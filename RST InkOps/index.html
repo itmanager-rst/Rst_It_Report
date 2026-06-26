@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Smart Ink Stock - Mobile Pro</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1e293b">
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Sarabun', sans-serif; }</style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center justify-start p-2 sm:p-4">
+
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200 flex flex-col my-2 min-h-[90vh]">
+        
+        <div class="bg-slate-900 text-white p-5 pb-8 text-center relative rounded-b-3xl shadow-md flex flex-col items-center justify-center gap-1.5">
+            
+            <a href="dashboard.html" target="_blank" class="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-bold py-1.5 px-2.5 rounded-xl border border-slate-700 flex items-center gap-1 transition-all text-slate-200 decoration-none">
+                📊 <span class="text-[10px]">Dashboard</span>
+            </a>
+
+            <h1 class="text-xl font-extrabold tracking-wide flex items-center justify-center gap-2 pr-6">⚡ Smart Ink Stock <span class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-md font-normal">RST</span></h1>
+            <p class="text-[11px] text-slate-400">ระบบจัดการและเบิกจ่ายหมึกพิมพ์หน้าร้านอัตโนมัติ</p>
+            
+            <div id="status-badge" class="mt-1 bg-slate-800/80 border border-slate-700 text-amber-400 text-[10px] px-3 py-1 rounded-full font-mono shadow-inner">
+                🔄 กำลังเชื่อมต่อข้อมูล...
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 text-center sticky top-0 z-10">
+            <button id="tab-printer-btn" onclick="switchTab('printer')" class="py-3.5 border-b-2 border-blue-600 text-blue-600 transition-all">🖨️ เลือกตามเครื่องปริ้น</button>
+            <button id="tab-status-btn" onclick="switchTab('status')" class="py-3.5 border-b-2 border-transparent transition-all">🚨 ตรวจสอบStock</button>
+        </div>
+
+        <div class="p-4 flex-1 flex flex-col justify-start overflow-y-auto">
+            <div id="tab-printer" class="space-y-4">
+                <p class="text-xs text-slate-400">💡 ลือกเครื่องปริ้นเตอร์ของแผนกเพื่อดูรหัสหมึกและตัดยอดสต๊อก</p>
+                <div id="printer-list-container" class="space-y-2"></div>
+            </div>
+
+            <div id="tab-status" class="space-y-4 hidden">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl text-center">
+                        <h4 class="text-xs font-bold text-amber-800">ใกล้หมดคลัง</h4>
+                        <span id="kpi-warn" class="text-3xl font-black text-amber-600 block mt-1">0</span>
+                    </div>
+                    <div class="bg-red-50 border border-red-200 p-4 rounded-xl text-center">
+                        <h4 class="text-xs font-bold text-red-800">หมึกหมด</h4>
+                        <span id="kpi-dang" class="text-3xl font-black text-red-600 block mt-1">0</span>
+                    </div>
+                </div>
+                <div id="critical-list" class="space-y-2 pt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="action-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl">
+            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-wider">ยืนยันทำรายการวัสดุ</span>
+            <h3 id="modal-ink-code" class="text-2xl font-black text-slate-800 font-mono">-</h3>
+            <p id="modal-ink-detail" class="text-xs text-slate-500 pb-2 border-b border-slate-100">-</p>
+            <div class="flex gap-2 pt-1">
+                <button onclick="closeModal()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition-all">ยกเลิก</button>
+                <button onclick="alert('บันทึกเบิกใช้สำเร็จ')" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all">[-] เบิกใช้</button>
+                <button onclick="alert('บันทึกเติมสต๊อกสำเร็จ')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all">[+] เติมของ</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbzkyD6vgKKN-3e5Ez5sbr43rKR6VVu7L6eBSK2n9bwBw3xEfrVSiCh50M12VYnyFTWG/exec";
+        let globalInkStock = [];
+        let globalPrinterList = [];
+
+        function switchTab(target) {
+            ['printer', 'status'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.add('hidden');
+                document.getElementById(`tab-${t}-btn`).className = "py-3.5 border-b-2 border-transparent transition-all";
+            });
+            document.getElementById(`tab-${target}`).classList.remove('hidden');
+            document.getElementById(`tab-${target}-btn`).className = "py-3.5 border-b-2 border-blue-600 text-blue-600 transition-all";
+        }
+
+        function initApp() {
+            fetch(API_URL)
+                .then(res => res.json())
+                .then(data => {
+                    if(data.status === "success") {
+                        const badge = document.getElementById('status-badge');
+                        badge.className = "mt-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] px-3 py-1 rounded-full font-mono shadow-inner";
+                        badge.innerHTML = "🟢 Connected Real-time";
+                        
+                        globalInkStock = data.ink_stock;
+                        globalPrinterList = data.printer_list;
+                        
+                        renderPrinterTab();
+                        renderStatusTab();
+                    }
+                }).catch(err => console.error(err));
+        }
+
+        function renderPrinterTab() {
+            let html = "";
+            globalPrinterList.forEach(p => {
+                const inkArray = p.Compatible_Inks.split(',').map(item => item.trim());
+                let inkButtonsHtml = "";
+                
+                inkArray.forEach(inkCode => {
+                    if(!inkCode) return;
+                    const matchedInk = globalInkStock.find(i => i.Ink_Code === inkCode) || {};
+                    const stock = matchedInk.Current_Stock !== undefined ? matchedInk.Current_Stock : "0";
+                    let btnColor = "bg-slate-200 text-slate-800";
+                    
+                    if(stock === 0) { btnColor = "bg-red-100 text-red-700 border border-red-200"; }
+                    else if(stock <= matchedInk.Min_Threshold) { btnColor = "bg-amber-100 text-amber-700 border border-amber-200"; }
+                    
+                    inkButtonsHtml += `
+                        <button onclick="openActionModal('${inkCode}')" class="text-[11px] font-bold px-2 py-1 rounded-lg font-mono ${btnColor} transition-all active:scale-95">
+                            ${inkCode} (${stock}ตลับ)
+                        </button>
+                    `;
+                });
+
+                html += `
+                    <div class="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                        <div>
+                            <span class="text-[10px] font-bold text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-md">📍 แผนก: ${p.Location_Dept}</span>
+                            <h4 class="text-sm font-bold text-slate-800 mt-1">🖨️ ${p.Printer_Model}</h4>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
+                            ${inkButtonsHtml}
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('printer-list-container').innerHTML = html || "<p class='text-center text-xs py-4'>ไม่มีข้อมูลเครื่องปริ้นเตอร์ในระบบ</p>";
+        }
+
+        function openActionModal(inkCode) {
+            const matchedInk = globalInkStock.find(i => i.Ink_Code === inkCode);
+            document.getElementById('modal-ink-code').textContent = inkCode;
+            if(matchedInk) {
+                document.getElementById('modal-ink-detail').textContent = `ยี่ห้อ: ${matchedInk.Brand} · สี: ${matchedInk.Color} (คงเหลือในตู้ปัจจุบัน: ${matchedInk.Current_Stock} ตลับ)`;
+            } else {
+                document.getElementById('modal-ink-detail').textContent = "ข้อมูลรหัสหมึกเติมชั่วคราว";
+            }
+            document.getElementById('action-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('action-modal').classList.add('hidden');
+        }
+
+        function renderStatusTab() {
+            let warn = 0, dang = 0, listHtml = "";
+            globalInkStock.forEach(i => {
+                if(i.Current_Stock === 0) {
+                    dang++;
+                    listHtml += `<div class="p-3 bg-red-50 border border-red-100 rounded-xl text-xs flex justify-between items-center"><span class="font-bold font-mono">${i.Ink_Code}</span> <span class="text-red-600 font-bold">หมึกหมดเกลี้ยง ❌</span></div>`;
+                } else if(i.Current_Stock <= i.Min_Threshold) {
+                    warn++;
+                    listHtml += `<div class="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs flex justify-between items-center"><span class="font-bold font-mono">${i.Ink_Code}</span> <span class="text-amber-600 font-bold">ใกล้หมด (เหลือ ${i.Current_Stock} ตลับ) ⚠️</span></div>`;
+                }
+            });
+            document.getElementById('kpi-warn').textContent = warn;
+            document.getElementById('kpi-dang').textContent = dang;
+            document.getElementById('critical-list').innerHTML = listHtml;
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบพิมพ์บันทึกลูกค้าจดทะเบียน - หจก.บ้านและที่ดินรวมสินไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; }
+    
+    /* กล่องจำลองขนาดหน้ากระดาษ A4 */
+    .a4-page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 10mm 15mm;
+      margin: 0 auto 20px auto;
+      background: white;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* เส้นประสำหรับฉีกแบ่งชุดงาน */
+    .tear-line {
+      border-bottom: 2px dashed #cbd5e1;
+      position: relative;
+      margin: 6px 0;
+    }
+    .tear-line::after {
+      content: "✂️ เส้นประฉีกแยกใบงาน";
+      position: absolute;
+      right: 10px;
+      top: -10px;
+      font-size: 10px;
+      color: #94a3b8;
+      background: white;
+      padding: 0 6px;
+    }
+
+    @media print {
+      body { background-color: #ffffff; color: #000000; }
+      .no-print { display: none !important; }
+      .a4-page {
+        margin: 0 !important;
+        box-shadow: none !important;
+        padding: 6mm 10mm !important;
+        width: 100% !important;
+        min-height: auto !important;
+      }
+      .tear-line::after { display: none; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <header class="no-print bg-slate-900 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <a href="index.html" class="bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 px-3 rounded-xl border border-slate-700 transition-colors">
+          ⬅ กลับหน้าหลัก
+        </a>
+        <div>
+          <h1 class="text-lg font-bold tracking-wide">📋 ระบบพิมพ์บันทึกติดตาม "ลูกค้าจดทะเบียน"</h1>
+          <p class="text-slate-400 text-xs">กรอกข้อมูลเพื่อพล็อตฟอร์มจดทะเบียนตัวรถ 4 ชุดลงในกระดาษ A4 หน้าเดียวอัตโนมัติ</p>
+        </div>
+      </div>
+      <button onclick="window.print()" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-sm transition-all flex items-center gap-2">
+        🖨️ สั่งพิมพ์ใบงานจดทะเบียน (A4)
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1600px] w-full mx-auto p-4 lg:p-8 flex flex-col lg:flex-row gap-8">
+    
+    <div class="no-print w-full lg:w-4/12 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[85vh] overflow-y-auto sticky top-6">
+      <h2 class="text-md font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+        📥 บันทึกข้อมูลประวัติตัวรถ
+      </h2>
+      
+      <div class="space-y-4 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">รหัส (F/R)</label>
+            <input type="text" id="inCode" oninput="syncData()" placeholder="ระบุรหัส F/R" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-cyan-500">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">เลขบิล P</label>
+            <input type="text" id="inBillP" oninput="syncData()" placeholder="ระบุเลขบิล P" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-cyan-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">ชื่อลูกค้า</label>
+          <input type="text" id="inCustomer" oninput="syncData()" placeholder="ระบุชื่อ-นามสกุลลูกค้า" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-cyan-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">วันที่ปิดบัญชี</label>
+            <input type="text" id="inCloseDate" oninput="syncData()" placeholder="ระบุวันที่ปิดบัญชี" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-cyan-500">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">วันส่งมอบ</label>
+            <input type="text" id="inDeliveryDate" oninput="syncData()" placeholder="ระบุวันส่งมอบ" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-cyan-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">เลขรถ / เลขเครื่อง</label>
+          <input type="text" id="inVehicleNo" oninput="syncData()" placeholder="ระบุหมายเลขรถ/หมายเลขเครื่อง" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-cyan-500">
+        </div>
+
+        <div class="bg-cyan-50 p-3.5 rounded-xl border border-cyan-100">
+          <label class="block font-bold text-cyan-950 mb-2 uppercase">ประเภทการโอนเล่ม</label>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-1.5 cursor-pointer text-sm">
+              <input type="radio" name="typeGroup" value="1 ต่อ" onchange="syncData()" class="w-4 h-4 accent-cyan-600"> 1 ต่อ
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer text-sm">
+              <input type="radio" name="typeGroup" value="2 ต่อ" onchange="syncData()" class="w-4 h-4 accent-cyan-600"> 2 ต่อ
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer text-sm">
+              <input type="radio" name="typeGroup" value="อื่นๆ" onchange="syncData()" class="w-4 h-4 accent-cyan-600"> อื่นๆ
+            </label>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-100 pt-2 space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">ผู้รับเรื่อง</label>
+              <input type="text" id="inReceiver" oninput="syncData()" placeholder="ระบุชื่อผู้รับเรื่อง" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">วันรับเล่ม</label>
+              <input type="text" id="inReceiveBookDate" oninput="syncData()" placeholder="ระบุวันรับเล่ม" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+            </div>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">ผู้รับโอน / วันที่โอน</label>
+            <input type="text" id="inTransferDetails" oninput="syncData()" placeholder="เช่น นายเอ / 15 มิ.ย. 2569" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="w-full lg:w-8/12 flex flex-col text-slate-900 text-[11.5px] leading-relaxed select-none">
+      <div class="a4-page">
+        
+        <div class="p-3 border border-slate-300 rounded-xl bg-slate-50/20 flex flex-col justify-between min-h-[63mm]">
+          <div class="flex justify-between items-center border-b border-slate-200 pb-1 mb-1.5">
+            <span class="font-bold text-xs text-cyan-800">📋 ลูกค้าจดทะเบียน (ชุดที่ 1)</span>
+            <div class="flex gap-4 text-[10.5px] text-slate-500">
+              <div>ผู้เช็คยืนยันปิดบัญชี.........................</div>
+              <div>ผูอนุมัติ.........................</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-12 gap-x-2 gap-y-1">
+            <div class="col-span-4">รหัส (F/R): <span class="v-code font-bold border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-8">ชื่อลูกค้า: <span class="v-customer font-bold text-slate-950 border-b border-dashed border-slate-400 px-1 inline-block min-w-[250px]"></span></div>
+            
+            <div class="col-span-4">วันที่ปิดบัญชี: <span class="v-closedate border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">เลขบิล P: <span class="v-billp border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">วันส่งมอบ: <span class="v-delivery border-b border-dashed border-slate-400 px-1"></span></div>
+            
+            <div class="col-span-6">เลขรถ/เลขเครื่อง: <span class="v-vehicleno font-medium border-b border-dashed border-slate-400 px-1 inline-block min-w-[180px]"></span></div>
+            <div class="col-span-6 flex gap-3 items-center bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+              <span class="font-semibold text-slate-500 text-[10.5px]">ประเภทโอน:</span>
+              <span id="vType1_1" class="text-slate-300">⬜ 1 ต่อ</span>
+              <span id="vType1_2" class="text-slate-300">⬜ 2 ต่อ</span>
+              <span id="vType1_3" class="text-slate-300">⬜ อื่นๆ</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-2 pt-1.5 border-t border-slate-100 text-[10.5px] text-slate-600">
+            <div>ผู้รับเรื่อง: <span class="v-receiver font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>ผู้รับโอน/วันที่โอน: <span class="v-transfer font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>วันรับเล่ม: <span class="v-bookdate font-medium border-b border-dashed border-slate-400"></span></div>
+          </div>
+        </div>
+
+        <div class="tear-line"></div>
+
+        <div class="p-3 border border-slate-300 rounded-xl bg-slate-50/20 flex flex-col justify-between min-h-[63mm]">
+          <div class="flex justify-between items-center border-b border-slate-200 pb-1 mb-1.5">
+            <span class="font-bold text-xs text-cyan-800">📋 ลูกค้าจดทะเบียน (ชุดที่ 2)</span>
+            <div class="flex gap-4 text-[10.5px] text-slate-500">
+              <div>ผู้เช็คยืนยันปิดบัญชี.........................</div>
+              <div>ผูอนุมัติ.........................</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-12 gap-x-2 gap-y-1">
+            <div class="col-span-4">รหัส (F/R): <span class="v-code font-bold border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-8">ชื่อลูกค้า: <span class="v-customer font-bold text-slate-950 border-b border-dashed border-slate-400 px-1 inline-block min-w-[250px]"></span></div>
+            
+            <div class="col-span-4">วันที่ปิดบัญชี: <span class="v-closedate border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">เลขบิล P: <span class="v-billp border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">วันส่งมอบ: <span class="v-delivery border-b border-dashed border-slate-400 px-1"></span></div>
+            
+            <div class="col-span-6">เลขรถ/เลขเครื่อง: <span class="v-vehicleno font-medium border-b border-dashed border-slate-400 px-1 inline-block min-w-[180px]"></span></div>
+            <div class="col-span-6 flex gap-3 items-center bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+              <span class="font-semibold text-slate-500 text-[10.5px]">ประเภทโอน:</span>
+              <span id="vType2_1" class="text-slate-300">⬜ 1 ต่อ</span>
+              <span id="vType2_2" class="text-slate-300">⬜ 2 ต่อ</span>
+              <span id="vType2_3" class="text-slate-300">⬜ อื่นๆ</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-2 pt-1.5 border-t border-slate-100 text-[10.5px] text-slate-600">
+            <div>ผู้รับเรื่อง: <span class="v-receiver font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>ผู้รับโอน/วันที่โอน: <span class="v-transfer font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>วันรับเล่ม: <span class="v-bookdate font-medium border-b border-dashed border-slate-400"></span></div>
+          </div>
+        </div>
+
+        <div class="tear-line"></div>
+
+        <div class="p-3 border border-slate-300 rounded-xl bg-slate-50/20 flex flex-col justify-between min-h-[63mm]">
+          <div class="flex justify-between items-center border-b border-slate-200 pb-1 mb-1.5">
+            <span class="font-bold text-xs text-cyan-800">📋 ลูกค้าจดทะเบียน (ชุดที่ 3)</span>
+            <div class="flex gap-4 text-[10.5px] text-slate-500">
+              <div>ผู้เช็คยืนยันปิดบัญชี.........................</div>
+              <div>ผูอนุมัติ.........................</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-12 gap-x-2 gap-y-1">
+            <div class="col-span-4">รหัส (F/R): <span class="v-code font-bold border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-8">ชื่อลูกค้า: <span class="v-customer font-bold text-slate-950 border-b border-dashed border-slate-400 px-1 inline-block min-w-[250px]"></span></div>
+            
+            <div class="col-span-4">วันที่ปิดบัญชี: <span class="v-closedate border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">เลขบิล P: <span class="v-billp border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">วันส่งมอบ: <span class="v-delivery border-b border-dashed border-slate-400 px-1"></span></div>
+            
+            <div class="col-span-6">เลขรถ/เลขเครื่อง: <span class="v-vehicleno font-medium border-b border-dashed border-slate-400 px-1 inline-block min-w-[180px]"></span></div>
+            <div class="col-span-6 flex gap-3 items-center bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+              <span class="font-semibold text-slate-500 text-[10.5px]">ประเภทโอน:</span>
+              <span id="vType3_1" class="text-slate-300">⬜ 1 ต่อ</span>
+              <span id="vType3_2" class="text-slate-300">⬜ 2 ต่อ</span>
+              <span id="vType3_3" class="text-slate-300">⬜ อื่นๆ</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-2 pt-1.5 border-t border-slate-100 text-[10.5px] text-slate-600">
+            <div>ผู้รับเรื่อง: <span class="v-receiver font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>ผู้รับโอน/วันที่โอน: <span class="v-transfer font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>วันรับเล่ม: <span class="v-bookdate font-medium border-b border-dashed border-slate-400"></span></div>
+          </div>
+        </div>
+
+        <div class="tear-line"></div>
+
+        <div class="p-3 border border-slate-300 rounded-xl bg-slate-50/20 flex flex-col justify-between min-h-[63mm]">
+          <div class="flex justify-between items-center border-b border-slate-200 pb-1 mb-1.5">
+            <span class="font-bold text-xs text-cyan-800">📋 ลูกค้าจดทะเบียน (ชุดที่ 4)</span>
+            <div class="flex gap-4 text-[10.5px] text-slate-500">
+              <div>ผู้เช็คยืนยันปิดบัญชี.........................</div>
+              <div>ผูอนุมัติ.........................</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-12 gap-x-2 gap-y-1">
+            <div class="col-span-4">รหัส (F/R): <span class="v-code font-bold border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-8">ชื่อลูกค้า: <span class="v-customer font-bold text-slate-950 border-b border-dashed border-slate-400 px-1 inline-block min-w-[250px]"></span></div>
+            
+            <div class="col-span-4">วันที่ปิดบัญชี: <span class="v-closedate border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">เลขบิล P: <span class="v-billp border-b border-dashed border-slate-400 px-1"></span></div>
+            <div class="col-span-4">วันส่งมอบ: <span class="v-delivery border-b border-dashed border-slate-400 px-1"></span></div>
+            
+            <div class="col-span-6">เลขรถ/เลขเครื่อง: <span class="v-vehicleno font-medium border-b border-dashed border-slate-400 px-1 inline-block min-w-[180px]"></span></div>
+            <div class="col-span-6 flex gap-3 items-center bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+              <span class="font-semibold text-slate-500 text-[10.5px]">ประเภทโอน:</span>
+              <span id="vType4_1" class="text-slate-300">⬜ 1 ต่อ</span>
+              <span id="vType4_2" class="text-slate-300">⬜ 2 ต่อ</span>
+              <span id="vType4_3" class="text-slate-300">⬜ อื่นๆ</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-2 pt-1.5 border-t border-slate-100 text-[10.5px] text-slate-600">
+            <div>ผู้รับเรื่อง: <span class="v-receiver font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>ผู้รับโอน/วันที่โอน: <span class="v-transfer font-medium border-b border-dashed border-slate-400"></span></div>
+            <div>วันรับเล่ม: <span class="v-bookdate font-medium border-b border-dashed border-slate-400"></span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="no-print bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 mt-auto">
+    &copy; 2026 ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย. ระบบภายในเพื่อการบริหารจัดการเอกสาร
+  </footer>
+
+  <script>
+    window.addEventListener('pageshow', function() { syncData(); });
+
+    function syncData() {
+      // ดึงค่าอินพุตจากฝั่งควบคุมด้านซ้าย
+      const code = document.getElementById('inCode').value || '.........................';
+      const customer = document.getElementById('inCustomer').value || '................................................';
+      const closedate = document.getElementById('inCloseDate').value || '.........................';
+      const billp = document.getElementById('inBillP').value || '.........................';
+      const delivery = document.getElementById('inDeliveryDate').value || '.........................';
+      const vehicleno = document.getElementById('inVehicleNo').value || '................................................';
+      const receiver = document.getElementById('inReceiver').value || '.........................';
+      const transfer = document.getElementById('inTransferDetails').value || '........................................';
+      const bookdate = document.getElementById('inReceiveBookDate').value || '.........................';
+
+      // ดึงค่าจากปุ่มตัวเลือกเรดิโอประเภทการโอน
+      const typeRadio = document.querySelector('input[name="typeGroup"]:checked');
+      const selectedType = typeRadio ? typeRadio.value : '';
+
+      // ซิงค์ข้อความพื้นฐานกระจายไปยังใบงานทั้ง 4 ชุดบนหน้ากระดาษพรีวิว
+      document.querySelectorAll('.v-code').forEach(el => el.innerText = code);
+      document.querySelectorAll('.v-customer').forEach(el => el.innerText = customer);
+      document.querySelectorAll('.v-closedate').forEach(el => el.innerText = closedate);
+      document.querySelectorAll('.v-billp').forEach(el => el.innerText = billp);
+      document.querySelectorAll('.v-delivery').forEach(el => el.innerText = delivery);
+      document.querySelectorAll('.v-vehicleno').forEach(el => el.innerText = vehicleno);
+      document.querySelectorAll('.v-receiver').forEach(el => el.innerText = receiver);
+      document.querySelectorAll('.v-transfer').forEach(el => el.innerText = transfer);
+      document.querySelectorAll('.v-bookdate').forEach(el => el.innerText = bookdate);
+
+      // วนลูปจัดการทำเครื่องหมายติ๊กถูก ☑️ ช่องประเภทการโอนทั้ง 4 ฟอร์มย่อย
+      for (let i = 1; i <= 4; i++) {
+        const t1 = document.getElementById(`vType${i}_1`);
+        const t2 = document.getElementById(`vType${i}_2`);
+        const t3 = document.getElementById(`vType${i}_3`);
+        
+        // เคลียร์ค่าสถานะเริ่มต้นให้กลับเป็นกล่องเปล่าจางๆ
+        t1.innerHTML = '⬜ 1 ต่อ'; t1.className = 'text-slate-300';
+        t2.innerHTML = '⬜ 2 ต่อ'; t2.className = 'text-slate-300';
+        t3.innerHTML = '⬜ อื่นๆ'; t3.className = 'text-slate-300';
+
+        // เข้าเงื่อนไขเปิดสัญลักษณ์เช็คถูกเมื่อผู้ใช้ทำการคลิกเลือก
+        if (selectedType === '1 ต่อ') {
+          t1.innerHTML = '☑️ <b>1 ต่อ</b>'; t1.className = 'text-cyan-800 font-bold';
+        } else if (selectedType === '2 ต่อ') {
+          t2.innerHTML = '☑️ <b>2 ต่อ</b>'; t2.className = 'text-cyan-800 font-bold';
+        } else if (selectedType === 'อื่นๆ') {
+          t3.innerHTML = '☑️ <b>อื่นๆ</b>'; t3.className = 'text-cyan-800 font-bold';
+        }
+      }
+    }
+  </script>
+</body>
+</html>

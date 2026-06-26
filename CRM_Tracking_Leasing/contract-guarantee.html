@@ -1,0 +1,437 @@
+ั<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบพิมพ์หนังสือสัญญาค้ำประกัน - หจก.บ้านและที่ดินรวมสินไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    body {
+      font-family: 'TH Sarabun PSK', 'Angsana New', 'Cordia New', 'Sarabun', sans-serif;
+      background-color: #f1f5f9;
+    }
+    
+    /* สไตล์คุมตำแหน่งข้อความในจุดไข่ปลาให้อยู่กึ่งกลางระนาบเดียวกัน */
+    .dot-line {
+      border-bottom: 1px dotted #000;
+      padding-left: 4px;
+      padding-right: 4px;
+      display: inline-flex;
+      justify-content: center;
+      align-items: flex-end;
+      font-weight: bold;
+      color: #1e3a8a; /* สีน้ำเงินเข้มเพื่อตรวจสอบความถูกต้องบนหน้าจอ */
+      text-align: center;
+      vertical-align: baseline;
+      line-height: 1.2;
+    }
+
+    /* สไตล์บรรทัดสัญญาจัดชิดซ้ายปกติ ป้องกันปัญหากระจายตัวอักษรยืดห่าง */
+    .contract-p {
+      text-align: left;
+      line-height: 2.2;
+      margin-bottom: 12px;
+      font-size: 16px;
+    }
+
+    /* จัดหน้าสำหรับการสั่งพิมพ์ */
+    @media print {
+      @page {
+        size: A4;
+        margin: 1.8cm 1.5cm 1.2cm 2.2cm;
+      }
+      body {
+        background-color: white;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-area {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        font-size: 16px !important;
+        color: #000 !important;
+      }
+      .dot-line {
+        color: #000 !important;
+        border-bottom: 1px dotted #000 !important;
+      }
+    }
+  </style>
+</head>
+<body class="p-4 md:p-8" onload="initSystem()">
+
+  <!-- ปุ่มย้อนกลับ (no-print) -->
+  <div class="max-w-4xl mx-auto mb-4 no-print">
+    <a href="index.html" class="inline-flex items-center text-sm font-medium text-slate-700 hover:text-slate-900 bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-xl transition gap-1.5 shadow-sm">
+      ⬅️ กลับไปหน้าหลัก (เมนูเลือกสัญญา)
+    </a>
+  </div>
+
+  <!-- ส่วนฟอร์มกรอกข้อมูลเพื่อนำไปคำนวณ (no-print) -->
+  <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden no-print mb-8">
+    <div class="bg-gradient-to-r from-red-900 to-slate-800 p-6 text-white text-center">
+      <h1 class="text-2xl font-bold tracking-wide">✍️ บันทึกข้อมูลหนังสือสัญญาค้ำประกัน</h1>
+    </div>
+
+    <form class="p-6 space-y-6" autocomplete="off" onsubmit="return false;">
+      <!-- ข้อมูลเอกสารหลัก -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">สัญญาค้ำประกันสัญญาเช่าซื้อ <span class="text-red-500">*</span></label>
+          <input type="text" id="in_doc_title" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น อุปกรณ์รถแทรกเตอร์">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">เลขที่เอกสารสัญญาค้ำฯ <span class="text-red-500">*</span></label>
+          <input type="text" id="in_guarantee_no" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น ZK85">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ทำที่ <span class="text-red-500">*</span></label>
+          <input type="text" id="in_location" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" value="ห้างหุ้นส่วนจำกัดบ้านและที่ดินรวมสินไทย">
+        </div>
+      </div>
+
+      <!-- ผู้ค้ำคนที่ 1 -->
+      <div class="border-t pt-4"><span class="text-xs font-bold text-red-800 bg-red-50 px-2 py-1 rounded">👤 ข้อมูลผู้ค้ำประกัน (คนที่ 1)</span></div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ชื่อผู้ค้ำประกัน (1)</label>
+          <input type="text" id="in_g1_name" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น นายสมชาย มั่นคง">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">เลขประจำตัวประชาชน (1)</label>
+          <input type="text" id="in_g1_id" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น 1-1002-00345-67-8">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ออกให้โดย (1)</label>
+          <input type="text" id="in_g1_issuer" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น กรมการปกครอง">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">อายุ (1)</label>
+          <input type="number" id="in_g1_age" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น 45">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">อยู่บ้านเลขที่ (1)</label>
+          <input type="text" id="in_g1_address" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น 99/1 หมู่ที่ 3 ตำบลในเมือง อำเภอเมือง จังหวัดยโสธร">
+        </div>
+      </div>
+
+      <!-- ผู้ค้ำคนที่ 2 -->
+      <div class="border-t pt-4"><span class="text-xs font-bold text-blue-800 bg-blue-50 px-2 py-1 rounded">👤 ข้อมูลผู้ค้ำประกัน (คนที่ 2)</span></div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ชื่อผู้ค้ำประกัน (2)</label>
+          <input type="text" id="in_g2_name" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-800 outline-none" placeholder="เช่น นางสาวสมศรี ดีใจ">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">เลขประจำตัวประชาชน (2)</label>
+          <input type="text" id="in_g2_id" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-800 outline-none" placeholder="เช่น 3-3501-00244-11-2">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ออกให้โดย (2)</label>
+          <input type="text" id="in_g2_issuer" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-800 outline-none" placeholder="เช่น อำเภอเมืองยโสธร">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">อายุ (2)</label>
+          <input type="number" id="in_g2_age" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-800 outline-none" placeholder="เช่น 38">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">อยู่บ้านเลขที่ (2)</label>
+          <input type="text" id="in_g2_address" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-800 outline-none" placeholder="เช่น 124 หมู่ที่ 5 ตำบลตาดทอง อำเภอเมือง จังหวัดยโสธร">
+        </div>
+      </div>
+
+      <!-- ผู้ค้ำคนที่ 3 -->
+      <div class="border-t pt-4"><span class="text-xs font-bold text-purple-800 bg-purple-50 px-2 py-1 rounded">👤 ข้อมูลผู้ค้ำประกัน (คนที่ 3)</span></div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ชื่อผู้ค้ำประกัน (3)</label>
+          <input type="text" id="in_g3_name" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-800 outline-none" placeholder="เช่น นายประหยัด มีทรัพย์">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">เลขประจำตัวประชาชน (3)</label>
+          <input type="text" id="in_g3_id" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-800 outline-none" placeholder="เช่น 5-4508-00122-33-4">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ออกให้โดย (3)</label>
+          <input type="text" id="in_g3_issuer" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-800 outline-none" placeholder="เช่น สำนักงานเขต">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">อายุ (3)</label>
+          <input type="number" id="in_g3_age" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-800 outline-none" placeholder="เช่น 50">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">อยู่บ้านเลขที่ (3)</label>
+          <input type="text" id="in_g3_address" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-800 outline-none" placeholder="เช่น 55 หมู่ที่ 1 ตำบลขุมเงิน อำเภอเมือง จังหวัดยโสธร">
+        </div>
+      </div>
+
+      <!-- ข้อมูลผู้ซื้อหลักและการเงิน -->
+      <div class="border-t pt-4"><span class="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">🚜 ข้อมูลผู้เช่าซื้อหลักและรายละเอียดวงเงิน</span></div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">วันที่ทำสัญญาค้ำประกัน <span class="text-red-500">*</span></label>
+          <input type="date" id="in_doc_date" class="w-full px-3 py-2 border rounded-lg text-sm bg-green-50 focus:ring-2 focus:ring-red-800 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ชื่อผู้เช่าซื้อหลัก <span class="text-red-500">*</span></label>
+          <input type="text" id="in_buyer_name" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น นายทวีโชค ร่ำรวย">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ยี่ห้อ/รุ่น อุปกรณ์ <span class="text-red-500">*</span></label>
+          <input type="text" id="in_product_model" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น AW82GV">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">เลขที่สัญญาเช่าซื้อ <span class="text-red-500">*</span></label>
+          <input type="text" id="in_contract_no" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น CK03">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ลงวันที่สัญญาเช่าซื้อ <span class="text-red-500">*</span></label>
+          <input type="date" id="in_contract_date" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">วงเงินค้ำประกัน (บาท) <span class="text-red-500">*</span></label>
+          <input type="number" id="in_amount" class="w-full px-3 py-2 border rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-red-800 outline-none" placeholder="เช่น 33333">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">ภายในระยะเวลา (ปี) <span class="text-red-500">*</span></label>
+          <input type="number" id="in_years" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-800 outline-none" value="5">
+        </div>
+      </div>
+
+      <div class="pt-4 border-t">
+        <button type="button" onclick="window.print()" class="w-full bg-red-800 hover:bg-red-950 text-white font-medium py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2">
+          🖨️ สั่งพิมพ์หนังสือสัญญาค้ำประกัน (A4)
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ================= AREA FOR PRINTING ================= -->
+  <div id="printDocument" class="print-area max-w-2xl mx-auto bg-white px-12 py-12 shadow-lg border border-gray-200 text-black">
+    
+    <div class="text-center font-bold text-xl tracking-wide mb-6">หนังสือสัญญาค้ำประกัน</div>
+    
+    <div class="contract-p text-right">
+      หนังสือสัญญาค้ำประกันสัญญาเช่าซื้อ <span id="p_doc_title" class="dot-line min-w-[200px]">........................................</span>
+      เลขที่ <span id="p_guarantee_no" class="dot-line min-w-[120px]">............................</span>
+    </div>
+
+    <div class="contract-p text-right mb-6">
+      ทำที่ <span id="p_location" class="dot-line min-w-[320px]">ห้างหุ้นส่วนจำกัดบ้านและที่ดินรวมสินไทย</span><br>
+      วันที่ <span id="p_doc_date" class="dot-line min-w-[180px]">........................................</span>
+    </div>
+
+    <!-- รายละเอียดผู้ค้ำประกัน 1, 2, 3 ไม่มีตัวดอกจัน -->
+    <div class="mb-4">
+      <!-- คนที่ 1 -->
+      <div class="contract-p">
+        <span class="pl-10">(1) ข้าพเจ้า</span> <span id="p_g1_name" class="dot-line min-w-[240px]">............................................................</span>
+        <span>เลขประจำตัวประชาชนเลขที่</span> <span id="p_g1_id" class="dot-line min-w-[160px]">........................................</span>
+      </div>
+      <div class="contract-p">
+        <span>ออกให้โดย</span> <span id="p_g1_issuer" class="dot-line min-w-[140px]">................................</span>
+        <span>อายุ</span> <span id="p_g1_age" class="dot-line min-w-[40px]">....</span> <span>ปี อยู่บ้านเลขที่</span>
+        <span id="p_g1_address" class="dot-line min-w-[340px]">......................................................................................................</span> <span class="float-right">และ</span>
+      </div>
+
+      <!-- คนที่ 2 -->
+      <div class="contract-p">
+        <span class="pl-10">(2) ข้าพเจ้า</span> <span id="p_g2_name" class="dot-line min-w-[240px]">............................................................</span>
+        <span>เลขประจำตัวประชาชนเลขที่</span> <span id="p_g2_id" class="dot-line min-w-[160px]">........................................</span>
+      </div>
+      <div class="contract-p">
+        <span>ออกให้โดย</span> <span id="p_g2_issuer" class="dot-line min-w-[140px]">................................</span>
+        <span>อายุ</span> <span id="p_g2_age" class="dot-line min-w-[40px]">....</span> <span>ปี อยู่บ้านเลขที่</span>
+        <span id="p_g2_address" class="dot-line min-w-[340px]">......................................................................................................</span> <span class="float-right">และ</span>
+      </div>
+
+      <!-- คนที่ 3 -->
+      <div class="contract-p">
+        <span class="pl-10">(3) ข้าพเจ้า</span> <span id="p_g3_name" class="dot-line min-w-[240px]">............................................................</span>
+        <span>เลขประจำตัวประชาชนเลขที่</span> <span id="p_g3_id" class="dot-line min-w-[160px]">........................................</span>
+      </div>
+      <div class="contract-p">
+        <span>ออกให้โดย</span> <span id="p_g3_issuer" class="dot-line min-w-[140px]">................................</span>
+        <span>อายุ</span> <span id="p_g3_age" class="dot-line min-w-[40px]">....</span> <span>ปี อยู่บ้านเลขที่</span>
+        <span id="p_g3_address" class="dot-line min-w-[390px]">......................................................................................................</span>
+      </div>
+    </div>
+
+    <p class="contract-p pl-10">
+      ซึ่งต่อไปในสัญญานี้เรียกว่า <strong>“ผู้ค้ำประกัน”</strong> ได้ทำหนังสือค้ำประกันฉบับนี้ไว้ให้แก่ <strong>ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย</strong> ซึ่งต่อไปในสัญญานี้เรียกว่า <strong>“บริษัท”</strong> โดยมีข้อความดังต่อไปนี้
+    </p>
+
+    <!-- เนื้อหาข้อสัญญา 1-11 ลบตัวสัญลักษณ์เสริมออกทั้งหมด คลีน 100% -->
+    <div class="mb-4">
+      <div class="contract-p">
+        <strong>ข้อ 1.</strong> ผู้ค้ำประกันตกลงค้ำประกันการชำระหนี้ และปฏิบัติให้เป็นไปตามสัญญาเช่าซื้อของ
+        <span id="p_buyer_name" class="dot-line min-w-[220px]">............................................................</span>
+        ซึ่งต่อไปในหนังสือสัญญานี้เรียกว่า “ผู้เช่าซื้อ” ซึ่งได้เช่าซื้อ อุปกรณ์รถแทรกเตอร์ ยี่ห้อ/รุ่น
+        <span id="p_product_model" class="dot-line min-w-[130px]">........................</span>
+        จากบริษัท ตามสัญญาเช่าซื้อระหว่างบริษัทและผู้เช่าซื้อเลขที่
+        <span id="p_contract_no" class="dot-line min-w-[90px]">................</span>
+        ลงวันที่
+        <span id="p_contract_date" class="dot-line min-w-[170px]">........................................</span>
+        (ต่อไปในสัญญานี้เรียกว่า “สัญญาเช่าซื้อ”) โดยผู้ค้ำประกันยอมตกลงทำสัญญาค้ำประกันหนี้ตามสัญญาเช่าซื้อที่ได้เกิดขึ้น หรือก่อให้เกิดขึ้น และหรืออาจจะเกิดขึ้นภายใน
+        <span id="p_years" class="dot-line min-w-[40px]">....</span>
+        ปี นับแต่วันที่ทำหนังสือสัญญาค้ำประกันนี้ จนกว่าผู้เช่าซื้อจะทำการชำระหนี้และปฏิบัติตามสัญญาเช่าซื้อแล้วเสร็จทุกประการ ทั้งนี้ภายในวงเงินค้ำประกัน
+        <span id="p_amount" class="dot-line min-w-[115px]">0.00</span> บาท
+        (<span id="p_amount_th" class="font-semibold">................................................................................</span>)
+      </div>
+
+      <p class="contract-p"><strong>ข้อ 2.</strong> หากผู้เช่าซื้อผิดนัดชำระหนี้ตามสัญญาเช่าซื้อไม่ว่าด้วยเหตุใดๆ รวมถึงการไม่ชำระค่าเช่าซื้อ และหรือเงินจำนวนอื่นใดที่ต้องชำระตามสัญญาเช่าซื้อภายในกำหนดเวลา ยอมรับผิด หรือผิดสัญญาเช่าซื้อไม่ว่าทั้งหมดหรือแต่บางส่วน หรือกรณีที่ผู้เช่าซื้อล้มละลาย หรือตาย หรือสาบสูญ หรือกลายเป็นบุคคลไร้ความสามารถ หรือย้ายไปจากถิ่นที่อยู่ หรือหาตัวไม่พบ หรือย้ายภูมิลำเนาโดยมิได้แจ้งให้บริษัททราบ หรือกรณีอื่นใดที่บริษัทไม่ได้รับชำระหนี้ตามสัญญาเช่าซื้อทั้งหมดไม่ว่าด้วยเหตุผลใด ผู้ค้ำประกันยินยอมรับผิดในการชำระหนี้ทั้งหมดของผู้เช่าซื้อ พร้อมอุปกรณ์แห่งหนี้ดังกล่าว และค่าเสียหายทั้งหมดแก่บริษัทจนครบถ้วนตามหนังสือสัญญาค้ำประกันนี้</p>
+      <p class="contract-p"><strong>ข้อ 3.</strong> สัญญาค้ำประกันฉบับนี้เป็นสัญญาค้ำประกันในขอบเขตการค้ำประกันที่ระบุในสัญญานี้ สำหรับหนี้ที่เกี่ยวข้องกับสัญญาเช่าซื้อของผู้เช่าซื้อ และภายในระยะเวลาการกำหนดการค้ำประกันตามข้อ 1 นี้ ผู้ค้ำประกันจะไม่เพิกถอนการค้ำประกันนี้ไม่ว่ากรณีใดๆ ตราบใดที่บริษัทยังไม่ได้รับการชำระหนี้ครบถ้วนแล้ว สัญญาค้ำประกันนี้มีผลผูกพันร่วมกันไปอย่างเต็มที่และใช้บังคับได้กับหนี้ของผู้เช่าซื้อที่มีต่อบริษัทตามที่ระบุไว้ข้างต้น แม้ว่าจะมีการเปลี่ยนแปลงในสภาพแพ่ง ลักษณะแห่งกิจการของผู้ค้ำประกัน ของบริษัท หรือของผู้เช่าซื้อ และหากว่า ผู้เช่าซื้อเป็นนิติบุคคลแล้ว ข้าพเจ้า ขอรับรู้ทางบัญชี ขอฟื้นฟูกิจการ หรือตกเป็นผู้ล้มละลายหรือกระจายสิทธิไม่มีผลเปลี่ยนแปลงหรือกระทบกระเทือนต่อความผูกพันของผู้ค้ำประกันที่มีต่อบริษัทตามหนังสือสัญญาค้ำประกันฉบับนี้แต่ประการใดทั้งสิ้น</p>
+      <p class="contract-p"><strong>ข้อ 4.</strong> เมื่อผู้เช่าซื้อผิดนัด บริษัทจะมีหนังสือบอกกล่าวไปยังผู้ค้ำประกันภายใน 60 วัน นับแต่ผู้เช่าซื้อผิดนัด เพื่อให้ผู้ค้ำประกันชำระหนี้ให้แก่บริษัท ในกรณีที่บริษัทไม่ได้มีหนังสือบอกกล่าวไปยังผู้ค้ำประกัน หรือมีหนังสือบอกกล่าวไปยังผู้ค้ำประกันเมื่อพ้นกำหนดระยะเวลาดังกล่าว ผู้ค้ำประกันยังคงรับผิดเช่นเดิม และจะไม่ยกเรื่องดังกล่าวเป็นข้อต่อสู้กับบริษัท และผู้ค้ำประกันตกลงรับผิดในดอกเบี้ย เบี้ยปรับ ค่าภาระติดพัน ค่าเสียหาย ตลอดจนค่าภาระติดพันเป็นอุปกรณ์แห่งหนี้ดังกล่าวทั้งหมดสิ้นทุกประการ</p>
+      <p class="contract-p"><strong>ข้อ 5.</strong> สัญญาฉบับนี้ให้มีผลสมบูรณ์ผูกพันถึงบรรดาทายาท ผู้รับโอนสิทธิ์ หรือผู้จัดการมรดกของผู้ค้ำประกันด้วย</p>
+      <p class="contract-p"><strong>ข้อ 6.</strong> การค้ำประกันนี้ย่อมผูกพันผู้ค้ำประกันอย่างสมบูรณ์ แม้หนี้ตามหนังสือเช่าซื้อนั้น หรือข้อบังคับของสัญญาเช่าซื้อของผู้เช่าซื้อ หรือผู้เข้าร่วมในระยะเวลาการกำหนดในสัญญาเช่าซื้อนี้จะบกพร่องความสามารถทางกฎหมาย หรือด้วยเหตุเป็นโมฆะ หรือโมฆียะก็ตาม หากในขณะที่ทำสัญญาค้ำประกัน ผู้ค้ำประกันรับรู้ถึงเหตุต่างๆ ดังกล่าวข้างต้นแล้ว</p>
+      <p class="contract-p"><strong>ข้อ 7.</strong> ผู้ค้ำประกันจะไม่หลุดพ้นจากความรับผิดเพราะเหตุที่บริษัทกระทำการใดๆ อันจะเป็นเหตุให้ผู้ค้ำประกัน ไม่อาจเข้ารับช่วงสิทธิได้ทั้งหมด หรือแต่บางส่วน ของทรัพย์สินหรือหลักประกันใดๆ อันได้ให้หรืออาจได้ให้ไว้แก่บริษัทก่อนหรือในขณะทำสัญญาค้ำประกันนี้</p>
+      <p class="contract-p"><strong>ข้อ 8.</strong> หากบุคคลภายนอกทำสัญญาค้ำประกันเพิ่มเติมแก่บริษัท เพื่อค้ำประกันความเสียหาย หรือหนี้ของผู้เช่าซื้อตามสัญญาเช่าซื้อ ให้ถือว่าเป็นการค้ำประกันเพิ่มเติมต่างหากเป็นอิสระและต่างหากจากความรับผิดชอบตามหนังสือสัญญาค้ำประกันฉบับนี้ และมิให้เสียสิทธิทางใดๆ ที่บริษัทจะพึงสิทธิจากหนังสือสัญญาค้ำประกันฉบับนี้ โดยบริษัทสามารถเรียกร้องให้ผู้เช่าซื้อและ/หรือผู้ค้ำประกัน หรือผู้ค้ำประกันภายนอกรายนั้นๆ รับผิดรายใดรายหนึ่งหรือทั้งหมด ชำระหนี้แก่บริษัท</p>
+      <p class="contract-p"><strong>ข้อ 9.</strong> กรณีที่ผู้ค้ำประกันย้ายไปจากที่อยู่ที่ระบุไว้ในสัญญานี้ ผู้ค้ำประกัน ตกลงจะแจ้งให้บริษัททราบเป็นลายลักษณ์อักษรภายใน 7 วัน นับตั้งแต่วันที่ผู้ค้ำประกันย้ายที่อยู่ มิฉะนั้นให้ถือว่าบรรดาการบอกกล่าว หนังสือทวงถาม หรือการติดต่ออื่นใดที่บริษัทมีถึงผู้ค้ำประกันตามที่ระบุไว้ในหนังสือสัญญาค้ำประกันนี้ เป็นการถูกต้องและเป็นการส่งโดยชอบด้วยกฎหมายแล้ว</p>
+      <p class="contract-p"><strong>ข้อ 10.</strong> กรณีส่วนหนึ่งส่วนใดของหนังสือสัญญาฉบับนี้ตกเป็นโมฆะ หรือใช้บังคับไม่ได้ตามกฎหมายไม่ว่าด้วยเหตุใดๆ ให้ส่วนที่เหลือของหนังสือสัญญานี้ยังคงมีผลบังคับใช้ได้โดยสมบูรณ์ตามกฎหมาย</p>
+      <p class="contract-p"><strong>ข้อ 11.</strong> การบอกกล่าว หรือหนังสือติดต่อทวงถามที่จะมีถึงผู้ค้ำประกัน ให้ส่งไปยังที่อยู่ของผู้ค้ำประกันตามที่ระบุไว้ในหนังสือสัญญาค้ำประกันนี้โดยทางไปรษณีย์ และให้ถือว่าเป็นการส่งให้แก่ผู้ค้ำประกันแล้ว</p>
+    </div>
+
+    <div class="contract-p pl-10 mt-4 mb-6">
+      ผู้ค้ำประกันได้อ่านและเข้าใจข้อความในสัญญานี้แล้ว เห็นว่าถูกต้องตรงตามเจตนาที่ได้ตกลงกันไว้ทุกประการ จึงได้ลงลายมือชื่อไว้เป็นสำคัญต่อหน้าพยานข้างท้ายนี้ ณ วัน เดือน ปี ที่ระบุข้างต้น
+    </div>
+
+    <!-- ส่วนเซ็นชื่อท้ายเอกสาร -->
+    <div class="grid grid-cols-2 gap-y-5 gap-x-6 text-[14px] mt-8 pl-2">
+      <div class="space-y-1">
+        <p>ลงชื่อ............................................................ผู้ค้ำประกันคนที่ 1</p>
+        <p class="pl-8">( <span id="p_g1_sig" class="font-medium">............................................................</span> )</p>
+      </div>
+      <div class="space-y-1">
+        <p>ลงชื่อ............................................................ผู้ค้ำประกันคนที่ 2</p>
+        <p class="pl-8">( <span id="p_g2_sig" class="font-medium">............................................................</span> )</p>
+      </div>
+      <div class="space-y-1">
+        <p>ลงชื่อ............................................................คู่สมรส</p>
+        <p class="pl-8">( ............................................................ )</p>
+      </div>
+      <div class="space-y-1">
+        <p>ลงชื่อ............................................................คู่สมรส</p>
+        <p class="pl-8">( ............................................................ )</p>
+      </div>
+      <div class="space-y-1">
+        <p>ลงชื่อ............................................................พยาน</p>
+        <p class="pl-8">( ............................................................ )</p>
+      </div>
+      <div class="space-y-1">
+        <p>ลงชื่อ............................................................พยาน</p>
+        <p class="pl-8">( ............................................................ )</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function initSystem() {
+      // ลงทะเบียนดักจับ Event การกรอกข้อมูลของทุกช่อง Input บนฟอร์มเพื่อซิงค์แบบ Real-time
+      const inputs = document.querySelectorAll('input');
+      inputs.forEach(input => {
+        input.addEventListener('input', syncData);
+      });
+      
+      // รันระบบครั้งแรกเพื่อล้างข้อมูลในสัญญาให้แสดงเป็นเส้นจุดไข่ปลาว่างๆ รอรับข้อมูลจริง
+      syncData();
+    }
+
+    function syncData() {
+      const fields = [
+        'doc_title', 'guarantee_no', 'location', 
+        'g1_name', 'g1_id', 'g1_issuer', 'g1_age', 'g1_address',
+        'g2_name', 'g2_id', 'g2_issuer', 'g2_age', 'g2_address',
+        'g3_name', 'g3_id', 'g3_issuer', 'g3_age', 'g3_address',
+        'buyer_name', 'product_model', 'contract_no', 'years'
+      ];
+      
+      fields.forEach(field => {
+        const inputElem = document.getElementById(`in_${field}`);
+        const printElem = document.getElementById(`p_${field}`);
+        if(inputElem && printElem) {
+          if(field === 'location') {
+            printElem.innerText = inputElem.value || "ห้างหุ้นส่วนจำกัดบ้านและที่ดินรวมสินไทย";
+          } else {
+            printElem.innerText = inputElem.value || "........................................";
+          }
+        }
+      });
+
+      // ดึงชื่อซิงค์ลงช่องเซ็นชื่อผู้ค้ำคนที่ 1 และ 2
+      const g1Name = document.getElementById('in_g1_name').value;
+      document.getElementById('p_g1_sig').innerText = g1Name || "............................................................";
+      
+      const g2Name = document.getElementById('in_g2_name').value;
+      document.getElementById('p_g2_sig').innerText = g2Name || "............................................................";
+
+      // ฟอร์แมตวันที่แบบไทย
+      const docDate = document.getElementById('in_doc_date').value;
+      document.getElementById('p_doc_date').innerText = docDate ? formatThaiDate(docDate) : "........................................";
+
+      const contractDate = document.getElementById('in_contract_date').value;
+      document.getElementById('p_contract_date').innerText = contractDate ? formatThaiDate(contractDate) : "........................................";
+
+      // คำนวณเงินตัวเลขและภาษาไทยตัวหนังสือตัวอักษร
+      const numAmount = parseFloat(document.getElementById('in_amount').value) || 0;
+      document.getElementById('p_amount').innerText = numAmount > 0 ? numAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+      document.getElementById('p_amount_th').innerText = numAmount > 0 ? ThaiBahtText(numAmount) : "................................................................................";
+    }
+
+    function formatThaiDate(dateStr) {
+      if(!dateStr) return "";
+      const parts = dateStr.split('-');
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function ThaiBahtText(num) {
+      const txtNum = ['ศูนย์', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
+      const txtWeight = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน', 'ล้าน'];
+      let strSplit = num.toFixed(2).split('.');
+      let baht = strSplit[0];
+      let satang = strSplit[1];
+      let bahtText = '';
+
+      if (parseInt(baht) === 0) bahtText = 'ศูนย์บาท';
+      else {
+        let len = baht.length;
+        for (let i = 0; i < len; i++) {
+          let digit = parseInt(baht.charAt(i));
+          let weight = len - 1 - i;
+          if (digit !== 0) {
+            if (weight % 6 === 1 && digit === 1) bahtText += 'เอ็ด';
+            else if (weight % 6 === 1 && digit === 2) bahtText += 'ยี่';
+            else if (weight % 6 === 0 && digit === 1 && i > 0) bahtText += 'เอ็ด';
+            else bahtText += txtNum[digit];
+            bahtText += txtWeight[weight % 6];
+          }
+          if (weight % 6 === 0 && weight > 0) bahtText += 'ล้าน';
+        }
+        bahtText += 'บาท';
+      }
+
+      if (parseInt(satang) === 0) bahtText += 'ถ้วน';
+      else {
+        if (parseInt(satang.charAt(0)) === 1) bahtText += 'สิบ';
+        else if (parseInt(satang.charAt(0)) === 2) bahtText += 'ยี่สิบ';
+        else if (parseInt(satang.charAt(0)) > 2) bahtText += txtNum[parseInt(satang.charAt(0))] + 'สิบ';
+        
+        if (parseInt(satang.charAt(1)) === 1) bahtText += 'เอ็ด';
+        else if (parseInt(satang.charAt(1)) > 1) bahtText += txtNum[parseInt(satang.charAt(1))];
+        bahtText += 'สตางค์';
+      }
+      return bahtText;
+    }
+  </script>
+</body>
+</html>

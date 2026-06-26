@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบจัดการเอกสาร - หจก.บ้านและที่ดินรวมสินไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body { 
+      font-family: 'Sarabun', sans-serif; 
+      background-color: #f8fafc; 
+    }
+    
+    /* ขนาดจำลองหน้าซองจดหมายมาตรฐานบนหน้าจอคอมพิวเตอร์ (สัดส่วนซองยาวมาตรฐาน DL 220mm x 110mm) */
+    .envelope-preview {
+      width: 220mm;
+      height: 110mm;
+      background-color: #ffffff;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      position: relative;
+      border: 1px solid #e2e8f0;
+      box-sizing: border-box;
+      padding: 8mm 12mm;
+    }
+
+    /* ซ่อนแถบเลื่อนบนฝั่งบันทึกประวัติให้ดูเนียนตา */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    /* ================= การตั้งค่าเมื่อกดสั่งพิมพ์ (CSS Print) ================= */
+    @media print {
+      @page {
+        margin: 0;
+      }
+      body {
+        background-color: #ffffff;
+        color: #000000;
+      }
+      /* ซ่อนส่วนที่เกี่ยวข้องกับเมนูควบคุมและ UI หน้าเว็บบนหน้าจอออกทั้งหมด */
+      .no-print {
+        display: none !important;
+      }
+      /* ปรับ Container ให้กางเต็มแผ่นตัดขอบส่วนเกินออก */
+      .print-container {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important;
+      }
+      /* แสดงเฉพาะบล็อกหน้าซองจดหมายตัวนี้เท่านั้น ปรับขนาดให้แม่นยำเป็นหน่วยมิลลิเมตร */
+      .envelope-preview {
+        width: 220mm !important;
+        height: 110mm !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 8mm 12mm !important;
+        page-break-inside: avoid;
+        position: relative !important;
+      }
+    }
+
+    /* สลับแนวกระดาษอัตโนมัติตามหน้าใช้งาน */
+    @media print {
+      /* หน้าพิมพ์ซองจดหมาย -> บังคับแนวนอน */
+      body:has(#envelopePage:not(.hidden)) {
+        @page { size: landscape; }
+      }
+      /* หน้าหนังสือสัญญาเงินกู้ -> บังคับแนวตั้ง */
+      body:has(#loanPage:not(.hidden)) {
+        @page { size: portrait; }
+      }
+    }
+
+    /* ควบคุมซ่อนหน้าอื่นกรณีสั่งพิมพ์สัญญาเงินกู้ */
+    @media print {
+      body:has(#loanPage:not(.hidden)) #dashboardPage,
+      body:has(#loanPage:not(.hidden)) #envelopePage,
+      body:has(#loanPage:not(.hidden)) nav, 
+      body:has(#loanPage:not(.hidden)) header, 
+      body:has(#loanPage:not(.hidden)) footer, 
+      body:has(#loanPage:not(.hidden)) .no-print {
+        display: none !important;
+      }
+      body:has(#loanPage:not(.hidden)) #loanPage {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      body:has(#loanPage:not(.hidden)) #printLoanArea {
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- ส่วนเนื้อหาหลักคงเหลือเฉพาะ GRID CARD ที่สามารถเพิ่มต่อลงไปด้านล่างได้เรื่อยๆ -->
+  <main id="dashboardPage" class="no-print flex-1 max-w-7xl w-full mx-auto px-4 lg:px-6 py-8">
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      
+      <!-- Card 1 -->
+      <div id="endlyCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-red-50 text-red-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">📄</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-red-800 transition-colors"><b>หนังสือบอกเลิกสัญญาเช่าซื้อ</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">แบบฟอร์มแจ้งเตือนผู้เช่าซื้อกรณีผิดนัดชำระค่างวด เพื่อขอยกเลิกสัญญา ทวงถามยอดหนี้ และให้ส่งมอบทรัพย์สินคืนภายใน 30 วัน</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="Endly.html" id="endlyBtn" onclick="lockPageOnOpen('endlyCard', 'endlyBtn')" class="w-full bg-red-800 hover:bg-red-900 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div id="guaranteeCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-blue-50 text-blue-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">✍️</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-blue-800 transition-colors"><b>หนังสือค้ำประกัน</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">แบบฟอร์มสัญญาค้ำประกัน รองรับผู้ค้ำประกันคนที่ 1 และคนที่ 2 พร้อมส่วนลงนามคู่สมรสและพยาน จัดหน้าลงกระดาษ A4 ความยาว 3 หน้า</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="contract-guarantee.html" id="guaranteeBtn" onclick="lockPageOnOpen('guaranteeCard', 'guaranteeBtn')" class="w-full bg-blue-800 hover:bg-blue-900 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div id="borrowCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-emerald-50 text-emerald-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">💵</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-emerald-800 transition-colors"><b>แบบฟอร์มเงินยืม (ใบเขียว)</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">ระบบพิมพ์บันทึกเบิกเงินยืมทดรองจ่ายของพนักงานและสัญญาเช่าซื้อ พิมพ์แบ่ง 4 ชุดลงในหน้ากระดาษ A4 หน้าเดียวอัตโนมัติ พร้อมส่วนคำนวณเงินทอน</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="borrow-form.html" id="borrowBtn" onclick="lockPageOnOpen('borrowCard', 'borrowBtn')" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 4 -->
+      <div id="debtCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-amber-50 text-amber-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">⚖️</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-amber-800 transition-colors"><b>บันทึกรับสภาพหนี้</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">แบบฟอร์มเอกสารรับสภาพหนี้กรณีลูกค้าผิดนัดเช่าซื้อ ทวงถามมูลค่าหนี้เดิม ค่าเสียหาย และคำนวณข้อตกลงจัดตารางผ่อนชำระงวดใหม่ลงกระดาษ A4</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="acknowledgment-debt.html" id="debtBtn" onclick="lockPageOnOpen('debtCard', 'debtBtn')" class="w-full bg-amber-700 hover:bg-amber-800 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 5 -->
+      <div id="powerCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">⚖️</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-indigo-800 transition-colors"><b>หนังสือมอบอำนาจพนักงาน</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">แบบฟอร์มหนังสือมอบอำนาจอย่างเป็นทางการ ครอบคลุม 8 ข้อกฎหมายหลัก สำหรับให้ผู้จัดการมอบสิทธิ์ให้พนักงานดำเนินคดี ฟ้องร้อง และติดต่อราชการแทนห้างฯ</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="power-of-attorney.html" id="powerBtn" onclick="lockPageOnOpen('powerCard', 'powerBtn')" class="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 6 -->
+      <div id="paymentCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-purple-50 text-purple-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-110 transition-transform">💳</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-purple-800 transition-colors"><b>ใบแจ้งชำระเงิน & QR PAYMENT</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">หนังสือแจ้งระเบียบการชำระเงิน แสดงบัญชีธนาคารไทยพาณิชย์ และฟังก์ชันพล็อตภาพ QR Code พร้อมเพย์ ป้องกันการถูกมิจฉาชีพแอบอ้างเก็บเงินลูกค้าที่บ้าน</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="payment-notice.html" id="paymentBtn" onclick="lockPageOnOpen('paymentCard', 'paymentBtn')" class="w-full bg-purple-700 hover:bg-purple-800 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 7 -->
+      <div id="regisCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-cyan-50 text-cyan-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">📋</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-cyan-800 transition-colors"><b>ใบบันทึกงาน "ลูกค้าจดทะเบียน"</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">ระบบบันทึกตรวจสอบประวัติตัวรถ วันปิดบัญชี เลขรถ/เลขเครื่อง และรูปแบบการโอนเล่มทะเบียน (1 ต่อ / 2 ต่อ) ซอยย่อยฟอร์ม 4 ชุดในกระดาษ A4</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="customer-registration.html" id="regisBtn" onclick="lockPageOnOpen('regisCard', 'regisBtn')" class="w-full bg-cyan-700 hover:bg-cyan-800 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 8 -->
+      <div id="receiptCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-emerald-50 text-emerald-800 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">💵</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-emerald-800 transition-colors"><b>ตั๋วใบรับเงินค่างวด & คำนวณทอน</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">ระบบลงบันทึกรับเงินสดและค่างวดรถหน้าเคาน์เตอร์ สามารถคีย์ด่วนหรือคีย์แยกใบได้อย่างอิสระ พร้อมระบบคำนวณเงินทอนอัตโนมัติ พล็อตย่อย 12 ชุด</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="payment-receipt.html" id="receiptBtn" onclick="lockPageOnOpen('receiptCard', 'receiptBtn')" class="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- Card 9 -->
+      <div id="loanGuarCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+        <div class="p-5">
+          <div class="w-10 h-10 bg-rose-50 text-rose-700 rounded-lg flex items-center justify-center text-lg font-bold mb-3 group-hover:scale-105 transition-transform">📝</div>
+          <h3 class="font-bold text-slate-800 text-base mb-1.5 group-hover:text-rose-800 transition-colors"><b>สัญญาเงินกู้ & ค้ำประกัน</b></h3>
+          <p class="text-slate-500 text-xs leading-relaxed">แบบฟอร์มรวมสัญญาเงินกู้และสัญญาค้ำประกันไว้ในฉบับเดียวกัน หรือแยกส่วนสำหรับกรณีมีผู้ค้ำประกันร่วม จัดหน้าลงกระดาษตามโครงสร้างกฎหมายใหม่</p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100">
+          <a href="contract-loan-guarantee.html" id="loanGuarBtn" onclick="lockPageOnOpen('loanGuarCard', 'loanGuarBtn')" class="w-full bg-rose-700 hover:bg-rose-800 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm">เปิดแบบฟอร์มนี้ ➔</a>
+        </div>
+      </div>
+
+      <!-- [คุณสามารถเพิ่ม Card ที่ 10, 11, 12... ต่อลงมาตรงนี้ได้เลยตามต้องการ] -->
+
+    </div>
+  </main>
+
+  <footer class="no-print bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 mt-auto">
+    &copy; 2026 ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย. ระบบภายในเพื่อการบริหารจัดการเอกสาร
+  </footer>
+
+  <script>
+    // ฟังก์ชันล็อกสถานะปุ่มกดเมื่อเปิดฟอร์มเอกสารอื่นภายนอก เพื่อไม่ให้ผู้ใช้กดซ้ำซ้อน
+    function lockPageOnOpen(cardId, btnId) {
+      const card = document.getElementById(cardId);
+      const btn = document.getElementById(btnId);
+      if (card && btn) {
+        card.classList.add('opacity-60');
+        btn.className = "w-full bg-slate-300 text-slate-500 font-medium py-3 px-4 rounded-xl text-center text-sm block cursor-not-allowed transition-all";
+        btn.innerHTML = '⏳ กำลังเรียกเปิดระบบเอกสาร...';
+        btn.style.pointerEvents = 'none'; 
+      }
+    }
+
+    // ดึงสถานะปุ่มบนแดชบอร์ดกลับคืนมาหากมีการใช้ปุ่ม Back บนเบราว์เซอร์
+    window.addEventListener('pageshow', function(event) {
+      const cards = ['endlyCard', 'guaranteeCard', 'borrowCard', 'debtCard', 'powerCard', 'paymentCard', 'regisCard', 'receiptCard', 'loanGuarCard'];
+      const btns = ['endlyBtn', 'guaranteeBtn', 'borrowBtn', 'debtBtn', 'powerBtn', 'paymentBtn', 'regisBtn', 'receiptBtn', 'loanGuarBtn'];
+      const colors = ['bg-red-800', 'bg-blue-800', 'bg-emerald-700', 'bg-amber-700', 'bg-indigo-700', 'bg-purple-700', 'bg-cyan-700', 'bg-emerald-800', 'bg-rose-700'];
+      const hovers = ['hover:bg-red-900', 'hover:bg-blue-900', 'hover:bg-emerald-800', 'hover:bg-amber-800', 'hover:bg-indigo-800', 'hover:bg-purple-800', 'hover:bg-cyan-800', 'hover:bg-emerald-900', 'hover:bg-rose-800'];
+
+      cards.forEach((id, idx) => {
+        const c = document.getElementById(id);
+        const b = document.getElementById(btns[idx]);
+        if (c && b) {
+          c.classList.remove('opacity-60');
+          b.className = `w-full ${colors[idx]} ${hovers[idx]} text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs block transition-colors shadow-sm cursor-pointer`;
+          b.innerHTML = 'เปิดแบบฟอร์มนี้ ➔';
+          b.style.pointerEvents = 'auto';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

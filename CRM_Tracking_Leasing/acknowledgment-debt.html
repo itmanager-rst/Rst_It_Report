@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบพิมพ์บันทึกรับสภาพหนี้ - หจก.บ้านและที่ดินรวมสินไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; }
+    
+    /* ควบคุมจำลองหน้ากระดาษ A4 */
+    .a4-page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 30mm 20mm 20mm 25mm;
+      margin: 0 auto 20px auto;
+      background: white;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    @media print {
+      body { background-color: #ffffff; color: #000000; }
+      .no-print { display: none !important; }
+      .a4-page {
+        margin: 0 !important;
+        box-shadow: none !important;
+        padding: 20mm 15mm 15mm 20mm !important;
+        width: 100% !important;
+        min-height: auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <header class="no-print bg-slate-900 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <a href="index.html" class="bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 px-3 rounded-xl border border-slate-700 transition-colors">
+          ⬅ กลับหน้าหลัก
+        </a>
+        <div>
+          <h1 class="text-lg font-bold tracking-wide">✍️ ระบบจัดการบันทึกรับสภาพหนี้</h1>
+          <p class="text-slate-400 text-xs">กรอกข้อมูลเพื่อพิมพ์บันทึกรับสภาพหนี้ฉบับทางการ ลงบนหน้ากระดาษ A4 จำนวน 1 หน้า</p>
+        </div>
+      </div>
+      <button onclick="window.print()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-sm transition-all flex items-center gap-2">
+        🖨️ สั่งพิมพ์เอกสารรับสภาพหนี้ (A4)
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1600px] w-full mx-auto p-4 lg:p-8 flex flex-col lg:flex-row gap-8">
+    
+    <div class="no-print w-full lg:w-4/12 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[85vh] overflow-y-auto sticky top-6">
+      <h2 class="text-md font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+        📝 ช่องกรอกข้อมูลสัญญารับสภาพหนี้
+      </h2>
+      
+      <div class="space-y-5">
+        <div class="bg-slate-50 p-4 rounded-xl space-y-3">
+          <h3 class="text-xs font-bold text-slate-700 uppercase">สถานที่และข้อมูลส่วนบุคคล</h3>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">บันทึกนี้ทำที่</label>
+            <input type="text" id="inputPlace" oninput="syncForm()" placeholder="เช่น หจก.บ้านและที่ดินรวมสินไทย" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:border-amber-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">ทำเมื่อวันที่</label>
+            <input type="text" id="inputDate" oninput="syncForm()" placeholder="เช่น 6 มิถุนายน พ.ศ. 2526" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:border-amber-500 outline-none">
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div class="col-span-2">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อ-นามสกุล ลูกค้า</label>
+              <input type="text" id="inputCustomer" oninput="syncForm()" placeholder="นาย / นาง / นางสาว" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:border-amber-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">อายุ (ปี)</label>
+              <input type="number" id="inputAge" oninput="syncForm()" placeholder="ปี" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:border-amber-500 outline-none">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">อยู่บ้านเลขที่ / ที่อยู่ปัจจุบัน</label>
+            <input type="text" id="inputAddress" oninput="syncForm()" placeholder="เลขที่ หมู่ ถนน ตำบล อำเภอ จังหวัด" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:border-amber-500 outline-none">
+          </div>
+        </div>
+
+        <div class="bg-amber-50/50 p-4 rounded-xl border border-amber-100 space-y-3">
+          <h3 class="text-xs font-bold text-amber-900 uppercase">อ้างอิงสัญญาเช่าซื้อเดิมและมูลค่าหนี้</h3>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">ตามสัญญาเลขที่</label>
+              <input type="text" id="inputContractNo" oninput="syncForm()" placeholder="ระบุเลขที่สัญญาเดิม" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">ลงวันที่ของสัญญา</label>
+              <input type="text" id="inputContractDate" oninput="syncForm()" placeholder="วัน เดือน พ.ศ." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">หนี้คงค้างผิดนัดสัญญา (บาท)</label>
+            <input type="number" id="inputDebt1" oninput="syncForm()" placeholder="0.00" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">ค่าเสียหายแก่ผู้ให้เช่าซื้อจริง (บาท)</label>
+            <input type="number" id="inputDebt2" oninput="syncForm()" placeholder="0.00" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-800">
+          </div>
+        </div>
+
+        <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-3">
+          <h3 class="text-xs font-bold text-blue-900 uppercase">ข้อตกลงการผ่อนชำระใหม่</h3>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">งวดแรก ชำระเงิน (บาท)</label>
+              <input type="number" id="inputPeriod1Amt" oninput="syncForm()" placeholder="0.00" class="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">ภายในวันที่</label>
+              <input type="text" id="inputPeriod1Date" oninput="syncForm()" placeholder="ระบุวันกำหนดชำระ" class="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">ส่วนที่เหลือ ชำระเงิน (บาท)</label>
+              <input type="number" id="inputPeriod2Amt" oninput="syncForm()" placeholder="0.00" class="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">ภายในวันที่</label>
+              <input type="text" id="inputPeriod2Date" oninput="syncForm()" placeholder="ระบุวันกำหนดชำระท้ายสุด" class="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="w-full lg:w-8/12 flex flex-col select-none text-slate-900 text-[15px] leading-loose">
+      <div class="a4-page">
+        
+        <div class="text-center text-xs text-slate-800 font-bold mb-1">หจก.บ้านและที่ดินรวมสินไทย</div>
+        <div class="text-center text-xs text-slate-600 mb-4">190/2 ม.7 ถ.เลี่ยงเมือง ต.แจระแม อ.เมือง จ.อุบลราชธานี 34000 โทร. 045-311728, 313664, 313663 แฟกซ์ 045-281788</div>
+        
+        <h2 class="text-center font-bold text-lg border-t border-b border-slate-800 py-1.5 mb-6 tracking-wide">บันทึกรับสภาพหนี้</h2>
+
+        <div class="space-y-4 text-justify">
+          <div class="flex justify-between">
+            <div>บันทึกนี้ทำที่ <span class="view-place inline-block min-w-[220px] border-b border-dashed border-slate-500 font-medium text-slate-800 px-1"></span></div>
+            <div>เมื่อวันที่ <span class="view-date inline-block min-w-[180px] border-b border-dashed border-slate-500 text-center text-slate-800 font-medium"></span></div>
+          </div>
+
+          <p class="pl-12">
+            โดย นาย/นาง/นางสาว <span class="view-customer inline-block min-w-[200px] border-b border-dashed border-slate-500 font-bold text-blue-900 px-1"></span>
+            อายุ <span class="view-age inline-block min-w-[40px] border-b border-dashed border-slate-500 text-center"></span> ปี
+            อยู่บ้านเลขที่ <span class="view-address inline-block min-w-[400px] border-b border-dashed border-slate-500 px-1"></span>
+            ซึ่งต่อไปจะเรียกว่า <b>“ลูกค้า”</b> ฝ่ายหนึ่ง ขอทำบันทึกนี้ไว้ให้กับ <b>หจก.บ้านและที่ดินรวมสินไทย</b> สำนักงานเลขที่ 190/2 ม.7 ถนนเลี่ยงเมือง ตำบลแจระแม อำเภอเมือง จังหวัดอุบลราชธานี ซึ่งต่อไปเรียกว่า <b>“ตัวแทนจำหน่าย”</b> อีกฝ่ายหนึ่ง โดยมีข้อความดังต่อไปนี้
+          </p>
+
+          <p class="pl-12">
+            ตามที่ลูกค้าได้ทำสัญญาเลขที่ <span class="view-contract-no inline-block min-w-[150px] border-b border-dashed border-slate-500 text-center font-medium"></span>
+            ไว้กับตัวแทนจำหน่ายฉบับลงวันที่ <span class="view-contract-date inline-block min-w-[140px] border-b border-dashed border-slate-500 text-center"></span>
+            ซึ่งต่อไปจะเรียกว่า “สัญญา” นั้น เนื่องจากลูกค้าผิดนัดผิดสัญญาไม่ชำระหนี้ จำนวน <span class="view-debt1 inline-block min-w-[100px] border-b border-dashed border-slate-500 text-right font-semibold"></span> บาท
+            (<span class="view-debt1-text text-slate-600 text-xs"></span>)
+            ทำให้ผู้ให้เช่าซื้อได้รับความเสียหาย ณ วันที่ทำบันทึกนี้จริงเป็นจำนวนเงิน <span class="view-debt2 inline-block min-w-[100px] border-b border-dashed border-slate-500 text-right font-semibold"></span> บาท
+            (<span class="view-debt2-text text-slate-600 text-xs"></span>)
+            รวมเป็นหนี้ทั้งสิ้น จำนวน <span class="view-total inline-block min-w-[100px] border-b border-dashed border-slate-500 text-right font-bold text-red-900"></span> บาท
+            (<span class="view-total-text font-medium text-slate-800"></span>) ซึ่งต่อไปจะเรียกว่า <b>“หนี้ที่ค้างชำระ”</b>
+          </p>
+
+          <p class="pl-12">
+            ลูกค้ายอมรับว่าเป็นหนี้ตามจำนวนดังกล่าว และทำให้ตัวแทนจำหน่ายเสียหายจริง และมีความประสงค์จะชำระหนี้ทั้งหมดให้กับตัวแทนจำหน่าย โดยมีรายละเอียดดังนี้
+          </p>
+
+          <p>
+            <b>ข้อ 1.</b> ลูกค้าตกลงชดใช้หนี้ที่ค้างชำระให้กับตัวแทนจำหน่าย เป็นจำนวน <span class="view-total inline-block min-w-[100px] border-b border-dashed border-slate-500 text-right font-bold"></span> บาท
+            (<span class="view-total-text"></span>) โดยวิธีการผ่อนชำระให้กับตัวแทนจำหน่าย ดังนี้
+          </p>
+          <p class="pl-12">
+            1.1 งวดแรกเป็นจำนวนเงิน <span class="view-p1-amt inline-block min-w-[100px] border-b border-dashed border-slate-500 text-right font-medium"></span> บาท
+            (<span class="view-p1-text text-xs text-slate-600"></span>) ภายในวันที่ <span class="view-p1-date inline-block min-w-[150px] border-b border-dashed border-slate-500 text-center"></span>
+          </p>
+          <p class="pl-12">
+            1.2 ส่วนที่เหลือเป็นจำนวนเงิน <span class="view-p2-amt inline-block min-w-[100px] border-b border-dashed border-slate-500 text-right font-medium"></span> บาท
+            (<span class="view-p2-text text-xs text-slate-600"></span>) ภายในวันที่ <span class="view-p2-date inline-block min-w-[150px] border-b border-dashed border-slate-500 text-center"></span>
+          </p>
+
+          <p>
+            <b>ข้อ 2.</b> กรณีที่ลูกค้าผิดนัดไม่ชำระหนี้ที่ค้างชำระงวดหนึ่งงวดใด ให้ถือว่าลูกค้าผิดนัดชำระหนี้ที่ค้างชำระทุกงวด ตัวแทนจำหน่ายมีสิทธิ์บอกเลิกการผ่อนชำระหนี้ที่ค้างชำระตามบันทึกนี้ และเรียกให้ลูกค้าชำระหนี้ที่ค้างได้ทั้งหมดโดยพลัน
+          </p>
+          <p>
+            <b>ข้อ 3.</b> การผ่อนผัน ผ่อนเวลา หรือละเว้นการใช้สิทธิใดๆ อันพึงมีของผู้ให้เช่าซื้อที่มีอยู่ผู้เช่าซื้อตามบันทึกนี้ไม่ถือว่าผู้ให้เช่าซื้อได้สละสิทธิประโยชน์ในข้อตกลงตามบันทึกกับผู้เช่าซื้อแต่อย่างใด
+          </p>
+          <p>
+            <b>ข้อ 4.</b> การบอกกล่าว ทวงถาม หรือส่งเอกสารใดๆ อันพึงมีแก่ผู้เช่าซื้อตามภูมิลำเนาที่ปรากฏในบันทึกนี้ให้ถือว่าส่งโดยชอบธรรม และลูกค้าได้ทราบแล้วในวันที่คำบอกกล่าวหรือเอกสารนั้นพึงไปถึงตามปกติ
+          </p>
+
+          <p class="pl-12 pt-2">
+            บันทึกนี้ทำขึ้นเป็นหนึ่งฉบับ ลูกค้าได้รับทราบและเข้าใจข้อความโดยตลอดดีแล้ว เห็นว่าถูกต้องตรงตามเจตนาของตน จึงได้ลงลายมือชื่อไว้เป็นสำคัญต่อหน้าพยาน และมอบให้ตัวแทนจำหน่ายยึดถือไว้เป็นหลักฐาน
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-y-10 pt-16 text-[14px]">
+          <div class="space-y-1">
+            <div>ลงชื่อ............................................................ลูกค้า</div>
+            <div class="pl-8">( <span class="view-customer inline-block min-w-[150px] text-center"></span> )</div>
+          </div>
+          <div class="space-y-1">
+            <div>ลงชื่อ............................................................พยาน</div>
+            <div class="pl-8">(............................................................)</div>
+          </div>
+          <div class="space-y-1">
+            <div>ลงชื่อ............................................................พยาน</div>
+            <div class="pl-8">(............................................................)</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+    window.addEventListener('pageshow', function() { syncForm(); });
+
+    function syncForm() {
+      const place = document.getElementById('inputPlace').value || '...................................';
+      const date = document.getElementById('inputDate').value || '...............................................';
+      const customer = document.getElementById('inputCustomer').value || '...........................................';
+      const age = document.getElementById('inputAge').value || '......';
+      const address = document.getElementById('inputAddress').value || '...........................................................................................................';
+      const contractNo = document.getElementById('inputContractNo').value || '............................';
+      const contractDate = document.getElementById('inputContractDate').value || '............................';
+      
+      const debt1 = parseFloat(document.getElementById('inputDebt1').value) || 0;
+      const debt2 = parseFloat(document.getElementById('inputDebt2').value) || 0;
+      const totalDebt = debt1 + debt2;
+
+      const p1Amt = parseFloat(document.getElementById('inputPeriod1Amt').value) || 0;
+      const p1Date = document.getElementById('inputPeriod1Date').value || '................................';
+      const p2Amt = parseFloat(document.getElementById('inputPeriod2Amt').value) || 0;
+      const p2Date = document.getElementById('inputPeriod2Date').value || '................................';
+
+      // แสดงข้อความบนแผ่นพิมพ์
+      document.querySelectorAll('.view-place').forEach(el => el.innerText = place);
+      document.querySelectorAll('.view-date').forEach(el => el.innerText = date);
+      document.querySelectorAll('.view-customer').forEach(el => el.innerText = customer);
+      document.querySelectorAll('.view-age').forEach(el => el.innerText = age);
+      document.querySelectorAll('.view-address').forEach(el => el.innerText = address);
+      document.querySelectorAll('.view-contract-no').forEach(el => el.innerText = contractNo);
+      document.querySelectorAll('.view-contract-date').forEach(el => el.innerText = contractDate);
+
+      // จัดการยอดเงินและคำอ่านไทย
+      document.querySelectorAll('.view-debt1').forEach(el => el.innerText = debt1 > 0 ? debt1.toLocaleString('th-TH',{minimumFractionDigits:2}) : '.................');
+      document.querySelectorAll('.view-debt1-text').forEach(el => el.innerText = debt1 > 0 ? ArabToThaiBaht(debt1) : '..................................................');
+      document.querySelectorAll('.view-debt2').forEach(el => el.innerText = debt2 > 0 ? debt2.toLocaleString('th-TH',{minimumFractionDigits:2}) : '.................');
+      document.querySelectorAll('.view-debt2-text').forEach(el => el.innerText = debt2 > 0 ? ArabToThaiBaht(debt2) : '..................................................');
+      document.querySelectorAll('.view-total').forEach(el => el.innerText = totalDebt > 0 ? totalDebt.toLocaleString('th-TH',{minimumFractionDigits:2}) : '.................');
+      document.querySelectorAll('.view-total-text').forEach(el => el.innerText = totalDebt > 0 ? ArabToThaiBaht(totalDebt) : '..................................................');
+
+      document.querySelectorAll('.view-p1-amt').forEach(el => el.innerText = p1Amt > 0 ? p1Amt.toLocaleString('th-TH',{minimumFractionDigits:2}) : '.................');
+      document.querySelectorAll('.view-p1-text').forEach(el => el.innerText = p1Amt > 0 ? ArabToThaiBaht(p1Amt) : '..................................................');
+      document.querySelectorAll('.view-p1-date').forEach(el => el.innerText = p1Date);
+
+      document.querySelectorAll('.view-p2-amt').forEach(el => el.innerText = p2Amt > 0 ? p2Amt.toLocaleString('th-TH',{minimumFractionDigits:2}) : '.................');
+      document.querySelectorAll('.view-p2-text').forEach(el => el.innerText = p2Amt > 0 ? ArabToThaiBaht(p2Amt) : '..................................................');
+      document.querySelectorAll('.view-p2-date').forEach(el => el.innerText = p2Date);
+    }
+
+    function ArabToThaiBaht(numStr) {
+      numStr = parseFloat(numStr).toFixed(2);
+      let textNumber = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+      let textPosition = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
+      let bahtText = "";
+      let [baht, satang] = numStr.split(".");
+      if (parseInt(baht) === 0) { bahtText = "ศูนย์บาท"; } else {
+        let bahtLen = baht.length;
+        for (let i = 0; i < bahtLen; i++) {
+          let digit = parseInt(baht.charAt(i));
+          let pos = bahtLen - i - 1;
+          if (digit !== 0) {
+            if (pos % 6 === 1 && digit === 1) bahtText += "เอ็ด";
+            else if (pos % 6 === 1 && digit === 2) bahtText += "ยี่";
+            else if (pos % 6 === 0 && digit === 1 && i > 0) bahtText += "เอ็ด";
+            else bahtText += textNumber[digit];
+            bahtText += textPosition[pos % 6];
+          }
+          if (pos % 6 === 0 && pos > 0) bahtText += "ล้าน";
+        }
+        bahtText += "บาท";
+      }
+      if (parseInt(satang) === 0) { bahtText += "ถ้วน"; } else {
+        let satangLen = satang.length;
+        for (let i = 0; i < satangLen; i++) {
+          let digit = parseInt(satang.charAt(i));
+          let pos = satangLen - i - 1;
+          if (digit !== 0) {
+            if (pos === 0 && digit === 1 && i > 0) bahtText += "เอ็ด";
+            else if (pos === 1 && digit === 2) bahtText += "ยี่";
+            else bahtText += textNumber[digit];
+            bahtText += textPosition[pos];
+          }
+        }
+        bahtText += "สตางค์";
+      }
+      return bahtText;
+    }
+  </script>
+</body>
+</html>

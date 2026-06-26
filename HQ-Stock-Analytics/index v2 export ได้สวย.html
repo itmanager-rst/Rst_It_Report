@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบคำนวณและสั่งสินค้า Min-Max (Ecount ERP Native Dashboard)</title>
+    <!-- นำเข้า Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- นำเข้า ฟอนต์ Prompt -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- นำเข้า SheetJS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Prompt', sans-serif; }
+        .table-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .table-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .table-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .table-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col antialiased">
+
+    <!-- 🌐 ส่วนหัวของหน้าเว็บ (Executive Header) -->
+    <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-50 border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-slate-800 border border-slate-700 p-2 rounded-xl text-lg text-indigo-400 font-bold shadow-md">INV</div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight">ระบบคำนวณสั่งซื้อสินค้าควบคุมคลัง</h1>
+                    <p class="text-xs text-slate-400 font-light">Ecount ERP Native Connector • Strict Filtering Mode</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+                <span class="flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                <span class="bg-slate-800 border border-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-lg">
+                    ฐานข้อมูล: Google Cloud Live API
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 📊 ส่วนเนื้อหาหลัก (Main Dashboard Layout) -->
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+        
+        <!-- 📝 แถบแสดงข้อมูลประวัติและช่วงเวลาจาก Ecount (Metadata Banner) -->
+        <div class="bg-slate-800 border border-slate-700/60 rounded-xl p-4 mb-4 text-sm text-slate-200 flex flex-col sm:flex-row gap-2 items-start sm:items-center shadow-inner">
+            <div class="bg-slate-700 rounded-lg p-1.5 px-2.5 font-bold text-xs text-slate-300 tracking-wide uppercase border border-slate-600">
+                ข้อมูลนำเข้าล่าสุด
+            </div>
+            <div id="ecountMetaDisplay" class="font-medium text-slate-300">
+                กำลังตรวจสอบหัวข้อเอกสารจากช่อง A1...
+            </div>
+        </div>
+
+        <!-- ⚡ แผงควบคุม ค้นหา และ จัดการ (Control Panel Area) -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 border border-slate-200/60 flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center">
+            
+            <!-- ช่องค้นหาอัจฉริยะ -->
+            <div class="relative flex-grow max-w-md">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 text-sm">🔍</span>
+                <input type="text" id="searchInput" onkeyup="searchTable()" placeholder="ค้นหารหัสสินค้า, ชื่อโมเดล..." class="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 text-slate-800 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition duration-150">
+            </div>
+
+            <!-- กลุ่มปุ่มสั่งการทำงานต่างๆ -->
+            <div class="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-end">
+                <!-- สรุปสถานะคลังสินค้า -->
+                <div class="flex gap-2 mr-1">
+                    <span id="badgeUrgent" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-700 border border-red-100">
+                        ต้องสั่งด่วน: <strong id="countUrgent">0</strong> รายการ
+                    </span>
+                    <span id="badgeNormal" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        สต็อกเพียงพอ: <strong id="countNormal">0</strong> รายการ
+                    </span>
+                </div>
+
+                <!-- ปุ่มรีเฟรช -->
+                <button onclick="fetchDataFromAPI()" class="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 active:bg-slate-100 transition shadow-xs cursor-pointer">
+                    รีเฟรชข้อมูล
+                </button>
+                
+                <!-- ปุ่มส่งออก Excel -->
+                <button onclick="exportToEcountExcel()" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-slate-800 hover:bg-slate-700 active:bg-slate-900 rounded-xl transition shadow-sm cursor-pointer">
+                    ส่งออก Excel รายงาน
+                </button>
+            </div>
+        </div>
+
+        <!-- 🏢 ตารางแสดงข้อมูลสินค้าจาก Ecount -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+            <div class="overflow-x-auto table-scrollbar">
+                <table class="w-full text-left border-collapse" id="productTable">
+                    <thead>
+                        <tr class="bg-slate-50/70 border-b border-slate-200 text-slate-600 text-xs font-semibold uppercase tracking-wider">
+                            <th class="px-6 py-4 font-bold">รหัสสินค้า</th>
+                            <th class="px-6 py-4 font-bold">ชื่อสินค้า / ข้อมูลจำเพาะจาก Ecount</th>
+                            <th class="px-6 py-4 text-center font-bold">คงเหลือในคลัง</th>
+                            <th class="px-6 py-4 text-center font-bold text-slate-400">Min</th>
+                            <th class="px-6 py-4 text-center font-bold text-slate-400">Max</th>
+                            <th class="px-6 py-4 text-center font-bold">สถานะระดับสต็อก</th>
+                            <th class="px-6 py-4 text-right font-bold">สั่งซื้อเพิ่มเติม</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm text-slate-700 font-normal" id="tableBody">
+                        <tr>
+                            <td colspan="7" class="px-6 py-16 text-center text-slate-400">
+                                <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-slate-600 mb-3"></div>
+                                <p class="text-sm font-medium text-slate-500">กำลังเชื่อมต่อเกตเวย์ข้อมูล...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- 📑 ส่วนท้าย (Footer) -->
+    <footer class="bg-white border-t border-slate-200/60 py-4 text-center text-xs text-slate-400 mt-auto">
+        &copy; 2026 ระบบการจัดการสั่งซื้อวัสดุอัตโนมัติอ้างอิงระดับขั้นต่ำอย่างมีประสิทธิภาพ
+    </footer>
+
+    <!-- ⚙️ JavaScript ส่วนจัดการและอัลกอริทึมคัดกรองขั้นสูง -->
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbyF838t3nLJc1_bf-wqDT4vXA1OpVdZ1EB0IeLgIxFySWkC8HAP2UYYtuba6RDgVcmI/exec";
+        
+        let allProcessedItems = []; 
+
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchDataFromAPI();
+        });
+
+        function fetchDataFromAPI() {
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="px-6 py-16 text-center text-slate-400">
+                        <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-slate-600 mb-3"></div>
+                        <p class="text-sm font-medium text-slate-500">กำลังเชื่อมต่อฐานข้อมูล Google Sheets...</p>
+                    </td>
+                </tr>`;
+
+            if(API_URL === "วาง_URL_WEB_APP_ที่นี่" || API_URL === "") {
+                tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-amber-700 bg-amber-50/50 border border-dashed border-amber-200 rounded-xl m-4">⚠️ ตรวจพบการตั้งค่าไม่ครบถ้วน: โปรดนำ URL Web App มาใส่ในโค้ดก่อนครับ</td></tr>`;
+                return;
+            }
+
+            fetch(API_URL)
+                .then(response => response.json())
+                .then(data => {
+                    if(data.metaInfo) {
+                        document.getElementById('ecountMetaDisplay').innerText = data.metaInfo;
+                    }
+                    renderDashboard(data);
+                })
+                .catch(err => {
+                    tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-16 text-center text-red-500">❌ ไม่สามารถดึงข้อมูลได้: ${err.message}</td></tr>`;
+                });
+        }
+
+        function renderDashboard(data) {
+            const tableBody = document.getElementById('tableBody');
+            if (!data || !data.stock || data.stock.length <= 1) return;
+
+            tableBody.innerHTML = ''; 
+            allProcessedItems = []; 
+            
+            let countUrgentNum = 0;
+            let countNormalNum = 0;
+            
+            const stockRows = data.stock;
+            const stockHeader = stockRows[0].map(h => String(h).trim());
+            
+            const codeIdx = stockHeader.findIndex(h => h === 'รหัสสินค้า');
+            const nameIdx = stockHeader.findIndex(h => h.includes('ชื่อสินค้า'));
+            const qtyIdx = stockHeader.findIndex(h => h === 'จำนวนคงเหลือ');
+
+            let textRowsHTML = '';
+
+            for(let i = 1; i < stockRows.length; i++) {
+                const row = stockRows[i];
+                if(!row[codeIdx] || row[codeIdx] === 'ลำดับ' || row[codeIdx] === 'รวม') continue; 
+
+                const code = String(row[codeIdx]).trim();
+                const name = nameIdx !== -1 ? String(row[nameIdx]).trim() : '-';
+                const currentStock = Number(row[qtyIdx]) || 0;
+                
+                if (name.includes('ซ่อม') || name.includes('ขนส่ง') || name.includes('ค่าแรง') || name.includes('บริการ')) continue;
+
+                const minVal = 5; 
+                const maxVal = 50; 
+                let statusText = '';
+                let orderQty = 0;
+
+                // 🎯 เอาตัวการ์ตูน/อีโมจิออก เหลือเพียงข้อความระบบที่เป็นทางการ
+                if (currentStock <= minVal) {
+                    statusText = 'ต้องสั่งด่วน';
+                    orderQty = maxVal - currentStock; 
+                    countUrgentNum++;
+                } else {
+                    statusText = 'สต็อกเพียงพอ';
+                    orderQty = 0;
+                    countNormalNum++;
+                }
+
+                allProcessedItems.push({
+                    code: code,
+                    name: name,
+                    stock: currentStock,
+                    min: minVal,
+                    max: maxVal,
+                    status: statusText,
+                    order: orderQty
+                });
+
+                textRowsHTML += `
+                    <tr class="${currentStock <= minVal ? 'bg-red-50/10' : ''} border-b border-slate-100">
+                        <td class="px-6 py-3.5 font-semibold text-slate-900">${code}</td>
+                        <td class="px-6 py-3.5 text-slate-600 text-xs">${name}</td>
+                        <td class="px-6 py-3.5 text-center font-bold">${currentStock}</td>
+                        <td class="px-6 py-3.5 text-center text-slate-400">${minVal}</td>
+                        <td class="px-6 py-3.5 text-center text-slate-400">${maxVal}</td>
+                        <td class="px-6 py-3.5 text-center">
+                            <span class="px-2.5 py-0.5 rounded text-xs font-medium ${currentStock <= minVal ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800'}">
+                                ${statusText}
+                            </span>
+                        </td>
+                        <td class="px-6 py-3.5 text-right font-bold ${orderQty > 0 ? 'text-red-600' : 'text-slate-400'}">${orderQty > 0 ? orderQty.toLocaleString() : '-'}</td>
+                    </tr>`;
+            }
+            
+            tableBody.innerHTML = textRowsHTML;
+            document.getElementById('countUrgent').innerText = countUrgentNum;
+            document.getElementById('countNormal').innerText = countNormalNum;
+        }
+
+        function exportToEcountExcel() {
+            if (allProcessedItems.length === 0) {
+                alert("ไม่มีข้อมูลที่จะส่งออกครับ");
+                return;
+            }
+
+            // 1. จัดโครงสร้างหัวข้อแบบ Clean & Corporate (ไม่มีตัวการ์ตูน)
+            const excelRows = [
+                ["รายงานวิเคราะห์ระดับสต็อกควบคุมและปริมาณการสั่งซื้อคลังสินค้า (Min-Max Report)"],
+                ["แหล่งข้อมูลอ้างอิงต้นทาง:", document.getElementById('ecountMetaDisplay').innerText],
+                [], 
+                ["รหัสสินค้า", "ชื่อสินค้า / ข้อมูลจำเพาะจาก Ecount", "คงเหลือในคลัง", "Min", "Max", "สถานะระดับสต็อก", "สั่งซื้อเพิ่มเติม"]
+            ];
+
+            // 2. ดึงข้อมูลลงตารางโดยใช้ค่าสถานะที่เป็นตัวอักษรล้วน 100%
+            allProcessedItems.forEach(item => {
+                excelRows.push([
+                    item.code,
+                    item.name,
+                    item.stock,
+                    item.min,
+                    item.max,
+                    item.status, // ดึงตัวอักษรล้วน เช่น "ต้องสั่งด่วน" (ไม่มีรูปไซเรน)
+                    item.order > 0 ? item.order : "-"
+                ]);
+            });
+
+            const worksheet = XLSX.utils.aoa_to_sheet(excelRows);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Dashboard_Report");
+
+            worksheet['!cols'] = [
+                { wch: 18 }, // รหัสสินค้า
+                { wch: 60 }, // ชื่อสินค้า
+                { wch: 15 }, // คงเหลือในคลัง
+                { wch: 10 }, // Min
+                { wch: 10 }, // Max
+                { wch: 18 }, // สถานะระดับสต็อก
+                { wch: 18 }  // สั่งซื้อเพิ่มเติม
+            ];
+
+            const today = new Date();
+            const dateStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+            XLSX.writeFile(workbook, `MinMax_Dashboard_Report_${dateStr}.xlsx`);
+        }
+
+        function searchTable() {
+            const input = document.getElementById('searchInput').value.toLowerCase();
+            const rows = document.getElementById('tableBody').getElementsByTagName('tr');
+            for (let i = 0; i < rows.length; i++) {
+                const text = rows[i].textContent.toLowerCase();
+                rows[i].style.display = text.includes(input) ? '' : 'none';
+            }
+        }
+    </script>
+</body>
+</html>

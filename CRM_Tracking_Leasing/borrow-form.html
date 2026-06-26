@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบพิมพ์แบบฟอร์มเงินยืม (ใบเขียว) - หจก.บ้านและที่ดินรวมสินไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; }
+    
+    /* สไตล์จำลองและควบคุมระยะสำหรับพิมพ์ลงกระดาษ A4 */
+    @media print {
+      body { background-color: #ffffff; color: #000000; }
+      .no-print { display: none !important; }
+      .print-area { padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; max-width: 100% !important; }
+      .sheet-row { border-bottom: 1px dashed #6b7280 !important; page-break-inside: avoid; }
+      .sheet-row:last-child { border-bottom: none !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <header class="no-print bg-slate-900 text-white shadow-md">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <a href="index.html" class="bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 px-3 rounded-xl border border-slate-700 transition-colors">
+          ⬅ กลับหน้าหลัก
+        </a>
+        <div>
+          <h1 class="text-lg font-bold tracking-wide">✍️ แบบฟอร์มเงินยืม (ใบเขียว)</h1>
+          <p class="text-slate-400 text-xs">ระบุข้อมูลเพื่อพิมพ์ลงกระดาษขนาด A4 (แบ่งออกเป็น 4 ชุดในหน้าเดียว)</p>
+        </div>
+      </div>
+      <button onclick="window.print()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-sm transition-all flex items-center gap-2">
+        🖨️ สั่งพิมพ์เอกสาร (A4)
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8 flex flex-col lg:flex-row gap-8">
+    
+    <div class="no-print w-full lg:w-5/12 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-fit sticky top-6">
+      <h2 class="text-md font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+        📝 ช่องกรอกรายละเอียดเงินยืม
+      </h2>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อ - นามสกุล ผู้ยืม</label>
+          <input type="text" id="inputName" oninput="syncForm()" placeholder="กรอกชื่อ-นามสกุล" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors">
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">รหัสพนักงาน/ผู้ยืม</label>
+            <input type="text" id="inputCode" oninput="syncForm()" placeholder="เช่น EMP01" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">เลขที่สัญญาเช่าซื้อ</label>
+            <input type="text" id="inputContract" oninput="syncForm()" placeholder="เช่น สญ.001/26" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">จำนวนเงินยืม (บาท)</label>
+          <input type="number" id="inputAmount" oninput="syncForm()" placeholder="0.00" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-blue-800 focus:outline-none focus:border-blue-500 transition-colors">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">หมายเหตุเพิ่มเติม</label>
+          <textarea id="inputMemo" oninput="syncForm()" rows="3" placeholder="ระบุเหตุผลการยืมเงิน เช่น มัดจำล่วงหน้า..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อผู้เช็คตรวจสอบ</label>
+            <input type="text" id="inputChecker" oninput="syncForm()" placeholder="ระบุชื่อเจ้าหน้าที่" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อผู้รับผิดชอบ/อนุมัติ</label>
+            <input type="text" id="inputApprover" oninput="syncForm()" placeholder="ระบุชื่อผู้อนุมัติ" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 transition-colors">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="print-area w-full lg:w-7/12 bg-white border border-slate-300 shadow-md p-8 rounded-2xl mx-auto max-w-[210mm] text-slate-900">
+      
+      <div id="printSheetsContainer" class="divide-y divide-dashed divide-slate-400">
+        </div>
+
+    </div>
+  </main>
+
+  <footer class="no-print bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400">
+    &copy; 2026 ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย. ระบบพิมพ์ใบยืมเงินใบเขียวภายใน
+  </footer>
+
+  <script>
+    // ดักฟังตอนที่โหลดหน้าจอ หรือกดถอยกลับ (Back) มายังหน้านี้ให้ค่าพร้อมใช้งาน
+    window.addEventListener('pageshow', function(event) {
+      syncForm();
+    });
+
+    // ฟังก์ชันสร้างแถวข้อมูลใบเขียวจำลอง 4 ชุดต่อหน้า A4 ตามโครงสร้างไฟล์ docx
+    function renderA4Sheets() {
+      const container = document.getElementById('printSheetsContainer');
+      let htmlContent = '';
+
+      for (let i = 1; i <= 4; i++) {
+        htmlContent += `
+          <div class="sheet-row py-6 first:pt-0 last:pb-0 font-medium text-[13px] leading-relaxed tracking-wide text-slate-800">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-xs text-slate-400 font-mono font-light">#ส่วนงานภายใน ชุดที่ ${i}</span>
+              <span class="font-bold text-xs bg-slate-100 border border-slate-300 px-2.5 py-0.5 rounded text-slate-700">ใบเขียวเงินยืม</span>
+            </div>
+
+            <div class="grid grid-cols-12 gap-2 mb-2">
+              <div class="col-span-6 flex">
+                <span class="whitespace-nowrap"><b>ชื่อ – สกุล</b>&nbsp;</span>
+                <span class="view-name flex-1 border-b border-dotted border-slate-600 text-blue-900 font-bold px-2"></span>
+              </div>
+              <div class="col-span-3 flex">
+                <span class="whitespace-nowrap"><b>รหัส</b>&nbsp;</span>
+                <span class="view-code flex-1 border-b border-dotted border-slate-600 text-center font-mono text-slate-700"></span>
+              </div>
+              <div class="col-span-3 flex">
+                <span class="whitespace-nowrap"><b>เลขที่สัญญา</b>&nbsp;</span>
+                <span class="view-contract flex-1 border-b border-dotted border-slate-600 text-center text-slate-700"></span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-12 gap-2 mb-2">
+              <div class="col-span-4 flex">
+                <span class="whitespace-nowrap"><b>เงินยืม</b>&nbsp;</span>
+                <span class="view-amount flex-1 border-b border-dotted border-slate-600 text-right font-bold text-red-900 px-2"></span>
+                <span class="whitespace-nowrap">&nbsp;บาท</span>
+              </div>
+              <div class="col-span-8 flex">
+                <span class="whitespace-nowrap"><b>จำนวนเงินตัวอักษร</b>&nbsp;</span>
+                <span class="view-text flex-1 border-b border-dotted border-slate-600 px-2 text-slate-600"></span>
+              </div>
+            </div>
+
+            <div class="flex mb-4">
+              <span class="whitespace-nowrap"><b>หมายเหตุ</b>&nbsp;</span>
+              <span class="view-memo flex-1 border-b border-dotted border-slate-600 px-2 text-slate-600"></span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-12 mt-4 text-xs">
+              <div class="flex justify-end items-end">
+                <span><b>ผู้เช็ค</b>.......................................................................</span>
+                <span class="view-checker absolute -mt-1 mr-8 text-slate-700 font-medium"></span>
+              </div>
+              <div class="flex justify-end items-end">
+                <span><b>ผู้รับผิดชอบ</b>...........................................................</span>
+                <span class="view-approver absolute -mt-1 mr-8 text-slate-700 font-medium"></span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      container.innerHTML = htmlContent;
+    }
+
+    // เรียกทำงานฟังก์ชันวาดโครงสร้างตารางก่อนเป็นอันดับแรก
+    renderA4Sheets();
+
+    // ฟังก์ชันผูกข้อมูลและประมวลผลข้อมูลลงใบพิมพ์พร้อมกัน 4 ชุดแบบ Real-time
+    function syncForm() {
+      const name = document.getElementById('inputName').value || '-';
+      const code = document.getElementById('inputCode').value || '-';
+      const contract = document.getElementById('inputContract').value || '-';
+      const amountVal = document.getElementById('inputAmount').value;
+      const memo = document.getElementById('inputMemo').value || '-';
+      const checker = document.getElementById('inputChecker').value || '';
+      const approver = document.getElementById('inputApprover').value || '';
+
+      // ปรับปรุงการแสดงจำนวนเงินและแปลงหน่วยตัวเลข
+      let amountFormatted = '-';
+      let thaiText = '(-';
+      if (amountVal) {
+        amountFormatted = parseFloat(amountVal).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        thaiText = '(' + ArabToThaiBaht(amountVal) + ')';
+      } else {
+        thaiText = '(- )';
+      }
+
+      // วนลูปเพื่อนำข้อความที่กรอกฝั่งซ้าย กระจายลงไปยังตัวพิมพ์จริงฝั่งขวาทั้ง 4 ตาราง
+      document.querySelectorAll('.view-name').forEach(el => el.innerText = name);
+      document.querySelectorAll('.view-code').forEach(el => el.innerText = code);
+      document.querySelectorAll('.view-contract').forEach(el => el.innerText = contract);
+      document.querySelectorAll('.view-amount').forEach(el => el.innerText = amountFormatted);
+      document.querySelectorAll('.view-text').forEach(el => el.innerText = thaiText);
+      document.querySelectorAll('.view-memo').forEach(el => el.innerText = memo);
+      document.querySelectorAll('.view-checker').forEach(el => el.innerText = checker);
+      document.querySelectorAll('.view-approver').forEach(el => el.innerText = approver);
+    }
+
+    // อัลกอริทึมสำหรับแปลงค่าตัวเลขทางการเงินเป็นคำอ่านตัวอักษรภาษาไทยถูกต้องตามกฎหมาย
+    function ArabToThaiBaht(numStr) {
+      numStr = parseFloat(numStr).toFixed(2);
+      let textNumber = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+      let textPosition = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
+      let bahtText = "";
+      
+      let [baht, satang] = numStr.split(".");
+      
+      if (parseInt(baht) === 0) {
+        bahtText = "ศูนย์บาท";
+      } else {
+        let bahtLen = baht.length;
+        for (let i = 0; i < bahtLen; i++) {
+          let digit = parseInt(baht.charAt(i));
+          let pos = bahtLen - i - 1;
+          if (digit !== 0) {
+            if (pos % 6 === 1 && digit === 1) bahtText += "เอ็ด";
+            else if (pos % 6 === 1 && digit === 2) bahtText += "ยี่";
+            else if (pos % 6 === 0 && digit === 1 && i > 0) bahtText += "เอ็ด";
+            else bahtText += textNumber[digit];
+            bahtText += textPosition[pos % 6];
+          }
+          if (pos % 6 === 0 && pos > 0) bahtText += "ล้าน";
+        }
+        bahtText += "บาท";
+      }
+      
+      if (parseInt(satang) === 0) {
+        bahtText += "ถ้วน";
+      } else {
+        let satangLen = satang.length;
+        for (let i = 0; i < satangLen; i++) {
+          let digit = parseInt(satang.charAt(i));
+          let pos = satangLen - i - 1;
+          if (digit !== 0) {
+            if (pos === 0 && digit === 1 && i > 0) bahtText += "เอ็ด";
+            else if (pos === 1 && digit === 2) bahtText += "ยี่";
+            else bahtText += textNumber[digit];
+            bahtText += textPosition[pos];
+          }
+        }
+        bahtText += "สตางค์";
+      }
+      return bahtText;
+    }
+  </script>
+</body>
+</html>

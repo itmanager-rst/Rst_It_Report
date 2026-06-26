@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบกรอกหนังสือสัญญาเงินกู้</title>
+    <style>
+        /* --- CSS จัดหน้าจอทำงาน --- */
+        * {
+            box-sizing: border-box;
+            font-family: 'Sarabun', 'Angsana New', sans-serif;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+            display: flex;
+            height: 100vh;
+        }
+        /* ฝั่งซ้าย: ฟอร์มกรอกข้อมูล */
+        .form-container {
+            width: 35%;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        .form-container h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #3f51b5;
+            padding-bottom: 10px;
+            font-size: 1.3rem;
+        }
+        .form-group {
+            margin-bottom: 12px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: bold;
+            color: #555;
+            font-size: 13px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        hr {
+            border: 0;
+            border-top: 1px solid #e2e8f0;
+            margin: 15px 0 10px 0;
+        }
+        .form-container h3 {
+            font-size: 14px;
+            color: #1e3a8a;
+            margin-bottom: 10px;
+        }
+        
+        /* ฝั่งขวา: แสดงตัวอย่างหนังสือสัญญา */
+        .preview-container {
+            width: 65%;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            overflow-y: auto;
+            background-color: #525659;
+        }
+        
+        /* --- CSS สำหรับตัวเอกสารสัญญา A4 จัดตามแบบต้นฉบับ --- */
+        .contract-paper {
+            width: 210mm;
+            height: 297mm;
+            background-color: #ffffff;
+            padding: 20mm 20mm 20mm 48mm; 
+            position: relative;
+            font-size: 16px; 
+            line-height: 2.1; 
+            color: #000;
+            box-sizing: border-box;
+        }
+
+        /* โครงสร้างแถบด้านซ้ายมือ (กล่องอากรแสตมป์ + ข้อความด้านข้าง) */
+        .stamp-sidebar {
+            position: absolute;
+            top: 25mm;
+            left: 12mm;
+            width: 32mm;
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        /* บล็อกตารางสี่เหลี่ยมแนวยาว */
+        .stamp-grid {
+            width: 20mm;
+            display: flex;
+            flex-direction: column;
+        }
+        .stamp-cell {
+            width: 100%;
+            height: 20mm;
+            border: 1px solid #666;
+            margin-bottom: -1px; 
+        }
+        
+        /* แก้ไข: ปรับค่าตำแหน่งเพื่อให้ตัวหนังสือเลื่อนขึ้นมาประกบด้านข้างตรงกลางกล่องพอดี */
+        .stamp-text {
+            font-size: 11px;
+            line-height: 1.4;
+            transform: rotate(-90deg);
+            transform-origin: left top;
+            width: 140mm; /* กำหนดกรอบความยาวตัวหนังสือ */
+            position: absolute;
+            left: 25mm;   /* ขยับห่างออกมาจากเส้นขอบกล่องกำลังพอดี */
+            top: 160mm;   /* ดึงตัวหนังสือให้เลื่อนขึ้นมาอยู่กึ่งกลางด้านข้างกล่อง (แก้ไขจากเดิมที่ตกไปอยู่ที่ 215mm) */
+            color: #333;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 26px;
+            font-weight: bold;
+            margin-top: 5px;
+            margin-bottom: 25px;
+            letter-spacing: 0.5px;
+        }
+        
+        /* จัดบล็อกส่วนหัวเรื่อง ลำดับที่ ทำที่ วันที่ */
+        .header-block {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .header-row-1 {
+            display: flex;
+            justify-content: space-between;
+        }
+        .header-row-2 {
+            text-align: right;
+            margin-top: 5px;
+        }
+        
+        .fill-space {
+            border-bottom: 1px dotted #333;
+            padding: 0 5px;
+            font-weight: bold;
+            color: #0033aa;
+            display: inline-block;
+            min-width: 50px;
+            text-align: center;
+        }
+        .indent {
+            text-indent: 1.8cm;
+            display: inline-block;
+        }
+        .contract-text {
+            text-align: justify;
+            margin-bottom: 12px; 
+        }
+        
+        /* ส่วนท้ายเรื่องลายเซ็น */
+        .signature-section {
+            margin-top: 35px;
+            width: 100%;
+        }
+        .sig-block {
+            margin-left: auto;
+            width: 75%;
+            margin-bottom: 15px;
+        }
+        .sig-row {
+            font-size: 16px;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        .sig-under-name {
+            display: block;
+            padding-left: 75px;
+            margin-top: 5px;
+            font-size: 14.5px;
+            color: #0033aa;
+            font-weight: bold;
+        }
+        
+        button.btn-print {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 99;
+        }
+        button.btn-print:hover {
+            background-color: #45a049;
+        }
+
+        /* --- สำหรับเวลาสั่งพิมพ์ (Print) --- */
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+            html, body {
+                height: 100%;
+                background: #fff;
+            }
+            body { 
+                display: block; 
+            }
+            .form-container, .btn-print { 
+                display: none !important;
+            }
+            .preview-container { 
+                width: 100%; 
+                padding: 0; 
+                margin: 0; 
+                background: none;
+                overflow: visible;
+                display: block;
+            }
+            .contract-paper { 
+                box-shadow: none; 
+                width: 210mm;
+                height: 297mm;
+                padding: 20mm 20mm 20mm 48mm;
+                margin: 0 auto;
+                page-break-after: avoid;
+                page-break-inside: avoid;
+            }
+            .fill-space {
+                color: #000000 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="form-container">
+        <h2>กรอกข้อมูลสัญญาเงินกู้</h2>
+        
+        <div class="form-group">
+            <label>ลำดับที่</label>
+            <input type="text" id="in_id" oninput="updateContract()" placeholder="เช่น 01/2569">
+        </div>
+        <div class="form-group">
+            <label>ทำที่</label>
+            <input type="text" id="in_place" oninput="updateContract()" placeholder="เช่น บ้านเลขที่...">
+        </div>
+        <div class="form-group">
+            <label>วันที่ทำสัญญา</label>
+            <input type="number" id="in_day" oninput="updateContract()" placeholder="เช่น 10">
+        </div>
+        <div class="form-group">
+            <label>เดือน</label>
+            <input type="text" id="in_month" oninput="updateContract()" placeholder="เช่น มิถุนายน">
+        </div>
+        <div class="form-group">
+            <label>พ.ศ.</label>
+            <input type="number" id="in_year" oninput="updateContract()" placeholder="เช่น 2569">
+        </div>
+        
+        <hr>
+        <h3>ข้อมูลผู้กู้</h3>
+        <div class="form-group">
+            <label>ชื่อผู้กู้ (ข้าพเจ้า)</label>
+            <input type="text" id="in_borrower" oninput="updateContract()" placeholder="ชื่อ-นามสกุล">
+        </div>
+        <div class="form-group">
+            <label>อายุ (ปี)</label>
+            <input type="number" id="in_age" oninput="updateContract()">
+        </div>
+        <div class="form-group">
+            <label>อยู่บ้านเลขที่ / ถนน / หมู่บ้าน</label>
+            <input type="text" id="in_address" oninput="updateContract()" placeholder="บ้านเลขที่ หมู่ หมู่บ้าน">
+        </div>
+        <div class="form-group">
+            <label>ตำบล</label>
+            <input type="text" id="in_subdistrict" oninput="updateContract()">
+        </div>
+        <div class="form-group">
+            <label>อำเภอ</label>
+            <input type="text" id="in_district" oninput="updateContract()">
+        </div>
+        <div class="form-group">
+            <label>จังหวัด</label>
+            <input type="text" id="in_province" oninput="updateContract()">
+        </div>
+
+        <hr>
+        <h3>ข้อมูลผู้ให้กู้ & เงินกู้</h3>
+        <div class="form-group">
+            <label>สัญญากู้เงินให้ไว้แก่ (ชื่อผู้ให้กู้)</label>
+            <input type="text" id="in_lender" oninput="updateContract()" placeholder="ชื่อผู้ให้กู้/เจ้าของเงิน">
+        </div>
+        <div class="form-group">
+            <label>จำนวนเงินกู้ (บาท)</label>
+            <input type="number" id="in_amount" oninput="updateContract()" placeholder="เช่น 50000">
+        </div>
+        <div class="form-group">
+            <label>จำนวนเงินกู้ (ตัวอักษร)</label>
+            <input type="text" id="in_amount_text" oninput="updateContract()" placeholder="เช่น ห้าหมื่น">
+        </div>
+        <div class="form-group">
+            <label>สตางค์ (ถ้ามี)</label>
+            <input type="text" id="in_satang" oninput="updateContract()" value="-">
+        </div>
+
+        <hr>
+        <h3>หลักประกัน & ดอกเบี้ย</h3>
+        <div class="form-group">
+            <label>ทรัพย์สินหลักประกัน (ข้อ 2)</label>
+            <input type="text" id="in_asset" oninput="updateContract()" placeholder="เช่น โฉนดที่ดินเลขที่... / ไม่มี">
+        </div>
+        <div class="form-group">
+            <label>กำหนดชำระคืนภายในวันที่</label>
+            <input type="text" id="in_due_day" oninput="updateContract()" placeholder="เช่น 31">
+        </div>
+        <div class="form-group">
+            <label>กำหนดชำระคืนเดือน</label>
+            <input type="text" id="in_due_month" oninput="updateContract()" placeholder="เช่น ธันวาคม">
+        </div>
+        <div class="form-group">
+            <label>กำหนดชำระคืน พ.ศ.</label>
+            <input type="number" id="in_due_year" oninput="updateContract()" placeholder="เช่น 2569">
+        </div>
+        <div class="form-group">
+            <label>อัตราดอกเบี้ย (ข้อ 4)</label>
+            <input type="text" id="in_interest" oninput="updateContract()" placeholder="เช่น ร้อยละ 15 ต่อปี">
+        </div>
+
+        <hr>
+        <h3>รายชื่อพยาน / ผู้เขียน</h3>
+        <div class="form-group">
+            <label>ชื่อพยานคนที่ 1</label>
+            <input type="text" id="in_witness1" oninput="updateContract()">
+        </div>
+        <div class="form-group">
+            <label>ชื่อพยานคนที่ 2</label>
+            <input type="text" id="in_witness2" oninput="updateContract()">
+        </div>
+        <div class="form-group">
+            <label>ชื่อผู้เขียนสัญญา</label>
+            <input type="text" id="in_writer" oninput="updateContract()">
+        </div>
+    </div>
+
+    <div class="preview-container">
+        <div class="contract-paper" id="printArea">
+            
+            <!-- โครงสร้างแถบด้านซ้ายมือ (แก้ไขปรับตำแหน่งตัวหนังสือประกบข้างเรียบร้อย) -->
+            <div class="stamp-sidebar">
+                <div class="stamp-grid">
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                    <div class="stamp-cell"></div>
+                </div>
+                <div class="stamp-text">
+                    ต้องปิดอากรแสตมป์ ๑๐ สตางค์ ทุกๆ เงินกู้ ๒๐๐ บาท หรือเศษ<br>และผู้กู้ยืมเงินเป็นผู้ขีดฆ่าตามประมวลรัษฎากร
+                </div>
+            </div>
+
+            <div class="title">หนังสือสัญญาเงินกู้ตามกฎหมายใหม่</div>
+            
+            <div class="header-block">
+                <div class="header-row-1">
+                    <div>ลำดับที่ <span class="fill-space" id="out_id" style="min-width: 120px;"></span></div>
+                    <div>ทำที่ <span class="fill-space" id="out_place" style="min-width: 250px;"></span></div>
+                </div>
+                <div class="header-row-2">
+                    วันที่ <span class="fill-space" id="out_day" style="min-width: 45px;"></span> เดือน <span class="fill-space" id="out_month" style="min-width: 140px;"></span> พ.ศ. <span class="fill-space" id="out_year" style="min-width: 80px;"></span>
+                </div>
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span>ข้าพเจ้า <span class="fill-space" id="out_borrower" style="min-width: 260px;"></span> 
+                อายุ <span class="fill-space" id="out_age" style="min-width: 45px;"></span> ปี อยู่บ้านเลขที่ <span class="fill-space" id="out_address" style="min-width: 180px;"></span> 
+                ตำบล <span class="fill-space" id="out_subdistrict" style="min-width: 130px;"></span> 
+                อำเภอ <span class="fill-space" id="out_district" style="min-width: 130px;"></span> 
+                จังหวัด <span class="fill-space" id="out_province" style="min-width: 130px;"></span> ได้ทำหนังสือ
+                สัญญากู้เงินให้ไว้แก่ <span class="fill-space" id="out_lender" style="min-width: 380px;"></span> มีข้อสัญญาดังแจ้งต่อไปนี้
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๑.</b> ข้าพเจ้า <span class="fill-space" id="out_borrower2" style="min-width: 320px;"></span> ได้กู้เงินของ
+                <span class="fill-space" id="out_lender2" style="min-width: 260px;"></span> เป็นจำนวนเงิน <span class="fill-space" id="out_amount" style="min-width: 140px;"></span> บาท
+                ( <span class="fill-space" id="out_amount_text" style="min-width: 340px;"></span> ) บาท <span class="fill-space" id="out_satang" style="min-width: 45px;"></span> สต. 
+                ข้าพเจ้าได้รับเงินไปครบถ้วนเสร็จแล้วตั้งแต่วันทำสัญญานี้
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๒.</b> เพื่อเป็นหลักฐานในเงินซึ่งข้าพเจ้ากู้ไปนี้ ข้าพเจ้าได้นำ <span class="fill-space" id="out_asset" style="min-width: 330px;"></span> ให้ท่านถือไว้เป็น
+                ประกันด้วย และข้าพเจ้าขอรับรองว่า ทรัพย์สินซึ่งข้าพเจ้านำมานี้ เป็นของข้าพเจ้า โดยแท้จริง และไม่มีภาระผูกพันใด ๆ ในหนี้สินรายอื่นนอกเหนือทรัพย์สินนี้เลย
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๓.</b> ในจำนวนเงินซึ่งข้าพเจ้าได้กู้ไปนี้ ข้าพเจ้าจะนำมาใช้ให้ท่านเสร็จภายใน วันที่ <span class="fill-space" id="out_due_day" style="min-width: 45px;"></span> 
+                เดือน <span class="fill-space" id="out_due_month" style="min-width: 140px;"></span> พ.ศ. <span class="fill-space" id="out_due_year" style="min-width: 80px;"></span> นับตั้งแต่วันทำสัญญานี้เป็นต้นไป
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๔.</b> ข้าพเจ้ายอมให้ดอกเบี้ย <span class="fill-space" id="out_interest" style="min-width: 340px;"></span> แก่ท่าน
+                ทุกเดือนไป จนกว่าข้าพเจ้าจะนำเงินต้นส่งให้แก่ท่านจนครบตามจำนวนที่ได้กู้ไป
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๕.</b> ข้าพเจ้าล้มตายเสียก็ดี หรือหลบหายไปเสียก็ดี ข้าพเจยอมให้ท่านมีอำนาจเอาทรัพย์สมบัติของข้าพเจ้า ขายทอดตลาดเอาเงินต้น และดอกเบี้ยของท่านจนครบ
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๖.</b> แม้ว่าข้าพเจ้าประพฤติผิดสัญญานี้แต่ข้อหนึ่งข้อใดก็ดี ยอมให้ท่านฟ้องร้องเรียกเงินต้น และดอกเบี้ยแก่ข้าพเจ้าตามกฎหมาย
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span><b>ข้อ ๗.</b> ค่าธรรมเนียม ค่าพาหนะและค่าเสียหายต่างๆ ซึ่งท่านต้องเสียไปในการทวงถาม ฟ้องร้องข้าพเจ้านั้น ข้าพเจยอมใช้ให้ท่านตามที่ได้เสียหายไปจนครบถ้วน
+            </div>
+
+            <div class="contract-text">
+                <span class="indent"></span>ทันใดนี้ผู้เขียนสัญญา ได้อ่านข้อสัญญาให้ข้าพเจ้าผู้กู้ฟังเข้าใจโดยละเอียดตลอดทุกข้อแล้ว ข้าพเจ้าได้ลงลายมือชื่อให้ไว้ต่อหน้าพยานผู้อยู่พร้อมกัน ณ ที่นี้
+            </div>
+
+            <div class="signature-section">
+                <div class="sig-block">
+                    <div class="sig-row">ลงลายมือชื่อ ...................................................................................................... ผู้กู้<small class="sig-under-name" id="out_sig_borrower"></small></div>
+                    <div class="sig-row">ลงลายมือชื่อ ...................................................................................................... ผู้ให้กู้ (เจ้าของเงิน)<small class="sig-under-name" id="out_sig_lender"></small></div>
+                </div>
+                
+                <div style="margin-top: 25px; margin-bottom: 20px; text-align: justify; font-size: 15px; line-height: 1.8; color: #000;">
+                    <span class="indent"></span>ข้าพเจ้าพยาน ขอรับรองว่าข้าพเจ้าเข้าใจข้อความในหนังสือสัญญานี้ตลอดแล้ว และได้เห็นคู่สัญญาส่งมอบเงินกู้ตกลงปากคำทำหนังสือสัญญานี้และลงลายมือชื่อต่อหน้าข้าพเจ้า
+                </div>
+
+                <div class="sig-block">
+                    <div class="sig-row">ลงลายมือชื่อ ...................................................................................................... พยาน<small class="sig-under-name" id="out_sig_witness1"></small></div>
+                    <div class="sig-row">ลงลายมือชื่อ ...................................................................................................... พยาน<small class="sig-under-name" id="out_sig_witness2"></small></div>
+                    <div class="sig-row">ลงลายมือชื่อ ...................................................................................................... ผู้เขียนและพยาน<small class="sig-under-name" id="out_sig_writer"></small></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <button class="btn-print" onclick="window.print()">พิมพ์สัญญากู้เงิน</button>
+
+    <script>
+        function updateContract() {
+            document.getElementById('out_id').innerText = document.getElementById('in_id').value || '............';
+            document.getElementById('out_place').innerText = document.getElementById('in_place').value || '................................................';
+            document.getElementById('out_day').innerText = document.getElementById('in_day').value || '........';
+            document.getElementById('out_month').innerText = document.getElementById('in_month').value || '........................';
+            document.getElementById('out_year').innerText = document.getElementById('in_year').value || '............';
+            
+            const borrowerName = document.getElementById('in_borrower').value;
+            document.getElementById('out_borrower').innerText = borrowerName || '....................................................';
+            document.getElementById('out_borrower2').innerText = borrowerName || '....................................................';
+            document.getElementById('out_sig_borrower').innerText = borrowerName ? `( ${borrowerName} )` : '';
+            
+            document.getElementById('out_subdistrict').innerText = document.getElementById('in_subdistrict').value || '........................';
+            document.getElementById('out_district').innerText = document.getElementById('in_district').value || '........................';
+            document.getElementById('out_province').innerText = document.getElementById('in_province').value || '........................';
+            
+            const lenderName = document.getElementById('in_lender').value;
+            document.getElementById('out_lender').innerText = lenderName || '....................................................';
+            document.getElementById('out_lender2').innerText = lenderName || '....................................................';
+            document.getElementById('out_sig_lender').innerText = lenderName ? `( ${lenderName} )` : '';
+            
+            document.getElementById('out_age').innerText = document.getElementById('in_age').value || '......';
+            document.getElementById('out_address').innerText = document.getElementById('in_address').value || '................................................';
+            
+            const amount = document.getElementById('in_amount').value;
+            document.getElementById('out_amount').innerText = amount ? Number(amount).toLocaleString('th-TH') : '........................';
+            document.getElementById('out_amount_text').innerText = document.getElementById('in_amount_text').value || '........................................................................';
+            document.getElementById('out_satang').innerText = document.getElementById('in_satang').value || '......';
+            
+            document.getElementById('out_asset').innerText = document.getElementById('in_asset').value || '........................................................................................................................';
+            
+            document.getElementById('out_due_day').innerText = document.getElementById('in_due_day').value || '........';
+            document.getElementById('out_due_month').innerText = document.getElementById('in_due_month').value || '........................';
+            document.getElementById('out_due_year').innerText = document.getElementById('in_due_year').value || '............';
+            
+            document.getElementById('out_interest').innerText = document.getElementById('in_interest').value || '........................................';
+            
+            const w1 = document.getElementById('in_witness1').value;
+            document.getElementById('out_sig_witness1').innerText = w1 ? `( ${w1} )` : '';
+            
+            const w2 = document.getElementById('in_witness2').value;
+            document.getElementById('out_sig_witness2').innerText = w2 ? `( ${w2} )` : '';
+            
+            const writer = document.getElementById('in_writer').value;
+            document.getElementById('out_sig_writer').innerText = writer ? `( ${writer} )` : '';
+        }
+
+        updateContract();
+    </script>
+</body>
+</html>

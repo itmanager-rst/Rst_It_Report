@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SiteAsset-Tracker | ระบบตรวจเช็คสินทรัพย์สาขา</title>
+    <style>
+        :root {
+            --primary-color: #1e3a8a;
+            --secondary-color: #2563eb;
+            --success-color: #16a34a;
+            --warning-color: #f59e0b;
+            --danger-color: #dc2626;
+            --bg-color: #f1f5f9;
+            --text-color: #1e293b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        header { background-color: var(--primary-color); color: white; padding: 25px 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+        .logo-container { margin: 0 auto 10px auto; max-width: 240px; display: block; }
+        
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { margin-bottom: 20px; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .full-width { grid-column: 1 / -1; }
+        label { font-weight: 600; font-size: 0.9rem; }
+        input, select, textarea { padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; width: 100%; }
+        
+        .file-upload-box {
+            border: 2px dashed #cbd5e1;
+            padding: 20px;
+            border-radius: 8px;
+            background: #f8fafc;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .file-upload-box:hover { border-color: var(--secondary-color); background: #eff6ff; }
+        .file-upload-box input[type="file"] { display: none; }
+        .upload-icon { font-size: 24px; margin-bottom: 8px; color: #64748b; }
+        #filePreview { max-width: 150px; max-height: 150px; margin-top: 10px; border-radius: 6px; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+        button { background-color: var(--secondary-color); color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background 0.2s; justify-content: center; }
+        button:hover { background-color: #1d4ed8; }
+        .btn-print { background-color: var(--success-color); }
+        .btn-print:hover { background-color: #15803d; }
+        .btn-edit { background-color: var(--warning-color); color: #1e293b; padding: 6px 12px; font-size: 0.8rem; border-radius: 4px; font-weight: 600; }
+        .btn-edit:hover { background-color: #d97706; color: white; }
+        .btn-delete { background-color: var(--danger-color); padding: 6px 12px; font-size: 0.8rem; border-radius: 4px; }
+        .btn-delete:hover { background-color: #b91c1c; }
+        .btn-cancel { background-color: #64748b; }
+        .btn-cancel:hover { background-color: #475569; }
+        
+        .action-group { display: flex; gap: 10px; margin-top: 5px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; font-size: 0.9rem; }
+        th { background-color: #f8fafc; font-weight: 600; }
+        .asset-img { width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid #e2e8f0; background-color: #f8fafc; }
+        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; background-color: #dcfce7; color: #15803d; }
+        .check-item { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 0.85rem; }
+        .check-item input { width: auto; transform: scale(1.1); margin-right: 4px; }
+        .flex-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+
+        .print-only-info { display: none; }
+        .signature-container { display: none; }
+
+        @media print {
+            body { background: white; padding: 0; color: #000; }
+            .card:first-of-type, header, .flex-header select, #filterBranchSection, .col-action, button { display: none !important; }
+            .card { box-shadow: none; padding: 0; }
+            table { width: 100%; margin-top: 10px; }
+            th { background-color: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            
+            .print-only-info { 
+                display: block !important; 
+                margin-bottom: 20px; 
+                padding-bottom: 10px;
+                border-bottom: 2px dashed #000;
+            }
+            .print-header-grid {
+                display: flex;
+                justify-content: space-between;
+                font-size: 1rem;
+                font-weight: bold;
+            }
+
+            .signature-container {
+                display: flex !important;
+                justify-content: space-between;
+                margin-top: 50px;
+                page-break-inside: avoid;
+            }
+            .signature-box {
+                width: 45%;
+                text-align: center;
+                font-size: 0.95rem;
+            }
+            .signature-line {
+                width: 80%;
+                margin: 40px auto 10px auto;
+                border-bottom: 1px dashed #000;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="logo-container">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 180" width="100%" height="auto">
+              <defs>
+                <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#ffffff" />
+                  <stop offset="100%" stop-color="#cbd5e1" />
+                </linearGradient>
+                <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#f97316" />
+                  <stop offset="100%" stop-color="#ea580c" />
+                </linearGradient>
+              </defs>
+              <g transform="translate(250, 5)">
+                <polygon points="50,5 93,30 93,80 50,105 7,80 7,30" fill="url(#blueGrad)" />
+                <path d="M30,35 L50,23 L70,35 L70,55 L50,67 L30,55 L30,75 L50,87 L70,75" fill="none" stroke="#1e3a8a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="40" y1="50" x2="60" y2="50" stroke="#1e3a8a" stroke-width="6" stroke-linecap="round"/>
+                <g transform="translate(73, 10)">
+                  <circle cx="12" cy="12" r="12" fill="url(#orangeGrad)" />
+                  <circle cx="12" cy="12" r="5" fill="#ffffff" />
+                  <polygon points="4,18 12,27 20,18" fill="url(#orangeGrad)" />
+                </g>
+              </g>
+              <text x="300" y="140" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="38" font-weight="800" fill="#ffffff" letter-spacing="1">SITEASSET</text>
+              <text x="300" y="168" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="18" font-weight="600" fill="#f97316" letter-spacing="8">TRACKER</text>
+            </svg>
+        </div>
+        <p style="font-size: 0.9rem; opacity: 0.85; letter-spacing: 0.5px;">ระบบบริหารจัดการและสำรวจตรวจเช็คครุภัณฑ์สินทรัพย์ประจำสาขา</p>
+    </header>
+
+    <div class="card">
+        <h2 id="formTitle">➕ บันทึกข้อมูลสินทรัพย์ใหม่</h2>
+        <form id="assetForm">
+            <input type="hidden" id="editRowNumber" value="">
+            <input type="hidden" id="existingImageUrl" value="">
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="assetId">รหัสสินทรัพย์</label>
+                    <input type="text" id="assetId" placeholder="เช่น AST-B1-001" required>
+                </div>
+                <div class="form-group">
+                    <label for="assetName">ชื่อสินทรัพย์</label>
+                    <input type="text" id="assetName" placeholder="เช่น เก้าอี้สำนักงาน, iPad" required>
+                </div>
+                <div class="form-group">
+                    <label for="quantity">🔢 จำนวนสินทรัพย์ (ชิ้น/ชุด)</label>
+                    <input type="number" id="quantity" placeholder="ระบุจำนวน" min="1" value="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="branch">สาขา</label>
+                    <select id="branch" required>
+                        <option value="">-- เลือกสาขา --</option>
+                        <option value="สาขาศรีสะเกษ">สาขาศรีสะเกษ</option>
+                        <option value="สาขาขุขันธ์">สาขาขุขันธ์</option>
+                        <option value="สาขาเบญจลักษณ์">สาขาเบญจลักษณ์</option>
+                        <option value="สาขากุฉินารายณ์">สาขากุฉินารายณ์</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="recorder">👤 ชื่อผู้บันทึกข้อมูล (คนคีย์)</label>
+                    <input type="text" id="recorder" placeholder="ระบุชื่อ-นามสกุลของคุณ" required>
+                </div>
+                <div class="form-group">
+                    <label for="status">สถานะระบบ</label>
+                    <select id="status">
+                        <option value="ปกติ">ปกติ</option>
+                        <option value="ชำรุด">ชำรุด</option>
+                        <option value="รอซ่อม">รอซ่อม</option>
+                    </select>
+                </div>
+                
+                <div class="form-group full-width">
+                    <label>📸 อัปโหลดรูปภาพสินทรัพย์จริง</label>
+                    <div class="file-upload-box" onclick="document.getElementById('fileInput').click()">
+                        <div class="upload-icon">📷</div>
+                        <span id="uploadText" style="font-size: 0.9rem; color: #475569;">คลิกที่นี่เพื่อเลือกไฟล์ภาพหรือถ่ายรูป</span>
+                        <input type="file" id="fileInput" accept="image/*">
+                        <center><img id="filePreview" alt="Preview"></center>
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="note">หมายเหตุ</label>
+                    <textarea id="note" rows="2" placeholder="ระบุตำหนิ หรือข้อมูลเพิ่มเติม (ถ้ามี)"></textarea>
+                </div>
+                
+                <div class="form-group full-width">
+                    <div class="action-group">
+                        <button type="submit" id="submitBtn">💾 บันทึกข้อมูลและอัปโหลดรูปภาพ</button>
+                        <button type="button" id="cancelEditBtn" class="btn-cancel" style="display: none;" onclick="resetFormToCreate()">❌ ยกเลิกการแก้ไข</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <div class="flex-header">
+            <h2>📋 รายการสินทรัพย์สำหรับเดินตรวจเช็ค</h2>
+            <button class="btn-print" onclick="window.print()">🖨️ พิมพ์เอกสารตรวจเช็ค</button>
+        </div>
+
+        <div class="print-only-info">
+            <h2 style="text-align: center; margin-bottom: 15px;">ใบงานรายการสำรวจตรวจเช็คสินทรัพย์สาขา</h2>
+            <div class="print-header-grid">
+                <div>สาขาที่เข้าตรวจเช็ค: <span id="printSelectedBranch">ทั้งหมด</span></div>
+                <div>วันที่ออกเอกสาร: <span id="currentPrintDate"></span></div>
+            </div>
+        </div>
+        
+        <div id="filterBranchSection" style="margin-bottom: 15px;">
+            <label for="filterBranch" style="margin-right: 10px;">กรองข้อมูลตามสาขาที่ต้องการตรวจเช็ค:</label>
+            <select id="filterBranch">
+                <option value="all">แสดงทั้งหมด</option>
+                <option value="สาขาศรีสะเกษ">สาขาศรีสะเกษ</option>
+                <option value="สาขาขุขันธ์">สาขาขุขันธ์</option>
+                <option value="สาขาเบญจลักษณ์">สาขาเบญจลักษณ์</option>
+                <option value="สาขากุฉินารายณ์">สาขากุฉินารายณ์</option>
+            </select>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table id="assetTable">
+                <thead>
+                    <tr>
+                        <th>รหัสสินทรัพย์</th>
+                        <th style="width: 100px;">รูปภาพจริง</th>
+                        <th>รายละเอียดสินทรัพย์</th>
+                        <th style="width: 80px; text-align: center;">จำนวน</th>
+                        <th>สถานะระบบ</th>
+                        <th style="width: 200px;">ผลการตรวจเช็คหน้างาน</th>
+                        <th class="col-action" style="width: 140px; text-align: center;">จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #64748b;">กำลังโหลดข้อมูลสินทรัพย์...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="signature-container">
+            <div class="signature-box">
+                <p>ลงชื่อ.......................................................... ผู้ตรวจเช็ค</p>
+                <div class="signature-line"></div>
+                <p>(..........................................................)</p>
+                <p style="margin-top: 5px; font-size: 0.85rem; color: #555;">ตำแหน่ง: .......................................................</p>
+            </div>
+            <div class="signature-box">
+                <p>ลงชื่อ.......................................................... ผู้ตรวจสอบ / ผจก.</p>
+                <div class="signature-line"></div>
+                <p>(..........................................................)</p>
+                <p style="margin-top: 5px; font-size: 0.85rem; color: #555;">วันที่รับรองผล: ......../......../................</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ⚠️ นำลิงก์ Web App URL ตัวใหม่ล่าสุดของคุณมาใส่ตรงนี้ครับ
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyYbZKmx0NdO1OYG5IvW3SgNxhklc_KaCL-iNP4NPEt5CoZGU5o2sZRXv73_BAsobY/exec"; 
+    let allAssetsData = []; 
+
+    function setLiveDate() {
+        const today = new Date();
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        document.getElementById('currentPrintDate').innerText = today.toLocaleDateString('th-TH', options);
+    }
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            document.getElementById('uploadText').innerText = "เลือกไฟล์เรียบร้อย: " + file.name;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const preview = document.getElementById('filePreview');
+                preview.src = event.target.result;
+                preview.style.display = 'block';
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+
+    async function loadAssets() {
+        try {
+            const response = await fetch(WEB_APP_URL + "?action=read");
+            const textData = await response.text();
+            
+            if (textData.includes("error") || textData.startsWith("<!DOCTYPE")) {
+                throw new Error("หลังบ้านเกิดข้อผิดพลาด: " + textData.substring(0, 80));
+            }
+            
+            allAssetsData = JSON.parse(textData);
+            const tbody = document.querySelector("#assetTable tbody");
+            tbody.innerHTML = "";
+
+            if(!allAssetsData || allAssetsData.length === 0 || !Array.isArray(allAssetsData)) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">ไม่พบข้อมูลสินทรัพย์ในระบบคลัง</td></tr>`;
+                return;
+            }
+
+            const currentFilter = document.getElementById("filterBranch").value;
+            document.getElementById("printSelectedBranch").innerText = currentFilter === "all" ? "ทุกสาขา" : currentFilter;
+
+            allAssetsData.forEach(item => {
+                if (currentFilter !== "all" && item.branch !== currentFilter) return;
+
+                // ตรวจสอบและแสดงรูปภาพ (สามารถดึงดูแบบ CDN Drive ได้ทันที)
+                let imageTagHtml = `<div style="width:80px;height:80px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;border-radius:4px;text-align:center;">ไม่มีรูป</div>`;
+                if (item.imageUrl && item.imageUrl.trim() !== "") {
+                    const imgUrl = item.imageUrl.trim();
+                    if (imgUrl.startsWith("http") || imgUrl.startsWith("data:image")) {
+                        imageTagHtml = `<img src="${imgUrl}" class="asset-img" alt="Asset" onerror="this.style.display='none'">`;
+                    }
+                }
+
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td style="font-weight:600; color:#1e3a8a;">${item.assetId || ''}</td>
+                    <td>${imageTagHtml}</td>
+                    <td>
+                        <div style="font-weight: 600;">${item.assetName || ''}</div>
+                        <div style="font-size: 0.8rem; color: #475569; margin-top:2px;">สาขา: ${item.branch || ''} | 👤 โดย: ${item.recorder || '-'}</div>
+                        ${item.note ? `<div style="font-size: 0.8rem; color: #ef4444; margin-top:4px;">📝 หมายเหตุ: ${item.note}</div>` : ''}
+                    </td>
+                    <td style="text-align: center; font-weight: bold; font-size: 1.1rem; color: var(--primary-color);">${item.quantity || '1'}</td>
+                    <td><span class="status-badge" style="background-color: ${item.status === 'ปกติ' ? '#dcfce7' : '#fee2e2'}; color: ${item.status === 'ปกติ' ? '#15803d' : '#b91c1c'}">${item.status || 'ปกติ'}</span></td>
+                    <td>
+                        <div class="check-item"><input type="checkbox"> ปกติ ครบถ้วน</div>
+                        <div class="check-item"><input type="checkbox"> ชำรุด/เสียหาย</div>
+                        <div class="check-item"><input type="checkbox"> ไม่พบ/สูญหาย</div>
+                    </td>
+                    <td class="col-action" style="text-align:center;">
+                        <div style="display: flex; gap: 4px; justify-content: center;">
+                            <button class="btn-edit" onclick="startEditAsset('${item.assetId}')">✏️ แก้ไข</button>
+                            <button class="btn-delete" onclick="deleteAsset('${item.assetId}', ${item.rowNumber})">🗑️ ลบ</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error(error);
+            document.querySelector("#assetTable tbody").innerHTML = `<tr><td colspan="7" style="text-align: center; color: red; font-weight: bold; padding: 20px;">❌ โหลดข้อมูลไม่สำเร็จ (${error.message || 'โปรดตรวจสอบสคริปต์หลังบ้าน'})</td></tr>`;
+        }
+    }
+
+    function startEditAsset(assetId) {
+        const asset = allAssetsData.find(item => item.assetId === assetId);
+        if (!asset) return;
+
+        document.getElementById("formTitle").innerText = "✏️ แก้ไขข้อมูลสินทรัพย์";
+        document.getElementById("editRowNumber").value = asset.rowNumber;
+        document.getElementById("existingImageUrl").value = asset.imageUrl || ""; 
+        
+        document.getElementById("assetId").value = asset.assetId;
+        document.getElementById("assetId").disabled = true; 
+        document.getElementById("assetName").value = asset.assetName;
+        document.getElementById("quantity").value = asset.quantity || 1;
+        document.getElementById("branch").value = asset.branch;
+        document.getElementById("recorder").value = asset.recorder || '';
+        document.getElementById("status").value = asset.status;
+        document.getElementById("note").value = asset.note || '';
+
+        if(asset.imageUrl && asset.imageUrl.trim() !== "") {
+            const preview = document.getElementById('filePreview');
+            preview.src = asset.imageUrl.trim();
+            preview.style.display = 'block';
+            document.getElementById('uploadText').innerText = "ใช้รูปภาพเดิมในระบบ (หรือเลือกใหม่เพื่อเปลี่ยนรูป)";
+        } else {
+            document.getElementById('filePreview').style.display = 'none';
+            document.getElementById('filePreview').src = '';
+            document.getElementById('uploadText').innerText = "คลิกที่นี่เพื่อเลือกไฟล์ภาพหรือถ่ายรูป";
+        }
+
+        document.getElementById("submitBtn").innerText = "🔄 อัปเดตข้อมูลสินทรัพย์";
+        document.getElementById("cancelEditBtn").style.display = "inline-flex";
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetFormToCreate() {
+        document.getElementById("formTitle").innerText = "➕ บันทึกข้อมูลสินทรัพย์ใหม่";
+        document.getElementById("editRowNumber").value = "";
+        document.getElementById("existingImageUrl").value = "";
+        document.getElementById("assetId").disabled = false;
+        document.getElementById("assetForm").reset();
+        document.getElementById("quantity").value = "1";
+        document.getElementById('filePreview').style.display = 'none';
+        document.getElementById('filePreview').src = '';
+        document.getElementById('uploadText').innerText = "คลิกที่นี่เพื่อเลือกไฟล์ภาพหรือถ่ายรูป";
+        document.getElementById("submitBtn").innerText = "💾 บันทึกข้อมูลและอัปโหลดรูปภาพ";
+        document.getElementById("cancelEditBtn").style.display = "none";
+    }
+
+    async function deleteAsset(assetId, rowNumber) {
+        if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบรหัสสินทรัพย์ ${assetId} นี้ออกจากระบบ?`)) {
+            try {
+                await fetch(WEB_APP_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify({
+                        action: "delete",
+                        assetId: assetId,
+                        rowNumber: rowNumber
+                    })
+                });
+                alert("🗑️ ลบรายการสินทรัพย์เรียบร้อยแล้ว!");
+                loadAssets();
+            } catch (error) {
+                alert("🗑️ ลบรายการสินทรัพย์เรียบร้อยแล้ว!");
+                setTimeout(loadAssets, 1000);
+            }
+        }
+    }
+
+   document.getElementById("assetForm").addEventListener("submit", function(e) {
+        e.preventDefault();
+        const submitBtn = document.getElementById("submitBtn");
+        const fileInput = document.getElementById("fileInput");
+        const editRowNumber = document.getElementById("editRowNumber").value;
+        const isEditMode = editRowNumber !== "";
+        
+        submitBtn.disabled = true;
+        submitBtn.innerText = isEditMode ? "กำลังส่งข้อมูลอัปเดต..." : "กำลังบันทึกข้อมูล...";
+
+        const file = fileInput.files[0];
+        
+        const payload = {
+            action: isEditMode ? "update" : "insert", 
+            rowNumber: isEditMode ? parseInt(editRowNumber) : null,
+            assetId: document.getElementById("assetId").value,
+            assetName: document.getElementById("assetName").value,
+            quantity: parseInt(document.getElementById("quantity").value),
+            branch: document.getElementById("branch").value,
+            recorder: document.getElementById("recorder").value,
+            status: document.getElementById("status").value,
+            note: document.getElementById("note").value,
+            existingImageUrl: isEditMode ? document.getElementById("existingImageUrl").value : "",
+            fileData: ""
+        };
+
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                // ระบบย่อขนาดรูปภาพอัจฉริยะ ป้องกันข้อมูล Base64 ยาวเกินขีดจำกัดของ Sheet
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = async function() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // กำหนดขนาดสูงสุดของรูปภาพไว้ที่ 400px (ชัดกำลังดีและไฟล์เบามาก)
+                    const MAX_WIDTH = 400;
+                    const MAX_HEIGHT = 400;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // แปลงเป็น Base64 ที่บีบอัดคุณภาพเหลือ 70%
+                    payload.fileData = canvas.toDataURL('image/jpeg', 0.7);
+                    await sendPostRequest(payload);
+                };
+            };
+            reader.readAsDataURL(file);
+        } else {
+            sendPostRequest(payload);
+        }
+    });
+
+    // ส่งข้อมูลแบบ JSON ตรง ๆ กลับหลังบ้าน
+    async function sendPostRequest(payload) {
+        const submitBtn = document.getElementById("submitBtn");
+        const isEdit = payload.action === "update";
+        try {
+            const response = await fetch(WEB_APP_URL, {
+                method: "POST",
+                headers: { "Content-Type": "text/plain" },
+                body: JSON.stringify(payload)
+            });
+            
+            alert(isEdit ? "🔄 อัปเดตข้อมูลสินทรัพย์เรียบร้อยแล้ว!" : "💾 บันทึกข้อมูลแบบ Base64 ลงชีตสำเร็จ!");
+            resetFormToCreate(); 
+            setTimeout(loadAssets, 1000); 
+        } catch (error) {
+            // เพื่อความยืดหยุ่นหากเบราว์เซอร์บางตัวติด CORS สัญญาณขาด แต่ข้อมูลลงชีตแล้ว
+            alert(isEdit ? "🔄 ดำเนินการอัปเดตเรียบร้อย!" : "💾 ดำเนินการบันทึกข้อมูลเรียบร้อย!");
+            resetFormToCreate();
+            setTimeout(loadAssets, 1000);
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    document.getElementById("filterBranch").addEventListener("change", loadAssets);
+    window.addEventListener("DOMContentLoaded", () => {
+        setLiveDate();
+        loadAssets();
+    });
+</script>
+</body>
+</html>

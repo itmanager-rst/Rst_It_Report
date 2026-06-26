@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบพิมพ์ใบแจ้งวิธีการชำระเงิน - หจก.บ้านและที่ดินรวมสินไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; }
+    
+    /* ควบคุมขนาดสำหรับการพรีวิวและจัดพิมพ์บนกระดาษ A4 */
+    .a4-page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 20mm 20mm 15mm 25mm;
+      margin: 0 auto 20px auto;
+      background: white;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      position: relative;
+      box-sizing: border-box;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    @media print {
+      body { background-color: #ffffff; color: #000000; }
+      .no-print { display: none !important; }
+      .a4-page {
+        margin: 0 !important;
+        box-shadow: none !important;
+        padding: 15mm 15mm 10mm 20mm !important;
+        width: 100% !important;
+        min-height: auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <header class="no-print bg-slate-900 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <a href="index.html" class="bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 px-3 rounded-xl border border-slate-700 transition-colors">
+          ⬅ กลับหน้าหลัก
+        </a>
+        <div>
+          <h1 class="text-lg font-bold tracking-wide">📄 ระบบพิมพ์เอกสารแจ้งเลขบัญชี & QR Code</h1>
+          <p class="text-slate-400 text-xs">กรอกระบุวันที่และผู้เช่าซื้อ เพื่อพิมพ์ใบแจ้งช่องทางรับเงินชำระค่างวดของห้างฯ</p>
+        </div>
+      </div>
+      <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-sm transition-all flex items-center gap-2">
+        🖨️ สั่งพิมพ์ใบแจ้งชำระเงิน (A4)
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-[1600px] w-full mx-auto p-4 lg:p-8 flex flex-col lg:flex-row gap-8">
+    
+    <div class="no-print w-full lg:w-4/12 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[85vh] overflow-y-auto sticky top-6">
+      <h2 class="text-md font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+        📥 ระบุข้อมูลเอกสาร
+      </h2>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">วันที่ออกเอกสาร</label>
+          <input type="text" id="inputDate" oninput="syncText()" placeholder="เช่น 6 มิถุนายน 2026" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อ - สกุล ลูกค้า (ผู้เช่าซื้อ)</label>
+          <input type="text" id="inputCustomer" oninput="syncText()" placeholder="ระบุชื่อผู้เช่าซื้อ" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500">
+        </div>
+
+        <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 mt-2">
+          <h3 class="text-xs font-bold text-blue-900 uppercase mb-2">📸 อัปเดตเปลี่ยนภาพ QR Code</h3>
+          <p class="text-slate-500 text-[11px] mb-3 leading-relaxed">คุณสามารถคลิกเลือกไฟล์ภาพ QR Code ของทางห้างฯ จากเครื่องคอมพิวเตอร์หรือมือถือเพื่อเปลี่ยนแทนภาพตัวอย่างในระบบได้ทันที</p>
+          <input type="file" id="uploadQR" accept="image/*" onchange="previewQR(event)" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+        </div>
+      </div>
+    </div>
+
+    <div class="w-full lg:w-8/12 flex flex-col text-slate-950">
+      <div class="a4-page flex flex-col justify-between">
+        
+        <div>
+          <div class="text-center border-b-2 border-slate-800 pb-3 mb-4">
+            <h2 class="text-xl font-bold tracking-wide">หจก.บ้านและที่ดินรวมสินไทย</h2>
+            <p class="text-xs text-slate-700 mt-1">190/2 ม.7 ถ.เลี่ยงเมือง ต.แจระแม อ.เมือง จ.อุบลราชธานี 34000</p>
+            <p class="text-xs text-slate-700">โทร. 045-311728 , 096-6234932 | ID Line (ฝ่ายบัญชี): 045311728</p>
+          </div>
+
+          <div class="text-right text-sm mb-6">
+            <b>วันที่:</b> <span id="vDate" class="inline-block min-w-[150px] border-b border-dashed border-slate-400 text-center">...................................................</span>
+          </div>
+
+          <div class="space-y-1 text-sm mb-6">
+            <div><b>เรื่อง:</b> แจ้งวิธีการชำระเงิน</div>
+            <div><b>เรียน:</b> ลูกค้า หจก.บ้านและที่ดินรวมสินไทย</div>
+          </div>
+
+          <div class="text-justify space-y-3 text-[14.5px] leading-relaxed">
+            <p class="pl-12">
+              ทางห้างฯ <b>ไม่มีนโยบายให้พนักงานของทางห้างฯ ไปรับชำระเงินที่บ้านของลูกค้าไม่ว่าในกรณีใดก็ตาม</b> หากลูกค้ามีความประสงค์จะชำระเงินค่างวดหรือยอดเงินอื่นๆ ขอให้ลูกค้าชำระเงินด้วยวิธีที่ถูกต้องปลอดภัยดังต่อไปนี้เท่านั้น:
+            </p>
+            
+            <ol class="list-decimal pl-12 space-y-2">
+              <li><b>การเข้ามาชำระที่ร้าน:</b> เมื่อชำระเรียบร้อยแล้วจะได้รับใบเสร็จรับเงินทันที</li>
+              <li><b>การชำระผ่าน THAI QR PAYMENT:</b> โดยการใช้แอปพลิเคชัน Mobile Banking ของธนาคารต่างๆ สแกนคิวอาร์โค้ดพร้อมเพย์ด้านล่างนี้</li>
+              <li><b>ชำระผ่านธนาคาร:</b> โดยการโอนเงินเข้าบัญชีธนาคารของทางห้างฯ โดยตรงตามรายละเอียดดังนี้</li>
+            </ol>
+          </div>
+
+          <div class="grid grid-cols-12 gap-4 my-6 items-center border border-slate-300 p-4 rounded-xl bg-slate-50/50">
+            
+            <div class="col-span-7 space-y-2 text-sm">
+              <div class="bg-blue-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg inline-block">🏛️ บัญชีธนาคารของห้างฯ (บัญชีเดียวเท่านั้น)</div>
+              <div class="pt-2"><span class="font-semibold text-slate-700">ชื่อธนาคาร:</span> ไทยพาณิชย์ (SCB) - ออมทรัพย์</div>
+              <div><span class="font-semibold text-slate-700">สาขา:</span> เซ็นทรัลพลาซ่าอุบล</div>
+              <div><span class="font-semibold text-slate-700">ชื่อบัญชี:</span> หจก.บ้านและที่ดินรวมสินไทย</div>
+              <div class="text-md font-bold text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl inline-block mt-1">
+                💳 เลขที่บัญชี: 420-031573-8
+              </div>
+            </div>
+
+            <div class="col-span-5 flex flex-col items-center justify-center border-l border-slate-300 pl-4">
+              <div class="text-[10px] font-bold text-slate-500 tracking-wider mb-1">PROMPT PAY</div>
+              
+              <img id="qrImg" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=BillerID:034353000012101" alt="QR Code Payment" class="w-[135px] h-[135px] object-contain border border-slate-200 p-1 bg-white rounded shadow-sm">
+              
+              <div class="text-[10px] text-center font-bold text-slate-700 mt-1.5">หจก.บ้านและที่ดินรวมสินไทย</div>
+              <div class="text-[9px] text-slate-400">Biller ID: 034353000012101</div>
+            </div>
+
+          </div>
+
+          <div class="text-justify text-[13.5px] text-slate-800 space-y-2 leading-relaxed bg-amber-50/60 p-3 rounded-xl border border-amber-200/70">
+            <p>
+              📌 <b>เมื่อลูกค้าโอนเงินเสร็จเรียบร้อยแล้ว:</b> กรุณาโทรแจ้งเจ้าหน้าที่ทางห้างฯ ทันทีที่เบอร์โทรศัพท์ <b>096-6234932</b> หรือค้นหาไอดีไลน์ <b>045311728 (ฝ่ายบัญชี)</b> หรือส่งหลักฐานมาทาง Line Official: <b>@674wwkkj</b> และโปรดเก็บหลักฐานการโอนเงิน (สลิป) ไว้เป็นหลักฐาน เมื่อทางห้างฯ ตรวจสอบยอดเงินเรียบร้อย จะส่งใบเสร็จรับเงินให้ลูกค้าผ่านทางไลน์ทันที
+            </p>
+            <p class="text-red-700 font-medium">
+              ⚠️ <b>คำเตือนสำคัญ:</b> หากลูกค้ามีข้อสงสัยใดๆ สามารถติดต่อสอบถามได้ที่เบอร์กลาง 045-311728 และหากลูกค้าชำระเงินด้วยวิธีอื่นใด นอกเหนือจากวิธีที่ทางห้างฯ ได้แจ้งไว้ข้างต้นนี้จนเกิดความเสียหาย ทางห้างฯ จะไม่ขอรับผิดชอบในทุกกรณี
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-8 border-t border-slate-200 pt-6">
+          <div class="grid grid-cols-2 gap-8 items-end text-sm">
+            
+            <div class="text-justify text-[12.5px] text-slate-500 leading-relaxed bg-slate-50 p-3 rounded-xl">
+              <b>ข้าพเจ้า</b> <span id="vCustomerBottom" class="font-semibold text-slate-800 border-b border-dashed border-slate-400 px-1">........................................</span> (ผู้เช่าซื้อ) ได้อ่านและรับทราบเข้าใจข้อความโดยตลอดครบถ้วนดีแล้ว จึงได้ลงลายมือชื่อไว้เป็นหลักฐานสำคัญ
+            </div>
+
+            <div class="space-y-6 text-center pl-8">
+              <div class="text-xs text-slate-400">ขอแสดงความนับถือ</div>
+              <div class="space-y-1">
+                <div>ลงชื่อ............................................................ผู้เช่าซื้อ</div>
+                <div class="text-xs text-slate-600">( <span id="vCustomerName" class="inline-block min-w-[150px]">........................................</span> )</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="no-print bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 mt-auto">
+    &copy; 2026 ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย. ระบบภายในเพื่อการบริหารจัดการเอกสาร
+  </footer>
+
+  <script>
+    // สั่งรันชุดข้อมูลเบื้องต้นเมื่อโหลดหน้าเพจสำเร็จ
+    window.addEventListener('pageshow', function() { syncText(); });
+
+    // ฟังก์ชันซิงค์เชื่อมความผูกพันข้อมูลคำพิมพ์ลงหน้ากระดาษ
+    function syncText() {
+      const dateVal = document.getElementById('inputDate').value || '...................................................';
+      const customerVal = document.getElementById('inputCustomer').value || '........................................';
+
+      document.getElementById('vDate').innerText = dateVal;
+      document.getElementById('vCustomerBottom').innerText = customerVal;
+      document.getElementById('vCustomerName').innerText = customerVal;
+    }
+
+    // ฟังก์ชันสลับเปลี่ยนไฟล์ภาพคิวอาร์โค้ดอัตโนมัติบนหน้าจอคอมพิวเตอร์
+    function previewQR(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('qrImg').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  </script>
+</body>
+</html>

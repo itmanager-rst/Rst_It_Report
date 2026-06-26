@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Scanner - PR System Professional</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght=400;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; font-family: 'Sarabun', sans-serif; }
+        body { margin: 0; padding: 0; background-color: #f8fafc; color: #1e293b; font-size: 14px; }
+        
+        .app-header { 
+            background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); 
+            color: white; padding: 20px 30px; 
+            border-bottom: 5px solid #3b82f6;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .app-title h1 { margin: 0; font-size: 24px; font-weight: 700; }
+        .app-title p { margin: 5px 0 0 0; color: #93c5fd; font-size: 14px; }
+
+        .main-container { display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
+        .sidebar { flex: 1; min-width: 350px; max-width: 420px; }
+        .content-area { flex: 2; min-width: 600px; }
+
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); border: 1px solid #e2e8f0; }
+        .card-header { font-weight: bold; font-size: 16px; color: #1e3a8a; border-bottom: 2px solid #f1f5f9; margin-bottom: 15px; padding-bottom: 10px; }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #475569; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: 0.15s; }
+        .form-control:focus { outline: none; border-color: #3b82f6; background: white; }
+        
+        .found-item { background-color: #fffbeb !important; border: 2px solid #f59e0b !important; font-weight: bold; }
+        .new-item { background-color: #fef2f2 !important; border: 2px solid #ef4444 !important; }
+
+        .btn { cursor: pointer; border: none; border-radius: 8px; padding: 12px 20px; font-weight: bold; width: 100%; font-size: 15px; transition: 0.2s; display: inline-flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none; }
+        .btn-add { background: #2563eb; color: white; margin-top: 5px; }
+        .btn-add:hover { background: #1d4ed8; }
+        
+        .action-buttons { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+        
+        .btn-submit { background: #16a34a; color: white; font-size: 16px; padding: 15px; }
+        .btn-submit:hover { background: #15803d; }
+        .btn-excel { background: #0284c7; color: white; font-size: 15px; padding: 12px; }
+        .btn-excel:hover { background: #0369a1; }
+        
+        .btn-link-filter { background: #f59e0b; color: #0f172a; font-size: 15px; padding: 12px; text-align: center; }
+        .btn-link-filter:hover { background: #d97706; color: white; }
+
+        .btn-clear-all { background: #94a3b8; color: #0f172a; }
+        .btn-clear-all:hover { background: #cbd5e1; }
+        .btn-scan { background: #0f172a; color: white; margin-bottom: 15px; }
+
+        .table-responsive { overflow-x: auto; margin-bottom: 20px; max-height: 500px; border: 1px solid #e2e8f0; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 950px; }
+        th { background: #f8fafc; text-align: left; padding: 12px 10px; border-bottom: 2px solid #e2e8f0; color: #475569; font-weight: bold; position: sticky; top: 0; }
+        td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #334155; }
+        tr:hover { background-color: #f8fafc; }
+        
+        .btn-delete { background: #fee2e2; color: #b91c1c; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-delete:hover { background: #fca5a5; }
+        
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; background: #dcfce7; color: #166534; }
+    </style>
+</head>
+<body>
+
+<div class="app-header">
+    <div class="app-title">
+        <h1>⚙️ Smart Scanner (ระบบสร้างใบขอซื้ออะไหล่)</h1>
+        <p>บันทึกรายการขอซื้ออะไหล่มาตรฐานและส่งข้อมูลรวมศูนย์ผ่านระบบออนไลน์</p>
+    </div>
+    <div><span class="badge" id="status-text">● กำลังเชื่อมต่อ...</span></div>
+</div>
+
+<div class="main-container">
+    <div class="sidebar">
+        <div class="card">
+            <div class="card-header">🎥 สแกนรหัสอะไหล่</div>
+            <div id="reader"></div>
+            <button class="btn btn-scan" onclick="startScanner()">🔄 เปิดกล้องสแกน</button>
+            <div class="form-group">
+                <label>รหัสอะไหล่</label>
+                <input type="text" id="partId" class="form-control" placeholder="รหัสจากบาร์โค้ด" onkeyup="lookupPartName(this.value)">
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">📝 ข้อมูลใบขอซื้ออะไหล่</div>
+            
+            <div class="form-group">
+                <label>สาขา</label>
+                <select id="branch" class="form-control" style="font-weight: bold; color: #2563eb;">
+                    <option value="">-- รอโหลดสาขา... --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>ชื่ออะไหล่</label>
+                <input type="text" id="partName" class="form-control" placeholder="ชื่อสินค้าจะขึ้นอัตโนมัติ">
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Stockเดิม</label>
+                    <input type="number" id="stock" class="form-control" value="0">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>รายการที่ขอซื้อจริง</label>
+                    <input type="number" id="quantity" class="form-control" value="1" style="font-weight: bold; border-color: #2563eb;">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>พนักงานผู้คีย์</label>
+                <select id="recorder" class="form-control">
+                    <option value="">-- รอโหลดรายชื่อ... --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>หมายเหตุ</label>
+                <textarea id="remarks" class="form-control" rows="1"></textarea>
+            </div>
+
+            <button class="btn btn-add" onclick="addItemToBasket()">➕ เพิ่มรายการนี้เข้าใบขอซื้อชั่วคราว</button>
+        </div>
+    </div>
+
+    <div class="content-area">
+        <div class="card" style="position: sticky; top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; margin-bottom: 15px; padding-bottom: 10px;">
+                <span style="font-weight: bold; font-size: 16px; color: #1e3a8a;">📋 รายการในใบขอซื้อที่พร้อมส่ง</span>
+                <span id="item-count" style="font-weight: bold; color: #2563eb; font-size: 15px;">0 รายการ</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 60px; text-align: center;">ลำดับที่</th>
+                            <th style="width: 140px;">วันเวลา</th>
+                            <th>สาขา</th>
+                            <th>รหัสอะไหล่</th>
+                            <th>ชื่ออะไหล่</th>
+                            <th style="text-align: right; width: 90px;">Stockเดิม</th>
+                            <th style="text-align: right; width: 140px; color: #1e3a8a;">รายการที่ขอซื้อจริง</th>
+                            <th>พนักงานผู้คีย์</th>
+                            <th>หมายเหตุ</th>
+                            <th style="width: 60px; text-align: center;">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="basket-table">
+                        <tr><td colspan="10" style="text-align:center; padding: 40px; color: #94a3b8;">🛒 ยังไม่มีรายการขอซื้อ ยิงของแล้วกดปุ่ม "เพิ่มรายการ"</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-excel" id="btn-export-excel" onclick="exportBasketToExcel()" disabled style="background: #cbd5e1; color: #64748b; cursor: not-allowed;">
+                    📥 Export Excel ใบขอซื้อชุดนี้สำรองไว้ (.xlsx)
+                </button>
+                
+                <button class="btn btn-submit" id="btn-submit-all" onclick="submitAllBasketToSheet()" disabled style="background: #cbd5e1; color: #64748b; cursor: not-allowed;">
+                    🚀 ส่งข้อมูลใบขอซื้อทั้งหมดลง Google Sheets (แถว A-I)
+                </button>
+
+                <a href="https://docs.google.com/spreadsheets/d/1OULfZUQ6ZZYwp1ayOvjbi-IOlXaq-MCT_b68Sm-BJnI/edit?gid=795258232#gid=795258232&fvid=582747468" 
+                   target="_blank" 
+                   class="btn btn-link-filter">
+                    🔍 เปิดดูตารางกรองข้อมูลการสลับ (แผ่นงาน Change-HQYM)
+                </a>
+                
+                <button class="btn btn-clear-all" onclick="clearWholeForm()">🧹 เคลียร์หน้าจอทั้งหมด</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwByaSwpXC8uSyP1XC1jB5a58aNctK8va3nASUspHihbPqB-CAlSTRYi4lbat2LiEEm/exec";
+
+    let masterParts = {};
+    let basketItems = [];
+    let html5QrScanner;
+
+    async function loadConfigData() {
+        try {
+            const resp = await fetch(WEB_APP_URL);
+            const data = await resp.json();
+            masterParts = data.masterParts;
+
+            const recSel = document.getElementById('recorder');
+            recSel.innerHTML = '<option value="">-- เลือกพนักงานผู้คีย์ --</option>';
+            data.smeList.forEach(n => { let o = document.createElement('option'); o.value = o.text = n; recSel.add(o); });
+
+            const brSel = document.getElementById('branch');
+            brSel.innerHTML = '<option value="">-- เลือกสาขา --</option>';
+            data.branchList.forEach(b => { let o = document.createElement('option'); o.value = o.text = b; brSel.add(o); });
+            
+            document.getElementById('status-text').innerHTML = "● ออนไลน์พร้อมใช้งาน";
+        } catch (e) { alert("❌ เชื่อมต่อหลังบ้านไม่ได้ เช็ค WEB_APP_URL ครับ"); }
+    }
+
+    function lookupPartName(val) {
+        const input = document.getElementById('partName');
+        const cleanVal = val.replace(/[- ]/g, "").trim();
+        let foundName = "";
+        for (let code in masterParts) {
+            if (code.replace(/[- ]/g, "") === cleanVal) { foundName = masterParts[code]; break; }
+        }
+        if (foundName) {
+            input.value = foundName;
+            input.className = "form-control found-item";
+        } else if (cleanVal.length > 3) {
+            input.value = "";
+            input.className = "form-control new-item";
+            input.placeholder = "⚠️ สินค้าใหม่! รบกวนพิมพ์ชื่อแจ้งตรงนี้";
+        } else {
+            input.className = "form-control";
+        }
+    }
+
+    function addItemToBasket() {
+        const branch = document.getElementById('branch').value;
+        const partId = document.getElementById('partId').value.trim();
+        const partName = document.getElementById('partName').value.trim();
+        const stock = document.getElementById('stock').value || 0;
+        const quantity = document.getElementById('quantity').value || 1;
+        const recorder = document.getElementById('recorder').value;
+        const remarks = document.getElementById('remarks').value.trim();
+
+        if (!branch || !partId || !partName || !recorder) {
+            alert("❌ ข้อมูล (สาขา, รหัส, ชื่อ, ผู้คีย์) ต้องครบก่อนเพิ่มรายการ");
+            return;
+        }
+
+        const currentTimeStr = new Date().toLocaleString('th-TH');
+
+        basketItems.push({ 
+            timeStr: currentTimeStr,
+            branch, 
+            partId, 
+            partName, 
+            stock, 
+            quantity, 
+            recorder, 
+            remarks 
+        });
+        renderBasketTable();
+
+        document.getElementById('partId').value = "";
+        document.getElementById('partName').value = "";
+        document.getElementById('partName').className = "form-control";
+        document.getElementById('stock').value = "0";
+        document.getElementById('quantity').value = "1";
+        document.getElementById('remarks').value = "";
+    }
+
+    function renderBasketTable() {
+        const tbody = document.getElementById('basket-table');
+        const countBadge = document.getElementById('item-count');
+        const submitBtn = document.getElementById('btn-submit-all');
+        const excelBtn = document.getElementById('btn-export-excel');
+        
+        tbody.innerHTML = "";
+        countBadge.innerHTML = `${basketItems.length} รายการ`;
+
+        if(basketItems.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 40px; color: #94a3b8;">🛒 ยังไม่มีรายการใบขอซื้อ</td></tr>`;
+            [submitBtn, excelBtn].forEach(b => {
+                b.disabled = true; b.style.background = "#cbd5e1"; b.style.color = "#64748b"; b.style.cursor = "not-allowed";
+            });
+            return;
+        }
+
+        submitBtn.disabled = excelBtn.disabled = false;
+        submitBtn.style.background = "#16a34a"; submitBtn.style.color = "white"; submitBtn.style.cursor = "pointer";
+        excelBtn.style.background = "#0284c7"; excelBtn.style.color = "white"; excelBtn.style.cursor = "pointer";
+
+        basketItems.forEach((item, index) => {
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align: center; color: #64748b;">${index + 1}</td>
+                <td style="color: #64748b; font-size: 11px;">${item.timeStr}</td>
+                <td><span style="color:#0369a1; font-weight:bold;">${item.branch}</span></td>
+                <td><strong>${item.partId}</strong></td>
+                <td>${item.partName}</td>
+                <td style="text-align: right;">${Number(item.stock).toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: #16a34a; font-size: 15px;">${Number(item.quantity).toLocaleString()}</td>
+                <td>${item.recorder}</td>
+                <td style="color: #64748b; font-style: italic;">${item.remarks || '-'}</td>
+                <td style="text-align: center;"><button class="btn-delete" onclick="removeItemFromBasket(${index})">ลบ</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function removeItemFromBasket(index) {
+        basketItems.splice(index, 1);
+        renderBasketTable();
+    }
+
+    function exportBasketToExcel() {
+        if(basketItems.length === 0) return;
+        const formattedData = basketItems.map((item, idx) => ({
+            "ลำดับที่": idx + 1,
+            "วันเวลา": item.timeStr,
+            "สาขา": item.branch,
+            "รหัสอะไหล่": item.partId,
+            "ชื่ออะไหล่": item.partName,
+            "Stockเดิม": Number(item.stock),
+            "รายการที่ขอซื้อจริง": Number(item.quantity),
+            "พนักงานผู้คีย์": item.recorder,
+            "หมายเหตุ": item.remarks || "-"
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(formattedData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "PR_Data_Batch");
+        XLSX.writeFile(wb, `ใบขอซื้ออะไหล่_${basketItems[0].recorder}.xlsx`);
+    }
+
+    // 🔥 ปรับปรุงโครงสร้างเน็ตเวิร์กใหม่เพื่อแก้ไขอาการค้าง
+    function submitAllBasketToSheet() {
+        if(basketItems.length === 0) return;
+        const submitBtn = document.getElementById('btn-submit-all');
+        const originalText = submitBtn.innerHTML;
+        
+        submitBtn.innerHTML = `⏳ กำลังส่งข้อมูลแบบรวดเดียว ${basketItems.length} รายการ...`;
+        submitBtn.disabled = true;
+
+        // เปลี่ยนโครงสร้างมาใช้การยิง API แบบดั้งเดิมที่แมตช์กับ Apps Script ไม่ให้เกิด Pending ค้าง
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = WEB_APP_URL;
+        form.target = 'hidden_iframe_worker';
+
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'contents';
+        input.value = JSON.stringify(basketItems);
+        form.appendChild(input);
+
+        let iframe = document.getElementById('hidden_iframe_worker');
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = 'hidden_iframe_worker';
+            iframe.name = 'hidden_iframe_worker';
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+
+        // หน่วงเวลาเซ็ตระบบฐานข้อมูลเคลียร์หน้าจอหลังส่งข้อมูลสำเร็จ
+        setTimeout(() => {
+            document.body.removeChild(form);
+            alert(`🎉 ส่งข้อมูลใบขอซื้อทั้งหมดเข้าคอลัมน์ระบบออนไลน์เรียบร้อยแล้วครับ!`);
+            clearWholeForm();
+        }, 1500);
+    }
+
+    function clearWholeForm() {
+        basketItems = [];
+        renderBasketTable();
+        document.getElementById('partId').value = "";
+        document.getElementById('partName').value = "";
+        document.getElementById('branch').value = "";
+        document.getElementById('recorder').value = "";
+        document.getElementById('remarks').value = "";
+    }
+
+    function startScanner() {
+        if (html5QrScanner) html5QrScanner.clear();
+        html5QrScanner = new Html5Qrcode("reader");
+        html5QrScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => {
+            document.getElementById('partId').value = txt;
+            lookupPartName(txt);
+            if (navigator.vibrate) navigator.vibrate(100);
+        });
+    }
+
+    window.onload = loadConfigData;
+</script>
+</body>
+</html>

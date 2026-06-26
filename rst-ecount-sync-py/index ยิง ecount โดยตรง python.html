@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบตรวจสอบสต็อกสินค้าคงคลัง</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Sarabun', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+    <nav class="bg-gradient-to-r from-slate-800 to-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-warehouse text-2xl text-emerald-400"></i>
+                <h1 class="text-lg sm:text-xl font-bold tracking-wide">ระบบตรวจสอบคลังสินค้าคงเหลือ</h1>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+                <button id="export-btn" onclick="exportToEcountExcel()" class="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-lg transition-all duration-200 shadow-sm cursor-pointer active:scale-95">
+                    <i class="fa-solid fa-file-excel text-base"></i>
+                    <span>Export Excel (ใบสั่งซื้อ ECOUNT)</span>
+                    <span id="export-count-badge" class="hidden ml-1 bg-white text-emerald-700 text-xs font-bold rounded-full px-2 py-0.5"></span>
+                </button>
+
+                <button id="refresh-btn" onclick="fetchStockData()" class="flex items-center space-x-2 bg-slate-700 hover:bg-emerald-600 text-white font-medium text-sm px-4 py-2 rounded-lg transition-all duration-200 shadow-sm border border-slate-600 hover:border-emerald-500 active:scale-95">
+                    <i id="refresh-icon" class="fa-solid fa-arrows-rotate"></i>
+                    <span id="refresh-text" class="hidden sm:inline">รีเฟรชข้อมูล</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div id="statusMessage" class="hidden mb-4 p-3 rounded-lg text-sm font-medium"></div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+                <div class="p-3 bg-emerald-100 text-emerald-700 rounded-lg"><i class="fa-solid fa-box text-xl"></i></div>
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">รายการอะไหล่ทั้งหมด</p>
+                    <h3 id="total-items" class="text-xl sm:text-2xl font-bold text-gray-700">0 รายการ</h3>
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+                <div class="p-3 bg-red-100 text-red-700 rounded-lg"><i class="fa-solid fa-triangle-exclamation text-xl"></i></div>
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">วิกฤต (สินค้าหมด/ติดลบ)</p>
+                    <h3 id="critical-items" class="text-xl sm:text-2xl font-bold text-red-600">0 รายการ</h3>
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+                <div class="p-3 bg-indigo-100 text-indigo-700 rounded-lg"><i class="fa-solid fa-clock text-xl"></i></div>
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">เวลาที่อัปเดตข้อมูลล่าสุด</p>
+                    <h3 id="last-update" class="text-sm sm:text-base font-semibold text-gray-600">-</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div class="relative w-full md:w-2/3">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400"><i class="fa-solid fa-magnifying-glass text-lg"></i></span>
+                <input type="text" id="search-input" class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 text-base" placeholder="พิมพ์รหัสสินค้า หรือ ชื่ออะไหล่ เพื่อค้นหาทันที...">
+            </div>
+            
+            <div class="flex items-center space-x-2 w-full md:w-auto justify-end">
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider hidden sm:inline">กรองสถานะ:</span>
+                <div class="inline-flex rounded-lg border border-gray-200 p-1 bg-slate-50">
+                    <button id="filter-all-btn" onclick="setStatusFilter('all')" class="px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 bg-white text-slate-700 shadow-sm cursor-pointer">
+                        ทั้งหมด
+                    </button>
+                    <button id="filter-critical-btn" onclick="setStatusFilter('critical')" class="px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 text-gray-500 hover:text-red-600 cursor-pointer flex items-center space-x-1">
+                        <span>🔴 วิกฤต/ควรสั่งเพิ่ม</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 mb-3 flex flex-wrap items-center gap-3 text-sm">
+            <label class="flex items-center space-x-2 cursor-pointer select-none">
+                <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                <span class="font-semibold text-gray-600">เลือกทั้งหมด (ที่กำลังแสดงอยู่)</span>
+            </label>
+            <button onclick="selectAllCritical()" class="text-xs font-semibold text-red-600 hover:text-red-700 underline cursor-pointer">
+                เลือกรายการเตือนสั่งซื้อทั้งหมด
+            </button>
+            <button onclick="clearSelection()" class="text-xs font-semibold text-gray-400 hover:text-gray-600 underline cursor-pointer">
+                ล้างการเลือกทั้งหมด
+            </button>
+            <span class="ml-auto text-xs font-bold text-gray-500">
+                เลือกแล้ว <span id="selected-count" class="text-emerald-600">0</span> รายการ
+            </span>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100/80 border-b border-gray-200 text-slate-700 text-xs sm:text-sm font-semibold">
+                            <th class="py-3 px-4 sm:px-6 w-10 text-center">
+                                <input type="checkbox" id="select-all-checkbox-head" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                            </th>
+                            <th class="py-3 px-4 sm:px-6 w-1/5">รหัสสินค้า</th>
+                            <th class="py-3 px-4 sm:px-6 w-2/5">ชื่ออะไหล่ / รายละเอียดสินค้า</th>
+                            <th class="py-3 px-4 sm:px-6 text-center w-28">ต่ำสุด (Min)</th>
+                            <th class="py-3 px-4 sm:px-6 text-center w-28">สูงสุด (Max)</th>
+                            <th class="py-3 px-4 sm:px-6 text-right">คงเหลือ</th>
+                            <th class="py-3 px-4 sm:px-6 text-center">การจัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-table-body" class="divide-y divide-gray-100 text-xs sm:text-sm text-gray-600">
+                        <tr><td colspan="7" class="py-12 text-center text-gray-400"><i class="fa-solid fa-spinner fa-spin text-2xl text-emerald-600 mb-2"></i><p>กำลังโหลดตารางข้อมูลสต็อกล่าสุด...</p></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 🔗 จุดเชื่อมต่อระบบหลังบ้าน (ปรับเป็น Localhost ทั้งคู่เพื่อให้รันจากเครื่องพี่ธนาได้เสถียร 100%)
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwpK5EMIj9zZMSJWq7bHPyLUTPFmOU3sV6QCXvC1aF3dKQqMSzqoU5ty9Qe-wfRIWCa_Q/exec";
+        const PYTHON_API_URL = "http://127.0.0.1:5000/api/save-minmax-bulk";
+
+        let allStockData = []; 
+        let currentFilter = 'all'; 
+        let selectedRowKeys = new Set(); 
+
+        function getItemCode(item) {
+            return String(item.PROD_CD || item.prod_cd || item["รหัสสินค้า"] || "").trim();
+        }
+
+        function getItemName(item) {
+            return String(item.PROD_NM || item.PROD_DES || item["ชื่ออะไหล่"] || "").trim();
+        }
+
+        function getItemQty(item) {
+            return parseFloat(item.QTY !== undefined ? item.QTY : (item.qty !== undefined ? item.qty : (item["สินค้าคงเหลือ"] || 0)));
+        }
+
+        function getItemMinQty(item) {
+            return item.MIN_QTY !== undefined && item.MIN_QTY !== "" ? parseFloat(item.MIN_QTY) : (item.min_qty !== undefined && item.min_qty !== "" ? parseFloat(item.min_qty) : null);
+        }
+
+        function getItemMaxQty(item) {
+            return item.MAX_QTY !== undefined && item.MAX_QTY !== "" ? parseFloat(item.MAX_QTY) : (item.max_qty !== undefined && item.max_qty !== "" ? parseFloat(item.MAX_QTY) : null);
+        }
+
+        function isNeedToOrder(item) {
+            const qty = getItemQty(item);
+            const minQty = getItemMinQty(item);
+            return qty <= 0 || (minQty !== null && qty <= minQty);
+        }
+
+        function formatThaiDateTime(rawDateStr) {
+            if (!rawDateStr) return '-';
+            try {
+                const dateObj = new Date(rawDateStr);
+                if (isNaN(dateObj.getTime())) return rawDateStr;
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                const hours = String(dateObj.getHours()).padStart(2, '0');
+                const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+                const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+                return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+            } catch (e) {
+                return rawDateStr;
+            }
+        }
+
+        function showStatus(message, isSuccess = true) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.innerText = message;
+            statusDiv.className = `p-3 rounded-lg text-sm font-medium mb-4 ${isSuccess ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`;
+            statusDiv.classList.remove('hidden');
+            setTimeout(() => statusDiv.classList.add('hidden'), 5000);
+        }
+
+        async function fetchStockData() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            const refreshIcon = document.getElementById('refresh-icon');
+            refreshBtn.disabled = true;
+            refreshIcon.classList.add('fa-spin');
+            
+            try {
+                const response = await fetch(`${WEB_APP_URL}?nocache=${new Date().getTime()}`);
+                allStockData = await response.json();
+                
+                document.getElementById('total-items').innerText = `${allStockData.length.toLocaleString()} รายการ`;
+                if (allStockData.length > 0) {
+                    const rawTime = allStockData[0].UPDATE_TIME || allStockData[0]["วันที่อัปเดตล่าสุด"] || '-';
+                    document.getElementById('last-update').innerText = formatThaiDateTime(rawTime);
+                }
+                
+                applyFilterAndSearch();
+            } catch (error) {
+                document.getElementById('stock-table-body').innerHTML = `<tr><td colspan="7" class="py-10 text-center text-red-500">การเชื่อมต่อขัดข้อง กรุณาตรวจสอบลิงก์ Web App</td></tr>`;
+            } finally {
+                refreshBtn.disabled = false;
+                refreshIcon.classList.remove('fa-spin');
+            }
+        }
+
+        function applyFilterAndSearch() {
+            const searchText = document.getElementById('search-input').value.toLowerCase().trim();
+            let totalCritical = 0;
+            allStockData.forEach(item => { if (getItemQty(item) <= 0) totalCritical++; });
+            document.getElementById('critical-items').innerText = `${totalCritical.toLocaleString()} รายการ`;
+
+            const filteredData = allStockData.filter(item => {
+                let pCode = getItemCode(item).toLowerCase();
+                let pName = getItemName(item).toLowerCase();
+                const matchesSearch = pCode.includes(searchText) || pName.includes(searchText);
+                let matchesFilter = currentFilter === 'critical' ? isNeedToOrder(item) : true;
+                return matchesSearch && matchesFilter;
+            });
+
+            displayData(filteredData);
+            updateSelectionUI();
+        }
+
+        function setStatusFilter(type) {
+            currentFilter = type;
+            document.getElementById('filter-all-btn').className = type === 'all' ? "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 bg-white text-slate-700 shadow-sm cursor-pointer" : "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 text-gray-500 hover:text-slate-700 cursor-pointer";
+            document.getElementById('filter-critical-btn').className = type === 'critical' ? "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 bg-red-500 text-white shadow-sm cursor-pointer flex items-center space-x-1" : "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 text-gray-500 hover:text-red-600 cursor-pointer flex items-center space-x-1";
+            applyFilterAndSearch();
+        }
+
+        function displayData(data) {
+            const tableBody = document.getElementById('stock-table-body');
+            if (!data || data.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-gray-400">ไม่พบข้อมูลที่ตรงตามเงื่อนไข</td></tr>`;
+                return;
+            }
+
+            let rowsHtml = '';
+            data.forEach(item => {
+                let pCode = getItemCode(item);
+                let pName = getItemName(item);
+                let qty = getItemQty(item);
+                let minQty = getItemMinQty(item);
+                let maxQty = getItemMaxQty(item);
+
+                if (!pCode || pCode.trim() === "" || pCode === "undefined") return;
+
+                const rowKey = `${pCode}_${pName}`; 
+
+                let statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 ปกติ</span>`;
+                let qtyColor = 'text-emerald-700 font-semibold';
+
+                if (qty <= 0) {
+                    statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200 animate-pulse">🔴 วิกฤต (สินค้าหมด)</span>`;
+                    qtyColor = 'text-red-600 font-bold bg-red-50 rounded px-1';
+                } else if (minQty !== null && qty <= minQty) {
+                    statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">🟡 ควรสั่งเพิ่ม</span>`;
+                    qtyColor = 'text-amber-600 font-semibold bg-amber-50 rounded px-1';
+                } else if (maxQty !== null && qty > maxQty) {
+                    statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">🔵 ล้นคลัง</span>`;
+                    qtyColor = 'text-blue-600 font-semibold';
+                }
+
+                const formattedQty = qty.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                const isChecked = selectedRowKeys.has(rowKey);
+                
+                rowsHtml += `
+                    <tr class="hover:bg-slate-50 transition-colors border-b border-gray-100 ${isChecked ? 'bg-emerald-50/40' : ''}">
+                        <td class="py-3 px-4 sm:px-6 text-center">
+                            <input type="checkbox" class="row-checkbox w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" 
+                                data-code="${pCode}" data-name="${pName}" ${isChecked ? 'checked' : ''} onchange="toggleRow('${rowKey}', this.checked)">
+                        </td>
+                        <td class="py-3 px-4 sm:px-6 font-mono text-gray-500 text-xs">${pCode}</td>
+                        <td class="py-3 px-4 sm:px-6 font-medium text-gray-800 break-words max-w-xs sm:max-w-md">
+                            ${pName} <div class="mt-0.5">${statusBadge}</div>
+                        </td>
+                        <td class="py-2 px-2 text-center">
+                            <input type="number" id="min_input_${pCode}" value="${minQty !== null ? minQty : ''}" placeholder="ระบุ Min" 
+                                class="w-full text-center border border-gray-300 rounded px-1 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                onchange="updateLocalValue('${pCode}', 'min', this.value)"
+                            />
+                        </td>
+                        <td class="py-2 px-2 text-center">
+                            <input type="number" id="max_input_${pCode}" value="${maxQty !== null ? maxQty : ''}" placeholder="ระบุ Max" 
+                                class="w-full text-center border border-gray-300 rounded px-1 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                onchange="updateLocalValue('${pCode}', 'max', this.value)"
+                            />
+                        </td>
+                        <td class="py-3 px-4 sm:px-6 text-right ${qtyColor}">${formattedQty}</td>
+                        <td class="py-2 px-4 text-center">
+                            <button onclick="saveMinMaxQty('${pCode}', '${pName.replace(/'/g, "\\'")}')" 
+                                class="bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] px-2 py-1 rounded font-medium transition cursor-pointer shadow-sm">
+                                💾 บันทึกค่า
+                            </button>
+                        </td>
+                    </tr>`;
+            });
+            tableBody.innerHTML = rowsHtml;
+        }
+
+        function updateLocalValue(prodCd, type, newValue) {
+            allStockData.forEach(item => {
+                if (getItemCode(item) === prodCd) {
+                    const val = newValue !== '' ? parseFloat(newValue) : "";
+                    if (type === 'min') {
+                        if (item.MIN_QTY !== undefined) item.MIN_QTY = val;
+                        if (item.min_qty !== undefined) item.min_qty = val;
+                    } else {
+                        if (item.MAX_QTY !== undefined) item.MAX_QTY = val;
+                        if (item.max_qty !== undefined) item.max_qty = val;
+                    }
+                }
+            });
+        }
+
+        // =====================================================================
+        // 🎯 ฟังก์ชันสำหรับกด "💾 บันทึกค่ารายแถว" วิ่งผ่าน Python เข้า ECOUNT ตรงๆ 
+        // =====================================================================
+        async function saveMinMaxQty(prodCd, prodDes) {
+            const minVal = document.getElementById(`min_input_${prodCd}`).value.trim();
+            const maxVal = document.getElementById(`max_input_${prodCd}`).value.trim();
+            
+            showStatus(`⏳ กำลังเชื่อมต่อส่งค่ารหัส ${prodCd} เข้าฐานข้อมูลคลัง...`);
+            
+            const payloadData = {
+                "items": [{
+                    "PROD_CD": prodCd,
+                    "PROD_DES": prodDes,
+                    "MIN_QTY": minVal !== '' ? minVal : "0",
+                    "MAX_QTY": maxVal !== '' ? maxVal : "0"
+                }]
+            };
+
+            try {
+                const response = await fetch(PYTHON_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payloadData)
+                });
+                
+                const result = await response.json();
+                if (result.status === "SUCCESS") {
+                    showStatus(`✅ ${result.message}`);
+                } else {
+                    showStatus(`⚠️ ${result.message}`, false);
+                }
+            } catch (error) {
+                showStatus(`❌ ไม่พบสัญญาณเปิดรันบอท Python หลังบ้านที่พอร์ต 5000 กรุณาเช็คช่อง Terminal`, false);
+            }
+        }
+
+        function toggleRow(rowKey, checked) {
+            if (checked) selectedRowKeys.add(rowKey); else selectedRowKeys.delete(rowKey);
+            updateSelectionUI();
+        }
+
+        function toggleSelectAll(checked) {
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                if (cb.closest('tr').style.display === "none") return;
+                const code = cb.getAttribute('data-code');
+                const name = cb.getAttribute('data-name');
+                const rowKey = `${code}_${name}`;
+                cb.checked = checked;
+                if (checked) selectedRowKeys.add(rowKey); else selectedRowKeys.delete(rowKey);
+            });
+            updateSelectionUI();
+        }
+
+        function selectAllCritical() {
+            allStockData.forEach(item => {
+                if (isNeedToOrder(item)) { 
+                    const rowKey = `${getItemCode(item)}_${getItemName(item)}`;
+                    selectedRowKeys.add(rowKey); 
+                }
+            });
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                if (cb.closest('tr').style.display === "none") return;
+                const code = cb.getAttribute('data-code');
+                const name = cb.getAttribute('data-name');
+                cb.checked = selectedRowKeys.has(`${code}_${name}`);
+            });
+            updateSelectionUI();
+        }
+
+        function clearSelection() {
+            selectedRowKeys.clear();
+            document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
+            updateSelectionUI();
+        }
+
+        function updateSelectionUI() {
+            const activeCheckedCount = document.querySelectorAll('#stock-table-body .row-checkbox:checked').length;
+            const countEl = document.getElementById('selected-count');
+            const badgeEl = document.getElementById('export-count-badge');
+            
+            countEl.innerText = activeCheckedCount.toLocaleString();
+            if (activeCheckedCount > 0) {
+                badgeEl.innerText = activeCheckedCount;
+                badgeEl.classList.remove('hidden');
+            } else {
+                badgeEl.classList.add('hidden');
+            }
+            
+            const rowCheckboxes = document.querySelectorAll('.row-checkbox:not([style*="display: none"])');
+            const allChecked = rowCheckboxes.length > 0 ? Array.from(rowCheckboxes).every(cb => cb.checked) : false;
+            document.getElementById('select-all-checkbox-head').checked = allChecked;
+            document.getElementById('select-all-checkbox').checked = allChecked;
+        }
+
+        document.getElementById('search-input').addEventListener('input', applyFilterAndSearch);
+
+        function exportToEcountExcel() {
+            let checkedBoxes = document.querySelectorAll('#stock-table-body .row-checkbox:checked');
+            
+            if (checkedBoxes.length === 0) {
+                alert("⚠️ กรุณาเลือกรายการสินค้าที่ต้องการ Export อย่างน้อย 1 รายการ");
+                return;
+            }
+
+            let csvContent = "\uFEFF"; 
+            csvContent += "รหัสสินค้า,จำนวน,รหัสคลัง\r\n"; 
+            let exportCount = 0;
+
+            checkedBoxes.forEach(cb => {
+                let parentRow = cb.closest('tr');
+                if (!parentRow || parentRow.style.display === "none") return;
+                
+                let pCode = cb.getAttribute('data-code');
+                let pName = cb.getAttribute('data-name');
+                
+                let item = allStockData.find(d => getItemCode(d) === pCode && getItemName(d) === pName);
+                if (!item) return;
+
+                let qty = getItemQty(item);
+                let maxInputEl = document.getElementById(`max_input_${pCode}`);
+                let maxQty = (maxInputEl && maxInputEl.value !== "") ? parseFloat(maxInputEl.value) : getItemMaxQty(item);
+                if (maxQty === null || isNaN(maxQty)) maxQty = 5; 
+
+                let orderQty = maxQty - qty; 
+                if (orderQty <= 0) orderQty = maxQty; 
+
+                let whCode = "00001"; 
+                if (pName.includes("(กุฉินารายณ์)")) whCode = "00002";
+                else if (pName.includes("(เดชอุดม)")) whCode = "00003";
+                else if (pName.includes("(ตระการพืชผล)")) whCode = "00004";
+                else if (pName.includes("(ศรีเมือง)") || pName.includes("(ศรีเมืองใหม่)")) whCode = "00005";
+                else if (pName.includes("(ศรีสะเกษ)") || pName.includes("(เมืองศรีสะเกษ)")) whCode = "00006";
+                else if (pName.includes("(เบญจลักษ์)")) whCode = "00007";
+                else if (pName.includes("(ขุขันธ์)")) whCode = "00008";
+                else if (pName.includes("(โกดังบ้านดอน)")) whCode = "00014";
+
+                csvContent += `"${pCode}","${orderQty}","=""${whCode}"""\r\n`;
+                exportCount++;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            const today = new Date().toISOString().slice(0,10);
+            
+            link.setAttribute("href", url);
+            link.setAttribute("download", `ECOUNT_PO_UPLOAD_${today}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showStatus(`📥 Export ข้อมูลจำนวน ${exportCount} รายการ แยกคลังสินค้าเรียบร้อยแล้ว`, true);
+        }
+
+        window.onload = fetchStockData;
+    </script>
+</body>
+</html>
