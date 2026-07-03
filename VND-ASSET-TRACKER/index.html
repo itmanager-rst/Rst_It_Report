@@ -193,7 +193,7 @@
     </div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx22mEmeQ3wPM0_eClc5j0AkJzKKCqv46t8CvfwLd68xylbnsTVvDfOuVimeG3ZeNYuKg/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyEznsNeep4Z0hd1t42Ogs-HT3T6N6P5xkOAAh8AmDIUiV27mV21gHJnCh0O16FNBYfhg/exec";
         
         let currentUser = null;
         let base64ImageString = ""; 
@@ -217,6 +217,7 @@
                 loading: "Loading data...", noPhoto: "No photo", selectPlaceholder: "-- Select Item --",
                 promptNewQty: "Enter new stock quantity for", msgInvalidLogin: "Invalid username or password",
                 msgSaveSuccess: "Transaction saved successfully", msgConfirmDelete: "Are you sure to delete log ID:",
+                msgConfirmDeleteItem: "Are you sure to delete item:",
                 msgSelectedViaDblClick: "Selected item:"
             },
             th: {
@@ -236,6 +237,7 @@
                 loading: "กำลังโหลดข้อมูล...", noPhoto: "ไม่มีรูปภาพ", selectPlaceholder: "-- เลือกรายการพัสดุ --",
                 promptNewQty: "ระบุจำนวนสต็อกใหม่สำหรับ", msgInvalidLogin: "Username หรือ Password ไม่ถูกต้อง",
                 msgSaveSuccess: "บันทึกสต็อกเรียบร้อย", msgConfirmDelete: "⚠️ ยืนยันการลบประวัติกิจกรรมรหัส:",
+                msgConfirmDeleteItem: "⚠️ ยืนยันการลบรายการสินค้า:",
                 msgSelectedViaDblClick: "เลือกสินค้าเรียบร้อย:"
             },
             vi: {
@@ -255,6 +257,7 @@
                 loading: "Đang tải dữ liệu...", noPhoto: "Không có ảnh", selectPlaceholder: "-- Chọn mặt hàng --",
                 promptNewQty: "Nhập số lượng kho mới cho", msgInvalidLogin: "Tên đăng nhập hoặc mật khẩu không đúng",
                 msgSaveSuccess: "Đã lưu giao dịch kho thành công", msgConfirmDelete: "⚠️ Bạn có chắc chắn muốn xóa mã log:",
+                msgConfirmDeleteItem: "⚠️ Bạn có chắc chắn muốn xóa mặt hàng:",
                 msgSelectedViaDblClick: "Đã chọn mặt hàng:"
             }
         };
@@ -413,7 +416,10 @@
                     result.data.forEach(item => {
                         let actionTd = '';
                         if(currentUser && currentUser.role === 'Admin') {
-                            actionTd = `<td class="p-2 text-center" onclick="event.stopPropagation();"><button onclick="editStockInline('${item.code}', ${item.qty})" class="bg-amber-500 text-white text-xs px-2 py-1 rounded font-bold">Edit</button></td>`;
+                            actionTd = `<td class="p-2 text-center" onclick="event.stopPropagation();">
+                                <button onclick="editStockInline('${item.code}', ${item.qty})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded font-bold">Edit</button>
+                                <button onclick="deleteItemAction('${item.code}')" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded font-bold ml-1"><i class="fa-solid fa-trash-can"></i> Delete</button>
+                            </td>`;
                         }
                         
                         const row = document.createElement('tr');
@@ -444,6 +450,18 @@
                 const result = await res.json();
                 if(result.success) { showToast("Updated", "Stock updated", "success"); loadInventory(); loadLogs(); }
             } catch(err) { console.error(err); }
+        }
+
+        // ADMIN DELETE ITEM
+        async function deleteItemAction(code) {
+            if (!currentUser || currentUser.role !== 'Admin') return;
+            if (!confirm(`${langDict[currentLang].msgConfirmDeleteItem} [${code}]?`)) return;
+            try {
+                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminDeleteItem", adminName: currentUser.fullName, itemCode: code }) });
+                const result = await res.json();
+                if(result.success) { showToast("Deleted", "Item deleted successfully", "success"); loadInventory(); loadLogs(); }
+                else { showToast("Error", result.message || "Failed to delete item", "error"); }
+            } catch(err) { console.error(err); showToast("Error", "Failed to delete item", "error"); }
         }
 
         // ADMIN ADD NEW ITEM TYPE
