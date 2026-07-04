@@ -43,7 +43,7 @@
       </div>
     </div>
 
-    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+    <div id="requisitionFormSection" class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 transition-all duration-300">
       <div class="flex items-center justify-between border-b border-gray-100 pb-2 mb-4">
         <div class="flex items-center space-x-2 text-blue-900 font-bold">
           <span>📋</span> <h2>บันทึกการเบิกพัสดุ / ตัดสต็อกสินทรัพย์</h2>
@@ -56,7 +56,7 @@
       <form id="assetForm" onsubmit="handleSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label class="block text-xs font-semibold text-gray-600 mb-1">เลือกสินทรัพย์ที่ต้องการเบิก <span class="text-red-500">*</span></label>
-          <select id="assetSelect" required class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <select id="assetSelect" required class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all">
             <option value="">-- กำลังเรียกดูรายการอุปกรณ์... --</option>
           </select>
         </div>
@@ -88,7 +88,7 @@
 
         <div id="previewContainer" class="md:col-span-3 hidden flex items-center space-x-3 p-2 bg-gray-50 rounded-lg">
           <img id="imagePreview" src="" alt="Preview" class="h-16 w-16 object-cover rounded-md border">
-          <span class="text-xs text-green-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย</span>
+          <span class="text-xs text-green-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย (บีบอัดขนาดแล้ว)</span>
         </div>
 
         <div class="md:col-span-3 pt-2">
@@ -101,10 +101,13 @@
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="p-4 bg-slate-100 border-b border-gray-200 flex justify-between items-center">
-        <div class="flex items-center space-x-2 text-gray-800 font-bold">
-          <span>📊</span> <h2>รายการสินทรัพย์คงเหลือในคลังและการจัดการ</h2>
+        <div class="flex flex-col text-left">
+          <div class="flex items-center space-x-2 text-gray-800 font-bold">
+            <span>📊</span> <h2>รายการสินทรัพย์คงเหลือในคลังและการจัดการ</h2>
+          </div>
+          <span class="text-xs text-blue-600 font-medium mt-0.5">💡 แนะนำ: คลิกที่แถวอุปกรณ์ใดก็ได้ เพื่อเลือกอุปกรณ์นั้นไปกรอกฟอร์มเบิกด้านบนทันที</span>
         </div>
-        <button onclick="loadAssets()" class="text-xs bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1 rounded-md shadow-sm cursor-pointer">🔄 รีเฟรชตารางสต็อก</button>
+        <button onclick="refreshData()" class="text-xs bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1 rounded-md shadow-sm cursor-pointer">🔄 รีเฟรชข้อมูลทั้งหมด</button>
       </div>
 
       <div class="overflow-x-auto">
@@ -134,7 +137,7 @@
     <div id="printArea" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="p-4 bg-slate-800 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div class="flex items-center space-x-2 font-bold">
-          <span>📜</span> <h2>รายงานประวัติการเบิกจ่ายสินทรัพย์ล่าสุด</h2>
+          <span>📜</span> <h2>รายงานประวัติการเบิกจ่ายสินทรัพย์ล่าสุด (แสดง 50 รายการล่าสุด)</h2>
         </div>
         <div class="flex items-center gap-2 no-print">
           <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white flex items-center font-bold">
@@ -143,7 +146,7 @@
           <button onclick="printReport()" class="text-xs bg-amber-500 hover:bg-amber-600 border border-amber-400 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-slate-900 flex items-center font-bold">
             🖨️ พิมพ์รายงาน / Save PDF
           </button>
-          <button onclick="loadLogs()" class="text-xs bg-slate-700 border border-slate-600 hover:bg-slate-600 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white">🔄 รีเฟรช</button>
+          <button onclick="refreshData()" class="text-xs bg-slate-700 border border-slate-600 hover:bg-slate-600 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white">🔄 รีเฟรช</button>
         </div>
       </div>
 
@@ -217,7 +220,7 @@
 
   <script>
     // 🔴 เปลี่ยนเป็น URL Web App ตัวล่าสุดของคุณครับ
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzpHa2Q1vASckR70rsrXt7nxdNLI3eHqWi_3traze3JDnh0xnqh_IhrBMK_qgaTtR7_/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyLFNwuS3S4qsivOHFpLQsga72HDCtHr1YXW6EcpZHZULasX3icvCQgHDIbt2d_s4PI/exec";
 
     let compressedBase64 = "";
     let newAssetBase64 = "";
@@ -226,10 +229,35 @@
     let isAdmin = false; 
 
     window.onload = function() {
-      loadAssets();
-      loadLogs();
+      refreshData();
       setupImageListeners();
     };
+
+    // 🚀 เพิ่มความเร็วด้วยการเรียกข้อมูลสต็อกและประวัติให้โหลดพร้อมกันแบบขนาน (Parallel Fetch)
+    function refreshData() {
+      Promise.all([loadAssets(), loadLogs()])
+        .catch(err => console.log("โหลดข้อมูลเสร็จสิ้น"));
+    }
+
+    function selectAssetToRequisition(assetId, remaining) {
+      if (remaining <= 0) {
+        alert("⚠️ สินทรัพย์รายการนี้หมดคลังชั่วคราว ไม่สามารถเลือกเบิกได้ค่ะ");
+        return;
+      }
+      
+      const selectEl = document.getElementById("assetSelect");
+      selectEl.value = assetId;
+      
+      const formSection = document.getElementById("requisitionFormSection");
+      formSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      formSection.classList.add("ring-4", "ring-blue-500", "bg-blue-50");
+      setTimeout(() => {
+        formSection.classList.remove("ring-4", "ring-blue-500", "bg-blue-50");
+      }, 800);
+
+      document.getElementById("quantity").focus();
+    }
 
     function toggleAdminMode() {
       if (!isAdmin) {
@@ -246,14 +274,13 @@
         .then(result => {
           if (result.authorized) {
             isAdmin = true;
-            alert("🔓 ยินดีต้อนรับผู้ดูแลระบบ สิทธิ์การแก้ไข");
+            alert("🔓 ยินดีต้อนรับผู้ดูแลระบบ สิทธิ์การแก้ไข/ลบเปิดใช้งานแล้วค่ะ");
             document.getElementById("adminAuthBtn").innerHTML = "🔓 ออกจากระบบ Admin";
             document.getElementById("adminAuthBtn").classList.replace("text-amber-400", "text-red-400");
             document.getElementById("addNewAssetBtn").classList.remove("hidden");
             document.getElementById("manageHeader").classList.remove("hidden");
-            document.getElementById("logManageHeader").classList.remove("hidden"); // 🌟 แสดงหัวคอลัมน์ลบประวัติ
-            loadAssets();
-            loadLogs();
+            document.getElementById("logManageHeader").classList.remove("hidden");
+            refreshData();
           } else {
             alert("❌ " + result.message);
           }
@@ -266,9 +293,8 @@
         document.getElementById("adminAuthBtn").classList.replace("text-red-400", "text-amber-400");
         document.getElementById("addNewAssetBtn").classList.add("hidden");
         document.getElementById("manageHeader").classList.add("hidden");
-        document.getElementById("logManageHeader").classList.add("hidden"); // 🌟 ซ่อนหัวคอลัมน์ลบประวัติ
-        loadAssets();
-        loadLogs();
+        document.getElementById("logManageHeader").classList.add("hidden");
+        refreshData();
       }
     }
 
@@ -310,7 +336,7 @@
     function loadAssets() {
       const select = document.getElementById("assetSelect");
       const tableBody = document.getElementById("assetTableBody");
-      fetch(`${WEB_APP_URL}?action=getAssets`)
+      return fetch(`${WEB_APP_URL}?action=getAssets`)
         .then(response => response.json())
         .then(assets => {
           cachedAssets = assets; 
@@ -337,17 +363,20 @@
               : `<span class="bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded">ของหมดคลัง</span>`;
 
             const manageButtons = isAdmin 
-              ? `<td class="p-3 text-center whitespace-nowrap">
+              ? `<td class="p-3 text-center whitespace-nowrap" onclick="event.stopPropagation();">
                   <button onclick="openEditModal('${asset.id}')" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs py-1 px-2.5 rounded-md shadow-sm transition-all cursor-pointer mr-1 font-bold">✏️ แก้ไข</button>
                   <button onclick="handleDeleteAsset('${asset.id}', '${asset.name}')" class="bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2.5 rounded-md shadow-sm transition-all cursor-pointer">🗑️ ลบ</button>
                  </td>`
               : `<td class="p-3 text-center hidden"></td>`;
 
             const row = `
-              <tr class="border-b border-gray-100 hover:bg-slate-50/50 transition-colors">
-                <td class="p-3 font-mono font-semibold text-gray-900">${asset.id}</td>
+              <tr onclick="selectAssetToRequisition('${asset.id}', ${asset.remaining})" class="border-b border-gray-100 hover:bg-blue-50/60 transition-all cursor-pointer group">
+                <td class="p-3 font-mono font-semibold text-gray-900 group-hover:text-blue-700">${asset.id}</td>
                 <td class="p-3">${imgHtml}</td>
-                <td class="p-3"><div class="font-bold text-gray-800">${asset.name}</div><div class="text-xs text-gray-400 mt-0.5">หมวดหมู่: ${asset.category} | ทั้งหมด: ${asset.total}</div></td>
+                <td class="p-3">
+                  <div class="font-bold text-gray-800 group-hover:text-blue-900">${asset.name}</div>
+                  <div class="text-xs text-gray-400 mt-0.5">หมวดหมู่: ${asset.category} | ทั้งหมด: ${asset.total}</div>
+                </td>
                 <td class="p-3 text-gray-600 text-xs max-w-[150px] break-words">${asset.notes}</td>
                 <td class="p-3 text-gray-700 text-xs font-medium">${asset.lastBranch}</td>
                 <td class="p-3 text-gray-700 text-xs font-medium">${asset.lastBorrower}</td>
@@ -362,7 +391,7 @@
 
     function loadLogs() {
       const logTableBody = document.getElementById("logTableBody");
-      fetch(`${WEB_APP_URL}?action=getLogs`)
+      return fetch(`${WEB_APP_URL}?action=getLogs`)
         .then(response => response.json())
         .then(logs => {
           globalLogData = logs; 
@@ -376,12 +405,9 @@
               ? `<img src="${log.image}" class="h-10 w-10 object-cover rounded border shadow-xs">` 
               : `<span class="text-gray-400 text-[10px]">ไม่มีรูป</span>`;
 
-            // 🌟 เพิ่มปุ่มลบรายการประวัติเบิกจ่ายสำหรับ Admin เท่านั้น
             const logManageButtons = isAdmin
               ? `<td class="p-3 text-center no-print whitespace-nowrap">
-                  <button onclick="handleDeleteLog('${log.txId}', '${log.assetName}', ${log.quantity})" class="bg-red-600 hover:bg-red-700 text-white text-[11px] py-1 px-2 rounded shadow-sm font-bold cursor-pointer transition-all">
-                    🗑️ ลบบันทึก
-                  </button>
+                  <button onclick="handleDeleteLog('${log.txId}', '${log.assetName}', ${log.quantity})" class="bg-red-600 hover:bg-red-700 text-white text-[11px] py-1 px-2 rounded shadow-sm font-bold cursor-pointer transition-all">🗑️ ลบบันทึก</button>
                  </td>`
               : `<td class="p-3 text-center hidden"></td>`;
 
@@ -401,7 +427,6 @@
         });
     }
 
-    // 🌟 ฟังก์ชันใหม่ยิงไปบอกหลังบ้านเพื่อขอลบบันทึกตัวนี้ออกจากประวัติ
     function handleDeleteLog(txId, assetName, qty) {
       if(confirm(`⚠️ คุณแน่ใจใช่ไหมว่าต้องการลบประวัติรายการนี้?\n\nสินทรัพย์: ${assetName}\nจำนวน: ${qty} ชิ้น\n\n*ระบบจะนำจำนวน ${qty} ชิ้นนี้ บวกคืนเข้าสู่สต็อกคลังสินค้าเดิมให้อัตโนมัติ*`)) {
         fetch(WEB_APP_URL, {
@@ -410,13 +435,10 @@
         })
         .then(() => {
           alert("🗑️ ลบประวัติเบิกและคืนสต็อกสำเร็จเรียบร้อยค่ะ!");
-          loadAssets();
-          loadLogs();
+          refreshData();
         })
         .catch(err => {
-          alert("ดำเนินการเรียบร้อย");
-          loadAssets();
-          loadLogs();
+          refreshData();
         });
       }
     }
@@ -427,7 +449,7 @@
       if(globalLogData.length === 0) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
       let csvContent = "\uFEFF"; csvContent += "วัน-เวลา,รหัสสินทรัพย์,ชื่อสินทรัพย์,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
       globalLogData.forEach(log => {
-        let row = [`"${log.timestamp}"`, `"${log.assetId}"`, `"${log.assetName.replace(/"/g, '""')}"`, log.quantity, `"${log.staffName.replace(/"/g, '""')}"`, `"${log.department}"`, `"${log.branch.replace(/"/g, '""')}"`, `"${log.notes.replace(/"/g, '""')}"`];
+        let row = [`"${log.timestamp}"`, `"${log.assetId}"`, `"${log.assetName.replace(/"/g, '""')}"`, log.quantity, `"${log.staffName.replace(/"/g, '""')}"`, `"${log.department}"`, `"${log.branch.replace(/"/g, '""')}"`, `"${log.notes.replace(/"/g, '""')}"` ];
         csvContent += row.join(",") + "\n";
       });
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -445,16 +467,21 @@
       });
     }
 
+    // 🚀 OPTIMIZED: ปรับสเกลภาพขาเข้าลดลงเหลือ 250px และลด Quality เหลือ 0.5 (รูปจะเล็กลงมาก ทำให้ส่งข้อมูลเข้า Google Sheet เร็วปรี๊ด ไม่ค้าง)
     function compressImage(file, callback) {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = function(event) {
         const img = new Image();
         img.onload = function() {
-          const canvas = document.createElement('canvas'); const MAX_WIDTH = 400; const scaleSize = MAX_WIDTH / img.width;
-          canvas.width = MAX_WIDTH; canvas.height = img.height * scaleSize;
-          const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          callback(canvas.toDataURL('image/jpeg', 0.7));
+          const canvas = document.createElement('canvas'); 
+          const MAX_WIDTH = 250; 
+          const scaleSize = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH; 
+          canvas.height = img.height * scaleSize;
+          const ctx = canvas.getContext('2d'); 
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          callback(canvas.toDataURL('image/jpeg', 0.5)); 
         };
         img.src = event.target.result;
       };
@@ -468,16 +495,16 @@
       const assetData = { action: actionType, id: document.getElementById("newAssetId").value, name: document.getElementById("newAssetName").value, category: document.getElementById("newAssetCategory").value, total: document.getElementById("newAssetTotal").value, notes: document.getElementById("newAssetNotes").value || "-", image: newAssetBase64 };
 
       fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify(assetData) })
-      .then(() => { alert(actionType === "addAsset" ? "🎉 เพิ่มสินทรัพย์ใหม่สำเร็จ!" : "✏️ อัปเดตข้อมูลพัสดุเรียบร้อย!"); toggleModal(false); loadAssets(); })
-      .catch(err => { alert("🎉 ดำเนินการบันทึกข้อมูลสำเร็จ"); toggleModal(false); loadAssets(); })
+      .then(() => { alert(actionType === "addAsset" ? "🎉 เพิ่มสินทรัพย์ใหม่สำเร็จ!" : "✏️ อัปเดตข้อมูลพัสดุเรียบร้อย!"); toggleModal(false); refreshData(); })
+      .catch(err => { toggleModal(false); refreshData(); })
       .finally(() => { addBtn.disabled = false; addBtn.innerText = "บันทึกข้อมูล"; });
     }
 
     function handleDeleteAsset(id, name) {
       if(confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบสินทรัพย์รายการนี้ออกจากคลัง?\n[${id}] - ${name}`)) {
         fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "deleteAsset", assetId: id }) })
-        .then(() => { alert("🗑️ ลบข้อมูลสำเร็จ"); loadAssets(); })
-        .catch(err => { alert("ดำเนินการลบข้อมูลเรียบร้อย"); loadAssets(); });
+        .then(() => { alert("🗑️ ลบข้อมูลสำเร็จ"); refreshData(); })
+        .catch(err => { refreshData(); });
       }
     }
 
@@ -489,8 +516,8 @@
       const formData = { staffName: document.getElementById("staffName").value, department: document.getElementById("department").value, branch: document.getElementById("branch").value, assetId: document.getElementById("assetSelect").value, quantity: document.getElementById("quantity").value, requisitionNotes: document.getElementById("requisitionNotes").value || "-", imageBase64: compressedBase64 };
 
       fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify(formData) })
-      .then(() => { alert("🎉 บันทึกการเบิกพัสดุและตัดสต็อกเรียบร้อยแล้วค่ะ"); document.getElementById("assetForm").reset(); compressedBase64 = ""; document.getElementById("previewContainer").classList.add('hidden'); loadAssets(); loadLogs(); })
-      .catch(err => { alert("🎉 บันทึกการเบิกพัสดุและตัดสต็อกเรียบร้อยแล้วค่ะ"); document.getElementById("assetForm").reset(); compressedBase64 = ""; document.getElementById("previewContainer").classList.add('hidden'); loadAssets(); loadLogs(); })
+      .then(() => { alert("🎉 บันทึกการเบิกพัสดุและตัดสต็อกเรียบร้อยแล้วค่ะ"); document.getElementById("assetForm").reset(); compressedBase64 = ""; document.getElementById("previewContainer").classList.add('hidden'); refreshData(); })
+      .catch(err => { document.getElementById("assetForm").reset(); compressedBase64 = ""; document.getElementById("previewContainer").classList.add('hidden'); refreshData(); })
       .finally(() => { submitBtn.disabled = false; btnText.innerText = "💾 บันทึกข้อมูลและตัดยอดสต็อก"; });
     }
   </script>
