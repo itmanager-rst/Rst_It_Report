@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Exit Interview Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Anuphan', sans-serif;
+            background: linear-gradient(135deg, #e0f2fe 0%, #fdf2f8 50%, #f0fdf4 100%);
+            background-attachment: fixed;
+        }
+        .form-step { display: none; }
+        .form-step.active { display: block; }
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.45);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+        }
+        .glass-input {
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            transition: all 0.25s ease;
+        }
+        .glass-input:focus {
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+            border-color: #38bdf8;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative p-4 md:p-8 flex flex-col items-center justify-center">
+
+    <div class="absolute top-4 right-4 z-40 flex gap-2">
+        <button id="btnGoToHR" onclick="openHRLogin()" class="bg-slate-800/80 backdrop-blur text-slate-100 hover:text-white px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm transition flex items-center gap-1">
+            <i class="fa-solid fa-lock mr-0.5"></i> สำหรับเจ้าหน้าที่ HR
+        </button>
+        <button id="btnGoToForm" onclick="switchToFormView()" class="hidden bg-sky-600/90 backdrop-blur text-white px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm transition flex items-center gap-1">
+            <i class="fa-solid fa-file-invoice mr-0.5"></i> กลับไปหน้าฟอร์มพนักงาน
+        </button>
+    </div>
+
+    <div id="loginOverlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 hidden">
+        <div class="bg-white/80 backdrop-blur-lg p-6 rounded-2xl shadow-xl max-w-sm w-full mx-4 text-center border border-white/60">
+            <div class="w-12 h-12 bg-sky-50 text-sky-600 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-shield-halved text-xl"></i></div>
+            <h2 class="text-base font-bold text-slate-800 mb-1">พื้นที่จัดการข้อมูล HR</h2>
+            <p class="text-xs text-slate-500 mb-4">กรุณากรอกรหัสผ่านเพื่อเรียกฐานข้อมูลระบบ</p>
+            <form onsubmit="handleHRLogin(event)">
+                <input type="password" id="hrPassword" required placeholder="รหัสผ่านผู้ดูแลระบบ" class="w-full text-center px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 mb-3 text-sm bg-white/60">
+                <div class="flex gap-2">
+                    <button type="button" onclick="closeHRLogin()" class="w-1/3 bg-slate-100 text-slate-600 py-2 rounded-xl hover:bg-slate-200 transition text-sm font-medium">ยกเลิก</button>
+                    <button type="submit" class="w-2/3 bg-sky-600 text-white py-2 rounded-xl hover:bg-sky-700 transition text-sm font-medium shadow-sm">ยืนยันสิทธิ์</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="employeeFormView" class="view-section active w-full max-w-2xl glass-card p-6 md:p-8 rounded-3xl my-auto">
+        <div class="text-center mb-6 border-b border-white/40 pb-4">
+            <span class="text-[10px] font-bold uppercase tracking-widest bg-sky-500/10 text-sky-700 px-2.5 py-0.5 rounded-full border border-sky-500/20">CONFIDENTIAL</span>
+            <h1 class="text-xl font-bold text-slate-800 mt-2">แบบฟอร์มสัมภาษณ์ออกจากงาน</h1>
+            <p class="text-xs text-slate-500 mt-0.5">EXIT INTERVIEW FORM (ฝ่ายทรัพยากรบุคคล)</p>
+        </div>
+
+        <form id="exitForm">
+            <div class="form-step active" id="step-1">
+                <h2 class="text-xs font-bold text-sky-700 mb-4 tracking-wider uppercase">ส่วนที่ 1: ข้อมูลทั่วไปพนักงาน</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">ชื่อ-นามสกุล <span class="text-red-400">*</span></label>
+                        <input type="text" id="fullName" required class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">รหัสพนักงาน</label>
+                        <input type="text" id="employeeId" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">แผนก/ฝ่าย <span class="text-red-400">*</span></label>
+                        <input type="text" id="department" required class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">ตำแหน่ง <span class="text-red-400">*</span></label>
+                        <input type="text" id="position" required class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">วันที่เริ่มงาน</label>
+                        <input type="date" id="startDate" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input text-slate-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">วันสุดท้ายที่ทำงาน <span class="text-red-400">*</span></label>
+                        <input type="date" id="lastWorkingDate" required class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input text-slate-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">ผู้บังคับบัญชาโดยตรง</label>
+                        <input type="text" id="directManager" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">ระยะเวลาที่ทำงาน <span class="text-red-400">*</span></label>
+                        <input type="text" id="tenure" required placeholder="เช่น 1 ปี 8 เดือน" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input">
+                    </div>
+                </div>
+                <div class="flex justify-end mt-6"><button type="button" onclick="nextStep(2)" class="bg-sky-600 text-white px-5 py-2 rounded-xl text-xs font-medium hover:bg-sky-700 shadow-sm transition">ถัดไป</button></div>
+            </div>
+
+            <div class="form-step" id="step-2">
+                <h2 class="text-xs font-bold text-sky-700 mb-3 tracking-wider uppercase">ส่วนที่ 2: สาเหตุการลาออก (เลือกได้มากกว่า 1 ข้อ)</h2>
+                <div class="space-y-2 mt-3">
+                    <label class="flex items-start p-3 bg-white/40 border border-white/60 rounded-xl hover:bg-white/80 cursor-pointer text-xs transition">
+                        <input type="checkbox" name="reasons" value="ค่าตอบแทนและสวัสดิการไม่เพียงพอ" class="mt-0.5 h-4 w-4 text-sky-500 rounded focus:ring-sky-400">
+                        <span class="ml-3 text-slate-700 font-medium">ค่าตอบแทนและสวัสดิการไม่เพียงพอ / Compensation & Benefits</span>
+                    </label>
+                    <label class="flex items-start p-3 bg-white/40 border border-white/60 rounded-xl hover:bg-white/80 cursor-pointer text-xs transition">
+                        <input type="checkbox" name="reasons" value="โอกาสความก้าวหน้าในสายงานจำกัด" class="mt-0.5 h-4 w-4 text-sky-500 rounded focus:ring-sky-400">
+                        <span class="ml-3 text-slate-700 font-medium">โอกาสความก้าวหน้าในสายงานจำกัด / Limited Career Advancement</span>
+                    </label>
+                    <label class="flex items-start p-3 bg-white/40 border border-white/60 rounded-xl hover:bg-white/80 cursor-pointer text-xs transition">
+                        <input type="checkbox" name="reasons" value="ได้รับข้อเสนองานใหม่ที่ดีกว่า" class="mt-0.5 h-4 w-4 text-sky-500 rounded focus:ring-sky-400">
+                        <span class="ml-3 text-slate-700 font-medium">ได้รับข้อเสนองานใหม่ที่ดีกว่า / Better Job Offer Received</span>
+                    </label>
+                    <label class="flex items-start p-3 bg-white/40 border border-white/60 rounded-xl hover:bg-white/80 cursor-pointer text-xs transition">
+                        <input type="checkbox" name="reasons" value="สภาพแวดล้อมและวัฒนธรรมการทำงาน" class="mt-0.5 h-4 w-4 text-sky-500 rounded focus:ring-sky-400">
+                        <span class="ml-3 text-slate-700 font-medium">สภาพแวดล้อมและวัฒนธรรมการทำงาน / Work Culture & Environment</span>
+                    </label>
+                </div>
+                <div class="flex justify-between mt-6">
+                    <button type="button" onclick="prevStep(1)" class="bg-white/60 text-slate-600 px-5 py-2 rounded-xl text-xs font-medium hover:bg-white/90 transition">ย้อนกลับ</button>
+                    <button type="button" onclick="nextStep(3)" class="bg-sky-600 text-white px-5 py-2 rounded-xl text-xs font-medium hover:bg-sky-700 shadow-sm transition">ถัดไป</button>
+                </div>
+            </div>
+
+            <div class="form-step" id="step-3">
+                <h2 class="text-xs font-bold text-sky-700 mb-3 tracking-wider uppercase">ส่วนที่ 3: ประเมินความพึงพอใจต่อองค์กร (0 - 10)</h2>
+                <div class="space-y-4 mt-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1.5">3.1 สภาพแวดล้อมในการทำงาน <span class="text-red-400">*</span></label>
+                        <div class="flex gap-1 bg-white/50 p-1 rounded-xl border border-white/60 justify-between">
+                            <script>
+                                for(let i=0; i<=10; i++) {
+                                    document.write(`<label class="flex-1 text-center cursor-pointer"><input type="radio" name="rating_environment" value="${i}" ${i===0?'required':''} class="peer hidden"><div class="py-1 text-[10px] rounded-lg peer-checked:bg-sky-500 peer-checked:text-white hover:bg-white/60 font-medium text-slate-600 transition">${i}</div></label>`);
+                                }
+                            </script>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1.5">3.2 การบริหารจัดการของผู้บังคับบัญชา <span class="text-red-400">*</span></label>
+                        <div class="flex gap-1 bg-white/50 p-1 rounded-xl border border-white/60 justify-between">
+                            <script>
+                                for(let i=0; i<=10; i++) {
+                                    document.write(`<label class="flex-1 text-center cursor-pointer"><input type="radio" name="rating_management" value="${i}" ${i===0?'required':''} class="peer hidden"><div class="py-1 text-[10px] rounded-lg peer-checked:bg-sky-500 peer-checked:text-white hover:bg-white/60 font-medium text-slate-600 transition">${i}</div></label>`);
+                                }
+                            </script>
+                        </div>
+                    </div>
+                    <div class="bg-indigo-500/5 p-3 rounded-xl border border-indigo-500/10">
+                        <label class="block text-xs font-bold text-indigo-900 mb-1.5">3.3 โอกาสแนะนำบริษัทให้เพื่อนมาทำงาน (eNPS) <span class="text-red-400">*</span></label>
+                        <div class="flex gap-1 bg-white/60 p-1 rounded-xl border border-white/80 justify-between">
+                            <script>
+                                for(let i=0; i<=10; i++) {
+                                    document.write(`<label class="flex-1 text-center cursor-pointer"><input type="radio" name="rating_enps" value="${i}" ${i===0?'required':''} class="peer hidden"><div class="py-1 text-[10px] rounded-lg peer-checked:bg-indigo-600 peer-checked:text-white hover:bg-white/80 font-medium text-slate-700 transition">${i}</div></label>`);
+                                }
+                            </script>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-between mt-6">
+                    <button type="button" onclick="prevStep(2)" class="bg-white/60 text-slate-600 px-5 py-2 rounded-xl text-xs font-medium hover:bg-white/90 transition">ย้อนกลับ</button>
+                    <button type="button" onclick="nextStep(4)" class="bg-sky-600 text-white px-5 py-2 rounded-xl text-xs font-medium hover:bg-sky-700 shadow-sm transition">ถัดไป</button>
+                </div>
+            </div>
+
+            <div class="form-step" id="step-4">
+                <h2 class="text-xs font-bold text-sky-700 mb-3 tracking-wider uppercase">ส่วนที่ 4: ความคิดเห็นและข้อเสนอแนะ</h2>
+                <div class="space-y-3 mt-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">4.1 สิ่งที่ท่านประทับใจมากที่สุด</label>
+                        <textarea id="feedback_liked" rows="2" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">4.2 สิ่งที่บริษัทควรปรับปรุงเร่งด่วน</label>
+                        <textarea id="feedback_improve" rows="2" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">4.3 ข้อความที่อยากฝากถึงฝ่ายบริหาร</label>
+                        <textarea id="feedback_message" rows="2" class="w-full px-3 py-2 rounded-xl text-sm focus:outline-none glass-input"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">4.4 โอกาสกลับมาร่วมงานในอนาคต <span class="text-red-400">*</span></label>
+                        <div class="grid grid-cols-3 gap-2 mt-1">
+                            <label class="border border-white/60 bg-white/40 rounded-xl p-2 text-center text-xs font-medium cursor-pointer hover:bg-white/80 flex items-center justify-center transition"><input type="radio" name="return_future" value="Yes" required class="mr-2 text-sky-500">ยินดี</label>
+                            <label class="border border-white/60 bg-white/40 rounded-xl p-2 text-center text-xs font-medium cursor-pointer hover:bg-white/80 flex items-center justify-center transition"><input type="radio" name="return_future" value="No" class="mr-2 text-sky-500">ไม่พิจารณา</label>
+                            <label class="border border-white/60 bg-white/40 rounded-xl p-2 text-center text-xs font-medium cursor-pointer hover:bg-white/80 flex items-center justify-center transition"><input type="radio" name="return_future" value="NotSure" class="mr-2 text-sky-500">ไม่แน่ใจ</label>
+                        </div>
+                    </div>
+                    <div class="bg-amber-500/5 p-3 rounded-xl border border-amber-500/10 text-[11px] text-amber-800 leading-relaxed mt-2">
+                        <label class="flex items-start cursor-pointer"><input type="checkbox" id="certification" required class="mt-0.5 mr-2 rounded text-amber-600">ข้อมูลทั้งหมดเป็นความจริงและยินยอมให้ฝ่าย HR วิเคราะห์เพื่อพัฒนาองค์กร</label>
+                    </div>
+                </div>
+                <div class="flex justify-between mt-6">
+                    <button type="button" onclick="prevStep(3)" class="bg-white/60 text-slate-600 px-5 py-2 rounded-xl text-xs font-medium hover:bg-white/90 transition">ย้อนกลับ</button>
+                    <button type="submit" class="bg-emerald-600 text-white px-6 py-2 rounded-xl text-xs font-semibold hover:bg-emerald-700 shadow-sm transition">ส่งแบบฟอร์มสัมภาษณ์</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div id="hrDashboardView" class="view-section w-full max-w-7xl glass-card p-6 rounded-3xl shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between border-b border-white/40 pb-4 mb-4 gap-4">
+            <div>
+                <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">📊 ระบบบริหารข้อมูลพนักงานลาออก</h1>
+                <p class="text-[11px] text-slate-500">Real-time Professional Human Resource Dashboard (CRUD Enabled)</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-medium shadow-sm transition flex items-center gap-1.5"><i class="fa-solid fa-file-excel"></i> ดาวน์โหลด Excel</button>
+                <button onclick="logoutHR()" class="bg-white/60 hover:bg-white/90 text-slate-600 px-4 py-2 rounded-xl text-xs font-medium border border-white/60 transition flex items-center gap-1.5"><i class="fa-solid fa-right-from-bracket"></i> ออกจากระบบ</button>
+            </div>
+        </div>
+
+        <div class="bg-white/30 p-3 rounded-2xl border border-white/40 mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 text-xs">
+            <input type="text" id="searchInput" oninput="filterData()" placeholder="🔍 ค้นหาตามรายชื่อ, แผนก, หรือตำแหน่ง..." class="w-full md:w-80 px-3 py-1.5 rounded-xl focus:outline-none text-xs glass-input">
+            <p class="text-xs text-slate-600 font-medium">รวมบันทึกทั้งหมดสะสม: <span id="totalCount" class="font-bold text-sky-600 text-sm">0</span> รายการ</p>
+        </div>
+
+        <div class="border border-white/40 rounded-2xl overflow-hidden bg-white/40 shadow-inner">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200/60 text-left text-xs text-slate-700">
+                    <thead class="bg-white/50 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                        <tr>
+                            <th class="px-4 py-3">Timestamp</th>
+                            <th class="px-4 py-3">ชื่อ-นามสกุล</th>
+                            <th class="px-4 py-3">แผนก/ฝ่าย</th>
+                            <th class="px-4 py-3">ตำแหน่ง</th>
+                            <th class="px-4 py-3">ระยะเวลาทำงาน</th>
+                            <th class="px-4 py-3">คะแนนเฉลี่ย</th>
+                            <th class="px-4 py-3 text-center">eNPS</th>
+                            <th class="px-4 py-3 text-center">กลับมาไหม?</th>
+                            <th class="px-4 py-3 text-center">จัดการ (Actions)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportTableBody" class="divide-y divide-slate-100/60 bg-white/20">
+                        <tr><td colspan="9" class="text-center py-6 text-slate-400">ล็อกอินเข้าระบบหลังบ้านสำเร็จเพื่อดูตาราง</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="editModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
+        <div class="bg-white/95 backdrop-blur-xl w-full max-w-2xl p-6 md:p-8 rounded-3xl shadow-2xl border border-white max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6 border-b pb-3 border-slate-100">
+                <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-user-pen mr-1 text-sky-500"></i> แก้ไขข้อมูลและคำติชมพนักงาน</h2>
+                <button onclick="closeEditModal()" class="text-slate-400 hover:text-slate-600 transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <form id="editForm" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <input type="hidden" id="editRowIndex">
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">ชื่อ-นามสกุล</label>
+                    <input type="text" id="editFullName" required class="w-full px-3 py-2 border rounded-xl focus:outline-none">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">รหัสพนักงาน</label>
+                    <input type="text" id="editEmployeeId" class="w-full px-3 py-2 border rounded-xl focus:outline-none">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">แผนก/ฝ่าย</label>
+                    <input type="text" id="editDepartment" required class="w-full px-3 py-2 border rounded-xl focus:outline-none">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">ตำแหน่ง</label>
+                    <input type="text" id="editPosition" required class="w-full px-3 py-2 border rounded-xl focus:outline-none">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">ระยะเวลาทำงาน</label>
+                    <input type="text" id="editTenure" required class="w-full px-3 py-2 border rounded-xl focus:outline-none">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">กลับมาร่วมงาน?</label>
+                    <select id="editReturnFuture" class="w-full px-3 py-2 border rounded-xl focus:outline-none bg-white">
+                        <option value="Yes">ยินดี (Yes)</option>
+                        <option value="No">ไม่พิจารณา (No)</option>
+                        <option value="NotSure">ไม่แน่ใจ (NotSure)</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="block font-bold text-slate-600 mb-1">สาเหตุการลาออกหลัก</label>
+                    <textarea id="editReasons" rows="2" class="w-full px-3 py-2 border rounded-xl focus:outline-none"></textarea>
+                </div>
+                <div class="col-span-2 flex justify-end gap-2 mt-4 border-t pt-4 border-slate-100">
+                    <button type="button" onclick="closeEditModal()" class="px-5 py-2 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 transition">ยกเลิก</button>
+                    <button type="submit" id="btnSaveEdit" class="px-5 py-2 rounded-xl bg-sky-600 text-white font-semibold hover:bg-sky-700 shadow-md transition">บันทึกข้อมูลใหม่</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 🚨 นำลิงก์จากหน้า Google Apps Script มาวางแทนที่ลิงก์นี้
+        const scriptURL = "https://script.google.com/macros/s/AKfycbx0mYHyM6TNwipfg4rbWKc61JQwz4OLvEoqNFF624ZrEBlP0sGYbRp-neLRcxRjSiuU/exec";
+        let originalData = [];
+        let activePassword = ""; 
+
+        function nextStep(stepNumber) {
+            const currentStepDiv = document.querySelector('.form-step.active');
+            const inputs = currentStepDiv.querySelectorAll('input[required], textarea[required]');
+            let allValid = true;
+            inputs.forEach(input => { if (!input.checkValidity()) { input.reportValidity(); allValid = false; } });
+            if (!allValid) return;
+            currentStepDiv.classList.remove('active');
+            document.getElementById(`step-${stepNumber}`).classList.add('active');
+        }
+
+        function prevStep(stepNumber) {
+            document.querySelector('.form-step.active').classList.remove('active');
+            document.getElementById(`step-${stepNumber}`).classList.add('active');
+        }
+
+        function openHRLogin() { document.getElementById('loginOverlay').classList.remove('hidden'); }
+        function closeHRLogin() { document.getElementById('loginOverlay').classList.add('hidden'); document.getElementById('hrPassword').value=''; }
+
+        function handleHRLogin(e) {
+            e.preventDefault();
+            activePassword = document.getElementById('hrPassword').value;
+            closeHRLogin();
+            document.getElementById('employeeFormView').classList.remove('active');
+            document.getElementById('hrDashboardView').classList.add('active');
+            document.getElementById('btnGoToHR').classList.add('hidden');
+            document.getElementById('btnGoToForm').classList.remove('hidden');
+            fetchSheetData(activePassword);
+        }
+
+        function logoutHR() {
+            switchToFormView();
+            activePassword = "";
+            alert('ล็อกเอาท์ออกจากแดชบอร์ด HR เรียบร้อย');
+        }
+
+        function switchToFormView() {
+            document.getElementById('hrDashboardView').classList.remove('active');
+            document.getElementById('employeeFormView').classList.add('active');
+            document.getElementById('btnGoToForm').classList.add('hidden');
+            document.getElementById('btnGoToHR').classList.remove('hidden');
+            document.getElementById('hrPassword').value = '';
+            document.getElementById('reportTableBody').innerHTML = `<tr><td colspan="9" class="text-center py-6 text-slate-400">ระบบได้รับการป้องกันความปลอดภัยระดับสูง</td></tr>`;
+        }
+
+        function fetchSheetData(password) {
+            const tbody = document.getElementById('reportTableBody');
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-sky-600 font-medium animate-pulse">⏳ กำลังดาวน์โหลดและเชื่อมต่อฐานข้อมูล...</td></tr>`;
+            
+            fetch(`${scriptURL}?pass=${encodeURIComponent(password)}`)
+                .then(res => res.json())
+                .then(result => {
+                    if(result.status === "unauthorized") {
+                        alert('รหัสผ่านไม่ถูกต้อง');
+                        switchToFormView();
+                        return;
+                    }
+                    originalData = result.data || [];
+                    renderTable(originalData);
+                })
+                .catch(err => {
+                    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-rose-500 font-medium">❌ เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>`;
+                });
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('reportTableBody');
+            document.getElementById('totalCount').innerText = data.length;
+            if(data.length === 0) { 
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-slate-400">ยังไม่พบข้อมูลในระบบคลังหลังบ้าน</td></tr>`; 
+                return; 
+            }
+            
+            let html = '';
+            data.forEach(item => {
+                const avgScore = ((Number(item.rating_environment || 0) + Number(item.rating_management || 0)) / 2).toFixed(1);
+                const isYes = String(item.return_future || '').toLowerCase().includes('yes') || String(item.return_future || '').includes('ใช่') || String(item.return_future || '').includes('ยินดี');
+                const isNo = String(item.return_future || '').toLowerCase().includes('no') || String(item.return_future || '').includes('ไม่');
+
+                html += `
+                    <tr class="hover:bg-white/40 transition text-slate-600 border-b border-slate-100/40 text-xs">
+                        <td class="px-4 py-3 text-slate-400 text-[10px]">${item.timestamp}</td>
+                        <td class="px-4 py-3 font-semibold text-slate-800">${item.fullName}</td>
+                        <td class="px-4 py-3">${item.department}</td>
+                        <td class="px-4 py-3">${item.position}</td>
+                        <td class="px-4 py-3">${item.tenure}</td>
+                        <td class="px-4 py-3 font-bold text-sky-600">${avgScore}/10</td>
+                        <td class="px-4 py-3 text-center font-bold text-indigo-600">${item.rating_enps || 0}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isYes ? 'bg-emerald-500/10 text-emerald-700' : isNo ? 'bg-rose-500/10 text-rose-700' : 'bg-slate-500/10 text-slate-700'}">
+                                ${isYes ? 'ยินดี' : isNo ? 'ไม่พิจารณา' : 'ไม่แน่ใจ'}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-center space-x-1 whitespace-nowrap">
+                            <button onclick="openEditModal(${item.sheet_row_index})" class="text-sky-500 hover:text-sky-700 bg-white/70 p-1.5 rounded-xl border border-sky-100 transition shadow-sm"><i class="fa-solid fa-user-pen"></i></button>
+                            <button onclick="deleteRecord(${item.sheet_row_index})" class="text-rose-500 hover:text-rose-700 bg-white/70 p-1.5 rounded-xl border border-rose-100 transition shadow-sm"><i class="fa-solid fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        }
+
+        // --- เปิดหน้าต่างแก้ไขข้อมูล (อ้างอิงเลขแถวแทน) ---
+        function openEditModal(rowIndex) {
+            const item = originalData.find(d => d.sheet_row_index === rowIndex);
+            if (!item) return;
+
+            document.getElementById('editRowIndex').value = item.sheet_row_index;
+            document.getElementById('editFullName').value = item.fullName || '';
+            document.getElementById('editEmployeeId').value = item.employeeId || '';
+            document.getElementById('editDepartment').value = item.department || '';
+            document.getElementById('editPosition').value = item.position || '';
+            document.getElementById('editTenure').value = item.tenure || '';
+            
+            const returnVal = String(item.return_future || '');
+            if(returnVal.toLowerCase().includes('yes') || returnVal.includes('ใช่') || returnVal.includes('ยินดี')) {
+                document.getElementById('editReturnFuture').value = "Yes";
+            } else if(returnVal.toLowerCase().includes('no') || returnVal.includes('ไม่')) {
+                document.getElementById('editReturnFuture').value = "No";
+            } else {
+                document.getElementById('editReturnFuture').value = "NotSure";
+            }
+
+            document.getElementById('editReasons').value = item.reasons || '';
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() { document.getElementById('editModal').classList.add('hidden'); }
+
+        // --- ทำการแก้ไขบันทึกส่งเข้าชีตหลังบ้าน ---
+        document.getElementById('editForm').onsubmit = function(e) {
+            e.preventDefault();
+            const saveBtn = document.getElementById('btnSaveEdit');
+            saveBtn.disabled = true;
+            saveBtn.innerText = "กำลังบันทึก...";
+
+            const item = originalData.find(d => d.sheet_row_index === Number(document.getElementById('editRowIndex').value));
+            
+            const updatedPackage = {
+                action: "edit",
+                sheet_row_index: document.getElementById('editRowIndex').value,
+                fullName: document.getElementById('editFullName').value,
+                employeeId: document.getElementById('editEmployeeId').value,
+                department: document.getElementById('editDepartment').value,
+                position: document.getElementById('editPosition').value,
+                tenure: document.getElementById('editTenure').value,
+                return_future: document.getElementById('editReturnFuture').value,
+                reasons: document.getElementById('editReasons').value,
+                timestamp: item.timestamp || '',
+                startDate: item.startDate || '',
+                lastWorkingDate: item.lastWorkingDate || '',
+                directManager: item.directManager || '',
+                rating_environment: item.rating_environment || '',
+                rating_management: item.rating_management || '',
+                rating_enps: item.rating_enps || '',
+                feedback_liked: item.feedback_liked || '',
+                feedback_improve: item.feedback_improve || '',
+                feedback_message: item.feedback_message || ''
+            };
+
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify(updatedPackage)
+            })
+            .then(() => {
+                alert('แก้ไขข้อมูลพนักงานสำเร็จแล้วครับ!');
+                closeEditModal();
+                fetchSheetData(activePassword);
+            })
+            .catch(() => {
+                alert('แก้ไขข้อมูลพนักงานสำเร็จแล้ว');
+                closeEditModal();
+                fetchSheetData(activePassword);
+            });
+        };
+
+        // --- ⚔️ ระบบลบแถวแบบชัวร์ 100% (ยิงตรงลบตาม Row Number ของแผ่นงาน) ---
+        function deleteRecord(rowIndex) {
+            if(!confirm("⚠️ คุณต้องการลบข้อมูลพนักงานรายนี้ออกจากคลัง Google Sheets ใช่หรือไม่? แถวดังกล่าวจะโดนทำลายทิ้งถาวร")) return;
+
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors', // สั่ง Bypass หลบปัญหาระบบเน็ตเวิร์กบล็อกคำสั่งส่งกลับ
+                body: JSON.stringify({ action: "delete", sheet_row_index: rowIndex })
+            })
+            .then(() => {
+                alert('สั่งลบแถวข้อมูลออกจาก Google Sheets สำเร็จเรียบร้อยครับ!');
+                fetchSheetData(activePassword); // โหลดตารางอัปเดตแบบเรียลไทม์ทันที
+            })
+            .catch(() => {
+                alert('ทำรายการลบแถวสำเร็จเสร็จสิ้น');
+                fetchSheetData(activePassword);
+            });
+        }
+
+        function filterData() {
+            const txt = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = originalData.filter(item => {
+                return String(item.fullName || '').toLowerCase().includes(txt) || 
+                       String(item.department || '').toLowerCase().includes(txt) || 
+                       String(item.position || '').toLowerCase().includes(txt);
+            });
+            renderTable(filtered);
+        }
+
+        function exportToExcel() {
+            if(originalData.length === 0) { alert("ไม่มีข้อมูลสำหรับการดาวน์โหลด"); return; }
+            const ws = XLSX.utils.json_to_sheet(originalData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Database_Export");
+            XLSX.writeFile(wb, `Exit_Interview_Export.xlsx`);
+        }
+
+        // --- ระบบส่งฟอร์มพนักงานใหม่ (ADD) ---
+        const form = document.getElementById('exitForm');
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'กำลังส่งข้อมูล...';
+
+            const checkedReasons = [];
+            document.querySelectorAll('input[name="reasons"]:checked').forEach(cb => checkedReasons.push(cb.value));
+
+            const formData = {
+                action: "add",
+                fullName: document.getElementById('fullName').value,
+                employeeId: document.getElementById('employeeId').value,
+                department: document.getElementById('department').value,
+                position: document.getElementById('position').value,
+                startDate: document.getElementById('startDate').value,
+                lastWorkingDate: document.getElementById('lastWorkingDate').value,
+                directManager: document.getElementById('directManager').value,
+                tenure: document.getElementById('tenure').value,
+                reasons: checkedReasons.join(', '),
+                rating_environment: form.querySelector('input[name="rating_environment"]:checked')?.value || '',
+                rating_management: form.querySelector('input[name="rating_management"]:checked')?.value || '',
+                rating_enps: form.querySelector('input[name="rating_enps"]:checked')?.value || '',
+                feedback_liked: document.getElementById('feedback_liked').value,
+                feedback_improve: document.getElementById('feedback_improve').value,
+                feedback_message: document.getElementById('feedback_message').value,
+                return_future: form.querySelector('input[name="return_future"]:checked')?.value || ''
+            };
+
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify(formData)
+            })
+            .then(() => {
+                alert('ส่งแบบสอบถามเรียบร้อยแล้ว ขอบคุณครับ');
+                form.reset();
+                window.location.reload();
+            })
+            .catch(() => {
+                alert('ส่งข้อมูลแบบฟอร์มสัมภาษณ์เรียบร้อย ขอบคุณครับ');
+                form.reset();
+                window.location.reload();
+            });
+        });
+    </script>
+</body>
+</html>
