@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yanmar BestCare - Professional Web Database</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; }
+    .yanmar-red { color: #da291c; }
+    .bg-yanmar-red { background-color: #da291c; }
+    .hover-bg-yanmar:hover { background-color: #fcebeb; color: #da291c; }
+    .sidebar-active { background-color: #fcebeb; color: #da291c; font-weight: 600; border-right: 4px solid #da291c; }
+    .page-section { display: none; }
+    .page-section.active { display: block; }
+  </style>
+</head>
+<body class="text-slate-700 min-h-screen flex flex-col">
+
+  <!-- 🔒 LOGIN / REGISTER OVERLAY PANEL -->
+  <div id="login-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-100 p-8">
+      
+      <!-- ฟอร์มล็อกอิน (Login Card) -->
+      <div id="login-box">
+        <div class="text-center mb-6">
+          <span class="bg-yanmar-red text-white px-3 py-1 rounded text-xs font-bold tracking-wider uppercase">BestCare Pro</span>
+          <h2 class="text-2xl font-bold text-slate-900 mt-3">Rst TrackXcavator</h2>
+          <p class="text-slate-400 text-xs mt-1">กรุณาลงชื่อเข้าใช้งานระบบด้วยสิทธิ์บัญชีในชีต Users</p>
+        </div>
+        
+        <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อผู้ใช้งาน (Username)</label>
+            <input type="text" id="login-username" placeholder="เช่น tana" class="w-full bg-slate-50 border border-gray-300 focus:border-red-500 focus:ring-1 focus:ring-red-500 rounded-xl p-3 text-sm outline-none transition" required>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">รหัสผ่าน (Password)</label>
+            <input type="password" id="login-password" placeholder="••••" class="w-full bg-slate-50 border border-gray-300 focus:border-red-500 focus:ring-1 focus:ring-red-500 rounded-xl p-3 text-sm outline-none transition" required>
+          </div>
+          <div id="login-error-msg" class="text-rose-600 text-xs font-medium hidden text-center bg-rose-50 p-2 rounded-lg"></div>
+          <button type="submit" id="btn-login-submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold p-3 rounded-xl text-sm transition shadow-md cursor-pointer">
+            เข้าสู่ระบบความปลอดภัย
+          </button>
+        </form>
+        <div class="text-center mt-4">
+          <button onclick="toggleAuthBox('register')" class="text-xs text-slate-500 hover:text-red-600 font-medium transition cursor-pointer">ยังไม่มีบัญชี? 👤 สมัครสมาชิกใหม่ที่นี่</button>
+        </div>
+      </div>
+
+      <!-- ฟอร์มสมัครสมาชิก (Register Card - ซ่อนอยู่เริ่มต้น) -->
+      <div id="register-box" class="hidden">
+        <div class="text-center mb-6">
+          <span class="bg-emerald-600 text-white px-3 py-1 rounded text-xs font-bold tracking-wider uppercase">Register</span>
+          <h2 class="text-2xl font-bold text-slate-900 mt-3">สร้างบัญชีผู้ใช้ใหม่</h2>
+          <p class="text-slate-400 text-xs mt-1">กรอกชื่อเพื่อลงทะเบียนสิทธิ์ User เพิ่มลงฐานข้อมูล</p>
+        </div>
+        
+        <form id="form-register" onsubmit="handleRegister(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ตั้งชื่อผู้ใช้งาน (New Username)</label>
+            <input type="text" id="reg-username" placeholder="ภาษาอังกฤษเท่านั้น เช่น jack" class="w-full bg-slate-50 border border-gray-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-sm outline-none transition" required>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">ตั้งรหัสผ่าน (Password)</label>
+            <input type="password" id="reg-password" placeholder="••••" class="w-full bg-slate-50 border border-gray-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-sm outline-none transition" required>
+          </div>
+          <div id="reg-error-msg" class="text-rose-600 text-xs font-medium hidden text-center bg-rose-50 p-2 rounded-lg"></div>
+          <div id="reg-success-msg" class="text-emerald-600 text-xs font-medium hidden text-center bg-emerald-50 p-2 rounded-lg"></div>
+          <button type="submit" id="btn-reg-submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-3 rounded-xl text-sm transition shadow-md cursor-pointer">
+            🎯 ยืนยันการสมัครสมาชิก
+          </button>
+        </form>
+        <div class="text-center mt-4">
+          <button onclick="toggleAuthBox('login')" class="text-xs text-slate-500 hover:text-slate-900 font-medium transition cursor-pointer">🔙 กลับไปหน้าเข้าสู่ระบบ</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 💻 MAIN SYSTEM APPLICATION -->
+  <div id="main-app" class="opacity-30 pointer-events-none transition-all duration-300 flex flex-col flex-1">
+    <!-- NAVBAR -->
+    <nav class="bg-white border-b border-gray-200 sticky top-0 z-50 px-6 py-3 flex justify-between items-center shadow-sm">
+      <div class="flex items-center space-x-4">
+        <span class="text-xl font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+          <span class="bg-yanmar-red text-white px-2.5 py-0.5 rounded text-sm font-bold">BestCare</span>
+          <span class="text-slate-500 font-normal text-base">| Rst TrackXcavator</span>
+        </span>
+      </div>
+      
+      <div class="flex items-center space-x-4">
+        <div class="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-gray-200">
+          <span class="text-xs text-slate-500 font-medium pl-1">ผู้ใช้งาน:</span>
+          <span id="display-user-name" class="text-xs font-bold text-slate-800">-</span>
+          <span id="role-badge" class="text-[10px] bg-slate-300 text-slate-700 px-2 py-0.5 rounded-md font-bold uppercase">-</span>
+        </div>
+        <button onclick="handleLogout()" class="text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-2 rounded-lg border border-rose-200 transition cursor-pointer">
+          🚪 ออกจากระบบ
+        </button>
+      </div>
+    </nav>
+
+    <div class="flex flex-1">
+      <!-- SIDEBAR -->
+      <aside class="w-64 bg-white border-r border-gray-200 p-4 hidden md:flex flex-col justify-between">
+        <div class="space-y-1">
+          <div class="text-xs font-bold text-gray-400 px-3 uppercase tracking-wider mb-2">เมนูระบบ</div>
+          <button onclick="switchPage('dashboard', this)" class="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition sidebar-active text-left cursor-pointer">
+            <span>📊</span> <span>รายการเครื่องจักร (PM)</span>
+          </button>
+          <button onclick="switchPage('report', this)" class="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 hover-bg-yanmar transition text-left cursor-pointer">
+            <span>📄</span> <span>รายงานการบริการ</span>
+          </button>
+        </div>
+        <div class="text-[11px] text-gray-400 text-center border-t border-gray-100 pt-4">
+          Yanmar System Management v4.0
+        </div>
+      </aside>
+
+      <!-- MAIN DISPLAY -->
+      <main class="flex-1 p-6 lg:p-8 overflow-y-auto">
+        
+        <!-- แท็บที่ 1: แดชบอร์ดรายการเครื่องจักรและการอนุมัติ -->
+        <section id="page-dashboard" class="page-section active">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <div>
+              <h1 class="text-2xl font-bold text-slate-900 tracking-tight">รายการเครื่องจักร (PM)</h1>
+              <p class="text-slate-500 text-xs mt-0.5">ตรวจสอบชั่วโมง และอนุมัติสิทธิ์คูปองงานบริการรายคัน</p>
+            </div>
+            <button onclick="loadDashboardData()" id="btn-refresh" class="bg-white border border-gray-300 hover:bg-gray-50 text-slate-700 font-medium px-4 py-2 rounded-xl text-sm shadow-sm transition cursor-pointer">
+              🔄 รีเฟรชข้อมูล
+            </button>
+          </div>
+
+          <!-- SUMMARY CARDS -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-start">
+              <div>
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider">ค่าบริการสะสมทั้งหมด</p>
+                <h3 class="text-3xl font-bold text-slate-900 mt-2" id="val-total-cost">0</h3>
+                <p class="text-[11px] text-slate-500 mt-3">บาท (THB)</p>
+              </div>
+              <span class="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl text-lg">💰</span>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-start">
+              <div>
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider">เครื่องจักรค้างรอบ PM</p>
+                <h3 class="text-3xl font-bold text-rose-600 mt-2" id="val-pm-alert">0</h3>
+                <p class="text-[11px] text-rose-500 mt-3 font-medium">• รอการตรวจสอบ</p>
+              </div>
+              <span class="p-2.5 bg-rose-50 text-rose-600 rounded-xl text-lg">⚠️</span>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-start">
+              <div>
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider">เอกสารค้าง INVOICE</p>
+                <h3 class="text-3xl font-bold text-amber-600 mt-2" id="val-incomplete-invoice">0</h3>
+                <p class="text-[11px] text-amber-600 mt-3 font-medium">• รายการค้างตรวจ</p>
+              </div>
+              <span class="p-2.5 bg-amber-50 text-amber-600 rounded-xl text-lg">📋</span>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-start">
+              <div>
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider">รถขุดในระบบสะสม</p>
+                <h3 class="text-3xl font-bold text-indigo-600 mt-2" id="val-total-machines">0</h3>
+                <p class="text-[11px] text-indigo-500 mt-3">• เครื่องลงทะเบียน</p>
+              </div>
+              <span class="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-lg">🚜</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 lg:col-span-3">
+              <h2 class="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <span class="h-2 w-2 bg-red-600 rounded-full animate-pulse"></span>
+                ตารางบันทึกสถานะการทำรอบบริการ (Service Report)
+              </h2>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="border-b border-gray-200 text-slate-400 text-xs font-semibold uppercase bg-gray-50">
+                      <th class="py-3 px-4">หมายเลขเครื่อง</th>
+                      <th class="py-3 px-3">รุ่น</th>
+                      <th class="py-3 px-3">ชั่วโมงทำงานสะสม</th>
+                      <th class="py-3 px-4">ชื่อลูกค้า</th>
+                      <th class="py-3 px-3 text-center">ชั่วโมงบริการล่าสุด</th>
+                      <th class="py-3 px-3">ชั่วโมงบริการถัดไป</th>
+                      <th class="py-3 px-3 text-center">สถานะ</th>
+                      <th class="py-3 px-3 text-center">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-pm-body" class="text-sm divide-y divide-gray-100">
+                    <tr><td colspan="8" class="p-6 text-center text-slate-400">กำลังเชื่อมโยงข้อมูลคลาวด์ Google Sheets...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ฟอร์มขวา -->
+            <div class="space-y-6 lg:col-span-1">
+              <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+                <h2 class="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2"><span>⏱️</span> อัปเดตชั่วโมงทำงานจริง</h2>
+                <form id="form-hours" onsubmit="submitHours(event)" class="space-y-3 mt-3">
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">หมายเลขเครื่อง</label>
+                    <input type="text" id="hours-machine-id" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs outline-none" required>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">ชั่วโมงใช้งานหน้าปัด</label>
+                    <input type="number" id="hours-current" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs outline-none" required>
+                  </div>
+                  <button type="submit" class="w-full bg-slate-900 text-white font-bold p-2.5 rounded-xl text-xs transition cursor-pointer">บันทึกชั่วโมงปัจจุบัน</button>
+                </form>
+              </div>
+
+              <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+                <h2 class="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2"><span>🎟️</span> บันทึกรับใบงานบริการ/คูปอง</h2>
+                <form id="form-ticket" onsubmit="submitTicket(event)" class="space-y-3 mt-3">
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">เลขคูปอง</label>
+                      <input type="text" id="form-ticket-id" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">หมายเลขเครื่อง</label>
+                      <input type="text" id="form-machine-id" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">รุ่นรถขุด</label>
+                      <input type="text" id="form-model" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อลูกค้า</label>
+                      <input type="text" id="form-customer" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">รอบเป้าหมาย</label>
+                      <input type="number" id="form-pm-round" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    
+                    <div>
+  <label class="block text-xs font-semibold text-slate-500 mb-1">ชม. จริงหน้างาน (จากฐานข้อมูล)</label>
+  <input type="number" id="form-actual-hours" class="w-full bg-slate-200 border border-gray-300 rounded-xl p-2.5 text-xs text-slate-500 cursor-not-allowed" readonly placeholder="ระบบดึงให้อัตโนมัติ">
+</div>
+
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">ค่าใช้จ่าย</label>
+                      <input type="number" id="form-cost" value="0" class="w-full bg-slate-50 border border-gray-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-500 mb-1">เลข Invoice</label>
+                      <input type="text" id="form-invoice" value="-">
+                    </div>
+                  </div>
+                  <button type="submit" class="w-full bg-yanmar-red text-white font-bold p-3 rounded-xl text-xs transition cursor-pointer">บันทึกลงฐานข้อมูล</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- แท็บที่ 2: รายงานประวัติ -->
+        <section id="page-report" class="page-section">
+          <div class="flex justify-between items-center mb-6">
+            <div>
+              <h1 class="text-2xl font-bold text-slate-900">รายงานการบริการ</h1>
+              <p class="text-slate-500 text-xs mt-0.5">ประวัติประมวลผลข้อมูลน้ำมันเครื่องและค่าบริการจากแท็บ PM_Log</p>
+            </div>
+            <button onclick="loadReportData()" class="bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl cursor-pointer">🔄 รีเฟรชประวัติ</button>
+          </div>
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-gray-50 border-b border-gray-200 text-slate-400 text-xs font-bold uppercase">
+                  <th class="p-4">Ticket ID</th><th class="p-4">หมายเลขเครื่อง</th><th class="p-4">รุ่น</th><th class="p-4">ลูกค้า</th>
+                  <th class="p-4">รอบเป้าหมาย PM</th><th class="p-4">ชั่วโมงบริการจริง</th><th class="p-4">วันที่ให้บริการ</th>
+                  <th class="p-4 text-right">ค่าใช้จ่าย (THB)</th><th class="p-4">เลขที่ใบแจ้งหนี้</th>
+                </tr>
+              </thead>
+              <tbody id="table-report-body" class="text-sm divide-y divide-gray-100">
+                <tr><td colspan="9" class="p-6 text-center text-slate-400">กำลังดึงรายการ...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // ⚠️ นำ Web App URL มาใส่ที่นี่ครับ
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXnVH0zfa7-MtXReJoCL7JDWXrUCMmfGKU1Hsc8-sotU243pWGu0hzpK_shpIJ4C6d/exec"; 
+    
+    let sessionUser = null;
+    let sessionRole = null;
+
+    // ฟังก์ชันสลับหน้า Login และ Register
+    function toggleAuthBox(mode) {
+      if(mode === 'register') {
+        document.getElementById('login-box').classList.add('hidden');
+        document.getElementById('register-box').classList.remove('hidden');
+      } else {
+        document.getElementById('register-box').classList.add('hidden');
+        document.getElementById('login-box').classList.remove('hidden');
+      }
+      document.getElementById('login-error-msg').classList.add('hidden');
+      document.getElementById('reg-error-msg').classList.add('hidden');
+      document.getElementById('reg-success-msg').classList.add('hidden');
+    }
+
+    // ฟังก์ชันจัดการสมัครสมาชิกหน้าบ้าน
+    function handleRegister(event) {
+      event.preventDefault();
+      const userVal = document.getElementById('reg-username').value.trim();
+      const passVal = document.getElementById('reg-password').value.trim();
+      const errEl = document.getElementById('reg-error-msg');
+      const succEl = document.getElementById('reg-success-msg');
+      const btn = document.getElementById('btn-reg-submit');
+
+      errEl.classList.add('hidden');
+      succEl.classList.add('hidden');
+      btn.innerText = "⏳ กำลังบันทึกบัญชีลงคลาวด์...";
+
+      fetch(GAS_WEB_APP_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "registerUser",
+          username: userVal,
+          password: passVal
+        })
+      })
+      .then(res => res.json())
+      .then(res => {
+        if(res.status === "success") {
+          succEl.innerText = "🎉 สมัครสมาชิกสำเร็จ! ระบบเพิ่มชื่อคุณเข้าชีต Users เรียบร้อย สามารถกดย้อนกลับไปล็อกอินได้เลย";
+          succEl.classList.remove('hidden');
+          document.getElementById('form-register').reset();
+        } else {
+          errEl.innerText = "❌ " + res.message;
+          errEl.classList.remove('hidden');
+        }
+      })
+      .catch(() => {
+        errEl.innerText = "❌ เกิดข้อผิดพลาดทางเทคนิค ไม่สามารถเชื่อมต่อ Apps Script ได้";
+        errEl.classList.remove('hidden');
+      })
+      .finally(() => btn.innerText = "🎯 ยืนยันการสมัครสมาชิก");
+    }
+
+    function handleLogin(event) {
+      event.preventDefault();
+      const userInp = document.getElementById('login-username').value.trim();
+      const passInp = document.getElementById('login-password').value.trim();
+      const errorEl = document.getElementById('login-error-msg');
+      const btn = document.getElementById('btn-login-submit');
+
+      errorEl.classList.add('hidden');
+      btn.innerText = "⏳ ยืนยันสิทธิ์สตรีมมิ่งข้อมูล...";
+
+      fetch(`${GAS_WEB_APP_URL}?action=verifyLogin&user=${encodeURIComponent(userInp)}&pass=${encodeURIComponent(passInp)}`)
+      .then(res => res.json())
+      .then(res => {
+        if(res.status === "success") {
+          sessionUser = res.username;
+          sessionRole = res.role;
+          
+          document.getElementById('login-overlay').classList.add('hidden');
+          document.getElementById('main-app').classList.remove('opacity-30', 'pointer-events-none');
+          
+          document.getElementById('display-user-name').innerText = sessionUser;
+          const rBadge = document.getElementById('role-badge');
+          rBadge.innerText = sessionRole;
+          rBadge.className = "text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md font-bold border border-emerald-200";
+          
+          loadDashboardData();
+        } else {
+          errorEl.innerText = "❌ " + res.message;
+          errorEl.classList.remove('hidden');
+          btn.innerText = "เข้าสู่ระบบความปลอดภัย";
+        }
+      })
+      .catch(err => {
+        errorEl.innerText = "❌ เชื่อมต่อล้มเหลว ตรวจสอบความถูกต้องของลิงก์ Web App";
+        errorEl.classList.remove('hidden');
+        btn.innerText = "เข้าสู่ระบบความปลอดภัย";
+      });
+    }
+
+    function handleLogout() { window.location.reload(); }
+
+    function switchPage(pageId, element) {
+      document.querySelectorAll('.page-section').forEach(sec => sec.classList.remove('active'));
+      document.getElementById(`page-${pageId}`).classList.add('active');
+      document.querySelectorAll('aside button').forEach(btn => {
+        btn.classList.remove('sidebar-active');
+        btn.classList.add('text-slate-600', 'hover-bg-yanmar');
+      });
+      element.classList.add('sidebar-active');
+      if(pageId === 'report') loadReportData();
+    }
+
+    function loadDashboardData() {
+      const btn = document.getElementById('btn-refresh');
+      btn.innerText = "⏳...";
+      fetch(`${GAS_WEB_APP_URL}?action=getDashboard`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('val-total-cost').innerText = Number(data.totalCostSum || 0).toLocaleString();
+          document.getElementById('val-pm-alert').innerText = data.pmAlertCount;
+          document.getElementById('val-incomplete-invoice').innerText = data.incompleteInvoiceCount;
+          document.getElementById('val-total-machines').innerText = data.totalRegisteredMachines;
+          const tbody = document.getElementById('table-pm-body');
+          tbody.innerHTML = "";
+          if(!data.pmAlerts || data.pmAlerts.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">❌ ไม่มีเครื่องจักรค้างรอบเช็กระยะ</td></tr>`;
+          } else {
+            data.pmAlerts.forEach(item => {
+              let badgeColor = item.status === "Pending" ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200";
+              let actionButton = item.status === "Pending" 
+                ? `<button onclick="quickApprove('${item.machineId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer">✔️ อนุมัติ</button>`
+                : `<span class="text-xs text-slate-400 font-medium">อนุมัติแล้ว</span>`;
+              tbody.innerHTML += `
+                <tr class="hover:bg-slate-50 border-b border-slate-100">
+                  <td class="p-4 font-bold text-slate-900 font-mono">${item.machineId}</td><td class="p-4 text-slate-500">${item.model}</td>
+                  <td class="p-4 font-mono font-bold text-amber-600">${item.currentHours} ชม.</td><td class="p-4 font-medium">${item.customer}</td>
+                  <td class="p-4 text-center font-semibold text-slate-500">${item.lastPm}</td><td class="p-4 font-mono font-bold text-slate-700">${item.nextPm} ชม.</td>
+                  <td class="p-4 text-center"><span class="${badgeColor} text-xs px-2.5 py-1 rounded-full font-semibold">${item.status}</span></td>
+                  <td class="p-4 text-center">${actionButton}</td>
+                </tr>`;
+            });
+          }
+        }).finally(() => btn.innerText = "🔄 รีเฟรชข้อมูล");
+    }
+
+    function quickApprove(machineId) {
+      if(!confirm(`ยืนยันการอนุมัติผ่านใบงานรอบ PM ของเครื่องจักร ${machineId}?`)) return;
+      fetch(GAS_WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "approveMachine", machineId: machineId }) })
+      .then(res => res.json()).then(res => {
+        if(res.status === "success") { alert("อนุมัติสำเร็จ!"); loadDashboardData(); }
+      });
+    }
+
+    function loadReportData() {
+      const tbody = document.getElementById('table-report-body');
+      tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">กำลังดาวน์โหลดข้อมูลบันทึกประวัติ...</td></tr>`;
+      fetch(`${GAS_WEB_APP_URL}?action=getReportList`)
+        .then(res => res.json()).then(rows => {
+          tbody.innerHTML = "";
+          if (rows.length === 0) return;
+          rows.forEach(r => {
+            let formatedDate = r.serviceDate;
+            if(r.serviceDate) {
+              const d = new Date(r.serviceDate);
+              if(!isNaN(d.getTime())) formatedDate = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth()+1).padStart(2, '0')}/${d.getFullYear()}`;
+            }
+            tbody.innerHTML += `
+              <tr class="text-slate-600 hover:bg-slate-50 border-b border-slate-100">
+                <td class="p-4 font-medium text-slate-500 font-mono">${r.ticketId}</td><td class="p-4 font-bold text-slate-900 font-mono">${r.machineId}</td>
+                <td class="p-4">${r.model}</td><td class="p-4 font-medium">${r.customerName}</td><td class="p-4 font-semibold text-center text-rose-600">${r.pmRound}</td>
+                <td class="p-4 font-mono font-semibold">${r.actualHours}</td><td class="p-4 text-xs text-slate-500">${formatedDate}</td>
+                <td class="p-4 font-mono text-right font-bold pr-8">${Number(r.cost || 0).toLocaleString()}</td><td class="p-4 text-slate-500 font-mono">${r.invoiceNo || '-'}</td>
+              </tr>`;
+          });
+        });
+    }
+
+    function submitHours(event) {
+      event.preventDefault();
+      const payload = { action: "updateHours", machineId: document.getElementById('hours-machine-id').value.trim(), currentHours: document.getElementById('hours-current').value };
+      fetch(GAS_WEB_APP_URL, { method: "POST", body: JSON.stringify(payload) })
+      .then(res => res.json()).then(() => { alert("บันทึกชั่วโมงและตั้งสถานะรอตรวจแล้วครับ!"); loadDashboardData(); document.getElementById('form-hours').reset(); });
+    }
+
+    function submitTicket(event) {
+      event.preventDefault();
+      const payload = {
+        action: "insertTicket", ticketId: document.getElementById('form-ticket-id').value.trim(), machineId: document.getElementById('form-machine-id').value.trim(),
+        model: document.getElementById('form-model').value.trim(), customerName: document.getElementById('form-customer').value.trim(),
+        pmRound: document.getElementById('form-pm-round').value, actualHours: document.getElementById('form-actual-hours').value,
+        cost: document.getElementById('form-cost').value, invoiceNo: document.getElementById('form-invoice').value.trim()
+      };
+      fetch(GAS_WEB_APP_URL, { method: "POST", body: JSON.stringify(payload) })
+      .then(res => res.json()).then(() => { alert("บันทึกคูปองและเปลี่ยนสถานะในตารางเรียบร้อย!"); loadDashboardData(); document.getElementById('form-ticket').reset(); });
+    }
+  </script>
+</body>
+</html>
