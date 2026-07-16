@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Spare Parts Defect Logger & Statistics</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        body { 
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; 
+            background-color: #f1f5f9; 
+            margin: 0; 
+            padding: 20px; 
+            color: #1e293b;
+        }
+        h2 { margin-top: 0; color: #0f172a; text-align: center; margin-bottom: 25px; font-weight: 700; }
+        
+        /* Layout สองฝั่งซ้าย-ขวา */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr; 
+            gap: 25px;
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+
+        /* การ์ดสไตล์ Enterprise */
+        .card {
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+            box-sizing: border-box;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            transition: all 0.3s ease;
+        }
+        .card h3 { margin-top: 0; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; color: #334155; font-size: 1.3rem; display: flex; align-items: center; gap: 8px; }
+
+        /* กล้องถ่ายรูป */
+        video { width: 100%; max-height: 260px; border-radius: 12px; background-color: #0f172a; object-fit: cover; }
+        .grid-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 15px 0 25px 0; }
+        
+        /* ปุ่มถ่ายภาพพรีเมียม */
+        .part-btn { 
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); 
+            border: none; 
+            border-radius: 10px; 
+            padding: 18px 10px; 
+            font-size: 1.1rem; 
+            font-weight: bold; 
+            color: white; 
+            cursor: pointer; 
+            transition: all 0.2s ease; 
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2); 
+        }
+        .part-btn:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.3); 
+        }
+        .part-btn:active { transform: translateY(1px); }
+
+        /* ส่วนแสดงผลข้อมูลฝั่งซ้าย */
+        .list-container { max-height: 250px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+        .item-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 12px; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; background: white; transition: background 0.2s; }
+        .item-row:hover { background: #f8fafc; }
+        .item-row:last-child { border-bottom: none; }
+        
+        .item-detail-flex { display: flex; align-items: center; gap: 12px; }
+        .img-thumbnail { width: 65px; height: 50px; border-radius: 8px; object-fit: cover; border: 1px solid #cbd5e1; cursor: zoom-in; transition: transform 0.2s; }
+        .img-thumbnail:hover { transform: scale(1.05); }
+        
+        .item-info b { color: #1e3a8a; font-size: 1rem; }
+        .action-btns { display: flex; gap: 6px; }
+        
+        /* ปุ่มจัดการรายการ */
+        .btn { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.75rem; font-weight: 600; color: white; transition: all 0.2s; }
+        .btn-view { background-color: #0ea5e9; }
+        .btn-view:hover { background-color: #0284c7; }
+        .btn-edit { background-color: #f59e0b; }
+        .btn-edit:hover { background-color: #d97706; }
+        .btn-delete { background-color: #ef4444; }
+        .btn-delete:hover { background-color: #dc2626; }
+
+        /* Skeleton Loading Animation */
+        .skeleton-row { display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid #e2e8f0; }
+        .skeleton-thumbnail { width: 65px; height: 50px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
+        .skeleton-text { width: 120px; height: 15px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 4px; }
+        .skeleton-btns { width: 100px; height: 30px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+        /* แดชบอร์ดฝั่งขวา */
+        .filter-container { background: #f8fafc; padding: 18px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        .date-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .date-inputs label { font-size: 0.85rem; font-weight: 600; color: #475569; display: flex; flex-direction: column; gap: 6px; }
+        .date-inputs input { padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 0.9rem; outline: none; transition: border 0.2s; }
+        .date-inputs input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn-excel { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 10px; padding: 14px; font-size: 0.95rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.2); transition: all 0.2s; }
+        .btn-excel:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(16, 185, 129, 0.3); }
+        .btn-print { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; border: none; border-radius: 10px; padding: 14px; font-size: 0.95rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2); transition: all 0.2s; }
+        .btn-print:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(99, 102, 241, 0.3); }
+
+        /* KPI Container */
+        .kpi-container { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 25px; }
+        .kpi-box { background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border-top: 4px solid #3b82f6; padding: 22px; border-radius: 12px; text-align: center; box-shadow: inset 0 0 0 1px #e2e8f0; }
+        .kpi-title { font-size: 0.85rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; }
+        .kpi-value { font-size: 2.2rem; font-weight: 800; margin-top: 8px; color: #1e3a8a; }
+
+        /* ตารางสถิติ */
+        .stats-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; }
+        .stats-table th { background-color: #f8fafc; color: #475569; font-weight: 700; text-align: left; padding: 16px 14px; border-bottom: 2px solid #e2e8f0; }
+        .stats-table td { padding: 16px 14px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+        
+        .text-bold { font-weight: 700; color: #0f172a; }
+        .badge-pct { background-color: #e0f2fe; color: #0369a1; padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 0.85rem; }
+
+        canvas#canvas { display: none; }
+        .print-only-header { display: none; }
+
+        @media (max-width: 900px) {
+            .main-layout { grid-template-columns: 1fr; }
+        }
+
+        /* รูปแบบรายงานสั่งพิมพ์กระดาษ / PDF */
+        @media print {
+            body { background: white !important; color: #000 !important; padding: 0 !important; }
+            h2, .grid-buttons, #webcam, #camera-status, .action-btns, .filter-container, #log-list { display: none !important; }
+            .main-layout { display: block !important; }
+            .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin-bottom: 30px !important; }
+            .card:first-child { display: none !important; } 
+            
+            .print-only-header { 
+                display: block !important; 
+                text-align: center; 
+                border-bottom: 2px double #334155; 
+                padding-bottom: 15px; 
+                margin-bottom: 25px; 
+            }
+            .print-only-header h1 { margin: 0 0 5px 0; font-size: 1.8rem; color: #0f172a; }
+            .print-only-header p { margin: 0; font-size: 0.95rem; color: #475569; }
+
+            .stats-table th { background-color: #f1f5f9 !important; border-bottom: 2px solid #94a3b8 !important; color: #000 !important; }
+            .stats-table td { border-bottom: 1px solid #cbd5e1 !important; color: #000 !important; }
+            
+            #print-defect-table-container { display: block !important; margin-top: 35px; }
+            .print-defect-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            .print-defect-table th { background: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; text-align: left; }
+            .print-defect-table td { padding: 10px; border: 1px solid #cbd5e1; vertical-align: middle; }
+            .print-img { width: 100px; height: 75px; object-fit: cover; border-radius: 4px; border: 1px solid #94a3b8; }
+        }
+        #print-defect-table-container { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="print-only-header">
+        <h1>Spare Parts Damage & Defect Inspection Report</h1>
+        <p id="print-date-subtitle">Report Period: All Records</p>
+        <p style="font-size: 0.85rem; margin-top: 5px; color: #64748b;">Printed on: <span id="current-print-time"></span></p>
+    </div>
+
+    <h2>Spare Parts Quality Management System</h2>
+    
+    <div class="main-layout">
+        
+        <div class="card">
+            <h3>📷 Live Inspection Camera</h3>
+            <video id="webcam" autoplay playsinline></video>
+            <p id="camera-status" style="color: gray; font-size: 0.85rem; margin: 8px 0; text-align: center; font-weight: 500;">Connecting to device camera...</p>
+            
+            <div class="grid-buttons">
+                <button class="part-btn" onclick="captureAndUpload('30P')">Capture 30P</button>
+                <button class="part-btn" onclick="captureAndUpload('50P2')">Capture 50P2</button>
+                <button class="part-btn" onclick="captureAndUpload('50P3')">Capture 50P3</button>
+                <button class="part-btn" onclick="captureAndUpload('60P')">Capture 60P</button>
+            </div>
+
+            <h3>📋 Recent Defect Logs</h3>
+            <div class="list-container" id="log-list"></div>
+        </div>
+
+        <div class="card">
+            <h3>📊 Statistical Summary Dashboard</h3>
+
+            <div class="filter-container">
+                <div class="date-inputs">
+                    <label>Start Date:
+                        <input type="date" id="start-date">
+                    </label>
+                    <label>End Date:
+                        <input type="date" id="end-date">
+                    </label>
+                </div>
+                <div class="action-grid">
+                    <button class="btn-excel" onclick="exportToExcelByDate()">📥 Export to Excel (.csv)</button>
+                    <button class="btn-print" onclick="printReport()">🖨️ Print Report (PDF)</button>
+                </div>
+            </div>
+            
+            <div class="kpi-container">
+                <div class="kpi-box">
+                    <div class="kpi-title">Total Defective Items</div>
+                    <div class="kpi-value" id="kpi-total">0</div>
+                </div>
+            </div>
+
+            <h3 style="border: none; font-size: 1.1rem; margin-bottom: 10px; color: #475569;">Defect Breakdown Table</h3>
+            <table class="stats-table">
+                <thead>
+                    <tr>
+                        <th>Part Type</th>
+                        <th>Defect Count</th>
+                        <th>Contribution (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="stats-table-body">
+                    <tr><td colspan="3" style="text-align: center; color: gray;">Calculating statistics...</td></tr>
+                </tbody>
+            </table>
+
+            <div id="print-defect-table-container">
+                <h3 style="margin-top: 30px; border: none; font-size: 1.2rem; color: #000;">Damage Evidence Details</h3>
+                <table class="print-defect-table">
+                    <thead>
+                        <tr>
+                            <th>Record ID</th>
+                            <th>Date Time</th>
+                            <th>Part Type</th>
+                            <th style="width: 120px;">Evidence Photo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="print-defect-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <canvas id="canvas"></canvas> 
+    
+    <script>
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx7g7QQuLP1qbzQBZhiagIhqa0jtgdTB7-6PMtlKjYD9q6H9fn0ZU9_UuU63nhIHsJx/exec"; 
+        
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const cameraStatus = document.getElementById('camera-status');
+        let globalLogs = []; 
+
+        window.onload = () => {
+            initWebcam();
+            fetchLogs();
+
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('start-date').value = today;
+            document.getElementById('end-date').value = today;
+        };
+
+        function initWebcam() {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => {
+                video.srcObject = stream;
+                cameraStatus.innerText = "● Rear Camera Connected (กล้องหลัง)";
+                cameraStatus.style.color = "#16a34a";
+            })
+            .catch(() => {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    cameraStatus.innerText = "● Webcam Connected";
+                    cameraStatus.style.color = "#f59e0b";
+                })
+                .catch(() => {
+                    cameraStatus.innerText = "❌ Unable to access webcam.";
+                    cameraStatus.style.color = "#dc2626";
+                });
+            });
+        }
+
+        function captureAndUpload(partName) {
+            Swal.fire({
+                title: 'Uploading...',
+                html: 'กำลังบันทึกภาพถ่ายและอัปเดตสถิติ...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+            
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const base64String = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+            executeAction({ action: "insert", partType: partName, image: base64String });
+        }
+
+        function executeAction(payload) {
+            fetch(WEB_APP_URL, {
+                method: "POST", mode: "no-cors",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+            .then(() => {
+                Swal.close();
+                const Toast = Swal.mixin({
+                    toast: true, position: 'top-end',
+                    showConfirmButton: false, timer: 3000,
+                    timerProgressBar: true
+                });
+                Toast.fire({ icon: 'success', title: 'บันทึกประวัติชำรุดเรียบร้อย' });
+                setTimeout(fetchLogs, 1500); 
+            })
+            .catch(err => {
+                Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: err });
+            });
+        }
+
+        function fetchLogs() {
+            const listDiv = document.getElementById('log-list');
+            listDiv.innerHTML = `
+                <div class="skeleton-row"><div class="skeleton-thumbnail"></div><div class="skeleton-text"></div><div class="skeleton-btns"></div></div>
+                <div class="skeleton-row"><div class="skeleton-thumbnail"></div><div class="skeleton-text"></div><div class="skeleton-btns"></div></div>
+                <div class="skeleton-row"><div class="skeleton-thumbnail"></div><div class="skeleton-text"></div><div class="skeleton-btns"></div></div>
+            `;
+
+            fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "fetch" }) })
+            .then(res => res.json())
+            .then(response => {
+                if(response.status === "success") {
+                    globalLogs = response.data;
+                    calculateStatisticsTable(globalLogs); 
+                    
+                    if(globalLogs.length === 0) { 
+                        listDiv.innerHTML = "<div style='padding:20px;text-align:center;color:gray;'>ไม่พบข้อมูลสถิติชำรุดในปัจจุบัน</div>"; 
+                        return; 
+                    }
+                    
+                    listDiv.innerHTML = "";
+                    globalLogs.forEach(item => {
+                        const row = document.createElement('div');
+                        row.className = "item-row";
+                        
+                        const imgSrc = item.image ? `data:image/jpeg;base64,${item.image}` : '';
+                        const imgTag = imgSrc ? `<img class="img-thumbnail" src="${imgSrc}" onclick="viewImage('${item.image}')" alt="defect" />` : '<div style="width:65px; height:50px; background:#e2e8f0; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:10px;">No Image</div>';
+
+                        row.innerHTML = `
+                            <div class="item-detail-flex">
+                                ${imgTag}
+                                <div class="item-info">
+                                    <b>${item.partType}</b><br>
+                                    <small style="color:#64748b;">📅 ${item.timestamp}</small>
+                                </div>
+                            </div>
+                            <div class="action-btns">
+                                <button class="btn btn-view" onclick="viewImage('${item.image}')">ดูภาพ</button>
+                                <button class="btn btn-edit" onclick="editPart('${item.id}', '${item.partType}')">แก้ไข</button>
+                                <button class="btn btn-delete" onclick="deleteItem('${item.id}')">ลบ</button>
+                            </div>
+                        `;
+                        listDiv.appendChild(row);
+                    });
+                }
+            }).catch(() => {
+                listDiv.innerHTML = "<div style='padding:20px;text-align:center;color:#dc2626;font-weight:600;'>การเชื่อมต่อล้มเหลว (ตรวจพบสัญญาณอินเทอร์เน็ตหลุด)</div>";
+            });
+        }
+
+        function calculateStatisticsTable(logs) {
+            const totalCount = logs.length;
+            document.getElementById('kpi-total').innerText = totalCount;
+
+            const targetedParts = ["30P", "50P2", "50P3", "60P"];
+            const partCounts = { "30P": 0, "50P2": 0, "50P3": 0, "60P": 0 };
+            
+            logs.forEach(item => {
+                if (partCounts[item.partType] !== undefined) partCounts[item.partType]++;
+            });
+
+            const tableBody = document.getElementById('stats-table-body');
+            tableBody.innerHTML = "";
+
+            targetedParts.forEach(part => {
+                const count = partCounts[part];
+                const percentage = totalCount > 0 ? ((count / totalCount) * 100).toFixed(1) : "0.0";
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-bold">${part}</td>
+                    <td class="text-bold" style="color: #2563eb;">${count} items</td>
+                    <td><span class="badge-pct">${percentage}%</span></td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function viewImage(base64) {
+            Swal.fire({
+                imageUrl: `data:image/jpeg;base64,${base64}`,
+                imageAlt: 'Evidence Defect Photo',
+                showConfirmButton: false,
+                showCloseButton: true
+            });
+        }
+
+        function editPart(id, currentPart) {
+            Swal.fire({
+                title: 'แก้ไขชนิดพาร์ทสินค้าชำรุด',
+                input: 'select',
+                inputOptions: { '30P': '30P', '50P2': '50P2', '50P3': '50P3', '60P': '60P' },
+                inputValue: currentPart,
+                showCancelButton: true,
+                confirmButtonText: 'บันทึกการแก้ไข',
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33'
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    Swal.fire({ title: 'Updating...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+                    executeAction({ action: "update", id: id, partType: result.value });
+                }
+            });
+        }
+
+        function deleteItem(id) {
+            Swal.fire({
+                title: 'ยืนยันการลบข้อมูลสถิติ?',
+                text: "ประวัติการชำรุดพาร์ทนี้จะถูกลบออกจากตารางแดชบอร์ด!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'ยืนยันการลบประวัติ',
+                cancelButtonText: 'ยกเลิก'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ title: 'Deleting...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+                    executeAction({ action: "delete", id: id });
+                }
+            });
+        }
+
+        // 🌟 ฟังก์ชันหลักในการกรองช่วงวันที่ (Date Range Filter Logic)
+        function getFilteredLogsByRange(startDateInput, endDateInput) {
+            if (!startDateInput || !endDateInput) return [];
+
+            // ตั้งค่าเวลาเริ่มต้นให้เป็น 00:00:00 และ เวลาสิ้นสุดให้เป็น 23:59:59 ของวันนั้นๆ เพื่อคลุมข้อมูลทั้งวัน
+            const startLimit = new Date(startDateInput + 'T00:00:00').getTime();
+            const endLimit = new Date(endDateInput + 'T23:59:59').getTime();
+
+            return globalLogs.filter(item => {
+                if (!item.timestamp) return false;
+                
+                let logTime = null;
+                const tsStr = item.timestamp.toString().trim();
+
+                // เคสที่ 1: ตรวจสอบรูปฟอร์แมต ISO สากล (YYYY-MM-DD)
+                if (tsStr.includes('-')) {
+                    logTime = new Date(tsStr).getTime();
+                } else if (tsStr.includes('/')) {
+                    // เคสที่ 2: ตรวจสอบรูปฟอร์แมต MM/DD/YYYY หรือ DD/MM/YYYY ของ Sheets
+                    const parts = tsStr.split(' ')[0].split('/');
+                    if (parts.length === 3) {
+                        let year = parseInt(parts[2]);
+                        let month = parseInt(parts[0]) - 1;
+                        let day = parseInt(parts[1]);
+
+                        // สลับตำแหน่งกรณี Sheets แสดงผลเป็น วัน/เดือน/ปี
+                        if (parseInt(parts[0]) > 12) {
+                            day = parseInt(parts[0]);
+                            month = parseInt(parts[1]) - 1;
+                        }
+                        logTime = new Date(year, month, day).getTime();
+                    }
+                }
+
+                // คืนค่าข้อมูลที่อยู่ "ระหว่าง" ช่วงเวลาที่เราเลือกเท่านั้น
+                return logTime && logTime >= startLimit && logTime <= endLimit;
+            });
+        }
+
+        // ดาวน์โหลดรายงาน Excel (.csv) ตามช่วงวันที่อย่างถูกต้อง
+        function exportToExcelByDate() {
+            const startInput = document.getElementById('start-date').value; 
+            const endInput = document.getElementById('end-date').value;
+
+            const filteredLogs = getFilteredLogsByRange(startInput, endInput);
+
+            if (filteredLogs.length === 0) {
+                Swal.fire({ icon: 'info', title: 'ไม่พบข้อมูลในช่วงเวลาที่เลือก', text: `ช่วงวันที่ ${startInput} ถึง ${endInput} ยังไม่มีประวัติบันทึก` });
+                return;
+            }
+
+            let csvContent = "\uFEFFRecord ID,Date Time,Part Type\n";
+            filteredLogs.forEach(item => {
+                const safeId = `\t${item.id}`; 
+                const safeTimestamp = item.timestamp ? item.timestamp.toString().replace(/"/g, '""') : '';
+                const safePartType = item.partType ? item.partType.toString().replace(/"/g, '""') : '';
+                csvContent += `"${safeId}","${safeTimestamp}","${safePartType}"\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.setAttribute("href", URL.createObjectURL(blob));
+            link.setAttribute("download", `SpareParts_Report_${startInput}_to_${endInput}.csv`);
+            link.click();
+        }
+
+        // จัดพิมพ์รายงาน PDF คัดกรองแบบเลือกช่วงวันที่สมบูรณ์แบบ
+        function printReport() {
+            const startInput = document.getElementById('start-date').value;
+            const endInput = document.getElementById('end-date').value;
+
+            const printLogs = getFilteredLogsByRange(startInput, endInput);
+
+            if (!startInput || !endInput) { 
+                Swal.fire({ icon: 'warning', title: 'โปรดเลือกช่วงวันที่ก่อนจัดพิมพ์รายงาน' });
+                return; 
+            }
+
+            document.getElementById('print-date-subtitle').innerText = `Report Period: ${startInput} to ${endInput}`;
+            document.getElementById('current-print-time').innerText = new Date().toLocaleString('th-TH');
+
+            const printTableBody = document.getElementById('print-defect-table-body');
+            printTableBody.innerHTML = "";
+
+            if (printLogs.length === 0) {
+                Swal.fire({ icon: 'info', title: 'ไม่พบประวัติข้อมูลชำรุดในช่วงวันที่เลือก' });
+                return;
+            } else {
+                printLogs.forEach(item => {
+                    const tr = document.createElement('tr');
+                    const imgTag = item.image ? `<img class="print-img" src="data:image/jpeg;base64,${item.image}" />` : 'No Image';
+                    tr.innerHTML = `
+                        <td>${item.id}</td>
+                        <td>${item.timestamp}</td>
+                        <td><b>${item.partType}</b></td>
+                        <td style="text-align:center;">${imgTag}</td>
+                    `;
+                    printTableBody.appendChild(tr);
+                });
+            }
+
+            // แสดงเฉพาะรายการที่ฟิลเตอร์ในตารางสรุปตอนจะพิมพ์ออกทางกระดาษ
+            calculateStatisticsTable(printLogs);
+            window.print();
+
+            // คืนค่าแดชบอร์ดหน้าเว็บหลักให้เป็นประวัติข้อมูลหลักทั้งหมดหลังจากปิดหน้าต่างพิมพ์รายงาน
+            setTimeout(() => {
+                calculateStatisticsTable(globalLogs);
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
