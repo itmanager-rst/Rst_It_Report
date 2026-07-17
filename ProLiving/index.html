@@ -12,11 +12,9 @@
     *, *::before, *::after { box-sizing: border-box; }
     body { 
       font-family: 'Chakra Petch', sans-serif; 
-      /* บังคับพื้นหลังไล่เฉดสีเทานมสว่างและฟ้าจาง ไม่ดำแน่นอน */
       background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 100%) !important; 
       min-height: 100vh;
     }
-    /* เอฟเฟกต์แผ่นแก้วโปร่งแสงโทนสว่าง (Light Glassmorphism) */
     .light-glass {
       background: rgba(255, 255, 255, 0.45) !important;
       backdrop-filter: blur(16px) !important;
@@ -32,27 +30,48 @@
       border-color: #4f46e5 !important;
       background: rgba(255, 255, 255, 0.9) !important;
     }
+    @media print {
+      body { background: #ffffff !important; color: #000000 !important; }
+      #login-page, #main-dashboard, #roomDetailsModal, .fixed, button, select, input { display: none !important; }
+      #printContainerReal { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; }
+    }
   </style>
 </head>
-<body class="text-slate-800 min-h-screen antialiased">
+<body class="text-slate-800 min-h-screen antialiased p-4">
+
+  <div id="printContainerReal" class="hidden"></div>
 
   <div id="login-page" class="fixed inset-0 flex items-center justify-center p-4 z-50 bg-slate-200/60 backdrop-blur-md">
-    <div class="light-glass p-8 rounded-2xl w-full max-w-sm text-center shadow-xl border border-white">
+    <div class="light-glass p-6 rounded-2xl w-full max-w-sm text-center shadow-xl border border-white max-h-[95vh] overflow-y-auto">
       <h2 class="text-2xl font-black text-slate-800 mb-1 tracking-wide">🏢 ระบบหอพัก ProLiving</h2>
-      <p class="text-slate-500 text-xs mb-6">กรุณาเลือกสถานะเพื่อเข้าสู่ระบบ</p>
+      <p class="text-slate-500 text-xs mb-4">กรุณาเลือกรูปแบบสิทธิ์การเข้าใช้งานระบบ</p>
       
       <div class="space-y-3">
-        <button onclick="loginAsTenant()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl text-sm transition shadow-md">
-          👤 เข้าใช้งานในสิทธิ์ "ผู้เช่าห้อง" (ดูข้อมูล)
-        </button>
-        
-        <div class="border-t border-slate-300/60 my-4 pt-4">
-          <p class="text-slate-400 text-[10px] mb-2.5 font-bold uppercase tracking-wider">สำหรับแอดมิน / เจ้าของหอพัก</p>
-          <div class="space-y-2">
-            <input type="text" id="adminUsername" placeholder="ชื่อผู้ใช้งาน (Username)" class="light-glass-input w-full rounded-lg p-2.5 text-center text-xs focus:outline-none font-bold placeholder-slate-400">
-            <input type="password" id="adminPassword" placeholder="รหัสผ่าน (Password)" class="light-glass-input w-full rounded-lg p-2.5 text-center text-xs focus:outline-none font-bold placeholder-slate-400">
+        <div class="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 p-3 rounded-xl border border-indigo-200">
+          <p class="text-indigo-700 text-[11px] font-bold mb-2 text-left">🌐 สำหรับบุคคลทั่วไป / ผู้สนใจเช่า</p>
+          <button onclick="loginAsPublic()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-md flex items-center justify-center gap-1.5">
+            🔍 เข้าชมผังห้องว่างของหอพัก
+          </button>
+        </div>
+
+        <div class="bg-white/50 p-3 rounded-xl border border-slate-300/40">
+          <p class="text-slate-600 text-[11px] font-bold mb-1 text-left">🔑 สำหรับผู้เช่าห้องพักปัจจุบัน</p>
+          <div class="space-y-1.5 mb-2">
+            <input type="text" id="tenantRoomNo" placeholder="ระบุเลขห้องพัก (เช่น 101)" class="light-glass-input w-full rounded-lg p-2 text-center text-xs focus:outline-none font-bold">
+            <input type="password" id="tenantPassword" placeholder="รหัสผ่านประจำห้องพัก" class="light-glass-input w-full rounded-lg p-2 text-center text-xs focus:outline-none font-bold">
           </div>
-          <button onclick="loginWithBackend()" id="login-submit-btn" class="w-full mt-3 bg-indigo-600 text-white font-black py-2.5 rounded-lg text-sm hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/20">
+          <button onclick="loginAsTenant()" id="btn-tenant-login" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded-xl text-xs transition shadow-md">
+            👤 ตรวจสอบห้องและบิลของฉัน
+          </button>
+        </div>
+
+        <div class="border-t border-slate-300/60 pt-2">
+          <p class="text-slate-400 text-[10px] mb-2 font-bold uppercase tracking-wider">สำหรับแอดมิน / เจ้าของหอพัก</p>
+          <div class="space-y-1.5">
+            <input type="text" id="adminUsername" placeholder="ชื่อผู้ใช้งาน" class="light-glass-input w-full rounded-lg p-2 text-center text-xs focus:outline-none font-bold">
+            <input type="password" id="adminPassword" placeholder="รหัสผ่าน" class="light-glass-input w-full rounded-lg p-2 text-center text-xs focus:outline-none font-bold">
+          </div>
+          <button onclick="loginWithBackend()" id="login-submit-btn" class="w-full mt-2 bg-slate-700 text-white font-black py-2 rounded-lg text-xs hover:bg-slate-800 transition shadow-md">
             🔐 เข้าสู่ระบบหลังบ้าน
           </button>
         </div>
@@ -60,133 +79,283 @@
     </div>
   </div>
 
-  <div id="main-dashboard" class="hidden container mx-auto p-4 md:p-6 max-w-6xl">
-    
-    <header class="mb-6 flex flex-col sm:flex-row justify-between items-center border-b border-slate-300/60 pb-4 gap-4">
-      <div class="text-center sm:text-left">
-        <h1 class="text-3xl font-black text-slate-800 tracking-wide flex items-center justify-center sm:justify-start gap-2">
-          🏢 Dashboard 
-          <span id="role-badge" class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider"></span>
-        </h1>
-        <p class="text-slate-500 text-xs mt-1">ระบบบริหารข้อมูลห้องพัก & บันทึกค่าไฟเรียลไทม์</p>
+  <div id="main-dashboard" class="hidden container mx-auto max-w-6xl">
+    <div id="tenant-alert-box" class="hidden mb-4 bg-rose-500 text-white p-4 rounded-xl shadow-lg border border-rose-600 animate-pulse flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+      <div>
+        <h4 class="font-black text-base">⚠️ แจ้งเตือนยอดค้างชำระประจำเดือน!</h4>
+        <p class="text-xs text-rose-100 font-medium">คุณมียอดค้างจ่ายในระบบ กรุณาตรวจสอบรายละเอียดประวัติบิลด้านล่างนี้ครับ</p>
       </div>
-      <button onclick="logout()" class="text-xs text-rose-600 hover:text-rose-700 font-bold bg-rose-50 px-3 py-1.5 rounded-md border border-rose-200 transition shadow-sm">
-        🚪 ออกจากระบบ
-      </button>
+      <div class="text-right">
+        <span class="text-xs bg-white text-rose-600 font-bold px-2.5 py-1 rounded-md" id="tenant-alert-total">รวมค้างชำระ: 0 ฿</span>
+      </div>
+    </div>
+
+    <header class="mb-6 flex flex-col sm:flex-row justify-between items-center border-b border-slate-300/60 pb-4 gap-4">
+      <div>
+        <h1 class="text-3xl font-black text-slate-800 tracking-wide">🏢 Dashboard <span id="role-badge"></span></h1>
+        <p class="text-slate-500 text-xs mt-1">ระบบบริหารข้อมูลห้องพัก & สินทรัพย์หอพัก</p>
+      </div>
+      <button onclick="logout()" class="text-xs text-rose-600 font-bold bg-rose-50 px-3 py-1.5 rounded-md border border-rose-200 transition">ออกจากระบบ</button>
     </header>
 
-    <div id="admin-tabs" class="grid grid-cols-2 gap-2 bg-slate-300/40 p-1 rounded-xl mb-6 border border-slate-300/30">
-      <button onclick="switchTab('rooms')" id="btn-rooms" class="py-2.5 rounded-lg font-bold text-xs transition bg-white text-slate-800 shadow-sm flex items-center justify-center gap-1.5 border border-white">
-        📊 ผังสถานะห้องพัก
-      </button>
-      <button onclick="switchTab('electricity')" id="btn-electricity" class="py-2.5 rounded-lg font-bold text-xs transition text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1.5">
-        ⚡ บันทึกค่าไฟฟ้าประจำเดือน
-      </button>
+    <div id="admin-tabs" class="grid grid-cols-2 gap-2 bg-slate-300/40 p-1 rounded-xl mb-6">
+      <button onclick="switchTab('rooms')" id="btn-rooms" class="py-2.5 rounded-lg font-bold text-xs bg-white text-slate-800 shadow-sm border border-white">📊 ผังสถานะห้องพัก</button>
+      <button onclick="switchTab('electricity')" id="btn-electricity" class="py-2.5 rounded-lg font-bold text-xs text-slate-500">🧾 ระบบคำนวณและออกบิลประจำเดือน</button>
     </div>
 
     <div id="tab-rooms" class="tab-content block">
-      <div class="light-glass p-4 rounded-xl mb-6 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center shadow-sm">
-        <div>
-          <span class="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">เลือกดูตึก/ชั้น:</span>
-          <div class="flex flex-wrap gap-1.5" id="floor-container">
-            <button id="floor-btn-1" onclick="filterFloor('1')" class="floor-btn bg-indigo-600 text-white px-3 py-1.5 rounded-md font-bold text-xs transition shadow-sm">ชั้น 1 (101-120)</button>
-            <button id="floor-btn-2" onclick="filterFloor('2')" class="floor-btn bg-white/60 text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md font-bold text-xs transition border border-slate-300/40">ชั้น 2 (201-220)</button>
-            <button id="floor-btn-3" onclick="filterFloor('3')" class="floor-btn bg-white/60 text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md font-bold text-xs transition border border-slate-300/40">ชั้น 3 (301-320)</button>
-            <button id="floor-btn-4" onclick="filterFloor('4')" class="floor-btn bg-white/60 text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md font-bold text-xs transition border border-slate-300/40">ชั้น 4 (401-420)</button>
-            <button id="floor-btn-5" onclick="filterFloor('5')" class="floor-btn bg-white/60 text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md font-bold text-xs transition border border-slate-300/40">ชั้น 5 (501-520)</button>
-          </div>
+      <div class="light-glass p-4 rounded-xl mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
+        <div class="flex flex-wrap gap-1.5" id="floor-container">
+          <button id="floor-btn-1" onclick="filterFloor('1')" class="floor-btn bg-indigo-600 text-white px-3 py-1.5 rounded-md font-bold text-xs transition">ชั้น 1</button>
+          <button id="floor-btn-2" onclick="filterFloor('2')" class="floor-btn bg-white/60 text-slate-600 px-3 py-1.5 rounded-md font-bold text-xs border border-slate-300/40 transition">ชั้น 2</button>
+          <button id="floor-btn-3" onclick="filterFloor('3')" class="floor-btn bg-white/60 text-slate-600 px-3 py-1.5 rounded-md font-bold text-xs border border-slate-300/40 transition">ชั้น 3</button>
+          <button id="floor-btn-4" onclick="filterFloor('4')" class="floor-btn bg-white/60 text-slate-600 px-3 py-1.5 rounded-md font-bold text-xs border border-slate-300/40 transition">ชั้น 4</button>
+          <button id="floor-btn-5" onclick="filterFloor('5')" class="floor-btn bg-white/60 text-slate-600 px-3 py-1.5 rounded-md font-bold text-xs border border-slate-300/40 transition">ชั้น 5</button>
         </div>
-        <div class="min-w-[280px]">
-          <span class="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">🔍 ค้นหาห้องพักด่วน:</span>
-          <input type="text" id="searchRoom" onkeyup="searchRoomNumber()" placeholder="พิมพ์เลขห้องเพื่อกรอง..." class="light-glass-input w-full rounded-lg px-3 py-2 text-sm focus:outline-none font-bold placeholder-slate-400">
-        </div>
+        <input type="text" id="searchRoom" onkeyup="searchRoomNumber()" placeholder="🔍 ค้นหาเลขห้อง..." class="light-glass-input rounded-lg px-3 py-2 text-sm font-bold w-full md:w-64">
       </div>
-
-      <div class="flex gap-4 mb-4 text-xs font-bold px-1">
-        <span class="flex items-center gap-1.5 text-emerald-600"><span class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span> ว่าง</span>
-        <span class="flex items-center gap-1.5 text-rose-600"><span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span> ไม่ว่าง</span>
-      </div>
-
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" id="rooms-grid"></div>
     </div>
 
-    <div id="tab-electricity" class="tab-content hidden max-w-md mx-auto light-glass p-6 rounded-2xl shadow-xl">
-      <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">⚡ บันทึกหน่วยไฟฟ้าประจำเดือน</h2>
-      <form id="elecForm" onsubmit="handleElectricity(event)">
-        <div class="mb-4">
-          <label class="block text-slate-500 text-xs font-semibold uppercase mb-2">ระบุเลขห้องพัก</label>
-          <input type="text" id="elecRoom" placeholder="เช่น 101" required class="light-glass-input w-full rounded-lg p-3 focus:outline-none font-bold placeholder-slate-400">
+    <div id="tab-electricity" class="tab-content hidden max-w-xl mx-auto light-glass p-6 rounded-2xl border">
+      <h2 class="text-xl font-bold text-slate-800 mb-1">🧾 ระบบคำนวณและออกบิลอัจฉริยะ</h2>
+      <p class="text-xs text-slate-400 mb-4">กรอกข้อมูลเพื่อคำนวณยอดและออกใบแจ้งหนี้ไปยังประวัติตารางเงินหลังบ้าน</p>
+      
+      <form id="elecForm" onsubmit="handleCreateBill(event)">
+        <div class="grid grid-cols-3 gap-3 mb-3">
+          <div>
+            <label class="block text-slate-500 text-xs font-semibold mb-1">เลขห้องพัก</label>
+            <input type="text" id="elecRoom" placeholder="เช่น 101" required class="light-glass-input w-full rounded-lg p-2.5 font-bold text-sm">
+          </div>
+          <div>
+            <label class="block text-slate-500 text-xs font-semibold mb-1">รอบบิลเดือน</label>
+            <input type="text" id="elecMonth" placeholder="เช่น 07/2026" required class="light-glass-input w-full rounded-lg p-2.5 font-bold text-sm">
+          </div>
+          <div>
+            <label class="block text-slate-500 text-xs font-semibold mb-1">ค่าเช่าห้อง (บาท)</label>
+            <input type="number" id="elecRent" placeholder="4500" required class="light-glass-input w-full rounded-lg p-2.5 font-bold text-sm text-indigo-600">
+          </div>
         </div>
-        <div class="mb-6">
-          <label class="block text-slate-500 text-xs font-semibold uppercase mb-2">หน่วยไฟที่จดได้ปัจจุบัน (Unit)</label>
-          <input type="number" step="0.1" id="elecUnit" placeholder="เช่น 145.5" required class="light-glass-input w-full rounded-lg p-3 text-indigo-600 focus:outline-none text-2xl font-black placeholder-slate-400">
+
+        <div class="grid grid-cols-2 gap-3 mb-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+          <div>
+            <label class="block text-blue-700 text-xs font-bold mb-1">💧 หน่วยน้ำที่ใช้เดือนนี้</label>
+            <input type="number" step="0.1" id="waterUnit" value="1" required class="light-glass-input w-full rounded-lg p-2.5 font-black text-sm text-blue-600">
+          </div>
+          <div>
+            <label class="block text-blue-700 text-xs font-bold mb-1">💵 ราคาน้ำต่อหน่วย/ยอดเหมา</label>
+            <input type="number" step="0.1" id="waterRate" value="100" required class="light-glass-input w-full rounded-lg p-2.5 font-black text-sm text-blue-600">
+          </div>
         </div>
-        <button type="submit" id="elec-submit-btn" class="w-full bg-indigo-600 text-white font-black py-3 rounded-lg hover:bg-indigo-500 transition shadow-md flex items-center justify-center gap-2">💾 บันทึกข้อมูล</button>
+
+        <div class="grid grid-cols-2 gap-3 mb-4 bg-rose-50/50 p-3 rounded-xl border border-rose-100">
+          <div>
+            <label class="block text-rose-700 text-xs font-bold mb-1">⚡ หน่วยไฟที่ใช้เดือนนี้</label>
+            <input type="number" step="0.1" id="elecUnit" placeholder="กรอกหน่วยมิเตอร์" required class="light-glass-input w-full rounded-lg p-2.5 font-black text-sm text-rose-600">
+          </div>
+          <div>
+            <label class="block text-rose-700 text-xs font-bold mb-1">💵 ราคาไฟต่อหน่วย (บาท)</label>
+            <input type="number" step="0.1" id="elecRate" value="8" required class="light-glass-input w-full rounded-lg p-2.5 font-black text-sm text-rose-600">
+          </div>
+        </div>
+
+        <button type="submit" id="elec-submit-btn" class="w-full bg-indigo-600 text-white font-black py-3 rounded-lg hover:bg-indigo-500 transition shadow-md text-sm">
+          💾 บันทึกและออกบิลเข้าระบบ Google Sheets
+        </button>
       </form>
     </div>
-
   </div>
 
-  <div id="chatModal" class="hidden fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="light-glass w-full max-w-md rounded-2xl shadow-2xl flex flex-col h-[450px] border border-white">
-      <div class="p-4 border-b border-slate-300/60 flex justify-between items-center bg-white/40 rounded-t-2xl">
-        <h3 id="chatTitle" class="font-bold text-slate-800 text-sm">💬 กล่องพูดคุย/บันทึกโน้ต</h3>
-        <button onclick="closeChat()" class="text-slate-400 hover:text-slate-600 text-2xl font-bold">&times;</button>
+  <div id="roomDetailsModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-50/95 max-w-3xl w-full rounded-3xl shadow-2xl border border-white flex flex-col max-h-[92vh] overflow-hidden">
+      
+      <div class="p-4 border-b flex justify-between items-center bg-white/50">
+        <div>
+          <h3 class="text-xl font-bold text-slate-800">จัดการห้องพัก <span id="modalRoomTitle" class="text-indigo-600 font-extrabold text-2xl">---</span></h3>
+        </div>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-2xl font-bold">✕</button>
       </div>
-      <div id="chatBox" class="flex-1 p-4 overflow-y-auto space-y-2 bg-slate-50/50 flex flex-col"></div>
-      <div class="p-3 border-t border-slate-300/60 bg-white/80 flex gap-2 rounded-b-2xl">
-        <input type="text" id="chatInput" placeholder="พิมพ์ข้อความบันทึกที่นี่..." class="light-glass-input flex-1 rounded-lg px-3 py-2 text-xs focus:outline-none">
-        <button onclick="sendChatMessage()" class="bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-xs hover:bg-indigo-500 transition">ส่ง</button>
+
+      <div class="p-5 overflow-y-auto space-y-5 flex-1">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-5">
+          
+          <div class="md:col-span-7 space-y-3">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div class="grid grid-cols-3 gap-2.5 text-xs">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">📋 Status</label>
+                  <select id="modalStatus" class="w-full bg-slate-50 border rounded-lg p-2.5 font-semibold focus:outline-none">
+                    <option value="ว่าง">ว่าง</option>
+                    <option value="ไม่ว่าง">ไม่ว่าง</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">📝 สัญญาเช่า</label>
+                  <input type="text" id="modalContractType" class="w-full bg-slate-50 border rounded-lg p-2.5 font-semibold focus:outline-none">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-indigo-600 mb-1">💰 ค่าเช่า / เดือน</label>
+                  <input type="number" id="modalRentPrice" class="w-full bg-slate-50 border rounded-lg p-2.5 font-bold text-indigo-600 focus:outline-none">
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-indigo-600 mb-1">🛋️ Furniture / รายการทรัพย์สินในห้อง</label>
+                <textarea id="modalFurniture" rows="4" class="w-full bg-slate-50 border rounded-lg p-3 text-xs font-semibold focus:outline-none leading-relaxed"></textarea>
+              </div>
+              <button onclick="saveRoomDetails()" id="btnSaveDetails" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl py-3 text-sm transition shadow-md">
+                💾 บันทึกรายละเอียดห้องและทรัพย์สิน
+              </button>
+            </div>
+          </div>
+
+          <div id="admin-comment-section" class="md:col-span-5 flex flex-col bg-white p-4 rounded-2xl border border-slate-200 shadow-sm h-[290px]">
+            <h4 class="text-xs font-bold text-slate-400 mb-1.5">💬 บันทึกโน้ตภายในห้อง (แอดมิน)</h4>
+            <div id="chatBox" class="flex-1 overflow-y-auto space-y-2 p-2 bg-slate-50 rounded-xl flex flex-col"></div>
+            <div id="chatInputArea" class="mt-2 flex gap-1">
+              <input type="text" id="chatInput" placeholder="พิมพ์ข้อความ..." class="flex-1 bg-slate-50 border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none">
+              <button onclick="sendChatMessage()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-xl font-bold">ส่ง</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="billing-history-section" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <h4 class="text-xs font-bold text-indigo-600 mb-2">💵 ประวัติรอบบิลค่าน้ำ-ค่าไฟ และสถานะการชำระเงิน</h4>
+          <div class="overflow-x-auto border rounded-xl">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b text-[11px] font-bold text-slate-500">
+                  <th class="p-2.5">รอบเดือน</th>
+                  <th class="p-2.5">ค่าเช่า</th>
+                  <th class="p-2.5">น้ำ+ไฟ</th>
+                  <th class="p-2.5 text-slate-700">รวมทั้งสิ้น</th>
+                  <th class="p-2.5 text-center">สถานะ</th>
+                  <th class="p-2.5 text-center">จัดการบิล</th>
+                </tr>
+              </thead>
+              <tbody id="billTableBody" class="divide-y text-xs text-slate-600"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="printModal" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white max-w-md w-full p-6 rounded-2xl shadow-2xl flex flex-col">
+      <div class="p-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 text-slate-800">
+        <div class="text-center border-b border-slate-300 pb-3 mb-4">
+          <h2 class="text-xl font-black tracking-wide text-slate-800">🏢 ใบเสร็จรับเงิน / ใบแจ้งหนี้</h2>
+          <p class="text-[10px] text-slate-400 mt-0.5">หอพัก ProLiving การจัดการอัจฉริยะ</p>
+        </div>
+        <div class="grid grid-cols-2 text-xs mb-4 gap-y-1.5">
+          <div><b>เลขห้องพัก:</b> <span id="pRoom" class="text-indigo-600 font-bold">---</span></div>
+          <div class="text-right"><b>ประจำรอบบิล:</b> <span id="pMonth">---</span></div>
+        </div>
+        <div class="border-t border-b divide-y divide-slate-200 text-xs py-1 mb-4">
+          <div class="flex justify-between py-2"><span>1. ค่าเช่าห้องพักรายเดือน</span><span id="pRent" class="font-bold">0 ฿</span></div>
+          <div class="flex justify-between py-2"><span>2. ค่าน้ำประปาประจำรอบบิล</span><span id="pWater" class="font-bold">0 ฿</span></div>
+          <div class="flex justify-between py-2"><span>3. ค่ากระแสไฟฟ้าประจำรอบ</span><span id="pElec" class="font-bold">0 ฿</span></div>
+        </div>
+        <div class="flex justify-between text-base font-black text-indigo-600 border-t border-slate-300 pt-3">
+          <span>ยอดเงินรวมทั้งสิ้น:</span>
+          <span id="pTotal" class="text-lg text-emerald-600">0 ฿</span>
+        </div>
+      </div>
+      <div class="mt-4 flex gap-2">
+        <button onclick="executePrintDoc()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs shadow-md transition">🖨️ สั่งพิมพ์ใบเสร็จ</button>
+        <button onclick="document.getElementById('printModal').classList.add('hidden')" class="bg-slate-200 text-slate-600 px-4 py-3 rounded-xl text-xs font-bold">ปิด</button>
       </div>
     </div>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxG_tf3Tq4GKBfIG0okCQmg_8mTtS8Oj14w5xigGzimQJGytzvPoXDocW1wu59LUI1N/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzPUv7ggVqoaKxdznWPCgljfOEq80xFD8ytvplPC8dpMt2KLo8NP2egDqDN40ASbqhD/exec";
     
     let currentFloor = '1';
-    let userRole = 'tenant'; 
+    let userRole = 'public'; 
     let currentActiveRoom = null;
-    let chatInterval = null;
+    let selectedReceiptData = null;
+    let tenantInputRoom = ""; 
 
-    function loginAsTenant() {
-      userRole = 'tenant';
+    function loginAsPublic() {
+      userRole = 'public';
+      tenantInputRoom = "";
       document.getElementById('admin-tabs').classList.add('hidden'); 
-      setRoleBadge('ผู้เช่าห้องพัก', 'bg-slate-200 text-slate-700 border border-slate-300/60');
+      setRoleBadge("บุคคลทั่วไป", "bg-emerald-100 text-emerald-700");
+      document.getElementById('floor-container').classList.remove('hidden');
+      document.getElementById('searchRoom').classList.remove('hidden');
+      document.getElementById('tenant-alert-box').classList.add('hidden');
       enterDashboard();
+    }
+
+    async function loginAsTenant() {
+      const roomInput = document.getElementById('tenantRoomNo').value.trim();
+      const passInput = document.getElementById('tenantPassword').value.trim();
+      
+      if(!roomInput || !passInput) return alert("กรุณาระบุทั้งเลขห้องและรหัสผ่านเพื่อล็อกอินครับ");
+      
+      const loginBtn = document.getElementById('btn-tenant-login');
+      loginBtn.innerText = "กำลังตรวจสอบความถูกต้อง..."; loginBtn.disabled = true;
+      
+      try {
+        const res = await fetch(`${API_URL}?action=verifyTenantLogin&roomNo=${roomInput}&password=${passInput}`);
+        const result = await res.json();
+        
+        if (result.success) {
+          userRole = 'tenant';
+          tenantInputRoom = roomInput;
+          
+          document.getElementById('admin-tabs').classList.add('hidden'); 
+          setRoleBadge(`ห้อง ${roomInput} (ผู้เช่า)`, 'bg-slate-200 text-slate-700');
+          
+          document.getElementById('floor-container').classList.add('hidden');
+          document.getElementById('searchRoom').classList.add('hidden');
+          
+          enterDashboard();
+          checkTenantDebts(roomInput); 
+        } else {
+          alert("❌ " + result.message);
+        }
+      } catch (e) {
+        alert("การเชื่อมต่อล้มเหลว กรุณาลองใหม่อีกครั้ง");
+      } finally {
+        loginBtn.innerText = "👤 ตรวจสอบห้องและบิลของฉัน"; loginBtn.disabled = false;
+      }
     }
 
     async function loginWithBackend() {
       const user = document.getElementById('adminUsername').value.trim();
       const pass = document.getElementById('adminPassword').value.trim();
-      const loginBtn = document.getElementById('login-submit-btn');
+      if (!user || !pass) return alert('กรุณากรอกข้อมูลผู้ใช้ให้ครบถ้วนครับ');
       
-      if (!user || !pass) { alert('กรุณากรอกข้อมูลให้ครบถ้วนครับ'); return; }
-      
-      loginBtn.innerText = "กำลังตรวจสอบความปลอดภัย...";
-      loginBtn.disabled = true;
-
       try {
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'checkLogin', username: user, password: pass })
-        });
+        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'checkLogin', username: user, password: pass }) });
         const result = await res.json();
-        
         if (result.success) {
           userRole = result.role; 
           document.getElementById('admin-tabs').classList.remove('hidden'); 
-          setRoleBadge('ผู้ดูแลระบบ', 'bg-indigo-100 text-indigo-700 border border-indigo-200');
+          document.getElementById('floor-container').classList.remove('hidden');
+          document.getElementById('searchRoom').classList.remove('hidden');
+          document.getElementById('tenant-alert-box').classList.add('hidden'); 
+          setRoleBadge('ผู้ดูแลระบบ', 'bg-indigo-100 text-indigo-700');
           enterDashboard();
-        } else {
-          alert('❌ ' + result.message);
-        }
-      } catch (err) {
-        alert('ระบบเกิดข้อผิดพลาดในการตรวจสอบสิทธิ์');
-      } finally {
-        loginBtn.innerText = "🔐 เข้าสู่ระบบหลังบ้าน";
-        loginBtn.disabled = false;
-      }
+        } else { alert('❌ ' + result.message); }
+      } catch (err) { alert('การเชื่อมต่อสิทธิ์ขัดข้อง'); }
+    }
+
+    async function checkTenantDebts(roomNo) {
+      try {
+        const res = await fetch(`${API_URL}?action=getRoomBills&roomNo=${roomNo}`);
+        const bills = await res.json();
+        let totalDebt = 0;
+        bills.forEach(b => { if(b.status === "ค้างชำระ") totalDebt += b.total; });
+
+        const alertBox = document.getElementById('tenant-alert-box');
+        if(totalDebt > 0) {
+          document.getElementById('tenant-alert-total').innerText = `รวมค้างชำระ: ${totalDebt.toLocaleString()} ฿`;
+          alertBox.classList.remove('hidden');
+        } else { alertBox.classList.add('hidden'); }
+      } catch (e) { }
     }
 
     function setRoleBadge(text, classes) {
@@ -198,205 +367,290 @@
     function enterDashboard() {
       document.getElementById('login-page').classList.add('hidden');
       document.getElementById('main-dashboard').classList.remove('hidden');
-      switchTab('rooms');
-      loadRooms();
+      switchTab('rooms'); loadRooms();
     }
 
-    function logout() {
-      document.getElementById('login-page').classList.remove('hidden');
-      document.getElementById('main-dashboard').classList.add('hidden');
-      clearInterval(chatInterval);
-    }
+    function logout() { window.location.reload(); }
 
     function switchTab(tabId) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
       document.getElementById('tab-' + tabId).classList.remove('hidden');
-      
-      document.querySelectorAll('[id^="btn-"]').forEach(btn => {
-        btn.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
-        btn.classList.add('text-slate-500', 'hover:text-slate-800');
-      });
-      document.getElementById('btn-' + tabId).classLink = "";
-      document.getElementById('btn-' + tabId).className = "py-2.5 rounded-lg font-bold text-xs transition bg-white text-slate-800 shadow-sm flex items-center justify-center gap-1.5 border border-white";
+      document.getElementById('btn-rooms').className = tabId === 'rooms' ? 'py-2.5 rounded-lg font-bold text-xs bg-white text-slate-800 shadow-sm border border-white' : 'py-2.5 rounded-lg font-bold text-xs text-slate-500';
+      document.getElementById('btn-electricity').className = tabId === 'electricity' ? 'py-2.5 rounded-lg font-bold text-xs bg-white text-slate-800 shadow-sm border border-white' : 'py-2.5 rounded-lg font-bold text-xs text-slate-500';
     }
 
     function filterFloor(floorNum) {
       currentFloor = floorNum;
-      document.getElementById('searchRoom').value = ''; 
-      updateFloorButtonsUI();
+      document.querySelectorAll('.floor-btn').forEach(btn => { btn.className = 'floor-btn bg-white/60 text-slate-600 px-3 py-1.5 rounded-md font-bold text-xs border border-slate-300/40 transition'; });
+      const activeBtn = document.getElementById('floor-btn-' + floorNum);
+      if(activeBtn) activeBtn.className = 'floor-btn bg-indigo-600 text-white px-3 py-1.5 rounded-md font-bold text-xs transition';
       loadRooms();
-    }
-
-    function updateFloorButtonsUI() {
-      document.querySelectorAll('.floor-btn').forEach(btn => {
-        btn.className = "floor-btn bg-white/60 text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md font-bold text-xs transition border border-slate-300/40";
-      });
-      const activeBtn = document.getElementById('floor-btn-' + currentFloor);
-      if(activeBtn) activeBtn.className = "floor-btn bg-indigo-600 text-white px-3 py-1.5 rounded-md font-bold text-xs transition shadow-sm";
     }
 
     async function loadRooms() {
       const grid = document.getElementById('rooms-grid');
-      grid.innerHTML = '<div class="col-span-full text-center py-8 text-slate-500 text-xs animate-pulse">กำลังซิงค์ผังห้องพักเรียลไทม์...</div>';
-      
+      grid.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400 text-xs">กำลังดึงข้อมูลผังห้องพัก...</div>';
       try {
-        const res = await fetch(`${API_URL}?action=getRoomsByFloor&floor=${currentFloor}`);
-        const rooms = await res.json();
-        renderRooms(rooms);
-      } catch (e) {
-        grid.innerHTML = '<div class="col-span-full text-center py-8 text-rose-600 text-xs">❌ การเชื่อมต่อล้มเหลว</div>';
-      }
+        let url = `${API_URL}?action=getRoomsByFloor&floor=${currentFloor}`;
+        
+        if(userRole === 'tenant' && tenantInputRoom) {
+          const detectedFloor = tenantInputRoom.substring(0,1);
+          url = `${API_URL}?action=getRoomsByFloor&floor=${detectedFloor}`;
+        }
+
+        const res = await fetch(url);
+        const rooms = await res.json(); grid.innerHTML = '';
+        
+        rooms.forEach(room => {
+          const roomNo = room[0]; const status = room[1]; const currentUnit = room[2] || '0.0'; const furniture = room[3] || ''; const contract = room[4] || ''; const rentPrice = room[5] || 0;
+          const isAvailable = status === 'ว่าง';
+          
+          if (userRole === 'tenant' && roomNo !== tenantInputRoom) {
+            return; 
+          }
+
+          const bgClass = isAvailable ? 'bg-emerald-500/10 border-emerald-300' : 'bg-rose-500/10 border-rose-300';
+          
+          grid.insertAdjacentHTML('beforeend', `
+            <div onclick="openRoomModal('${roomNo}', '${status}', \`${furniture}\`, \`${contract}\`, ${rentPrice})" class="${bgClass} border p-4 rounded-xl cursor-pointer hover:shadow-md transition">
+              <div class="flex justify-between items-center border-b pb-2">
+                <span class="text-xl font-bold">${roomNo}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded font-bold ${isAvailable?'bg-emerald-600 text-white':'bg-rose-600 text-white'}">${status}</span>
+              </div>
+              <div class="my-2 flex justify-between items-center">
+                <span class="text-[10px] text-slate-400">สถานะห้อง:</span>
+                <span class="text-xs font-black ${isAvailable?'text-emerald-600':'text-rose-600'}">${status}</span>
+              </div>
+            </div>`);
+        });
+      } catch (e) { grid.innerHTML = '<div class="col-span-full text-center py-8 text-rose-500 text-xs">❌ โหลดข้อมูลล้มเหลว</div>'; }
     }
 
-    function renderRooms(roomsToShow) {
-      const grid = document.getElementById('rooms-grid');
-      grid.innerHTML = '';
+    function openRoomModal(roomNo, status, furniture, contractType, rentPrice) {
+      if (userRole === 'public' && status === 'ไม่ว่าง') {
+        alert("🔒 จำกัดสิทธิ์: ห้องนี้มีผู้เช่าแล้ว ระบบไม่อนุญาตให้บุคคลทั่วไปดูรายละเอียดบิลการเงินครับ");
+        return;
+      }
+
+      if (userRole === 'tenant' && roomNo !== tenantInputRoom) {
+        alert(`🔒 จำกัดสิทธิ์: สามารถเข้าชมประวัติของห้องตัวเอง (${tenantInputRoom}) ได้เท่านั้นครับ`);
+        return; 
+      }
+
+      currentActiveRoom = roomNo;
+      document.getElementById('modalRoomTitle').innerText = roomNo;
+      document.getElementById('modalStatus').value = status;
+      document.getElementById('modalFurniture').value = (furniture === 'undefined' || !furniture) ? '' : furniture;
+      document.getElementById('modalContractType').value = (contractType === 'undefined' || !contractType) ? '' : contractType;
+      document.getElementById('modalRentPrice').value = rentPrice || '';
+
+      if(userRole === 'admin') {
+        document.getElementById('admin-comment-section').classList.remove('hidden');
+        document.getElementById('modalStatus').disabled = false; document.getElementById('modalFurniture').disabled = false; document.getElementById('modalContractType').disabled = false; document.getElementById('modalRentPrice').disabled = false;
+        document.getElementById('btnSaveDetails').classList.remove('hidden');
+        document.getElementById('billing-history-section').classList.remove('hidden'); 
+      } else if (userRole === 'public') {
+        document.getElementById('admin-comment-section').classList.add('hidden');
+        document.getElementById('modalStatus').disabled = true; document.getElementById('modalFurniture').disabled = true; document.getElementById('modalContractType').disabled = true; document.getElementById('modalRentPrice').disabled = true;
+        document.getElementById('btnSaveDetails').classList.add('hidden');
+        document.getElementById('billing-history-section').classList.add('hidden'); 
+      } else {
+        document.getElementById('admin-comment-section').classList.add('hidden');
+        document.getElementById('modalStatus').disabled = true; document.getElementById('modalFurniture').disabled = true; document.getElementById('modalContractType').disabled = true; document.getElementById('modalRentPrice').disabled = true;
+        document.getElementById('btnSaveDetails').classList.add('hidden');
+        document.getElementById('billing-history-section').classList.remove('hidden'); 
+      }
+
+      document.getElementById('roomDetailsModal').classList.remove('hidden');
+      if (userRole !== 'public') { loadRoomBillHistory(roomNo); }
+      if (userRole === 'admin') { loadChatMessages(roomNo); }
+    }
+
+    function closeModal() { document.getElementById('roomDetailsModal').classList.add('hidden'); }
+
+    async function saveRoomDetails() {
+      const status = document.getElementById('modalStatus').value;
+      const furniture = document.getElementById('modalFurniture').value.trim();
+      const contractType = document.getElementById('modalContractType').value.trim();
+      const rentPrice = document.getElementById('modalRentPrice').value.trim();
+      try {
+        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "updateRoomDetails", roomNo: currentActiveRoom, status: status, furniture: furniture, contractType: contractType, rentPrice: rentPrice }) });
+        const r = await res.json();
+        if(r.success) { alert("🎉 บันทึกข้อมูลสำเร็จ!"); closeModal(); loadRooms(); }
+      } catch(e) { alert("ฐานข้อมูลขัดข้อง"); }
+    }
+
+    async function loadRoomBillHistory(roomNo) {
+      const tbody = document.getElementById('billTableBody');
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center p-3 text-slate-400">กำลังโหลดประวัติบิล...</td></tr>`;
+      try {
+        const res = await fetch(`${API_URL}?action=getRoomBills&roomNo=${roomNo}`);
+        const bills = await res.json(); tbody.innerHTML = '';
+        
+        if(bills.length === 0) { 
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center p-3 text-slate-400 text-xs font-semibold">➖ ห้องพักนี้ยังไม่มีประวัติบิล</td></tr>`; 
+          return; 
+        }
+
+        bills.forEach(b => {
+          const isPaid = b.status === "ชำระแล้ว";
+          const badge = isPaid 
+            ? `<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold text-[10px]">ชำระแล้ว</span>`
+            : `<span class="bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold text-[10px]">ค้างชำระ</span>`;
+          
+          let actionButtons = `<div class="flex items-center justify-center gap-1.5">`;
+          actionButtons += `<button onclick="prepareReceipt('${roomNo}', '${b.month}', ${b.rent}, ${b.water}, ${b.elec}, ${b.total})" class="text-[11px] font-bold text-indigo-600 hover:underline">🔍 เปิดดู</button>`;
+          
+          if(userRole === 'admin') {
+            if(!isPaid) {
+              actionButtons += `<button onclick="markBillAsPaid(${b.rowIndex})" class="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">✔️ รับเงิน</button>`;
+            }
+            // 🗑️ ปุ่มลบประวัติบิลเวอร์ชันสมบูรณ์แบบ
+            actionButtons += `<button onclick="deleteBillRecord(${b.rowIndex})" class="text-[11px] font-bold text-rose-600 hover:bg-rose-50 p-1 rounded border border-transparent hover:border-rose-200 transition">🗑️ ลบ</button>`;
+          }
+          actionButtons += `</div>`;
+
+          let displayMonth = b.month;
+          if(b.month && b.month.includes('T')) {
+            displayMonth = b.month.split('T')[0];
+          }
+
+          tbody.insertAdjacentHTML('beforeend', `
+            <tr class="hover:bg-slate-50/80 transition">
+              <td class="p-2.5 font-bold text-slate-700">${displayMonth}</td>
+              <td class="p-2.5">${b.rent.toLocaleString()} ฿</td>
+              <td class="p-2.5">${(b.water + b.elec).toLocaleString()} ฿</td>
+              <td class="p-2.5 font-black text-indigo-600">${b.total.toLocaleString()} ฿</td>
+              <td class="p-2.5 text-center">${badge}</td>
+              <td class="p-2.5 text-center">${actionButtons}</td>
+            </tr>`);
+        });
+      } catch(e) { tbody.innerHTML = `<tr><td colspan="6" class="text-center text-rose-500 p-3">❌ ดึงข้อมูลบิลขัดข้อง</td></tr>`; }
+    }
+
+    async function deleteBillRecord(rowIndex) {
+      if(!confirm("⚠️ ยืนยันการลบประวัติบิลรายการนี้ออกจากฐานข้อมูล Google Sheets อย่างถาวร?")) return;
+      try {
+        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteMonthlyBill', rowIndex: rowIndex }) });
+        const result = await res.json();
+        if(result.success) {
+          alert("🗑️ ลบข้อมูลบิลสำเร็จ!");
+          if(currentActiveRoom) loadRoomBillHistory(currentActiveRoom);
+        } else { alert("❌ " + result.message); }
+      } catch(err) { alert("ฐานข้อมูลขัดข้อง"); }
+    }
+
+    async function markBillAsPaid(rowIndex) {
+      if(!confirm("💵 เปลี่ยนสถานะบิลเป็น 'ชำระแล้ว' ใช่หรือไม่?")) return;
+      try {
+        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateBillStatus', rowIndex: rowIndex }) });
+        const result = await res.json();
+        if(result.success) {
+          alert("🎉 ยืนยันการรับเงินสำเร็จ!");
+          if(currentActiveRoom) loadRoomBillHistory(currentActiveRoom);
+        }
+      } catch(err) { alert("ฐานข้อมูลขัดข้อง"); }
+    }
+
+    function prepareReceipt(roomNo, month, rent, water, elec, total) {
+      let displayMonth = month;
+      if(month && month.includes('T')) { displayMonth = month.split('T')[0]; }
+      document.getElementById('pRoom').innerText = roomNo; document.getElementById('pMonth').innerText = displayMonth; document.getElementById('pRent').innerText = rent.toLocaleString() + " ฿"; document.getElementById('pWater').innerText = water.toLocaleString() + " ฿"; document.getElementById('pElec').innerText = elec.toLocaleString() + " ฿"; document.getElementById('pTotal').innerText = total.toLocaleString() + " ฿";
+      selectedReceiptData = { roomNo, month: displayMonth, rent, water, elec, total };
+      document.getElementById('printModal').classList.remove('hidden');
+    }
+
+    function executePrintDoc() { window.print(); }
+
+    async function handleCreateBill(e) {
+      e.preventDefault(); 
+      const roomNo = document.getElementById('elecRoom').value.trim(); 
+      const month = document.getElementById('elecMonth').value.trim(); 
+      const rent = document.getElementById('elecRent').value; 
+      const wUnit = document.getElementById('waterUnit').value;
+      const wRate = document.getElementById('waterRate').value;
+      const calcWaterCost = parseFloat(wUnit) * parseFloat(wRate);
+      const eUnit = document.getElementById('elecUnit').value;
+      const eRate = document.getElementById('elecRate').value;
+      const calcElecCost = parseFloat(eUnit) * parseFloat(eRate); 
       
-      roomsToShow.forEach(room => {
-        const roomNo = room[0]; 
-        const isAvailable = room[1] === 'ว่าง'; 
-        const elecUnit = room[2] || '0.0'; 
-        
-        // 🔮 แก้วใสขอบเรืองแสงสีพาสเทล สว่าง นุ่ม ไม่ดำแน่นอน
-        const bgClass = isAvailable 
-          ? 'bg-emerald-500/10 border-emerald-400/40 hover:border-emerald-500 text-slate-800 shadow-sm' 
-          : 'bg-rose-500/10 border-rose-400/40 hover:border-rose-500 text-slate-800 shadow-sm';
-        
-        const badgeClass = isAvailable ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-600 text-white border-rose-600';
-        const statusText = isAvailable ? 'ว่าง' : 'ไม่ว่าง';
+      const submitBtn = document.getElementById('elec-submit-btn');
+      submitBtn.innerText = "กำลังออกบิลค่าน้ำไฟ..."; submitBtn.disabled = true;
+      
+      try {
+        await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'saveElectricity', roomNo: roomNo, unit: eUnit }) });
+        const resBill = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'createMonthlyBill', roomNo: roomNo, month: month, rent: rent, water: calcWaterCost, elec: calcElecCost, status: "ค้างชำระ" }) });
+        const finalResult = await resBill.json();
+        if(finalResult.success) { 
+          alert(`🎉 ออกบิลสำเร็จ! ค่าน้ำ ${calcWaterCost} ฿ และค่าไฟ ${calcElecCost} ฿ บันทึกเรียบร้อยครับ`); 
+          document.getElementById('elecForm').reset(); 
+          document.getElementById('waterRate').value = wRate; 
+          document.getElementById('elecRate').value = eRate;   
+          loadRooms(); 
+        }
+      } catch (err) { alert('ระบบการบันทึกขัดข้อง'); }
+      finally { submitBtn.innerText = "💾 บันทึกและออกบิลเข้าระบบ Google Sheets"; submitBtn.disabled = false; }
+    }
 
-        const isAdmin = (userRole === 'admin' || userRole === 'staff');
-        const clickAction = isAdmin ? `onclick="toggleRoomStatus('${roomNo}')"` : '';
-        const chatButtonHtml = isAdmin 
-          ? `<button onclick="openChat('${roomNo}')" class="w-full mt-3 bg-white/80 hover:bg-white text-slate-700 py-1.5 rounded-lg text-[11px] font-bold transition border border-slate-300/60 shadow-xs">💬 ประวัติ / โน้ตห้อง</button>`
-          : '';
-
-        const cardHtml = `
-          <div data-room="${roomNo}" class="${bgClass} border p-4 rounded-xl flex flex-col justify-between min-h-[120px] transition duration-200 backdrop-blur-md">
-            <div class="flex justify-between items-center border-b border-slate-300/40 pb-2">
-              <span class="text-2xl font-black text-slate-800 tracking-tight">${roomNo}</span>
-              <span ${clickAction} class="text-[10px] font-bold ${isAdmin ? 'cursor-pointer select-none' : 'cursor-default'} px-2 py-0.5 rounded ${badgeClass}">
-                ${statusText}
-              </span>
-            </div>
-            <div class="my-2 flex justify-between items-baseline">
-              <span class="text-[10px] text-slate-500 font-bold">ไฟล่าสุด:</span>
-              <span class="text-xl font-black text-indigo-600">${elecUnit} <span class="text-[10px] text-slate-400 font-normal">หน่วย</span></span>
-            </div>
-            ${chatButtonHtml}
+    async function loadChatMessages(roomNo) {
+  try {
+    const res = await fetch(`${API_URL}?action=getComments&roomNo=${roomNo}`); 
+    const comments = await res.json(); 
+    const chatBox = document.getElementById('chatBox'); 
+    chatBox.innerHTML = '';
+    
+    if(comments.length === 0) { 
+      chatBox.innerHTML = '<p class="text-slate-400 text-center my-auto text-xs">ไม่มีบันทึกข้อความ</p>'; 
+      return; 
+    }
+    
+    comments.forEach(c => {
+      chatBox.innerHTML += `
+        <div class="bg-white p-2 border rounded-xl mb-1 text-xs shadow-sm flex justify-between items-start gap-2 group">
+          <div class="flex-1">
+            <b class="text-indigo-600">${c.user}:</b> 
+            <span class="text-slate-700 font-medium break-all">${c.message}</span>
+            <div class="text-[9px] text-slate-400 mt-0.5">${c.timestamp}</div>
           </div>
-        `;
-        grid.insertAdjacentHTML('beforeend', cardHtml);
-      });
+          <button onclick="deleteCommentRecord(${c.rowIndex})" class="text-rose-500 hover:text-rose-700 font-bold px-1 rounded hover:bg-rose-50 transition" title="ลบโน้ตนี้">
+            ✕
+          </button>
+        </div>`;
+    });
+  } catch (e) { 
+    console.error("โหลดคอมเมนต์ขัดข้อง", e);
+  }
+}
+
+// ฟังก์ชันรองรับการกดยืนยันลบคอมเมนต์ส่งไปหลังบ้าน
+async function deleteCommentRecord(rowIndex) {
+  if(!confirm("🗑️ คุณแน่ใจใช่หรือไม่ว่าต้องการลบข้อความโน้ตบันทึกนี้?")) return;
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'deleteComment', rowIndex: rowIndex })
+    });
+    const result = await res.json();
+    if(result.success) {
+      if(currentActiveRoom) {
+        loadChatMessages(currentActiveRoom); // โหลดกล่องคอมเมนต์ใหม่ทันที
+      }
+    } else {
+      alert("ไม่สามารถลบข้อความได้: " + result.message);
+    }
+  } catch(err) {
+    alert("การเชื่อมต่อฐานข้อมูลขัดข้อง");
+  }
+}
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chatInput'); if (!input.value.trim() || !currentActiveRoom) return;
+      try { await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'sendComment', roomNo: currentActiveRoom, user: 'Admin', message: input.value.trim() }) }); input.value = ''; loadChatMessages(currentActiveRoom); } catch (err) {}
     }
 
     function searchRoomNumber() {
       let input = document.getElementById('searchRoom').value.trim();
-      if (input === '') {
-        document.querySelectorAll('#rooms-grid > div').forEach(card => card.style.display = 'flex');
-        return;
-      }
-      document.querySelectorAll('#rooms-grid > div').forEach(card => {
-        let roomNo = card.getAttribute('data-room');
-        if (roomNo) {
-          card.style.display = roomNo.includes(input) ? "flex" : "none";
-        }
-      });
-    }
-
-    async function handleElectricity(e) {
-      e.preventDefault();
-      const roomNo = document.getElementById('elecRoom').value.trim();
-      const unit = document.getElementById('elecUnit').value;
-      const submitBtn = document.getElementById('elec-submit-btn');
-
-      submitBtn.innerText = "กำลังบันทึกข้อมูล...";
-      submitBtn.disabled = true;
-
-      try {
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'saveElectricity', roomNo: roomNo, unit: unit })
-        });
-        const result = await res.json();
-        if(result.success) {
-          alert(`🎉 บันทึกหน่วยไฟฟ้าห้อง ${roomNo} เรียบร้อย!`);
-          document.getElementById('elecForm').reset();
-          loadRooms();
-        }
-      } catch (err) {
-        alert('เครือข่ายขัดข้อง');
-      } finally {
-        submitBtn.innerText = "💾 บันทึกข้อมูลเข้า Google Sheets";
-        submitBtn.disabled = false;
-      }
-    }
-
-    async function toggleRoomStatus(roomNo) {
-      if(!confirm(`ต้องการสลับสถานะห้อง ${roomNo}?`)) return;
-      try {
-        await fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'toggleRoomStatus', roomNo: roomNo })
-        });
-        loadRooms();
-      } catch (err) { }
-    }
-
-    function openChat(roomNo) {
-      currentActiveRoom = roomNo;
-      document.getElementById('chatTitle').innerText = `💬 บันทึกโน้ตแอดมิน - ห้อง ${roomNo}`;
-      document.getElementById('chatModal').classList.remove('hidden');
-      fetchChatMessages();
-      chatInterval = setInterval(fetchChatMessages, 4000);
-    }
-
-    function closeChat() {
-      document.getElementById('chatModal').classList.add('hidden');
-      clearInterval(chatInterval);
-    }
-
-    async function fetchChatMessages() {
-      if (!currentActiveRoom) return;
-      try {
-        const res = await fetch(`${API_URL}?action=getComments&roomNo=${currentActiveRoom}`);
-        const comments = await res.json();
-        const chatBox = document.getElementById('chatBox');
-        chatBox.innerHTML = '';
-        
-        if (comments.length === 0) {
-          chatBox.innerHTML = `<p class="text-slate-400 text-xs text-center my-auto">ยังไม่มีบันทึกโน้ต</p>`;
-          return;
-        }
-
-        comments.forEach(c => {
-          const msgHtml = `
-            <div class="bg-white border border-slate-200 p-2.5 rounded-xl rounded-tl-none max-w-[90%] self-start shadow-sm">
-              <div class="flex justify-between gap-4 mb-0.5">
-                <span class="text-[9px] text-indigo-600 font-bold">${c.user}</span>
-                <span class="text-[8px] text-slate-400">${c.time}</span>
-              </div>
-              <p class="text-xs text-slate-700">${c.msg}</p>
-            </div>`;
-          chatBox.insertAdjacentHTML('beforeend', msgHtml);
-        });
-        chatBox.scrollTop = chatBox.scrollHeight;
-      } catch (e) { }
-    }
-
-    async function sendChatMessage() {
-      const input = document.getElementById('chatInput');
-      if (!input.value.trim() || !currentActiveRoom) return;
-      const text = input.value;
-      input.value = '';
-
-      try {
-        await fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'sendComment', roomNo: currentActiveRoom, user: 'Admin', message: text })
-        });
-        fetchChatMessages();
-      } catch (err) { }
+      document.querySelectorAll('#rooms-grid > div').forEach(card => { let roomNo = card.querySelector('.text-xl').innerText; card.style.display = roomNo.includes(input) ? "block" : "none"; });
     }
   </script>
 </body>

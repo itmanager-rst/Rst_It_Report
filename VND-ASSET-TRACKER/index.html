@@ -7,10 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
         .toast { transition: all 0.3s ease; transform: translateY(-20px); opacity: 0; }
         .toast.show { transform: translateY(0); opacity: 1; }
+        .clickable-row { cursor: pointer; user-select: none; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800">
@@ -24,217 +25,165 @@
     </div>
 
     <div id="auth-section" class="flex min-h-screen items-center justify-center p-4">
+        <div class="absolute top-4 right-4 z-50">
+            <select id="langSelectLogin" onchange="changeLanguage(this.value)" class="bg-white border border-slate-300 rounded-lg p-1.5 text-xs font-semibold shadow-sm focus:outline-none">
+                <option value="en">🇺🇸 English</option>
+                <option value="th" selected>🇹🇭 ภาษาไทย</option>
+                <option value="vi">🇻🇳 Tiếng Việt</option>
+            </select>
+        </div>
+
         <div id="loginBox" class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-slate-100 block">
             <div class="text-center mb-8">
                 <div class="inline-flex p-3 bg-red-50 text-red-600 rounded-2xl mb-3 text-2xl">
                     <i class="fa-solid fa-shield-halved"></i>
                 </div>
-                <h2 class="text-2xl font-bold text-slate-800">Authorized Access Only</h2>
-                <p class="text-slate-400 text-sm mt-1">Please sign in with your account to proceed</p>
+                <h2 id="lbl-auth-title" class="text-2xl font-bold text-slate-800">Authorized Access Only</h2>
+                <p id="lbl-auth-desc" class="text-slate-400 text-sm mt-1">Please sign in with your account to proceed</p>
             </div>
             <form id="loginForm" class="space-y-5">
                 <div>
-                    <label class="block mb-1.5 font-semibold text-slate-600 text-sm">Username</label>
-                    <div class="relative">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i class="fa-solid fa-user"></i></span>
-                        <input type="text" id="login_user" required class="w-full bg-slate-50 pl-10 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="Enter username">
-                    </div>
+                    <label id="lbl-username" class="block mb-1.5 font-semibold text-slate-600 text-sm">Username</label>
+                    <input type="text" id="login_user" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200" placeholder="Enter username">
                 </div>
                 <div>
-                    <label class="block mb-1.5 font-semibold text-slate-600 text-sm">Password</label>
-                    <div class="relative">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i class="fa-solid fa-lock"></i></span>
-                        <input type="password" id="login_pass" required class="w-full bg-slate-50 pl-10 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="••••">
-                    </div>
+                    <label id="lbl-password" class="block mb-1.5 font-semibold text-slate-600 text-sm">Password</label>
+                    <input type="password" id="login_pass" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200" placeholder="••••">
                 </div>
-                <button type="submit" id="btn-login" class="w-full bg-slate-900 text-white font-medium p-3 rounded-lg hover:bg-slate-800 transition flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-right-to-bracket"></i> Sign In
-                </button>
+                <button type="submit" id="btn-login" class="w-full bg-slate-900 text-white font-medium p-3 rounded-lg hover:bg-slate-800 transition">Sign In</button>
             </form>
-            <div class="text-center mt-6">
-                <button onclick="toggleAuthMode('register')" class="text-sm font-medium text-red-600 hover:underline">New staff? Register here</button>
-            </div>
-        </div>
-
-        <div id="registerBox" class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-slate-100 hidden">
-            <div class="text-center mb-8">
-                <div class="inline-flex p-3 bg-blue-50 text-blue-600 rounded-2xl mb-3 text-2xl">
-                    <i class="fa-solid fa-user-plus"></i>
-                </div>
-                <h2 class="text-2xl font-bold text-slate-800">Staff Registration</h2>
-                <p class="text-slate-400 text-sm mt-1">Create an account to access the tracker system</p>
-            </div>
-            <form id="registerForm" class="space-y-4">
-                <div>
-                    <label class="block mb-1.5 font-semibold text-slate-600 text-sm">Username</label>
-                    <input type="text" id="reg_user" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="e.g. staff_b">
-                </div>
-                <div>
-                    <label class="block mb-1.5 font-semibold text-slate-600 text-sm">Full Name</label>
-                    <input type="text" id="reg_name" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="Firstname & Lastname">
-                </div>
-                <div>
-                    <label class="block mb-1.5 font-semibold text-slate-600 text-sm">Password</label>
-                    <input type="password" id="reg_pass" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="••••">
-                </div>
-                <button type="submit" id="btn-register" class="w-full bg-blue-600 text-white font-medium p-3 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-user-check"></i> Register Account
-                </button>
-            </form>
-            <div class="text-center mt-6">
-                <button onclick="toggleAuthMode('login')" class="text-sm font-medium text-slate-500 hover:underline">Already have an account? Sign In</button>
-            </div>
         </div>
     </div>
 
     <div id="main-section" class="hidden">
-        <header class="bg-red-700 text-white px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-md">
+        <header class="bg-red-700 text-white px-6 py-4 flex justify-between items-center shadow-md">
             <div class="flex items-center gap-3">
                 <i class="fa-solid fa-cubes text-2xl"></i>
-                <h1 class="text-lg font-bold">VN ระบบติดตามทรัพย์สินและสต็อก (เวียดนาม)</h1>
+                <h1 id="lbl-app-title" class="text-lg font-bold">VN Asset & Stock Tracking System</h1>
             </div>
             <div class="flex items-center gap-4">
+                <select id="langSelect" onchange="changeLanguage(this.value)" class="bg-white border border-slate-300 rounded-lg p-1.5 text-xs font-semibold text-slate-800 shadow-sm focus:outline-none">
+                    <option value="en">🇺🇸 English</option>
+                    <option value="th" selected>🇹🇭 ภาษาไทย</option>
+                    <option value="vi">🇻🇳 Tiếng Việt</option>
+                </select>
+
                 <div class="text-right text-sm">
                     <p class="text-xs opacity-75">Role: <span id="user-role" class="bg-red-900 px-2 py-0.5 rounded-full font-bold">User</span></p>
                     <p class="font-bold" id="user-display">Guest</p>
                 </div>
                 <button onclick="logout()" class="text-white/80 hover:text-white text-xl"><i class="fa-solid fa-power-off"></i></button>
-                <div class="flex gap-1 text-xs bg-red-800 p-1 rounded-lg">
-                    <button onclick="changeLang('en')" class="px-2 py-1 rounded hover:bg-red-600">EN</button>
-                    <button onclick="changeLang('vn')" class="px-2 py-1 rounded hover:bg-red-600">VN</button>
-                    <button onclick="changeLang('th')" class="px-2 py-1 rounded hover:bg-red-600">TH</button>
-                </div>
             </div>
         </header>
 
         <main class="p-6 max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="space-y-6 h-fit">
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
-                    <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-square-plus text-red-600"></i> ฟอร์มบันทึกรายการสินค้า</h3>
+                    <h3 id="lbl-form-title" class="text-lg font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-square-plus text-red-600"></i> Stock Transaction Form</h3>
                     <form id="stockForm" class="space-y-4">
                         <div>
-                            <label class="block mb-1.5 font-semibold text-slate-600 text-sm">ผู้ทำรายการ</label>
+                            <label id="lbl-form-operator" class="block mb-1.5 font-semibold text-slate-600 text-sm">Operator</label>
                             <input type="text" id="form-user" disabled class="w-full bg-slate-100 p-2.5 rounded-lg border text-slate-500 font-medium">
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-semibold text-slate-600 text-sm">ประเภทการทำรายการ</label>
-                            <select id="transactionType" class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none">
-                                <option value="เบิกออกไปใช้งาน (Stock Out)">เบิกออกไปใช้งาน (Stock Out)</option>
-                                <option value="รับสินค้าเข้าคลัง (Stock In)">รับสินค้าเข้าคลัง (Stock In)</option>
-                            </select>
+                            <label id="lbl-form-type" class="block mb-1.5 font-semibold text-slate-600 text-sm">Transaction Type</label>
+                            <select id="transactionType" class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200"></select>
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-semibold text-slate-600 text-sm">📊 Scan Barcode Here</label>
-                            <div class="relative">
-                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i class="fa-solid fa-barcode"></i></span>
-                                <input type="text" id="barcodeInput" class="w-full bg-blue-50/50 pl-9 p-2.5 rounded-lg border border-blue-200 focus:outline-none font-mono" placeholder="คลิกที่นี่แล้วใช้เครื่องสแกนยิงได้เลย...">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block mb-1.5 font-semibold text-slate-600 text-sm">เลือกสินค้า / อุปกรณ์พัสดุ</label>
-                            <select id="item" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none">
-                                <option value="">-- เลือกรายการพัสดุ --</option>
+                            <label id="lbl-form-select-item" class="block mb-1.5 font-semibold text-slate-600 text-sm">Select Part / Asset</label>
+                            <select id="item" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <option value="">-- Select Item --</option>
                             </select>
                         </div>
                         <div>
                             <label class="block mb-1.5 font-semibold text-slate-600 text-sm">🔗 Matchain Line</label>
-                            <select id="matchainLine" class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none">
+                            <select id="matchainLine" class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                                 <option value="Non">-- Non --</option>
                                 <option value="30P">30P</option>
                                 <option value="50P-2">50P-2</option>
-                                <option value="50P-3">50P-3</option>
                                 <option value="60P">60P</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-semibold text-slate-600 text-sm">จำนวน</label>
-                            <input type="number" id="qty" min="1" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="0">
+                            <label id="lbl-form-qty" class="block mb-1.5 font-semibold text-slate-600 text-sm">Quantity</label>
+                            <input type="number" id="qty" min="1" required class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200" placeholder="0">
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-semibold text-slate-600 text-sm">เหตุผลความจำเป็น / ชื่อโครงการ</label>
-                            <textarea id="reason" rows="2" class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200 focus:outline-none" placeholder="ระบุเหตุผล..."></textarea>
+                            <label id="lbl-form-reason" class="block mb-1.5 font-semibold text-slate-600 text-sm">Reason / Project Name</label>
+                            <textarea id="reason" rows="2" class="w-full bg-slate-50 p-2.5 rounded-lg border border-slate-200" placeholder="Enter reason details..."></textarea>
                         </div>
-                        
-                        <div class="border p-3 rounded-xl bg-slate-50 border-dashed border-slate-300">
-                            <label id="lbl-job-img" class="block mb-1.5 font-bold text-slate-700 text-sm">📸 แนบรูปภาพหน้างาน (เฉพาะตอนเบิก)</label>
-                            <input type="file" id="jobImage" accept="image/*" class="w-full bg-white p-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none cursor-pointer">
-                            <img id="previewImg" class="mt-3 max-h-32 hidden rounded-lg border p-1 bg-white mx-auto shadow-sm">
+                        <div>
+                            <label id="lbl-form-photo" class="block mb-1.5 font-semibold text-slate-600 text-sm">📷 Attach Evidence Photo</label>
+                            <input type="file" id="imageFile" accept="image/*" class="w-full text-xs bg-slate-50 p-2 rounded-lg border">
+                            <div id="previewContainer" class="mt-2 text-center hidden">
+                                <img id="previewImg" src="" class="max-h-24 inline-block rounded border border-slate-300 shadow-sm">
+                            </div>
                         </div>
-                        
-                        <button type="submit" id="btn-submit" class="w-full bg-red-600 text-white font-medium p-3 rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2">
-                            <i class="fa-solid fa-floppy-disk"></i> บันทึกข้อมูลพัสดุ
+                        <button type="submit" id="btn-submit" class="w-full bg-red-600 text-white font-medium p-3 rounded-lg hover:bg-red-700 transition">
+                            <i class="fa-solid fa-floppy-disk"></i> Save Transaction
                         </button>
                     </form>
                 </div>
 
-                <div id="admin-add-item-box" class="bg-amber-50/50 p-6 rounded-2xl border border-amber-200 shadow-sm space-y-4 hidden">
-                    <h3 class="text-base font-bold text-amber-800 flex items-center gap-2"><i class="fa-solid fa-circle-plus text-amber-600"></i> ➕ เพิ่มพัสดุอุปกรณ์ชิ้นใหม่ (Admin Only)</h3>
-                    <div>
-                        <label class="block mb-1 text-amber-900 font-semibold text-xs">📷 ยิงบาร์โค้ดเพื่อรับรหัสพัสดุใหม่</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-amber-600"><i class="fa-solid fa-qrcode"></i></span>
-                            <input type="text" id="adminBarcodeInput" class="w-full bg-white pl-8 p-2 rounded-lg border border-amber-300 focus:outline-none text-sm font-mono" placeholder="ยิงบาร์โค้ดชิ้นใหม่ตรงนี้...">
-                        </div>
-                    </div>
-                    <hr class="border-amber-200">
+                <div id="admin-add-item-box" class="bg-amber-50/70 p-6 rounded-2xl border border-amber-200 shadow-sm space-y-4 hidden">
+                    <h3 id="lbl-admin-box-title" class="text-base font-bold text-amber-800 flex items-center gap-2"><i class="fa-solid fa-circle-plus text-amber-600"></i> Add New Asset Stock (Admin)</h3>
                     <form id="adminNewItemForm" class="space-y-3">
                         <div>
-                            <label class="block mb-1 text-slate-600 font-semibold text-xs">รหัสสินค้า / อะไหล่ใหม่</label>
-                            <input type="text" id="new_item_code" required class="w-full bg-white p-2 rounded-lg border text-sm uppercase font-mono" placeholder="เช่น vna-004">
+                            <label id="lbl-admin-code" class="block mb-1 text-slate-600 font-semibold text-xs">New Item Code</label>
+                            <input type="text" id="new_item_code" required class="w-full bg-white p-2 rounded-lg border text-sm uppercase" placeholder="e.g. vna-004">
                         </div>
                         <div>
-                            <label class="block mb-1 text-slate-600 font-semibold text-xs">ชื่อพัสดุ / รายละเอียดสเปก</label>
-                            <input type="text" id="new_item_name" required class="w-full bg-white p-2 rounded-lg border text-sm" placeholder="เช่น กระบอกสูบ SMC 50mm">
+                            <label id="lbl-admin-name" class="block mb-1 text-slate-600 font-semibold text-xs">Asset Name / Specification</label>
+                            <input type="text" id="new_item_name" required class="w-full bg-white p-2 rounded-lg border text-sm" placeholder="e.g. SMC Cylinder">
                         </div>
                         <div>
-                            <label class="block mb-1 text-slate-600 font-semibold text-xs">ยอดสต็อกเริ่มต้นตั้งค่า</label>
+                            <label id="lbl-admin-qty" class="block mb-1 text-slate-600 font-semibold text-xs">Initial Stock</label>
                             <input type="number" id="new_item_qty" min="0" required class="w-full bg-white p-2 rounded-lg border text-sm" placeholder="0">
                         </div>
-                        <button type="submit" id="btn-admin-add" class="w-full bg-amber-600 text-white text-sm font-semibold p-2.5 rounded-lg hover:bg-amber-700 transition flex items-center justify-center gap-2">
-                            <i class="fa-solid fa-plus-square"></i> สร้างและจัดเก็บเข้าฐานข้อมูลคลัง
-                        </button>
+                        <button type="submit" id="btn-admin-add" class="w-full bg-amber-600 text-white text-sm font-semibold p-2 rounded-lg hover:bg-amber-700 transition">Create Asset Item</button>
                     </form>
                 </div>
             </div>
 
-            <div class="lg:grid-cols-1 lg:col-span-2 space-y-6">
+            <div class="lg:col-span-2 space-y-6">
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-warehouse text-slate-600"></i> รายการสินค้าคลังปัจจุบัน</h3>
-                    <div class="overflow-x-auto max-h-[350px] overflow-y-auto border rounded-xl">
+                    <h3 id="lbl-tbl-inv-title" class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-warehouse text-slate-600"></i> Current Warehouse Stock</h3>
+                    <div class="overflow-x-auto max-h-[300px] border rounded-xl">
                         <table class="w-full text-left border-collapse">
                             <thead>
                                 <tr class="bg-slate-900 text-white text-sm">
-                                    <th id="th-inv-code" class="p-3">รหัสสินค้า</th>
-                                    <th id="th-inv-name" class="p-3">ชื่ออะไหล่ / ข้อมูลจำเพาะ</th>
-                                    <th id="th-inv-qty" class="p-3 text-center">คงเหลือ</th>
-                                    <th id="th-action" class="p-3 text-center hidden">การจัดการ (Admin Only)</th>
+                                    <th id="th-inv-code" class="p-3">Item Code</th>
+                                    <th id="th-inv-name" class="p-3">Part Name / Specifications</th>
+                                    <th id="th-inv-qty" class="p-3 text-center">Available</th>
+                                    <th id="th-action" class="p-3 text-center hidden">Action (Admin)</th>
                                 </tr>
                             </thead>
                             <tbody id="inventoryTable" class="divide-y text-sm">
-                                <tr><td colspan="4" class="p-4 text-center text-slate-400">กำลังโหลดสต็อก...</td></tr>
+                                <tr><td colspan="4" class="p-4 text-center text-slate-400">Loading Stock...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-history text-slate-600"></i> ประวัติกิจกรรมล่าสุด</h3>
-                    <div class="overflow-x-auto max-h-[320px] overflow-y-auto border rounded-xl">
+                    <h3 id="lbl-tbl-log-title" class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-history text-slate-600"></i> Recent Activity Logs</h3>
+                    <div class="overflow-x-auto max-h-[350px] border rounded-xl">
                         <table class="w-full text-left border-collapse">
                             <thead>
                                 <tr class="bg-slate-900 text-white text-sm">
-                                    <th id="th-log-date" class="p-3">วัน-เวลา</th>
-                                    <th id="th-log-user" class="p-3">ผู้ทำรายการ</th>
-                                    <th id="th-log-item" class="p-3">ชื่อพัสดุ</th>
-                                    <th id="th-log-qty" class="p-3 text-center">จำนวน</th>
-                                    <th id="th-log-type" class="p-3">ประเภท</th>
-                                    <th id="th-log-reason" class="p-3">เหตุผล / โครงการ</th>
-                                    <th id="th-log-matchain" class="p-3">ไลน์</th>
-                                    <th id="th-log-img" class="p-3 text-center">รูปภาพหน้างาน</th>
+                                    <th id="th-log-date" class="p-3">Date-Time</th>
+                                    <th id="th-log-user" class="p-3">Operator</th>
+                                    <th id="th-log-item" class="p-3">Part Name</th>
+                                    <th id="th-log-qty" class="p-3 text-center">Qty</th>
+                                    <th id="th-log-type" class="p-3">Type</th>
+                                    <th class="p-3">Line</th>
+                                    <th id="th-log-reason" class="p-3">Reason / Project</th>
+                                    <th id="th-log-photo" class="p-3 text-center">Photo</th>
+                                    <th id="th-log-action" class="p-3 text-center hidden">Log Action</th>
                                 </tr>
                             </thead>
                             <tbody id="logTable" class="divide-y text-sm">
-                                <tr><td colspan="8" class="p-4 text-center text-slate-400">กำลังโหลดประวัติ...</td></tr>
+                                <tr><td colspan="9" class="p-4 text-center text-slate-400">Loading Logs...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -244,11 +193,136 @@
     </div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyBZB0Q57KPSlGQU9tWWIVLlG_HoqpH1HTMTOLRZUMH5au_IbqXB__XKSW_vpC17_MnBQ/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyEznsNeep4Z0hd1t42Ogs-HT3T6N6P5xkOAAh8AmDIUiV27mV21gHJnCh0O16FNBYfhg/exec";
         
         let currentUser = null;
-        let inventoryData = [];
-        let currentLang = 'th';
+        let base64ImageString = ""; 
+        let currentLang = "th";
+
+        const langDict = {
+            en: {
+                authTitle: "Authorized Access Only", authDesc: "Please sign in with your account to proceed",
+                username: "Username", password: "Password", btnLogin: "Sign In",
+                appTitle: "VN Asset & Stock Tracking System", formTitle: "Stock Transaction Form",
+                operator: "Operator", txType: "Transaction Type", selectItem: "Select Part / Asset",
+                qty: "Quantity", reason: "Reason / Project Name", photo: "📷 Attach Evidence Photo",
+                btnSubmit: "Save Transaction", adminBoxTitle: "Add New Asset Stock (Admin)",
+                adminCode: "New Item Code", adminName: "Asset Name / Specification", adminQty: "Initial Stock",
+                btnAdminAdd: "Create Asset Item", tblInvTitle: "Current Warehouse Stock",
+                thInvCode: "Item Code", thInvName: "Part Name / Specifications", thInvQty: "Available",
+                thInvAction: "Action (Admin)", tblLogTitle: "Recent Activity Logs",
+                thLogDate: "Date-Time", thLogUser: "Operator", thLogItem: "Part Name", thLogQty: "Qty",
+                thLogType: "Type", thLogReason: "Reason / Project", thLogPhoto: "Photo", thLogAction: "Log Action",
+                optStockOut: "Stock Out (Usage / Dispatch)", optStockIn: "Stock In (Restock / Arrival)",
+                loading: "Loading data...", noPhoto: "No photo", selectPlaceholder: "-- Select Item --",
+                promptNewQty: "Enter new stock quantity for", msgInvalidLogin: "Invalid username or password",
+                msgSaveSuccess: "Transaction saved successfully", msgConfirmDelete: "Are you sure to delete log ID:",
+                msgConfirmDeleteItem: "Are you sure to delete item:",
+                msgSelectedViaDblClick: "Selected item:"
+            },
+            th: {
+                authTitle: "ระบบเฉพาะผู้มีสิทธิ์เข้าถึงเท่านั้น", authDesc: "กรุณาลงชื่อเข้าใช้งานบัญชีของคุณเพื่อดำเนินการต่อ",
+                username: "ชื่อผู้ใช้งาน", password: "รหัสผ่าน", btnLogin: "เข้าสู่ระบบ",
+                appTitle: "VN ระบบติดตามทรัพย์สินและสต็อก (เวียดนาม)", formTitle: "ฟอร์มบันทึกรายการสินค้า",
+                operator: "ผู้ทำรายการ", txType: "ประเภทการทำรายการ", selectItem: "เลือกสินค้า / อุปกรณ์พัสดุ",
+                qty: "จำนวน", reason: "เหตุผลความจำเป็น / ชื่อโครงการ", photo: "📷 แนบรูปภาพหลักฐานหน้างาน",
+                btnSubmit: "บันทึกข้อมูลพัสดุ", adminBoxTitle: "➕ เพิ่มพัสดุอุปกรณ์ใหม่ (Admin Only)",
+                adminCode: "รหัสสินค้าใหม่", adminName: "ชื่อพัสดุอุปกรณ์ / ข้อมูลจำเพาะ", adminQty: "ยอดเริ่มต้นคลัง",
+                btnAdminAdd: "สร้างเข้าฐานคลังสินค้า", tblInvTitle: "รายการสินค้าคลังปัจจุบัน",
+                thInvCode: "รหัสสินค้า", thInvName: "ชื่ออะไหล่ / ข้อมูลจำเพาะ", thInvQty: "คงเหลือ",
+                thInvAction: "การจัดการ (Admin)", tblLogTitle: "ประวัติกิจกรรมล่าสุด",
+                thLogDate: "วัน-เวลา", thLogUser: "ผู้ทำรายการ", thLogItem: "ชื่อพัสดุ", thLogQty: "จำนวน",
+                thLogType: "ประเภท", thLogReason: "เหตุผลความจำเป็น / ชื่อโครงการ", thLogPhoto: "รูปภาพหลักฐาน", thLogAction: "การจัดการ Log (Admin)",
+                optStockOut: "เบิกออกไปใช้งาน (Stock Out)", optStockIn: "รับสินค้าเข้าคลัง (Stock In)",
+                loading: "กำลังโหลดข้อมูล...", noPhoto: "ไม่มีรูปภาพ", selectPlaceholder: "-- เลือกรายการพัสดุ --",
+                promptNewQty: "ระบุจำนวนสต็อกใหม่สำหรับ", msgInvalidLogin: "Username หรือ Password ไม่ถูกต้อง",
+                msgSaveSuccess: "บันทึกสต็อกเรียบร้อย", msgConfirmDelete: "⚠️ ยืนยันการลบประวัติกิจกรรมรหัส:",
+                msgConfirmDeleteItem: "⚠️ ยืนยันการลบรายการสินค้า:",
+                msgSelectedViaDblClick: "เลือกสินค้าเรียบร้อย:"
+            },
+            vi: {
+                authTitle: "Chỉ Truy Cập Được Ủy Quyền", authDesc: "Vui lòng đăng nhập bằng tài khoản của bạn để tiếp tục",
+                username: "Tên đăng nhập", password: "Mật khẩu", btnLogin: "Đăng Nhập",
+                appTitle: "VN Hệ Thống Theo Dõi Tài Sản & Kho", formTitle: "Biểu Mẫu Giao Dịch Kho",
+                operator: "Người thực hiện", txType: "Loại giao dịch", selectItem: "Chọn thiết bị / tài sản",
+                qty: "Số lượng", reason: "Lý do / Tên dự án", photo: "📷 Đính kèm ảnh bằng chứng",
+                btnSubmit: "Lưu giao dịch", adminBoxTitle: " Thêm mã tài sản mới (Admin Only)",
+                adminCode: "Mã tài sản mới", adminName: "Tên tài sản / Thông số kỹ thuật", adminQty: "Số lượng kho ban đầu",
+                btnAdminAdd: "Tạo tài sản vào kho", tblInvTitle: "Số lượng kho hiện tại",
+                thInvCode: "Mã sản phẩm", thInvName: "Tên phụ tùng / Thông số", thInvQty: "Tồn kho",
+                thInvAction: "Hành động (Admin)", tblLogTitle: "Lịch sử hoạt động gần đây",
+                thLogDate: "Ngày-Giờ", thLogUser: "Người thực hiện", thLogItem: "Tên tài sản", thLogQty: "SL",
+                thLogType: "Loại", thLogReason: "Lý do / Dự án", thLogPhoto: "Hình ảnh", thLogAction: "Quản lý Log",
+                optStockOut: "Xuất kho sử dụng (Stock Out)", optStockIn: "Nhập kho bổ sung (Stock In)",
+                loading: "Đang tải dữ liệu...", noPhoto: "Không có ảnh", selectPlaceholder: "-- Chọn mặt hàng --",
+                promptNewQty: "Nhập số lượng kho mới cho", msgInvalidLogin: "Tên đăng nhập hoặc mật khẩu không đúng",
+                msgSaveSuccess: "Đã lưu giao dịch kho thành công", msgConfirmDelete: "⚠️ Bạn có chắc chắn muốn xóa mã log:",
+                msgConfirmDeleteItem: "⚠️ Bạn có chắc chắn muốn xóa mặt hàng:",
+                msgSelectedViaDblClick: "Đã chọn mặt hàng:"
+            }
+        };
+
+        function changeLanguage(lang) {
+            currentLang = lang;
+            const t = langDict[lang];
+            
+            // ซิงค์ค่าของซีเล็คเตอร์เลือกภาษาทั้งสองจุด (ในหน้า Login และหน้าหลัก) ให้ตรงกัน
+            if (document.getElementById('langSelectLogin')) document.getElementById('langSelectLogin').value = lang;
+            if (document.getElementById('langSelect')) document.getElementById('langSelect').value = lang;
+
+            document.getElementById('lbl-auth-title').innerText = t.authTitle;
+            document.getElementById('lbl-auth-desc').innerText = t.authDesc;
+            document.getElementById('lbl-username').innerText = t.username;
+            document.getElementById('lbl-password').innerText = t.password;
+            document.getElementById('btn-login').innerText = t.btnLogin;
+
+            document.getElementById('lbl-app-title').innerText = t.appTitle;
+            document.getElementById('lbl-form-title').innerHTML = `<i class="fa-solid fa-square-plus text-red-600"></i> ${t.formTitle}`;
+            document.getElementById('lbl-form-operator').innerText = t.operator;
+            document.getElementById('lbl-form-type').innerText = t.txType;
+            document.getElementById('lbl-form-select-item').innerText = t.selectItem;
+            document.getElementById('lbl-form-qty').innerText = t.qty;
+            document.getElementById('lbl-form-reason').innerText = t.reason;
+            document.getElementById('lbl-form-photo').innerText = t.photo;
+            document.getElementById('btn-submit').innerHTML = `<i class="fa-solid fa-floppy-disk"></i> ${t.btnSubmit}`;
+            
+            document.getElementById('lbl-admin-box-title').innerHTML = `<i class="fa-solid fa-circle-plus text-amber-600"></i> ${t.adminBoxTitle}`;
+            document.getElementById('lbl-admin-code').innerText = t.adminCode;
+            document.getElementById('lbl-admin-name').innerText = t.adminName;
+            document.getElementById('lbl-admin-qty').innerText = t.adminQty;
+            document.getElementById('btn-admin-add').innerText = t.btnAdminAdd;
+
+            document.getElementById('lbl-tbl-inv-title').innerHTML = `<i class="fa-solid fa-warehouse text-slate-600"></i> ${t.tblInvTitle}`;
+            document.getElementById('th-inv-code').innerText = t.thInvCode;
+            document.getElementById('th-inv-name').innerText = t.thInvName;
+            document.getElementById('th-inv-qty').innerText = t.thInvQty;
+            document.getElementById('th-action').innerText = t.thInvAction;
+
+            document.getElementById('lbl-tbl-log-title').innerHTML = `<i class="fa-solid fa-history text-slate-600"></i> ${t.tblLogTitle}`;
+            document.getElementById('th-log-date').innerText = t.thLogDate;
+            document.getElementById('th-log-user').innerText = t.thLogUser;
+            document.getElementById('th-log-item').innerText = t.thLogItem;
+            document.getElementById('th-log-qty').innerText = t.thLogQty;
+            document.getElementById('th-log-type').innerText = t.thLogType;
+            document.getElementById('th-log-reason').innerText = t.thLogReason;
+            document.getElementById('th-log-photo').innerText = t.thLogPhoto;
+            document.getElementById('th-log-action').innerText = t.thLogAction;
+
+            const txSelect = document.getElementById('transactionType');
+            txSelect.innerHTML = `
+                <option value="Stock Out / เบิกออก / Xuất">${t.optStockOut}</option>
+                <option value="Stock In / รับเข้า / Nhập">${t.optStockIn}</option>
+            `;
+            
+            if (currentUser) {
+                loadInventory();
+                loadLogs();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            changeLanguage('th');
+        });
 
         function showToast(title, desc, type='success') {
             const t = document.getElementById('toast');
@@ -266,12 +340,30 @@
             setTimeout(() => { t.classList.remove('show'); }, 3500);
         }
 
-        function toggleAuthMode(mode) {
-            document.getElementById('loginBox').style.display = mode === 'login' ? 'block' : 'none';
-            document.getElementById('registerBox').style.display = mode === 'register' ? 'block' : 'none';
-        }
+        document.getElementById('imageFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const max_width = 400; 
+                    let width = img.width; let height = img.height;
+                    if(width > max_width) { height *= max_width / width; width = max_width; }
+                    canvas.width = width; canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+                    base64ImageString = canvas.toDataURL('image/jpeg', 0.75); 
+                    document.getElementById('previewImg').src = base64ImageString;
+                    document.getElementById('previewContainer').classList.remove('hidden');
+                };
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
 
-        // 🔐 LOGIN ACTION
+        // LOGIN ACTION
         document.getElementById('loginForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-login'); btn.disabled = true;
@@ -283,7 +375,7 @@
                 const result = await res.json();
                 if(result.success) {
                     currentUser = { username, fullName: result.user.fullName, role: result.user.role };
-                    showToast("Login Success", `Welcome ${result.user.fullName}`);
+                    showToast("Access Granted", `Welcome ${result.user.fullName}`);
                     document.getElementById('auth-section').classList.add('hidden');
                     document.getElementById('main-section').classList.remove('hidden');
                     document.getElementById('user-display').innerText = currentUser.fullName;
@@ -291,328 +383,178 @@
                     document.getElementById('form-user').value = currentUser.fullName;
                     
                     if(currentUser.role === 'Admin') {
-                        document.getElementById('user-role').className = "bg-amber-500 text-slate-900 px-2 py-0.5 rounded-full font-bold text-xs";
                         document.getElementById('th-action').classList.remove('hidden'); 
+                        document.getElementById('th-log-action').classList.remove('hidden'); 
                         document.getElementById('admin-add-item-box').classList.remove('hidden'); 
                     }
-                    
                     loadInventory(); loadLogs();
-                } else { showToast("Authentication Error", result.message, 'error'); }
-            } catch(err) { showToast("Connection Error", "Cannot connect to server", 'error'); }
+                } else { showToast("Auth Failed", langDict[currentLang].msgInvalidLogin, 'error'); }
+            } catch(err) { showToast("Error", "Server connection timeout", 'error'); }
             btn.disabled = false;
         });
 
-        // 📝 REGISTER ACTION
-        document.getElementById('registerForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const btn = document.getElementById('btn-register'); btn.disabled = true;
-            const payload = { action: "register", username: document.getElementById('reg_user').value.trim(), password: document.getElementById('reg_pass').value.trim(), fullName: document.getElementById('reg_name').value.trim() };
-            try {
-                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
-                const result = await res.json();
-                if(result.success) {
-                    showToast("Account Created", "You can sign in now!", 'success');
-                    document.getElementById('registerForm').reset(); toggleAuthMode('login');
-                } else { showToast("Registration Failed", result.message, 'error'); }
-            } catch(e) { showToast("Connection Error", "Registration failed", 'error'); }
-            btn.disabled = false;
-        });
+        function selectItemToForm(itemCode, itemName) {
+            const selectEl = document.getElementById('item');
+            selectEl.value = itemCode;
+            showToast(langDict[currentLang].msgSelectedViaDblClick, `${itemCode} - ${itemName}`, "success");
+            const qtyInput = document.getElementById('qty');
+            qtyInput.focus();
+            document.getElementById('stockForm').scrollIntoView({ behavior: 'smooth' });
+        }
 
-        // ⚡ BARCODE DETECT
-        document.getElementById('barcodeInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const scannedCode = this.value.trim();
-                const itemSelect = document.getElementById('item');
-                if (!scannedCode) return;
-                let found = false;
-                for (let i = 0; i < itemSelect.options.length; i++) {
-                    if (itemSelect.options[i].value.toLowerCase() === scannedCode.toLowerCase()) { itemSelect.selectedIndex = i; found = true; break; }
-                }
-                if (found) { showToast("Scanned Successfully", `Found Item Code: ${scannedCode}`); document.getElementById('qty').focus(); }
-                else { showToast("Barcode Error", `Code [${scannedCode}] not found`, 'error'); }
-                this.value = '';
-            }
-        });
-
-        document.getElementById('adminBarcodeInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const scannedNewCode = this.value.trim();
-                if (scannedNewCode) {
-                    document.getElementById('new_item_code').value = scannedNewCode.toUpperCase();
-                    showToast("Barcode Captured", `รหัสถูกกรอกลงในฟอร์มแล้ว: ${scannedNewCode}`, "success");
-                    document.getElementById('new_item_name').focus();
-                }
-                this.value = '';
-            }
-        });
-
-        // 📷 EVENT: บีบอัดรูปภาพหน้างานทันทีก่อนส่งชีต (จำกัด 300px คลีนข้อความเพื่อไม่ให้เซลล์สเปรดชีตเต็ม)
-        document.getElementById('jobImage').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const img = new Image();
-                img.onload = function() {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 300; 
-                    const scaleSize = MAX_WIDTH / img.width;
-                    canvas.width = MAX_WIDTH;
-                    canvas.height = img.height * scaleSize;
-                    
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
-                    const preview = document.getElementById('previewImg');
-                    preview.src = compressedBase64;
-                    preview.classList.remove('hidden');
-                    preview.setAttribute('data-base64', compressedBase64);
-                }
-                img.src = event.target.result;
-            }
-            reader.readAsDataURL(file);
-        });
-
-        // 📦 LOAD INVENTORY
+        // LOAD INVENTORY
         async function loadInventory() {
             try {
                 const res = await fetch(`${SCRIPT_URL}?action=getInventory`);
                 const result = await res.json();
                 if(result.success) {
-                    inventoryData = result.data;
                     const table = document.getElementById('inventoryTable');
                     const select = document.getElementById('item');
                     table.innerHTML = '';
-                    select.innerHTML = `<option value="">${translations[currentLang].optSelect}</option>`;
+                    select.innerHTML = `<option value="">${langDict[currentLang].selectPlaceholder}</option>`;
                     
-                    inventoryData.forEach(item => {
+                    result.data.forEach(item => {
                         let actionTd = '';
                         if(currentUser && currentUser.role === 'Admin') {
-                            actionTd = `<td class="p-2 text-center">
-                                <button onclick="editStockInline('${item.code}', ${item.qty})" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-2.5 py-1 text-xs rounded transition flex items-center gap-1 mx-auto">
-                                    <i class="fa-solid fa-pen-to-square"></i> Edit
-                                </button>
+                            actionTd = `<td class="p-2 text-center" onclick="event.stopPropagation();">
+                                <button onclick="editStockInline('${item.code}', ${item.qty})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded font-bold">Edit</button>
+                                <button onclick="deleteItemAction('${item.code}')" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded font-bold ml-1"><i class="fa-solid fa-trash-can"></i> Delete</button>
                             </td>`;
                         }
-                        table.innerHTML += `
-                            <tr class="hover:bg-slate-50">
-                                <td class="p-3 font-mono font-medium text-slate-500">${item.code}</td>
-                                <td class="p-3">${item.name}</td>
-                                <td class="p-3 text-center font-bold">${item.qty}</td>
-                                ${actionTd}
-                            </tr>`;
+                        
+                        const row = document.createElement('tr');
+                        row.className = "hover:bg-slate-50 clickable-row";
+                        row.title = "Double click to select / ดับเบิ้ลคลิกเพื่อเลือกเบิก";
+                        row.ondblclick = () => selectItemToForm(item.code, item.name);
+                        
+                        row.innerHTML = `
+                            <td class="p-3 font-mono">${item.code}</td>
+                            <td class="p-3">${item.name}</td>
+                            <td class="p-3 text-center font-bold">${item.qty}</td>
+                            ${actionTd}
+                        `;
+                        
+                        table.appendChild(row);
                         select.innerHTML += `<option value="${item.code}">${item.code} - ${item.name}</option>`;
                     });
                 }
             } catch(e) { console.error(e); }
         }
 
-        // 🛠️ ADMIN EDIT STOCK
+        // ADMIN QUICK EDIT STOCK
         async function editStockInline(code, currentQty) {
-            const promptMsg = currentLang === 'th' ? `ระบุจำนวนสต็อกใหม่สำหรับรหัสสินค้า [${code}]:` : `Enter new stock quantity for [${code}]:`;
-            const newQty = prompt(promptMsg, currentQty);
+            const newQty = prompt(`${langDict[currentLang].promptNewQty} [${code}]:`, currentQty);
             if (newQty === null || newQty === '' || isNaN(newQty)) return;
-
             try {
-                showToast("Updating...", "Sending update request to sheet.");
-                const res = await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: "adminUpdateStock", adminName: currentUser.fullName, itemCode: code, newQty: parseInt(newQty) })
-                });
+                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminUpdateStock", adminName: currentUser.fullName, itemCode: code, newQty: parseInt(newQty) }) });
                 const result = await res.json();
-                if(result.success) {
-                    showToast("Stock Overridden!", "Inventory database adjusted by Admin.", "success");
-                    await loadInventory(); await loadLogs();
-                } else { showToast("Error", result.message, "error"); }
-            } catch(err) { showToast("Error", "Failed to override stock data", "error"); }
+                if(result.success) { showToast("Updated", "Stock updated", "success"); loadInventory(); loadLogs(); }
+            } catch(err) { console.error(err); }
         }
 
-        // ➕ ADMIN ADD NEW ITEM
+        // ADMIN DELETE ITEM
+        async function deleteItemAction(code) {
+            if (!currentUser || currentUser.role !== 'Admin') return;
+            if (!confirm(`${langDict[currentLang].msgConfirmDeleteItem} [${code}]?`)) return;
+            try {
+                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminDeleteItem", adminName: currentUser.fullName, itemCode: code }) });
+                const result = await res.json();
+                if(result.success) { showToast("Deleted", "Item deleted successfully", "success"); loadInventory(); loadLogs(); }
+                else { showToast("Error", result.message || "Failed to delete item", "error"); }
+            } catch(err) { console.error(err); showToast("Error", "Failed to delete item", "error"); }
+        }
+
+        // ADMIN ADD NEW ITEM TYPE
         document.getElementById('adminNewItemForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-admin-add'); btn.disabled = true;
-            const payload = {
-                action: "adminAddNewItem",
-                adminName: currentUser.fullName,
-                itemCode: document.getElementById('new_item_code').value.trim(),
-                itemName: document.getElementById('new_item_name').value.trim(),
-                initialQty: document.getElementById('new_item_qty').value
-            };
-
+            const payload = { action: "adminAddNewItem", adminName: currentUser.fullName, itemCode: document.getElementById('new_item_code').value.trim(), itemName: document.getElementById('new_item_name').value.trim(), initialQty: document.getElementById('new_item_qty').value };
             try {
-                showToast("Creating Item...", "Appending new row into spreadsheet database.");
                 const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
                 const result = await res.json();
-                if(result.success) {
-                    showToast("Success!", "พัสดุชิ้นใหม่เข้าสู่คลังเรียบร้อยแล้ว", "success");
-                    document.getElementById('adminNewItemForm').reset();
-                    await loadInventory(); await loadLogs(); 
-                } else { showToast("Error", result.message, "error"); }
-            } catch(err) { showToast("Error", "Failed to add new asset item", "error"); }
+                if(result.success) { showToast("Success", "New asset registered", "success"); document.getElementById('adminNewItemForm').reset(); loadInventory(); loadLogs(); }
+            } catch(err) { console.error(err); }
             btn.disabled = false;
         });
 
-        // 📜 LOAD LOGS WITH PHOTO BADGES
+        // LOAD LOGS WITH REASON AND PHOTO
         async function loadLogs() {
             try {
                 const res = await fetch(`${SCRIPT_URL}?action=getLogs`);
                 const result = await res.json();
-                const t = translations[currentLang];
                 if(result.success) {
-                    const table = document.getElementById('logTable'); 
-                    table.innerHTML = '';
+                    const table = document.getElementById('logTable'); table.innerHTML = '';
                     
-                    if(result.data.length === 0) {
-                        table.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-400">${t.noLog}</td></tr>`;
-                        return;
-                    }
-
-                    result.data.forEach(log => {
+                    result.data.reverse().forEach(log => {
                         let badgeColor = "bg-slate-100 text-slate-600";
-                        let statusText = log.type;
+                        if(log.type.includes("Out") || log.type.includes("เบิก") || log.type.includes("Xuất")) badgeColor = "bg-red-50 text-red-600";
+                        if(log.type.includes("In") || log.type.includes("รับ") || log.type.includes("Nhập")) badgeColor = "bg-green-50 text-green-600";
 
-                        if(log.type.includes("Out") || log.type.includes("เบิก")) {
-                            badgeColor = "bg-red-50 text-red-600"; statusText = t.badgeOut;
-                        } else if(log.type.includes("In") || log.type.includes("รับ")) {
-                            badgeColor = "bg-green-50 text-green-600"; statusText = t.badgeIn;
-                        } else if(log.type.includes("สร้าง") || log.type.includes("New Item") || log.type.includes("ใหม่")) {
-                                        badgeColor = "bg-amber-50 text-amber-600"; statusText = t.badgeNew;
-                }
-
-                        // แสดงรูปตัวอย่างขนาดเล็กในตาราง ถ้าคลิกจะดูภาพขนาดใหญ่ได้
-                        let imgHtml = '<span class="text-slate-400">-</span>';
-                        if(log.imgBase64 && log.imgBase64.startsWith("data:image")) {
-                            imgHtml = `<img src="${log.imgBase64}" onclick="viewLargeImage('${log.imgBase64}')" class="w-10 h-10 object-cover rounded cursor-zoom-in border border-slate-200 hover:scale-110 transition mx-auto">`;
+                        let imageTd = `<td class="p-3 text-center text-slate-400 text-xs italic">${langDict[currentLang].noPhoto}</td>`;
+                        if(log.image && log.image.startsWith("data:image")) {
+                            imageTd = `<td class="p-3 text-center"><img src="${log.image}" class="h-10 w-10 object-cover rounded border inline-block cursor-pointer" onclick="window.open('${log.image}')"></td>`;
                         }
+
+                        let logActionTd = '';
+                        if(currentUser && currentUser.role === 'Admin') {
+                            logActionTd = `<td class="p-3 text-center"><button onclick="deleteLogAction('${log.id}')" class="bg-red-600 hover:bg-red-700 text-white font-bold px-2 py-1 text-xs rounded transition shadow"><i class="fa-solid fa-trash-can"></i> Delete</button></td>`;
+                        }
+
+                        const displayReason = log.reason ? log.reason : "—";
 
                         table.innerHTML += `
                             <tr class="hover:bg-slate-50">
                                 <td class="p-3 text-slate-500 text-xs">${log.timestamp}</td>
                                 <td class="p-3 font-medium text-xs">${log.user}</td>
-                                <td class="p-3 text-xs max-w-[180px] truncate" title="${log.itemName}">${log.itemName}</td>
+                                <td class="p-3 text-xs max-w-[200px] truncate" title="${log.itemName}">${log.itemName}</td>
                                 <td class="p-3 text-center font-bold text-xs">${log.qty}</td>
-                                <td class="p-3 text-[11px]"><span class="px-2 py-0.5 rounded font-medium ${badgeColor}">${statusText}</span></td>
-                                <td class="p-3 text-slate-500 text-xs max-w-[150px] truncate" title="${log.reason || ''}">${log.reason || '-'}</td>
-                                <td class="p-3 font-semibold text-blue-600 text-xs">${log.matchainLine}</td>
-                                <td class="p-3 text-center">${imgHtml}</td>
+                                <td class="p-3 text-[11px]"><span class="px-2 py-0.5 rounded font-medium ${badgeColor}">${log.type}</span></td>
+                                <td class="p-3 font-semibold text-blue-600 text-xs">${log.matchainLine || 'Non'}</td>
+                                <td class="p-3 text-slate-600 text-xs max-w-[180px] truncate" title="${displayReason}">${displayReason}</td>
+                                ${imageTd}
+                                ${logActionTd}
                             </tr>`;
                     });
                 }
-            } catch(e) { 
-                console.error(e); 
-                document.getElementById('logTable').innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-400">${translations[currentLang].logLoadErr}</td></tr>`;
-            }
+            } catch(e) { console.error(e); }
         }
 
-        // 📝 SUBMIT STANDARD FORM (บังคับส่งรูปภาพเฉพาะเมื่อเลือกเบิกออกใช้งาน)
+        // DELETE LOG ACTION 
+        async function deleteLogAction(logIdValue) {
+            if (!logIdValue || logIdValue === '') return;
+            if (!confirm(`${langDict[currentLang].msgConfirmDelete} [${logIdValue}]?`)) return;
+            try {
+                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminDeleteLog", logId: logIdValue }) });
+                const result = await res.json();
+                if(result.success) { showToast("Deleted", "Log deleted successfully", "success"); loadInventory(); loadLogs(); }
+            } catch(err) { showToast("Error", "Failed", "error"); }
+        }
+
+        // SUBMIT TRANSACTION FORM
         document.getElementById('stockForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            const typeSelect = document.getElementById('transactionType').value;
-            const previewImg = document.getElementById('previewImg');
-            const imgBase64Data = previewImg.classList.contains('hidden') ? "" : previewImg.getAttribute('data-base64');
-            
-            if ((typeSelect.includes("Out") || typeSelect.includes("เบิก")) && !imgBase64Data) {
-                showToast("ข้อมูลไม่ครบ", "กรุณาแนบรูปถ่ายหน้างานก่อนทำรายการเบิก!", "error");
-                return;
-            }
-
             const btn = document.getElementById('btn-submit'); btn.disabled = true;
             const payload = { 
-                action: "submitForm", 
-                username: currentUser.fullName, 
-                itemCode: document.getElementById('item').value, 
-                qty: document.getElementById('qty').value, 
-                type: typeSelect, 
-                reason: document.getElementById('reason').value, 
-                matchainLine: document.getElementById('matchainLine').value,
-                imgBase64: imgBase64Data 
+                action: "submitForm", username: currentUser.fullName, itemCode: document.getElementById('item').value, 
+                qty: document.getElementById('qty').value, type: document.getElementById('transactionType').value, 
+                reason: document.getElementById('reason').value, matchainLine: document.getElementById('matchainLine').value,
+                image: base64ImageString 
             };
-            
             try {
                 const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
                 const result = await res.json();
                 if(result.success) {
-                    showToast("Saved!", "บันทึกข้อมูลและแนบรูปภาพเข้าตารางสำเร็จแล้ว");
-                    document.getElementById('stockForm').reset(); 
+                    showToast("Saved", langDict[currentLang].msgSaveSuccess, "success");
+                    document.getElementById('stockForm').reset();
                     document.getElementById('form-user').value = currentUser.fullName;
-                    previewImg.classList.add('hidden');
-                    previewImg.removeAttribute('data-base64');
-                    document.getElementById('jobImage').value = ''; // เคลียร์ไฟล์รูปภาพ
-                    await loadInventory(); await loadLogs();
+                    document.getElementById('previewContainer').classList.add('hidden');
+                    base64ImageString = ""; loadInventory(); loadLogs();
                 } else { showToast("Error", result.message, 'error'); }
-            } catch(e) { showToast("Error", "Failed to submit form", 'error'); }
+            } catch(e) { showToast("Error", "Submission failed", 'error'); }
             btn.disabled = false;
         });
 
-        function viewLargeImage(base64Data) {
-            const newWindow = window.open();
-            newWindow.document.write(`<body style="margin:0; background:#111; display:flex; justify-content:center; align-items:center; height:100vh;"><img src="${base64Data}" style="max-width:95%; max-height:95%; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.7);"></body>`);
-        }
-
         function logout() { currentUser = null; location.reload(); }
-
-        // 🌐 TRANSLATION ENGINE & DICTIONARY
-        const translations = {
-            en: { 
-                title: "VN Asset Tracker & Stock System", formTitle: "Stock Transaction Form", lblUser: "Operator Name", lblType: "Transaction Type", lblBarcode: "📊 Scan Barcode Here", lblItem: "Select Item / Asset", lblMatchain: "🔗 Matchain Line", lblQty: "Quantity", lblReason: "Reason / Project Name", lblImg: "📸 Job Photo Attachment (Stock Out Only)", btnSubmit: "Save Stock Data", tblInvTitle: "Current Inventory Stock", tblLogTitle: "Recent Activity Logs", 
-                thCode: "Item Code", thName: "Specification / Name", thQty: "Remaining", thAction: "Management (Admin Only)", 
-                thDate: "Date-Time", thUser: "Operator", thItem: "Item Name", thLogQty: "Qty", thType: "Type", thReason: "Reason / Project", thMatchain: "Line", thImg: "Photo",
-                badgeOut: "Stock Out", badgeIn: "Stock In", badgeNew: "New Asset",
-                optSelect: "-- Select Item --", placeholderBarcode: "Click here and scan barcode...", placeholderReason: "Enter reason...",
-                noLog: "No activity logs available at this moment.", logLoadErr: "Error loading activity history."
-            },
-            vn: { 
-                title: "VN Hệ Thống Theo Dõi Tài Sản & Kho", formTitle: "Biểu Mẫu Giao Dịch Kho", lblUser: "Tên Người Thực Hiện", lblType: "Loại Giao Dịch", lblBarcode: "📊 Quét Mã Vạch Tại Đây", lblItem: "Chọn Sản Phẩm / Tài Sản", lblMatchain: "🔗 Dây Chuyền Matchain", lblQty: "Số Lượng", lblReason: "Lý Do / Tên Dự Án", lblImg: "📸 Đính kèm hình ảnh (Chỉ xuất kho)", btnSubmit: "Lưu Dữ Liệu Kho", tblInvTitle: "Kho Hàng Hiện Tại", tblLogTitle: "Lịch Sử Hoạt Động Gần Đây", 
-                thCode: "Mã Sản Phẩm", thName: "Quy Cách / Tên", thQty: "Còn Lại", thAction: "Quản lý (Chỉ Admin)", 
-                thDate: "Ngày-Giờ", thUser: "Người Làm", thItem: "Tên Sản Phẩm", thLogQty: "S.Lượng", thType: "Loại", thReason: "Lý Do / Dự Án", thMatchain: "Chuyền", thImg: "Hình Ảnh",
-                badgeOut: "Xuất Kho", badgeIn: "Nhập Kho", badgeNew: "Tài Sản Mới",
-                optSelect: "-- Chọn sản phẩm --", placeholderBarcode: "Nhập vào đây và quét mã vạch...", placeholderReason: "Nhập lý do...",
-                noLog: "Hiện tại chưa có lịch sử hoạt động.", logLoadErr: "Lỗi khi tải lịch sử hoạt động."
-            },
-            th: { 
-                title: "VN ระบบติดตามทรัพย์สินและสต็อก (เวียดนาม)", formTitle: "ฟอร์มบันทึกรายการสินค้า", lblUser: "ผู้ทำรายการ", lblType: "ประเภทการทำรายการ", lblBarcode: "📊 Scan Barcode Here", lblItem: "เลือกสินค้า / อุปกรณ์พัสดุ", lblMatchain: "🔗 Matchain Line", lblQty: "จำนวน", lblReason: "เหตุผลความจำเป็น / ชื่อโครงการ", lblImg: "📸 แนบรูปภาพหน้างาน (เฉพาะตอนเบิก)", btnSubmit: "บันทึกข้อมูลพัสดุ", tblInvTitle: "รายการสินค้าคลังปัจจุบัน", tblLogTitle: "ประวัติกิจกรรมล่าสุด", 
-                thCode: "รหัสสินค้า", thName: "ชื่ออะไหล่ / ข้อมูลจำเพาะ", thQty: "คงเหลือ", thAction: "การจัดการ (Admin Only)", 
-                thDate: "วัน-เวลา", thUser: "ผู้ทำรายการ", thItem: "ชื่อพัสดุ", thLogQty: "จำนวน", thType: "ประเภท", thReason: "เหตุผล / โครงการ", thMatchain: "ไลน์", thImg: "รูปภาพหน้างาน",
-                badgeOut: "เบิกออกไปใช้งาน", badgeIn: "รับสินค้าเข้าคลัง", badgeNew: "สร้างพัสดุใหม่",
-                optSelect: "-- เลือกรายการพัสดุ --", placeholderBarcode: "คลิกที่นี่แล้วใช้เครื่องสแกนยิงได้เลย...", placeholderReason: "ระบุเหตุผล...",
-                noLog: "ยังไม่มีประวัติกิจกรรมในขณะนี้", logLoadErr: "เกิดข้อผิดพลาดในการโหลดประวัติ"
-            }
-        };
-
-        function changeLang(lang) {
-            currentLang = lang; const t = translations[lang]; if (!t) return;
-            document.querySelector("header h1").innerText = t.title;
-            document.querySelector("#stockForm").previousElementSibling.innerHTML = `<i class="fa-solid fa-square-plus text-red-600"></i> ${t.formTitle}`;
-            const labels = document.querySelectorAll("#stockForm > div > label");
-            if(labels[0]) labels[0].innerText = t.lblUser; 
-            if(labels[1]) labels[1].innerText = t.lblType; 
-            if(labels[2]) labels[2].innerText = t.lblBarcode; 
-            if(labels[3]) labels[3].innerText = t.lblItem; 
-            if(labels[4]) labels[4].innerText = t.lblMatchain; 
-            if(labels[5]) labels[5].innerText = t.lblQty; 
-            if(labels[6]) labels[6].innerText = t.lblReason;
-            document.getElementById("lbl-job-img").innerText = t.lblImg;
-            
-            document.getElementById("barcodeInput").placeholder = t.placeholderBarcode; document.getElementById("reason").placeholder = t.placeholderReason; document.getElementById("btn-submit").innerHTML = `<i class="fa-solid fa-floppy-disk"></i> ${t.btnSubmit}`;
-            
-            document.querySelector("#inventoryTable").closest(".bg-white").querySelector("h3").innerHTML = `<i class="fa-solid fa-warehouse text-slate-600"></i> ${t.tblInvTitle}`;
-            document.querySelector("#logTable").closest(".bg-white").querySelector("h3").innerHTML = `<i class="fa-solid fa-history text-slate-600"></i> ${t.tblLogTitle}`;
-            
-            // 📊 แปลภาษาหัวตารางสต็อก
-            document.getElementById("th-inv-code").innerText = t.thCode; document.getElementById("th-inv-name").innerText = t.thName; document.getElementById("th-inv-qty").innerText = t.thQty; document.getElementById("th-action").innerText = t.thAction;
-            
-            // 📜 แปลภาษาหัวตารางประวัติกิจกรรม
-            document.getElementById("th-log-date").innerText = t.thDate; document.getElementById("th-log-user").innerText = t.thUser; document.getElementById("th-log-item").innerText = t.thItem; document.getElementById("th-log-qty").innerText = t.thLogQty; document.getElementById("th-log-type").innerText = t.thType; document.getElementById("th-log-reason").innerText = t.thReason; document.getElementById("th-log-matchain").innerText = t.thMatchain; document.getElementById("th-log-img").innerText = t.thImg;
-            
-            const firstOption = document.getElementById("item").options[0]; if(firstOption) firstOption.innerText = t.optSelect;
-            if (currentUser) { loadLogs(); }
-        }
-
-        window.onload = () => { changeLang('th'); };
     </script>
 </body>
 </html>

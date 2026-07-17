@@ -1,199 +1,367 @@
-// ⚠️ เปลี่ยนรหัส Spreadsheet ID ให้ตรงกับไฟล์ของคุณ
-const SPREADSHEET_ID = "1eX2zfmtU0_J43bzB4GCNcdcYPa5VfjKuRpIr-DGC2AA"; 
+// VN Asset Tracker & Stock - Phase 1 critical fixes
+// - Fix image field mismatch
+// - Add delete item/log actions
+// - Add LockService for stock mutations
+// - Validate quantity/input
+// - Server-side admin role check for admin actions
+
+const SPREADSHEET_ID = "1eX2zfmtU0_J43bzB4GCNcdcYPa5VfjKuRpIr-DGC2AA";
+const TZ = "GMT+7";
 
 function getTargetSpreadsheet() {
   try {
     return SpreadsheetApp.openById(SPREADSHEET_ID);
-  } catch(e) {
+  } catch (e) {
     return SpreadsheetApp.getActiveSpreadsheet();
   }
 }
 
+function jsonOutput(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getSheetOrThrow(ss, name) {
+  const sheet = ss.getSheetByName(name);
+  if (!sheet) throw new Error("ไม่พบแท็บ " + name);
+  return sheet;
+}
+
+function normalizeText(value) {
+  return (value === null || value === undefined) ? "" : value.toString().trim();
+}
+
+function normalizeCode(value) {
+  return normalizeText(value).toUpperCase();
+}
+
+function parseNonNegativeInt(value, fieldName) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error(fieldName + " ต้องเป็นจำนวนเต็ม 0 ขึ้นไป");
+  }
+  return n;
+}
+
+function parsePositiveInt(value, fieldName) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(fieldName + " ต้องเป็นจำนวนเต็มมากกว่า 0");
+  }
+  return n;
+}
+
+function findUser(ss, username) {
+  const userSheet = getSheetOrThrow(ss, "Users");
+  const userData = userSheet.getDataRange().getValues();
+  const inputUser = normalizeText(username).toLowerCase();
+
+  for (let i = 1; i < userData.length; i++) {
+    const dbUser = normalizeText(userData[i][0]).toLowerCase();
+    if (dbUser && dbUser === inputUser) {
+      return {
+        row: i + 1,
+        username: dbUser,
+        password: normalizeText(userData[i][1]),
+        fullName: normalizeText(userData[i][2]),
+        role: normalizeText(userData[i][3]) || "User"
+      };
+    }
+  }
+  return null;
+}
+
+function requireAdmin(ss, identity) {
+  const userSheet = getSheetOrThrow(ss, "Users");
+  const userData = userSheet.getDataRange().getValues();
+  const input = normalizeText(identity).toLowerCase();
+
+  for (let i = 1; i < userData.length; i++) {
+    const dbUser = normalizeText(userData[i][0]).toLowerCase();
+    const fullName = normalizeText(userData[i][2]);
+    const dbFullName = fullName.toLowerCase();
+    const role = normalizeText(userData[i][3]) || "User";
+
+    if ((dbUser && dbUser === input) || (dbFullName && dbFullName === input)) {
+      if (role === "Admin") {
+        return {
+          row: i + 1,
+          username: dbUser,
+          fullName: fullName,
+          role: role
+        };
+      }
+      break;
+    }
+  }
+
+  throw new Error("Permission denied: Admin only");
+}
+
 function doGet(e) {
   try {
-    const action = e.parameter.action;
-    const ss = getTargetSpreadsheet(); 
-    
-    // 📦 ดึงข้อมูลพัสดุคงคลังปัจจุบัน
+    const action = e && e.parameter ? e.parameter.action : "";
+    const ss = getTargetSpreadsheet();
+
     if (action === "getInventory") {
-      const sheet = ss.getSheetByName("Inventory");
+      const sheet = getSheetOrThrow(ss, "Inventory");
       const data = sheet.getDataRange().getValues();
       const result = [];
+
       for (let i = 1; i < data.length; i++) {
-        if(data[i][0]) { 
+        if (data[i][0]) {
           result.push({
-            code: data[i][0].toString(),
-            name: data[i][1].toString(),
-            qty: parseInt(data[i][2]) || 0
+            code: normalizeText(data[i][0]),
+            name: normalizeText(data[i][1]),
+            qty: parseInt(data[i][2], 10) || 0
           });
         }
       }
-      return ContentService.createTextOutput(JSON.stringify({ success: true, data: result })).setMimeType(ContentService.MimeType.JSON);
+
+      return jsonOutput({ success: true, data: result });
     }
-    
-    // 📜 ดึงข้อมูลประวัติกิจกรรมย้อนหลัง 15 รายการ (รวมฟิลด์รูปภาพ Base64)
+
     if (action === "getLogs") {
-      const sheet = ss.getSheetByName("Stock_Log");
-      if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "ไม่พบแท็บ Stock_Log" })).setMimeType(ContentService.MimeType.JSON);
-      
+      const sheet = getSheetOrThrow(ss, "Stock_Log");
       const data = sheet.getDataRange().getValues();
       const result = [];
       const startRow = Math.max(1, data.length - 15);
-      
+
       for (let i = data.length - 1; i >= startRow; i--) {
-        if(data[i][0]) {
+        if (data[i][0]) {
           let formattedDate = data[i][0];
           if (data[i][0] instanceof Date) {
-            formattedDate = Utilities.formatDate(data[i][0], "GMT+7", "yyyy-MM-dd HH:mm");
+            formattedDate = Utilities.formatDate(data[i][0], TZ, "yyyy-MM-dd HH:mm");
           }
+
+          const imgBase64 = normalizeText(data[i][7]);
           result.push({
-            timestamp: formattedDate.toString(),
-            user: data[i][1] ? data[i][1].toString() : "",
-            itemName: data[i][2] ? data[i][2].toString() : "",
-            qty: data[i][3] !== "" ? Math.abs(parseInt(data[i][3])) : 0,
-            type: data[i][4] ? data[i][4].toString() : "",
-            reason: data[i][5] ? data[i][5].toString() : "",
-            matchainLine: data[i][6] ? data[i][6].toString() : "Non",
-            imgBase64: data[i][7] ? data[i][7].toString() : "" // คอลัมน์ H (ช่องที่ 8)
+            id: i + 1,
+            rowNumber: i + 1,
+            timestamp: normalizeText(formattedDate),
+            user: normalizeText(data[i][1]),
+            itemName: normalizeText(data[i][2]),
+            qty: data[i][3] !== "" ? Math.abs(parseInt(data[i][3], 10)) || 0 : 0,
+            type: normalizeText(data[i][4]),
+            reason: normalizeText(data[i][5]),
+            matchainLine: normalizeText(data[i][6]) || "Non",
+            imgBase64: imgBase64,
+            image: imgBase64
           });
         }
       }
-      return ContentService.createTextOutput(JSON.stringify({ success: true, data: result })).setMimeType(ContentService.MimeType.JSON);
+
+      return jsonOutput({ success: true, data: result });
     }
-    
-    return HtmlService.createHtmlOutputFromFile('index')
-        .setTitle('VN Asset Tracker & Stock')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+    return HtmlService.createHtmlOutputFromFile("index")
+      .setTitle("VN Asset Tracker & Stock")
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag("viewport", "width=device-width, initial-scale=1");
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+    return jsonOutput({ success: false, message: err.toString() });
   }
 }
 
 function doPost(e) {
+  const lock = LockService.getScriptLock();
+
   try {
-    const data = JSON.parse(e.postData.contents);
+    const data = JSON.parse(e.postData.contents || "{}");
     const ss = getTargetSpreadsheet();
-    const timestamp = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy, HH:mm");
-    
-    // 🔐 ระบบ Login
+    const timestamp = Utilities.formatDate(new Date(), TZ, "dd/MM/yyyy, HH:mm");
+
     if (data.action === "login") {
-      const userSheet = ss.getSheetByName("Users");
-      const userData = userSheet.getDataRange().getValues();
-      const inputUser = data.username.trim().toLowerCase();
-      const inputPass = data.password.toString().trim();
-      
-      for (let i = 1; i < userData.length; i++) {
-        if (userData[i][0]) {
-          const dbUser = userData[i][0].toString().trim().toLowerCase();
-          const dbPassword = userData[i][1].toString().trim();
-          
-          if (dbUser === inputUser && dbPassword === inputPass) {
-            return ContentService.createTextOutput(JSON.stringify({
-              success: true,
-              user: { fullName: userData[i][2].toString(), role: userData[i][3] ? userData[i][3].toString() : "User" }
-            })).setMimeType(ContentService.MimeType.JSON);
-          }
-        }
+      const inputUser = normalizeText(data.username).toLowerCase();
+      const inputPass = normalizeText(data.password);
+      const user = findUser(ss, inputUser);
+
+      if (user && user.password === inputPass) {
+        return jsonOutput({
+          success: true,
+          user: { fullName: user.fullName, role: user.role }
+        });
       }
-      return ContentService.createTextOutput(JSON.stringify({ success: false, message: "Username หรือ Password ไม่ถูกต้อง!" })).setMimeType(ContentService.MimeType.JSON);
+
+      return jsonOutput({ success: false, message: "Username หรือ Password ไม่ถูกต้อง!" });
     }
-    
-    // 📝 ระบบสมัครสมาชิก (Register)
+
     if (data.action === "register") {
-      const userSheet = ss.getSheetByName("Users");
-      const userData = userSheet.getDataRange().getValues();
-      const inputUser = data.username.trim().toLowerCase();
-      
-      for (let i = 1; i < userData.length; i++) {
-        if (userData[i][0] && userData[i][0].toString().trim().toLowerCase() === inputUser) {
-          return ContentService.createTextOutput(JSON.stringify({ success: false, message: "Username นี้ถูกใช้ไปแล้ว!" })).setMimeType(ContentService.MimeType.JSON);
-        }
+      const userSheet = getSheetOrThrow(ss, "Users");
+      const inputUser = normalizeText(data.username).toLowerCase();
+      const password = normalizeText(data.password);
+      const fullName = normalizeText(data.fullName);
+
+      if (!inputUser || !password || !fullName) {
+        return jsonOutput({ success: false, message: "กรุณากรอกข้อมูลสมัครสมาชิกให้ครบ" });
       }
-      userSheet.appendRow([inputUser, data.password, data.fullName, "User"]);
-      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+
+      if (findUser(ss, inputUser)) {
+        return jsonOutput({ success: false, message: "Username นี้ถูกใช้ไปแล้ว!" });
+      }
+
+      userSheet.appendRow([inputUser, password, fullName, "User"]);
+      return jsonOutput({ success: true });
     }
-    
-    // 📦 ฟอร์มเบิก-รับพัสดุ (บันทึกข้อมูล Base64 ในคอลัมน์ H)
+
     if (data.action === "submitForm") {
-      const logSheet = ss.getSheetByName("Stock_Log");
-      const invSheet = ss.getSheetByName("Inventory");
+      lock.waitLock(10000);
+
+      const logSheet = getSheetOrThrow(ss, "Stock_Log");
+      const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
-      const changeQty = parseInt(data.qty);
-      const isOut = data.type.includes("Out") || data.type.includes("เบิก");
+
+      const itemCode = normalizeCode(data.itemCode);
+      const changeQty = parsePositiveInt(data.qty, "จำนวน");
+      const txType = normalizeText(data.type);
+      const isOut = txType.includes("Out") || txType.includes("เบิก") || txType.includes("Xuất");
+      const imgBase64 = normalizeText(data.imgBase64 || data.image);
+
+      if (!itemCode) throw new Error("กรุณาเลือกรหัสสินค้า");
+
+      let foundRow = -1;
       let currentItemName = "";
-      
+      let newQty = 0;
+
       for (let i = 1; i < invData.length; i++) {
-        if (invData[i][0] && invData[i][0].toString().trim().toUpperCase() === data.itemCode.toString().trim().toUpperCase()) {
-          currentItemName = invData[i][1].toString();
-          let currentQty = parseInt(invData[i][2]) || 0;
-          let newQty = isOut ? currentQty - changeQty : currentQty + changeQty;
-          
-          if (newQty < 0 && isOut) {
-            return ContentService.createTextOutput(JSON.stringify({ success: false, message: "Error: สินค้าในสต็อกมีไม่พอให้เบิก!" })).setMimeType(ContentService.MimeType.JSON);
+        if (normalizeCode(invData[i][0]) === itemCode) {
+          foundRow = i + 1;
+          currentItemName = normalizeText(invData[i][1]);
+          const currentQty = parseInt(invData[i][2], 10) || 0;
+          newQty = isOut ? currentQty - changeQty : currentQty + changeQty;
+
+          if (isOut && newQty < 0) {
+            return jsonOutput({ success: false, message: "Error: สินค้าในสต็อกมีไม่พอให้เบิก!" });
           }
-          invSheet.getRange(i + 1, 3).setValue(newQty);
+
+          invSheet.getRange(foundRow, 3).setValue(newQty);
           break;
         }
       }
-      
-      // บันทึกแถวข้อมูลลงในชีต Stock_Log ทั้งหมด 8 คอลัมน์ (A ถึง H)
+
+      if (foundRow === -1) {
+        return jsonOutput({ success: false, message: "ไม่พบรหัสสินค้านี้ในคลัง" });
+      }
+
       logSheet.appendRow([
-        timestamp, 
-        data.username, 
-        currentItemName || data.itemCode, 
-        isOut ? -changeQty : changeQty, 
-        data.type, 
-        data.reason, 
-        data.matchainLine || "Non",
-        data.imgBase64 || "" // คอลัมน์ H รูปภาพ Base64 ของหน้างาน
+        timestamp,
+        normalizeText(data.username),
+        currentItemName || itemCode,
+        isOut ? -changeQty : changeQty,
+        txType,
+        normalizeText(data.reason),
+        normalizeText(data.matchainLine) || "Non",
+        imgBase64
       ]);
-      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+
+      return jsonOutput({ success: true, newQty: newQty });
     }
 
-    // 🔧 แก้ไขยอดสต็อกโดยแอดมิน
     if (data.action === "adminUpdateStock") {
-      const invSheet = ss.getSheetByName("Inventory");
+      lock.waitLock(10000);
+      const admin = requireAdmin(ss, data.adminUsername || data.username || data.adminName);
+
+      const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
+      const itemCode = normalizeCode(data.itemCode);
+      const newQty = parseNonNegativeInt(data.newQty, "จำนวนสต็อกใหม่");
       let isUpdated = false;
 
       for (let i = 1; i < invData.length; i++) {
-        if (invData[i][0] && invData[i][0].toString().trim().toUpperCase() === data.itemCode.toString().trim().toUpperCase()) {
-          invSheet.getRange(i + 1, 3).setValue(parseInt(data.newQty));
+        if (normalizeCode(invData[i][0]) === itemCode) {
+          invSheet.getRange(i + 1, 3).setValue(newQty);
           isUpdated = true;
           break;
         }
       }
 
       if (isUpdated) {
-        const logSheet = ss.getSheetByName("Stock_Log");
-        logSheet.appendRow([timestamp, data.adminName + " (Admin)", "🔧 Code: " + data.itemCode, data.newQty, "Admin Override", "Database Manual Adjustment", "Non", ""]);
-        return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+        const logSheet = getSheetOrThrow(ss, "Stock_Log");
+        logSheet.appendRow([timestamp, admin.fullName + " (Admin)", "Code: " + itemCode, newQty, "Admin Override", "Database Manual Adjustment", "Non", ""]);
+        return jsonOutput({ success: true });
       }
-      return ContentService.createTextOutput(JSON.stringify({ success: false, message: "ไม่พบรหัสสินค้านี้ในคลัง" })).setMimeType(ContentService.MimeType.JSON);
+
+      return jsonOutput({ success: false, message: "ไม่พบรหัสสินค้านี้ในคลัง" });
     }
 
-    // ➕ แอดมินเพิ่มพัสดุรายการใหม่
     if (data.action === "adminAddNewItem") {
-      const invSheet = ss.getSheetByName("Inventory");
+      lock.waitLock(10000);
+      const admin = requireAdmin(ss, data.adminUsername || data.username || data.adminName);
+
+      const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
-      const newCode = data.itemCode.toString().trim().toUpperCase();
-      
+      const newCode = normalizeCode(data.itemCode);
+      const itemName = normalizeText(data.itemName);
+      const initialQty = parseNonNegativeInt(data.initialQty, "ยอดเริ่มต้นคลัง");
+
+      if (!newCode || !itemName) {
+        return jsonOutput({ success: false, message: "กรุณากรอกรหัสและชื่อสินค้าให้ครบ" });
+      }
+
       for (let i = 1; i < invData.length; i++) {
-        if (invData[i][0] && invData[i][0].toString().trim().toUpperCase() === newCode) {
-          return ContentService.createTextOutput(JSON.stringify({ success: false, message: "Error: รหัสอุปกรณ์พัสดุนี้มีอยู่ในคลังสินค้าแล้ว!" })).setMimeType(ContentService.MimeType.JSON);
+        if (normalizeCode(invData[i][0]) === newCode) {
+          return jsonOutput({ success: false, message: "Error: รหัสอุปกรณ์พัสดุนี้มีอยู่ในคลังสินค้าแล้ว!" });
         }
       }
-      
-      invSheet.appendRow([newCode, data.itemName.trim(), parseInt(data.initialQty) || 0]);
-      const logSheet = ss.getSheetByName("Stock_Log");
-      logSheet.appendRow([timestamp, data.adminName + " (Admin)", data.itemName.trim(), parseInt(data.initialQty) || 0, "New Item Added", "Initial Stock Entry", "Non", ""]);
-      
-      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+
+      invSheet.appendRow([newCode, itemName, initialQty]);
+      const logSheet = getSheetOrThrow(ss, "Stock_Log");
+      logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName, initialQty, "New Item Added", "Initial Stock Entry", "Non", ""]);
+
+      return jsonOutput({ success: true });
     }
-    
-    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "Invalid Action" })).setMimeType(ContentService.MimeType.JSON);
+
+    if (data.action === "adminDeleteItem") {
+      lock.waitLock(10000);
+      const admin = requireAdmin(ss, data.adminUsername || data.username || data.adminName);
+
+      const invSheet = getSheetOrThrow(ss, "Inventory");
+      const invData = invSheet.getDataRange().getValues();
+      const itemCode = normalizeCode(data.itemCode);
+
+      for (let i = 1; i < invData.length; i++) {
+        if (normalizeCode(invData[i][0]) === itemCode) {
+          const itemName = normalizeText(invData[i][1]);
+          const qty = parseInt(invData[i][2], 10) || 0;
+
+          if (qty > 0) {
+            return jsonOutput({ success: false, message: "ไม่สามารถลบได้ เพราะสต็อกยังมากกว่า 0" });
+          }
+
+          invSheet.deleteRow(i + 1);
+          const logSheet = getSheetOrThrow(ss, "Stock_Log");
+          logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName || itemCode, 0, "Item Deleted", "Admin deleted item from inventory", "Non", ""]);
+          return jsonOutput({ success: true });
+        }
+      }
+
+      return jsonOutput({ success: false, message: "ไม่พบรหัสสินค้านี้ในคลัง" });
+    }
+
+    if (data.action === "adminDeleteLog") {
+      lock.waitLock(10000);
+      requireAdmin(ss, data.adminUsername || data.username || data.adminName);
+
+      const logSheet = getSheetOrThrow(ss, "Stock_Log");
+      const rowNumber = parseInt(data.logId, 10);
+
+      if (!Number.isInteger(rowNumber) || rowNumber < 2 || rowNumber > logSheet.getLastRow()) {
+        return jsonOutput({ success: false, message: "ไม่พบ Log ที่ต้องการลบ" });
+      }
+
+      logSheet.deleteRow(rowNumber);
+      return jsonOutput({ success: true });
+    }
+
+    return jsonOutput({ success: false, message: "Invalid Action" });
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
+    return jsonOutput({ success: false, message: error.toString() });
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (releaseError) {
+      // Lock may not have been acquired for non-mutating actions.
+    }
   }
 }
