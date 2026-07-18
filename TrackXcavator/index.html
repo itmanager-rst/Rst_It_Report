@@ -179,6 +179,12 @@
                 <span class="h-2 w-2 bg-red-600 rounded-full animate-pulse"></span>
                 ตารางบันทึกสถานะการทำรอบบริการ (Service Report)
               </h2>
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                <div class="relative flex-1">
+                  <input id="dashboard-search" type="text" placeholder="ค้นหาเครื่อง / รุ่น / ลูกค้า / สถานะ" class="w-full bg-slate-50 border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500">
+                </div>
+                <button id="dashboard-clear-search" class="text-xs font-semibold text-slate-600 hover:text-red-600 border border-gray-300 rounded-xl px-3 py-2">ล้างค้นหา</button>
+              </div>
               <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                   <thead>
@@ -278,7 +284,14 @@
             </div>
             <button onclick="loadReportData()" class="bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl cursor-pointer">🔄 รีเฟรชประวัติ</button>
           </div>
-          <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 overflow-x-auto">
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+              <div class="relative flex-1">
+                <input id="report-search" type="text" placeholder="ค้นหา Ticket / เครื่อง / รุ่น / ลูกค้า / Invoice" class="w-full bg-slate-50 border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500">
+              </div>
+              <button id="report-clear-search" class="text-xs font-semibold text-slate-600 hover:text-red-600 border border-gray-300 rounded-xl px-3 py-2">ล้างค้นหา</button>
+            </div>
+            <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="bg-gray-50 border-b border-gray-200 text-slate-400 text-xs font-bold uppercase">
@@ -304,6 +317,137 @@
     
     let sessionUser = null;
     let sessionRole = null;
+    let dashboardRows = [];
+    let reportRows = [];
+
+    function normalizeText(value) {
+      return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+
+    function attachSearchEvents() {
+      const dashboardSearch = document.getElementById('dashboard-search');
+      const dashboardClear = document.getElementById('dashboard-clear-search');
+      const reportSearch = document.getElementById('report-search');
+      const reportClear = document.getElementById('report-clear-search');
+
+      if (dashboardSearch) {
+        dashboardSearch.addEventListener('input', () => applySearch('dashboard'));
+      }
+      if (dashboardClear) {
+        dashboardClear.addEventListener('click', () => {
+          if (dashboardSearch) dashboardSearch.value = '';
+          applySearch('dashboard');
+        });
+      }
+      if (reportSearch) {
+        reportSearch.addEventListener('input', () => applySearch('report'));
+      }
+      if (reportClear) {
+        reportClear.addEventListener('click', () => {
+          if (reportSearch) reportSearch.value = '';
+          applySearch('report');
+        });
+      }
+    }
+
+    function applySearch(page) {
+      if (page === 'dashboard') {
+        const keyword = normalizeText(document.getElementById('dashboard-search')?.value);
+        const tbody = document.getElementById('table-pm-body');
+        if (!tbody) return;
+
+        if (!keyword) {
+          renderDashboardRows(dashboardRows);
+          return;
+        }
+
+        const filtered = dashboardRows.filter(item => [
+          item.machineId,
+          item.model,
+          item.customer,
+          item.status,
+          item.lastPm,
+          item.nextPm
+        ].some(value => normalizeText(value).includes(keyword)));
+
+        renderDashboardRows(filtered);
+      }
+
+      if (page === 'report') {
+        const keyword = normalizeText(document.getElementById('report-search')?.value);
+        const tbody = document.getElementById('table-report-body');
+        if (!tbody) return;
+
+        if (!keyword) {
+          renderReportRows(reportRows);
+          return;
+        }
+
+        const filtered = reportRows.filter(item => [
+          item.ticketId,
+          item.machineId,
+          item.model,
+          item.customerName,
+          item.invoiceNo,
+          item.pmRound,
+          item.actualHours
+        ].some(value => normalizeText(value).includes(keyword)));
+
+        renderReportRows(filtered);
+      }
+    }
+
+    function renderDashboardRows(rows) {
+      const tbody = document.getElementById('table-pm-body');
+      tbody.innerHTML = "";
+
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">ไม่พบข้อมูลที่ตรงกับการค้นหา</td></tr>`;
+        return;
+      }
+
+      rows.forEach(item => {
+        let badgeColor = item.status === "Pending" ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200";
+        let actionButton = item.status === "Pending"
+          ? `<button onclick="quickApprove('${item.machineId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer">✔️ อนุมัติ</button>`
+          : `<span class="text-xs text-slate-400 font-medium">อนุมัติแล้ว</span>`;
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 border-b border-slate-100">
+            <td class="p-4 font-bold text-slate-900 font-mono">${item.machineId}</td><td class="p-4 text-slate-500">${item.model}</td>
+            <td class="p-4 font-mono font-bold text-amber-600">${item.currentHours} ชม.</td><td class="p-4 font-medium">${item.customer}</td>
+            <td class="p-4 text-center font-semibold text-slate-500">${item.lastPm}</td><td class="p-4 font-mono font-bold text-slate-700">${item.nextPm} ชม.</td>
+            <td class="p-4 text-center"><span class="${badgeColor} text-xs px-2.5 py-1 rounded-full font-semibold">${item.status}</span></td>
+            <td class="p-4 text-center">${actionButton}</td>
+          </tr>`;
+      });
+    }
+
+    function renderReportRows(rows) {
+      const tbody = document.getElementById('table-report-body');
+      tbody.innerHTML = "";
+
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">ไม่พบข้อมูลที่ตรงกับการค้นหา</td></tr>`;
+        return;
+      }
+
+      rows.forEach(r => {
+        let formatedDate = r.serviceDate;
+        if(r.serviceDate) {
+          const d = new Date(r.serviceDate);
+          if(!isNaN(d.getTime())) formatedDate = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth()+1).padStart(2, '0')}/${d.getFullYear()}`;
+        }
+
+        tbody.innerHTML += `
+          <tr class="text-slate-600 hover:bg-slate-50 border-b border-slate-100">
+            <td class="p-4 font-medium text-slate-500 font-mono">${r.ticketId}</td><td class="p-4 font-bold text-slate-900 font-mono">${r.machineId}</td>
+            <td class="p-4">${r.model}</td><td class="p-4 font-medium">${r.customerName}</td><td class="p-4 font-semibold text-center text-rose-600">${r.pmRound}</td>
+            <td class="p-4 font-mono font-semibold">${r.actualHours}</td><td class="p-4 text-xs text-slate-500">${formatedDate}</td>
+            <td class="p-4 font-mono text-right font-bold pr-8">${Number(r.cost || 0).toLocaleString()}</td><td class="p-4 text-slate-500 font-mono">${r.invoiceNo || '-'}</td>
+          </tr>`;
+      });
+    }
 
     // ฟังก์ชันสลับหน้า Login และ Register
     function toggleAuthBox(mode) {
@@ -420,26 +564,10 @@
           document.getElementById('val-pm-alert').innerText = data.pmAlertCount;
           document.getElementById('val-incomplete-invoice').innerText = data.incompleteInvoiceCount;
           document.getElementById('val-total-machines').innerText = data.totalRegisteredMachines;
-          const tbody = document.getElementById('table-pm-body');
-          tbody.innerHTML = "";
-          if(!data.pmAlerts || data.pmAlerts.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">❌ ไม่มีเครื่องจักรค้างรอบเช็กระยะ</td></tr>`;
-          } else {
-            data.pmAlerts.forEach(item => {
-              let badgeColor = item.status === "Pending" ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200";
-              let actionButton = item.status === "Pending" 
-                ? `<button onclick="quickApprove('${item.machineId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer">✔️ อนุมัติ</button>`
-                : `<span class="text-xs text-slate-400 font-medium">อนุมัติแล้ว</span>`;
-              tbody.innerHTML += `
-                <tr class="hover:bg-slate-50 border-b border-slate-100">
-                  <td class="p-4 font-bold text-slate-900 font-mono">${item.machineId}</td><td class="p-4 text-slate-500">${item.model}</td>
-                  <td class="p-4 font-mono font-bold text-amber-600">${item.currentHours} ชม.</td><td class="p-4 font-medium">${item.customer}</td>
-                  <td class="p-4 text-center font-semibold text-slate-500">${item.lastPm}</td><td class="p-4 font-mono font-bold text-slate-700">${item.nextPm} ชม.</td>
-                  <td class="p-4 text-center"><span class="${badgeColor} text-xs px-2.5 py-1 rounded-full font-semibold">${item.status}</span></td>
-                  <td class="p-4 text-center">${actionButton}</td>
-                </tr>`;
-            });
-          }
+
+          dashboardRows = data.pmAlerts || [];
+          renderDashboardRows(dashboardRows);
+          applySearch('dashboard');
         }).finally(() => btn.innerText = "🔄 รีเฟรชข้อมูล");
     }
 
@@ -456,22 +584,9 @@
       tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">กำลังดาวน์โหลดข้อมูลบันทึกประวัติ...</td></tr>`;
       fetch(`${GAS_WEB_APP_URL}?action=getReportList`)
         .then(res => res.json()).then(rows => {
-          tbody.innerHTML = "";
-          if (rows.length === 0) return;
-          rows.forEach(r => {
-            let formatedDate = r.serviceDate;
-            if(r.serviceDate) {
-              const d = new Date(r.serviceDate);
-              if(!isNaN(d.getTime())) formatedDate = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth()+1).padStart(2, '0')}/${d.getFullYear()}`;
-            }
-            tbody.innerHTML += `
-              <tr class="text-slate-600 hover:bg-slate-50 border-b border-slate-100">
-                <td class="p-4 font-medium text-slate-500 font-mono">${r.ticketId}</td><td class="p-4 font-bold text-slate-900 font-mono">${r.machineId}</td>
-                <td class="p-4">${r.model}</td><td class="p-4 font-medium">${r.customerName}</td><td class="p-4 font-semibold text-center text-rose-600">${r.pmRound}</td>
-                <td class="p-4 font-mono font-semibold">${r.actualHours}</td><td class="p-4 text-xs text-slate-500">${formatedDate}</td>
-                <td class="p-4 font-mono text-right font-bold pr-8">${Number(r.cost || 0).toLocaleString()}</td><td class="p-4 text-slate-500 font-mono">${r.invoiceNo || '-'}</td>
-              </tr>`;
-          });
+          reportRows = rows || [];
+          renderReportRows(reportRows);
+          applySearch('report');
         });
     }
 
@@ -493,6 +608,8 @@
       fetch(GAS_WEB_APP_URL, { method: "POST", body: JSON.stringify(payload) })
       .then(res => res.json()).then(() => { alert("บันทึกคูปองและเปลี่ยนสถานะในตารางเรียบร้อย!"); loadDashboardData(); document.getElementById('form-ticket').reset(); });
     }
+
+    attachSearchEvents();
   </script>
 </body>
 </html>
