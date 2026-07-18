@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>สมุดทะเบียนลิขสิทธิ์ซอฟต์แวร์ | RST</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Trirong:wght@500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap');
+
+    :root {
+      --desk: #2e2a26;
+      --desk-2: #211e1b;
+      --cover: #7e1f2b;
+      --cover-2: #5c1620;
+      --paper: #fbf6ea;
+      --paper-2: #f3ecdb;
+      --paper-edge: #e6dcc4;
+      --ink: #2b2118;
+      --ink-soft: #6b5d4c;
+      --accent: #b3202e;
+      --stamp: #1f4e79;
+      --ok: #1d7a46;
+      --gold: #b78a3c;
+      --line: #d9cdb2;
+      --flip-ms: 750ms;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: 'Sarabun', sans-serif;
+      color: var(--ink);
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(255,255,255,.06), transparent 60%),
+        radial-gradient(1400px 900px at 50% 120%, rgba(0,0,0,.45), transparent 60%),
+        linear-gradient(160deg, var(--desk) 0%, var(--desk-2) 100%);
+    }
+
+    /* ── แถบเครื่องมือด้านบน ───────────────────────── */
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+      justify-content: space-between;
+      max-width: 1180px; margin: 0 auto; padding: 1rem 1.2rem .4rem;
+      color: #efe7d6;
+    }
+    .toolbar h1 {
+      font-family: 'Trirong', serif; font-weight: 700;
+      font-size: 1.25rem; margin: 0; letter-spacing: .02em;
+      display: flex; align-items: center; gap: .55rem;
+    }
+    .toolbar h1 .logo {
+      background: var(--accent); color: #fff; border-radius: .35rem;
+      font-size: .8rem; padding: .2rem .45rem; letter-spacing: .12em;
+      font-family: 'Sarabun', sans-serif; font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    }
+    .toolbar .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+    .btn {
+      border: 0; cursor: pointer; font-family: inherit; font-weight: 600;
+      font-size: .85rem; padding: .5rem .9rem; border-radius: .55rem;
+      display: inline-flex; align-items: center; gap: .45rem;
+      transition: transform .15s ease, filter .15s ease, box-shadow .15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+    .btn:focus-visible { outline: 3px solid #f3d08a; outline-offset: 2px; }
+    .btn-red { background: var(--accent); color: #fff; box-shadow: 0 6px 16px rgba(179,32,46,.35); }
+    .btn-paper { background: #efe7d6; color: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.25); }
+    .btn-ghost { background: rgba(255,255,255,.1); color: #efe7d6; border: 1px solid rgba(255,255,255,.2); }
+
+    .searchwrap {
+      position: relative; flex: 1 1 240px; max-width: 340px;
+    }
+    .searchwrap i { position: absolute; left: .8rem; top: 50%; transform: translateY(-50%); color: var(--ink-soft); }
+    .searchwrap input {
+      width: 100%; padding: .55rem .9rem .55rem 2.2rem; border-radius: .55rem;
+      border: 1px solid rgba(255,255,255,.25); background: #efe7d6; color: var(--ink);
+      font-family: inherit; font-size: .85rem;
+    }
+    .searchwrap input:focus { outline: 3px solid #f3d08a; outline-offset: 1px; }
+
+    /* ── เวทีหนังสือ ───────────────────────── */
+    .stage {
+      max-width: 1180px; margin: 0 auto; padding: .6rem 1.2rem 2rem;
+      display: grid; grid-template-columns: 52px 1fr 52px; gap: .8rem; align-items: center;
+    }
+
+    .navbtn {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: rgba(255,255,255,.08); color: #efe7d6;
+      border: 1px solid rgba(255,255,255,.18); cursor: pointer; font-size: 1.1rem;
+      transition: background .15s ease, transform .15s ease;
+    }
+    .navbtn:hover:not(:disabled) { background: rgba(255,255,255,.18); transform: scale(1.06); }
+    .navbtn:disabled { opacity: .25; cursor: default; }
+    .navbtn:focus-visible { outline: 3px solid #f3d08a; }
+
+    .book-outer { perspective: 2600px; }
+
+    .book {
+      position: relative;
+      display: flex;
+      min-height: 640px;
+      border-radius: 10px 16px 16px 10px;
+      background: linear-gradient(90deg, var(--cover-2), var(--cover) 12%, var(--cover) 88%, var(--cover-2));
+      padding: 16px 18px;
+      box-shadow:
+        0 40px 70px rgba(0,0,0,.55),
+        inset 0 2px 2px rgba(255,255,255,.12),
+        inset 0 -3px 6px rgba(0,0,0,.4);
+    }
+    /* ขอบกระดาษซ้อนกันด้านข้าง */
+    .book::before, .book::after {
+      content: ""; position: absolute; top: 14px; bottom: 14px; width: 10px;
+      background: repeating-linear-gradient(90deg, var(--paper-edge) 0 1.6px, #cfc3a5 1.6px 2.6px);
+      z-index: 1;
+    }
+    .book::before { left: 9px; border-radius: 4px 0 0 4px; }
+    .book::after  { right: 9px; border-radius: 0 4px 4px 0; }
+
+    .page {
+      position: relative; z-index: 2;
+      width: 50%; min-height: 100%;
+      background:
+        radial-gradient(120% 100% at 0% 50%, rgba(0,0,0,.10), transparent 22%),
+        linear-gradient(90deg, var(--paper-2), var(--paper) 12%);
+      padding: 2rem 2rem 2.6rem;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .page.right {
+      background:
+        radial-gradient(120% 100% at 100% 50%, rgba(0,0,0,.10), transparent 22%),
+        linear-gradient(-90deg, var(--paper-2), var(--paper) 12%);
+      border-radius: 0 6px 6px 0;
+    }
+    .page.left { border-radius: 6px 0 0 6px; }
+
+    /* เงาร่องสัน */
+    .spine-shadow {
+      position: absolute; z-index: 3; top: 16px; bottom: 16px; left: 50%;
+      width: 70px; transform: translateX(-50%); pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(0,0,0,.16) 42%, rgba(0,0,0,.28) 50%, rgba(0,0,0,.16) 58%, transparent);
+    }
+
+    /* ── แผ่นพลิก (3D) ───────────────────────── */
+    .flipper {
+      position: absolute; z-index: 5; top: 16px; bottom: 16px;
+      width: calc(50% - 18px);
+      transform-style: preserve-3d;
+      display: none;
+      will-change: transform;
+    }
+    .flipper.fwd { right: 18px; transform-origin: left center; }
+    .flipper.bwd { left: 18px;  transform-origin: right center; }
+    .flipper .face {
+      position: absolute; inset: 0; backface-visibility: hidden;
+      background: var(--paper); overflow: hidden;
+      padding: 2rem 2rem 2.6rem; display: flex; flex-direction: column;
+    }
+    .flipper .back { transform: rotateY(180deg); }
+    .flipper .shade { position: absolute; inset: 0; pointer-events: none; }
+    .flipper.fwd .front .shade { background: linear-gradient(90deg, rgba(0,0,0,.12), transparent 30%); }
+    .flipper.bwd .front .shade { background: linear-gradient(-90deg, rgba(0,0,0,.12), transparent 30%); }
+
+    @keyframes flipFwd { from { transform: rotateY(0); } to { transform: rotateY(-180deg); } }
+    @keyframes flipBwd { from { transform: rotateY(0); } to { transform: rotateY(180deg); } }
+    .flipper.fwd.go { display: block; animation: flipFwd var(--flip-ms) cubic-bezier(.35,.1,.25,1) forwards; }
+    .flipper.bwd.go { display: block; animation: flipBwd var(--flip-ms) cubic-bezier(.35,.1,.25,1) forwards; }
+
+    @media (prefers-reduced-motion: reduce) {
+      :root { --flip-ms: 1ms; }
+      .btn, .navbtn { transition: none; }
+    }
+
+    /* ── เนื้อหาบนหน้ากระดาษ ───────────────────────── */
+    .pageno {
+      position: absolute; bottom: .9rem; font-size: .72rem; color: var(--ink-soft);
+      letter-spacing: .08em;
+    }
+    .page.left .pageno, .flipper .back .pageno { left: 2rem; }
+    .page.right .pageno, .flipper .front .pageno { right: 2rem; }
+
+    .doc-head {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 0;
+      border: 1.6px solid var(--ink); margin-bottom: 1.1rem; background: #fffdf6;
+    }
+    .doc-head .brand {
+      font-family: 'Trirong', serif; font-weight: 700; font-size: 1.5rem;
+      padding: .5rem .9rem; display: flex; align-items: center;
+      color: var(--accent); border-right: 1.6px solid var(--ink); letter-spacing: .04em;
+    }
+    .doc-head .mid { display: flex; flex-direction: column; }
+    .doc-head .mid .t1 {
+      text-align: center; font-weight: 700; padding: .35rem .5rem;
+      border-bottom: 1px solid var(--ink); font-size: .95rem;
+    }
+    .doc-head .mid .t2 { padding: .3rem .6rem; font-size: .8rem; color: var(--ink-soft); }
+    .doc-head .date {
+      border-left: 1.6px solid var(--ink); padding: .4rem .7rem; font-size: .78rem;
+      display: flex; align-items: center; white-space: nowrap;
+    }
+
+    .rec-title {
+      font-family: 'Trirong', serif; font-weight: 700; font-size: 1.05rem;
+      margin: 0 0 .2rem;
+    }
+    .rec-id {
+      display: inline-block; background: #f6e3b8; border: 1px dashed var(--gold);
+      padding: .12rem .55rem; border-radius: .3rem; font-weight: 700; font-size: .82rem;
+      margin-bottom: .8rem;
+    }
+
+    dl.kv { margin: 0; }
+    .kv .row {
+      display: grid; grid-template-columns: 128px 1fr; gap: .6rem;
+      padding: .42rem .1rem; border-bottom: 1px dotted var(--line);
+      font-size: .84rem; align-items: baseline;
+    }
+    .kv dt { color: var(--ink-soft); font-weight: 600; }
+    .kv dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+
+    .serial-chip {
+      font-family: ui-monospace, 'Courier New', monospace; letter-spacing: .06em;
+      background: #f1ead6; border: 1px solid var(--line); border-radius: .35rem;
+      padding: .15rem .5rem; font-size: .8rem; display: inline-flex; gap: .5rem; align-items: center;
+    }
+    .serial-chip button { border: 0; background: none; cursor: pointer; color: var(--ink-soft); padding: 0; }
+    .serial-chip button:hover { color: var(--accent); }
+
+    .badge { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .74rem; font-weight: 700; }
+    .badge.never { background: #e2f2e6; color: var(--ok); border: 1px solid #bfe0c8; }
+    .badge.date  { background: #fdeeda; color: #9a6210; border: 1px solid #ecd3a8; }
+    .badge.expired { background: #fde3e3; color: #a11a1a; border: 1px solid #f2bcbc; }
+
+    .stamp {
+      position: absolute; right: 1.6rem; top: 5.4rem; transform: rotate(-9deg);
+      border: 2.5px solid var(--stamp); color: var(--stamp); border-radius: .5rem;
+      padding: .2rem .7rem; font-weight: 700; font-size: .78rem; letter-spacing: .18em;
+      opacity: .78; pointer-events: none;
+    }
+    .stamp.red { border-color: var(--accent); color: var(--accent); }
+
+    .sec-label {
+      font-size: .72rem; font-weight: 700; letter-spacing: .14em; color: var(--ink-soft);
+      text-transform: uppercase; margin: 1rem 0 .4rem; display: flex; align-items: center; gap: .5rem;
+    }
+    .sec-label::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+    /* ตารางสเปกคอม */
+    table.spec { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    table.spec td { padding: .34rem .5rem; border: 1px solid var(--line); }
+    table.spec td:first-child { width: 118px; background: #f4eddb; color: var(--ink-soft); font-weight: 600; }
+    table.spec td:last-child { overflow-wrap: anywhere; }
+
+    /* แกลเลอรีรูป */
+    .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: .7rem; }
+    .gallery figure {
+      margin: 0; background: #fff; border: 1px solid var(--line);
+      padding: .4rem .4rem 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,.10);
+      transform: rotate(var(--tilt, 0deg)); cursor: zoom-in;
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .gallery figure:hover { transform: rotate(0deg) scale(1.02); box-shadow: 0 8px 18px rgba(0,0,0,.18); }
+    .gallery img { width: 100%; height: 130px; object-fit: cover; display: block; background: #eee; }
+    .gallery figcaption { font-size: .68rem; color: var(--ink-soft); text-align: center; padding-top: .3rem; }
+    .gallery .empty {
+      grid-column: 1/-1; border: 1.5px dashed var(--line); border-radius: .5rem;
+      color: var(--ink-soft); font-size: .8rem; text-align: center; padding: 1.6rem .8rem;
+    }
+
+    .page-actions { margin-top: auto; padding-top: 1rem; display: flex; gap: .5rem; }
+    .btn-mini {
+      font-size: .76rem; padding: .35rem .7rem; border-radius: .45rem; border: 1px solid var(--line);
+      background: #fffdf6; color: var(--ink); cursor: pointer; font-family: inherit; font-weight: 600;
+      display: inline-flex; gap: .4rem; align-items: center;
+    }
+    .btn-mini:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-mini.danger { color: #8a1a1a; }
+    .btn-mini.danger:hover { background: #fde3e3; border-color: #a11a1a; }
+
+    /* ── หน้าปก / สารบัญ ───────────────────────── */
+    .coverpage { align-items: center; text-align: center; justify-content: center; gap: .4rem; }
+    .coverpage .crest {
+      font-family: 'Trirong', serif; font-weight: 700; font-size: 2.4rem; color: var(--accent);
+      letter-spacing: .06em;
+    }
+    .coverpage .rule { width: 130px; border-top: 2px solid var(--gold); margin: .6rem 0; }
+    .coverpage h2 { font-family: 'Trirong', serif; font-size: 1.5rem; margin: .2rem 0; font-weight: 700; }
+    .coverpage .sub { color: var(--ink-soft); font-size: .85rem; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-top: 1.4rem; width: 100%; max-width: 330px; }
+    .stats .stat {
+      border: 1px solid var(--line); border-radius: .6rem; padding: .6rem .4rem; background: #fffdf6;
+    }
+    .stat b { display: block; font-size: 1.5rem; font-family: 'Trirong', serif; }
+    .stat span { font-size: .72rem; color: var(--ink-soft); }
+
+    .toc-list { overflow-y: auto; margin-top: .4rem; padding-right: .3rem; flex: 1; }
+    .toc-item {
+      width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
+      display: flex; align-items: baseline; gap: .5rem; padding: .5rem .2rem;
+      font-family: inherit; font-size: .85rem; color: var(--ink);
+      border-bottom: 1px dotted var(--line);
+    }
+    .toc-item:hover .t { color: var(--accent); }
+    .toc-item .t { font-weight: 600; white-space: nowrap; }
+    .toc-item .dots { flex: 1; border-bottom: 1.5px dotted var(--line); transform: translateY(-3px); }
+    .toc-item .pn { font-family: 'Trirong', serif; font-weight: 700; }
+    .toc-item small { display: block; color: var(--ink-soft); font-weight: 400; }
+    .toc-edit {
+      border: 0; background: none; cursor: pointer; color: var(--ink-soft);
+      padding: .4rem .5rem; border-radius: .4rem; font-size: .78rem;
+    }
+    .toc-edit:hover { color: var(--accent); background: #f4eddb; }
+
+    .center-note { margin: auto; text-align: center; color: var(--ink-soft); font-size: .85rem; }
+    .center-note i { font-size: 1.6rem; display: block; margin-bottom: .5rem; }
+
+    /* ── โมดัลฟอร์ม ───────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(20,15,10,.65); z-index: 50;
+      display: none; align-items: flex-start; justify-content: center; padding: 2rem 1rem; overflow-y: auto;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--paper); border-radius: .8rem; width: 100%; max-width: 860px;
+      box-shadow: 0 30px 60px rgba(0,0,0,.5); border: 1px solid var(--paper-edge);
+      padding: 1.4rem 1.6rem;
+    }
+    .modal h2 { font-family: 'Trirong', serif; margin: 0 0 1rem; font-size: 1.2rem; display: flex; gap: .5rem; align-items: center; }
+    .fgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem .8rem; }
+    .fgrid label { display: block; font-size: .72rem; font-weight: 700; color: var(--ink-soft); margin-bottom: .25rem; }
+    .fgrid input, .fgrid select, .fgrid textarea {
+      width: 100%; padding: .5rem .6rem; font-size: .84rem; font-family: inherit;
+      border: 1px solid var(--line); border-radius: .45rem; background: #fffdf6; color: var(--ink);
+    }
+    .fgrid input:focus, .fgrid textarea:focus { outline: 2px solid var(--gold); }
+    .span2 { grid-column: span 2; } .span4 { grid-column: span 4; }
+
+    .dropzone {
+      border: 2px dashed var(--gold); border-radius: .6rem; background: #fdf8ec;
+      padding: 1rem; text-align: center; color: var(--ink-soft); font-size: .82rem; cursor: pointer;
+    }
+    .dropzone.drag { background: #f6ecd2; }
+    .thumbs { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .7rem; }
+    .thumb { position: relative; width: 92px; }
+    .thumb img { width: 92px; height: 70px; object-fit: cover; border-radius: .4rem; border: 1px solid var(--line); display: block; }
+    .thumb .rm {
+      position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent); color: #fff; border: 0; cursor: pointer; font-size: .65rem; line-height: 1;
+    }
+    .thumb .tag { font-size: .6rem; color: var(--ink-soft); text-align: center; }
+
+    .modal .foot { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1.2rem; }
+
+    /* ── Lightbox ───────────────────────── */
+    .lightbox {
+      position: fixed; inset: 0; background: rgba(10,8,6,.88); z-index: 60;
+      display: none; align-items: center; justify-content: center; padding: 2rem; cursor: zoom-out;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 100%; max-height: 92vh; border-radius: .4rem; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+
+    .toast {
+      position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--ink); color: #f5efe2; padding: .6rem 1.1rem; border-radius: .6rem;
+      font-size: .84rem; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 70;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .hint { text-align: center; color: rgba(239,231,214,.55); font-size: .74rem; padding-bottom: 1.6rem; }
+
+    /* ── มือถือ: หน้าเดี่ยว ───────────────────────── */
+    @media (max-width: 900px) {
+      .stage { grid-template-columns: 1fr; }
+      .navbtn { display: none; }
+      .book { flex-direction: column; min-height: unset; padding: 12px; }
+      .page { width: 100%; min-height: 480px; border-radius: 6px 6px 0 0; }
+      .page.right { border-radius: 0 0 6px 6px; border-top: 1px dashed var(--line); }
+      .spine-shadow, .flipper { display: none !important; }
+      .book::before, .book::after { display: none; }
+      .mobile-nav { display: flex !important; }
+      .fgrid { grid-template-columns: 1fr 1fr; }
+      .span4 { grid-column: span 2; }
+    }
+    .mobile-nav {
+      display: none; justify-content: center; gap: .8rem; padding: .8rem 0 0; align-items: center; color: #efe7d6; font-size: .8rem;
+    }
+    .mobile-nav button {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); color: #efe7d6;
+      border-radius: .5rem; padding: .45rem .9rem; cursor: pointer; font-family: inherit;
+    }
+
+    /* ── พิมพ์: เฉพาะหน้าปัจจุบันเป็นแบบฟอร์มกระดาษ ── */
+    @media print {
+      @page { size: A4 portrait; margin: 12mm; }
+      body { background: #fff !important; }
+      .toolbar, .stage, .hint, .modal-backdrop, .lightbox, .mobile-nav, .toast { display: none !important; }
+      #printArea { display: block !important; color: #000; }
+      #printArea .gallery img { height: 150px; }
+      #printArea .page-actions { display: none; }
+    }
+    #printArea { display: none; font-family: 'Sarabun', sans-serif; }
+    #printArea .half { page-break-inside: avoid; margin-bottom: 14mm; }
+  </style>
+</head>
+<body>
+
+  <!-- แถบเครื่องมือ -->
+  <header class="toolbar">
+    <h1><span class="logo">RST</span> สมุดทะเบียนลิขสิทธิ์ซอฟต์แวร์</h1>
+    <div class="searchwrap">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input id="searchInput" type="search" placeholder="ค้นหารหัสเครื่อง / ชื่อเครื่อง / ซอฟต์แวร์…" aria-label="ค้นหา">
+    </div>
+    <div class="actions">
+      <button class="btn btn-red" onclick="openForm()"><i class="fa-solid fa-pen-nib"></i> บันทึกเครื่องใหม่</button>
+      <button class="btn btn-paper" onclick="printCurrent()"><i class="fa-solid fa-print"></i> พิมพ์หน้านี้</button>
+      <button class="btn btn-ghost" onclick="loadAllData()" title="โหลดข้อมูลใหม่"><i class="fa-solid fa-rotate"></i></button>
+    </div>
+  </header>
+
+  <!-- เวทีหนังสือ -->
+  <main class="stage">
+    <button class="navbtn" id="prevBtn" onclick="flip(-1)" aria-label="หน้าก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button>
+
+    <div class="book-outer">
+      <div class="book" id="book">
+        <div class="page left" id="pageLeft"></div>
+        <div class="page right" id="pageRight"></div>
+        <div class="spine-shadow"></div>
+        <div class="flipper" id="flipper">
+          <div class="face front" id="flipFront"></div>
+          <div class="face back" id="flipBack"></div>
+        </div>
+      </div>
+      <div class="mobile-nav">
+        <button onclick="flip(-1)"><i class="fa-solid fa-chevron-left"></i> ก่อนหน้า</button>
+        <span id="mobilePageInfo">–</span>
+        <button onclick="flip(1)">ถัดไป <i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+    </div>
+
+    <button class="navbtn" id="nextBtn" onclick="flip(1)" aria-label="หน้าถัดไป"><i class="fa-solid fa-chevron-right"></i></button>
+  </main>
+  <p class="hint">เคล็ดลับ: ใช้ปุ่มลูกศร ← → บนคีย์บอร์ดเพื่อพลิกหน้า · คลิกรายการในสารบัญเพื่อกระโดดไปหน้านั้น · คลิกรูปเพื่อขยาย</p>
+
+  <!-- โมดัลฟอร์มบันทึก -->
+  <div class="modal-backdrop" id="formModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="formTitle">
+      <h2 id="formTitle"><i class="fa-solid fa-pen-to-square" style="color:var(--accent)"></i> บันทึก / แก้ไขข้อมูลลิขสิทธิ์</h2>
+      <form id="licenseForm" onsubmit="submitForm(event)">
+        <input type="hidden" name="originalId">
+        <div class="fgrid">
+          <div><label>รหัสเครื่อง (id) *</label><input name="id" required placeholder="เช่น NB-RST-68-012"></div>
+          <div><label>ชื่อเครื่อง (name)</label><input name="name" placeholder="เช่น DESKTOP-GE06H09"></div>
+          <div><label>ซอฟต์แวร์</label><input name="software" value="SolidWorks Professional"></div>
+          <div><label>เวอร์ชัน</label><input name="version" placeholder="เช่น 2025 SP2.0"></div>
+
+          <div class="span2"><label>Serial Number</label><input name="serial" style="font-family:monospace" placeholder="9000 0000 0000 0000 XXXX XXXX"></div>
+          <div><label>วันหมดอายุ (Exp) — Never หรือวันที่</label><input name="exp" value="Never"></div>
+          <div><label>MA หมดอายุบำรุงรักษา</label><input type="date" name="ma"></div>
+
+          <div class="span2"><label>ผู้บันทึก / ผู้ใช้งาน</label><input name="user" placeholder="ชื่อผู้ใช้งานเครื่อง"></div>
+          <div class="span2"><label>วันที่ติดตั้ง / ตรวจสอบ</label><input type="date" name="recdate"></div>
+
+          <div class="span4" style="border-top:1px dashed var(--line);padding-top:.6rem;margin-top:.2rem">
+            <label style="color:var(--accent);letter-spacing:.1em">รายละเอียดคอมพิวเตอร์ (SPECIFICATIONS)</label>
+          </div>
+          <div class="span2"><label>ระบบปฏิบัติการ (OS)</label><input name="os" placeholder="เช่น Windows 11 Pro 26100"></div>
+          <div class="span2"><label>หน่วยประมวลผล (CPU)</label><input name="cpu" placeholder="เช่น Intel Core i5-13400 2.5GHz"></div>
+          <div><label>หน่วยความจำ (RAM)</label><input name="ram" placeholder="เช่น 32 GB"></div>
+          <div><label>System Type</label><input name="systemType" placeholder="x64-based PC"></div>
+          <div><label>Device ID</label><input name="deviceId"></div>
+          <div><label>Product ID</label><input name="productId"></div>
+          <div class="span4"><label>หมายเหตุ</label><textarea name="note" rows="2" placeholder="เช่น อัปเดตจาก SolidWorks 2024 เป็น 2025"></textarea></div>
+
+          <div class="span4">
+            <label style="color:var(--accent);letter-spacing:.1em">รูปภาพประกอบ (หลักฐาน / เอกสารสแกน)</label>
+            <div class="dropzone" id="dropzone" tabindex="0">
+              <i class="fa-solid fa-images"></i> คลิกหรือลากรูปมาวางที่นี่ (เพิ่มได้หลายรูป · ระบบย่อขนาดให้อัตโนมัติ)
+              <input type="file" id="imgInput" accept="image/*" multiple hidden>
+            </div>
+            <div class="thumbs" id="thumbs"></div>
+          </div>
+        </div>
+        <div class="foot">
+          <button type="button" class="btn btn-paper" onclick="closeForm()">ยกเลิก</button>
+          <button type="submit" id="submitBtn" class="btn btn-red"><i class="fa-solid fa-floppy-disk"></i> บันทึกลงฐานข้อมูล</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="lightbox" id="lightbox" onclick="this.classList.remove('open')"><img id="lightboxImg" alt="รูปขยาย"></div>
+  <div class="toast" id="toast"></div>
+  <div id="printArea"></div>
+
+<script>
+  // 🔗 วาง URL Google Apps Script Web App (Deploy ใหม่หลังอัปเดต Code.gs)
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzNGYightvTBC_Igv1DO42ZJgQOuV-uuCYneO-IKNcAfCsi3qdaMXoeLs01y2zHir2t/exec";
+
+  // โครงสร้างคอลัมน์ในชีต (index)
+  const C = { ID:0, NAME:1, SOFTWARE:2, VERSION:3, SERIAL:4, EXP:5, MA:6, USER:7,
+              OS:8, CPU:9, RAM:10, DEVICEID:11, PRODUCTID:12, SYSTYPE:13, NOTE:14, IMAGES:15, RECDATE:16 };
+
+  let records = [];      // ทุกแถวจากชีต
+  let filtered = [];     // หลังค้นหา
+  let current = 0;       // spread ปัจจุบัน (0 = ปก/สารบัญ, 1..n = เครื่อง)
+  let flipping = false;
+  let pendingImages = []; // {dataUrl, name} รูปภาพใหม่ที่บีบอัดแล้ว
+  let existingImages = []; // ข้อความ Base64 เดิมที่มีอยู่แล้วตอนกดแก้ไข
+
+  document.addEventListener("DOMContentLoaded", loadAllData);
+  document.addEventListener("keydown", e => {
+    if (document.getElementById('formModal').classList.contains('open')) return;
+    if (e.key === "ArrowRight") flip(1);
+    if (e.key === "ArrowLeft") flip(-1);
+  });
+  document.getElementById('searchInput').addEventListener('input', handleSearch);
+
+  /* ───────── โหลดข้อมูล ───────── */
+  function loadAllData() {
+    renderLoading();
+    fetch(`${WEB_APP_URL}?action=getLicenseData`)
+      .then(r => r.json())
+      .then(data => {
+        records = (data || []).filter(r => r && r[C.ID]);
+        filtered = records;
+        current = 0;
+        renderSpread(current);
+      })
+      .catch(err => {
+        console.error(err);
+        renderError();
+      });
+  }
+
+  function handleSearch() {
+    const q = document.getElementById('searchInput').value.toLowerCase().trim();
+    filtered = !q ? records : records.filter(r =>
+      [r[C.ID], r[C.NAME], r[C.SOFTWARE], r[C.USER]].some(v => (v||'').toString().toLowerCase().includes(q))
+    );
+    current = 0;
+    renderSpread(current);
+  }
+
+  /* ───────── สร้างเนื้อหาหน้า ───────── */
+  const totalSpreads = () => 1 + filtered.length;
+
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  function fmtDate(v){
+    if(!v || String(v).trim()==='' || String(v).trim()==='-') return '-';
+    if(String(v).toLowerCase()==='never') return 'Never';
+    
+    // สร้างก้อน Date จากข้อมูล
+    const d = new Date(v);
+    if (isNaN(d)) return esc(v);
+    
+    // บังคับแสดงผลเป็น ค.ศ. เสมอ (หรือเปลี่ยน 'en-US' เป็น 'th-TH' ถ้าต้องการให้ออกเป็น พ.ศ. บนหน้าจออย่างถูกต้อง)
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function expBadge(v){
+    const s = (v||'').toString().trim();
+    if (s.toLowerCase()==='never') return `<span class="badge never"><i class="fa-solid fa-infinity"></i> Never</span>`;
+    const d = new Date(s);
+    if (!isNaN(d) && d < new Date()) return `<span class="badge expired">หมดอายุ ${fmtDate(s)}</span>`;
+    return `<span class="badge date">${fmtDate(s)}</span>`;
+  }
+
+  function imgList(row){
+    return (row[C.IMAGES]||'').toString().split('|').map(s=>s.trim()).filter(Boolean);
+  }
+
+  function spreadHTML(idx){
+    if (idx === 0) return coverSpread();
+    const row = filtered[idx-1];
+    return recordSpread(row, idx);
+  }
+
+  function coverSpread(){
+    const total = filtered.length;
+    const never = filtered.filter(r => (r[C.EXP]||'').toString().toLowerCase()==='never').length;
+    const withMA = filtered.filter(r => { const m=(r[C.MA]||'').toString().trim(); return m && m!=='-' && !isNaN(Date.parse(m)); }).length;
+    const sw = new Set(filtered.map(r => (r[C.SOFTWARE]||'').toString().trim()).filter(s=>s && s!=='-')).size;
+
+    const left = `
+      <div class="page-inner coverpage" style="display:flex;flex-direction:column;flex:1">
+        <div style="margin:auto;display:flex;flex-direction:column;align-items:center">
+          <div class="crest">RST</div>
+          <div class="rule"></div>
+          <h2>สมุดทะเบียนลิขสิทธิ์ซอฟต์แวร์</h2>
+          <div class="sub">บันทึกการตรวจสอบและติดตั้งโปรแกรม · Software License Registry</div>
+          <div class="stats">
+            <div class="stat"><b>${total}</b><span>ลิขสิทธิ์ทั้งหมด</span></div>
+            <div class="stat"><b style="color:var(--ok)">${never}</b><span>ไม่หมดอายุ (Never)</span></div>
+            <div class="stat"><b style="color:#9a6210">${withMA}</b><span>มีกำหนดต่ออายุ MA</span></div>
+            <div class="stat"><b style="color:var(--stamp)">${sw}</b><span>ชนิดซอฟต์แวร์</span></div>
+          </div>
+        </div>
+      </div>
+      <span class="pageno">ปกใน</span>`;
+
+    const toc = filtered.length === 0
+      ? `<div class="center-note"><i class="fa-regular fa-folder-open"></i>ยังไม่มีบันทึกในสมุดเล่มนี้<br>กด “บันทึกเครื่องใหม่” เพื่อเริ่มหน้าแรก</div>`
+      : `<div class="toc-list">` + filtered.map((r,i)=>`
+          <div style="display:flex;align-items:center;gap:.2rem;border-bottom:1px dotted var(--line)">
+            <button class="toc-item" style="border-bottom:0;flex:1" onclick="goTo(${i+1})">
+              <span class="t">${esc(r[C.ID])}<small>${esc(r[C.NAME]||'')} · ${esc(r[C.SOFTWARE]||'')} ${esc(r[C.VERSION]||'')}</small></span>
+              <span class="dots"></span>
+              <span class="pn">${i+1}</span>
+            </button>
+            <button class="toc-edit" onclick="editRecord(${i})" title="แก้ไขข้อมูล ${esc(r[C.ID])}"><i class="fa-solid fa-pen"></i></button>
+          </div>`).join('') + `</div>`;
+
+    const right = `
+      <div style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <h3 style="font-family:'Trirong',serif;margin:0 0 .2rem;font-size:1.15rem">สารบัญ</h3>
+        <div style="font-size:.76rem;color:var(--ink-soft);margin-bottom:.4rem">คลิกรายการเพื่อเปิดไปยังหน้าบันทึกของเครื่องนั้น</div>
+        ${toc}
+      </div>
+      <span class="pageno">สารบัญ</span>`;
+    return { left, right };
+  }
+
+  function recordSpread(row, idx){
+    const imgs = imgList(row);
+    const pageL = idx*2 - 1, pageR = idx*2;
+    const isUpdate = (row[C.NOTE]||'').toString().includes('อัปเดต') || (row[C.NOTE]||'').toString().toLowerCase().includes('update');
+
+    const left = `
+      <div class="doc-head">
+        <div class="brand">RST</div>
+        <div class="mid">
+          <div class="t1">บันทึกการตรวจสอบ</div>
+          <div class="t2">รายละเอียดงาน : Management Software ${esc(row[C.SOFTWARE]||'')} (license)</div>
+        </div>
+        <div class="date">วันที่ : ${fmtDate(row[C.RECDATE])}</div>
+      </div>
+      <div class="stamp ${isUpdate?'':'red'}">${isUpdate ? 'UPDATED' : 'INSTALLED'}</div>
+      <div class="rec-title">${esc(row[C.SOFTWARE]||'-')} ${esc(row[C.VERSION]||'')}</div>
+      <span class="rec-id"><i class="fa-solid fa-tag"></i> ${esc(row[C.ID])}</span>
+      <dl class="kv">
+        <div class="row"><dt>ชื่อเครื่อง</dt><dd>${esc(row[C.NAME]||'-')}</dd></div>
+        <div class="row"><dt>Serial Number</dt><dd>${row[C.SERIAL]
+          ? `<span class="serial-chip">${esc(row[C.SERIAL])}<button onclick="copyText('${esc(row[C.SERIAL])}',this)" title="คัดลอก"><i class="fa-regular fa-copy"></i></button></span>`
+          : '-'}</dd></div>
+        <div class="row"><dt>วันหมดอายุ</dt><dd>${expBadge(row[C.EXP])}</dd></div>
+        <div class="row"><dt>MA หมดอายุ</dt><dd>${fmtDate(row[C.MA])}</dd></div>
+        <div class="row"><dt>ผู้ใช้งาน</dt><dd>${esc(row[C.USER]||'-')}</dd></div>
+        ${row[C.NOTE] ? `<div class="row"><dt>หมายเหตุ</dt><dd>${esc(row[C.NOTE])}</dd></div>` : ''}
+      </dl>
+
+      <div class="sec-label">รายละเอียดคอมพิวเตอร์</div>
+      <table class="spec">
+        <tr><td>OS</td><td>${esc(row[C.OS]||'-')}</td></tr>
+        <tr><td>Processor</td><td>${esc(row[C.CPU]||'-')}</td></tr>
+        <tr><td>RAM</td><td>${esc(row[C.RAM]||'-')}</td></tr>
+        <tr><td>System Type</td><td>${esc(row[C.SYSTYPE]||'-')}</td></tr>
+        <tr><td>Device ID</td><td>${esc(row[C.DEVICEID]||'-')}</td></tr>
+        <tr><td>Product ID</td><td>${esc(row[C.PRODUCTID]||'-')}</td></tr>
+      </table>
+
+      <div class="page-actions">
+        <button class="btn-mini" onclick="editRecord(${idx-1})"><i class="fa-solid fa-pen"></i> แก้ไขหน้านี้</button>
+        <button class="btn-mini danger" onclick="deleteRecord(${idx-1})"><i class="fa-solid fa-trash-can"></i> ลบข้อมูล</button>
+      </div>
+      <span class="pageno">— ${pageL} —</span>`;
+
+    const gallery = imgs.length
+      ? imgs.map((u,i)=>`
+          <figure style="--tilt:${(i%2? 1.2 : -1.4)}deg" onclick="openLightbox('${esc(u)}')">
+            <img src="${esc(u)}" loading="lazy" alt="รูปประกอบ ${i+1}" onerror="this.parentElement.style.opacity=.4">
+            <figcaption>หลักฐานที่ ${i+1}</figcaption>
+          </figure>`).join('')
+      : `<div class="empty"><i class="fa-regular fa-image"></i> ยังไม่มีรูปประกอบ — กด “แก้ไขหน้านี้” เพื่อแนบรูป</div>`;
+
+    const right = `
+      <div class="sec-label" style="margin-top:0">รูปภาพประกอบ / หลักฐานการติดตั้ง</div>
+      <div class="gallery">${gallery}</div>
+      <div style="margin-top:auto;padding-top:1.2rem">
+        <div class="sec-label">ผู้เกี่ยวข้อง</div>
+        <table class="spec"><tr>
+          <td style="width:25%;text-align:center;background:#f4eddb">ผู้บันทึก</td>
+          <td style="text-align:center">........./........./..........</td>
+          <td style="width:25%;text-align:center;background:#f4eddb">ผู้ตรวจสอบ</td>
+          <td style="text-align:center">........./........./..........</td>
+        </tr></table>
+      </div>
+      <span class="pageno">— ${pageR} —</span>`;
+    return { left, right };
+  }
+
+  /* ───────── เรนเดอร์ + พลิกหน้า ───────── */
+  function renderSpread(idx){
+    const s = spreadHTML(idx);
+    document.getElementById('pageLeft').innerHTML = s.left;
+    document.getElementById('pageRight').innerHTML = s.right;
+    updateNav();
+  }
+
+  function updateNav(){
+    document.getElementById('prevBtn').disabled = current <= 0;
+    document.getElementById('nextBtn').disabled = current >= totalSpreads()-1;
+    document.getElementById('mobilePageInfo').textContent =
+      current === 0 ? 'ปก / สารบัญ' : `หน้า ${current} จาก ${totalSpreads()-1}`;
+  }
+
+  function flip(dir){ goTo(current + dir); }
+
+  function goTo(target){
+    if (flipping || target < 0 || target > totalSpreads()-1 || target === current) return;
+    const isMobile = window.matchMedia('(max-width: 900px)').matches;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (isMobile || reduced) { current = target; renderSpread(current); return; }
+
+    flipping = true;
+    const dir = target > current ? 1 : -1;
+    const next = spreadHTML(target);
+    const cur = spreadHTML(current);
+    const flipper = document.getElementById('flipper');
+    const front = document.getElementById('flipFront');
+    const back = document.getElementById('flipBack');
+
+    flipper.className = 'flipper ' + (dir === 1 ? 'fwd' : 'bwd');
+    if (dir === 1) {
+      front.innerHTML = cur.right + '<div class="shade"></div>';
+      back.innerHTML = next.left;
+      document.getElementById('pageRight').innerHTML = next.right;
+    } else {
+      front.innerHTML = cur.left + '<div class="shade"></div>';
+      back.innerHTML = next.right;
+      document.getElementById('pageLeft').innerHTML = next.left;
+    }
+
+    requestAnimationFrame(()=> flipper.classList.add('go'));
+    flipper.onanimationend = () => {
+      flipper.classList.remove('go');
+      flipper.style.display = 'none';
+      flipper.onanimationend = null;
+      current = target;
+      renderSpread(current);
+      flipper.style.display = '';
+      flipping = false;
+    };
+  }
+
+  function renderLoading(){
+    document.getElementById('pageLeft').innerHTML =
+      `<div class="center-note"><i class="fa-solid fa-circle-notch fa-spin"></i>กำลังเปิดสมุดทะเบียน…</div><span class="pageno">ปกใน</span>`;
+    document.getElementById('pageRight').innerHTML =
+      `<div class="center-note"><i class="fa-solid fa-book-open"></i>กำลังโหลดฐานข้อมูลลิขสิทธิ์</div><span class="pageno">สารบัญ</span>`;
+  }
+
+  function renderError(){
+    document.getElementById('pageLeft').innerHTML = `
+      <div class="center-note">
+        <i class="fa-solid fa-triangle-exclamation" style="color:var(--accent)"></i>
+        เชื่อมต่อฐานข้อมูลไม่ได้<br>กรุณาตรวจสอบ URL ของ Web App หรือสิทธิ์การเข้าถึง<br><br>
+        <button class="btn btn-red" onclick="loadAllData()"><i class="fa-solid fa-rotate"></i> ลองอีกครั้ง</button>
+        <button class="btn btn-paper" onclick="loadDemo()" style="margin-left:.4rem"><i class="fa-solid fa-eye"></i> ดูตัวอย่าง</button>
+      </div><span class="pageno">ปกใน</span>`;
+    document.getElementById('pageRight').innerHTML =
+      `<div class="center-note"><i class="fa-regular fa-hand-point-left"></i>ยังแสดงข้อมูลไม่ได้</div><span class="pageno">สารบัญ</span>`;
+  }
+
+  function loadDemo(){
+    records = [
+      ["NB-RSTYM-66-003","DESKTOP-GE06H09","SolidWorks Professional","2025","","Never","","RST","Microsoft Windows 11 Pro (26100)","13th Gen Intel Core i5-13400 2.5GHz 10C/16T","32 GB","","", "x64-based PC","ติดตั้งใหม่ license 3 เครื่อง (ASUS ExpertCenter D500TE)","","2025-03-14"],
+      ["NB-RSTYM-66-064","DESKTOP-QHF58R8","SolidWorks Professional","2025 SP1.2","9000 0514 0693 1685 ZJD5 FSKK","Never","","RST","Windows 11","13th Gen Intel Core i7-13700 2.1GHz","32 GB (31.8 GB usable)","210C7546-5C4A-4948-8538-1A6850C58079","00331-10000-00001-AA057","x64-based PC","อัปเดตจาก SolidWorks 2024 เป็น 2025","","2025-03-14"],
+      ["NB-RSTYM-66-065","DESKTOP-O6CBRRJ","SolidWorks Professional","2025 SP1.2","9000 0522 6764 0158 MRM9 896C","Never","","RST","Windows 11","Intel Core i5-14500 2.6GHz","32 GB (31.8 GB usable)","74DBDDCD-BA43-48AA-8B6E-9437C34CC64B","00331-10000-00001-AA495","x64-based PC","อัปเดตจาก SolidWorks 2024 SP3.1 เป็น 2025","","2025-03-14"],
+      ["NB-RST-68-012","","SolidWorks Professional + CAM Standard","2025 SP2.0","9000 0532 8055 7950 SCPW CXH5","Never","2027-06-30","RST","Windows 11","","","","","x64-based PC","ติดตั้งใหม่ license 4 เครื่อง · CAM Standard หมดอายุ 30 มิ.ย. 2027","","2025-06-27"]
+    ];
+    filtered = records; current = 0; renderSpread(0);
+    showToast("แสดงข้อมูลตัวอย่าง — ยังไม่ได้บันทึกลงฐานข้อมูลจริง");
+  }
+
+  /* ───────── ฟอร์ม + รูปภาพ ───────── */
+  const dz = document.getElementById('dropzone');
+  const imgInput = document.getElementById('imgInput');
+  dz.addEventListener('click', ()=> imgInput.click());
+  dz.addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' ') imgInput.click(); });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', ()=> dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); addFiles(e.dataTransfer.files); });
+  imgInput.addEventListener('change', ()=> { addFiles(imgInput.files); imgInput.value=''; });
+
+  function addFiles(files){
+    [...files].forEach(f => {
+      if(!f.type.startsWith('image/')) return;
+      compressImage(f).then(dataUrl => {
+        pendingImages.push({ dataUrl, name: f.name });
+        renderThumbs();
+      });
+    });
+  }
+
+  // 🛠️ ฟังก์ชันบีบอัดรูปฝั่งเบราว์เซอร์ (กว้าง/สูง สูงสุด 800px เพื่อให้ขนาด Base64 ไม่เกินลิมิตเซลล์ 50,000 ตัวอักษร)
+  function compressImage(file){
+    return new Promise(res => {
+      const img = new Image();
+      const fr = new FileReader();
+      fr.onload = ()=> { img.src = fr.result; };
+      img.onload = ()=>{
+        const max = 800; // ปรับขนาดด้านที่ยาวที่สุดไม่เกิน 800px ตัวหนังสือจะไม่ยาวล้นเซลล์ครับ
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width*scale); cv.height = Math.round(img.height*scale);
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        res(cv.toDataURL('image/jpeg', .75)); // บีบอัดความคมชัดที่ 75% ชัดเจนพอสำหรับอ่านข้อความหน้าจอและประหยัดพื้นที่
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function renderThumbs(){
+    const box = document.getElementById('thumbs');
+    box.innerHTML =
+      existingImages.map((u,i)=>`
+        <div class="thumb">
+          <img src="${esc(u)}" alt="">
+          <button type="button" class="rm" onclick="existingImages.splice(${i},1);renderThumbs()" title="ลบรูป">✕</button>
+          <div class="tag">ในระบบ</div>
+        </div>`).join('') +
+      pendingImages.map((p,i)=>`
+        <div class="thumb">
+          <img src="${p.dataUrl}" alt="">
+          <button type="button" class="rm" onclick="pendingImages.splice(${i},1);renderThumbs()" title="ลบรูป">✕</button>
+          <div class="tag">รูปใหม่</div>
+        </div>`).join('');
+  }
+
+  function openForm(){
+    document.getElementById('licenseForm').reset();
+    document.getElementById('formTitle').innerHTML =
+      `<i class="fa-solid fa-pen-to-square" style="color:var(--accent)"></i> บันทึก / แก้ไขข้อมูลลิขสิทธิ์`;
+    document.getElementById('licenseForm').elements['originalId'].value = '';
+    document.getElementById('licenseForm').elements['software'].value = "SolidWorks Professional";
+    document.getElementById('licenseForm').elements['exp'].value = "Never";
+    pendingImages = []; existingImages = []; renderThumbs();
+    document.getElementById('formModal').classList.add('open');
+  }
+  function closeForm(){ document.getElementById('formModal').classList.remove('open'); }
+  document.getElementById('formModal').addEventListener('click', e => { if(e.target.id==='formModal') closeForm(); });
+
+  function editRecord(i){
+    const row = filtered[i];
+    openForm();
+    document.getElementById('formTitle').innerHTML =
+      `<i class="fa-solid fa-pen-to-square" style="color:var(--accent)"></i> แก้ไขข้อมูล : ${esc(row[C.ID])}`;
+    const f = document.getElementById('licenseForm').elements;
+    f['originalId'].value = row[C.ID]||'';
+    f['id'].value = row[C.ID]||''; f['name'].value = row[C.NAME]||'';
+    f['software'].value = row[C.SOFTWARE]||''; f['version'].value = row[C.VERSION]||'';
+    f['serial'].value = row[C.SERIAL]||''; f['exp'].value = row[C.EXP]||'Never';
+    f['user'].value = row[C.USER]||'';
+    f['os'].value = row[C.OS]||''; f['cpu'].value = row[C.CPU]||''; f['ram'].value = row[C.RAM]||'';
+    f['deviceId'].value = row[C.DEVICEID]||''; f['productId'].value = row[C.PRODUCTID]||'';
+    f['systemType'].value = row[C.SYSTYPE]||''; f['note'].value = row[C.NOTE]||'';
+    ['ma','recdate'].forEach((k, j) => {
+      const v = row[j===0 ? C.MA : C.RECDATE];
+      const d = new Date(v);
+      f[k].value = (v && !isNaN(d)) ? d.toISOString().split('T')[0] : '';
+    });
+    existingImages = imgList(row); pendingImages = []; renderThumbs();
+  }
+
+  async function submitForm(e){
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึกข้อมูล…`;
+
+    try {
+      // ดึง Base64 จากรูปภาพใหม่ทั้งหมด
+      const newImagesBase64 = pendingImages.map(img => img.dataUrl);
+      
+      // มัดรวม Base64 ทั้งของเก่าและของใหม่เข้าด้วยกัน คั่นสัญลักษ์ด้วย |
+      const combinedImagesString = [...existingImages, ...newImagesBase64].join(' | ');
+
+      const f = document.getElementById('licenseForm').elements;
+      const payload = {
+        action: "saveOrUpdateLicense",
+        originalId: f['originalId'].value.trim(),
+        id: f['id'].value.trim(), name: f['name'].value, software: f['software'].value,
+        version: f['version'].value, serial: f['serial'].value, exp: f['exp'].value,
+        ma: f['ma'].value, user: f['user'].value,
+        os: f['os'].value, cpu: f['cpu'].value, ram: f['ram'].value,
+        deviceId: f['deviceId'].value, productId: f['productId'].value,
+        systemType: f['systemType'].value, note: f['note'].value,
+        images: combinedImagesString, // ส่ง string ก้อนใหญ่เข้าคอลัมน์ images ตรงๆ เลย
+        recdate: f['recdate'].value
+      };
+
+      const resp = await fetch(WEB_APP_URL, { 
+        method: "POST", 
+        body: JSON.stringify(payload) 
+      }).then(r => r.json());
+      
+      if (!resp.success) throw new Error(resp.message || "บันทึกไม่สำเร็จ");
+
+      showToast("บันทึกเรียบร้อย ✓");
+      closeForm();
+      
+      const savedId = payload.id;
+      await fetch(`${WEB_APP_URL}?action=getLicenseData`).then(r=>r.json()).then(data => {
+        records = (data||[]).filter(r=>r && r[C.ID]);
+        document.getElementById('searchInput').value = '';
+        filtered = records;
+        const i = filtered.findIndex(r => String(r[C.ID]).trim() === savedId);
+        current = i >= 0 ? i+1 : 0;
+        renderSpread(current);
+      });
+    } catch(err) {
+      console.error(err);
+      alert("เกิดข้อผิดพลาด: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> บันทึกลงฐานข้อมูล`;
+    }
+  }
+
+  async function deleteRecord(i){
+    const row = filtered[i];
+    const id = String(row[C.ID]).trim();
+    if (!confirm(`ยืนยันการลบข้อมูลเครื่อง "${id}" ?\n\nหน้าบันทึกนี้จะถูกฉีกออกจากสมุดถาวร`)) return;
+    try {
+      showToast("กำลังลบข้อมูล…");
+      const resp = await fetch(WEB_APP_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "deleteLicense", id })
+      }).then(r=>r.json());
+      if (!resp.success) throw new Error(resp.message || "ลบไม่สำเร็จ");
+      showToast(`ลบข้อมูลเครื่อง ${id} แล้ว ✓`);
+      records = records.filter(r => String(r[C.ID]).trim() !== id);
+      filtered = filtered.filter(r => String(r[C.ID]).trim() !== id);
+      current = Math.min(current, totalSpreads()-1);
+      renderSpread(current);
+    } catch(err) {
+      console.error(err);
+      alert("เกิดข้อผิดพลาด: " + err.message);
+    }
+  }
+
+  /* ───────── อื่น ๆ ───────── */
+  function copyText(t, el){
+    navigator.clipboard.writeText(t).then(()=>{
+      const i = el.querySelector('i');
+      i.className = 'fa-solid fa-check'; i.style.color = 'var(--ok)';
+      setTimeout(()=>{ i.className='fa-regular fa-copy'; i.style.color=''; }, 1400);
+    });
+  }
+
+  function openLightbox(url){
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightbox').classList.add('open');
+  }
+
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(()=> t.classList.remove('show'), 2600);
+  }
+
+  function printCurrent(){
+    const s = spreadHTML(current);
+    document.getElementById('printArea').innerHTML =
+      `<div class="half">${s.left}</div><div class="half">${s.right}</div>`;
+    window.print();
+  }
+</script>
+</body>
+</html>
