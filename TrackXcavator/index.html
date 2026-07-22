@@ -3,778 +3,1038 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rst Excavators Database System</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <title>Excavators Database - Tracking & Service Report</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
   <style>
-    body { font-family: 'Kanit', sans-serif; background-color: #f8fafc; }
-    .clickable-row { cursor: pointer; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #f1f1f1; }
-    ::-webkit-scrollbar-thumb { background: #d32f2f; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #9a0007; }
+    :root {
+      --primary-red: #dc3545;
+      --dark-bg: #1a1a1a;
+      --light-bg: #f4f6f9;
+    }
+
+    body {
+      font-family: 'Prompt', sans-serif;
+      background-color: var(--light-bg);
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+
+    .navbar-custom {
+      background-color: var(--dark-bg);
+      border-bottom: 3px solid var(--primary-red);
+    }
+
+    .brand-logo {
+      background-color: var(--primary-red);
+      color: #fff;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 4px;
+      margin-right: 8px;
+    }
+
+    .card-stat {
+      border: none;
+      border-left: 5px solid var(--primary-red);
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      background: #fff;
+      transition: transform 0.2s;
+    }
+
+    .card-stat:hover {
+      transform: translateY(-2px);
+    }
+
+    .nav-pills .nav-link {
+      color: #555;
+      font-weight: 500;
+      border-radius: 6px;
+      padding: 10px 20px;
+      transition: all 0.2s;
+    }
+
+    .nav-pills .nav-link:hover {
+      background-color: #e9ecef;
+      color: #000;
+    }
+
+    .nav-pills .nav-link.active {
+      background-color: var(--primary-red);
+      color: #fff;
+    }
+
+    .table-container {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .table th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      border-bottom: 2px solid #dee2e6;
+    }
+
+    .table td {
+      font-size: 0.85rem;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .clickable-row {
+      cursor: pointer;
+    }
+
+    .badge-pending { background-color: #e9ecef; color: #495057; font-weight: 500; }
+    .badge-approved { background-color: #d1e7dd; color: #0f5132; font-weight: 500; }
+    .badge-warning-custom { background-color: #fff3cd; color: #664d03; font-weight: 500; }
+    .badge-partial-custom { background-color: #ffe5d0; color: #b34700; font-weight: 500; }
+    .badge-success-custom { background-color: #d1e7dd; color: #0f5132; font-weight: 500; }
+
+    #loginOverlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      padding: 35px;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    }
+
+    .btn-excel {
+      background-color: #198754;
+      color: #fff;
+      font-weight: 500;
+    }
+    
+    .btn-excel:hover {
+      background-color: #157347;
+      color: #fff;
+    }
+
+    .filter-btn {
+      font-size: 0.8rem;
+      border-radius: 20px;
+      padding: 4px 12px;
+    }
+
+    .form-label-sm {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #6c757d;
+      margin-bottom: 2px;
+    }
+
+    .form-card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .preset-badge {
+      cursor: pointer;
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background-color: #e9ecef;
+      color: #495057;
+      border: 1px solid #ced4da;
+      transition: all 0.15s ease-in-out;
+      user-select: none;
+    }
+
+    .preset-badge:hover {
+      background-color: #dc3545;
+      color: #fff;
+      border-color: #dc3545;
+    }
   </style>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen">
+<body>
 
-  <!-- 🔒 Modal ล็อกอิน -->
-  <div id="login-modal" class="fixed inset-0 bg-zinc-900/90 z-50 flex items-center justify-center p-4" style="display: flex;">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-8 border-red-600 relative overflow-hidden">
-      <div class="text-center mb-6">
-        <div class="inline-block bg-red-600 text-white font-extrabold px-3 py-1 rounded text-xs tracking-wider mb-2">RST SYSTEM</div>
-        <h1 class="text-2xl font-black text-zinc-900 tracking-tight">🚜 Master Excavators</h1>
-        <p class="text-xs text-zinc-500 mt-1">ระบบฐานข้อมูลเครื่องจักร Rst</p>
-      </div>
-
-      <div class="space-y-4">
-        <div>
-          <label class="block text-xs font-bold text-zinc-700 mb-1">ชื่อผู้ใช้งาน (Username)</label>
-          <input type="text" id="login-username" class="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-sm bg-zinc-50">
+  <!-- 🔒 LOGIN OVERLAY -->
+  <div id="loginOverlay">
+    <div class="login-card text-center">
+      <h3 class="mb-2 fw-bold"><span class="brand-logo">Rst</span> เข้าสู่ระบบ</h3>
+      <p class="text-muted small mb-4">Excavators Service Management System</p>
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="mb-3 text-start">
+          <label class="form-label form-label-sm">ชื่อผู้ใช้งาน (User)</label>
+          <input type="text" id="loginUser" class="form-control" required placeholder="ระบุชื่อผู้ใช้">
         </div>
-        <div>
-          <label class="block text-xs font-bold text-zinc-700 mb-1">รหัสผ่าน (Password)</label>
-          <input type="password" id="login-password" class="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-sm bg-zinc-50">
+        <div class="mb-4 text-start">
+          <label class="form-label form-label-sm">รหัสผ่าน (Password)</label>
+          <input type="password" id="loginPass" class="form-control" required placeholder="ระบุรหัสผ่าน">
         </div>
-        <div id="login-error" class="text-red-600 text-xs hidden font-bold text-center bg-red-50 py-1.5 rounded border border-red-200"></div>
-
-        <button onclick="handleLogin()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-all text-sm shadow-md hover:shadow-lg active:scale-[0.99]">
-          เข้าสู่ระบบ
+        <button type="submit" id="btnLoginSubmit" class="btn btn-danger w-100 fw-bold py-2">
+          <i class="fa-solid fa-right-to-bracket me-1"></i> เข้าสู่ระบบ
         </button>
-        <button onclick="handleRegister()" class="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold py-2 rounded-lg transition-colors text-xs border border-zinc-300">
-          ลงทะเบียนผู้ใช้ใหม่
-        </button>
-      </div>
+      </form>
     </div>
   </div>
 
-  <!-- 📦 Main App Body -->
-  <div id="main-app" style="display: none;">
-    <!-- Navbar -->
-    <nav class="bg-zinc-900 text-white border-b-4 border-red-600 sticky top-0 z-30 px-6 py-3 flex items-center justify-between shadow-lg">
-      <div class="flex items-center gap-3">
-        <span class="bg-red-600 text-white px-2 py-0.5 rounded font-black text-sm tracking-wider">Rst</span>
-        <span class="text-lg font-bold tracking-wide text-zinc-100">Excavators Database</span>
-      </div>
-      <div class="flex items-center gap-4">
-        <div class="flex items-center gap-2 bg-zinc-800 px-3 py-1 rounded-full border border-zinc-700">
-          <span id="user-display" class="font-bold text-zinc-200 text-xs">guest</span>
-          <span id="role-badge" class="bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold uppercase">USER</span>
-        </div>
-        <button onclick="handleLogout()" class="bg-zinc-800 hover:bg-red-600 text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-zinc-700">
-          ออกจากระบบ
+  <!-- 🌐 NAVBAR -->
+  <nav class="navbar navbar-expand-lg navbar-dark navbar-custom px-4 sticky-top">
+    <a class="navbar-brand d-flex align-items-center" href="#">
+      <span class="brand-logo">Rst</span>
+      <span class="fw-bold">Excavators Database</span>
+    </a>
+    <div class="ms-auto d-flex align-items-center">
+      <span class="text-white me-3 small">
+        <i class="fa-solid fa-circle-user me-1"></i> <span id="userDisplay">-</span> 
+        <span class="badge bg-danger ms-1" id="roleDisplay">-</span>
+      </span>
+      <button class="btn btn-outline-light btn-sm" onclick="logout()">
+        <i class="fa-solid fa-power-off me-1"></i> ออกจากระบบ
+      </button>
+    </div>
+  </nav>
+
+  <!-- 📑 MAIN CONTENT -->
+  <div class="container-fluid my-4 px-3">
+    
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="nav nav-pills" role="tablist">
+        <button class="nav-link active me-2" data-bs-toggle="pill" data-bs-target="#tab-dashboard" type="button" onclick="loadDashboardData()">
+          <i class="fa-solid fa-table-cells me-2"></i> ตารางเครื่องจักร
+        </button>
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" onclick="loadHistoryData()">
+          <i class="fa-solid fa-clock-rotate-left me-2"></i> บันทึกประวัติ PM
         </button>
       </div>
-    </nav>
+      <div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadDashboardData()">
+          <i class="fa-solid fa-rotate me-1"></i> รีเฟรชข้อมูล
+        </button>
+      </div>
+    </div>
 
-    <!-- Main Container -->
-    <div class="max-w-[1700px] mx-auto p-6">
-      <div class="flex gap-6">
-        <!-- Sidebar Menu -->
-        <div class="w-52 shrink-0 space-y-2">
-          <button id="btn-tab-dashboard" onclick="switchTab('dashboard')" class="w-full text-left px-4 py-2.5 rounded-lg font-bold text-sm bg-red-600 text-white shadow-md transition-all flex items-center justify-between">
-            <span>ตารางเครื่องจักร</span>
-            <span class="text-xs opacity-75">📊</span>
-          </button>
-          <button id="btn-tab-pmlog" onclick="switchTab('pmlog')" class="w-full text-left px-4 py-2.5 rounded-lg font-bold text-sm bg-white text-zinc-700 hover:bg-zinc-100 transition-all border border-zinc-200 flex items-center justify-between">
-            <span>บันทึกประวัติ PM</span>
-            <span class="text-xs text-zinc-400">📝</span>
-          </button>
+    <div class="tab-content">
+      
+      <!-- TAB 1: DASHBOARD -->
+      <div class="tab-pane fade show active" id="tab-dashboard">
+        
+        <div class="row mb-3">
+          <div class="col-md-4 mb-2">
+            <div class="card card-stat p-3">
+              <span class="text-muted small">ยอดรวมเคลมคูปอง Yanmar</span>
+              <h3 class="text-danger fw-bold mb-0 mt-1" id="statCouponSum">0 บาท</h3>
+            </div>
+          </div>
+          <div class="col-md-4 mb-2">
+            <div class="card card-stat p-3" style="border-left-color: #ffc107;">
+              <span class="text-muted small">เครื่องจักรรอตรวจสอบ PM ด่วน</span>
+              <h3 class="text-warning fw-bold mb-0 mt-1" id="statPmAlertCount">0</h3>
+            </div>
+          </div>
+          <div class="col-md-4 mb-2">
+            <div class="card card-stat p-3" style="border-left-color: #0d6efd;">
+              <span class="text-muted small">บิลค้างส่ง / ส่งอะไหล่ไม่ครบ</span>
+              <h3 class="text-primary fw-bold mb-0 mt-1" id="statPendingInvoiceCount">0</h3>
+            </div>
+          </div>
         </div>
 
-        <!-- Content Area -->
-        <div class="flex-1 space-y-6 overflow-hidden">
+        <div class="row">
+          <div class="col-12 mb-4">
+            <div class="table-container">
+              
+              <div class="row g-2 mb-3 align-items-center">
+                <div class="col-md-4">
+                  <div class="input-group input-group-sm">
+                    <input type="text" id="searchDashboard" class="form-control" placeholder="พิมพ์ค้นหา แล้วกด Enter..." onkeydown="handleDashboardSearchKey(event)">
+                    <button class="btn btn-danger" type="button" onclick="filterDashboardTable()">
+                      <i class="fa-solid fa-magnifying-glass me-1"></i> ค้นหา
+                    </button>
+                  </div>
+                </div>
+                <div class="col-md-5 d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-dark filter-btn active" onclick="setDashboardFilter('all', this)">ทั้งหมด</button>
+                  <button class="btn btn-sm btn-outline-danger filter-btn" onclick="setDashboardFilter('pm_alert', this)">ต้องทำ PM ด่วน</button>
+                  <button class="btn btn-sm btn-outline-warning filter-btn text-dark" onclick="setDashboardFilter('partial_parts', this)">ส่งบางส่วน</button>
+                  <button class="btn btn-sm btn-outline-secondary filter-btn" onclick="setDashboardFilter('pending_parts', this)">ค้างส่งอะไหล่</button>
+                </div>
+                <div class="col-md-3 text-end">
+                  <button class="btn btn-sm btn-excel" onclick="exportToExcel('tbDashboardTable', 'Service_Report')">
+                    <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+                  </button>
+                </div>
+              </div>
+
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0 text-danger"><i class="fa-solid fa-list-check me-1"></i> ตารางสถานะเครื่องจักร (Service_Report)</h6>
+              </div>
+              
+              <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                <table class="table table-hover align-middle" id="tbDashboardTable">
+                  <thead>
+                    <tr>
+                      <th>Machine_ID</th>
+                      <th>Model</th>
+                      <th>Customer</th>
+                      <th>Customer_ID</th>
+                      <th>Phone_Number</th>
+                      <th>Contract_Date</th>
+                      <th>Current_Hours</th>
+                      <th>Last_PM_Round</th>
+                      <th>Next_PM_Round</th>
+                      <th>Status</th>
+                      <th>Updated_By</th>
+                      <th>Parts_Store</th>
+                      <th>Parts_Bill_No</th>
+                      <th>Parts_Status</th>
+                      <th class="text-center">Receipt_Image</th>
+                      <th>Yanmar_Coupon</th>
+                      <th>Remark</th>
+                      <th class="text-center">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbDashboard">
+                    <tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div class="row" id="formSection">
           
-          <!-- DASHBOARD TAB -->
-          <div id="tab-dashboard" class="space-y-6">
-            <div class="flex justify-between items-center">
-              <h2 class="text-xl font-black text-zinc-900 flex items-center gap-2">
-                <span class="w-2 h-5 bg-red-600 rounded-full inline-block"></span>
-                ตารางสถานะเครื่องจักร (Service_Report)
-              </h2>
-              <button onclick="loadDashboardData()" class="bg-white border border-zinc-300 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-zinc-50 shadow-sm transition-all text-zinc-700">
-                🔄 รีเฟรชข้อมูล
+          <div class="col-md-4 mb-3">
+            <div class="card form-card p-3 h-100">
+              <h6 class="fw-bold text-dark mb-3"><i class="fa-solid fa-stopwatch me-1 text-danger"></i> อัปเดตชั่วโมงใช้งานด่วน</h6>
+              <form onsubmit="handleUpdateHours(event)">
+                <div class="mb-3">
+                  <label class="form-label form-label-sm">Machine ID *</label>
+                  <input type="text" id="quickMachineId" class="form-control form-control-sm" placeholder="ระบุ Machine ID" required>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label form-label-sm">ชั่วโมงใช้งานล่าสุด *</label>
+                  <input type="number" id="quickHours" class="form-control form-control-sm" placeholder="ระบุชั่วโมงล่าสุด" required>
+                </div>
+
+                <div class="mb-3">
+                  <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">คลิกเลือกชั่วโมงด่วน:</span>
+                  <div class="d-flex flex-wrap gap-1">
+                    <span class="preset-badge" onclick="setQuickHours(50)">50</span>
+                    <span class="preset-badge" onclick="setQuickHours(250)">250</span>
+                    <span class="preset-badge" onclick="setQuickHours(500)">500</span>
+                    <span class="preset-badge" onclick="setQuickHours(750)">750</span>
+                    <span class="preset-badge" onclick="setQuickHours(1000)">1000</span>
+                    <span class="preset-badge" onclick="setQuickHours(1500)">1500</span>
+                    <span class="preset-badge" onclick="setQuickHours(2000)">2000</span>
+                  </div>
+                </div>
+
+                <button type="submit" id="btnQuickHours" class="btn btn-dark btn-sm w-100 fw-bold py-2 mt-2">
+                  <i class="fa-solid fa-clock me-1"></i> บันทึกชั่วโมง
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="col-md-8 mb-3">
+            <div class="card form-card p-3">
+              <h6 class="fw-bold text-dark mb-3"><i class="fa-solid fa-file-signature me-1 text-danger"></i> เพิ่ม / แก้ไข ใบงานบริการ PM</h6>
+              <form id="ticketForm" onsubmit="handleSaveTicket(event)">
+                <input type="hidden" id="inpTicketId">
+                <input type="hidden" id="inpReceiptImageBase64">
+                
+                <div class="row g-2 mb-2">
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">Machine ID *</label>
+                    <input type="text" id="inpMachineId" class="form-control form-control-sm" required placeholder="เช่น VMRVIO55...">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">รุ่น (Model) *</label>
+                    <input type="text" id="inpModel" class="form-control form-control-sm" required placeholder="รุ่นรถขุด">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">เบอร์โทรศัพท์</label>
+                    <input type="text" id="inpPhone" class="form-control form-control-sm" placeholder="08X-XXX-XXXX">
+                  </div>
+                </div>
+
+                <div class="row g-2 mb-2">
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">ชื่อลูกค้า *</label>
+                    <input type="text" id="inpCustomerName" class="form-control form-control-sm" required placeholder="ชื่อลูกค้า/บริษัท">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">รหัสลูกค้า (Customer_ID)</label>
+                    <input type="text" id="inpCustomerId" class="form-control form-control-sm" placeholder="เช่น 0097">
+                  </div>
+                </div>
+
+                <div class="row g-2 mb-1">
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">รอบ PM (Target) *</label>
+                    <input type="number" id="inpPmRound" class="form-control form-control-sm" placeholder="เช่น 500" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">ชั่วโมงจริง (Actual) *</label>
+                    <input type="number" id="inpActualHours" class="form-control form-control-sm" placeholder="เช่น 480" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">อะไหล่เบิกบริษัท</label>
+                    <input type="text" id="inpPartsStore" class="form-control form-control-sm" placeholder="ชื่ออะไหล่">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">รหัสผู้ขาย (Supplier_ID)</label>
+                    <input type="text" id="inpSupplierId" class="form-control form-control-sm" placeholder="เช่น SUP-001">
+                  </div>
+                </div>
+
+                <div class="row g-2 mb-2">
+                  <div class="col-md-6">
+                    <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">เลือกรอบ PM ด่วน:</span>
+                    <div class="d-flex flex-wrap gap-1">
+                      <span class="preset-badge" onclick="setPmRound(50)">50 ชม.</span>
+                      <span class="preset-badge" onclick="setPmRound(250)">250 ชม.</span>
+                      <span class="preset-badge" onclick="setPmRound(500)">500 ชม.</span>
+                      <span class="preset-badge" onclick="setPmRound(750)">750 ชม.</span>
+                      <span class="preset-badge" onclick="setPmRound(1000)">1000 ชม.</span>
+                      <span class="preset-badge" onclick="setPmRound(1500)">1500 ชม.</span>
+                      <span class="preset-badge" onclick="setPmRound(2000)">2000 ชม.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row g-2 mb-2">
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">เลขบิลอะไหล่</label>
+                    <input type="text" id="inpPartsBillNo" class="form-control form-control-sm" placeholder="เลขที่ใบเสร็จ">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm fw-bold text-danger">สถานะการส่งอะไหล่ *</label>
+                    <select id="inpPartsStatus" class="form-select form-select-sm fw-bold">
+                      <option value="ส่งครบแล้ว">🟢 ส่งครบแล้ว</option>
+                      <option value="ส่งบางส่วน">🟠 ส่งบางส่วน</option>
+                      <option value="ค้างส่งอะไหล่" selected>🔴 ค้างส่งอะไหล่</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">คูปอง Yanmar (บาท)</label>
+                    <input type="number" id="inpYanmarCoupon" class="form-control form-control-sm" value="0">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">แนบรูปใบเสร็จ (อะไหล่)</label>
+                    <input type="file" id="inpReceiptFile" class="form-control form-control-sm" accept="image/*" onchange="previewUploadImage(this)">
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label form-label-sm">หมายเหตุ (Remark)</label>
+                  <input type="text" id="inpRemark" class="form-control form-control-sm" placeholder="ระบุสิ่งที่ส่งแล้ว หรือ รายการที่ยังค้างอยู่...">
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                  <button type="button" class="btn btn-outline-secondary btn-sm px-4" onclick="resetTicketForm()">ล้างข้อมูล</button>
+                  <button type="submit" id="btnSubmitTicket" class="btn btn-danger btn-sm px-4 fw-bold"><i class="fa-solid fa-floppy-disk me-1"></i> บันทึกใบงาน</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- TAB 2: PM LOG HISTORY -->
+      <div class="tab-pane fade" id="tab-history">
+        <div class="table-container">
+          
+          <div class="row g-2 mb-3 align-items-center">
+            <div class="col-md-6">
+              <div class="input-group input-group-sm">
+                <input type="text" id="searchHistory" class="form-control" placeholder="พิมพ์ค้นหา แล้วกด Enter..." onkeydown="handleHistorySearchKey(event)">
+                <button class="btn btn-danger" type="button" onclick="filterHistoryTable()">
+                  <i class="fa-solid fa-magnifying-glass me-1"></i> ค้นหา
+                </button>
+              </div>
+            </div>
+            <div class="col-md-6 text-end">
+              <button class="btn btn-sm btn-excel me-2" onclick="exportToExcel('tbHistoryTable', 'PM_Log_History')">
+                <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="loadHistoryData()">
+                <i class="fa-solid fa-rotate me-1"></i> รีเฟรชประวัติ
               </button>
             </div>
-
-            <!-- Cards Summary -->
-            <div class="grid grid-cols-3 gap-4">
-              <div class="bg-white p-4 rounded-xl border-l-4 border-l-red-600 border border-zinc-200 shadow-sm">
-                <p class="text-xs text-zinc-500 font-bold">ยอดรวมเคลมคูปอง Yanmar</p>
-                <p id="card-total-cost" class="text-2xl font-black text-red-600 mt-1">0 บาท</p>
-              </div>
-              <div class="bg-white p-4 rounded-xl border-l-4 border-l-amber-500 border border-zinc-200 shadow-sm">
-                <p class="text-xs text-zinc-500 font-bold">เครื่องจักรรอตรวจสอบ PM</p>
-                <p id="card-pm-count" class="text-2xl font-black text-amber-600 mt-1">0</p>
-              </div>
-              <div class="bg-white p-4 rounded-xl border-l-4 border-l-zinc-800 border border-zinc-200 shadow-sm">
-                <p class="text-xs text-zinc-500 font-bold">บิลค้างเลข INVOICE</p>
-                <p id="card-invoice-count" class="text-2xl font-black text-zinc-800 mt-1">0</p>
-              </div>
-            </div>
-
-            <!-- 🚨 กล่องแจ้งเตือนด่วนบนหน้าเว็บ -->
-            <div id="pm-alert-banner" class="hidden bg-gradient-to-r from-amber-500 to-red-600 text-white rounded-xl p-4 shadow-lg border-2 border-red-700">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <span class="text-3xl animate-bounce">🚨</span>
-                  <div>
-                    <h3 class="font-black text-sm text-white tracking-wide">เตือนด่วน! มีเครื่องจักรใกล้ถึงรอบ / เกินกำหนด PM</h3>
-                    <p id="pm-alert-text" class="text-xs text-amber-100 mt-0.5 font-medium">คลิกที่ปุ่มรหัสเครื่องจักรด้านขวาเพื่อเลือกรายการด่วน</p>
-                  </div>
-                </div>
-                <div id="pm-alert-chips" class="flex flex-wrap gap-1.5 max-w-xl justify-end">
-                  <!-- Dynamic Chips -->
-                </div>
-              </div>
-            </div>
-
-            <!-- Table & Form Section -->
-            <div class="grid grid-cols-12 gap-6">
-              
-              <!-- Table Section (9 Cols) -->
-              <div class="col-span-12 lg:col-span-9 bg-white rounded-xl border border-zinc-200 shadow-sm p-4 space-y-4">
-                
-                <!-- 🔍 SEARCH & FILTER TOOLBAR -->
-                <div class="flex flex-wrap items-center justify-between gap-3 bg-zinc-50 p-2.5 rounded-lg border border-zinc-200">
-                  <div class="flex items-center gap-2 flex-1 min-w-[240px]">
-                    <div class="relative w-full">
-                      <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-400">🔍</span>
-                      <input type="text" id="search-input" oninput="filterDashboardTable()" 
-                             placeholder="พิมพ์ค้นหา (Machine_ID, รุ่น, ลูกค้า, เบอร์โทร)..." 
-                             class="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-zinc-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none">
-                    </div>
-                  </div>
-
-                  <div class="flex items-center gap-1.5 text-xs">
-                    <button onclick="setFilter('all')" id="btn-filter-all" class="px-3 py-1.5 rounded-lg font-bold bg-zinc-900 text-white shadow-sm transition-all">ทั้งหมด</button>
-                    <button onclick="setFilter('pm')" id="btn-filter-pm" class="px-3 py-1.5 rounded-lg font-black bg-red-500 text-white hover:bg-red-600 transition-all shadow-sm">🚨 ต้องทำ PM ด่วน</button>
-                    <button onclick="setFilter('parts')" id="btn-filter-parts" class="px-3 py-1.5 rounded-lg font-bold bg-amber-400 text-zinc-900 hover:bg-amber-500 transition-all shadow-sm">⚠️ ค้างส่งอะไหล่</button>
-                    <button onclick="setFilter('coupon')" id="btn-filter-coupon" class="px-3 py-1.5 rounded-lg font-bold bg-orange-500 text-white hover:bg-orange-600 transition-all shadow-sm">🎫 ค้างส่งคูปอง</button>
-                    <button onclick="exportToCSV()" class="px-3 py-1.5 rounded-lg font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm ml-2 transition-all">📊 Export Excel</button>
-                  </div>
-                </div>
-
-                <!-- Table Wrapper -->
-                <div class="overflow-x-auto max-h-[600px]">
-                  <table class="w-full text-left text-xs border-collapse min-w-[1600px]">
-                    <thead class="sticky top-0 bg-zinc-100 z-10 text-zinc-800 font-bold border-b-2 border-zinc-300 shadow-sm">
-                      <tr>
-                        <th class="p-3">Machine_ID</th>
-                        <th class="p-3">Model</th>
-                        <th class="p-3">Customer</th>
-                        <th class="p-3 text-center bg-blue-50 text-blue-800">📞 เบอร์โทรศัพท์</th>
-                        <th class="p-3 text-center bg-red-100 text-red-800 border-x border-red-200">📅 วันที่สัญญา</th>
-                        <th class="p-3 text-center">Hours</th>
-                        <th class="p-3 text-center">Last_PM</th>
-                        <th class="p-3 text-center">Next_PM</th>
-                        <th class="p-3 text-center min-w-[120px]">สถานะการเตือน</th>
-                        <th class="p-3 text-center">Status</th>
-                        <th class="p-3">Updated_By</th>
-                        <th class="p-3">อะไหล่เบิกบริษัท</th>
-                        <th class="p-3">เลขบิลอะไหล่</th>
-                        <th class="p-3 text-center">รูปใบเสร็จ</th>
-                        <th class="p-3">คูปอง Yanmar</th>
-                        <th class="p-3">Remark</th>
-                        <th class="p-3 text-center min-w-[80px]">จัดการ</th>
-                      </tr>
-                    </thead>
-                    <tbody id="table-pm-body">
-                      <!-- Dynamic Render -->
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Form Side (3 Cols) -->
-              <div class="col-span-12 lg:col-span-3 bg-white rounded-xl border border-zinc-200 shadow-sm p-4 space-y-4 h-fit">
-                <h3 class="font-bold text-sm border-b pb-2 text-zinc-900 flex items-center gap-1.5">⏱️ อัปเดตชั่วโมงใช้งานด่วน</h3>
-                <div class="space-y-2">
-                  <input type="text" id="quick-machine-id" placeholder="รหัสเครื่องจักร" class="w-full px-3 py-1.5 border border-zinc-300 rounded text-xs">
-                  <input type="number" id="quick-hours" placeholder="ระบุชั่วโมงล่าสุด" class="w-full px-3 py-1.5 border border-zinc-300 rounded text-xs">
-                  <button onclick="handleQuickUpdateHours()" class="w-full bg-zinc-900 text-white font-bold py-2 rounded text-xs hover:bg-zinc-800 transition-colors">
-                    บันทึกชั่วโมง
-                  </button>
-                </div>
-
-                <hr class="border-zinc-200">
-
-                <h3 class="font-bold text-sm border-b pb-2 text-zinc-900 flex items-center gap-1.5">📝 เพิ่ม/แก้ไข ใบงานบริการ</h3>
-                <form id="form-ticket" class="space-y-2 text-xs">
-                  <input type="text" id="form-ticket-id" placeholder="Ticket_ID (เว้นว่างเพื่อสุ่ม)" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="text" id="form-machine-id" placeholder="Machine_ID" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded" required>
-                  <input type="text" id="form-model" placeholder="Model (รุ่น)" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="text" id="form-customer" placeholder="Customer Name (ชื่อลูกค้า)" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="tel" id="form-phone" placeholder="Phone (เบอร์โทรศัพท์)" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded font-mono">
-                  
-                  <div>
-                    <label class="block text-[10px] text-zinc-500 mb-0.5">📅 วันที่เริ่มสัญญา</label>
-                    <input type="date" id="form-contract-date" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded bg-white text-zinc-700">
-                  </div>
-
-                  <div class="grid grid-cols-2 gap-2">
-                    <div>
-                      <label class="block text-[10px] text-zinc-500 mb-0.5">PM Round (Auto)</label>
-                      <input type="number" id="form-pm-round" placeholder="Auto" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded bg-zinc-100 font-bold text-red-600" readonly>
-                    </div>
-                    <div>
-                      <label class="block text-[10px] text-zinc-500 mb-0.5">Actual Hours (ชั่วโมงจริง)</label>
-                      <input type="number" id="form-actual-hours" oninput="autoCalculatePmRound(this.value)" placeholder="กรอกไมล์จริง" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded focus:ring-2 focus:ring-red-500 outline-none" required>
-                    </div>
-                  </div>
-
-                  <input type="number" id="form-cost" placeholder="คูปอง (จำนวนเงิน)" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="text" id="form-store" placeholder="อะไหล่เบิกบริษัท" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="text" id="form-bill" placeholder="เลขบิลอะไหล่" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="text" id="form-coupon" placeholder="เลขคูปอง Yanmar" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <input type="text" id="form-remark" placeholder="Remark (หมายเหตุ)" class="w-full px-2.5 py-1.5 border border-zinc-300 rounded">
-                  <div>
-                    <label class="block text-[10px] text-zinc-500 mb-1">แนบรูปใบเสร็จ (อะไหล่)</label>
-                    <input type="file" id="form-file" accept="image/*" class="w-full text-[10px] text-zinc-500">
-                  </div>
-                  <button type="submit" class="w-full bg-red-600 text-white font-bold py-2 rounded hover:bg-red-700 transition-colors shadow-sm mt-2">
-                    บันทึกใบงาน
-                  </button>
-                </form>
-              </div>
-
-            </div>
           </div>
 
-          <!-- PM LOG TAB -->
-          <div id="tab-pmlog" class="hidden space-y-4">
-            <h2 class="text-xl font-black text-zinc-900 flex items-center gap-2">
-              <span class="w-2 h-5 bg-red-600 rounded-full inline-block"></span>
-              บันทึกประวัติล็อก (PM_Log)
-            </h2>
-            <div class="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 overflow-x-auto">
-              <table class="w-full text-left text-xs border-collapse min-w-[1400px]">
-                <thead>
-                  <tr class="border-b-2 border-zinc-200 bg-zinc-100 text-zinc-700 font-bold">
-                    <th class="p-3">Ticket_ID</th>
-                    <th class="p-3">Machine_ID</th>
-                    <th class="p-3">Model</th>
-                    <th class="p-3">Customer</th>
-                    <th class="p-3">Phone</th>
-                    <th class="p-3 text-center">PM_Round</th>
-                    <th class="p-3 text-center">Hours</th>
-                    <th class="p-3">Date</th>
-                    <th class="p-3 text-right">คูปอง Yanmar</th>
-                    <th class="p-3">อะไหล่เบิกบริษัท</th>
-                    <th class="p-3">เลขบิล</th>
-                    <th class="p-3 text-center">รูปใบเสร็จ</th>
-                    <th class="p-3">Remark</th>
-                    <th class="p-3 text-center">จัดการ</th>
-                  </tr>
-                </thead>
-                <tbody id="table-log-body">
-                  <!-- Dynamic Render -->
-                </tbody>
-              </table>
-            </div>
+          <h6 class="fw-bold mb-3 text-dark"><i class="fa-solid fa-history me-1"></i> ประวัติการรับบริการ PM (PM_Log)</h6>
+          
+          <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+            <table class="table table-hover align-middle" id="tbHistoryTable">
+              <thead>
+                <tr>
+                  <th>Ticket_ID</th>
+                  <th>Machine_ID</th>
+                  <th>Model</th>
+                  <th>Customer</th>
+                  <th>Customer_ID</th>
+                  <th>PM_Target</th>
+                  <th>Actual_Hours</th>
+                  <th>Service_Date</th>
+                  <th>Cost</th>
+                  <th>Invoice_No</th>
+                  <th>Parts_Store</th>
+                  <th>Supplier_ID</th>
+                  <th>Parts_Bill_No</th>
+                  <th>Parts_Status</th>
+                  <th>Receipt_Image</th>
+                  <th>Yanmar_Coupon</th>
+                  <th>Remark</th>
+                  <th class="text-center">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="tbHistory">
+                <tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูลประวัติ...</td></tr>
+              </tbody>
+            </table>
           </div>
+        </div>
+      </div>
 
+    </div>
+  </div>
+
+  <!-- 🖼️ MODAL SHOW IMAGE -->
+  <div class="modal fade" id="imageModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-image me-1"></i> รูปภาพแนบ</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-center">
+          <img id="modalImgPreview" src="" class="img-fluid rounded shadow-sm" alt="Receipt Image">
         </div>
       </div>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
   <script>
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx4EhuHdyXYmwhOXH0YPS1ko2vonwp4k1XZSTT3wqCAeZiCeiWDoVoonzKlSdJ5zElV8A/exec";
+    // 🔗 URL ของ Google Apps Script Web App
+    const API_URL = "https://script.google.com/macros/s/AKfycbz7rvZjlnofSarcPTQdhTBdTfGNiVtofpc14F9C_KHjdnMSYADG9w4fGmIsMUF0qWxStg/exec";
 
     let currentUser = null;
-    let currentUserRole = "user";
-    let base64ImageString = "";
+    let currentRole = null;
     let rawDashboardData = [];
-    let currentFilterMode = 'all';
+    let rawHistoryData = [];
+    let activeFilter = 'all';
 
-    window.onload = () => {
-      showLoginUI();
-    };
-
-    function showLoginUI() {
-      document.getElementById("login-modal").style.display = "flex";
-      document.getElementById("main-app").style.display = "none";
+    function formatCustomerId(id) {
+      if (!id && id !== 0) return '-';
+      const strId = String(id).trim();
+      if (strId === '' || strId === '-') return '-';
+      if (/^\d+$/.test(strId) && strId.length < 4) {
+        return strId.padStart(4, '0');
+      }
+      return strId;
     }
 
-    function showAppUI() {
-      document.getElementById("login-modal").style.display = "none";
-      document.getElementById("main-app").style.display = "block";
-      updateUserUI();
-      loadDashboardData();
-    }
+    function setPmRound(val) { document.getElementById("inpPmRound").value = val; }
+    function setQuickHours(val) { document.getElementById("quickHours").value = val; }
 
-    function switchTab(tab) {
-      if (tab === 'dashboard') {
-        document.getElementById('tab-dashboard').classList.remove('hidden');
-        document.getElementById('tab-pmlog').classList.add('hidden');
-        document.getElementById('btn-tab-dashboard').className = "w-full text-left px-4 py-2.5 rounded-lg font-bold text-sm bg-red-600 text-white shadow-md transition-all flex items-center justify-between";
-        document.getElementById('btn-tab-pmlog').className = "w-full text-left px-4 py-2.5 rounded-lg font-bold text-sm bg-white text-zinc-700 hover:bg-zinc-100 transition-all border border-zinc-200 flex items-center justify-between";
-        loadDashboardData();
-      } else {
-        document.getElementById('tab-dashboard').classList.add('hidden');
-        document.getElementById('tab-pmlog').classList.remove('hidden');
-        document.getElementById('btn-tab-pmlog').className = "w-full text-left px-4 py-2.5 rounded-lg font-bold text-sm bg-red-600 text-white shadow-md transition-all flex items-center justify-between";
-        document.getElementById('btn-tab-dashboard').className = "w-full text-left px-4 py-2.5 rounded-lg font-bold text-sm bg-white text-zinc-700 hover:bg-zinc-100 transition-all border border-zinc-200 flex items-center justify-between";
-        loadLogData();
-      }
-    }
+    // LOGIN / LOGOUT
+    async function handleLogin(e) {
+      e.preventDefault();
+      const u = document.getElementById("loginUser").value.trim();
+      const p = document.getElementById("loginPass").value.trim();
+      const btn = document.getElementById("btnLoginSubmit");
 
-    function autoCalculatePmRound(actualHours) {
-      const hrs = Number(actualHours);
-      const pmInput = document.getElementById("form-pm-round");
-
-      if (!hrs || hrs <= 0) {
-        pmInput.value = "";
-        return;
-      }
-
-      const pmSteps = [50, 500, 1000, 1500, 2000];
-      let matchedRound = pmSteps[0];
-      let minDiff = Math.abs(hrs - pmSteps[0]);
-
-      for (let i = 1; i < pmSteps.length; i++) {
-        let diff = Math.abs(hrs - pmSteps[i]);
-        if (diff < minDiff) {
-          minDiff = diff;
-          matchedRound = pmSteps[i];
-        }
-      }
-
-      if (hrs > 2000) {
-        matchedRound = Math.round(hrs / 500) * 500;
-      }
-
-      pmInput.value = matchedRound;
-    }
-
-    async function handleLogin() {
-      const u = document.getElementById("login-username").value.trim();
-      const p = document.getElementById("login-password").value.trim();
-      const errEl = document.getElementById("login-error");
-      errEl.classList.add("hidden");
-
-      if (!u || !p) {
-        errEl.innerText = "กรุณากรอก Username และ Password";
-        errEl.classList.remove("hidden");
-        return;
-      }
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังตรวจสอบ...';
 
       try {
-        const res = await fetch(GAS_WEB_APP_URL, {
+        const response = await fetch(API_URL, {
           method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "verifyLogin", username: u, password: p })
         });
-        const data = await res.json();
+        const res = await response.json();
 
-        if (data.status === "success") {
-          currentUser = data.username;
-          currentUserRole = (data.role || "user").toLowerCase();
-          showAppUI();
+        if (res.status === "success") {
+          currentUser = res.username;
+          currentRole = res.role;
+          document.getElementById("userDisplay").innerText = currentUser;
+          document.getElementById("roleDisplay").innerText = currentRole;
+          document.getElementById("loginOverlay").style.display = "none";
+          loadDashboardData();
         } else {
-          errEl.innerText = data.message;
-          errEl.classList.remove("hidden");
+          alert(res.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
         }
       } catch (err) {
-        errEl.innerText = "เกิดข้อผิดพลาดในการเชื่อมต่อระบบ";
-        errEl.classList.remove("hidden");
+        alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-1"></i> เข้าสู่ระบบ';
       }
     }
 
-    async function handleRegister() {
-      const u = document.getElementById("login-username").value.trim();
-      const p = document.getElementById("login-password").value.trim();
+    function logout() {
+      currentUser = null;
+      currentRole = null;
+      document.getElementById("loginForm").reset();
+      document.getElementById("loginOverlay").style.display = "flex";
+    }
 
-      if (!u || !p) {
-        alert("กรุณากรอก Username และ Password ที่ต้องการสมัคร");
+    // DASHBOARD DATA
+    function loadDashboardData() {
+      const tbody = document.getElementById("tbDashboard");
+      tbody.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+
+      fetch(`${API_URL}?action=getDashboard`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("statCouponSum").innerText = (data.totalCostSum || 0).toLocaleString() + " บาท";
+          document.getElementById("statPmAlertCount").innerText = data.pmAlertCount || 0;
+          document.getElementById("statPendingInvoiceCount").innerText = data.incompleteInvoiceCount || 0;
+
+          rawDashboardData = data.pmAlerts || [];
+          renderDashboardTable(rawDashboardData);
+        })
+        .catch(err => {
+          tbody.innerHTML = `<tr><td colspan="18" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        });
+    }
+
+    function renderDashboardTable(list) {
+      const tbody = document.getElementById("tbDashboard");
+      tbody.innerHTML = "";
+
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>';
         return;
       }
 
-      const res = await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "registerUser", username: u, password: p })
+      list.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.className = "clickable-row";
+        tr.onclick = function(e) {
+          if (e.target.closest('button')) return;
+          editDashboardItem(item.machineId);
+        };
+
+        const hrs = Number(item.currentHours) || 0;
+        const nextPm = Number(item.nextPm) || 0;
+        const isPmAlert = nextPm > 0 && (nextPm - hrs <= 50);
+        const displayCusId = formatCustomerId(item.customerId);
+        const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
+
+        // แสดงผล Badge ของสถานะอะไหล่
+        let partsStatusDisplay = `<span class="badge badge-warning-custom">ค้างส่งอะไหล่</span>`;
+        if (pStatus === "ส่งครบแล้ว") {
+          partsStatusDisplay = `<span class="badge badge-success-custom">ส่งครบแล้ว</span>`;
+        } else if (pStatus === "ส่งบางส่วน") {
+          partsStatusDisplay = `<span class="badge badge-partial-custom">ส่งบางส่วน</span>`;
+        }
+
+        // แสดงคูปอง Yanmar
+        let couponDisplay = "";
+        if (pStatus !== "ส่งครบแล้ว") {
+          couponDisplay = `<span class="badge badge-warning-custom">ค้างส่งคูปอง</span>`;
+        } else {
+          couponDisplay = `<span class="text-success fw-bold">${Number(item.yanmarCoupon || 0).toLocaleString()}</span>`;
+        }
+
+        tr.innerHTML = `
+          <td><strong>${item.machineId || '-'}</strong></td>
+          <td>${item.model || '-'}</td>
+          <td>${item.customer || '-'}</td>
+          <td><span class="badge bg-light text-dark border">${displayCusId}</span></td>
+          <td>${item.phone || '-'}</td>
+          <td>${formatDate(item.contractDate)}</td>
+          <td class="fw-bold text-center">${hrs}</td>
+          <td class="text-center">${item.lastPm || 0}</td>
+          <td class="text-center ${isPmAlert ? 'text-danger fw-bold' : ''}">${nextPm} ${isPmAlert ? '<i class="fa-solid fa-bell text-danger ms-1"></i>' : ''}</td>
+          <td><span class="badge ${item.status === 'Approved' ? 'badge-approved' : 'badge-pending'}">${item.status || 'Pending'}</span></td>
+          <td><small class="text-muted">${item.updatedBy || '-'}</small></td>
+          <td>${item.partsStore || '-'}</td>
+          <td>${item.partsBillNo || '-'}</td>
+          <td>${partsStatusDisplay}</td>
+          <td class="text-center">
+            ${item.receiptImage && (item.receiptImage.startsWith('http') || item.receiptImage.startsWith('data:image')) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${item.receiptImage}')"><i class="fa-solid fa-image"></i></button>` : '-'}
+          </td>
+          <td class="text-end">${couponDisplay}</td>
+          <td><small>${item.remark || '-'}</small></td>
+          <td class="text-center">
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-success" onclick="approveItem('${item.machineId}')" title="อนุมัติ"><i class="fa-solid fa-check"></i></button>
+              <button class="btn btn-outline-primary" onclick="editDashboardItem('${item.machineId}')" title="แก้ไข/ทำ PM"><i class="fa-solid fa-pen"></i></button>
+              <button class="btn btn-outline-danger" onclick="deleteDashboardItem('${item.machineId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
       });
-      const data = await res.json();
-      alert(data.message);
     }
 
-    function handleLogout() {
-      currentUser = null;
-      currentUserRole = "user";
-      showLoginUI();
+    function formatDate(rawDate) {
+      if (!rawDate || rawDate === "-") return "-";
+      if (rawDate.includes("T")) return rawDate.split("T")[0];
+      return rawDate;
     }
 
-    function updateUserUI() {
-      document.getElementById("user-display").innerText = currentUser;
-      document.getElementById("role-badge").innerText = currentUserRole;
+    function previewUploadImage(input) {
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+          const img = new Image();
+          img.src = e.target.result;
+
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            const maxWidth = 1024;
+            const maxHeight = 1024;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              }
+            } else {
+              if (height > maxHeight) {
+                width = Math.round((width * maxHeight) / height);
+                height = maxHeight;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+            document.getElementById("inpReceiptImageBase64").value = compressedBase64;
+          };
+        };
+        reader.readAsDataURL(file);
+      }
     }
 
-    async function loadDashboardData() {
-      try {
-        const res = await fetch(`${GAS_WEB_APP_URL}?action=getDashboard`);
-        const data = await res.json();
-
-        document.getElementById("card-total-cost").innerText = (data.totalCostSum || 0).toLocaleString() + " บาท";
-        document.getElementById("card-pm-count").innerText = data.pmAlertCount || 0;
-        document.getElementById("card-invoice-count").innerText = data.incompleteInvoiceCount || 0;
-
-        rawDashboardData = data.pmAlerts || [];
-        updatePmAlertBanner();
+    function handleDashboardSearchKey(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
         filterDashboardTable();
-      } catch (err) {
-        console.error("Fetch dashboard error:", err);
       }
     }
 
-    function updatePmAlertBanner() {
-      const banner = document.getElementById("pm-alert-banner");
-      const chipsContainer = document.getElementById("pm-alert-chips");
-      chipsContainer.innerHTML = "";
-
-      const urgentItems = rawDashboardData.filter(item => {
-        const cur = Number(item.currentHours) || 0;
-        const nxt = Number(item.nextPm) || 0;
-        return nxt > 0 && (nxt - cur <= 50);
-      });
-
-      if (urgentItems.length > 0) {
-        banner.classList.remove("hidden");
-        urgentItems.forEach(item => {
-          const cur = Number(item.currentHours) || 0;
-          const nxt = Number(item.nextPm) || 0;
-          const diff = nxt - cur;
-          const isOver = diff <= 0;
-
-          const chipBg = isOver ? "bg-red-950 text-white border border-red-400" : "bg-amber-900 text-amber-100 border border-amber-300";
-          const label = isOver ? `🚨 ${item.machineId} (เกินกำหนด)` : `⚠️ ${item.machineId} (อีก ${diff} ชม.)`;
-
-          chipsContainer.innerHTML += `
-            <button onclick="selectRowToEdit('${item.machineId}')" class="${chipBg} text-[11px] font-black px-2.5 py-1 rounded-lg shadow-md hover:scale-105 transition-all">
-              ${label}
-            </button>`;
-        });
-      } else {
-        banner.classList.add("hidden");
-      }
-    }
-
-    function setFilter(mode) {
-      currentFilterMode = mode;
-      
-      document.getElementById('btn-filter-all').className = mode === 'all' ? "px-3 py-1.5 rounded-lg font-bold bg-zinc-900 text-white shadow-sm transition-all" : "px-3 py-1.5 rounded-lg font-semibold bg-white text-zinc-700 hover:bg-zinc-100 transition-all border";
-      document.getElementById('btn-filter-pm').className = mode === 'pm' ? "px-3 py-1.5 rounded-lg font-black bg-red-600 text-white shadow-md transition-all scale-105 ring-2 ring-red-400" : "px-3 py-1.5 rounded-lg font-black bg-red-500 text-white hover:bg-red-600 transition-all shadow-sm";
-      document.getElementById('btn-filter-parts').className = mode === 'parts' ? "px-3 py-1.5 rounded-lg font-bold bg-amber-500 text-white shadow-md transition-all scale-105 ring-2 ring-amber-300" : "px-3 py-1.5 rounded-lg font-bold bg-amber-400 text-zinc-900 hover:bg-amber-500 transition-all shadow-sm";
-      document.getElementById('btn-filter-coupon').className = mode === 'coupon' ? "px-3 py-1.5 rounded-lg font-bold bg-orange-600 text-white shadow-md transition-all scale-105 ring-2 ring-orange-300" : "px-3 py-1.5 rounded-lg font-bold bg-orange-500 text-white hover:bg-orange-600 transition-all shadow-sm";
-
+    function setDashboardFilter(type, btn) {
+      activeFilter = type;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
       filterDashboardTable();
     }
 
     function filterDashboardTable() {
-      const searchTxt = document.getElementById("search-input").value.trim().toLowerCase();
-      
-      const filtered = rawDashboardData.filter(item => {
-        const matchSearch = String(item.machineId || "").toLowerCase().includes(searchTxt) ||
-                            String(item.model || "").toLowerCase().includes(searchTxt) ||
-                            String(item.customer || "").toLowerCase().includes(searchTxt) ||
-                            String(item.phone || "").toLowerCase().includes(searchTxt) ||
-                            String(item.contractDate || "").toLowerCase().includes(searchTxt) ||
-                            String(item.remark || "").toLowerCase().includes(searchTxt);
+      const search = document.getElementById("searchDashboard").value.toLowerCase().trim();
+      let filtered = rawDashboardData.filter(item => {
+        const formattedCusId = formatCustomerId(item.customerId).toLowerCase();
+        const matchesSearch = 
+          (item.machineId && item.machineId.toLowerCase().includes(search)) ||
+          (item.model && item.model.toLowerCase().includes(search)) ||
+          (item.customer && item.customer.toLowerCase().includes(search)) ||
+          (item.customerId && String(item.customerId).toLowerCase().includes(search)) ||
+          formattedCusId.includes(search);
 
-        let matchFilter = true;
-        const bill = String(item.partsBillNo || "").trim();
-        const coupon = String(item.yanmarCoupon || "").trim();
-        const cur = Number(item.currentHours) || 0;
-        const nxt = Number(item.nextPm) || 0;
+        if (!matchesSearch) return false;
 
-        if (currentFilterMode === 'pm') {
-          matchFilter = nxt > 0 && (nxt - cur <= 50);
-        } else if (currentFilterMode === 'parts') {
-          matchFilter = (!bill || bill === '-' || bill === 'ค้างส่งอะไหล่');
-        } else if (currentFilterMode === 'coupon') {
-          matchFilter = (!coupon || coupon === '-' || coupon === 'ค้างส่งคูปอง');
-        }
+        const hrs = Number(item.currentHours) || 0;
+        const nextPm = Number(item.nextPm) || 0;
+        const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
 
-        return matchSearch && matchFilter;
+        if (activeFilter === 'pm_alert') return nextPm > 0 && (nextPm - hrs <= 50);
+        if (activeFilter === 'partial_parts') return pStatus === "ส่งบางส่วน";
+        if (activeFilter === 'pending_parts') return pStatus === "ค้างส่งอะไหล่";
+
+        return true;
       });
 
-      renderDashboard(filtered);
+      renderDashboardTable(filtered);
     }
 
-    function renderDashboard(rows) {
-      const tbody = document.getElementById('table-pm-body');
+    // HISTORY LOG
+    function loadHistoryData() {
+      const tbody = document.getElementById("tbHistory");
+      tbody.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดประวัติ...</td></tr>';
+
+      fetch(`${API_URL}?action=getReportList`)
+        .then(res => res.json())
+        .then(data => {
+          rawHistoryData = data || [];
+          renderHistoryTable(rawHistoryData);
+        })
+        .catch(err => {
+          tbody.innerHTML = `<tr><td colspan="18" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        });
+    }
+
+    function renderHistoryTable(list) {
+      const tbody = document.getElementById("tbHistory");
       tbody.innerHTML = "";
-      
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="17" class="p-6 text-center text-zinc-400">ไม่พบข้อมูลในระบบ</td></tr>`;
+
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-muted">ไม่พบประวัติการทำ PM</td></tr>';
         return;
       }
 
-      rows.forEach(item => {
-        const rawImg = String(item.receiptImage || "").trim();
-        let imgHtml = `<span class="text-zinc-300">-</span>`;
-        
-        if (rawImg && rawImg !== "-" && (rawImg.startsWith("data:image") || rawImg.startsWith("http"))) {
-          imgHtml = `
-            <div class="flex justify-center">
-              <img src="${rawImg}" class="h-8 w-8 object-cover rounded border border-zinc-300 cursor-pointer hover:scale-125 transition-transform shadow-sm" 
-                   onclick="event.stopPropagation(); window.open('${rawImg}')" title="คลิกเพื่อดูรูปใหญ่">
-            </div>`;
+      list.forEach(item => {
+        const tr = document.createElement("tr");
+        const displayCusId = formatCustomerId(item.customerId);
+        const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
+
+        let partsStatusDisplay = `<span class="badge badge-warning-custom">ค้างส่งอะไหล่</span>`;
+        if (pStatus === "ส่งครบแล้ว") {
+          partsStatusDisplay = `<span class="badge badge-success-custom">ส่งครบแล้ว</span>`;
+        } else if (pStatus === "ส่งบางส่วน") {
+          partsStatusDisplay = `<span class="badge badge-partial-custom">ส่งบางส่วน</span>`;
         }
 
-        // 📞 แสดงผลเบอร์โทรศัพท์ (สร้างเป็นลิงก์กดโทรออกได้ทันที)
-        let phoneHtml = `<span class="text-zinc-400">-</span>`;
-        if (item.phone && String(item.phone).trim() !== "-") {
-          const cleanPhone = String(item.phone).replace(/[^0-9+]/g, '');
-          phoneHtml = `<a href="tel:${cleanPhone}" onclick="event.stopPropagation();" class="text-blue-600 font-bold font-mono hover:underline flex items-center justify-center gap-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100">
-                        📞 ${item.phone}
-                       </a>`;
-        }
-
-        let displayPartsBill = String(item.partsBillNo || "").trim();
-        if (!displayPartsBill || displayPartsBill === "-") {
-          displayPartsBill = `<span class="bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded border border-amber-300">ค้างส่งอะไหล่</span>`;
-        }
-
-        let displayCoupon = String(item.yanmarCoupon || "").trim();
-        if (!displayCoupon || displayCoupon === "-") {
-          displayCoupon = `<span class="bg-red-100 text-red-800 font-bold px-1.5 py-0.5 rounded border border-red-300">ค้างส่งคูปอง</span>`;
-        }
-
-        // 🚨 คำนวณสีเตือน PM
-        const curHrs = Number(item.currentHours) || 0;
-        const nxtPm = Number(item.nextPm) || 0;
-        const diffHrs = nxtPm - curHrs;
-
-        let rowStyleClass = "hover:bg-zinc-50";
-        let pmAlertBadge = `<span class="bg-zinc-100 text-zinc-600 px-2 py-1 rounded text-[10px] font-bold border border-zinc-300">ปกติ</span>`;
-
-        if (nxtPm > 0) {
-          if (diffHrs <= 0) {
-            rowStyleClass = "bg-red-100/90 hover:bg-red-200/90 transition-colors border-l-4 border-l-red-600";
-            pmAlertBadge = `<span class="bg-red-600 text-white px-2.5 py-1 rounded-md text-[11px] font-black tracking-wide animate-pulse shadow-md flex items-center justify-center gap-1">
-                              🚨 เกินกำหนด!
-                            </span>`;
-          } else if (diffHrs <= 50) {
-            rowStyleClass = "bg-amber-100/80 hover:bg-amber-200/80 transition-colors border-l-4 border-l-amber-500";
-            pmAlertBadge = `<span class="bg-orange-500 text-white px-2.5 py-1 rounded-md text-[11px] font-black tracking-wide shadow-md flex items-center justify-center gap-1">
-                              ⚠️ อีก ${diffHrs} ชม.
-                            </span>`;
-          }
-        }
-
-        // 📌 ปุ่มจัดการสิทธิ์ Admin
-        let btnAction = `-`;
-        if (currentUserRole === 'admin') {
-          if (item.status === "Approved") {
-            btnAction = `<span class="bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded border border-emerald-300">อนุมัติแล้ว</span>`;
-          } else {
-            btnAction = `<button onclick="event.stopPropagation(); quickApprove('${item.machineId}')" class="bg-emerald-600 text-white px-2.5 py-1 rounded text-[11px] font-bold hover:bg-emerald-700 shadow-sm">อนุมัติ</button>`;
-          }
-          
-          btnAction += `
-            <div class="flex items-center justify-center gap-1 mt-1.5">
-              <button onclick="event.stopPropagation(); deleteDashboardItem('${item.machineId}')" class="bg-red-600 text-white px-1.5 py-0.5 rounded text-[10px] hover:bg-red-700">ลบ</button>
-            </div>`;
+        let couponDisplay = "";
+        if (pStatus !== "ส่งครบแล้ว") {
+          couponDisplay = `<span class="badge badge-warning-custom">ค้างส่งคูปอง</span>`;
         } else {
-          if (item.status === "Approved") {
-            btnAction = `<span class="text-emerald-600 font-bold text-xs">อนุมัติแล้ว</span>`;
-          } else {
-            btnAction = `<span class="text-amber-600 font-semibold text-xs">รออนุมัติ</span>`;
-          }
+          couponDisplay = `<span class="text-success fw-bold">${Number(item.yanmarCoupon || 0).toLocaleString()}</span>`;
         }
 
-        tbody.innerHTML += `
-          <tr onclick="selectRowToEdit('${item.machineId}')" class="clickable-row border-b border-zinc-200 ${rowStyleClass}">
-            <td class="p-3 font-black font-mono text-zinc-900">${item.machineId || '-'}</td>
-            <td class="p-3 font-semibold">${item.model || '-'}</td>
-            <td class="p-3 font-semibold text-zinc-800">${item.customer || '-'}</td>
-            <td class="p-3 text-center">${phoneHtml}</td>
-            <td class="p-3 font-mono text-center bg-red-50/80 font-bold text-red-600 border-x border-red-200">${item.contractDate || '-'}</td>
-            <td class="p-3 font-mono text-center font-extrabold text-zinc-900 text-sm">${item.currentHours ?? '-'}</td>
-            <td class="p-3 font-mono text-center text-zinc-500">${item.lastPm ?? '-'}</td>
-            <td class="p-3 font-mono font-black text-red-600 text-center text-sm">${item.nextPm ?? '-'}</td>
-            <td class="p-3 text-center">${pmAlertBadge}</td>
-            <td class="p-3 text-center"><span class="bg-white/80 text-zinc-800 px-2 py-0.5 rounded text-[10px] font-bold border border-zinc-300 shadow-xs">${item.status || '-'}</span></td>
-            <td class="p-3 text-zinc-600">${item.updatedBy || '-'}</td>
-            <td class="p-3">${item.partsStore || '-'}</td>
-            <td class="p-3 font-mono">${displayPartsBill}</td>
-            <td class="p-3 text-center">${imgHtml}</td>
-            <td class="p-3 font-mono">${displayCoupon}</td>
-            <td class="p-3 font-mono text-zinc-600">${item.remark || '-'}</td>
-            <td class="p-3 text-center">${btnAction}</td>
-          </tr>`;
+        tr.innerHTML = `
+          <td><span class="badge bg-secondary">${item.ticketId}</span></td>
+          <td><strong>${item.machineId}</strong></td>
+          <td>${item.model || '-'}</td>
+          <td>${item.customerName || '-'}</td>
+          <td><span class="badge bg-light text-dark border">${displayCusId}</span></td>
+          <td class="text-center">${item.pmRound || '-'}</td>
+          <td class="text-center">${item.actualHours || '-'}</td>
+          <td>${formatDate(item.serviceDate)}</td>
+          <td class="text-end">${Number(item.cost || 0).toLocaleString()}</td>
+          <td>${item.invoiceNo || '-'}</td>
+          <td>${item.partsStore || '-'}</td>
+          <td><span class="badge bg-light text-dark border">${item.supplierId || '-'}</span></td>
+          <td>${item.partsBillNo || '-'}</td>
+          <td>${partsStatusDisplay}</td>
+          <td class="text-center">
+            ${item.receiptImage && (item.receiptImage.startsWith('http') || item.receiptImage.startsWith('data:image')) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${item.receiptImage}')"><i class="fa-solid fa-image"></i></button>` : '-'}
+          </td>
+          <td class="text-end">${couponDisplay}</td>
+          <td><small>${item.remark || '-'}</small></td>
+          <td class="text-center">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem('${item.ticketId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
       });
     }
 
-    async function loadLogData() {
-      const res = await fetch(`${GAS_WEB_APP_URL}?action=getReportList`);
-      const data = await res.json();
-      const tbody = document.getElementById("table-log-body");
-      tbody.innerHTML = "";
-
-      data.forEach(item => {
-        const rawImg = String(item.receiptImage || "").trim();
-        let imgHtml = `<span class="text-zinc-300">-</span>`;
-        if (rawImg && rawImg !== "-" && (rawImg.startsWith("data:image") || rawImg.startsWith("http"))) {
-          imgHtml = `
-            <div class="flex justify-center">
-              <img src="${rawImg}" class="h-8 w-8 object-cover rounded border border-zinc-300 cursor-pointer hover:scale-125 transition-transform shadow-sm" 
-                   onclick="window.open('${rawImg}')">
-            </div>`;
-        }
-
-        let btnDelete = currentUserRole === 'admin' 
-          ? `<button onclick="deleteLogItem('${item.ticketId}')" class="bg-red-600 text-white px-2 py-0.5 rounded text-[10px]">ลบ</button>` 
-          : `-`;
-
-        tbody.innerHTML += `
-          <tr class="border-b hover:bg-zinc-50">
-            <td class="p-3 font-mono">${item.ticketId}</td>
-            <td class="p-3 font-bold font-mono">${item.machineId}</td>
-            <td class="p-3">${item.model}</td>
-            <td class="p-3">${item.customerName}</td>
-            <td class="p-3 font-mono text-blue-600">${item.phone || '-'}</td>
-            <td class="p-3 text-center">${item.pmRound}</td>
-            <td class="p-3 text-center">${item.actualHours}</td>
-            <td class="p-3 font-mono">${item.serviceDate}</td>
-            <td class="p-3 text-right font-mono">${(item.cost || 0).toLocaleString()}</td>
-            <td class="p-3">${item.partsStore}</td>
-            <td class="p-3 font-mono">${item.partsBillNo}</td>
-            <td class="p-3 text-center">${imgHtml}</td>
-            <td class="p-3 font-mono text-zinc-600">${item.remark || '-'}</td>
-            <td class="p-3 text-center">${btnDelete}</td>
-          </tr>`;
-      });
-    }
-
-    function exportToCSV() {
-      let csv = "\uFEFFMachine_ID,Model,Customer,Phone,Contract_Date,Hours,Last_PM,Next_PM,Status,Updated_By,Parts_Store,Parts_Bill_No,Yanmar_Coupon,Remark\n";
-      rawDashboardData.forEach(r => {
-        csv += `"${r.machineId}","${r.model}","${r.customer}","${r.phone || ''}","${r.contractDate}","${r.currentHours}","${r.lastPm}","${r.nextPm}","${r.status}","${r.updatedBy}","${r.partsStore}","${r.partsBillNo}","${r.yanmarCoupon}","${r.remark || ''}"\n`;
-      });
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `Service_Report_${new Date().toISOString().slice(0,10)}.csv`;
-      link.click();
-    }
-
-    document.getElementById("form-file").addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (evt) => base64ImageString = evt.target.result;
-        reader.readAsDataURL(file);
-      } else {
-        base64ImageString = "";
+    function handleHistorySearchKey(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        filterHistoryTable();
       }
-    });
+    }
 
-    document.getElementById("form-ticket").addEventListener("submit", async (e) => {
+    function filterHistoryTable() {
+      const search = document.getElementById("searchHistory").value.toLowerCase().trim();
+      let filtered = rawHistoryData.filter(item => {
+        const formattedCusId = formatCustomerId(item.customerId).toLowerCase();
+        return (item.ticketId && item.ticketId.toLowerCase().includes(search)) ||
+               (item.machineId && item.machineId.toLowerCase().includes(search)) ||
+               (item.customerName && item.customerName.toLowerCase().includes(search)) ||
+               (item.customerId && String(item.customerId).toLowerCase().includes(search)) ||
+               formattedCusId.includes(search) ||
+               (item.partsStore && item.partsStore.toLowerCase().includes(search));
+      });
+      renderHistoryTable(filtered);
+    }
+
+    // FORM SAVE / UPDATE ACTIONS
+    async function handleSaveTicket(e) {
       e.preventDefault();
+
+      const btn = document.getElementById("btnSubmitTicket");
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังบันทึก...';
+
       const payload = {
         action: "insertTicket",
-        ticketId: document.getElementById("form-ticket-id").value,
-        machineId: document.getElementById("form-machine-id").value,
-        model: document.getElementById("form-model").value,
-        customerName: document.getElementById("form-customer").value,
-        phone: document.getElementById("form-phone").value, // 📞 บันทึกเบอร์
-        contractDate: document.getElementById("form-contract-date").value,
-        pmRound: Number(document.getElementById("form-pm-round").value) || 0,
-        actualHours: Number(document.getElementById("form-actual-hours").value) || 0,
-        cost: Number(document.getElementById("form-cost").value) || 0,
-        partsStore: document.getElementById("form-store").value,
-        partsBillNo: document.getElementById("form-bill").value,
-        yanmarCoupon: document.getElementById("form-coupon").value,
-        remark: document.getElementById("form-remark").value,
-        receiptImage: base64ImageString,
+        ticketId: document.getElementById("inpTicketId").value,
+        machineId: document.getElementById("inpMachineId").value.trim(),
+        model: document.getElementById("inpModel").value.trim(),
+        customerName: document.getElementById("inpCustomerName").value.trim(),
+        customerId: document.getElementById("inpCustomerId").value.trim(),
+        phone: document.getElementById("inpPhone").value.trim(),
+        pmRound: document.getElementById("inpPmRound").value,
+        actualHours: document.getElementById("inpActualHours").value,
+        partsStore: document.getElementById("inpPartsStore").value.trim(),
+        supplierId: document.getElementById("inpSupplierId").value.trim(),
+        partsBillNo: document.getElementById("inpPartsBillNo").value.trim(),
+        partsStatus: document.getElementById("inpPartsStatus").value,
+        receiptImage: document.getElementById("inpReceiptImageBase64").value,
+        yanmarCoupon: document.getElementById("inpYanmarCoupon").value,
+        remark: document.getElementById("inpRemark").value.trim(),
         updatedBy: currentUser
       };
 
-      const res = await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      const result = await res.json();
-      if (result.status === "success") {
-        alert("บันทึกข้อมูลเรียบร้อย!");
-        document.getElementById("form-ticket").reset();
-        document.getElementById("form-pm-round").value = "";
-        base64ImageString = "";
-        loadDashboardData();
-      }
-    });
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+        const res = await response.json();
 
-    async function handleQuickUpdateHours() {
-      const mId = document.getElementById("quick-machine-id").value.trim();
-      const hrs = document.getElementById("quick-hours").value;
-      if(!mId || !hrs) return alert("กรอกข้อมูลให้ครบ");
-
-      await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "updateHours", machineId: mId, currentHours: hrs })
-      });
-      alert("อัปเดตชั่วโมงเรียบร้อย");
-      loadDashboardData();
-    }
-
-    async function quickApprove(mId) {
-      if (currentUserRole !== 'admin') {
-        alert("ขออภัย! สิทธิ์การอนุมัติเฉพาะผู้ใช้ระดับ Admin เท่านั้น");
-        return;
-      }
-
-      await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "approveMachine", machineId: mId })
-      });
-      loadDashboardData();
-    }
-
-    async function deleteDashboardItem(mId) {
-      if (currentUserRole !== 'admin') return alert("เฉพาะ Admin เท่านั้นที่ลบได้");
-      if (!confirm(`ยืนยันการลบเครื่องจักร ${mId} ?`)) return;
-      
-      await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "deleteDashboard", machineId: mId })
-      });
-      loadDashboardData();
-    }
-
-    async function deleteLogItem(tId) {
-      if (currentUserRole !== 'admin') return alert("เฉพาะ Admin เท่านั้นที่ลบได้");
-      if (!confirm(`ยืนยันการลบใบงาน ${tId} ?`)) return;
-      
-      await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "deleteReport", ticketId: tId })
-      });
-      loadLogData();
-    }
-
-    function selectRowToEdit(mId) {
-      document.getElementById("form-machine-id").value = mId;
-      document.getElementById("quick-machine-id").value = mId;
-      
-      const item = rawDashboardData.find(x => x.machineId === mId);
-      if (item) {
-        document.getElementById("form-model").value = item.model || "";
-        document.getElementById("form-customer").value = item.customer || "";
-        document.getElementById("form-phone").value = item.phone || ""; // 📞 ดึงเบอร์มาโชว์ในฟอร์ม
-        
-        if (item.contractDate && item.contractDate.includes("/")) {
-          const parts = item.contractDate.split("/");
-          if (parts.length === 3) {
-            document.getElementById("form-contract-date").value = `${parts[2]}-${parts[1]}-${parts[0]}`;
-          }
+        if (res.status === "success") {
+          alert("บันทึกข้อมูลเรียบร้อยแล้ว!");
+          resetTicketForm();
+          loadDashboardData();
         } else {
-          document.getElementById("form-contract-date").value = item.contractDate || "";
+          alert("บันทึกไม่สำเร็จ: " + res.message);
         }
-
-        if (document.getElementById("form-remark")) {
-          document.getElementById("form-remark").value = item.remark || "";
-        }
+      } catch (err) {
+        alert("เกิดข้อผิดพลาดในการบันทึก: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
       }
+    }
+
+    async function handleUpdateHours(e) {
+      e.preventDefault();
+      const mId = document.getElementById("quickMachineId").value.trim();
+      const hrs = document.getElementById("quickHours").value;
+      const btn = document.getElementById("btnQuickHours");
+      const originalText = btn.innerHTML;
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังบันทึก...';
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "updateHours", machineId: mId, currentHours: hrs })
+        });
+        const res = await response.json();
+
+        if (res.status === "success") {
+          alert("อัปเดตชั่วโมงใช้งานเรียบร้อย!");
+          document.getElementById("quickMachineId").value = "";
+          document.getElementById("quickHours").value = "";
+          loadDashboardData();
+        } else {
+          alert("อัปเดตไม่สำเร็จ: " + res.message);
+        }
+      } catch (err) {
+        alert("เกิดข้อผิดพลาด: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    function editDashboardItem(machineId) {
+      const item = rawDashboardData.find(x => x.machineId === machineId);
+      if (!item) return;
+
+      document.getElementById("inpMachineId").value = item.machineId || "";
+      document.getElementById("inpModel").value = item.model || "";
+      document.getElementById("inpCustomerName").value = item.customer || "";
+      document.getElementById("inpCustomerId").value = formatCustomerId(item.customerId);
+      document.getElementById("inpPhone").value = item.phone || "";
+      document.getElementById("inpPmRound").value = item.nextPm || item.lastPm || "";
+      document.getElementById("inpActualHours").value = item.currentHours || "";
+      document.getElementById("inpPartsStore").value = item.partsStore || "";
+      document.getElementById("inpSupplierId").value = item.supplierId || "";
+      document.getElementById("inpPartsBillNo").value = item.partsBillNo || "";
+      document.getElementById("inpPartsStatus").value = item.partsStatus || "ค้างส่งอะไหล่";
+      document.getElementById("inpReceiptImageBase64").value = item.receiptImage || "";
+      document.getElementById("inpYanmarCoupon").value = item.yanmarCoupon || 0;
+      document.getElementById("inpRemark").value = item.remark || "";
+      
+      document.getElementById("quickMachineId").value = item.machineId || "";
+      document.getElementById("quickHours").value = item.currentHours || "";
+
+      document.getElementById("formSection").scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function resetTicketForm() {
+      document.getElementById("ticketForm").reset();
+      document.getElementById("inpTicketId").value = "";
+      document.getElementById("inpReceiptImageBase64").value = "";
+      document.getElementById("inpPartsStatus").value = "ค้างส่งอะไหล่";
+    }
+
+    async function approveItem(machineId) {
+      if (!confirm(`ยืนยันการอนุมัติสถานะ Machine ID: ${machineId} ?`)) return;
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "approveMachine", machineId: machineId })
+      });
+      loadDashboardData();
+    }
+
+    async function deleteDashboardItem(machineId) {
+      if (!confirm(`ต้องการลบข้อมูล Machine ID: ${machineId} ใช่หรือไม่?`)) return;
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "deleteDashboard", machineId: machineId })
+      });
+      loadDashboardData();
+    }
+
+    async function deleteHistoryItem(ticketId) {
+      if (!confirm(`ต้องการลบรายการประวัติ Ticket: ${ticketId} ใช่หรือไม่?`)) return;
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "deleteReport", ticketId: ticketId })
+      });
+      loadHistoryData();
+    }
+
+    function showImageModal(url) {
+      document.getElementById("modalImgPreview").src = url;
+      const myModal = new bootstrap.Modal(document.getElementById('imageModal'));
+      myModal.show();
+    }
+
+    function exportToExcel(tableId, filename) {
+      const table = document.getElementById(tableId);
+      const wb = XLSX.utils.table_to_book(table, { sheet: filename });
+      XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
   </script>
 </body>
