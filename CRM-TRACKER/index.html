@@ -87,6 +87,26 @@
 
         .phone-warning { font-size: 12px; color: #dc2626; margin-top: 2px; min-height: 14px; }
 
+        .fab-download {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #107c41;
+            color: white;
+            border-radius: 50%;
+            text-decoration: none;
+            font-size: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+            z-index: 100;
+            transition: all 0.2s;
+        }
+        .fab-download:hover { background-color: #0b5c30; transform: scale(1.08); }
+
         .btn-export { background: #107c41; color: white; }
         .btn-export:hover { background: #0b5c30; }
 
@@ -104,7 +124,7 @@
 
         @media print {
             body { background: white; color: black; padding: 0; height: auto; overflow: visible; }
-            .header, .card, .right-panel, .btn-warning, .search-actions, .pagination-bar, #dashboard-card { display: none !important; }
+            .header, .card, .right-panel, .btn-warning, .search-actions, .pagination-bar, #dashboard-card, .fab-download { display: none !important; }
             .main-layout { display: block; overflow: visible; }
             .left-panel { width: 100%; display: block; overflow: visible; }
             .table-container { box-shadow: none; padding: 0; overflow: visible; }
@@ -117,15 +137,14 @@
     </style>
 </head>
 
- <div style="margin: 15px 0;">
-  <a href="https://docs.google.com/spreadsheets/d/1x5BOC2WVysEGB7HN2E5KIxH2c_tyi5PTezo1RtgSwhU/export?format=xlsx"
-     style="display: inline-flex; align-items: center; gap: 8px; background-color: #107c41; color: white; padding: 12px 20px; text-decoration: none; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;"
-     download="Pretrack_database.xlsx">
-     📊 ดาวน์โหลดฐานข้อมูลทั้งหมด (Pretrack database.xlsx)
-  </a>
-</div>
-
 <body>
+
+    <a href="https://docs.google.com/spreadsheets/d/1x5BOC2WVysEGB7HN2E5KIxH2c_tyi5PTezo1RtgSwhU/export?format=xlsx"
+       class="fab-download"
+       download="Pretrack_database.xlsx"
+       title="ดาวน์โหลดฐานข้อมูลทั้งหมด (Pretrack database.xlsx)">
+       📊
+    </a>
 
     <div class="header">
         <h1>CRM-TRACKER ระบบจัดการข้อมูลลูกค้า</h1>
@@ -324,21 +343,18 @@
                     </div>
                     <div class="form-group">
                         <label>จังหวัด (Province)</label>
-                        <select id="cust-province" class="form-control" onchange="onFormProvinceChange()">
-                            <option value="">-- กำลังโหลดจังหวัด... --</option>
-                        </select>
+                        <input type="text" id="cust-province" class="form-control" list="cust-province-list" placeholder="พิมพ์หรือเลือกจังหวัด" oninput="onFormProvinceChange()">
+                        <datalist id="cust-province-list"></datalist>
                     </div>
                     <div class="form-group">
                         <label>อำเภอ (District)</label>
-                        <select id="cust-district" class="form-control" onchange="onFormDistrictChange()">
-                            <option value="">-- เลือกอำเภอ --</option>
-                        </select>
+                        <input type="text" id="cust-district" class="form-control" list="cust-district-list" placeholder="พิมพ์หรือเลือกอำเภอ" oninput="onFormDistrictChange()">
+                        <datalist id="cust-district-list"></datalist>
                     </div>
                     <div class="form-group">
                         <label>ตำบล (Subdistrict)</label>
-                        <select id="cust-subdistrict" class="form-control">
-                            <option value="">-- เลือกตำบล --</option>
-                        </select>
+                        <input type="text" id="cust-subdistrict" class="form-control" list="cust-subdistrict-list" placeholder="พิมพ์หรือเลือกตำบล">
+                        <datalist id="cust-subdistrict-list"></datalist>
                     </div>
                     <div class="form-group">
                         <label>รหัสไปรษณีย์</label>
@@ -371,14 +387,15 @@
 
     </div>
 
+    <script src="thailand-geo.js"></script>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTMBCUK66kmgoRzIZ7hPq4joTQgAEpkLNNzcJpZ5boPPhUnGvcRR0C6qTT00U8YLXw/exec';
         const SAVED_FILTERS_KEY = 'crmTrackerFilters_v1';
 
-        // ไฟล์ข้อมูลจังหวัด/อำเภอ/ตำบลทั้งประเทศ (แยกไฟล์ต่างหาก ไม่ผูกกับ Google Sheet)
-        // ตอนนี้ใช้ path เดียวกับ index.html — ถ้าอัปโหลดขึ้น GitHub แล้วเปลี่ยนเป็น raw URL ของไฟล์ เช่น
-        // 'https://raw.githubusercontent.com/<user>/<repo>/main/thailand-geo.json'
-        const THAILAND_GEO_URL = 'thailand-geo.json';
+        // ข้อมูลจังหวัด/อำเภอ/ตำบลทั้งประเทศ มาจาก thailand-geo.js (โหลดผ่าน <script src> ก่อนหน้านี้)
+        // เก็บเป็นตัวแปร THAILAND_GEO_DATA อยู่แล้ว ไม่ต้อง fetch — ใช้ <script src> แทน fetch()
+        // เพราะ fetch ไฟล์ในเครื่อง (เปิดแบบ file://) จะถูกเบราว์เซอร์บล็อกด้วย CORS แต่ <script src> ไม่ติดปัญหานี้
+        // ถ้าจะอัปเดตข้อมูล ให้แก้ที่ thailand-geo.json แล้วสร้าง thailand-geo.js ใหม่จากไฟล์นั้น
 
         // จังหวัดที่ใช้ประจำ เรียงขึ้นบนสุดตามลำดับนี้ก่อน จังหวัดที่เหลือเรียงตามตัวอักษรไว้ด้านล่าง
         const PRIORITY_PROVINCES = ['อุบลราชธานี', 'ศรีสะเกษ', 'กาฬสินธุ์', 'อำนาจเจริญ', 'ยโสธร', 'มุกดาหาร', 'ร้อยเอ็ด', 'สุรินทร์', 'บุรีรัมย์', 'สกลนคร', 'นครพนม', 'มหาสารคาม'];
@@ -643,16 +660,12 @@
             localFilterData();
         }
 
-        // ---------- จังหวัด / อำเภอ / ตำบล ทั้งประเทศ สำหรับ "ฟอร์มเพิ่ม/แก้ไขลูกค้า" (โหลดจาก thailand-geo.json) ----------
+        // ---------- จังหวัด / อำเภอ / ตำบล ทั้งประเทศ สำหรับ "ฟอร์มเพิ่ม/แก้ไขลูกค้า" (ข้อมูลจาก thailand-geo.js) ----------
+        // ใช้ input + <datalist> แทน <select> เพื่อให้พิมพ์ค้นหาได้ (ไม่ต้องเลื่อนหา) และยังพิมพ์ข้อความอิสระได้ถ้าไม่ตรงกับรายการ
         function loadThailandGeoData() {
-            fetch(THAILAND_GEO_URL)
-                .then(res => res.json())
-                .then(data => {
-                    thaiGeoData = data || [];
-                    buildThaiGeoIndex();
-                    populateFormProvinceDropdown();
-                })
-                .catch(err => console.log('Thailand geo data load error:', err));
+            thaiGeoData = (typeof THAILAND_GEO_DATA !== 'undefined') ? THAILAND_GEO_DATA : [];
+            buildThaiGeoIndex();
+            populateFormProvinceDropdown();
         }
 
         function buildThaiGeoIndex() {
@@ -676,54 +689,44 @@
             return PROVINCE_NAME_ALIASES[n] || n;
         }
 
-        function addTempOption(selectId, value) {
-            const sel = document.getElementById(selectId);
-            if(!sel || !value) return;
-            const opt = document.createElement('option');
-            opt.value = value;
-            opt.text = value + ' (ข้อมูลเดิม)';
-            sel.appendChild(opt);
-            sel.value = value;
-        }
-
-        function populateFormProvinceDropdown() {
-            const sel = document.getElementById('cust-province');
-            if(!sel) return;
-            const current = sel.value || DEFAULT_PROVINCE;
-            const names = sortedProvinceNames();
-            sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
-            if(names.includes(current)) sel.value = current;
-            populateFormDistrictDropdown(sel.value, null);
-        }
-
-        function populateFormDistrictDropdown(provinceName, keepValue) {
-            const sel = document.getElementById('cust-district');
-            if(!sel) return;
+        function refreshFormDistrictOptions(provinceName) {
+            const dl = document.getElementById('cust-district-list');
+            if(!dl) return;
             const districts = (thaiGeoByProvince[provinceName] || []).map(d => d.n);
-            sel.innerHTML = '<option value="">-- เลือกอำเภอ --</option>' + districts.map(d => `<option value="${d}">${d}</option>`).join('');
-            if(keepValue && districts.includes(keepValue)) sel.value = keepValue;
-            populateFormSubdistrictDropdown(provinceName, sel.value, null);
+            dl.innerHTML = districts.map(d => `<option value="${d}"></option>`).join('');
         }
 
-        function populateFormSubdistrictDropdown(provinceName, districtName, keepValue) {
-            const sel = document.getElementById('cust-subdistrict');
-            if(!sel) return;
+        function refreshFormSubdistrictOptions(provinceName, districtName) {
+            const dl = document.getElementById('cust-subdistrict-list');
+            if(!dl) return;
             const districtsArr = thaiGeoByProvince[provinceName] || [];
             const districtObj = districtsArr.find(d => d.n === districtName);
             const subs = districtObj ? districtObj.t.map(t => t.n) : [];
-            sel.innerHTML = '<option value="">-- เลือกตำบล --</option>' + subs.map(s => `<option value="${s}">${s}</option>`).join('');
-            if(keepValue && subs.includes(keepValue)) sel.value = keepValue;
+            dl.innerHTML = subs.map(s => `<option value="${s}"></option>`).join('');
+        }
+
+        function populateFormProvinceDropdown() {
+            const dl = document.getElementById('cust-province-list');
+            if(!dl) return;
+            dl.innerHTML = sortedProvinceNames().map(n => `<option value="${n}"></option>`).join('');
+
+            const input = document.getElementById('cust-province');
+            if(input && !input.value) input.value = DEFAULT_PROVINCE;
+
+            refreshFormDistrictOptions(input.value);
+            refreshFormSubdistrictOptions(input.value, document.getElementById('cust-district').value.trim());
         }
 
         function onFormProvinceChange() {
-            const sel = document.getElementById('cust-province');
-            populateFormDistrictDropdown(sel.value, null);
+            const provinceName = document.getElementById('cust-province').value.trim();
+            refreshFormDistrictOptions(provinceName);
+            refreshFormSubdistrictOptions(provinceName, document.getElementById('cust-district').value.trim());
         }
 
         function onFormDistrictChange() {
-            const provSel = document.getElementById('cust-province');
-            const distSel = document.getElementById('cust-district');
-            populateFormSubdistrictDropdown(provSel.value, distSel.value, null);
+            const provinceName = document.getElementById('cust-province').value.trim();
+            const districtName = document.getElementById('cust-district').value.trim();
+            refreshFormSubdistrictOptions(provinceName, districtName);
         }
 
         // ---------- จังหวัด / อำเภอ / ตำบล (cascading, สร้างจากข้อมูลจริงที่โหลดมา) สำหรับช่องค้นหา ----------
@@ -1129,17 +1132,11 @@
                     const editDistrict = (d[11] || '').toString().trim();
                     const editSubdistrict = (d[10] || '').toString().trim();
 
-                    const provSel = document.getElementById('cust-province');
-                    provSel.value = editProvince;
-                    if(provSel.value !== editProvince) addTempOption('cust-province', editProvince);
-
-                    populateFormDistrictDropdown(provSel.value, editDistrict);
-                    const distSel = document.getElementById('cust-district');
-                    if(editDistrict && distSel.value !== editDistrict) addTempOption('cust-district', editDistrict);
-
-                    populateFormSubdistrictDropdown(provSel.value, distSel.value, editSubdistrict);
-                    const subSel = document.getElementById('cust-subdistrict');
-                    if(editSubdistrict && subSel.value !== editSubdistrict) addTempOption('cust-subdistrict', editSubdistrict);
+                    document.getElementById('cust-province').value = editProvince;
+                    refreshFormDistrictOptions(editProvince);
+                    document.getElementById('cust-district').value = editDistrict;
+                    refreshFormSubdistrictOptions(editProvince, editDistrict);
+                    document.getElementById('cust-subdistrict').value = editSubdistrict;
 
                     document.getElementById('cust-zipcode').value = d[13] || '';
                     document.getElementById('cust-note').value = d[14] || '';
@@ -1166,10 +1163,13 @@
                 if(entryInput) entryInput.value = '';
                 setDefaultDate();
 
-                const provSel = document.getElementById('cust-province');
-                if(provSel) {
-                    provSel.value = DEFAULT_PROVINCE;
-                    populateFormDistrictDropdown(DEFAULT_PROVINCE, null);
+                const provInput = document.getElementById('cust-province');
+                if(provInput) {
+                    provInput.value = DEFAULT_PROVINCE;
+                    document.getElementById('cust-district').value = '';
+                    document.getElementById('cust-subdistrict').value = '';
+                    refreshFormDistrictOptions(DEFAULT_PROVINCE);
+                    refreshFormSubdistrictOptions(DEFAULT_PROVINCE, '');
                 }
             } catch(e) {}
         }
