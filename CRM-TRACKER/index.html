@@ -323,16 +323,22 @@
                         <input type="text" id="cust-village" class="form-control">
                     </div>
                     <div class="form-group">
+                        <label>จังหวัด (Province)</label>
+                        <select id="cust-province" class="form-control" onchange="onFormProvinceChange()">
+                            <option value="">-- กำลังโหลดจังหวัด... --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>อำเภอ (District)</label>
+                        <select id="cust-district" class="form-control" onchange="onFormDistrictChange()">
+                            <option value="">-- เลือกอำเภอ --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>ตำบล (Subdistrict)</label>
-                        <input type="text" id="cust-subdistrict" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>อำเภอ</label>
-                        <input type="text" id="cust-district" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>จังหวัด</label>
-                        <input type="text" id="cust-province" class="form-control" value="อุบลฯ">
+                        <select id="cust-subdistrict" class="form-control">
+                            <option value="">-- เลือกตำบล --</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>รหัสไปรษณีย์</label>
@@ -369,6 +375,19 @@
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTMBCUK66kmgoRzIZ7hPq4joTQgAEpkLNNzcJpZ5boPPhUnGvcRR0C6qTT00U8YLXw/exec';
         const SAVED_FILTERS_KEY = 'crmTrackerFilters_v1';
 
+        // ไฟล์ข้อมูลจังหวัด/อำเภอ/ตำบลทั้งประเทศ (แยกไฟล์ต่างหาก ไม่ผูกกับ Google Sheet)
+        // ตอนนี้ใช้ path เดียวกับ index.html — ถ้าอัปโหลดขึ้น GitHub แล้วเปลี่ยนเป็น raw URL ของไฟล์ เช่น
+        // 'https://raw.githubusercontent.com/<user>/<repo>/main/thailand-geo.json'
+        const THAILAND_GEO_URL = 'thailand-geo.json';
+
+        // จังหวัดที่ใช้ประจำ เรียงขึ้นบนสุดตามลำดับนี้ก่อน จังหวัดที่เหลือเรียงตามตัวอักษรไว้ด้านล่าง
+        const PRIORITY_PROVINCES = ['อุบลราชธานี', 'ศรีสะเกษ', 'กาฬสินธุ์', 'อำนาจเจริญ', 'ยโสธร', 'มุกดาหาร', 'ร้อยเอ็ด', 'สุรินทร์', 'บุรีรัมย์', 'สกลนคร', 'นครพนม', 'มหาสารคาม'];
+        const DEFAULT_PROVINCE = 'อุบลราชธานี';
+        const PROVINCE_NAME_ALIASES = { 'อุบลฯ': 'อุบลราชธานี', 'กทม.': 'กรุงเทพมหานคร', 'กทม': 'กรุงเทพมหานคร' };
+
+        let thaiGeoData = [];
+        let thaiGeoByProvince = {};
+
         let masterDataList = [];
         let filteredDataList = [];
         let locationMap = {}; // { province: { district: Set(subdistrict) } }
@@ -382,6 +401,7 @@
                 pendingSavedFilters = loadFiltersFromStorage();
                 applyBasicSavedFilters(pendingSavedFilters);
                 loadInitialMeta();
+                loadThailandGeoData();
                 fetchDataFromServer();
                 document.getElementById('customer-form').addEventListener('submit', onFormSubmit);
                 const phoneInput = document.getElementById('cust-phone');
@@ -623,7 +643,90 @@
             localFilterData();
         }
 
-        // ---------- จังหวัด / อำเภอ / ตำบล (cascading, สร้างจากข้อมูลจริงที่โหลดมา) ----------
+        // ---------- จังหวัด / อำเภอ / ตำบล ทั้งประเทศ สำหรับ "ฟอร์มเพิ่ม/แก้ไขลูกค้า" (โหลดจาก thailand-geo.json) ----------
+        function loadThailandGeoData() {
+            fetch(THAILAND_GEO_URL)
+                .then(res => res.json())
+                .then(data => {
+                    thaiGeoData = data || [];
+                    buildThaiGeoIndex();
+                    populateFormProvinceDropdown();
+                })
+                .catch(err => console.log('Thailand geo data load error:', err));
+        }
+
+        function buildThaiGeoIndex() {
+            thaiGeoByProvince = {};
+            thaiGeoData.forEach(p => {
+                if(!p || !p.n) return;
+                thaiGeoByProvince[p.n] = p.a || [];
+            });
+        }
+
+        function sortedProvinceNames() {
+            const all = thaiGeoData.map(p => p.n);
+            const prioritySet = new Set(PRIORITY_PROVINCES);
+            const priorityFirst = PRIORITY_PROVINCES.filter(p => all.includes(p));
+            const rest = all.filter(p => !prioritySet.has(p)).sort((a, b) => a.localeCompare(b, 'th'));
+            return [...priorityFirst, ...rest];
+        }
+
+        function normalizeProvinceName(name) {
+            const n = (name || '').toString().trim();
+            return PROVINCE_NAME_ALIASES[n] || n;
+        }
+
+        function addTempOption(selectId, value) {
+            const sel = document.getElementById(selectId);
+            if(!sel || !value) return;
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.text = value + ' (ข้อมูลเดิม)';
+            sel.appendChild(opt);
+            sel.value = value;
+        }
+
+        function populateFormProvinceDropdown() {
+            const sel = document.getElementById('cust-province');
+            if(!sel) return;
+            const current = sel.value || DEFAULT_PROVINCE;
+            const names = sortedProvinceNames();
+            sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+            if(names.includes(current)) sel.value = current;
+            populateFormDistrictDropdown(sel.value, null);
+        }
+
+        function populateFormDistrictDropdown(provinceName, keepValue) {
+            const sel = document.getElementById('cust-district');
+            if(!sel) return;
+            const districts = (thaiGeoByProvince[provinceName] || []).map(d => d.n);
+            sel.innerHTML = '<option value="">-- เลือกอำเภอ --</option>' + districts.map(d => `<option value="${d}">${d}</option>`).join('');
+            if(keepValue && districts.includes(keepValue)) sel.value = keepValue;
+            populateFormSubdistrictDropdown(provinceName, sel.value, null);
+        }
+
+        function populateFormSubdistrictDropdown(provinceName, districtName, keepValue) {
+            const sel = document.getElementById('cust-subdistrict');
+            if(!sel) return;
+            const districtsArr = thaiGeoByProvince[provinceName] || [];
+            const districtObj = districtsArr.find(d => d.n === districtName);
+            const subs = districtObj ? districtObj.t.map(t => t.n) : [];
+            sel.innerHTML = '<option value="">-- เลือกตำบล --</option>' + subs.map(s => `<option value="${s}">${s}</option>`).join('');
+            if(keepValue && subs.includes(keepValue)) sel.value = keepValue;
+        }
+
+        function onFormProvinceChange() {
+            const sel = document.getElementById('cust-province');
+            populateFormDistrictDropdown(sel.value, null);
+        }
+
+        function onFormDistrictChange() {
+            const provSel = document.getElementById('cust-province');
+            const distSel = document.getElementById('cust-district');
+            populateFormSubdistrictDropdown(provSel.value, distSel.value, null);
+        }
+
+        // ---------- จังหวัด / อำเภอ / ตำบล (cascading, สร้างจากข้อมูลจริงที่โหลดมา) สำหรับช่องค้นหา ----------
         function buildLocationMap(data) {
             locationMap = {};
             (data || []).forEach(item => {
@@ -1022,9 +1125,22 @@
                     document.getElementById('cust-addressno').value = d[7] || '';
                     document.getElementById('cust-moo').value = d[8] || '';
                     document.getElementById('cust-village').value = d[9] || '';
-                    document.getElementById('cust-subdistrict').value = d[10] || '';
-                    document.getElementById('cust-district').value = d[11] || '';
-                    document.getElementById('cust-province').value = d[12] || 'อุบลฯ';
+                    const editProvince = normalizeProvinceName(d[12] || DEFAULT_PROVINCE);
+                    const editDistrict = (d[11] || '').toString().trim();
+                    const editSubdistrict = (d[10] || '').toString().trim();
+
+                    const provSel = document.getElementById('cust-province');
+                    provSel.value = editProvince;
+                    if(provSel.value !== editProvince) addTempOption('cust-province', editProvince);
+
+                    populateFormDistrictDropdown(provSel.value, editDistrict);
+                    const distSel = document.getElementById('cust-district');
+                    if(editDistrict && distSel.value !== editDistrict) addTempOption('cust-district', editDistrict);
+
+                    populateFormSubdistrictDropdown(provSel.value, distSel.value, editSubdistrict);
+                    const subSel = document.getElementById('cust-subdistrict');
+                    if(editSubdistrict && subSel.value !== editSubdistrict) addTempOption('cust-subdistrict', editSubdistrict);
+
                     document.getElementById('cust-zipcode').value = d[13] || '';
                     document.getElementById('cust-note').value = d[14] || '';
                     document.getElementById('cust-line').value = d[15] || '';
@@ -1049,6 +1165,12 @@
                 const entryInput = document.getElementById('cust-note-entry');
                 if(entryInput) entryInput.value = '';
                 setDefaultDate();
+
+                const provSel = document.getElementById('cust-province');
+                if(provSel) {
+                    provSel.value = DEFAULT_PROVINCE;
+                    populateFormDistrictDropdown(DEFAULT_PROVINCE, null);
+                }
             } catch(e) {}
         }
 
