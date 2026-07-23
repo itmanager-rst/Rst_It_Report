@@ -1247,4 +1247,138 @@
                     document.getElementById('cust-lname').value = d[2] || '';
 
                     let p = (d[3] || '').toString().trim();
-                    if(p && !p.startsWith('0') && p !== '-') p = '0
+                    if(p && !p.startsWith('0') && p !== '-') p = '0' + p;
+                    document.getElementById('cust-phone').value = p;
+                    updatePhoneFeedback();
+
+                    document.getElementById('cust-appdate').value = parseDateString(d[4]);
+                    document.getElementById('cust-type').value = d[5] || 'ลงทะเบียน';
+                    document.getElementById('cust-product').value = d[6] || '';
+                    document.getElementById('cust-addressno').value = d[7] || '';
+                    document.getElementById('cust-moo').value = d[8] || '';
+                    document.getElementById('cust-village').value = d[9] || '';
+                    const editProvince = normalizeProvinceName(d[12] || DEFAULT_PROVINCE);
+                    const editDistrict = (d[11] || '').toString().trim();
+                    const editSubdistrict = (d[10] || '').toString().trim();
+
+                    document.getElementById('cust-province').value = editProvince;
+                    refreshFormDistrictOptions(editProvince);
+                    document.getElementById('cust-district').value = editDistrict;
+                    refreshFormSubdistrictOptions(editProvince, editDistrict);
+                    document.getElementById('cust-subdistrict').value = editSubdistrict;
+
+                    document.getElementById('cust-zipcode').value = d[13] || '';
+                    document.getElementById('cust-note').value = d[14] || '';
+                    document.getElementById('cust-line').value = d[15] || '';
+                    document.getElementById('cust-facebook').value = d[16] || '';
+
+                    document.getElementById('form-title').innerText = `📝 แก้ไขข้อมูลลูกค้า (แถวที่ ${rid})`;
+                    document.getElementById('btn-submit').innerText = '💾 อัปเดตข้อมูล';
+                }
+            }).catch(err => console.log(err));
+        }
+
+        function resetFormState() {
+            try {
+                document.getElementById('customer-form').reset();
+                document.getElementById('form-row-index').value = '';
+                document.getElementById('form-title').innerText = '➕ เพิ่มข้อมูลลูกค้าใหม่';
+                const submitBtn = document.getElementById('btn-submit');
+                submitBtn.innerText = '💾 บันทึกข้อมูล';
+                submitBtn.disabled = false;
+                const warnEl = document.getElementById('phone-duplicate-warning');
+                if(warnEl) warnEl.innerText = '';
+                const entryInput = document.getElementById('cust-note-entry');
+                if(entryInput) entryInput.value = '';
+                setDefaultDate();
+
+                const provInput = document.getElementById('cust-province');
+                if(provInput) {
+                    provInput.value = DEFAULT_PROVINCE;
+                    document.getElementById('cust-district').value = '';
+                    document.getElementById('cust-subdistrict').value = '';
+                    refreshFormDistrictOptions(DEFAULT_PROVINCE);
+                    refreshFormSubdistrictOptions(DEFAULT_PROVINCE, '');
+                }
+            } catch(e) {}
+        }
+
+        function onFormSubmit(e) {
+            e.preventDefault();
+            try {
+                const rid = document.getElementById('form-row-index').value;
+
+                // ตรวจรูปแบบเบอร์โทรก่อนบันทึก (10 หลัก ขึ้นต้นด้วย 0)
+                const phoneRaw = document.getElementById('cust-phone').value.trim();
+                const phoneDigits = phoneRaw.replace(/[^0-9]/g, '');
+                if(phoneDigits.length > 0 && !isValidThaiPhone(phoneDigits)) {
+                    alert('⚠️ กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (ตัวเลข 10 หลัก ขึ้นต้นด้วย 0)');
+                    document.getElementById('cust-phone').focus();
+                    return;
+                }
+
+                // เช็คเบอร์ซ้ำก่อนบันทึกจริง (ไม่ใช่แค่เตือนขณะพิมพ์)
+                if(phoneDigits.length > 0) {
+                    const dup = findDuplicatePhone(phoneDigits, rid);
+                    if(dup) {
+                        const proceed = confirm(`⚠️ พบเบอร์นี้ในระบบแล้ว: ${dup.name || '-'}\n\nต้องการบันทึกข้อมูลนี้ต่อหรือไม่?`);
+                        if(!proceed) return;
+                    }
+                }
+
+                const packData = {
+                    date: document.getElementById('cust-date').value,
+                    firstName: document.getElementById('cust-fname').value,
+                    lastName: document.getElementById('cust-lname').value,
+                    phone1: document.getElementById('cust-phone').value,
+                    appdate: document.getElementById('cust-appdate').value,
+                    type: document.getElementById('cust-type').value,
+                    product: document.getElementById('cust-product').value,
+                    addressno: document.getElementById('cust-addressno').value,
+                    moo: document.getElementById('cust-moo').value,
+                    village: document.getElementById('cust-village').value,
+                    subdistrict: document.getElementById('cust-subdistrict').value,
+                    district: document.getElementById('cust-district').value,
+                    province: document.getElementById('cust-province').value,
+                    zipcode: document.getElementById('cust-zipcode').value,
+                    note: document.getElementById('cust-note').value,
+                    line: document.getElementById('cust-line').value,
+                    facebook: document.getElementById('cust-facebook').value
+                };
+
+                const actionType = rid ? 'editCustomer' : 'addCustomer';
+                const alertMsg = rid ? '✏️ อัปเดตข้อมูลลูกค้าสำเร็จเรียบร้อย!' : '➕ บันทึกข้อมูลลูกค้าใหม่สำเร็จ!';
+
+                const submitBtn = document.getElementById('btn-submit');
+                const originalBtnText = submitBtn.innerText;
+                submitBtn.disabled = true;
+                submitBtn.innerText = '⏳ กำลังบันทึก...';
+
+                fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: actionType, rowIndex: rid, data: packData })
+                })
+                .then(res => res.json())
+                .then(resData => {
+                    if(resData && resData.success) {
+                        alert(alertMsg);
+                        resetFormState();
+                        fetchDataFromServer();
+                    } else {
+                        alert('❌ ข้อผิดพลาดจากระบบ: ' + (resData.message || 'ไม่ทราบสาเหตุ'));
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = originalBtnText;
+                    }
+                }).catch((err) => {
+                    alert('🛑 การส่งข้อมูลผิดพลาดหรือเซิร์ฟเวอร์ไม่ตอบสนอง');
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = originalBtnText;
+                });
+            } catch(err) {
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
