@@ -138,6 +138,12 @@
       padding: 4px 12px;
     }
 
+    .btn-action-sm {
+      font-size: 0.72rem;
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+
     .form-label-sm {
       font-size: 0.78rem;
       font-weight: 600;
@@ -532,12 +538,12 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbyHaGi7EwZ15PUYN79HVsw5On1t1Ed4SaaCP9qI-uCjKo9TwyePprQGJAvQkhH-zR6gTg/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxSTtlAVdihuuueEwVhfEH37BdzN1jL9S2prBJO31IeItHGk0onozHGjF3MQoEhiKGdFg/exec";
 
     let currentUser = null;
     let currentRole = null;
     let rawDashboardData = [];
-    let rawHistoryData = [];
+    let rawHistoryData = []; 
     let activeFilter = 'all';
 
     function formatCustomerId(id) {
@@ -609,7 +615,7 @@
           
           updateActionColumnsVisibility();
           loadDashboardData();
-          loadHistoryData(); // โหลดข้อมูลประวัติไว้ใช้ตรวจสอบคูปองค้าง
+          loadHistoryData();
         } else {
           alert(res.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
         }
@@ -688,11 +694,18 @@
         const displayCusId = formatCustomerId(item.customerId);
         const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
 
-        let partsStatusDisplay = `<span class="badge badge-warning-custom">ค้างส่งอะไหล่</span>`;
+        // 🚚 ตกแต่งและเพิ่มปุ่ม "✓ รับครบแล้ว" ข้างสถานะอะไหล่
+        let partsStatusDisplay = "";
         if (pStatus === "ส่งครบแล้ว") {
-          partsStatusDisplay = `<span class="badge badge-success-custom">ส่งครบแล้ว</span>`;
-        } else if (pStatus === "ส่งบางส่วน") {
-          partsStatusDisplay = `<span class="badge badge-partial-custom">ส่งบางส่วน</span>`;
+          partsStatusDisplay = `<span class="badge badge-success-custom">🟢 ส่งครบแล้ว</span>`;
+        } else {
+          const badgeClass = pStatus === "ส่งบางส่วน" ? "badge-partial-custom" : "badge-warning-custom";
+          partsStatusDisplay = `
+            <div class="d-flex align-items-center gap-1">
+              <span class="badge ${badgeClass}">${pStatus}</span>
+              ${showAction ? `<button type="button" class="btn btn-outline-success btn-action-sm text-nowrap" onclick="handleReceiveAllParts('${item.machineId}')">✓ รับครบแล้ว</button>` : ''}
+            </div>
+          `;
         }
 
         // 🎟️ เช็ครายการรอบ PM ที่ค้างคูปองจาก rawHistoryData
@@ -702,7 +715,6 @@
 
         let couponDisplay = "";
         if (pendingCoupons.length > 0) {
-          // ถ้ามีรอบที่ค้างคูปอง ให้แสดงแจ้งเตือนแยกเป็นรายรอบ + ปุ่มกดยืนยันรับ
           couponDisplay = pendingCoupons.map(p => `
             <div class="mb-1">
               <span class="badge badge-warning-custom text-wrap">ค้างคูปอง (${p.pmRound} ชม.)</span>
@@ -753,6 +765,33 @@
       });
 
       document.getElementById("containerDashboardTable").scrollTop = 0;
+    }
+
+    // ⚡ ฟังก์ชันเปลี่ยนสถานะอะไหล่เป็น "ส่งครบแล้ว" ทันที
+    async function handleReceiveAllParts(machineId) {
+      if (!confirm(`ยืนยันการอัปเดตสถานะอะไหล่ของเครื่องจักร ${machineId} เป็น "ส่งครบแล้ว" ใช่หรือไม่?`)) return;
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "updatePartsStatus",
+            machineId: machineId,
+            updatedBy: currentUser
+          })
+        });
+        const res = await response.json();
+
+        if (res.status === "success") {
+          alert("🟢 อัปเดตสถานะอะไหล่เป็น 'ส่งครบแล้ว' เรียบร้อยครับ!");
+          loadDashboardData();
+        } else {
+          alert("เกิดข้อผิดพลาด: " + res.message);
+        }
+      } catch (err) {
+        alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + err.message);
+      }
     }
 
     function formatDate(rawDate) {
@@ -853,7 +892,7 @@
         .then(data => {
           rawHistoryData = data || [];
           renderHistoryTable(rawHistoryData);
-          renderDashboardTable(rawDashboardData); // อัปเดตตารางหน้าหลักเพื่อให้แสดงคูปองค้างล่าสุด
+          renderDashboardTable(rawDashboardData);
         })
         .catch(err => {
           tbody.innerHTML = `<tr><td colspan="18" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
@@ -941,7 +980,6 @@
       document.getElementById("containerHistoryTable").scrollTop = 0;
     }
 
-    // 🎟️ เปิด Modal เพื่อยืนยันรับคูปองย้อนหลัง
     function openClaimModal(ticketId, pmRound) {
       document.getElementById("claimTicketId").value = ticketId;
       document.getElementById("claimPmRoundDisplay").value = pmRound + " ชม.";
@@ -950,7 +988,6 @@
       modal.show();
     }
 
-    // 🎟️ บันทึกการรับคูปองย้อนหลังเข้าสู่ระบบ
     async function submitClaimCoupon() {
       const ticketId = document.getElementById("claimTicketId").value;
       const amount = document.getElementById("claimAmountInput").value;
