@@ -279,6 +279,14 @@
                         <input type="date" id="filter-appdate" class="form-control" onchange="localFilterData()">
                     </div>
                     <div class="form-group">
+                        <label>บันทึกตั้งแต่วันที่</label>
+                        <input type="date" id="filter-date-from" class="form-control" onchange="localFilterData()">
+                    </div>
+                    <div class="form-group">
+                        <label>บันทึกถึงวันที่</label>
+                        <input type="date" id="filter-date-to" class="form-control" onchange="localFilterData()">
+                    </div>
+                    <div class="form-group">
                         <label>สินค้าที่สนใจ</label>
                         <select id="filter-product" class="form-control" onchange="localFilterData()">
                             <option value="ALL">-- ทุกสินค้า --</option>
@@ -313,12 +321,18 @@
                     </div>
 
                     <div class="search-actions">
+                        <button class="btn btn-secondary" onclick="runProvinceDiagnostic()">🧹 ตรวจข้อมูลจังหวัด</button>
                         <button class="btn btn-export" onclick="exportFilteredResults()">📥 ส่งออกผลลัพธ์ (CSV)</button>
                         <button class="btn btn-print" onclick="window.print()">🖨️ พิมพ์รายงานด่วน</button>
                         <button class="btn btn-secondary" onclick="clearFilters()">🔄 ล้างเงื่อนไข</button>
                         <button class="btn btn-primary" onclick="fetchDataFromServer()">🚀 ค้นหา</button>
                     </div>
                 </div>
+            </div>
+
+            <div class="card" id="diagnostic-card" style="display:none;">
+                <div class="card-title">🧹 ตรวจสอบข้อมูลจังหวัดที่สะกดไม่ตรงมาตรฐาน</div>
+                <div id="diagnostic-content" style="font-size:13px;"></div>
             </div>
 
             <div class="card" id="dashboard-card">
@@ -487,6 +501,8 @@
                     keyword: document.getElementById('filter-keyword').value,
                     types: getSelectedTypes(),
                     appdate: document.getElementById('filter-appdate').value,
+                    dateFrom: document.getElementById('filter-date-from').value,
+                    dateTo: document.getElementById('filter-date-to').value,
                     product: document.getElementById('filter-product').value,
                     province: document.getElementById('filter-province').value,
                     district: document.getElementById('filter-district').value,
@@ -511,6 +527,8 @@
             try {
                 if(saved.keyword) document.getElementById('filter-keyword').value = saved.keyword;
                 if(saved.appdate) document.getElementById('filter-appdate').value = saved.appdate;
+                if(saved.dateFrom) document.getElementById('filter-date-from').value = saved.dateFrom;
+                if(saved.dateTo) document.getElementById('filter-date-to').value = saved.dateTo;
                 if(saved.note) document.getElementById('filter-note').value = saved.note;
                 if(saved.phoneExact) document.getElementById('filter-phone-exact').value = saved.phoneExact;
                 if(saved.pageSize) {
@@ -534,6 +552,8 @@
                 document.querySelectorAll('#type-multiselect-panel input[type=checkbox]').forEach(cb => cb.checked = false);
                 updateTypeButtonLabel();
                 document.getElementById('filter-appdate').value = '';
+                document.getElementById('filter-date-from').value = '';
+                document.getElementById('filter-date-to').value = '';
                 document.getElementById('filter-product').value = 'ALL';
                 document.getElementById('filter-province').value = 'ALL';
                 populateDistrictDropdown('ALL', null);
@@ -743,12 +763,41 @@
             delete el.dataset.prevValue;
         }
 
+        // ---------- ปรับข้อความจังหวัดที่กรอกอิสระ (ก่อนมี dropdown) ให้ตรงกับชื่อทางการ เพื่อให้กรองได้แม่นขึ้น ----------
+        // ครอบคลุมคำย่อ/ชื่อเล่นที่พบบ่อย ส่วนที่เหลือจะพยายามจับคู่แบบคร่าวๆ (substring) กับรายชื่อจังหวัดทางการ
+        const PROVINCE_SEARCH_ALIASES = {
+            'อุบล': 'อุบลราชธานี', 'อุบลฯ': 'อุบลราชธานี',
+            'อำนาจ': 'อำนาจเจริญ', 'อำนาจฯ': 'อำนาจเจริญ',
+            'กทม': 'กรุงเทพมหานคร', 'กทม.': 'กรุงเทพมหานคร', 'กรุงเทพ': 'กรุงเทพมหานคร', 'กรุงเทพฯ': 'กรุงเทพมหานคร',
+            'โคราช': 'นครราชสีมา'
+        };
+
+        function normalizeProvinceForMatch(raw) {
+            let s = (raw || '').toString().trim();
+            if(!s) return '';
+            s = s.replace(/^(จังหวัด|จ\.)\s*/, '').trim();
+
+            const officialNames = thaiGeoData.length ? thaiGeoData.map(p => p.n) : [];
+            if(officialNames.includes(s)) return s;
+            if(PROVINCE_SEARCH_ALIASES[s]) return PROVINCE_SEARCH_ALIASES[s];
+
+            const compact = s.replace(/\s/g, '');
+            let best = officialNames.find(n => n.replace(/\s/g, '') === compact);
+            if(best) return best;
+            best = officialNames.find(n => compact.length >= 3 && (n.includes(compact) || compact.includes(n)));
+            if(best) return best;
+
+            return s; // ไม่เจอที่ตรงกัน คืนค่าที่ตัดช่องว่าง/คำนำหน้าแล้ว (จะกลายเป็นกลุ่มของตัวเอง)
+        }
+
         // ---------- จังหวัด / อำเภอ / ตำบล (cascading, สร้างจากข้อมูลจริงที่โหลดมา) สำหรับช่องค้นหา ----------
+        // หมายเหตุ: จังหวัดถูก normalize ก่อนจัดกลุ่ม (กันข้อมูลเก่าที่พิมพ์เองสะกดไม่ตรงกัน เช่น "อุบลฯ" vs "อุบลราชธานี")
+        // ส่วนอำเภอ/ตำบล ยังคงกลุ่มตามข้อความจริงที่บันทึกไว้ (ยังไม่ normalize)
         function buildLocationMap(data) {
             locationMap = {};
             (data || []).forEach(item => {
                 if(!item) return;
-                const prov = (item.province || '').toString().trim();
+                const prov = normalizeProvinceForMatch(item.province);
                 const dist = (item.district || '').toString().trim();
                 const sub = (item.subdistrict || '').toString().trim();
                 if(!prov) return;
@@ -827,6 +876,8 @@
 
                 const selectedTypes = getSelectedTypes();
                 const sAppDate = document.getElementById('filter-appdate').value;
+                const sDateFrom = document.getElementById('filter-date-from').value;
+                const sDateTo = document.getElementById('filter-date-to').value;
                 const sProd = document.getElementById('filter-product').value;
                 const sProv = document.getElementById('filter-province').value;
                 const sDist = document.getElementById('filter-district').value;
@@ -843,8 +894,15 @@
                         if(cleanItemDate !== sAppDate) return false;
                     }
 
+                    if(sDateFrom !== '' || sDateTo !== '') {
+                        const cleanRecordDate = parseDateString(item.date || '');
+                        if(!cleanRecordDate) return false;
+                        if(sDateFrom !== '' && cleanRecordDate < sDateFrom) return false;
+                        if(sDateTo !== '' && cleanRecordDate > sDateTo) return false;
+                    }
+
                     if(sProd !== 'ALL' && (item.product || '').toString() !== sProd) return false;
-                    if(sProv !== 'ALL' && (item.province || '').toString() !== sProv) return false;
+                    if(sProv !== 'ALL' && normalizeProvinceForMatch(item.province) !== sProv) return false;
                     if(sDist !== 'ALL' && (item.district || '').toString() !== sDist) return false;
                     if(sSub !== 'ALL' && (item.subdistrict || '').toString() !== sSub) return false;
                     if(sNote !== '' && !(item.note || '').toString().toLowerCase().includes(sNote)) return false;
@@ -863,6 +921,63 @@
                 renderPage(1);
             } catch(e) {
                 console.error("Filter Error: ", e);
+            }
+        }
+
+        // ---------- ตรวจสอบข้อมูลจังหวัดที่สะกดไม่ตรงมาตรฐาน (ดูอย่างเดียว ไม่แก้ข้อมูลในชีต) ----------
+        // ใช้ข้อมูลชุดที่โหลดอยู่ตอนนี้ (masterDataList) — ถ้าอยากตรวจทั้งฐานข้อมูล ให้กด "ล้างเงื่อนไข" แล้วค้นหาใหม่ก่อน
+        function runProvinceDiagnostic() {
+            try {
+                const officialNames = new Set(thaiGeoData.map(p => p.n));
+                const groups = {};
+
+                masterDataList.forEach(item => {
+                    if(!item) return;
+                    const raw = (item.province || '').toString().trim();
+                    if(!raw || officialNames.has(raw)) return; // สะกดตรงมาตรฐานอยู่แล้ว ข้าม
+                    if(!groups[raw]) groups[raw] = { count: 0, suggestion: normalizeProvinceForMatch(raw) };
+                    groups[raw].count++;
+                });
+
+                const card = document.getElementById('diagnostic-card');
+                const content = document.getElementById('diagnostic-content');
+                if(!card || !content) return;
+
+                const entries = Object.entries(groups).sort((a, b) => b[1].count - a[1].count);
+
+                if(entries.length === 0) {
+                    content.innerHTML = `<div style="color:#15803d;">✅ ไม่พบข้อมูลจังหวัดที่สะกดไม่ตรงมาตรฐานในผลลัพธ์ที่โหลดอยู่ตอนนี้ (${masterDataList.length.toLocaleString()} รายการ)</div>`;
+                } else {
+                    const rows = entries.map(([raw, info]) => `
+                        <tr>
+                            <td style="padding:6px; border-bottom:1px solid #f1f5f9;">${raw}</td>
+                            <td style="padding:6px; border-bottom:1px solid #f1f5f9;">${info.count.toLocaleString()}</td>
+                            <td style="padding:6px; border-bottom:1px solid #f1f5f9; color:#0369a1; font-weight:600;">${info.suggestion}</td>
+                        </tr>`).join('');
+
+                    content.innerHTML = `
+                        <div style="margin-bottom:10px; color:#475569;">
+                            พบ ${entries.length} รูปแบบการสะกดที่ไม่ตรงกับชื่อจังหวัดทางการ จากทั้งหมด ${masterDataList.length.toLocaleString()} รายการที่โหลดอยู่ตอนนี้
+                            (ถ้าอยากตรวจทั้งฐานข้อมูล ให้กด "ล้างเงื่อนไข" แล้วกด "ค้นหา" อีกครั้งก่อนตรวจ)
+                        </div>
+                        <table style="width:100%; border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left; padding:6px; border-bottom:2px solid #e2e8f0;">ข้อความที่กรอกไว้เดิม</th>
+                                    <th style="text-align:left; padding:6px; border-bottom:2px solid #e2e8f0;">จำนวนรายการ</th>
+                                    <th style="text-align:left; padding:6px; border-bottom:2px solid #e2e8f0;">คาดว่าคือจังหวัด</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                        <div style="margin-top:10px; color:#94a3b8; font-size:12px;">
+                            รายการนี้เป็นแค่รายงาน ยังไม่ได้แก้ข้อมูลในชีตให้ — เปิดแก้ไขรายชื่อลูกค้าทีละคนแล้วเลือกจังหวัดจาก dropdown ใหม่แล้วกดบันทึก จะช่วยแก้สะกดให้ตรงมาตรฐานไปในตัว
+                        </div>`;
+                }
+                card.style.display = 'block';
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch(e) {
+                console.error("Diagnostic Error: ", e);
             }
         }
 
@@ -1132,138 +1247,4 @@
                     document.getElementById('cust-lname').value = d[2] || '';
 
                     let p = (d[3] || '').toString().trim();
-                    if(p && !p.startsWith('0') && p !== '-') p = '0' + p;
-                    document.getElementById('cust-phone').value = p;
-                    updatePhoneFeedback();
-
-                    document.getElementById('cust-appdate').value = parseDateString(d[4]);
-                    document.getElementById('cust-type').value = d[5] || 'ลงทะเบียน';
-                    document.getElementById('cust-product').value = d[6] || '';
-                    document.getElementById('cust-addressno').value = d[7] || '';
-                    document.getElementById('cust-moo').value = d[8] || '';
-                    document.getElementById('cust-village').value = d[9] || '';
-                    const editProvince = normalizeProvinceName(d[12] || DEFAULT_PROVINCE);
-                    const editDistrict = (d[11] || '').toString().trim();
-                    const editSubdistrict = (d[10] || '').toString().trim();
-
-                    document.getElementById('cust-province').value = editProvince;
-                    refreshFormDistrictOptions(editProvince);
-                    document.getElementById('cust-district').value = editDistrict;
-                    refreshFormSubdistrictOptions(editProvince, editDistrict);
-                    document.getElementById('cust-subdistrict').value = editSubdistrict;
-
-                    document.getElementById('cust-zipcode').value = d[13] || '';
-                    document.getElementById('cust-note').value = d[14] || '';
-                    document.getElementById('cust-line').value = d[15] || '';
-                    document.getElementById('cust-facebook').value = d[16] || '';
-
-                    document.getElementById('form-title').innerText = `📝 แก้ไขข้อมูลลูกค้า (แถวที่ ${rid})`;
-                    document.getElementById('btn-submit').innerText = '💾 อัปเดตข้อมูล';
-                }
-            }).catch(err => console.log(err));
-        }
-
-        function resetFormState() {
-            try {
-                document.getElementById('customer-form').reset();
-                document.getElementById('form-row-index').value = '';
-                document.getElementById('form-title').innerText = '➕ เพิ่มข้อมูลลูกค้าใหม่';
-                const submitBtn = document.getElementById('btn-submit');
-                submitBtn.innerText = '💾 บันทึกข้อมูล';
-                submitBtn.disabled = false;
-                const warnEl = document.getElementById('phone-duplicate-warning');
-                if(warnEl) warnEl.innerText = '';
-                const entryInput = document.getElementById('cust-note-entry');
-                if(entryInput) entryInput.value = '';
-                setDefaultDate();
-
-                const provInput = document.getElementById('cust-province');
-                if(provInput) {
-                    provInput.value = DEFAULT_PROVINCE;
-                    document.getElementById('cust-district').value = '';
-                    document.getElementById('cust-subdistrict').value = '';
-                    refreshFormDistrictOptions(DEFAULT_PROVINCE);
-                    refreshFormSubdistrictOptions(DEFAULT_PROVINCE, '');
-                }
-            } catch(e) {}
-        }
-
-        function onFormSubmit(e) {
-            e.preventDefault();
-            try {
-                const rid = document.getElementById('form-row-index').value;
-
-                // ตรวจรูปแบบเบอร์โทรก่อนบันทึก (10 หลัก ขึ้นต้นด้วย 0)
-                const phoneRaw = document.getElementById('cust-phone').value.trim();
-                const phoneDigits = phoneRaw.replace(/[^0-9]/g, '');
-                if(phoneDigits.length > 0 && !isValidThaiPhone(phoneDigits)) {
-                    alert('⚠️ กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (ตัวเลข 10 หลัก ขึ้นต้นด้วย 0)');
-                    document.getElementById('cust-phone').focus();
-                    return;
-                }
-
-                // เช็คเบอร์ซ้ำก่อนบันทึกจริง (ไม่ใช่แค่เตือนขณะพิมพ์)
-                if(phoneDigits.length > 0) {
-                    const dup = findDuplicatePhone(phoneDigits, rid);
-                    if(dup) {
-                        const proceed = confirm(`⚠️ พบเบอร์นี้ในระบบแล้ว: ${dup.name || '-'}\n\nต้องการบันทึกข้อมูลนี้ต่อหรือไม่?`);
-                        if(!proceed) return;
-                    }
-                }
-
-                const packData = {
-                    date: document.getElementById('cust-date').value,
-                    firstName: document.getElementById('cust-fname').value,
-                    lastName: document.getElementById('cust-lname').value,
-                    phone1: document.getElementById('cust-phone').value,
-                    appdate: document.getElementById('cust-appdate').value,
-                    type: document.getElementById('cust-type').value,
-                    product: document.getElementById('cust-product').value,
-                    addressno: document.getElementById('cust-addressno').value,
-                    moo: document.getElementById('cust-moo').value,
-                    village: document.getElementById('cust-village').value,
-                    subdistrict: document.getElementById('cust-subdistrict').value,
-                    district: document.getElementById('cust-district').value,
-                    province: document.getElementById('cust-province').value,
-                    zipcode: document.getElementById('cust-zipcode').value,
-                    note: document.getElementById('cust-note').value,
-                    line: document.getElementById('cust-line').value,
-                    facebook: document.getElementById('cust-facebook').value
-                };
-
-                const actionType = rid ? 'editCustomer' : 'addCustomer';
-                const alertMsg = rid ? '✏️ อัปเดตข้อมูลลูกค้าสำเร็จเรียบร้อย!' : '➕ บันทึกข้อมูลลูกค้าใหม่สำเร็จ!';
-
-                const submitBtn = document.getElementById('btn-submit');
-                const originalBtnText = submitBtn.innerText;
-                submitBtn.disabled = true;
-                submitBtn.innerText = '⏳ กำลังบันทึก...';
-
-                fetch(WEB_APP_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: actionType, rowIndex: rid, data: packData })
-                })
-                .then(res => res.json())
-                .then(resData => {
-                    if(resData && resData.success) {
-                        alert(alertMsg);
-                        resetFormState();
-                        fetchDataFromServer();
-                    } else {
-                        alert('❌ ข้อผิดพลาดจากระบบ: ' + (resData.message || 'ไม่ทราบสาเหตุ'));
-                        submitBtn.disabled = false;
-                        submitBtn.innerText = originalBtnText;
-                    }
-                }).catch((err) => {
-                    alert('🛑 การส่งข้อมูลผิดพลาดหรือเซิร์ฟเวอร์ไม่ตอบสนอง');
-                    submitBtn.disabled = false;
-                    submitBtn.innerText = originalBtnText;
-                });
-            } catch(err) {
-                console.error(err);
-            }
-        }
-    </script>
-</body>
-</html>
+                    if(p && !p.startsWith('0') && p !== '-') p = '0
