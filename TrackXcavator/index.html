@@ -229,7 +229,7 @@
         </button>
       </div>
       <div>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadDashboardData()">
+        <button class="btn btn-sm btn-outline-secondary" onclick="refreshAllData()">
           <i class="fa-solid fa-rotate me-1"></i> รีเฟรชข้อมูล
         </button>
       </div>
@@ -295,6 +295,7 @@
                 <table class="table table-hover align-middle" id="tbDashboardTable">
                   <thead>
                     <tr id="thDashboardRow">
+                      <th class="text-center">No.</th>
                       <th>รหัสเครื่องจักร (Machine ID)</th>
                       <th>รุ่น (Model)</th>
                       <th>ชื่อลูกค้า</th>
@@ -316,7 +317,7 @@
                     </tr>
                   </thead>
                   <tbody id="tbDashboard">
-                    <tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
+                    <tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -462,16 +463,17 @@
             <table class="table table-hover align-middle" id="tbHistoryTable">
               <thead>
                 <tr id="thHistoryRow">
+                  <th class="text-center">No.</th>
                   <th>รหัสใบงาน (Ticket ID)</th>
                   <th>รหัสเครื่องจักร (Machine ID)</th>
                   <th>รุ่น (Model)</th>
                   <th>ชื่อลูกค้า</th>
                   <th>รหัสลูกค้า</th>
+                  <th>เบอร์โทรศัพท์</th>
                   <th class="text-center">รอบ PM</th>
                   <th class="text-center">ชั่วโมงจริง</th>
                   <th>วันที่รับบริการ</th>
                   <th class="text-end">ค่าบริการ</th>
-                  <th>เลขที่ใบแจ้งหนี้</th>
                   <th>ร้านค้าอะไหล่</th>
                   <th>รหัสผู้ขาย</th>
                   <th>เลขที่บิลอะไหล่</th>
@@ -483,7 +485,7 @@
                 </tr>
               </thead>
               <tbody id="tbHistory">
-                <tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูลประวัติ...</td></tr>
+                <tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูลประวัติ...</td></tr>
               </tbody>
             </table>
           </div>
@@ -538,12 +540,12 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxSTtlAVdihuuueEwVhfEH37BdzN1jL9S2prBJO31IeItHGk0onozHGjF3MQoEhiKGdFg/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbwuBjsqvoe1IFOcz0tx_TkeGDwlp7TM6Jd35QihrAp-McKq4jMcU2uSZVSb7Dqke__FWg/exec";
 
     let currentUser = null;
     let currentRole = null;
     let rawDashboardData = [];
-    let rawHistoryData = []; 
+    let rawHistoryData = [];
     let activeFilter = 'all';
 
     function formatCustomerId(id) {
@@ -554,6 +556,24 @@
         return strId.padStart(4, '0');
       }
       return strId;
+    }
+
+    function formatDate(rawDate) {
+      if (!rawDate || rawDate === "-" || rawDate === "") return "-";
+      
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+
+      if (typeof rawDate === 'string' && rawDate.includes("T")) {
+        return rawDate.split("T")[0];
+      }
+
+      return String(rawDate);
     }
 
     function parseDateForSort(dateStr) {
@@ -589,6 +609,21 @@
 
     function setPmRound(val) { document.getElementById("inpPmRound").value = val; }
 
+    // 🟢 ฟังก์ชันคำนวณยอดคูปอง Yanmar รวมทั้งหมดจาก PM_Log
+    function updateCouponSum() {
+      if (!rawHistoryData) return;
+      const totalCoupon = rawHistoryData.reduce((sum, item) => {
+        return sum + (Number(item.yanmarCoupon) || 0);
+      }, 0);
+
+      document.getElementById("statCouponSum").innerText = totalCoupon.toLocaleString() + " บาท";
+    }
+
+    function refreshAllData() {
+      loadHistoryData();
+      loadDashboardData();
+    }
+
     async function handleLogin(e) {
       e.preventDefault();
       const u = document.getElementById("loginUser").value.trim();
@@ -614,8 +649,7 @@
           document.getElementById("loginOverlay").style.display = "none";
           
           updateActionColumnsVisibility();
-          loadDashboardData();
-          loadHistoryData();
+          refreshAllData();
         } else {
           alert(res.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
         }
@@ -636,12 +670,11 @@
 
     function loadDashboardData() {
       const tbody = document.getElementById("tbDashboard");
-      tbody.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
 
       fetch(`${API_URL}?action=getDashboard`)
         .then(res => res.json())
         .then(data => {
-          document.getElementById("statCouponSum").innerText = (data.totalCostSum || 0).toLocaleString() + " บาท";
           document.getElementById("statPmAlertCount").innerText = data.pmAlertCount || 0;
           document.getElementById("statPendingInvoiceCount").innerText = data.incompleteInvoiceCount || 0;
 
@@ -649,7 +682,7 @@
           renderDashboardTable(rawDashboardData);
         })
         .catch(err => {
-          tbody.innerHTML = `<tr><td colspan="18" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
         });
     }
 
@@ -659,8 +692,7 @@
       updateActionColumnsVisibility();
 
       if (!list || list.length === 0) {
-        const colCount = isAdmin() ? 18 : 17;
-        tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
         return;
       }
 
@@ -677,7 +709,7 @@
 
       const showAction = isAdmin();
 
-      sortedList.forEach(item => {
+      sortedList.forEach((item, index) => {
         const tr = document.createElement("tr");
         
         if (showAction) {
@@ -694,7 +726,6 @@
         const displayCusId = formatCustomerId(item.customerId);
         const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
 
-        // 🚚 ตกแต่งและเพิ่มปุ่ม "✓ รับครบแล้ว" ข้างสถานะอะไหล่
         let partsStatusDisplay = "";
         if (pStatus === "ส่งครบแล้ว") {
           partsStatusDisplay = `<span class="badge badge-success-custom">🟢 ส่งครบแล้ว</span>`;
@@ -708,7 +739,6 @@
           `;
         }
 
-        // 🎟️ เช็ครายการรอบ PM ที่ค้างคูปองจาก rawHistoryData
         const pendingCoupons = rawHistoryData.filter(h => 
           h.machineId === item.machineId && (Number(h.yanmarCoupon || 0) === 0)
         );
@@ -726,20 +756,18 @@
           couponDisplay = `<span class="text-success fw-bold"><i class="fa-solid fa-circle-check me-1"></i>ครบถ้วน (${totalCoupon.toLocaleString()})</span>`;
         }
 
-        let actionTd = '';
-        if (showAction) {
-          actionTd = `
-            <td class="text-center col-action">
-              <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-success" onclick="approveItem('${item.machineId}')" title="อนุมัติ"><i class="fa-solid fa-check"></i></button>
-                <button class="btn btn-outline-primary" onclick="editDashboardItem('${item.machineId}')" title="แก้ไข/ทำ PM"><i class="fa-solid fa-pen"></i></button>
-                <button class="btn btn-outline-danger" onclick="deleteDashboardItem('${item.machineId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
-              </div>
-            </td>
-          `;
-        }
+        let actionTd = `
+          <td class="text-center col-action">
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-success" onclick="approveItem('${item.machineId}')" title="อนุมัติ"><i class="fa-solid fa-check"></i></button>
+              <button class="btn btn-outline-primary" onclick="editDashboardItem('${item.machineId}')" title="แก้ไข/ทำ PM"><i class="fa-solid fa-pen"></i></button>
+              <button class="btn btn-outline-danger" onclick="deleteDashboardItem('${item.machineId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </td>
+        `;
 
         tr.innerHTML = `
+          <td class="text-center text-muted fw-bold">${index + 1}</td>
           <td><strong>${item.machineId || '-'}</strong></td>
           <td>${item.model || '-'}</td>
           <td>${item.customer || '-'}</td>
@@ -764,10 +792,10 @@
         tbody.appendChild(tr);
       });
 
+      updateActionColumnsVisibility();
       document.getElementById("containerDashboardTable").scrollTop = 0;
     }
 
-    // ⚡ ฟังก์ชันเปลี่ยนสถานะอะไหล่เป็น "ส่งครบแล้ว" ทันที
     async function handleReceiveAllParts(machineId) {
       if (!confirm(`ยืนยันการอัปเดตสถานะอะไหล่ของเครื่องจักร ${machineId} เป็น "ส่งครบแล้ว" ใช่หรือไม่?`)) return;
 
@@ -792,12 +820,6 @@
       } catch (err) {
         alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + err.message);
       }
-    }
-
-    function formatDate(rawDate) {
-      if (!rawDate || rawDate === "-") return "-";
-      if (rawDate.includes("T")) return rawDate.split("T")[0];
-      return rawDate;
     }
 
     function previewUploadImage(input) {
@@ -885,7 +907,7 @@
 
     function loadHistoryData() {
       const tbody = document.getElementById("tbHistory");
-      tbody.innerHTML = '<tr><td colspan="18" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดประวัติ...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดประวัติ...</td></tr>';
 
       fetch(`${API_URL}?action=getReportList`)
         .then(res => res.json())
@@ -893,9 +915,12 @@
           rawHistoryData = data || [];
           renderHistoryTable(rawHistoryData);
           renderDashboardTable(rawDashboardData);
+          
+          // 🟢 คำนวณอัปเดตยอดคูปอง Yanmar ทันทีที่ประวัติโหลดเสร็จ
+          updateCouponSum();
         })
         .catch(err => {
-          tbody.innerHTML = `<tr><td colspan="18" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
         });
     }
 
@@ -904,11 +929,8 @@
       tbody.innerHTML = "";
       updateActionColumnsVisibility();
 
-      const showAction = isAdmin();
-
       if (!list || list.length === 0) {
-        const colCount = showAction ? 18 : 17;
-        tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center py-4 text-muted">ไม่พบประวัติการทำ PM</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-muted">ไม่พบประวัติการทำ PM</td></tr>`;
         return;
       }
 
@@ -922,7 +944,7 @@
         return String(b.ticketId).localeCompare(String(a.ticketId));
       });
 
-      sortedList.forEach(item => {
+      sortedList.forEach((item, index) => {
         const tr = document.createElement("tr");
         const displayCusId = formatCustomerId(item.customerId);
         const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
@@ -943,26 +965,24 @@
           couponDisplay = `<span class="badge badge-warning-custom">ค้างส่งคูปอง</span>`;
         }
 
-        let actionTd = '';
-        if (showAction) {
-          actionTd = `
-            <td class="text-center col-action">
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem('${item.ticketId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
-            </td>
-          `;
-        }
+        let actionTd = `
+          <td class="text-center col-action">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem('${item.ticketId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        `;
 
         tr.innerHTML = `
+          <td class="text-center text-muted fw-bold">${index + 1}</td>
           <td><span class="badge bg-secondary">${item.ticketId}</span></td>
           <td><strong>${item.machineId}</strong></td>
           <td>${item.model || '-'}</td>
           <td>${item.customerName || '-'}</td>
           <td><span class="badge bg-light text-dark border">${displayCusId}</span></td>
+          <td>${item.phone || '-'}</td>
           <td class="text-center">${item.pmRound || '-'}</td>
           <td class="text-center">${item.actualHours || '-'}</td>
           <td>${formatDate(item.serviceDate)}</td>
           <td class="text-end">${Number(item.cost || 0).toLocaleString()}</td>
-          <td>${item.invoiceNo || '-'}</td>
           <td>${item.partsStore || '-'}</td>
           <td><span class="badge bg-light text-dark border">${item.supplierId || '-'}</span></td>
           <td>${item.partsBillNo || '-'}</td>
@@ -977,6 +997,7 @@
         tbody.appendChild(tr);
       });
 
+      updateActionColumnsVisibility();
       document.getElementById("containerHistoryTable").scrollTop = 0;
     }
 
@@ -1011,8 +1032,9 @@
 
         alert("อัปเดตรับคูปองย้อนหลังสำเร็จ!");
         modal.hide();
-        loadHistoryData();
-        loadDashboardData();
+        
+        // 🟢 โหลดข้อมูลใหม่ทั้งหมด เพื่อรีเฟรชยอดคูปองที่หน้าจอ
+        refreshAllData();
       } catch (err) {
         alert("เกิดข้อผิดพลาดในการอัปเดตคูปอง: " + err.message);
       }
@@ -1078,8 +1100,7 @@
         if (res.status === "success") {
           alert("บันทึกข้อมูลเรียบร้อยแล้ว!");
           resetTicketForm();
-          loadDashboardData();
-          loadHistoryData();
+          refreshAllData();
         } else {
           alert("บันทึกไม่สำเร็จ: " + res.message);
         }
@@ -1168,7 +1189,7 @@
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "deleteReport", ticketId: ticketId })
       });
-      loadHistoryData();
+      refreshAllData();
     }
 
     function showImageModal(url) {
