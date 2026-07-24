@@ -80,8 +80,8 @@
         </div>
 
         <div id="previewContainer" class="md:col-span-3 hidden flex items-center space-x-3 p-2 bg-gray-50 rounded-lg">
-          <img id="imagePreview" src="" alt="Preview" class="h-16 w-16 object-cover rounded-md border">
-          <span class="text-xs text-green-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย</span>
+          <img id="imagePreview" src="" alt="Preview" class="h-16 w-16 object-cover rounded-md border cursor-pointer hover:opacity-80 transition-opacity" onclick="openZoomModal(this.src)">
+          <span class="text-xs text-green-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย (คลิกเพื่อซูม)</span>
         </div>
 
         <div class="md:col-span-3 pt-2">
@@ -92,7 +92,7 @@
       </form>
     </div>
 
-    <!-- ตารางรายการอุปกรณ์สำนักงาน (เพิ่มคอลัมน์ No.) -->
+    <!-- ตารางรายการอุปกรณ์สำนักงาน -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="p-4 bg-slate-100 border-b border-gray-200 flex justify-between items-center">
         <div class="flex items-center space-x-2 text-gray-800 font-bold">
@@ -126,7 +126,7 @@
       </div>
     </div>
 
-    <!-- ตารางรายงานประวัติ (เพิ่มคอลัมน์ No.) -->
+    <!-- ตารางรายงานประวัติ -->
     <div id="printArea" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="p-4 bg-slate-800 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div class="flex items-center space-x-2 font-bold">
@@ -168,6 +168,7 @@
 
   </div>
 
+  <!-- Modal สำหรับเพิ่ม/แก้ไขอุปกรณ์ -->
   <div id="addAssetModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
     <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl mx-4">
       <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
@@ -211,6 +212,15 @@
     </div>
   </div>
 
+  <!-- 🔍 Modal สำหรับ Zoom ดูรูปภาพขนาดใหญ่ -->
+  <div id="imageZoomModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4 transition-all" onclick="closeZoomModal()">
+    <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onclick="event.stopPropagation()">
+      <button onclick="closeZoomModal()" class="absolute -top-10 right-0 text-white text-3xl font-bold hover:text-gray-300 cursor-pointer">&times;</button>
+      <img id="zoomedImage" src="" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border-2 border-white/20">
+      <p class="text-white/70 text-xs mt-2 font-light">คลิกที่ไหนก็ได้ด้านนอก หรือกด ESC เพื่อปิดหน้าต่าง</p>
+    </div>
+  </div>
+
   <script>
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyrj9_EiYRcme62yfYIM5kf75AT18NCI21tzIvC29QqFNffKJkiyqZoJNlXkFqjyyn2/exec";
 
@@ -224,6 +234,26 @@
       loadLogs();
       setupImageListeners();
     };
+
+    // --- ระบบ Zoom รูปภาพ ---
+    function openZoomModal(imgSrc) {
+      if(!imgSrc) return;
+      document.getElementById("zoomedImage").src = imgSrc;
+      document.getElementById("imageZoomModal").classList.remove("hidden");
+    }
+
+    function closeZoomModal() {
+      document.getElementById("imageZoomModal").classList.add("hidden");
+      document.getElementById("zoomedImage").src = "";
+    }
+
+    // รองรับการกดปุ่ม ESC บนคีย์บอร์ดเพื่อปิด Zoom รูป
+    document.addEventListener('keydown', function(event) {
+      if (event.key === "Escape") {
+        closeZoomModal();
+        toggleModal(false);
+      }
+    });
 
     function toggleModal(show) {
       const modal = document.getElementById("addAssetModal");
@@ -278,7 +308,6 @@
             return;
           }
 
-          // วนลูปและใช้ index เพื่อแสดงลำดับ 1, 2, 3...
           assets.forEach((asset, index) => {
             const option = document.createElement("option");
             option.value = asset.id;
@@ -286,8 +315,9 @@
             if(asset.remaining <= 0) { option.disabled = true; option.text += " [ของหมด]"; }
             select.appendChild(option);
 
+            // ใส่เอฟเฟกต์ Hover และการคลิกเพื่อ Zoom
             const imgHtml = asset.image 
-              ? `<img src="${asset.image}" class="h-12 w-12 object-cover rounded-md border shadow-sm">` 
+              ? `<img src="${asset.image}" onclick="openZoomModal('${asset.image}')" class="h-12 w-12 object-cover rounded-md border shadow-sm cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
               : `<div class="h-12 w-12 bg-gray-100 flex items-center justify-center text-xs text-gray-400 rounded-md border">ไม่มีรูป</div>`;
 
             const statusBadge = asset.remaining > 0 
@@ -340,10 +370,10 @@
             return;
           }
 
-          // วนลูปและใช้ index เพื่อแสดงลำดับ 1, 2, 3...
           logs.forEach((log, index) => {
+            // ใส่เอฟเฟกต์ Hover และการคลิกเพื่อ Zoom
             const proofImg = log.image 
-              ? `<img src="${log.image}" class="h-10 w-10 object-cover rounded border shadow-xs">` 
+              ? `<img src="${log.image}" onclick="openZoomModal('${log.image}')" class="h-10 w-10 object-cover rounded border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
               : `<span class="text-gray-400 text-[10px]">ไม่มีรูป</span>`;
 
             const row = `
