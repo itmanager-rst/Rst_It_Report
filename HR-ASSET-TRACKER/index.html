@@ -98,7 +98,7 @@
         <div class="flex items-center space-x-2 text-gray-800 font-bold">
           <span>📊</span> <h2>รายการอุปกรณ์สำนักงานคงเหลือในคลังและการจัดการ</h2>
         </div>
-        <button onclick="loadAssets()" class="text-xs bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1 rounded-md shadow-sm cursor-pointer">🔄 รีเฟรชตารางสต็อก</button>
+        <button onclick="loadData()" class="text-xs bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1 rounded-md shadow-sm cursor-pointer">🔄 รีเฟรชตารางสต็อก</button>
       </div>
 
       <div class="overflow-x-auto">
@@ -139,7 +139,7 @@
           <button onclick="printReport()" class="text-xs bg-amber-500 hover:bg-amber-600 border border-amber-400 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-slate-900 flex items-center font-bold">
             🖨️ พิมพ์รายงาน / Save PDF
           </button>
-          <button onclick="loadLogs()" class="text-xs bg-slate-700 border border-slate-600 hover:bg-slate-600 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white">🔄 รีเฟรช</button>
+          <button onclick="loadData()" class="text-xs bg-slate-700 border border-slate-600 hover:bg-slate-600 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white">🔄 รีเฟรช</button>
         </div>
       </div>
 
@@ -222,7 +222,7 @@
   </div>
 
   <script>
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwyCl6oNZSM-UUetErOAldzOqVPixEYZiJGqyjEeHu4w_l9OcEczOYCCjLLAEnI9ME/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_uYDpb36YpqlKDJ5tznO-8Hm5oGrtLPRgoqtbktoi723SNg-a4WK3QGrN7GTjxacF/exec";
 
     let compressedBase64 = "";
     let newAssetBase64 = "";
@@ -230,8 +230,7 @@
     let cachedAssets = []; 
 
     window.onload = function() {
-      loadAssets();
-      loadLogs();
+      loadData();
       setupImageListeners();
     };
 
@@ -247,7 +246,6 @@
       document.getElementById("zoomedImage").src = "";
     }
 
-    // รองรับการกดปุ่ม ESC บนคีย์บอร์ดเพื่อปิด Zoom รูป
     document.addEventListener('keydown', function(event) {
       if (event.key === "Escape") {
         closeZoomModal();
@@ -291,36 +289,74 @@
       toggleModal(true);
     }
 
-    function loadAssets() {
+    // ฟังก์ชันโหลดข้อมูลทั้งหมด
+    async function loadData() {
       const select = document.getElementById("assetSelect");
       const tableBody = document.getElementById("assetTableBody");
-      
-      fetch(`${WEB_APP_URL}?action=getAssets`)
-        .then(response => response.json())
-        .then(assets => {
-          cachedAssets = assets; 
-          select.innerHTML = '<option value="">-- กรุณาเลือกอุปกรณ์สำนักงาน--</option>';
-          tableBody.innerHTML = '';
+      const logTableBody = document.getElementById("logTableBody");
 
-          if(assets.length === 0) {
-            select.innerHTML = '<option value="">ไม่พบข้อมูลอุปกรณ์สำนักงานในสต็อก</option>';
-            tableBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-gray-400">ยังไม่มีอุปกรณ์สำนักงานถูกเพิ่มเข้ามาในคลัง</td></tr>';
-            return;
+      try {
+        const [assetsRes, logsRes] = await Promise.all([
+          fetch(`${WEB_APP_URL}?action=getAssets`),
+          fetch(`${WEB_APP_URL}?action=getLogs`)
+        ]);
+
+        const assets = await assetsRes.json();
+        const logs = await logsRes.json();
+
+        globalLogData = logs || [];
+        cachedAssets = assets || [];
+
+        // ดึงข้อมูลการเบิกล่าสุด
+        const lastBorrowMap = {};
+        globalLogData.forEach(log => {
+          const aId = String(log.assetId);
+          if (!lastBorrowMap[aId]) {
+            lastBorrowMap[aId] = {
+              staffName: log.staffName || "-",
+              branch: log.branch || "-"
+            };
           }
+        });
 
-          assets.forEach((asset, index) => {
+        // 2. แสดงผลตารางสต็อกสินค้าโดยใช้ค่า remaining จาก Google Sheets โดยตรง
+        select.innerHTML = '<option value="">-- กรุณาเลือกอุปกรณ์สำนักงาน--</option>';
+        tableBody.innerHTML = '';
+
+        if (cachedAssets.length === 0) {
+          select.innerHTML = '<option value="">ไม่พบข้อมูลอุปกรณ์สำนักงานในสต็อก</option>';
+          tableBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-gray-400">ยังไม่มีอุปกรณ์สำนักงานถูกเพิ่มเข้ามาในคลัง</td></tr>';
+        } else {
+          cachedAssets.forEach((asset, index) => {
+            const aId = String(asset.id);
+            const total = parseInt(asset.total) || 0;
+            
+            // 💡 แก้ไข: ดึงยอดคงเหลือ (remaining) ที่บันทึกไว้จริงในคอลัมน์ E มาแสดงตรงๆ
+            let remaining = parseInt(asset.remaining);
+            if (isNaN(remaining)) remaining = total;
+            if (remaining < 0) remaining = 0;
+
+            const lastBorrow = lastBorrowMap[aId] || {
+              staffName: asset.lastBorrower || "-",
+              branch: asset.lastBranch || "-"
+            };
+
+            // อัปเดตตัวเลือกใน Dropdown
             const option = document.createElement("option");
             option.value = asset.id;
-            option.text = `${asset.name} (คงเหลือ: ${asset.remaining})`;
-            if(asset.remaining <= 0) { option.disabled = true; option.text += " [ของหมด]"; }
+            option.text = `${asset.name} (คงเหลือ: ${remaining})`;
+            if (remaining <= 0) { 
+              option.disabled = true; 
+              option.text += " [ของหมด]"; 
+            }
             select.appendChild(option);
 
-            // ใส่เอฟเฟกต์ Hover และการคลิกเพื่อ Zoom
+            // แสดงผลรูปภาพ
             const imgHtml = asset.image 
               ? `<img src="${asset.image}" onclick="openZoomModal('${asset.image}')" class="h-12 w-12 object-cover rounded-md border shadow-sm cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
               : `<div class="h-12 w-12 bg-gray-100 flex items-center justify-center text-xs text-gray-400 rounded-md border">ไม่มีรูป</div>`;
 
-            const statusBadge = asset.remaining > 0 
+            const statusBadge = remaining > 0 
               ? `<span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">ปกติ</span>`
               : `<span class="bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded">ของหมดคลัง</span>`;
 
@@ -331,12 +367,12 @@
                 <td class="p-3">${imgHtml}</td>
                 <td class="p-3">
                   <div class="font-bold text-gray-800">${asset.name}</div>
-                  <div class="text-xs text-gray-400 mt-0.5">หมวดหมู่: ${asset.category} | ทั้งหมด: ${asset.total}</div>
+                  <div class="text-xs text-gray-400 mt-0.5">หมวดหมู่: ${asset.category} | ทั้งหมด: ${total}</div>
                 </td>
-                <td class="p-3 text-gray-600 text-xs max-w-[150px] break-words">${asset.notes}</td>
-                <td class="p-3 text-gray-700 text-xs font-medium">${asset.lastBranch}</td>
-                <td class="p-3 text-gray-700 text-xs font-medium">${asset.lastBorrower}</td>
-                <td class="p-3 text-center font-bold text-base ${asset.remaining > 0 ? 'text-blue-600' : 'text-red-500'}">${asset.remaining}</td>
+                <td class="p-3 text-gray-600 text-xs max-w-[150px] break-words">${asset.notes || '-'}</td>
+                <td class="p-3 text-gray-700 text-xs font-medium">${lastBorrow.branch}</td>
+                <td class="p-3 text-gray-700 text-xs font-medium">${lastBorrow.staffName}</td>
+                <td class="p-3 text-center font-bold text-base ${remaining > 0 ? 'text-blue-600' : 'text-red-500'}">${remaining}</td>
                 <td class="p-3 text-center">${statusBadge}</td>
                 <td class="p-3 text-center whitespace-nowrap">
                   <button onclick="openEditModal('${asset.id}')" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs py-1 px-2.5 rounded-md shadow-sm transition-all cursor-pointer mr-1 font-bold">
@@ -350,28 +386,14 @@
             `;
             tableBody.insertAdjacentHTML('beforeend', row);
           });
-        })
-        .catch(err => {
-          tableBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-red-500">เรียกข้อมูลอุปกรณ์สำนักงานไม่สำเร็จ</td></tr>';
-          console.error(err);
-        });
-    }
+        }
 
-    function loadLogs() {
-      const logTableBody = document.getElementById("logTableBody");
-      
-      fetch(`${WEB_APP_URL}?action=getLogs`)
-        .then(response => response.json())
-        .then(logs => {
-          globalLogData = logs; 
-          logTableBody.innerHTML = '';
-          if(logs.length === 0) {
-            logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-gray-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
-            return;
-          }
-
-          logs.forEach((log, index) => {
-            // ใส่เอฟเฟกต์ Hover และการคลิกเพื่อ Zoom
+        // 3. แสดงผลตารางรายงานประวัติ
+        logTableBody.innerHTML = '';
+        if (globalLogData.length === 0) {
+          logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-gray-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
+        } else {
+          globalLogData.forEach((log, index) => {
             const proofImg = log.image 
               ? `<img src="${log.image}" onclick="openZoomModal('${log.image}')" class="h-10 w-10 object-cover rounded border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
               : `<span class="text-gray-400 text-[10px]">ไม่มีรูป</span>`;
@@ -390,17 +412,19 @@
                   <div class="text-[10px] text-gray-400">แผนก: ${log.department}</div>
                 </td>
                 <td class="p-3 text-gray-700">${log.branch}</td>
-                <td class="p-3 text-gray-600 max-w-[200px] break-words">${log.notes}</td>
+                <td class="p-3 text-gray-600 max-w-[200px] break-words">${log.notes || '-'}</td>
                 <td class="p-3 no-print">${proofImg}</td>
               </tr>
             `;
             logTableBody.insertAdjacentHTML('beforeend', row);
           });
-        })
-        .catch(err => {
-          logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-red-500">ไม่สามารถเรียกรายงานประวัติได้</td></tr>';
-          console.error(err);
-        });
+        }
+
+      } catch (err) {
+        tableBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-red-500">เรียกข้อมูลอุปกรณ์สำนักงานไม่สำเร็จ</td></tr>';
+        logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-red-500">ไม่สามารถเรียกรายงานประวัติได้</td></tr>';
+        console.error(err);
+      }
     }
 
     function printReport() { window.print(); }
@@ -408,19 +432,19 @@
     function exportToCSV() {
       if(globalLogData.length === 0) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
       let csvContent = "\uFEFF"; 
-      csvContent += "ลำดับ,วัน-เวลา,รหัสอุปกรณ์สำน้กงาน,ชื่ออุปกรณ์สำนักงาน,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
+      csvContent += "ลำดับ,วัน-เวลา,รหัสอุปกรณ์สำนักงาน,ชื่ออุปกรณ์สำนักงาน,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
       
       globalLogData.forEach((log, index) => {
         let row = [
           index + 1,
           `"${log.timestamp}"`,
           `"${log.assetId}"`,
-          `"${log.assetName.replace(/"/g, '""')}"`,
+          `"${(log.assetName || '').replace(/"/g, '""')}"`,
           log.quantity,
-          `"${log.staffName.replace(/"/g, '""')}"`,
+          `"${(log.staffName || '').replace(/"/g, '""')}"`,
           `"${log.department}"`,
-          `"${log.branch.replace(/"/g, '""')}"`,
-          `"${log.notes.replace(/"/g, '""')}"`
+          `"${(log.branch || '').replace(/"/g, '""')}"`,
+          `"${(log.notes || '').replace(/"/g, '""')}"`
         ];
         csvContent += row.join(",") + "\n";
       });
@@ -471,7 +495,7 @@
       reader.readAsDataURL(file);
     }
 
-    function handleAssetSubmit(event) {
+    async function handleAssetSubmit(event) {
       event.preventDefault();
       const addBtn = document.getElementById("addBtn");
       const actionType = document.getElementById("formAction").value;
@@ -489,46 +513,45 @@
         image: newAssetBase64
       };
 
-      fetch(WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify(assetData)
-      })
-      .then(() => {
+      try {
+        await fetch(WEB_APP_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify(assetData)
+        });
         alert(actionType === "addAsset" ? "🎉 เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!" : "✏️ อัปเดตข้อมูลพัสดุเรียบร้อย!");
-        toggleModal(false);
-        loadAssets();
-      })
-      .catch(err => {
+      } catch (err) {
         alert("🎉 ดำเนินการบันทึกข้อมูลสำเร็จ");
+      } finally {
         toggleModal(false);
-        loadAssets();
-      })
-      .finally(() => {
         addBtn.disabled = false;
         addBtn.innerText = "บันทึกข้อมูล";
-      });
-    }
-
-    function handleDeleteAsset(id, name) {
-      if(confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบอุปกรณ์สำนักงานรายการนี้ออกจากคลัง?\n[${id}] - ${name}`)) {
-        const deleteData = { action: "deleteAsset", assetId: id };
-
-        fetch(WEB_APP_URL, {
-          method: "POST",
-          body: JSON.stringify(deleteData)
-        })
-        .then(() => {
-          alert("🗑️ ลบข้อมูลสำเร็จ");
-          loadAssets();
-        })
-        .catch(err => {
-          alert("ดำเนินการลบข้อมูลเรียบร้อย");
-          loadAssets();
-        });
+        loadData();
       }
     }
 
-    function handleSubmit(event) {
+    async function handleDeleteAsset(id, name) {
+      if(confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบอุปกรณ์สำนักงานรายการนี้ออกจากคลัง?\n[${id}] - ${name}`)) {
+        const deleteData = { action: "deleteAsset", assetId: id };
+
+        try {
+          await fetch(WEB_APP_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify(deleteData)
+          });
+          alert("🗑️ ลบข้อมูลสำเร็จ");
+        } catch (err) {
+          alert("ดำเนินการลบข้อมูลเรียบร้อย");
+        } finally {
+          loadData();
+        }
+      }
+    }
+
+    async function handleSubmit(event) {
       event.preventDefault();
       const submitBtn = document.getElementById("submitBtn");
       const btnText = document.getElementById("btnText");
@@ -547,30 +570,24 @@
         imageBase64: compressedBase64
       };
 
-      fetch(WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify(formData)
-      })
-      .then(() => {
+      try {
+        await fetch(WEB_APP_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify(formData)
+        });
         alert("🎉 บันทึกการเบิกอุปกรณ์สำนักงานและตัดสต็อกเรียบร้อย");
+      } catch (err) {
+        alert("🎉 บันทึกการเบิกอุปกรณ์สำนักงานและตัดสต็อกเรียบร้อย");
+      } finally {
         document.getElementById("assetForm").reset();
         compressedBase64 = "";
         document.getElementById("previewContainer").classList.add('hidden');
-        loadAssets();
-        loadLogs();
-      })
-      .catch(err => {
-        alert("🎉 บันทึกการเบิกอุปกรณ์สำนักงานและตัดสต็อกเรียบร้อย");
-        document.getElementById("assetForm").reset();
-        compressedBase64 = "";
-        document.getElementById("previewContainer").classList.add('hidden');
-        loadAssets();
-        loadLogs();
-      })
-      .finally(() => {
         submitBtn.disabled = false;
         btnText.innerText = "💾 บันทึกข้อมูลและตัดยอดสต็อก";
-      });
+        loadData();
+      }
     }
   </script>
 </body>
