@@ -303,7 +303,7 @@
 
     <script>
         // 🚨 นำลิงก์จากหน้า Google Apps Script มาวางแทนที่ลิงก์นี้
-        const scriptURL = "https://script.google.com/macros/s/AKfycbx0mYHyM6TNwipfg4rbWKc61JQwz4OLvEoqNFF624ZrEBlP0sGYbRp-neLRcxRjSiuU/exec";
+        const scriptURL = "https://script.google.com/macros/s/AKfycbxpD7nQWXVs7h92xYHMBAu2YU3AEu-CxnGE1up40YAbmKFTRVYIlJc4aP5TAeH3-OjAxA/exec";
         let originalData = [];
         let activePassword = ""; 
 
@@ -513,12 +513,96 @@
             renderTable(filtered);
         }
 
+        // 🟢 [อัปเดตใหม่] ฟังก์ชัน Export Excel แยกคำถาม-คำตอบและแบ่งแท็บแบบละเอียดตามแบบฟอร์มสัมภาษณ์
         function exportToExcel() {
-            if(originalData.length === 0) { alert("ไม่มีข้อมูลสำหรับการดาวน์โหลด"); return; }
-            const ws = XLSX.utils.json_to_sheet(originalData);
+            if (!originalData || originalData.length === 0) { 
+                alert("ไม่มีข้อมูลสำหรับการดาวน์โหลด"); 
+                return; 
+            }
+
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Database_Export");
-            XLSX.writeFile(wb, `Exit_Interview_Export.xlsx`);
+
+            // Helper แปลงค่า return_future เป็นข้อความภาษาไทย
+            const parseReturnText = (val) => {
+                const str = String(val || '').toLowerCase();
+                if (str.includes('yes') || str.includes('ใช่') || str.includes('ยินดี')) return 'ยินดี';
+                if (str.includes('no') || str.includes('ไม่')) return 'ไม่พิจารณา';
+                return 'ไม่แน่ใจ';
+            };
+
+            // ==========================================
+            // 📄 Sheet 1: สรุปภาพรวมคำตอบทุกข้อ (Overview)
+            // ==========================================
+            const overviewData = originalData.map(item => ({
+                "วัน-เวลาที่บันทึก": item.timestamp || '',
+                "1.1 ชื่อ-นามสกุล": item.fullName || '',
+                "1.2 รหัสพนักงาน": item.employeeId || '',
+                "1.3 แผนก/ฝ่าย": item.department || '',
+                "1.4 ตำแหน่ง": item.position || '',
+                "1.5 วันที่เริ่มงาน": item.startDate || '',
+                "1.6 วันสุดท้ายที่ทำงาน": item.lastWorkingDate || '',
+                "1.7 ผู้บังคับบัญชาโดยตรง": item.directManager || '',
+                "1.8 ระยะเวลาที่ทำงาน": item.tenure || '',
+                "2. สาเหตุการลาออก": item.reasons || '',
+                "3.1 คะแนนสภาพแวดล้อม (0-10)": item.rating_environment || '',
+                "3.2 คะแนนการบริหารงาน (0-10)": item.rating_management || '',
+                "3.3 คะแนน eNPS (0-10)": item.rating_enps || '',
+                "4.1 สิ่งที่ประทับใจมากที่สุด": item.feedback_liked || '',
+                "4.2 สิ่งที่ควรปรับปรุงเร่งด่วน": item.feedback_improve || '',
+                "4.3 ข้อความถึงฝ่ายบริหาร": item.feedback_message || '',
+                "4.4 โอกาสกลับมาร่วมงาน": parseReturnText(item.return_future)
+            }));
+            const wsOverview = XLSX.utils.json_to_sheet(overviewData);
+            XLSX.utils.book_append_sheet(wb, wsOverview, "1.สรุปภาพรวมทั้งหมด");
+
+            // ==========================================
+            // 📄 Sheet 2: ส่วนที่ 1 ข้อมูลทั่วไปพนักงาน
+            // ==========================================
+            const step1Data = originalData.map(item => ({
+                "ชื่อ-นามสกุล": item.fullName || '',
+                "รหัสพนักงาน": item.employeeId || '',
+                "แผนก/ฝ่าย": item.department || '',
+                "ตำแหน่ง": item.position || '',
+                "วันที่เริ่มงาน": item.startDate || '',
+                "วันสุดท้ายที่ทำงาน": item.lastWorkingDate || '',
+                "ผู้บังคับบัญชาโดยตรง": item.directManager || '',
+                "ระยะเวลาที่ทำงาน": item.tenure || ''
+            }));
+            const wsStep1 = XLSX.utils.json_to_sheet(step1Data);
+            XLSX.utils.book_append_sheet(wb, wsStep1, "2.ส่วนที่ 1 ข้อมูลทั่วไป");
+
+            // ==========================================
+            // 📄 Sheet 3: ส่วนที่ 2 สาเหตุการลาออก
+            // ==========================================
+            const step2Data = originalData.map(item => ({
+                "ชื่อ-นามสกุล": item.fullName || '',
+                "แผนก/ฝ่าย": item.department || '',
+                "ตำแหน่ง": item.position || '',
+                "ข้อ 2. สาเหตุการลาออกที่เลือกตอบ": item.reasons || ''
+            }));
+            const wsStep2 = XLSX.utils.json_to_sheet(step2Data);
+            XLSX.utils.book_append_sheet(wb, wsStep2, "3.ส่วนที่ 2 สาเหตุการลาออก");
+
+            // ==========================================
+            // 📄 Sheet 4: ส่วนที่ 3 & 4 ประเมินและข้อเสนอแนะ
+            // ==========================================
+            const step3and4Data = originalData.map(item => ({
+                "ชื่อ-นามสกุล": item.fullName || '',
+                "แผนก/ฝ่าย": item.department || '',
+                "3.1 สภาพแวดล้อม (0-10)": item.rating_environment || '',
+                "3.2 การบริหารงาน (0-10)": item.rating_management || '',
+                "3.3 แนะนำเพื่อน eNPS (0-10)": item.rating_enps || '',
+                "4.1 สิ่งที่ประทับใจมากที่สุด": item.feedback_liked || '',
+                "4.2 สิ่งที่บริษัทควรปรับปรุงเร่งด่วน": item.feedback_improve || '',
+                "4.3 ข้อความที่อยากฝากถึงฝ่ายบริหาร": item.feedback_message || '',
+                "4.4 โอกาสกลับมาร่วมงานในอนาคต": parseReturnText(item.return_future)
+            }));
+            const wsStep3and4 = XLSX.utils.json_to_sheet(step3and4Data);
+            XLSX.utils.book_append_sheet(wb, wsStep3and4, "4.ส่วนที่ 3-4 รายละเอียดคำตอบ");
+
+            // บันทึกและดาวน์โหลดไฟล์ Excel
+            const dateStr = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(wb, `Exit_Interview_Report_${dateStr}.xlsx`);
         }
 
         // --- ระบบส่งฟอร์มพนักงานใหม่ (ADD) ---
