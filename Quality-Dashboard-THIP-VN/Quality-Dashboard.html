@@ -1203,44 +1203,18 @@ async function pullSheetIntoLocal(lsKey, sheetName){
   return true;
 }
 
-// Recorder list sync - per request, this DOES participate in automatic sync (new names another
-// device/admin added show up here too), but ADDITIVELY ONLY: the local list and whatever's on the
-// shared Sheet are merged (union), never replaced. A name already on THIS device is never renamed,
-// reordered away, or silently dropped just because it isn't (yet, or anymore) on the remote sheet -
-// only Settings > Recorder's own Edit/Delete ever removes or renames a local entry. Also re-uses
-// recorderNameOf() to normalize any legacy/odd-shaped remote row, so a sync can never bring back the
-// old "[object Object]" display bug either.
-async function pullRecordersMerged(){
-  const remote = await gsGet(GS_SHEET_MAP[LS.recorders]);
-  if(remote===null) return false;
-  const remoteNames = remote.map(recorderNameOf).map(s=>s.trim()).filter(Boolean);
-  const localNames = getRecorderNames();
-  const merged = Array.from(new Set([...localNames, ...remoteNames]));
-  const changed = merged.length!==localNames.length || merged.some((n,i)=> n!==localNames[i]);
-  if(changed){
-    setArr(LS.recorders, merged);
-    if(typeof renderRecordersTable==='function') renderRecordersTable();
-    if(typeof buildCurrentUserSelect==='function') buildCurrentUserSelect();
-    if(typeof refreshRecorderPickers==='function') refreshRecorderPickers();
-    // Push the merged (superset) list back up too, so a name that so far only existed locally also
-    // reaches the shared Sheet - every device converges on the same union over time instead of a name
-    // only ever living on whichever single device it was first typed into.
-    gsPushWhole(LS.recorders);
-  }
-  return true;
-}
-
-// Startup / "Sync now" / periodic-poll / focus-triggered bootstrap: pulls every mirrored sheet (plus
-// the Recorder list, merge-only - see pullRecordersMerged above) in parallel, then re-renders every
-// visible module and the Dashboard so the UI reflects the freshly-synced shared data immediately.
+// Startup / "Sync now" / periodic-poll / focus-triggered bootstrap: pulls every mirrored sheet -
+// including the Recorder list - and re-renders every visible module and the Dashboard so the UI
+// reflects the freshly-synced shared data immediately. The Recorder list is a full REPLACE from the
+// shared Google Sheet (same as every other master list here), not a merge: the Google Sheet's
+// "recorders" tab is the single source of truth, so a name removed from (or never added to) the
+// sheet does not keep showing up locally. Add/edit/delete recorder names via Settings > Recorder or
+// by editing the Sheet directly - either path pushes to/pulls from the same shared list.
 async function pullAllFromGoogleSheets(){
   if(!getGsUrl()){ setGsStatus('notconfigured'); return false; }
   setGsStatus('syncing');
-  const entries = Object.entries(GS_SHEET_MAP).filter(([lsKey])=> lsKey!==LS.recorders);
-  const results = await Promise.all([
-    ...entries.map(([lsKey, sheetName])=> pullSheetIntoLocal(lsKey, sheetName)),
-    pullRecordersMerged()
-  ]);
+  const entries = Object.entries(GS_SHEET_MAP);
+  const results = await Promise.all(entries.map(([lsKey, sheetName])=> pullSheetIntoLocal(lsKey, sheetName)));
   const anyFailed = results.includes(false);
   setGsStatus(anyFailed ? 'error' : 'connected');
   rerenderEverythingAfterSync();
@@ -1371,19 +1345,6 @@ function getRecorderNames(){
   });
   return out;
 }
-// One-time cleanup of any pre-existing/embedded Recorder data (see RECORDER_CLEANUP_FLAG near INIT,
-// below - deferred until after I18N/currentLang are initialized, since the cleanup calls into
-// gsPushWhole -> setGsStatus, which reads I18N[currentLang] synchronously).
-const RECORDER_CLEANUP_FLAG = 'fd_recordersCleanup_v1';
-let recorderCleanupPromise = Promise.resolve();
-// Primary Admin setup (see PRIMARY_ADMIN_FLAG near INIT, below - deferred for the same reason as the
-// Recorder cleanup above: it calls into gsPushWhole -> setGsStatus, which needs I18N[currentLang]).
-const PRIMARY_ADMIN_FLAG = 'fd_primaryAdminSet_v1';
-let primaryAdminPromise = Promise.resolve();
-// One-time removal (per request) of specific Recorder names - see REMOVE_NCTK_FLAG near INIT, below.
-const REMOVE_NCTK_FLAG = 'fd_removeNCTK_v1';
-let removeNctkPromise = Promise.resolve();
-
 function localDate(d=new Date()){ const off=d.getTimezoneOffset(); return new Date(d.getTime()-off*60000).toISOString().slice(0,10); }
 function localTime(d=new Date()){ return d.toTimeString().slice(0,5); }
 // Normalizes any date value to a plain "YYYY-MM-DD" string (date only, no time) - see the comment above
@@ -3938,55 +3899,10 @@ if(isLoggedIn()){ hideLoginOverlay(); } else { showLoginOverlay(); }
 // as a non-blocking background refresh - if a Web App URL is configured, pull the latest shared data
 // down and re-render; otherwise just show the "Local only" status. Also polls periodically so changes
 // saved from other devices show up here without needing a manual "Sync now" click or a page reload.
-// One-time cleanup (per request): the Recorder list could contain names "baked into"/embedded in the
-// app from earlier use, or from whatever was already on the shared Google Sheet (including non-plain-
-// string rows, which rendered as "[object Object]" in the picker buttons). This runs once, wipes that
-// out completely (local + pushes the empty list to the shared Google Sheet so a sync doesn't bring it
-// back), leaving a clean slate for the Admin to add real names from Settings > Recorder. Guarded by
-// RECORDER_CLEANUP_FLAG so it never re-runs and wipes out Recorders added afterwards.
-if(!localStorage.getItem(RECORDER_CLEANUP_FLAG)){
-  setArr(LS.recorders, []);
-  localStorage.setItem(RECORDER_CLEANUP_FLAG, '1');
-  renderRecordersTable();
-  buildCurrentUserSelect();
-  refreshRecorderPickers();
-  recorderCleanupPromise = gsPushWhole(LS.recorders);
-}
-// One-time setup (per request): registers 'Nattayika' as the primary Admin - added to the Admin list
-// if missing, and moved to the front so they're the default logged-in user (getCurrentUserName() falls
-// back to ADMINS[0] whenever no explicit user has been picked on a device) and appear first in
-// Settings > Admin List / the header's user picker. Guarded by PRIMARY_ADMIN_FLAG so this only ever
-// happens once and never fights with Admin list changes made afterwards from Settings.
-if(!localStorage.getItem(PRIMARY_ADMIN_FLAG)){
-  const primaryAdminName = 'Nattayika';
-  ADMINS = [primaryAdminName, ...ADMINS.filter(n=>n!==primaryAdminName)];
-  setArr(LS.admins, ADMINS);
-  localStorage.setItem(PRIMARY_ADMIN_FLAG, '1');
-  renderAdminsTable();
-  buildCurrentUserSelect();
-  applyRolePermissions();
-  primaryAdminPromise = gsPushWhole(LS.admins);
-}
-// One-time removal (per request): drops the Recorder names "N", "C", "T", "K" (exact match) from the
-// Recorder list - local + pushes the updated list to the shared Google Sheet so the removal propagates
-// to every device on next sync, not just this one. Guarded by REMOVE_NCTK_FLAG so it only ever runs
-// once and never fights with an Admin re-adding a name that happens to also be "N"/"C"/"T"/"K" later.
-if(!localStorage.getItem(REMOVE_NCTK_FLAG)){
-  const namesToRemove = ['N', 'C', 'T', 'K'];
-  const before = getRecorderNames();
-  const after = before.filter(n=> !namesToRemove.includes(n));
-  localStorage.setItem(REMOVE_NCTK_FLAG, '1');
-  if(after.length!==before.length){
-    setArr(LS.recorders, after);
-    renderRecordersTable();
-    buildCurrentUserSelect();
-    refreshRecorderPickers();
-    removeNctkPromise = gsPushWhole(LS.recorders);
-  }
-}
-Promise.all([recorderCleanupPromise, primaryAdminPromise, removeNctkPromise]).then(()=>{
-  if(getGsUrl()){ pullAllFromGoogleSheets(); } else { setGsStatus('notconfigured'); }
-});
+// User/Recorder/Admin management is handled entirely via Settings > Admin/Recorder in the app UI
+// (which syncs to the shared Google Sheet), or by editing the Google Sheet directly - no names are
+// hardcoded/baked into the app code.
+if(getGsUrl()){ pullAllFromGoogleSheets(); } else { setGsStatus('notconfigured'); }
 // AUTO SYNC - keeps every device's local data (and the main Dashboard) fresh from the shared Google
 // Sheet automatically, without the user clicking "Sync Now" or reloading the page:
 //  1) Periodic poll (every GS_POLL_MS) - the baseline "keep catching up" mechanism.
@@ -3999,9 +3915,8 @@ Promise.all([recorderCleanupPromise, primaryAdminPromise, removeNctkPromise]).th
 // A real push/websocket channel isn't available from a static HTML file + Apps Script Web App, and
 // polling far more often than this risks exceeding Apps Script's free-tier daily request quota across
 // several devices - this combination is the closest practical approximation of "realtime" here.
-// The Recorder list is included in every one of these automatic syncs too, via pullRecordersMerged()
-// (merge/union only, never a destructive replace) - so names another device added show up here
-// automatically, without ever renaming/reordering/dropping a name this device already has.
+// The Recorder list is included in every one of these automatic syncs too, as a full replace from the
+// shared Google Sheet - see pullAllFromGoogleSheets above.
 const GS_POLL_MS = 60000;
 setInterval(()=>{ if(getGsUrl()) pullAllFromGoogleSheets(); }, GS_POLL_MS);
 let lastAutoSyncAt = 0;
