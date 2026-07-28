@@ -971,10 +971,11 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <thead><tr><th data-i18n="settingsAdminName">ชื่อ</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
-    <div class="grid" style="margin-top:14px;">
+    <div class="grid" style="margin-top:14px;" id="mst-ad-add-field">
       <div class="field"><label data-i18n="settingsAdminName">ชื่อ</label><input type="text" id="mst-ad-name"></div>
     </div>
-    <div class="btn-row"><button class="btn btn-performance" id="mst-ad-add" data-i18n="settingsAddBtn">เพิ่มรายการ</button></div>
+    <div class="btn-row" id="mst-ad-add-row"><button class="btn btn-performance" id="mst-ad-add" data-i18n="settingsAddBtn">เพิ่มรายการ</button></div>
+    <div class="mini-dash-note" id="mst-ad-add-restricted-note" data-i18n="settingsAdminAddRestricted" style="display:none;"></div>
   </div>
 
   <div class="card">
@@ -1196,10 +1197,19 @@ function restoreFromSync(sheetName, arr){
 
 // Pull one sheet's data down into localStorage. Only overwrites local data if the pull actually
 // succeeded (gsGet returned an array, not null) - a failed/offline pull leaves local data untouched.
+// Special-cased for LS.admins: the live `ADMINS` variable everything else reads (login gating, Settings
+// table, header picker) is refreshed here too - not just localStorage - and SUPER_ADMIN_NAME is always
+// re-added if a Sheet edit ever dropped it, so "Nattayika" can never disappear via sync.
 async function pullSheetIntoLocal(lsKey, sheetName){
   const remote = await gsGet(sheetName);
   if(remote===null) return false;
-  setArr(lsKey, restoreFromSync(sheetName, remote));
+  const restored = restoreFromSync(sheetName, remote);
+  if(lsKey===LS.admins){
+    ADMINS = ensureSuperAdmin(restored);
+    setArr(lsKey, ADMINS);
+  } else {
+    setArr(lsKey, restored);
+  }
   return true;
 }
 
@@ -1317,7 +1327,22 @@ let CAUSE_TYPES = loadMasterList(LS.causeTypes, CAUSE_TYPES_DEFAULT);
 let BD_CAUSES = loadMasterList(LS.bdCauses, BD_CAUSES_DEFAULT);
 // Names in this list are treated as Admin; anyone else selected in the header's user picker is
 // treated as Recorder (view-only). Client-side only - see settingsRoleNote for the security caveat.
-let ADMINS = loadMasterList(LS.admins, ['Admin']);
+// "Nattayika" is a permanent, baked-in primary Admin: always present in ADMINS (added back if a Sheet
+// sync or edit ever drops it) and the only Admin allowed to add brand-new Admins from Settings (see
+// isSuperAdmin/the mst-ad-add click handler below). Existing Admins can still be edited/reordered/
+// removed by any Admin as before - only adding a NEW name is gated to this one account.
+const SUPER_ADMIN_NAME = 'Nattayika';
+function ensureSuperAdmin(list){
+  const seen = new Set(); const out = [];
+  (Array.isArray(list) ? list : []).map(recorderNameOf).map(s=>s.trim()).filter(Boolean).forEach(n=>{
+    if(!seen.has(n)){ seen.add(n); out.push(n); }
+  });
+  if(!out.includes(SUPER_ADMIN_NAME)) out.unshift(SUPER_ADMIN_NAME);
+  return out;
+}
+function isSuperAdmin(){ return getCurrentUserName()===SUPER_ADMIN_NAME; }
+let ADMINS = ensureSuperAdmin(loadMasterList(LS.admins, [SUPER_ADMIN_NAME]));
+setArr(LS.admins, ADMINS);
 
 // Normalizes one Recorder-list entry to a plain display string. Handles legacy/unexpected shapes
 // (e.g. a synced row object like {name:"..."} instead of a plain string) so the picker/table never
@@ -1436,6 +1461,7 @@ gsUrlRequired:"กรุณาวาง Web App URL ก่อน", gsTesting:"�
 gsConnectSuccess:"เชื่อมต่อสำเร็จ - บันทึก URL แล้ว กำลังดึงข้อมูลเข้าเครื่องนี้", gsSyncSuccess:"ซิงค์ข้อมูลสำเร็จ", gsConnectFail:"เชื่อมต่อไม่สำเร็จ: ",
 gsStatusNotConfigured:"ยังไม่เชื่อมต่อ", gsStatusConnected:"เชื่อมต่อแล้ว", gsStatusSyncing:"กำลังซิงค์...", gsStatusError:"เชื่อมต่อไม่สำเร็จ",
 settingsAdmins:"รายชื่อ Admin", settingsAdminName:"ชื่อ", settingsNameRequired:"กรุณากรอกชื่อ", settingsNameDuplicate:"มีชื่อนี้ในรายชื่อ Admin แล้ว",
+settingsAdminAddRestricted:'เฉพาะ "Nattayika" เท่านั้นที่เพิ่มรายชื่อ Admin ใหม่ได้', settingsAdminSuperNote:'"Nattayika" เป็น Admin หลักที่ระบบกำหนดไว้ตายตัว ลบออกไม่ได้',
 roleAdmin:"Admin", roleRecorder:"Recorder", currentUserLabel:"ผู้ใช้งาน", loginTitle:"เข้าสู่ระบบ", loginNote:"เลือกชื่อของคุณและกรอกรหัส PIN เพื่อเข้าใช้งาน (Admin ใช้รหัส admin / ผู้บันทึกใช้รหัส THIP-VN)", loginSelectUser:"ชื่อผู้ใช้งาน", loginPin:"รหัส PIN", loginPinPh:"กรอกรหัส PIN", loginBtn:"เข้าสู่ระบบ", loginSelectUserRequired:"กรุณาเลือกชื่อผู้ใช้งาน", loginWrongPin:"รหัส PIN ไม่ถูกต้อง", logoutBtn:"ออกจากระบบ", moveUp:"เลื่อนขึ้น", moveDown:"เลื่อนลง",
 statDefectTotal:"Defect Total (สะสมทั้งหมด)", statDefectToday:"Defect Count Today", statDefectPctToday:"% Defect Today",
 statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdown (min)", statTotalProdToday:"Total Production วันนี้",
@@ -1508,6 +1534,7 @@ gsUrlRequired:"Please paste a Web App URL first", gsTesting:"Testing connection.
 gsConnectSuccess:"Connected - URL saved. Pulling data into this device...", gsSyncSuccess:"Sync complete", gsConnectFail:"Connection failed: ",
 gsStatusNotConfigured:"Local only", gsStatusConnected:"Connected", gsStatusSyncing:"Syncing...", gsStatusError:"Connection failed",
 settingsAdmins:"Admin List", settingsAdminName:"Name", settingsNameRequired:"Please enter a name", settingsNameDuplicate:"This name is already in the Admin list",
+settingsAdminAddRestricted:'Only "Nattayika" can add new Admins', settingsAdminSuperNote:'"Nattayika" is the fixed primary Admin and cannot be removed',
 roleAdmin:"Admin", roleRecorder:"Recorder", currentUserLabel:"User", loginTitle:"Sign In", loginNote:"Select your name and enter your PIN to continue (Admins use 'admin', Recorders use 'THIP-VN').", loginSelectUser:"User Name", loginPin:"PIN Code", loginPinPh:"Enter PIN", loginBtn:"Sign In", loginSelectUserRequired:"Please select a user name", loginWrongPin:"Incorrect PIN", logoutBtn:"Logout", moveUp:"Move up", moveDown:"Move down",
 statDefectTotal:"Defect Total (All-time)", statDefectToday:"Defect Count Today", statDefectPctToday:"% Defect Today",
 statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdown (min)", statTotalProdToday:"Total Production Today",
@@ -1580,6 +1607,7 @@ gsUrlRequired:"Vui lòng dán Web App URL trước", gsTesting:"Đang kiểm tra
 gsConnectSuccess:"Kết nối thành công - đã lưu URL. Đang tải dữ liệu vào thiết bị này...", gsSyncSuccess:"Đồng bộ hoàn tất", gsConnectFail:"Kết nối thất bại: ",
 gsStatusNotConfigured:"Chỉ cục bộ", gsStatusConnected:"Đã kết nối", gsStatusSyncing:"Đang đồng bộ...", gsStatusError:"Kết nối thất bại",
 settingsAdmins:"Danh sách Admin", settingsAdminName:"Tên", settingsNameRequired:"Vui lòng nhập tên", settingsNameDuplicate:"Tên này đã có trong danh sách Admin",
+settingsAdminAddRestricted:'Chỉ "Nattayika" mới có thể thêm Admin mới', settingsAdminSuperNote:'"Nattayika" là Admin chính cố định và không thể xóa',
 roleAdmin:"Admin", roleRecorder:"Recorder", currentUserLabel:"Người dùng", loginTitle:"Đăng nhập", loginNote:"Chọn tên của bạn và nhập mã PIN để tiếp tục (Admin dùng 'admin', Người ghi dùng 'THIP-VN').", loginSelectUser:"Tên người dùng", loginPin:"Mã PIN", loginPinPh:"Nhập mã PIN", loginBtn:"Đăng nhập", loginSelectUserRequired:"Vui lòng chọn tên người dùng", loginWrongPin:"Mã PIN không đúng", logoutBtn:"Đăng xuất", moveUp:"Di chuyển lên", moveDown:"Di chuyển xuống",
 statDefectTotal:"Defect Total (Lũy kế)", statDefectToday:"Số lượng Defect hôm nay", statDefectPctToday:"% Defect Today",
 statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdown (min)", statTotalProdToday:"Total Production hôm nay",
@@ -1732,6 +1760,28 @@ function buildRecorderPicker(pickerId, selectId){
   const sel = document.getElementById(selectId);
   function render(){
     const list = getRecorderNames();
+    const isAdminUser = currentUserRole()==='admin';
+    if(!isAdminUser){
+      // Recorder role: the entry's recorder is locked to the logged-in user's own name - they cannot
+      // attribute an entry to anyone else. Admins keep the full free-choice picker below (e.g. to
+      // correct/cover an entry for someone else).
+      const cur = getCurrentUserName();
+      fillRecorderSelect(sel);
+      if(cur && !list.includes(cur)){
+        // Logged-in name isn't (yet/anymore) in the Recorder list - still add it as the sole option so
+        // the record saves under the correct name instead of silently falling back to another one.
+        const opt = document.createElement('option'); opt.value = cur; opt.textContent = cur;
+        sel.appendChild(opt);
+      }
+      sel.value = cur;
+      sel.disabled = true;
+      picker.innerHTML = cur
+        ? `<button type="button" class="machine-pick-btn active" disabled>${cur}</button>`
+        : `<span class="note">${I18N[currentLang].noData}</span>`;
+      updateTopRoleBadgeFor(cur);
+      return;
+    }
+    sel.disabled = false;
     const prev = sel.value;
     fillRecorderSelect(sel);
     if(list.includes(prev)) sel.value = prev;
@@ -1742,6 +1792,7 @@ function buildRecorderPicker(pickerId, selectId){
     updateTopRoleBadgeFor(current);
   }
   picker.addEventListener('click', e=>{
+    if(currentUserRole()!=='admin') return; // locked to own name - Recorder can't pick someone else
     const btn = e.target.closest('.machine-pick-btn');
     if(!btn) return;
     sel.value = btn.dataset.r;
@@ -3345,17 +3396,30 @@ function moveArrayItem(arr, index, dir){
 }
 function renderAdminsTable(){
   const tbody = document.querySelector('#mst-ad-table tbody');
-  tbody.innerHTML = ADMINS.map((name,i)=>`<tr>
-    <td>${name}</td>
+  tbody.innerHTML = ADMINS.map((name,i)=>{
+    const locked = name===SUPER_ADMIN_NAME; // permanent primary Admin - can't be moved/deleted
+    return `<tr>
+    <td>${name}${locked?` <span class="role-badge role-admin" title="${I18N[currentLang].settingsAdminSuperNote}">\u2605</span>`:''}</td>
     <td style="white-space:nowrap;">
-      <button class="small-btn move-btn" ${i===0?'disabled':''} onclick="moveAdmin('${name.replace(/'/g,"\\'")}',-1)" title="${I18N[currentLang].moveUp}">&uarr;</button>
-      <button class="small-btn move-btn" ${i===ADMINS.length-1?'disabled':''} onclick="moveAdmin('${name.replace(/'/g,"\\'")}',1)" title="${I18N[currentLang].moveDown}">&darr;</button>
+      <button class="small-btn move-btn" ${(locked||i===0)?'disabled':''} onclick="moveAdmin('${name.replace(/'/g,"\\'")}',-1)" title="${I18N[currentLang].moveUp}">&uarr;</button>
+      <button class="small-btn move-btn" ${(locked||i===ADMINS.length-1)?'disabled':''} onclick="moveAdmin('${name.replace(/'/g,"\\'")}',1)" title="${I18N[currentLang].moveDown}">&darr;</button>
       <button class="small-btn" onclick="editAdminItem('${name.replace(/'/g,"\\'")}')">${I18N[currentLang].settingsEditBtn}</button>
-      <button class="small-btn" onclick="deleteAdmin('${name.replace(/'/g,"\\'")}')">${I18N[currentLang].delete}</button>
+      <button class="small-btn" ${locked?'disabled':''} onclick="deleteAdmin('${name.replace(/'/g,"\\'")}')">${I18N[currentLang].delete}</button>
     </td>
-  </tr>`).join('') || `<tr><td colspan="2" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
+  </tr>`;
+  }).join('') || `<tr><td colspan="2" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
+  // Only SUPER_ADMIN_NAME (logged in as "Nattayika") may add brand-new Admins - everyone else sees a
+  // note instead of the add form. Editing/deleting/reordering existing entries is unaffected.
+  const canAdd = isSuperAdmin();
+  const fieldEl = document.getElementById('mst-ad-add-field');
+  const rowEl = document.getElementById('mst-ad-add-row');
+  const noteEl = document.getElementById('mst-ad-add-restricted-note');
+  if(fieldEl) fieldEl.style.display = canAdd ? '' : 'none';
+  if(rowEl) rowEl.style.display = canAdd ? '' : 'none';
+  if(noteEl){ noteEl.style.display = canAdd ? 'none' : ''; noteEl.textContent = I18N[currentLang].settingsAdminAddRestricted; }
 }
 window.moveAdmin = function(name, dir){
+  if(name===SUPER_ADMIN_NAME) return;
   const idx = ADMINS.indexOf(name);
   if(idx<0) return;
   ADMINS = moveArrayItem(ADMINS, idx, dir);
@@ -3396,6 +3460,7 @@ function refreshAfterAdminListChange(){
   applyRolePermissions();
 }
 window.deleteAdmin = function(name){
+  if(name===SUPER_ADMIN_NAME) return; // permanent primary Admin - never removable
   ADMINS = ADMINS.filter(n=>n!==name);
   setArr(LS.admins, ADMINS);
   gsPushWhole(LS.admins);
@@ -3413,6 +3478,8 @@ document.getElementById('mst-ad-add').addEventListener('click', ()=>{
     gsPushWhole(LS.admins);
     cancelAdminEdit();
   } else {
+    if(!isSuperAdmin()) return; // only "Nattayika" may add brand-new Admins - button/field are hidden
+                                  // for everyone else, this is just defense-in-depth.
     if(ADMINS.includes(name)){ alert(I18N[currentLang].settingsNameDuplicate); return; }
     ADMINS = ADMINS.concat([name]);
     setArr(LS.admins, ADMINS);
@@ -3603,6 +3670,7 @@ function attemptLogin(){
   hideLoginOverlay();
   buildCurrentUserSelect();
   applyRolePermissions();
+  if(typeof refreshRecorderPickers==='function') refreshRecorderPickers(); // lock/unlock recorder pickers to the just-logged-in user's role
 }
 document.getElementById('login-submit-btn').addEventListener('click', attemptLogin);
 document.getElementById('login-pin-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') attemptLogin(); });
