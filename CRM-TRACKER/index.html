@@ -412,6 +412,26 @@
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTMBCUK66kmgoRzIZ7hPq4joTQgAEpkLNNzcJpZ5boPPhUnGvcRR0C6qTT00U8YLXw/exec';
         const SAVED_FILTERS_KEY = 'crmTrackerFilters_v1';
 
+        // ⚡ ตัวช่วยเรียก Apps Script พร้อม retry อัตโนมัติ เพราะ Apps Script Web App
+        // บางครั้งตอบ error/404 แบบชั่วคราวโดยไม่เกี่ยวกับข้อมูลหรือสิทธิ์การเข้าถึง
+        // (ลองใหม่สูงสุด 2 ครั้ง ก่อนจะถือว่าล้มเหลวจริง)
+        function fetchWithRetry(url, options, retriesLeft) {
+            if (retriesLeft === undefined) retriesLeft = 2;
+            return fetch(url, options).then(res => {
+                if (!res.ok && retriesLeft > 0) {
+                    return new Promise(resolve => setTimeout(resolve, 500))
+                        .then(() => fetchWithRetry(url, options, retriesLeft - 1));
+                }
+                return res;
+            }).catch(err => {
+                if (retriesLeft > 0) {
+                    return new Promise(resolve => setTimeout(resolve, 500))
+                        .then(() => fetchWithRetry(url, options, retriesLeft - 1));
+                }
+                throw err;
+            });
+        }
+
         // ข้อมูลจังหวัด/อำเภอ/ตำบลทั้งประเทศ มาจาก thailand-geo.js (โหลดผ่าน <script src> ก่อนหน้านี้)
         // เก็บเป็นตัวแปร THAILAND_GEO_DATA อยู่แล้ว ไม่ต้อง fetch — ใช้ <script src> แทน fetch()
         // เพราะ fetch ไฟล์ในเครื่อง (เปิดแบบ file://) จะถูกเบราว์เซอร์บล็อกด้วย CORS แต่ <script src> ไม่ติดปัญหานี้
@@ -465,7 +485,7 @@
         }
 
         function loadInitialMeta() {
-            fetch(`${WEB_APP_URL}?action=getInitialData`)
+            fetchWithRetry(`${WEB_APP_URL}?action=getInitialData`)
                 .then(res => res.json())
                 .then(data => {
                     if(data && data.totalCount) document.getElementById('stat-total').innerText = data.totalCount.toLocaleString();
@@ -577,7 +597,7 @@
                 const tbody = document.querySelector('#main-table tbody');
                 if(tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูลล่าสุดจาก Google Sheets...</td></tr>';
 
-                fetch(WEB_APP_URL, {
+                fetchWithRetry(WEB_APP_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'searchCustomers', keyword: kw })
@@ -1240,7 +1260,7 @@
             document.getElementById('form-title').innerText = '⏳ กำลังดึงข้อมูล...';
             document.getElementById('form-row-index').value = rid;
 
-            fetch(WEB_APP_URL, {
+            fetchWithRetry(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({ action: 'getCustomerByRow', rowIndex: rid })
@@ -1362,7 +1382,7 @@
                 submitBtn.disabled = true;
                 submitBtn.innerText = '⏳ กำลังบันทึก...';
 
-                fetch(WEB_APP_URL, {
+                fetchWithRetry(WEB_APP_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: actionType, rowIndex: rid, data: packData })
