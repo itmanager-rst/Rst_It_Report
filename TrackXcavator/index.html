@@ -255,7 +255,7 @@
         <div class="row mb-3">
           <div class="col-md-4 mb-2">
             <div class="card card-stat p-3">
-              <span class="text-muted small">ยอดรวมเคลมคูปอง Yanmar ทั้งหมด</span>
+              <span class="text-muted small">ยอดรวมสิทธิ์คูปอง Yanmar ทั้งหมด (รวมค้างส่ง 4,000/สิทธิ์)</span>
               <h3 class="text-danger fw-bold mb-0 mt-1" id="statCouponSum">0 บาท</h3>
             </div>
           </div>
@@ -375,7 +375,7 @@
                 <div class="row g-2 mb-1">
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">รอบ PM ที่ทำ (Target) *</label>
-                    <input type="number" id="inpPmRound" class="form-control form-control-sm" placeholder="เช่น 0 หรือ 500" value="0" required>
+                    <input type="number" id="inpPmRound" class="form-control form-control-sm" placeholder="เช่น 0 หรือ 500" value="0" required onchange="handlePmRoundChange(this.value)">
                   </div>
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">ชั่วโมงจริง (Actual) *</label>
@@ -416,7 +416,7 @@
                   <div class="col-md-12">
                     <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">เลือกรอบ PM ด่วน:</span>
                     <div class="d-flex flex-wrap gap-1">
-                      <span class="preset-badge" onclick="setPmRound(0)">0 ชม. (เพิ่มเครื่อง)</span>
+                      <span class="preset-badge" onclick="setPmRound(0)">0 ชม. (ลูกค้าใหม่)</span>
                       <span class="preset-badge" onclick="setPmRound(50)">50 ชม.</span>
                       <span class="preset-badge" onclick="setPmRound(250)">250 ชม.</span>
                       <span class="preset-badge" onclick="setPmRound(500)">500 ชม.</span>
@@ -443,8 +443,8 @@
                     </select>
                   </div>
                   <div class="col-md-3">
-                    <label class="form-label form-label-sm">คูปองน้ำมันYanmar(บาท) 0=ค้างส่งคูปอง 4000=ส่งคูปอง yanmar</label>
-                    <input type="number" id="inpYanmarCoupon" class="form-control form-control-sm" value="0" placeholder="0 ถ้ารายการแรกยังไม่ทำ PM">
+                    <label class="form-label form-label-sm">คูปองน้ำมันYanmar(บาท) (0 = ค้างส่งคูปอง / 4000 = ได้รับแล้ว)</label>
+                    <input type="number" id="inpYanmarCoupon" class="form-control form-control-sm" value="0" placeholder="0 = ค้างส่งคูปอง">
                   </div>
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">แนบรูปใบเสร็จ</label>
@@ -563,7 +563,6 @@
             <label class="form-label form-label-sm">จำนวนเงินคูปอง (บาท):</label>
             <input type="number" id="claimAmountInput" class="form-control form-control-sm fw-bold text-success" value="4000">
           </div>
-          <!-- 🟢 เพิ่มช่องกรอก เลขรับคูปอง / หมายเหตุคูปอง -->
           <div class="mb-2">
             <label class="form-label form-label-sm fw-bold text-dark">เลขที่เอกสารรับคูปอง / หมายเหตุเพิ่มเติม:</label>
             <input type="text" id="claimCouponRemarkInput" class="form-control form-control-sm" placeholder="เช่น YBxxxx, เอกสารรับคูปองลงวันที่...">
@@ -604,11 +603,10 @@
 
           <div class="mb-3" id="groupRemainingParts">
             <label class="form-label form-label-sm text-danger fw-bold">รายการอะไหล่ที่ "ยังค้างส่ง" อยู่ในขณะนี้:</label>
-            <textarea id="claimPartsListInput" class="form-control form-control-sm border-danger" rows="2" placeholder="ระบุรายการอะไหล่ที่ยังค้างส่งอยู่..."></textarea>
+            <textarea id="claimPartsListInput" class="form-control form-control-sm border-danger" rows="3" placeholder="ระบุรายการอะไหล่ที่ยังค้างส่งอยู่..."></textarea>
             <span class="text-muted" style="font-size: 0.72rem;">* ลบรายการที่ลูกค้าได้รับไปแล้วออก ให้เหลือเฉพาะชิ้นที่ยังค้างส่ง</span>
           </div>
 
-          <!-- 🟢 เพิ่มช่องกรอก เลขรับอะไหล่ / หมายเหตุเพิ่มเติม -->
           <div class="mb-2">
             <label class="form-label form-label-sm fw-bold text-dark">เลขที่เอกสารรับอะไหล่ / หมายเหตุเพิ่มเติม:</label>
             <input type="text" id="claimPartsRemarkInput" class="form-control form-control-sm" placeholder="เช่น DTT0xxxx, น้ำมัน Yanmar 5 ลิตร">
@@ -618,7 +616,7 @@
         </div>
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-          <button type="button" class="btn btn-sm btn-success fw-bold" onclick="submitClaimParts()"><i class="fa-solid fa-floppy-disk me-1"></i> บันทึกอัปเดต</button>
+          <button type="button" id="btnSubmitClaimParts" class="btn btn-sm btn-success fw-bold" onclick="submitClaimParts()"><i class="fa-solid fa-floppy-disk me-1"></i> บันทึกอัปเดต</button>
         </div> 
       </div>
     </div>
@@ -628,13 +626,19 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxcLGz0MxuruCS6eP3COWiywbQwfMRA47gRcBWjr5RFI-zOYmuRioCZ0S81DWJdFqTKNg/exec";
+    // 🔗 ระบุ URL สำหรับเชื่อมต่อกับ Google Apps Script / Backend
+    const API_URL = "https://script.google.com/macros/s/AKfycbzkeRM0jIXh3HYEKjaiRgbObHVHIB-KErw98SGvojAd3ArmDQrXBpbPovPEESMKquy4eQ/exec";
 
     let currentUser = null;
     let currentRole = null;
     let rawDashboardData = [];
     let rawHistoryData = [];
     let activeFilter = 'all';   
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
 
     function isImageUrl(url) {
       var str = String(url || '').trim();
@@ -700,7 +704,18 @@
       });
     }
 
-    function setPmRound(val) { document.getElementById("inpPmRound").value = val; }
+    function handlePmRoundChange(val) {
+      const round = Number(val);
+      if (round === 0) {
+        document.getElementById("inpPartsStatus").value = "ไม่ได้เบิกอะไหล่";
+        document.getElementById("inpYanmarCoupon").value = 0;
+      }
+    }
+
+    function setPmRound(val) { 
+      document.getElementById("inpPmRound").value = val; 
+      handlePmRoundChange(val);
+    }
 
     function appendPartItem(itemName) {
       const input = document.getElementById("inpPartsStore");
@@ -721,8 +736,14 @@
         let valStr = String(item.yanmarCoupon || '0').replace(/,/g, '').trim();
         let val = parseFloat(valStr);
 
-        if (isNaN(val) || val < 0 || val > 50000) {
+        if (isNaN(val) || val < 0) {
           val = 0;
+        }
+
+        const pmRound = Number(item.pmRound || 0);
+
+        if (val === 0 && pmRound > 0) {
+          val = 4000;
         }
 
         return sum + val;
@@ -801,10 +822,10 @@
     function renderDashboardTable(list) {
       const tbody = document.getElementById("tbDashboard");
       tbody.innerHTML = "";
-      updateActionColumnsVisibility();
 
       if (!list || list.length === 0) {
         tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
+        updateActionColumnsVisibility();
         return;
       }
 
@@ -837,7 +858,8 @@
         const nextPm = Number(item.nextPm) || 0;
         const isPmAlert = nextPm > 0 && (nextPm - hrs <= 50);
         const displayCusId = formatCustomerId(item.customerId);
-        const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
+        
+        let pStatus = item.partsStatus || (lastPmRound === 0 ? "ไม่ได้เบิกอะไหล่" : "ค้างส่งอะไหล่");
 
         let partsStatusDisplay = "";
         if (pStatus === "ส่งครบแล้ว") {
@@ -850,7 +872,7 @@
           partsStatusDisplay = `
             <div class="mb-1">
               <span class="badge ${badgeClass} text-wrap">ค้างส่ง: ${item.partsStore || 'อะไหล่ PM'}${item.lastPm ? ` (${item.lastPm} ชม.)` : ''}</span>
-              ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimPartsModal('${item.machineId}', '${item.partsStore || 'อะไหล่ PM'}')">รับอะไหล่</button>` : ''}
+              ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimPartsModal('${escapeHtml(item.machineId)}')">รับอะไหล่</button>` : ''}
             </div>
           `;
         }
@@ -874,8 +896,8 @@
             } else {
               couponDisplay = `
                 <div class="mb-1">
-                  <span class="badge badge-warning-custom text-wrap">ค้างคูปอง</span>
-                  ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimModal('${matchedHistory.ticketId}', '${lastPmRound}')">รับคูปอง</button>` : ''}
+                  <span class="badge badge-warning-custom text-wrap">ค้างส่งคูปอง (สิทธิ์ 4,000.-)</span>
+                  ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimModal('${escapeHtml(matchedHistory.ticketId)}', '${lastPmRound}')">รับคูปอง</button>` : ''}
                 </div>
               `;
             }
@@ -886,8 +908,8 @@
             } else {
               couponDisplay = `
                 <div class="mb-1">
-                  <span class="badge badge-warning-custom text-wrap">ค้างคูปอง</span>
-                  ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimModal('${item.machineId}', '${lastPmRound}')">รับคูปอง</button>` : ''}
+                  <span class="badge badge-warning-custom text-wrap">ค้างส่งคูปอง (สิทธิ์ 4,000.-)</span>
+                  ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimModal('${escapeHtml(item.machineId)}', '${lastPmRound}')">รับคูปอง</button>` : ''}
                 </div>
               `;
             }
@@ -897,9 +919,9 @@
         let actionTd = `
           <td class="text-center col-action">
             <div class="btn-group btn-group-sm">
-              <button class="btn btn-outline-success" onclick="approveItem('${item.machineId}')" title="อนุมัติ"><i class="fa-solid fa-check"></i></button>
-              <button class="btn btn-outline-primary" onclick="editDashboardItem('${item.machineId}')" title="แก้ไข/ทำ PM"><i class="fa-solid fa-pen"></i></button>
-              <button class="btn btn-outline-danger" onclick="deleteDashboardItem('${item.machineId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+              <button class="btn btn-outline-success" onclick="approveItem('${escapeHtml(item.machineId)}')" title="อนุมัติ"><i class="fa-solid fa-check"></i></button>
+              <button class="btn btn-outline-primary" onclick="editDashboardItem('${escapeHtml(item.machineId)}')" title="แก้ไข/ทำ PM"><i class="fa-solid fa-pen"></i></button>
+              <button class="btn btn-outline-danger" onclick="deleteDashboardItem('${escapeHtml(item.machineId)}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
             </div>
           </td>
         `;
@@ -921,7 +943,7 @@
           <td>${item.partsBillNo || '-'}</td>
           <td>${partsStatusDisplay}</td>
           <td class="text-center">
-            ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${item.receiptImage}')"><i class="fa-solid fa-image"></i></button>` : '-'}
+            ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
           </td>
           <td class="text-end">${couponDisplay}</td>
           <td><small>${item.remark || '-'}</small></td>
@@ -934,16 +956,32 @@
       document.getElementById("containerDashboardTable").scrollTop = 0;
     }
 
-    function openClaimPartsModal(machineId, partsName) {
+    // 💡 ฟังก์ชันเปิด Modal อัปเดตสถานะการรับอะไหล่ (แก้ไขดึงข้อมูลให้ชัวร์ขึ้น)
+    function openClaimPartsModal(machineId) {
+      const item = rawDashboardData.find(x => String(x.machineId).trim() === String(machineId).trim());
+      
+      // ดึงรายการอะไหล่แบบครอบคลุม property Name
+      let partsName = "";
+      if (item) {
+        partsName = item.partsStore || item.parts || item.partsList || item.spareParts || "";
+      }
+
+      const status = item ? (item.partsStatus || "ส่งบางส่วน") : "ส่งบางส่วน";
+
       document.getElementById("claimPartsMachineId").value = machineId;
       document.getElementById("claimPartsMachineDisplay").value = machineId;
-      document.getElementById("claimPartsListInput").value = partsName || "";
-      document.getElementById("claimPartsRemarkInput").value = "";
-      document.getElementById("claimPartsStatusSelect").value = "ส่งบางส่วน";
       
-      togglePartsInputList("ส่งบางส่วน");
+      // แสดงรายการเดิมลงกล่อง
+      document.getElementById("claimPartsListInput").value = partsName;
+      document.getElementById("claimPartsRemarkInput").value = "";
+      
+      const selectEl = document.getElementById("claimPartsStatusSelect");
+      selectEl.value = (status === "ส่งครบแล้ว") ? "ส่งครบแล้ว" : "ส่งบางส่วน";
+      
+      togglePartsInputList(selectEl.value);
 
-      const modal = new bootstrap.Modal(document.getElementById('claimPartsModal'));
+      const modalEl = document.getElementById('claimPartsModal');
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
       modal.show();
     }
 
@@ -956,13 +994,23 @@
       }
     }
 
+    // 💡 ฟังก์ชันบันทึกการอัปเดตอะไหล่
     async function submitClaimParts() {
       const machineId = document.getElementById("claimPartsMachineId").value;
-      const newStatus = document.getElementById("claimPartsStatusSelect").value;
+      let newStatus = document.getElementById("claimPartsStatusSelect").value;
       const remainingParts = document.getElementById("claimPartsListInput").value.trim();
       const partsRemark = document.getElementById("claimPartsRemarkInput").value.trim();
 
       if (!machineId) return;
+
+      // หากผู้ใช้ลบรายการค้างส่งออกจนหมดแล้ว ให้ปรับสถานะเป็น "ส่งครบแล้ว" โดยอัตโนมัติ
+      if (newStatus === "ส่งบางส่วน" && remainingParts === "") {
+        newStatus = "ส่งครบแล้ว";
+      }
+
+      const btn = document.getElementById("btnSubmitClaimParts");
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังบันทึก...';
 
       const modalEl = document.getElementById('claimPartsModal');
       const modal = bootstrap.Modal.getInstance(modalEl);
@@ -983,14 +1031,17 @@
         const res = await response.json();
 
         if (res.status === "success") {
-          alert("🟢 อัปเดตสถานะและเลขรับอะไหล่เรียบร้อยแล้ว!");
-          modal.hide();
+          alert("🟢 อัปเดตรายการอะไหล่ค้างส่งเรียบร้อยแล้ว!");
+          if (modal) modal.hide();
           refreshAllData();
         } else {
           alert("เกิดข้อผิดพลาด: " + res.message);
         }
       } catch (err) {
         alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i> บันทึกอัปเดต';
       }
     }
 
@@ -1065,7 +1116,8 @@
 
         const hrs = Number(item.currentHours) || 0;
         const nextPm = Number(item.nextPm) || 0;
-        const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
+        const lastPmRound = Number(item.lastPm) || 0;
+        const pStatus = item.partsStatus || (lastPmRound === 0 ? "ไม่ได้เบิกอะไหล่" : "ค้างส่งอะไหล่");
 
         if (activeFilter === 'pm_alert') return nextPm > 0 && (nextPm - hrs <= 50);
         if (activeFilter === 'partial_parts') return pStatus === "ส่งบางส่วน";
@@ -1096,10 +1148,10 @@
     function renderHistoryTable(list) {
       const tbody = document.getElementById("tbHistory");
       tbody.innerHTML = "";
-      updateActionColumnsVisibility();
 
       if (!list || list.length === 0) {
         tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-muted">ไม่พบประวัติการทำ PM</td></tr>`;
+        updateActionColumnsVisibility();
         return;
       }
 
@@ -1118,7 +1170,9 @@
       sortedList.forEach((item, index) => {
         const tr = document.createElement("tr");
         const displayCusId = formatCustomerId(item.customerId);
-        const pStatus = item.partsStatus || "ค้างส่งอะไหล่";
+        const pmRound = Number(item.pmRound || 0);
+
+        const pStatus = item.partsStatus || (pmRound === 0 ? "ไม่ได้เบิกอะไหล่" : "ค้างส่งอะไหล่");
 
         const rawDateVal = item.serviceDate || item.date || item.service_date || item.timestamp || item.createdDate || "-";
         const formattedDate = formatDate(rawDateVal);
@@ -1134,24 +1188,26 @@
 
         let rawCouponStr = String(item.yanmarCoupon || '0').replace(/,/g, '').trim();
         let couponVal = parseFloat(rawCouponStr);
-        if (isNaN(couponVal) || couponVal > 50000 || couponVal <= 0) {
+        if (isNaN(couponVal) || couponVal < 0) {
           couponVal = 0;
         }
 
         let couponDisplay = "";
+
         if (couponVal > 0) {
           couponDisplay = `<span class="text-success fw-bold">${couponVal.toLocaleString('th-TH')}</span>`;
+        } else if (pmRound === 0) {
+          couponDisplay = `<span class="text-muted small">⚪ ยังไม่ถึงรอบ PM</span>`;
         } else {
-          couponDisplay = `<span class="badge badge-warning-custom">ค้างส่งคูปอง</span>`;
+          couponDisplay = `<span class="badge badge-warning-custom">ค้างส่งคูปอง (สิทธิ์ 4,000.-)</span>`;
         }
 
         let actionTd = `
           <td class="text-center col-action">
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem('${item.ticketId}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem('${escapeHtml(item.ticketId)}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
           </td>
         `;
 
-        // 🟢 แมปข้อมูลให้ตรงช่องตารางเรียบร้อย (ลำดับ 19 คอลัมน์ตรงกับ <thead>)
         tr.innerHTML = `
           <td class="text-center text-muted fw-bold">${index + 1}</td>
           <td><span class="badge bg-secondary">${item.ticketId || '-'}</span></td>
@@ -1160,7 +1216,7 @@
           <td>${item.customerName || item.customer || '-'}</td>
           <td><span class="badge bg-light text-dark border">${displayCusId}</span></td>
           <td>${item.phone || '-'}</td>
-          <td class="text-center">${item.pmRound || 0}</td>
+          <td class="text-center">${pmRound}</td>
           <td class="text-center">${item.actualHours || 0}</td>
           <td>${formattedDate}</td>
           <td class="text-end">${Number(item.cost || 0).toLocaleString()}</td>
@@ -1169,7 +1225,7 @@
           <td>${item.partsBillNo || '-'}</td>
           <td>${partsStatusDisplay}</td>
           <td class="text-center">
-            ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${item.receiptImage}')"><i class="fa-solid fa-image"></i></button>` : '-'}
+            ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
           </td>
           <td class="text-end">${couponDisplay}</td>
           <td><small>${item.remark || '-'}</small></td>
@@ -1215,7 +1271,7 @@
         });
 
         alert("อัปเดตรับคูปองย้อนหลังสำเร็จ!");
-        modal.hide();
+        if (modal) modal.hide();
         refreshAllData();
       } catch (err) {
         alert("เกิดข้อผิดพลาดในการอัปเดตคูปอง: " + err.message);
@@ -1300,20 +1356,24 @@
         return;
       }
 
-      const item = rawDashboardData.find(x => x.machineId === machineId);
+      const item = rawDashboardData.find(x => String(x.machineId).trim() === String(machineId).trim());
       if (!item) return;
+
+      const pmRoundVal = item.lastPm || 0;
 
       document.getElementById("inpMachineId").value = item.machineId || "";
       document.getElementById("inpModel").value = item.model || "";
       document.getElementById("inpCustomerName").value = item.customer || "";
       document.getElementById("inpCustomerId").value = formatCustomerId(item.customerId);
       document.getElementById("inpPhone").value = item.phone || "";
-      document.getElementById("inpPmRound").value = item.lastPm || 0;
+      document.getElementById("inpPmRound").value = pmRoundVal;
       document.getElementById("inpActualHours").value = item.currentHours || 0;
-      document.getElementById("inpPartsStore").value = item.partsStore || "";
+      document.getElementById("inpPartsStore").value = item.partsStore || item.parts || "";
       document.getElementById("inpSupplierId").value = item.supplierId || "";
       document.getElementById("inpPartsBillNo").value = item.partsBillNo || "";
-      document.getElementById("inpPartsStatus").value = item.partsStatus || "ค้างส่งอะไหล่";
+      
+      document.getElementById("inpPartsStatus").value = item.partsStatus || (Number(pmRoundVal) === 0 ? "ไม่ได้เบิกอะไหล่" : "ค้างส่งอะไหล่");
+      
       document.getElementById("inpReceiptImageBase64").value = item.receiptImage || "";
       document.getElementById("inpYanmarCoupon").value = item.yanmarCoupon || 0;
       document.getElementById("inpRemark").value = item.remark || "";
@@ -1325,6 +1385,7 @@
       document.getElementById("ticketForm").reset();
       document.getElementById("inpTicketId").value = "";
       document.getElementById("inpReceiptImageBase64").value = "";
+      document.getElementById("inpReceiptFile").value = "";
       document.getElementById("inpPmRound").value = 0;
       document.getElementById("inpActualHours").value = 0;
       
