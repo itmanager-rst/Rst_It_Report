@@ -141,10 +141,11 @@
 
 <body>
 
-    <a href="https://docs.google.com/spreadsheets/d/1v_88uTFV3NJp-oIBJj4J3P8lYkv98de68XJjWm3WMGQ/export?format=xlsx&gid=0"
+    <a href="#"
        class="fab-download"
-       download="Pretrack_database.xlsx"
-       title="ดาวน์โหลดฐานข้อมูลทั้งหมด (Pretrack database.xlsx)">
+       id="btn-download-all"
+       title="ดาวน์โหลดฐานข้อมูลทั้งหมด"
+       onclick="downloadAllData(event)">
        📊
     </a>
 
@@ -1136,6 +1137,32 @@
             return null;
         }
 
+        // ---------- ดาวน์โหลดฐานข้อมูลทั้งหมด (ไฟล์เดียวกับที่ระบบค้นหา/บันทึกข้อมูลใช้งานจริง) ----------
+        // ขอลิงก์ export จาก backend (action=downloadAll) แทนการฝัง URL ไฟล์ไว้ตรงๆ ในหน้าเว็บ
+        // เพราะ backend จะคำนวณ spreadsheet id + gid ของชีตที่ใช้งานจริงให้เสมอ ต่อให้มีการสลับ/เพิ่มแท็บในอนาคตก็ยังถูกต้อง
+        function downloadAllData(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-download-all');
+            const originalText = btn.innerText;
+            btn.innerText = '⏳';
+
+            fetchWithRetry(`${WEB_APP_URL}?action=downloadAll`)
+                .then(res => res.json())
+                .then(data => {
+                    if(data && data.downloadUrl) {
+                        window.open(data.downloadUrl, '_blank');
+                    } else {
+                        alert('🛑 ไม่พบลิงก์ดาวน์โหลดฐานข้อมูล');
+                    }
+                })
+                .catch(err => {
+                    alert('🛑 ดาวน์โหลดฐานข้อมูลไม่สำเร็จ');
+                })
+                .finally(() => {
+                    btn.innerText = originalText;
+                });
+        }
+
         // ---------- ส่งออกผลลัพธ์ที่ค้นหาเป็น CSV (เฉพาะข้อมูลที่กรองได้ทั้งหมด) ----------
         function exportFilteredResults() {
             try {
@@ -1457,29 +1484,4 @@
 
                 fetchWithRetry(WEB_APP_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: actionType, rowIndex: rid, data: packData })
-                })
-                .then(res => res.json())
-                .then(resData => {
-                    if(resData && resData.success) {
-                        alert(alertMsg);
-                        resetFormState();
-                        fetchDataFromServer();
-                    } else {
-                        alert('❌ ข้อผิดพลาดจากระบบ: ' + (resData.message || 'ไม่ทราบสาเหตุ'));
-                        submitBtn.disabled = false;
-                        submitBtn.innerText = originalBtnText;
-                    }
-                }).catch((err) => {
-                    alert('🛑 การส่งข้อมูลผิดพลาดหรือเซิร์ฟเวอร์ไม่ตอบสนอง');
-                    submitBtn.disabled = false;
-                    submitBtn.innerText = originalBtnText;
-                });
-            } catch(err) {
-                console.error(err);
-            }
-        }
-    </script>
-</body>
-</html>
+       
