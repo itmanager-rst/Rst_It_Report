@@ -50,6 +50,8 @@
         .btn-accent { background: var(--accent-color); color: white; }
         .btn-accent:hover { background: #ea580c; }
         .btn-warning { background: #eab308; color: #fff; padding: 4px 10px; font-size: 12px; }
+        .btn-danger { background: #ef4444; color: #fff; padding: 4px 10px; font-size: 12px; }
+        .btn-danger:hover { background: #dc2626; }
         .btn-print { background: #0284c7; color: white; }
         .btn-print:hover { background: #0369a1; }
 
@@ -75,7 +77,7 @@
 
         @media print {
             body { background: white; color: black; padding: 0; height: auto; overflow: visible; }
-            .header, .card, .right-panel, .btn-warning, .search-actions, .download-banner, .pagination-container { display: none !important; }
+            .header, .card, .right-panel, .btn-warning, .btn-danger, .search-actions, .download-banner, .pagination-container { display: none !important; }
             .main-layout { display: block; overflow: visible; }
             .left-panel { width: 100%; display: block; overflow: visible; }
             .table-container { box-shadow: none; padding: 0; overflow: visible; }
@@ -101,7 +103,7 @@
     <div class="header">
         <h1>CRM-TRACKER ระบบจัดการข้อมูลลูกค้า</h1>
         <div class="stats-container">
-            <div class="stat-item">ฐานข้อมูลทั้งหมด: <span id="stat-total">500,000+</span> รายชื่อ</div>
+            <div class="stat-item">ฐานข้อมูลทั้งหมด: <span id="stat-total">0</span> รายชื่อ</div>
             <div class="stat-item">ดึงผลลัพธ์มาได้: <span id="stat-display">0</span> รายชื่อ</div>
         </div>
     </div>
@@ -191,7 +193,7 @@
                     </table>
                 </div>
 
-                <!-- 📄 ปุ่มควบคุมการเปลี่ยนหน้า (Pagination) เพิ่มความเร็วระบบ -->
+                <!-- 📄 ปุ่มควบคุมการเปลี่ยนหน้า (Pagination) -->
                 <div class="pagination-container">
                     <span style="font-size: 13px; color: #64748b;">แสดงผลทีละ 50 รายการ</span>
                     <div style="display: flex; gap: 8px;">
@@ -226,15 +228,15 @@
                     </div>
                     <div class="form-group full-width">
                         <label>เบอร์โทรศัพท์ (Phone1)</label>
-                        <input type="tel" id="cust-phone" class="form-control" placeholder="0xxxxxxxxx">
+                        <input type="tel" id="cust-phone" class="form-control" placeholder="0xxxxxxxxx" required>
                     </div>
                     <div class="form-group">
                         <label>ประเภท (Type)</label>
                         <select id="cust-type" class="form-control">
-                            <option>ลงทะเบียน</option>
-                            <option>เป้าหมาย</option>
-                            <option>จอง</option>
-                            <option>ติดตาม</option>
+                            <option value="ลงทะเบียน">ลงทะเบียน</option>
+                            <option value="เป้าหมาย">เป้าหมาย</option>
+                            <option value="จอง">จอง</option>
+                            <option value="ติดตาม">ติดตาม</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -295,7 +297,7 @@
     </div>
 
     <script> 
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyxMF1_zvOfSIYR2Nwu6Gfxehwi9BvR7RHsR8yOjAOwoP93wjslVhP05cREl9Z8c9MC/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxCZptahHy0G_RUx3VAgk568MvktRiYngJap-rC_I1deRJHiNLAuPcq2iabdtQybt_Y/exec';
         
         let currentPage = 1;
         const pageSize = 50;
@@ -320,7 +322,7 @@
         }
 
         function loadInitialMeta() {
-            fetch(`${WEB_APP_URL}?action=getInitialData`)
+            fetch(`${WEB_APP_URL}?action=getInitialData`, { method: 'GET', redirect: 'follow' })
                 .then(res => res.json())
                 .then(data => {
                     if(data && data.totalCount) document.getElementById('stat-total').innerText = data.totalCount.toLocaleString();
@@ -338,9 +340,10 @@
                 custProd.innerHTML = '<option value="">-- เลือกสินค้า --</option>';
                 
                 goods.forEach(item => {
-                    if(!item || !item[0] || item[0] === 'ProductName' || item[0] === 'ชื่อสินค้า') return;
-                    filterProd.innerHTML += `<option value="${item[0]}">${item[0]}</option>`;
-                    custProd.innerHTML += `<option value="${item[0]}">${item[0]}</option>`;
+                    let val = Array.isArray(item) ? item[0] : item;
+                    if(!val || val === 'ProductName' || val === 'ชื่อสินค้า') return;
+                    filterProd.innerHTML += `<option value="${val}">${val}</option>`;
+                    custProd.innerHTML += `<option value="${val}">${val}</option>`;
                 });
             } catch(e) {}
         }
@@ -380,7 +383,7 @@
                 if(tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align: center; padding: 20px;">⚡ กำลังค้นหาข้อมูลจากระบบ BigQuery...</td></tr>';
 
                 const searchParams = {
-                    action: 'searchCustomers',
+                    action: 'search',
                     page: currentPage,
                     pageSize: pageSize,
                     filters: {
@@ -397,7 +400,8 @@
                 fetch(WEB_APP_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify(searchParams)
+                    body: JSON.stringify(searchParams),
+                    redirect: 'follow'
                 })
                 .then(res => res.json())
                 .then(resData => {
@@ -464,7 +468,7 @@
             return dStr;
         }
 
-        // 🎯 ฟังก์ชันสร้างแถวข้อมูลในตาราง High-Performance
+        // 🎯 ฟังก์ชันสร้างแถวข้อมูลในตาราง
         function renderTableRows(data) {
             const tbody = document.querySelector('#main-table tbody');
             if(!tbody) return;
@@ -494,7 +498,10 @@
                 let rowIndexId = row.sheetRowIndex || row.id || phoneNum;
 
                 htmlArr.push(`<tr>
-                    <td><button class="btn btn-warning" onclick="loadSingleRowForEdit('${rowIndexId}')">✏️ แก้ไข</button></td>
+                    <td>
+                        <button class="btn btn-warning" onclick="loadSingleRowForEdit('${rowIndexId}')">✏️ แก้ไข</button>
+                        <button class="btn btn-danger" onclick="deleteCustomerRow('${rowIndexId}')">🗑️ ลบ</button>
+                    </td>
                     <td>${displayDate}</td>
                     <td style="color: var(--accent-color); font-weight: 600;">${displayAppDate}</td>
                     <td><b>${fullName}</b></td>
@@ -523,7 +530,7 @@
             document.getElementById('btn-next-page').disabled = (currentPage >= totalPages);
         }
 
-        // ✏️ ฟังก์ชันดึงข้อมูลมาแสดงในฟอร์มเพื่อทำการแก้ไข (ตัวเต็มกลับมาแล้วครับ)
+        // ✏️ ฟังก์ชันดึงข้อมูลมาแสดงในฟอร์มเพื่อทำการแก้ไข
         function loadSingleRowForEdit(rid) {
             if(!rid) return;
             document.getElementById('form-title').innerText = '⏳ กำลังดึงข้อมูล...';
@@ -532,59 +539,57 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'getCustomerByRow', rowIndex: rid })
+                body: JSON.stringify({ action: 'getByPhone', payload: { phoneKey: rid } }),
+                redirect: 'follow'
             })
             .then(res => res.json())
             .then(resData => {
-                if(resData && resData.success && (Array.isArray(resData.data) || typeof resData.data === 'object')) {
+                if(resData && resData.success && resData.data) {
                     const d = resData.data;
                     
-                    if (Array.isArray(d)) {
-                        document.getElementById('cust-date').value = parseDateString(d[0]);
-                        document.getElementById('cust-fname').value = d[1] || '';
-                        document.getElementById('cust-lname').value = d[2] || '';
-                        
-                        let p = (d[3] || '').toString().trim();
-                        if(p && !p.startsWith('0') && p !== '-') p = '0' + p;
-                        document.getElementById('cust-phone').value = p;
-                        
-                        document.getElementById('cust-appdate').value = parseDateString(d[4]);
-                        document.getElementById('cust-type').value = d[5] || 'ลงทะเบียน';
-                        document.getElementById('cust-product').value = d[6] || '';
-                        document.getElementById('cust-addressno').value = d[7] || '';
-                        document.getElementById('cust-moo').value = d[8] || '';
-                        document.getElementById('cust-village').value = d[9] || '';
-                        document.getElementById('cust-subdistrict').value = d[10] || '';
-                        document.getElementById('cust-district').value = d[11] || '';
-                        document.getElementById('cust-province').value = d[12] || 'อุบลฯ';
-                        document.getElementById('cust-zipcode').value = d[13] || '';
-                        document.getElementById('cust-note').value = d[14] || '';
-                        document.getElementById('cust-line').value = d[15] || '';
-                        document.getElementById('cust-facebook').value = d[16] || '';
-                    } else {
-                        document.getElementById('cust-date').value = parseDateString(d.date);
-                        document.getElementById('cust-fname').value = d.firstname || '';
-                        document.getElementById('cust-lname').value = d.lastname || '';
-                        document.getElementById('cust-phone').value = d.phone1 || d.phone || '';
-                        document.getElementById('cust-appdate').value = parseDateString(d.booking_date || d.appdate);
-                        document.getElementById('cust-type').value = d.type || 'ลงทะเบียน';
-                        document.getElementById('cust-product').value = d.product || '';
-                        document.getElementById('cust-addressno').value = d.addressno || '';
-                        document.getElementById('cust-moo').value = d.moo || '';
-                        document.getElementById('cust-village').value = d.village || '';
-                        document.getElementById('cust-subdistrict').value = d.subdistrict || '';
-                        document.getElementById('cust-district').value = d.district || '';
-                        document.getElementById('cust-province').value = d.province || 'อุบลฯ';
-                        document.getElementById('cust-zipcode').value = d.zipcode || '';
-                        document.getElementById('cust-note').value = d.remark || d.note || '';
-                        document.getElementById('cust-line').value = d.line || '';
-                        document.getElementById('cust-facebook').value = d.facebook || '';
-                    }
+                    document.getElementById('cust-date').value = parseDateString(d.date);
+                    document.getElementById('cust-fname').value = d.firstname || '';
+                    document.getElementById('cust-lname').value = d.lastname || '';
+                    document.getElementById('cust-phone').value = d.phone1 || d.phone || '';
+                    document.getElementById('cust-appdate').value = parseDateString(d.booking_date || d.appdate);
+                    document.getElementById('cust-type').value = d.type || 'ลงทะเบียน';
+                    document.getElementById('cust-product').value = d.product || '';
+                    document.getElementById('cust-addressno').value = d.addressno || '';
+                    document.getElementById('cust-moo').value = d.moo || '';
+                    document.getElementById('cust-village').value = d.village || '';
+                    document.getElementById('cust-subdistrict').value = d.subdistrict || '';
+                    document.getElementById('cust-district').value = d.district || '';
+                    document.getElementById('cust-province').value = d.province || 'อุบลฯ';
+                    document.getElementById('cust-zipcode').value = d.zipcode || '';
+                    document.getElementById('cust-note').value = d.remark || d.note || '';
+                    document.getElementById('cust-line').value = d.line || '';
+                    document.getElementById('cust-facebook').value = d.facebook || '';
 
                     document.getElementById('form-title').innerText = `📝 แก้ไขข้อมูลลูกค้า (${rid})`;
                     document.getElementById('btn-submit').innerText = '💾 อัปเดตข้อมูล';
                 }
             }).catch(err => console.log(err));
+        }
+
+        // 🗑️ ฟังก์ชันลบข้อมูลลูกค้า
+        function deleteCustomerRow(rid) {
+            if(!rid || !confirm('คุณต้องการลบข้อมูลลูกค้ารายนี้ใช่หรือไม่?')) return;
+
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'delete', payload: { phoneKey: rid } }),
+                redirect: 'follow'
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if(resData && resData.success) {
+                    alert('🗑️ ลบข้อมูลลูกค้าสำเร็จเรียบร้อย!');
+                    fetchDataFromServer(currentPage);
+                } else {
+                    alert('❌ ไม่สามารถลบข้อมูลได้: ' + (resData.message || 'เกิดข้อผิดพลาด'));
+                }
+            }).catch(err => alert('🛑 เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์'));
         }
 
         function resetFormState() {
@@ -603,9 +608,10 @@
                 const rid = document.getElementById('form-row-index').value;
                 const packData = {
                     date: document.getElementById('cust-date').value,
-                    firstName: document.getElementById('cust-fname').value,
-                    lastName: document.getElementById('cust-lname').value,
+                    firstname: document.getElementById('cust-fname').value,
+                    lastname: document.getElementById('cust-lname').value,
                     phone1: document.getElementById('cust-phone').value,
+                    phone: document.getElementById('cust-phone').value,
                     appdate: document.getElementById('cust-appdate').value,
                     type: document.getElementById('cust-type').value,
                     product: document.getElementById('cust-product').value,
@@ -616,18 +622,21 @@
                     district: document.getElementById('cust-district').value,
                     province: document.getElementById('cust-province').value,
                     zipcode: document.getElementById('cust-zipcode').value,
+                    remark: document.getElementById('cust-note').value,
                     note: document.getElementById('cust-note').value,
                     line: document.getElementById('cust-line').value,
                     facebook: document.getElementById('cust-facebook').value
                 };
 
-                const actionType = rid ? 'editCustomer' : 'addCustomer';
+                const actionType = rid ? 'update' : 'add';
+                const payloadReq = rid ? { rowIndex: rid, cust: packData } : packData;
                 const alertMsg = rid ? '✏️ อัปเดตข้อมูลลูกค้าสำเร็จเรียบร้อย!' : '➕ บันทึกข้อมูลลูกค้าใหม่สำเร็จ!';
 
                 fetch(WEB_APP_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: actionType, rowIndex: rid, data: packData })
+                    body: JSON.stringify({ action: actionType, payload: payloadReq }),
+                    redirect: 'follow'
                 })
                 .then(res => res.json())
                 .then(resData => {
