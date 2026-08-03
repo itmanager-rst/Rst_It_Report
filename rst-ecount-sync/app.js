@@ -366,11 +366,43 @@ function toggleSelectAllCount(checked) {
 }
 
 function updateActualQty(pCode, pName, val) {
+    // 1. อัปเดตข้อมูลในหน่วยความจำ
     const item = allStockData.find(d => getItemCode(d) === pCode && getItemName(d) === pName);
-    if (item) {
-        item.actualQty = val !== '' ? parseFloat(val) : null;
-        applyFilterAndSearch();
+    if (!item) return;
+    
+    item.actualQty = val !== '' ? parseFloat(val) : null;
+
+    // 2. คำนวณผลต่าง (Diff) และสถานะใหม่เฉพาะแถวนี้
+    const systemQty = getItemQty(item);
+    const actualQty = item.actualQty;
+    const diff = actualQty !== null ? actualQty - systemQty : null;
+
+    let statusBadge = '<span class="bg-purple-50 text-purple-600 border border-purple-200 text-[10px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1"><i class="fa-regular fa-moon"></i> ยังไม่นับ</span>';
+    let diffDisplay = '-';
+
+    if (actualQty !== null) {
+        if (diff === 0) {
+            statusBadge = '<span class="bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ตรง</span>';
+            diffDisplay = `<span class="text-emerald-600 font-semibold">0.00</span>`;
+        } else if (diff < 0) {
+            statusBadge = '<span class="bg-rose-50 text-rose-600 border border-rose-200 text-[10px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1"><i class="fa-solid fa-minus"></i> ขาด</span>';
+            diffDisplay = `<span class="text-rose-600 font-semibold">${diff.toFixed(2)}</span>`;
+        } else {
+            statusBadge = '<span class="bg-amber-50 text-amber-600 border border-amber-200 text-[10px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1"><i class="fa-solid fa-plus"></i> เกิน</span>';
+            diffDisplay = `<span class="text-amber-600 font-semibold">+${diff.toFixed(2)}</span>`;
+        }
     }
+
+    // 3. อัปเดตเฉพาะ Cell ของแถวนั้นทันที โดยไม่ต้องวาดตารางใหม่ทั้งหมด
+    const rowInput = event.target; // รับ HTML Element ตัวที่กำลังกรอก
+    const row = rowInput.closest('tr');
+    if (row) {
+        row.cells[6].innerHTML = diffDisplay;  // ช่องผลต่าง (Diff)
+        row.cells[7].innerHTML = statusBadge;  // ช่องสถานะ
+    }
+
+    // 4. อัปเดตตัวเลขการ์ดสรุปด้านบน
+    updateCountCards();
 }
 
 function updateCountCards() {
