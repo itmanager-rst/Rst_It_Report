@@ -77,7 +77,27 @@
         .badge-book { background: #dcfce7; color: #15803d; }
         .badge-track { background: #f3e8ff; color: #6b21a8; }
 
-        /* Animation for Loading Spinner */
+        /* Dashboard Styles */
+        .dash-card { 
+            background: #ffffff; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 10px; 
+            padding: 14px; 
+            margin-bottom: 20px; 
+            max-height: 280px; 
+            flex-shrink: 0;
+            overflow-y: auto; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02); 
+        }
+        .dash-card::-webkit-scrollbar { width: 4px; }
+        .dash-card::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        .dash-title { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+        .dash-list { list-style: none; font-size: 12px; color: #334155; }
+        .dash-item { display: flex; justify-content: space-between; padding: 6px 8px; margin-bottom: 4px; background: #f8fafc; border-radius: 6px; border: 1px solid #f1f5f9; transition: all 0.2s; }
+        .dash-item:hover { background: #f1f5f9; }
+        .dash-item:last-child { margin-bottom: 0; }
+        .dash-count { font-weight: 600; color: var(--primary-color); background: #e0f2fe; padding: 1px 8px; border-radius: 10px; font-size: 11px; }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -202,7 +222,6 @@
                     </table>
                 </div>
 
-                <!-- 📄 ปุ่มควบคุมการเปลี่ยนหน้า (Pagination) -->
                 <div class="pagination-container">
                     <span style="font-size: 13px; color: #64748b;">แสดงผลทีละ 50 รายการ</span>
                     <div style="display: flex; gap: 8px;">
@@ -214,6 +233,20 @@
         </div>
 
         <div class="right-panel">
+            <div class="dash-card">
+                <div class="dash-title">
+                    <span>📊 สรุปภาพรวมลูกค้า</span>
+                    <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 11px;" onclick="loadDashboardData()">🔄 รีเฟรช</button>
+                </div>
+                <div class="dash-list" id="dash-type-list">
+                    <div style="text-align:center; color:#94a3b8; padding:5px;">กำลังโหลดสรุปประเภท...</div>
+                </div>
+                <div class="dash-title" style="margin-top: 10px; font-size: 13px;">🏆 Top 5 สินค้ายอดนิยม</div>
+                <div class="dash-list" id="dash-prod-list">
+                    <div style="text-align:center; color:#94a3b8; padding:5px;">กำลังโหลดสรุปสินค้า...</div>
+                </div>
+            </div>
+
             <div class="form-panel-title" id="form-title">➕ เพิ่มข้อมูลลูกค้าใหม่</div>
             <form id="customer-form">
                 <input type="hidden" id="form-row-index" value="">
@@ -236,8 +269,8 @@
                         <input type="text" id="cust-lname" class="form-control" required placeholder="นามสกุล">
                     </div>
                     <div class="form-group full-width">
-                        <label>เบอร์โทรศัพท์ (Phone1)</label>
-                        <input type="tel" id="cust-phone" class="form-control" placeholder="0xxxxxxxxx" required>
+                        <label>เบอร์โทรศัพท์ (Phone) <span id="phone-check-msg" style="font-size:11px; font-weight:normal;"></span></label>
+                        <input type="tel" id="cust-phone" class="form-control" placeholder="0xxxxxxxxx" required onblur="checkDuplicatePhone()">
                     </div>
                     <div class="form-group">
                         <label>ประเภท (Type)</label>
@@ -315,7 +348,7 @@
     </div>
 
     <script> 
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzdCVNX_zVTacd8Jjpczyu0b_beDFSLiix0jo1P6zsrl2lqBk8OhXm81OMHYIoUr9hU/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzHE1n7XqN1uBd__4C0H0tfaqVa-ifcan_DlObFmO4MDvet_SKHtiGdD_EHp98X57DY/exec';
         
         let currentPage = 1;
         const pageSize = 50;
@@ -325,6 +358,7 @@
             try {
                 setDefaultDate();
                 loadInitialMeta();
+                loadDashboardData();
                 fetchDataFromServer(1);
                 document.getElementById('customer-form').addEventListener('submit', onFormSubmit);
             } catch(e) {
@@ -344,31 +378,71 @@
                 .then(res => res.json())
                 .then(data => {
                     if(data && data.totalCount) document.getElementById('stat-total').innerText = data.totalCount.toLocaleString();
-                    
-                    // ปิดการใช้งานฟังก์ชัน setupProductDropdowns ด้านล่างนี้ 
-                    // เพื่อไม่ให้ระบบดึงข้อมูลสินค้าที่ซ้ำหรือมั่วจากฐานข้อมูลมาทับรายการที่เราตั้งค่าไว้ใน HTML
-                    // if(data && data.goods) setupProductDropdowns(data.goods);
-                    
                 }).catch(err => console.log('Meta error:', err));
         }
 
-        // เก็บฟังก์ชันนี้ไว้เผื่อต้องการใช้อนาคต แต่ปัจจุบันถูกปิดการทำงานแล้วใน loadInitialMeta
-        function setupProductDropdowns(goods) {
-            try {
-                const filterProd = document.getElementById('filter-product');
-                const custProd = document.getElementById('cust-product');
-                if(!filterProd || !custProd) return;
-                
-                filterProd.innerHTML = '<option value="ALL">-- ทุกสินค้า --</option>';
-                custProd.innerHTML = '<option value="">-- เลือกสินค้า --</option>';
-                
-                goods.forEach(item => {
-                    let val = Array.isArray(item) ? item[0] : item;
-                    if(!val || val === 'ProductName' || val === 'ชื่อสินค้า') return;
-                    filterProd.innerHTML += `<option value="${val}">${val}</option>`;
-                    custProd.innerHTML += `<option value="${val}">${val}</option>`;
-                });
-            } catch(e) {}
+        function loadDashboardData() {
+            fetch(`${WEB_APP_URL}?action=getDashboardSummary`, { method: 'GET', redirect: 'follow' })
+                .then(res => res.json())
+                .then(resData => {
+                    if(resData && resData.success) {
+                        const typeList = document.getElementById('dash-type-list');
+                        if (resData.typeSummary && resData.typeSummary.length > 0) {
+                            typeList.innerHTML = resData.typeSummary.map(item => 
+                                `<div class="dash-item">
+                                    <span>${item.type}</span>
+                                    <span class="dash-count">${item.count.toLocaleString()} ราย</span>
+                                </div>`
+                            ).join('');
+                        } else {
+                            typeList.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:5px;">ไม่มีข้อมูล</div>';
+                        }
+
+                        const prodList = document.getElementById('dash-prod-list');
+                        if (resData.topProducts && resData.topProducts.length > 0) {
+                            prodList.innerHTML = resData.topProducts.map(item => 
+                                `<div class="dash-item">
+                                    <span>${item.product}</span>
+                                    <span class="dash-count">${item.count.toLocaleString()} ราย</span>
+                                </div>`
+                            ).join('');
+                        } else {
+                            prodList.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:5px;">ไม่มีข้อมูล</div>';
+                        }
+                    }
+                }).catch(err => console.log('Dashboard error:', err));
+        }
+
+        function checkDuplicatePhone() {
+            const phoneInput = document.getElementById('cust-phone');
+            const msgSpan = document.getElementById('phone-check-msg');
+            const phoneVal = phoneInput.value.trim();
+            const editRowIndex = document.getElementById('form-row-index').value;
+
+            if (editRowIndex || phoneVal.length < 9) {
+                if (msgSpan) msgSpan.innerHTML = '';
+                return;
+            }
+
+            if (msgSpan) msgSpan.innerHTML = '⚡ กำลังเช็กเบอร์ซ้ำ...';
+
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'checkDuplicatePhone', payload: { phone: phoneVal } }),
+                redirect: 'follow'
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success && resData.isDuplicate) {
+                    if (msgSpan) msgSpan.innerHTML = `<b style="color:#ef4444;">⚠️ มีในระบบแล้ว (${resData.customerName})</b>`;
+                    alert(`⚠️ เบอร์โทรศัพท์นี้ (${phoneVal}) มีในระบบแล้ว!\nเป็นของลูกค้า: ${resData.customerName}`);
+                } else {
+                    if (msgSpan) msgSpan.innerHTML = '<b style="color:#10b981;">✓ เบอร์นี้ใช้งานได้</b>';
+                }
+            }).catch(err => {
+                if (msgSpan) msgSpan.innerHTML = '';
+            });
         }
 
         function handleSearchKeyPress(e) {
@@ -398,7 +472,6 @@
             }
         }
 
-        // 🚀 ดึงข้อมูลจาก Server พร้อมเงื่อนไขการกรอง + Pagination
         function fetchDataFromServer(page = 1) {
             try {
                 currentPage = page;
@@ -444,7 +517,6 @@
             }
         }
 
-        // 📅 ฟังก์ชันแปลงรูปแบบวันที่ให้ถูกต้อง
         function parseDateString(dateVal) {
             if (dateVal === undefined || dateVal === null) return '';
             let dStr = dateVal.toString().trim();
@@ -491,7 +563,6 @@
             return dStr;
         }
 
-        // 🎯 ฟังก์ชันสร้างแถวข้อมูลในตาราง
         function renderTableRows(data) {
             const tbody = document.querySelector('#main-table tbody');
             if(!tbody) return;
@@ -553,7 +624,6 @@
             document.getElementById('btn-next-page').disabled = (currentPage >= totalPages);
         }
 
-        // ✏️ ฟังก์ชันดึงข้อมูลมาแสดงในฟอร์มเพื่อทำการแก้ไข
         function loadSingleRowForEdit(rid) {
             if(!rid) return;
             document.getElementById('form-title').innerText = '⏳ กำลังดึงข้อมูล...';
@@ -588,13 +658,13 @@
                     document.getElementById('cust-line').value = d.line || '';
                     document.getElementById('cust-facebook').value = d.facebook || '';
 
+                    document.getElementById('phone-check-msg').innerHTML = '';
                     document.getElementById('form-title').innerText = `📝 แก้ไขข้อมูลลูกค้า (${rid})`;
                     document.getElementById('btn-submit').innerText = '💾 อัปเดตข้อมูล';
                 }
             }).catch(err => console.log(err));
         }
 
-        // 🗑️ ฟังก์ชันลบข้อมูลลูกค้า
         function deleteCustomerRow(rid) {
             if(!rid || !confirm('คุณต้องการลบข้อมูลลูกค้ารายนี้ใช่หรือไม่?')) return;
 
@@ -609,6 +679,8 @@
                 if(resData && resData.success) {
                     alert('🗑️ ลบข้อมูลลูกค้าสำเร็จเรียบร้อย!');
                     fetchDataFromServer(currentPage);
+                    loadDashboardData();
+                    loadInitialMeta();
                 } else {
                     alert('❌ ไม่สามารถลบข้อมูลได้: ' + (resData.message || 'เกิดข้อผิดพลาด'));
                 }
@@ -619,15 +691,13 @@
             try {
                 document.getElementById('customer-form').reset();
                 document.getElementById('form-row-index').value = '';
+                document.getElementById('phone-check-msg').innerHTML = '';
                 document.getElementById('form-title').innerText = '➕ เพิ่มข้อมูลลูกค้าใหม่';
                 document.getElementById('btn-submit').innerText = '💾 บันทึกข้อมูล';
                 setDefaultDate();
             } catch(e) {}
         }
 
-        // ---------------------------------------------------------
-        // 🔄 ฟังก์ชันสร้าง UI Loading (ป๊อปอัปแจ้งเตือนขณะบันทึกข้อมูล)
-        // ---------------------------------------------------------
         function showLoadingAlert(msg) {
             let overlay = document.getElementById('custom-loading-overlay');
             if (!overlay) {
@@ -652,7 +722,6 @@
             const overlay = document.getElementById('custom-loading-overlay');
             if (overlay) overlay.style.display = 'none';
         }
-        // ---------------------------------------------------------
 
         function onFormSubmit(e) {
             e.preventDefault();
@@ -684,7 +753,6 @@
                 const payloadReq = rid ? { rowIndex: rid, cust: packData } : packData;
                 const alertMsg = rid ? '✏️ อัปเดตข้อมูลลูกค้าสำเร็จเรียบร้อย!' : '➕ บันทึกข้อมูลลูกค้าใหม่สำเร็จ!';
 
-                // --- 🔒 ล็อกปุ่มและโชว์ป๊อปอัป Loading ---
                 showLoadingAlert(rid ? 'กำลังอัปเดตข้อมูลลงฐานข้อมูล...' : 'กำลังบันทึกข้อมูลใหม่...');
                 const btnSubmit = document.getElementById('btn-submit');
                 if(btnSubmit) btnSubmit.disabled = true;
@@ -701,6 +769,8 @@
                         alert(alertMsg);
                         resetFormState();
                         fetchDataFromServer(currentPage);
+                        loadDashboardData();
+                        loadInitialMeta();
                     } else {
                         alert('❌ ข้อผิดพลาดจากระบบ: ' + (resData.message || 'ไม่ทราบสาเหตุ'));
                     }
@@ -709,7 +779,6 @@
                     resetFormState();
                     fetchDataFromServer(currentPage);
                 }).finally(() => {
-                    // --- 🔓 ปลดล็อกปุ่มและปิดป๊อปอัป Loading ---
                     hideLoadingAlert();
                     if(btnSubmit) btnSubmit.disabled = false;
                 });
