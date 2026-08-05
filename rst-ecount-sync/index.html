@@ -24,6 +24,7 @@
             table { width: 100% !important; border-collapse: collapse !important; }
             th, td { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 11px !important; }
             th { background-color: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .print-hidden-row { display: none !important; }
         }
     </style>
 </head>
@@ -115,15 +116,18 @@
             <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between no-print">
                 <div class="flex items-center gap-2 w-full md:w-auto">
                     <i class="fa-solid fa-warehouse text-slate-400 text-sm"></i>
-                    <label for="warehouse-select" class="text-xs text-slate-600 whitespace-nowrap font-semibold">เลือกคลังที่จะนับ:</label>
-                    <select id="warehouse-select" onchange="applyFilterAndSearch()" class="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 w-full md:w-56 font-medium">
+                    <label for="warehouse-select" class="text-xs text-slate-600 whitespace-nowrap font-semibold">เลือกคลัง/สาขา:</label>
+                    <select id="warehouse-select" onchange="syncWarehouseSelection(this.value)" class="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 w-full md:w-56 font-medium">
                         <option value="all">ทุกคลังสินค้า</option>
-                        <option value="เบญจลักษณ์">กาวดำ Shime (เบญจลักษณ์)</option>
-                        <option value="เดชอุดม">กาวดำ Shime (เดชอุดม)</option>
-                        <option value="กุฉินารายณ์">กาวดำ Shime (กุฉินารายณ์)</option>
-                        <option value="สำนักงานใหญ่">กาวดำ Shime (สำนักงานใหญ่)</option>
-                        <option value="ตระการพืชผล">กาวดำ Shime (ตระการพืชผล)</option>
-                        <option value="ศรีเมืองใหม่">กาวดำ Shime (ศรีเมืองใหม่)</option>
+                        <option value="สำนักงานใหญ่">สำนักงานใหญ่</option>
+                        <option value="กุฉินารายณ์">กุฉินารายณ์</option>
+                        <option value="เดชอุดม">เดชอุดม</option>
+                        <option value="ตระการพืชผล">ตระการพืชผล</option>
+                        <option value="ศรีเมืองใหม่">ศรีเมืองใหม่</option>
+                        <option value="ศรีสะเกษ">ศรีสะเกษ</option>
+                        <option value="เบญจลักษณ์">เบญจลักษณ์</option>
+                        <option value="ขุขันธ์">ขุขันธ์</option>
+                        <option value="โกดังบ้านดอน">โกดังบ้านดอน</option>
                     </select>
                 </div>
 
@@ -132,12 +136,28 @@
                         <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                             <i class="fa-solid fa-barcode text-base"></i>
                         </div>
-                        <input type="text" id="barcode-input" onkeydown="checkSearchEnter(event)" placeholder="สแกนบาร์โค้ด หรือ พิมพ์รหัสสินค้า/ชื่อสินค้า..." class="bg-white border-2 border-emerald-500 text-slate-800 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block w-full pl-9 p-2 font-mono font-semibold tracking-wider">
+                        <input type="text" id="barcode-input" onkeyup="applyFilterAndSearch()" onkeydown="checkSearchEnter(event)" placeholder="สแกนบาร์โค้ด หรือ พิมพ์รหัสสินค้า/ชื่อสินค้า..." class="bg-white border-2 border-emerald-500 text-slate-800 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block w-full pl-9 p-2 font-mono font-semibold tracking-wider">
                     </div>
                     <button onclick="openCameraScanner()" class="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shrink-0 cursor-pointer shadow">
                         <i class="fa-solid fa-camera text-emerald-400"></i>
                         <span class="hidden sm:inline">สแกนผ่านกล้อง</span>
                     </button>
+                </div>
+            </div>
+
+            <!-- เพิ่ม แถบควบคุม Checkbox ฝั่งหน้าตรวจนับ -->
+            <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs no-print">
+                <div class="flex flex-wrap items-center gap-4">
+                    <label class="flex items-center space-x-2 cursor-pointer select-none">
+                        <input type="checkbox" id="select-all-count-top" onchange="toggleSelectAllCount(this.checked)" class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                        <span class="font-semibold text-slate-600">เลือกทั้งหมดเพื่อปริ้น (ที่กำลังแสดงอยู่)</span>
+                    </label>
+                    <button onclick="clearSelectionCount()" class="font-semibold text-slate-400 hover:text-slate-600 underline cursor-pointer">
+                        ล้างการเลือกทั้งหมด
+                    </button>
+                </div>
+                <div class="font-bold text-slate-500">
+                    เลือกสำหรับปริ้นแล้ว <span id="selected-count-print-num" class="text-blue-600">0</span> รายการ
                 </div>
             </div>
 
@@ -147,7 +167,7 @@
                         <thead class="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200 font-semibold">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-center w-12 no-print">
-                                    <input type="checkbox" onchange="toggleSelectAllCount(this.checked)" class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                                    <input type="checkbox" id="select-all-count-head" onchange="toggleSelectAllCount(this.checked)" class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-center w-12">#</th>
                                 <th scope="col" class="px-4 py-3">รหัสสินค้า</th>
@@ -176,13 +196,15 @@
                         <h3 id="total-items" class="text-lg font-bold text-slate-700">0 รายการ</h3>
                     </div>
                 </div>
-                <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex items-center space-x-3">
-                    <div class="p-2.5 bg-red-100 text-red-700 rounded-lg"><i class="fa-solid fa-triangle-exclamation text-lg"></i></div>
+                
+                <div onclick="setCriticalFilter(filterCriticalStatus === 'critical' ? 'all' : 'critical')" class="cursor-pointer bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 hover:border-red-400 transition flex items-center space-x-3 group">
+                    <div class="p-2.5 bg-red-100 text-red-700 rounded-lg group-hover:bg-red-600 group-hover:text-white transition"><i class="fa-solid fa-triangle-exclamation text-lg"></i></div>
                     <div>
-                        <p class="text-[11px] text-slate-400 font-medium">วิกฤต (สินค้าหมด/ติดลบ)</p>
+                        <p class="text-[11px] text-slate-400 font-medium">วิกฤต (คลิกเพื่อกรอง)</p>
                         <h3 id="critical-items" class="text-lg font-bold text-red-600">0 รายการ</h3>
                     </div>
                 </div>
+
                 <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex items-center space-x-3">
                     <div class="p-2.5 bg-indigo-100 text-indigo-700 rounded-lg"><i class="fa-solid fa-clock text-lg"></i></div>
                     <div>
@@ -192,20 +214,51 @@
                 </div>
             </div>
 
-            <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center gap-3 text-xs">
-                <label class="flex items-center space-x-2 cursor-pointer select-none">
-                    <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
-                    <span class="font-semibold text-slate-600">เลือกทั้งหมด (ที่กำลังแสดงอยู่)</span>
-                </label>
-                <button onclick="selectAllCritical()" class="font-semibold text-red-600 hover:text-red-700 underline cursor-pointer">
-                    เลือกรายการเตือนสั่งซื้อทั้งหมด
-                </button>
-                <button onclick="clearSelection()" class="font-semibold text-slate-400 hover:text-slate-600 underline cursor-pointer">
-                    ล้างการเลือกทั้งหมด
-                </button>
-                <span class="ml-auto font-bold text-slate-500">
-                    เลือกแล้ว <span id="selected-count" class="text-emerald-600">0</span> รายการ
-                </span>
+            <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div class="flex flex-wrap items-center gap-4">
+                    <div class="flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                        <i class="fa-solid fa-warehouse text-slate-400 text-xs"></i>
+                        <label for="warehouse-select-minmax" class="text-xs text-slate-600 font-semibold whitespace-nowrap">สาขา/คลัง:</label>
+                        <select id="warehouse-select-minmax" onchange="syncWarehouseSelection(this.value)" class="bg-white border border-slate-300 text-slate-700 text-xs rounded-md focus:ring-emerald-500 focus:border-emerald-500 p-1 font-medium">
+                            <option value="all">ทุกคลังสินค้า</option>
+                            <option value="สำนักงานใหญ่">สำนักงานใหญ่</option>
+                            <option value="กุฉินารายณ์">กุฉินารายณ์</option>
+                            <option value="เดชอุดม">เดชอุดม</option>
+                            <option value="ตระการพืชผล">ตระการพืชผล</option>
+                            <option value="ศรีเมืองใหม่">ศรีเมืองใหม่</option>
+                            <option value="ศรีสะเกษ">ศรีสะเกษ</option>
+                            <option value="เบญจลักษณ์">เบญจลักษณ์</option>
+                            <option value="ขุขันธ์">ขุขันธ์</option>
+                            <option value="โกดังบ้านดอน">โกดังบ้านดอน</option>
+                        </select>
+                    </div>
+
+                    <label class="flex items-center space-x-2 cursor-pointer select-none">
+                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                        <span class="font-semibold text-slate-600">เลือกทั้งหมด (ที่กำลังแสดงอยู่)</span>
+                    </label>
+                    <button onclick="selectAllCritical()" class="font-semibold text-red-600 hover:text-red-700 underline cursor-pointer">
+                        เลือกรายการเตือนสั่งซื้อทั้งหมด
+                    </button>
+                    <button onclick="clearSelection()" class="font-semibold text-slate-400 hover:text-slate-600 underline cursor-pointer">
+                        ล้างการเลือกทั้งหมด
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-3 ml-auto">
+                    <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button onclick="setCriticalFilter('all')" id="btn-filter-all" class="px-3 py-1 rounded-md font-semibold transition text-slate-700 bg-white shadow-sm">
+                            ทั้งหมด
+                        </button>
+                        <button onclick="setCriticalFilter('critical')" id="btn-filter-critical" class="px-3 py-1 rounded-md font-semibold transition text-slate-500 hover:text-red-600">
+                            🚨 เฉพาะสินค้าวิกฤต/สั่งซื้อ
+                        </button>
+                    </div>
+
+                    <span class="font-bold text-slate-500 whitespace-nowrap">
+                        เลือกแล้ว <span id="selected-count" class="text-emerald-600">0</span> รายการ
+                    </span>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -260,7 +313,6 @@
         </div>
     </div>
 
-    <!-- ดึงไฟล์ JavaScript แยก -->
     <script src="app.js"></script>
 </body>
 </html>
