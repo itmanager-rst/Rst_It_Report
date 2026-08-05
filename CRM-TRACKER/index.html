@@ -39,6 +39,12 @@
         .form-control { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px; width: 100%; outline: none; background: #fff; }
         .form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(2,132,199,0.1); }
 
+        /* แถวฟิลด์ค้นหา/กรองข้อมูล: บังคับให้อยู่บรรทัดเดียว เรียงชิดขอบล่างให้เท่ากันทุกช่อง */
+        .filter-grid { display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+        .filter-grid .form-group { flex: 1 1 125px; min-width: 125px; }
+        .filter-grid .form-group.wide { flex: 1.8 1 200px; min-width: 180px; }
+        .filter-grid .form-group label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
         /* Multi-select Dropdown CSS */
         .multiselect-box { position: relative; width: 100%; }
         .select-btn { display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #fff; }
@@ -46,7 +52,7 @@
         .checkboxes-dropdown.show { display: block; }
         .checkboxes-dropdown label { display: flex; align-items: center; gap: 6px; padding: 5px; font-size: 12px; cursor: pointer; border-radius: 4px; }
         .checkboxes-dropdown label:hover { background: #f1f5f9; }
-        .search-actions { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
+        .search-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
         .btn { padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s; }
         .btn-primary { background: #10b981; color: white; }
         .btn-primary:hover { background: #059669; }
@@ -99,18 +105,17 @@
                 <span>🔍 ค้นหาและกรองข้อมูลขั้นสูง</span>
                 <button class="btn btn-secondary" style="font-size: 11px; padding: 2px 8px;" onclick="runGeoCheckTool()">🛠️ ตรวจสอบชื่อ ที่อยู่ผิดมาตรฐาน</button>
             </div>
-            <div class="search-grid">
-                    <div class="form-group" style="grid-column: span 2;">
-                        <label>ค้นหาหลัก (ชื่อ / นามสกุล / รายละเอียด)</label>
+            <div class="search-grid filter-grid">
+                    <div class="form-group wide">
+                        <label>ชื่อ สกุล</label>
                         <input type="text" id="filter-keyword" class="form-control" placeholder="พิมพ์คำค้น..." onkeypress="handleSearchKeyPress(event)">
                     </div>
-
                     <div class="form-group">
-                        <label>ค้นหาเบอร์โทรตรงตัว</label>
+                        <label>เบอร์โทร</label>
                         <input type="text" id="filter-exact-phone" class="form-control" placeholder="เช่น 0812345678" onkeypress="handleSearchKeyPress(event)">
                     </div>
                     <div class="form-group">
-                        <label>ประเภทลูกค้า (Multi-Select)</label>
+                        <label>ประเภทลูกค้า</label>
                         <div class="multiselect-box">
                             <div class="form-control select-btn" onclick="toggleTypeDropdown()">
                                 <span id="type-select-label">-- เลือกประเภท --</span>
@@ -135,7 +140,7 @@
                         <input type="date" id="filter-end-date" class="form-control">
                     </div>
                     <div class="form-group">
-                        <label style="color: var(--accent-color); font-weight: 600;">วันนัดหมาย (Booking)</label>
+                        <label style="color: var(--accent-color); font-weight: 600;">วันนัดหมาย</label>
                         <input type="date" id="filter-appdate" class="form-control">
                     </div>
                     <div class="form-group">
@@ -152,25 +157,29 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>ตำบล</label>
-                        <input type="text" id="filter-subdistrict" class="form-control" placeholder="ตำบล" onkeypress="handleSearchKeyPress(event)">
+                        <label>จังหวัด</label>
+                        <select id="filter-province" class="form-control" onchange="onFilterProvinceChange()"></select>
                     </div>
                     <div class="form-group">
                         <label>อำเภอ</label>
-                        <input type="text" id="filter-district" class="form-control" placeholder="อำเภอ" onkeypress="handleSearchKeyPress(event)">
+                        <select id="filter-district" class="form-control" onchange="onFilterDistrictChange()"></select>
                     </div>
-                    <div class="form-group" style="grid-column: span 2;">
-                        <label>ค้นหาในหมายเหตุ</label>
+                    <div class="form-group">
+                        <label>ตำบล</label>
+                        <select id="filter-subdistrict" class="form-control"></select>
+                    </div>
+                    <div class="form-group wide">
+                        <label>หมายเหตุ</label>
                         <input type="text" id="filter-note" class="form-control" placeholder="ค้นความเห็น/หมายเหตุ..." onkeypress="handleSearchKeyPress(event)">
                     </div>
-                    <div class="search-actions">
-                        <div style="display:flex; gap:8px;">
-                            <button class="btn btn-export" onclick="exportFilteredCSV()">📥 Export CSV</button>
-                            <button class="btn btn-secondary" onclick="clearFilters()">🔄 ล้างเงื่อนไข</button>
-                        </div>
-                        <button class="btn btn-primary" onclick="fetchDataFromServer(1)">🚀 ค้นหาข้อมูล</button>
-                    </div>
+            </div>
+            <div class="search-actions">
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-export" onclick="exportFilteredCSV()">📥 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="clearFilters()">🔄 ล้างเงื่อนไข</button>
                 </div>
+                <button class="btn btn-primary" onclick="fetchDataFromServer(1)">🚀 ค้นหาข้อมูล</button>
+            </div>
             </div>
         <div class="content-row">
             <div class="form-panel">
@@ -184,7 +193,7 @@
                             <input type="date" id="cust-date" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label style="color: var(--accent-color); font-weight: 600;">📅 Booking Date</label>
+                            <label style="color: var(--accent-color); font-weight: 600;">วันนัดหมาย</label>
                             <input type="date" id="cust-appdate" class="form-control">
                         </div>
                         <div class="form-group">
@@ -308,6 +317,7 @@
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span>แสดงแถวต่อหน้า:</span>
                         <select id="filter-pagesize" class="form-control" style="width: auto; padding: 2px 6px;" onchange="fetchDataFromServer(1)">
+                            <option value="20" selected>20</option>
                             <option value="50">50</option>
                             <option value="100">100</option>
                             <option value="200">200</option>
@@ -347,8 +357,11 @@
         const DEFAULT_PROVINCE = 'อุบลราชธานี';
         document.addEventListener('DOMContentLoaded', () => {
             setDefaultDate();
-            populateProvinceSelect();
+            populateProvinceSelect('cust-province');
             resetGeoSelectsToDefault();
+            populateProvinceSelect('filter-province', '-- ทุกจังหวัด --');
+            populateDistrictSelect('filter-district', '', '', '-- ทุกอำเภอ --');
+            populateSubdistrictSelect('filter-subdistrict', '', '', '', '-- ทุกตำบล --');
             loadFiltersFromLocalStorage();
             loadInitialMeta();
             fetchDataFromServer(1);
@@ -373,6 +386,7 @@
                 endDate: document.getElementById('filter-end-date').value,
                 appdate: document.getElementById('filter-appdate').value,
                 product: document.getElementById('filter-product').value,
+                province: document.getElementById('filter-province').value,
                 subdistrict: document.getElementById('filter-subdistrict').value,
                 district: document.getElementById('filter-district').value,
                 note: document.getElementById('filter-note').value,
@@ -391,8 +405,9 @@
                 document.getElementById('filter-end-date').value = f.endDate || '';
                 document.getElementById('filter-appdate').value = f.appdate || '';
                 document.getElementById('filter-product').value = f.product || 'ALL';
-                document.getElementById('filter-subdistrict').value = f.subdistrict || '';
-                document.getElementById('filter-district').value = f.district || '';
+                document.getElementById('filter-province').value = f.province || '';
+                populateDistrictSelect('filter-district', f.province || '', f.district || '', '-- ทุกอำเภอ --');
+                populateSubdistrictSelect('filter-subdistrict', f.province || '', f.district || '', f.subdistrict || '', '-- ทุกตำบล --');
                 document.getElementById('filter-note').value = f.note || '';
                 if(f.pageSize) document.getElementById('filter-pagesize').value = f.pageSize;
                 if (f.types && Array.isArray(f.types)) {
@@ -437,8 +452,9 @@
             document.getElementById('filter-end-date').value = '';
             document.getElementById('filter-appdate').value = '';
             document.getElementById('filter-product').value = 'ALL';
-            document.getElementById('filter-subdistrict').value = '';
-            document.getElementById('filter-district').value = '';
+            document.getElementById('filter-province').value = '';
+            populateDistrictSelect('filter-district', '', '', '-- ทุกอำเภอ --');
+            populateSubdistrictSelect('filter-subdistrict', '', '', '', '-- ทุกตำบล --');
             document.getElementById('filter-note').value = '';
             localStorage.removeItem('crm_tracker_filters');
             fetchDataFromServer(1);
@@ -452,7 +468,7 @@
             const tbody = document.querySelector('#main-table tbody');
             tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูล...</td></tr>';
             const selectedTypes = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
-            const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 50;
+            const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
             const payload = {
                 action: 'search',
                 page: currentPage,
@@ -465,6 +481,7 @@
                     endDate: document.getElementById('filter-end-date').value,
                     appdate: document.getElementById('filter-appdate').value,
                     product: document.getElementById('filter-product').value,
+                    province: document.getElementById('filter-province').value,
                     subdistrict: document.getElementById('filter-subdistrict').value.trim(),
                     district: document.getElementById('filter-district').value.trim(),
                     note: document.getElementById('filter-note').value.trim()
@@ -553,7 +570,7 @@
             tbody.innerHTML = html;
         }
         function updatePaginationControls() {
-            const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 50;
+            const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
             const totalPages = Math.ceil(totalRecords / pageSizeVal) || 1;
             document.getElementById('page-info').innerText = `หน้า ${currentPage} จาก ${totalPages}`;
             document.getElementById('btn-prev-page').disabled = (currentPage <= 1);
@@ -571,44 +588,55 @@
             if (!prov) return null;
             return (prov.a || []).find(a => a.n === districtName);
         }
-        function populateProvinceSelect() {
-            const sel = document.getElementById('cust-province');
+        function populateProvinceSelect(selectId, allLabel) {
+            const sel = document.getElementById(selectId);
             const provinces = (typeof THAILAND_GEO_DATA !== 'undefined' ? THAILAND_GEO_DATA : [])
                 .map(p => p.n)
                 .sort((a, b) => a.localeCompare(b, 'th'));
-            sel.innerHTML = '<option value="">-- เลือกจังหวัด --</option>' +
-                provinces.map(n => `<option value="${n}">${n}</option>`).join('');
+            const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกจังหวัด --</option>';
+            sel.innerHTML = placeholder + provinces.map(n => `<option value="${n}">${n}</option>`).join('');
         }
-        function populateDistrictSelect(provName, selected) {
-            const sel = document.getElementById('cust-district');
+        function populateDistrictSelect(selectId, provName, selected, allLabel) {
+            const sel = document.getElementById(selectId);
             const prov = getProvinceObj(provName);
             const dists = prov ? (prov.a || []).map(a => a.n).sort((a, b) => a.localeCompare(b, 'th')) : [];
-            sel.innerHTML = '<option value="">-- เลือกอำเภอ --</option>' +
-                dists.map(n => `<option value="${n}">${n}</option>`).join('');
+            const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกอำเภอ --</option>';
+            sel.innerHTML = placeholder + dists.map(n => `<option value="${n}">${n}</option>`).join('');
             if (selected && dists.includes(selected)) sel.value = selected;
         }
-        function populateSubdistrictSelect(provName, distName, selected) {
-            const sel = document.getElementById('cust-subdistrict');
+        function populateSubdistrictSelect(selectId, provName, distName, selected, allLabel) {
+            const sel = document.getElementById(selectId);
             const amphoe = getAmphoeObj(provName, distName);
             const subs = amphoe ? (amphoe.t || []).map(t => t.n).sort((a, b) => a.localeCompare(b, 'th')) : [];
-            sel.innerHTML = '<option value="">-- เลือกตำบล --</option>' +
-                subs.map(n => `<option value="${n}">${n}</option>`).join('');
+            const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกตำบล --</option>';
+            sel.innerHTML = placeholder + subs.map(n => `<option value="${n}">${n}</option>`).join('');
             if (selected && subs.includes(selected)) sel.value = selected;
         }
         function onProvinceChange() {
             const provName = document.getElementById('cust-province').value;
-            populateDistrictSelect(provName);
-            populateSubdistrictSelect(provName, '');
+            populateDistrictSelect('cust-district', provName);
+            populateSubdistrictSelect('cust-subdistrict', provName, '');
         }
         function onDistrictChange() {
             const provName = document.getElementById('cust-province').value;
             const distName = document.getElementById('cust-district').value;
-            populateSubdistrictSelect(provName, distName);
+            populateSubdistrictSelect('cust-subdistrict', provName, distName);
         }
         function resetGeoSelectsToDefault() {
             const provSel = document.getElementById('cust-province');
             provSel.value = DEFAULT_PROVINCE;
             onProvinceChange();
+        }
+        /* Cascading Geo Dropdowns สำหรับส่วนค้นหา/กรองข้อมูล (จังหวัด/อำเภอ/ตำบล = ตัวกรอง ไม่บังคับเลือก) */
+        function onFilterProvinceChange() {
+            const provName = document.getElementById('filter-province').value;
+            populateDistrictSelect('filter-district', provName, '', '-- ทุกอำเภอ --');
+            populateSubdistrictSelect('filter-subdistrict', provName, '', '', '-- ทุกตำบล --');
+        }
+        function onFilterDistrictChange() {
+            const provName = document.getElementById('filter-province').value;
+            const distName = document.getElementById('filter-district').value;
+            populateSubdistrictSelect('filter-subdistrict', provName, distName, '', '-- ทุกตำบล --');
         }
         /* Levenshtein Distance Spelling Checker Tool */
         function levenshteinDistance(a, b) {
