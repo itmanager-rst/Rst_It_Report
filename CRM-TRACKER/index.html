@@ -48,7 +48,7 @@
         /* Multi-select Dropdown CSS */
         .multiselect-box { position: relative; width: 100%; }
         .select-btn { display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #fff; }
-        .checkboxes-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 100; max-height: 180px; overflow-y: auto; padding: 5px; }
+        .checkboxes-dropdown { display: none; position: fixed; width: 170px; background: #fff; border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 1000; max-height: 200px; overflow-y: auto; padding: 5px; }
         .checkboxes-dropdown.show { display: block; }
         .checkboxes-dropdown label { display: flex; align-items: center; gap: 6px; padding: 5px; font-size: 12px; cursor: pointer; border-radius: 4px; }
         .checkboxes-dropdown label:hover { background: #f1f5f9; }
@@ -117,7 +117,7 @@
                     <div class="form-group">
                         <label>ประเภทลูกค้า</label>
                         <div class="multiselect-box">
-                            <div class="form-control select-btn" onclick="toggleTypeDropdown()">
+                            <div class="form-control select-btn" onclick="toggleTypeDropdown(this)">
                                 <span id="type-select-label">-- เลือกประเภท --</span>
                                 <span>▼</span>
                             </div>
@@ -371,6 +371,10 @@
                     document.getElementById('type-dropdown').classList.remove('show');
                 }
             });
+            // ปิด dropdown เวลาเลื่อนหน้าจอ/เลื่อนแถวค้นหาแนวนอน กันไม่ให้ตำแหน่งเพี้ยนจากปุ่ม
+            window.addEventListener('scroll', function() {
+                document.getElementById('type-dropdown').classList.remove('show');
+            }, true);
         });
         function setDefaultDate() {
             document.getElementById('cust-date').value = new Date().toISOString().split('T')[0];
@@ -418,8 +422,19 @@
                 }
             } catch(e) {}
         }
-        function toggleTypeDropdown() {
-            document.getElementById('type-dropdown').classList.toggle('show');
+        function toggleTypeDropdown(triggerEl) {
+            const dropdown = document.getElementById('type-dropdown');
+            const isOpen = dropdown.classList.contains('show');
+            if (isOpen) {
+                dropdown.classList.remove('show');
+                return;
+            }
+            // ใช้ตำแหน่งจริงบนหน้าจอ (position: fixed) เพื่อไม่ให้ถูกช่องค้นหา/กรองที่เลื่อนแนวนอนบังหรือตัดขอบ
+            const trigger = triggerEl || document.querySelector('.multiselect-box .select-btn');
+            const rect = trigger.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + 4) + 'px';
+            dropdown.style.left = rect.left + 'px';
+            dropdown.classList.add('show');
         }
         function updateTypeSelectLabel() {
             const checked = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
@@ -456,6 +471,7 @@
             populateDistrictSelect('filter-district', '', '', '-- ทุกอำเภอ --');
             populateSubdistrictSelect('filter-subdistrict', '', '', '', '-- ทุกตำบล --');
             document.getElementById('filter-note').value = '';
+            document.getElementById('filter-pagesize').value = '20';
             localStorage.removeItem('crm_tracker_filters');
             fetchDataFromServer(1);
         }
