@@ -373,7 +373,7 @@
     </div>
 
     <script>
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxqRAA3Yd-UdoPrCfFY6ElTjNfIdz575BTWtDreEM_2YO5brB2T-ZqYTNyzbQAL4798/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzxhwBmKJs7FjPs2l5bhj7rh44W9vX17jxK7U_Qy2tCvw_w9WpulJwdRktt-nnkbfWW/exec';
         
         let currentPage = 1;
         let totalRecords = 0;
@@ -396,6 +396,31 @@
                 "คำเขื่อนแก้ว": ["ลุมพุก", "ย่อ", "กุดกุง"]
             }
         };
+
+       function formatDateForDisplay(dateStr) {
+    if (!dateStr || dateStr === '-' || dateStr === 'null' || dateStr === 'undefined') return '-';
+    
+    var sStr = String(dateStr).trim();
+    if (sStr.includes('T')) {
+        sStr = sStr.split('T')[0];
+    }
+    
+    if (/^\d{4}-\d{2}-\d{2}/.test(sStr)) {
+        var parts = sStr.substring(0, 10).split('-');
+        var year = parseInt(parts[0], 10);
+        
+        // ถ้าได้ปีช่วง 1950 - 1980 หรือ 2500 - 2525 (เกิดจากการแปลงปีผิด 57 ปี) ให้ปรับคืนเป็นปี ค.ศ. จริง
+        if (year >= 1950 && year <= 1980) {
+            year = year + 57; // 1967 + 57 = 2024
+        } else if (year >= 2500 && year <= 2525) {
+            year = year + 57 - 543; // ดึงกลับเป็น ค.ศ.
+        }
+        
+        return year + '-' + parts[1] + '-' + parts[2];
+    }
+
+    return sStr;
+}
 
         document.addEventListener('DOMContentLoaded', () => {
             setDefaultDate();
@@ -602,16 +627,19 @@
                 if(row.type === 'ทำสัญญา') badgeClass = 'badge-contract';
                 if(row.type === 'ส่งมอบ') badgeClass = 'badge-deliver';
 
+                var displayRecDate = formatDateForDisplay(row.date);
+                var displayBookDate = formatDateForDisplay(row.booking_date || row.appdate);
+
                 return `<tr>
                     <td>
                         <button class="btn btn-warning" onclick="loadSingleRowForEdit('${row.sheetRowIndex}')">✏️ Edit</button>
                         <button class="btn btn-danger" onclick="deleteCustomerRow('${row.sheetRowIndex}')">🗑️ Del</button>
                     </td>
-                    <td>${row.date || '-'}</td>
-                    <td style="color: var(--accent-color); font-weight: 600;">${row.booking_date || '-'}</td>
+                    <td>${displayRecDate}</td>
+                    <td style="color: var(--accent-color); font-weight: 600;">${displayBookDate}</td>
                     <td><b>${row.name}</b></td>
-                    <td>${row.phone}</td>
-                    <td><span class="badge ${badgeClass}">${row.type}</span></td>
+                    <td>${row.phone || '-'}</td>
+                    <td><span class="badge ${badgeClass}">${row.type || 'ลงทะเบียน'}</span></td>
                     <td>${row.product || '-'}</td>
                     <td>${row.addressno || '-'}</td>
                     <td>${row.moo || '-'}</td>
@@ -621,7 +649,7 @@
                     <td>${row.province || '-'}</td>
                     <td>${row.line || '-'}</td>
                     <td>${row.facebook || '-'}</td>
-                    <td style="white-space:pre-line;">${row.remark || '-'}</td>
+                    <td style="white-space:pre-line;">${row.remark || row.note || '-'}</td>
                 </tr>`;
             }).join('');
 
@@ -760,22 +788,30 @@
             });
         }
 
+        /* ดึงข้อมูลลูกค้า 1 รายการเพื่อนำขึ้นฟอร์มแก้ไข */
         function loadSingleRowForEdit(rid) {
             document.getElementById('form-row-index').value = rid;
+            
+            const selectedRow = currentRenderedData.find(r => r.sheetRowIndex === rid);
+            const phoneVal = selectedRow ? selectedRow.phone : rid;
+
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'getByPhone', payload: { phoneKey: rid } })
+                body: JSON.stringify({ 
+                    action: 'getByPhone', 
+                    payload: { phoneKey: phoneVal, rowIndex: rid } 
+                })
             })
             .then(res => res.json())
             .then(resData => {
                 if(resData && resData.success && resData.data) {
                     const d = resData.data;
-                    document.getElementById('cust-date').value = d.date;
-                    document.getElementById('cust-fname').value = d.firstname;
-                    document.getElementById('cust-lname').value = d.lastname;
-                    document.getElementById('cust-phone').value = d.phone;
-                    document.getElementById('cust-appdate').value = d.appdate;
+                    document.getElementById('cust-date').value = formatDateForDisplay(d.date);
+                    document.getElementById('cust-fname').value = d.firstname || '';
+                    document.getElementById('cust-lname').value = d.lastname || '';
+                    document.getElementById('cust-phone').value = d.phone || '';
+                    document.getElementById('cust-appdate').value = formatDateForDisplay(d.appdate || d.booking_date);
                     document.getElementById('cust-type').value = d.type || 'ลงทะเบียน';
                     document.getElementById('cust-product').value = d.product || '';
                     document.getElementById('cust-addressno').value = d.addressno || '';
@@ -787,26 +823,38 @@
                     document.getElementById('cust-zipcode').value = d.zipcode || '';
                     document.getElementById('cust-line').value = d.line || '';
                     document.getElementById('cust-facebook').value = d.facebook || '';
-                    document.getElementById('cust-note').value = d.remark || '';
+                    document.getElementById('cust-note').value = d.remark || d.note || '';
 
                     document.getElementById('form-title').innerText = `📝 แก้ไขข้อมูลลูกค้า`;
                     document.getElementById('btn-submit').innerText = '💾 อัปเดตข้อมูล';
+                } else {
+                    alert('❌ ไม่สามารถดึงข้อมูลสำหรับแก้ไขได้: ' + (resData.message || 'ไม่พบข้อมูล'));
                 }
             });
         }
 
+        /* ลบรายการลูกค้า */
         function deleteCustomerRow(rid) {
             if(!confirm('คุณต้องการลบข้อมูลลูกค้ารายนี้ใช่หรือไม่?')) return;
+            
+            const selectedRow = currentRenderedData.find(r => r.sheetRowIndex === rid);
+            const phoneVal = selectedRow ? selectedRow.phone : rid;
+
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'delete', payload: { phoneKey: rid } })
+                body: JSON.stringify({ 
+                    action: 'delete', 
+                    payload: { phoneKey: phoneVal, rowIndex: rid } 
+                })
             })
             .then(res => res.json())
             .then(resData => {
                 if(resData && resData.success) {
                     alert('🗑️ ลบข้อมูลเรียบร้อย');
                     fetchDataFromServer(currentPage);
+                } else {
+                    alert('❌ ไม่สามารถลบข้อมูลได้: ' + (resData.message || 'เกิดข้อผิดพลาด'));
                 }
             });
         }
@@ -857,6 +905,8 @@
                     alert('💾 บันทึกข้อมูลสำเร็จ!');
                     resetFormState();
                     fetchDataFromServer(currentPage);
+                } else {
+                    alert('❌ ไม่สามารถบันทึกข้อมูลได้: ' + (resData.message || 'เกิดข้อผิดพลาด'));
                 }
             });
         }
@@ -869,7 +919,9 @@
             }
             let csvContent = "\uFEFFวันที่บันทึก,Booking Date,ชื่อ-สกุล,เบอร์โทร,ประเภท,สินค้า,ตำบล,อำเภอ,จังหวัด,หมายเหตุ\n";
             currentRenderedData.forEach(r => {
-                csvContent += `"${r.date}","${r.booking_date}","${r.name}","${r.phone}","${r.type}","${r.product}","${r.subdistrict}","${r.district}","${r.province}","${(r.remark||'').replace(/"/g, '""')}"\n`;
+                var recD = formatDateForDisplay(r.date);
+                var bookD = formatDateForDisplay(r.booking_date || r.appdate);
+                csvContent += `"${recD}","${bookD}","${r.name}","${r.phone || ''}","${r.type || ''}","${r.product || ''}","${r.subdistrict || ''}","${r.district || ''}","${r.province || ''}","${(r.remark||r.note||'').replace(/"/g, '""')}"\n`;
             });
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
