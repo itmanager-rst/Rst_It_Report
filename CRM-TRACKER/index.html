@@ -121,6 +121,17 @@
         .btn-done { width: 100%; background: #16a34a; color: #fff; border: none; padding: 10px; border-radius: 10px; font-size: 14px; font-weight: 600; margin-top: 14px; cursor: pointer; }
         .btn-done:hover { background: #15803d; }
 
+        /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
+        .row-action-group { display: flex; gap: 4px; justify-content: center; }
+        .btn-row-icon { padding: 3px 6px; font-size: 11px; }
+        .btn-row-icon.has-log { background: #f3e8ff; color: #6b21a8; font-weight: 600; }
+        .timeline-list { max-height: 280px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
+        .timeline-item { border-left: 3px solid var(--primary-color); padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
+        .timeline-date { font-size: 11px; font-weight: 600; color: var(--primary-color); margin-bottom: 3px; }
+        .timeline-note { font-size: 12.5px; color: #334155; white-space: pre-line; word-break: break-word; }
+        .timeline-empty { font-size: 12px; color: #94a3b8; text-align: center; padding: 16px 0; }
+        .timeline-cust-info { font-size: 13px; margin-bottom: 12px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; color: #0f172a; }
+
         /* ===== แบบฟอร์มติดตามลูกค้า (สำหรับพิมพ์) ===== */
         #print-form-area { display: none; }
         .pf-page { width: 190mm; margin: 0 auto; font-size: 11.5px; line-height: 1.75; color: #000; }
@@ -366,7 +377,7 @@
                 <div class="table-responsive">
                     <table id="main-table">
                         <colgroup>
-                            <col style="width:4%"><!-- พิมพ์ -->
+                            <col style="width:7%"><!-- จัดการ (พิมพ์ / ประวัติติดตาม) -->
                             <col style="width:7%"><!-- วันที่บันทึก -->
                             <col style="width:7%"><!-- Booking Date -->
                             <col style="width:10%"><!-- ชื่อ - นามสกุล -->
@@ -386,7 +397,7 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th>พิมพ์</th>
+                                <th>จัดการ</th>
                                 <th>วันที่บันทึก</th>
                                 <th style="color: var(--accent-color);">Booking Date</th>
                                 <th>ชื่อ - นามสกุล</th>
@@ -489,6 +500,30 @@
                 </div>
             </div>
             <button type="button" class="btn-done" onclick="closeAddressModal()">✓ เสร็จแล้ว</button>
+        </div>
+    </div>
+
+    <!-- Modal ไทม์ไลน์การติดตามลูกค้า -->
+    <div id="history-modal-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:480px;">
+            <div class="modal-header">
+                <span>🕓 ประวัติการติดตามลูกค้า</span>
+                <button type="button" class="modal-close-btn" onclick="closeHistoryModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="timeline-cust-info" id="history-customer-info"></div>
+
+                <div class="modal-section-title">📜 ไทม์ไลน์การติดตาม (ล่าสุดขึ้นก่อน)</div>
+                <div class="timeline-list" id="history-timeline-list"></div>
+
+                <div class="modal-section-title">➕ เพิ่มบันทึกการติดตามรอบใหม่</div>
+                <div class="item-fields">
+                    <div><label>วันที่ติดต่อ/พูดคุย</label><input type="date" id="history-new-date" class="form-control"></div>
+                    <div class="full"><label>หมายเหตุ (คุยเรื่องอะไร ผลเป็นอย่างไร)</label><textarea id="history-new-note" class="form-control" rows="2" placeholder="เช่น โทรเสนอโปรโมชั่น Solis30, ลูกค้าขอคิดดูก่อน 1 สัปดาห์"></textarea></div>
+                </div>
+                <button type="button" class="btn-add-item" onclick="submitFollowUpEntry()">💾 บันทึกการติดตามนี้</button>
+            </div>
+            <button type="button" class="btn-done" onclick="closeHistoryModal()">✓ ปิดหน้าต่าง</button>
         </div>
     </div>
 
@@ -1060,8 +1095,14 @@
                 if(row.type === 'ทำสัญญา') badgeClass = 'badge-contract';
                 if(row.type === 'ส่งมอบ') badgeClass = 'badge-deliver';
                 const prodParts = getRowProductParts(row);
+                const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
                 return `<tr>
-                    <td style="text-align:center;"><button class="btn btn-secondary" style="padding:3px 6px; font-size:11px;" onclick="printRowByIndex(${idx})" title="พิมพ์แบบฟอร์มติดตามลูกค้า">🖨️</button></td>
+                    <td style="text-align:center;">
+                        <div class="row-action-group">
+                            <button class="btn btn-secondary btn-row-icon" onclick="printRowByIndex(${idx})" title="พิมพ์แบบฟอร์มติดตามลูกค้า">🖨️</button>
+                            <button class="btn btn-secondary btn-row-icon${followCount ? ' has-log' : ''}" onclick="openHistoryModal(${idx})" title="ดูไทม์ไลน์การติดตามลูกค้ารายนี้">🕓${followCount ? ' ' + followCount : ''}</button>
+                        </div>
+                    </td>
                     <td>${row.date || '-'}</td>
                     <td style="color: var(--accent-color); font-weight: 600;">${row.booking_date || '-'}</td>
                     <td><b>${row.name}</b></td>
@@ -1408,6 +1449,79 @@
                 return;
             }
             renderPrintForm(lastSavedCustomer);
+        }
+
+        /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
+        let historyModalRowIdx = null;
+        let historyModalKey = null;
+        let historyModalEntries = [];
+
+        function escapeHtml(v) {
+            return (v === undefined || v === null ? '' : String(v))
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function openHistoryModal(idx) {
+            const row = currentRenderedData[idx];
+            if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
+            historyModalRowIdx = idx;
+            historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
+            historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
+            document.getElementById('history-customer-info').innerHTML =
+                `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>`;
+            document.getElementById('history-new-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('history-new-note').value = '';
+            renderHistoryTimeline();
+            document.getElementById('history-modal-overlay').classList.add('show');
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('history-modal-overlay').classList.remove('show');
+        }
+
+        function renderHistoryTimeline() {
+            const container = document.getElementById('history-timeline-list');
+            if (!historyModalEntries.length) {
+                container.innerHTML = '<div class="timeline-empty">ยังไม่มีบันทึกการติดตามลูกค้ารายนี้</div>';
+                return;
+            }
+            const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            container.innerHTML = sorted.map(e => `
+                <div class="timeline-item">
+                    <div class="timeline-date">📅 ${escapeHtml(e.date)}</div>
+                    <div class="timeline-note">${escapeHtml(e.note || '')}</div>
+                </div>
+            `).join('');
+        }
+
+        function submitFollowUpEntry() {
+            const dateVal = document.getElementById('history-new-date').value;
+            const noteVal = document.getElementById('history-new-note').value.trim();
+            if (!dateVal || !noteVal) { alert('กรุณาระบุวันที่และหมายเหตุการติดตามให้ครบ'); return; }
+            if (!historyModalKey) { alert('ไม่พบข้อมูลอ้างอิงลูกค้ารายนี้'); return; }
+
+            const newEntry = { date: dateVal, note: noteVal };
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success) {
+                    historyModalEntries.push(newEntry);
+                    if (currentRenderedData[historyModalRowIdx]) {
+                        currentRenderedData[historyModalRowIdx].followUpLog = historyModalEntries.slice();
+                        currentRenderedData[historyModalRowIdx].followUpCount = historyModalEntries.length;
+                    }
+                    renderHistoryTimeline();
+                    renderTableRows(currentRenderedData);
+                    document.getElementById('history-new-note').value = '';
+                } else {
+                    alert('❌ บันทึกการติดตามไม่สำเร็จ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'));
         }
 
         function exportFilteredCSV() {
