@@ -625,8 +625,9 @@
         let currentPage = 1;
         let totalRecords = 0;
         let currentRenderedData = [];
-        let lastSavedCustomer = null; 
-        const DEFAULT_PROVINCE = 'อุบลราชธานี';  
+        let lastSavedCustomer = null;
+        let duplicatePhoneMatch = null; // { phone, name } ถ้าเบอร์ที่กำลังกรอกอยู่มีลูกค้ารายนี้ในระบบแล้ว
+        const DEFAULT_PROVINCE = 'อุบลราชธานี';
 
         const FREE_TEXT_CATEGORY = 'อุปกรณ์ต่อพ่วง';
         const PRODUCT_CATALOG = {
@@ -1253,6 +1254,7 @@
             const msgSpan = document.getElementById('phone-check-msg');
             const phoneVal = phoneInput.value.trim();
             const editRowIndex = document.getElementById('form-row-index').value;
+            duplicatePhoneMatch = null; // เคลียร์ผลเช็กเดิมทุกครั้งที่เช็กใหม่ (กันเบอร์เปลี่ยนแล้วค่าเดิมค้าง)
             if (editRowIndex || phoneVal.length < 9) {
                 msgSpan.innerHTML = '';
                 return;
@@ -1266,17 +1268,51 @@
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success && resData.isDuplicate) {
-                    msgSpan.innerHTML = `<b style="color:#ef4444;">⚠️ มีในระบบแล้ว (${resData.customerName})</b>`;
+                    duplicatePhoneMatch = { phone: phoneVal, name: resData.customerName };
+                    msgSpan.innerHTML = `<b style="color:#ef4444;">⚠️ มีในระบบแล้ว (${escapeAttr(resData.customerName)})</b> ` +
+                        `<button type="button" class="btn btn-accent" style="padding:2px 8px; font-size:10px; vertical-align:middle;" onclick="jumpToExistingCustomerTimeline('${escapeAttr(phoneVal)}')">🕓 ไปหน้าติดตามลูกค้ารายนี้แทน</button>`;
                 } else {
+                    duplicatePhoneMatch = null;
                     msgSpan.innerHTML = '<b style="color:#10b981;">✓ เบอร์ใช้งานได้</b>';
                 }
             });
+        }
+
+        /**
+         * เมื่อเซลล์กดปุ่ม "ไปหน้าติดตามลูกค้ารายนี้แทน" (จากคำเตือนเบอร์ซ้ำ ทั้งตอนกรอกและตอนกดบันทึก):
+         * ดึงข้อมูลลูกค้ารายนั้นด้วยเบอร์โทร, สลับไปหน้าประวัติ/ค้นหา, และเปิดหน้าต่างไทม์ไลน์การติดตามให้ทันที
+         * โดยไม่ต้องให้เซลล์มานั่งค้นหาเองอีกรอบ — ป้องกันการเผลอกดบันทึกเป็นลูกค้าใหม่ซ้ำเบอร์เดิม
+         */
+        function jumpToExistingCustomerTimeline(phoneVal) {
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getByPhone', payload: { phoneKey: phoneVal } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success && resData.data) {
+                    resetFormState();
+                    switchPage('history');
+                    document.getElementById('filter-exact-phone').value = phoneVal;
+                    currentRenderedData = [resData.data];
+                    totalRecords = 1;
+                    document.getElementById('stat-display').innerText = '1';
+                    renderTableRows(currentRenderedData);
+                    updatePaginationControls();
+                    openHistoryModal(0);
+                } else {
+                    alert('❌ ไม่พบข้อมูลลูกค้ารายนี้ในระบบ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'));
         }
 
         function resetFormState() {
             document.getElementById('customer-form').reset();
             document.getElementById('form-row-index').value = '';
             document.getElementById('phone-check-msg').innerHTML = '';
+            duplicatePhoneMatch = null;
             document.getElementById('form-title').innerText = '➕ เพิ่มข้อมูลลูกค้าใหม่';
             document.getElementById('btn-submit').innerText = '💾 บันทึกข้อมูล';
             setDefaultDate();
@@ -1295,7 +1331,22 @@
         function onFormSubmit(e) {
             e.preventDefault();
             const rid = document.getElementById('form-row-index').value;
-            
+
+            // ---- ตัวช่วยกันบันทึกลูกค้าใหม่ซ้ำเบอร์เดิม ----
+            // ถ้ากำลังเพิ่มลูกค้าใหม่ (ไม่ใช่แก้ไข) และเบอร์ที่กรอกตรงกับผลเช็กซ้ำล่าสุด
+            // ให้ถามยืนยันก่อนเสมอ กันเซลล์เผลอกดบันทึกซ้ำทั้งที่มีลูกค้ารายนี้อยู่แล้ว
+            if (!rid && duplicatePhoneMatch && duplicatePhoneMatch.phone === document.getElementById('cust-phone').value.trim()) {
+                const proceedAnyway = confirm(
+                    `⚠️ เบอร์ ${duplicatePhoneMatch.phone} มีอยู่ในระบบแล้ว (${duplicatePhoneMatch.name})\n\n` +
+                    `กด "ตกลง" เพื่อเพิ่มลูกค้ารายใหม่ซ้ำเบอร์นี้ต่อไป (ใช้เมื่อตั้งใจเพิ่มจริงๆ เท่านั้น)\n` +
+                    `กด "ยกเลิก" เพื่อไปหน้าติดตามลูกค้ารายเดิมแทน (แนะนำ)`
+                );
+                if (!proceedAnyway) {
+                    jumpToExistingCustomerTimeline(duplicatePhoneMatch.phone);
+                    return;
+                }
+            }
+
             const fname = document.getElementById('cust-fname').value.trim();
             const lname = document.getElementById('cust-lname').value.trim();
             const fullName = `${fname} ${lname}`.trim();
