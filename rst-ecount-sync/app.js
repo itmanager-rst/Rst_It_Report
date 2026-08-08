@@ -1,7 +1,7 @@
 // ==========================================
 // Config & Global Variables
 // ==========================================
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzmYcwvj2bLE8eghWydZDKVQdJb6C_6dqS0HRY-QWBqfMXyYegP4Qv5c5v_1mxtx11bAQ/exec"; 
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwf-5C_zTUBWfdARhEfjjhlCnF7H2Q2B6EoYWhknCO_mprhJDwzNg2Myvh_JWYutgyhlQ/exec"; 
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
@@ -18,7 +18,7 @@ let filterCriticalStatus = 'all';
 let html5QrCode = null;              
 
 // ==========================================
-// Initialization
+// Initialization & Data Fetching
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
     fetchStockData();
@@ -92,8 +92,22 @@ function syncWarehouseSelection(value) {
 }
 
 // ==========================================
-// Filter & Search Logic
+// Filter & Search Logic (ปรับปรุงแก้ไขการพิมพ์ค้นหา)
 // ==========================================
+
+function checkSearchEnter(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        applyFilterAndSearch();
+    }
+}
+
+// ฟังก์ชันรองรับเมื่อลบข้อความในช่องค้นหาจนว่างเปล่า
+function handleSearchInput(event) {
+    if (event.target.value.trim() === "") {
+        applyFilterAndSearch();
+    }
+}
 
 function setCriticalFilter(status) {
     filterCriticalStatus = status;
@@ -352,7 +366,7 @@ function updateSelectedCountUI() {
 }
 
 // ==========================================
-// Mode 2: Physical Count Table & Check Diff
+// Mode 2: Physical Count Table & Direct Cell DOM Update
 // ==========================================
 
 function renderCountTable() {
@@ -404,7 +418,7 @@ function renderCountTable() {
                 <td class="py-2.5 px-6 font-medium text-slate-800">${item.PROD_NM}</td>
                 <td class="py-2.5 px-4 text-right font-semibold text-slate-700">${systemQty.toFixed(2)}</td>
                 <td class="py-2.5 px-4 text-center">
-                    <input type="number" step="any" value="${actualVal}" onchange="updateCountVal('${code}', this.value)" placeholder="ป้อนค่านับ" class="w-28 text-center border-2 border-slate-300 focus:border-emerald-500 rounded-lg py-1 px-2 text-xs font-bold text-slate-800 focus:ring-0 no-print">
+                    <input type="number" step="any" value="${actualVal}" onchange="updateCountVal('${code}', this.value, event)" placeholder="ป้อนค่านับ" class="w-28 text-center border-2 border-slate-300 focus:border-emerald-500 rounded-lg py-1 px-2 text-xs font-bold text-slate-800 focus:ring-0 no-print">
                     <span class="hidden print-inline font-bold">${actualVal !== "" ? actualVal : "-"}</span>
                 </td>
                 <td class="py-2.5 px-4 text-center font-mono ${diffClass}">${diffText}</td>
@@ -417,13 +431,52 @@ function renderCountTable() {
     updateSelectedCountPrintUI();
 }
 
-function updateCountVal(code, val) {
+// อัปเดตเฉพาะ Cell ในตารางเพื่อความรวดเร็ว ไม่กระตุก ไม่ Re-render ทั้งตาราง
+function updateCountVal(code, val, event) {
     if (val === "" || val === null) {
         delete countedData[code];
     } else {
         countedData[code] = val;
     }
-    renderCountTable();
+
+    const item = rawStockData.find(i => String(i.PROD_CD) === String(code));
+    const systemQty = item ? (parseFloat(item.QTY) || 0) : 0;
+
+    let diffText = "-";
+    let diffClass = "text-slate-400 font-medium";
+    let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">ยังไม่นับ</span>`;
+
+    if (val !== "" && val !== null) {
+        const actualQty = parseFloat(val) || 0;
+        const diff = actualQty - systemQty;
+
+        if (diff === 0) {
+            diffText = "0.00";
+            diffClass = "text-emerald-600 font-bold";
+            statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700"><i class="fa-solid fa-check"></i> ตรงกัน</span>`;
+        } else if (diff < 0) {
+            diffText = diff.toFixed(2);
+            diffClass = "text-rose-600 font-bold";
+            statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700"><i class="fa-solid fa-minus"></i> สินค้าขาด</span>`;
+        } else {
+            diffText = "+" + diff.toFixed(2);
+            diffClass = "text-amber-600 font-bold";
+            statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700"><i class="fa-solid fa-plus"></i> สินค้าเกิน</span>`;
+        }
+    }
+
+    if (event && event.target) {
+        const row = event.target.closest('tr');
+        if (row) {
+            const printSpan = row.cells[5].querySelector('span.print-inline');
+            if (printSpan) printSpan.innerText = val !== "" ? val : "-";
+            
+            row.cells[6].className = `py-2.5 px-4 text-center font-mono ${diffClass}`;
+            row.cells[6].innerText = diffText;
+            row.cells[7].innerHTML = statusBadge;
+        }
+    }
+
     updateCountCards();
 }
 
@@ -462,25 +515,20 @@ function updateSelectedCountPrintUI() {
 }
 
 // ==========================================
-// Print Diff Report Function (Fixed Bug)
+// Print Diff Report Function
 // ==========================================
 
 function printDiffReport() {
-    // ตรวจสอบว่าปัจจุบันผู้ใช้อยู่ที่หน้าไหน
     const viewMinMax = document.getElementById("view-minmax");
     const isMinMaxTab = viewMinMax && !viewMinMax.classList.contains("hidden");
 
     if (isMinMaxTab) {
-        // ==========================================
-        // พิมพ์จากหน้า "ภาพรวมสต็อก & Min/Max"
-        // ==========================================
         const rows = document.querySelectorAll("#stock-table-body tr");
         const hasSelection = selectedMinMaxItems.size > 0;
 
         rows.forEach(row => {
             const chk = row.querySelector("input[type='checkbox']");
             if (hasSelection && chk) {
-                // ถ้ามีการติ๊กเลือก Checkbox ไว้ ให้พิมพ์เฉพาะแถวที่ติ๊กถูก
                 if (!chk.checked) {
                     row.classList.add("print-hidden-row");
                 } else {
@@ -499,9 +547,6 @@ function printDiffReport() {
         }, 300);
 
     } else {
-        // ==========================================
-        // พิมพ์จากหน้า "ตรวจนับสต็อก & Check Diff"
-        // ==========================================
         const rows = document.querySelectorAll("#count-table-body tr");
         const hasSelection = selectedCountItems.size > 0;
 
@@ -530,12 +575,6 @@ function printDiffReport() {
 // ==========================================
 // Barcode & Camera Scanner Logic
 // ==========================================
-
-function checkSearchEnter(event) {
-    if (event.key === 'Enter') {
-        applyFilterAndSearch();
-    }
-}
 
 function openCameraScanner() {
     const modal = document.getElementById('camera-modal');
