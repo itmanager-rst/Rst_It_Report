@@ -543,12 +543,64 @@
     }
 
     function exportBasketToExcel() {
-        if (basketItems.length === 0) return;
-        const worksheet = XLSX.utils.json_to_sheet(basketItems);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "BasketData");
-        XLSX.writeFile(workbook, `PR_Items_${new Date().toISOString().slice(0,10)}.xlsx`);
-    }
+    if (basketItems.length === 0) return;
+
+    let firstItem = basketItems[0];
+    let docCode = generateDocCode(firstItem.branch);
+    let todayStr = new Date().toLocaleDateString('th-TH');
+
+    // 1. จัดวางโครงสร้างข้อมูลเป็น Array 2 มิติ (AOA) ให้เหมือนใบขอซื้อตาม PDF
+    let excelData = [
+        ["", "", "", "", "", docCode],                                                 // บรรทัดที่ 1: เลขที่เอกสารมุมขวาบน (เช่น KU69/1)
+        ["ใบขอซื้ออะไหล่มาตรฐาน (MO 30 วัน)"],                                           // บรรทัดที่ 2: ชื่อหัวข้อเอกสาร
+        [""],                                                                          // บรรทัดที่ 3: เว้นวรรค
+        [`สาขา: ${firstItem.branch}`, "", "", `วันที่: ${todayStr}`],                    // บรรทัดที่ 4: ข้อมูลสาขา และ วันที่
+        [`ผู้ขอซื้อ: ${firstItem.recorder}`, "", "", "เบอร์โทร: -"],                     // บรรทัดที่ 5: ข้อมูลผู้ขอซื้อ
+        [""],                                                                          // บรรทัดที่ 6: เว้นวรรค
+        ["ลำดับ", "รหัสอะไหล่", "ชื่ออะไหล่", "Stock", "จำนวนขอซื้อ", "หมายเหตุ"]         // บรรทัดที่ 7: หัวตาราง
+    ];
+
+    // 2. วนลูปดึงรายการสินค้ามาลงตาราง
+    basketItems.forEach((item, idx) => {
+        excelData.push([
+            idx + 1,
+            item.partId,
+            item.partName,
+            Number(item.stock),
+            Number(item.quantity),
+            item.remarks || "-"
+        ]);
+    });
+
+    // 3. ใส่ช่องเซ็นชื่อด้านท้าย (ผู้ดำเนินการ / ผู้ตรวจสอบ / ผู้อนุมัติ)
+    excelData.push([""]);
+    excelData.push([""]);
+    excelData.push(["(......................................)", "", "(......................................)", "", "(......................................)"]);
+    excelData.push(["ผู้ดำเนินการ", "", "ผู้ตรวจสอบ", "", "ผู้อนุมัติ"]);
+
+    // 4. แปลงข้อมูล Array 2 มิติเข้า Sheet (ใช้ aoa_to_sheet แทน json_to_sheet)
+    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+
+    // 5. ตั้งค่าความกว้างคอลัมน์ A - F ให้เรียบร้อย ไม่โดนบีบตัด
+    worksheet['!cols'] = [
+        { wch: 8 },   // A: ลำดับ
+        { wch: 18 },  // B: รหัสอะไหล่
+        { wch: 38 },  // C: ชื่ออะไหล่
+        { wch: 10 },  // D: Stock
+        { wch: 14 },  // E: จำนวนขอซื้อ
+        { wch: 28 }   // F: หมายเหตุ
+    ];
+
+    // 6. ผสานเซลล์หัวข้อ "ใบขอซื้ออะไหล่มาตรฐาน (MO 30 วัน)" ตรงกลาง (A2:F2)
+    worksheet['!merges'] = [
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }
+    ];
+
+    // 7. บันทึกและดาวน์โหลดไฟล์ Excel (.xlsx)
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "ใบขอซื้อ");
+    XLSX.writeFile(workbook, `ใบขอซื้อ_${docCode.replace('/', '-')}_${firstItem.branch}.xlsx`);
+}
 
     function submitAllBasketToSheet() {
         if(basketItems.length === 0) return;
