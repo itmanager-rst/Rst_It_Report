@@ -3,8 +3,6 @@
 // ==========================================
 // URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT
 const PYTHON_API_URL = "http://localhost:5000/api"; 
-// เก็บ URL เดิมไว้เผื่ออ้างอิง
-// const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwf-5C_zTUBWfdARhEfjjhlCnF7H2Q2B6EoYWhknCO_mprhJDwzNg2Myvh_JWYutgyhlQ/exec"; 
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
@@ -45,7 +43,7 @@ function formatThaiDateTime(dateStr) {
 
         const day = String(d.getDate()).padStart(2, '0');
         const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear(); // หากต้องการ พ.ศ. ให้ใช้ d.getFullYear() + 543
+        const year = d.getFullYear();
         const hours = String(d.getHours()).padStart(2, '0');
         const minutes = String(d.getMinutes()).padStart(2, '0');
         const seconds = String(d.getSeconds()).padStart(2, '0');
@@ -80,17 +78,21 @@ async function fetchStockData() {
         
         const data = await response.json();
         
-        // 📌 Mapping ฟิลด์ให้อยู่ในโครงสร้างมาตรฐาน (รองรับทั้ง Schema BigQuery และ ECOUNT)
+        // 📌 Mapping ฟิลด์ให้อยู่ในโครงสร้างมาตรฐาน (แก้ไขจุด Falsy Data Loss)
         let lastUpdateTime = null;
         rawStockData = data.map(item => {
-            const pCode = String(item.PROD_CD || item.item_code || "").trim();
-            const pName = String(item.PROD_NM || item.item_name || "").trim();
-            const qty = parseFloat(item.QTY !== undefined ? item.QTY : item.stock_qty) || 0;
-            const minQty = parseFloat(item.MIN_QTY !== undefined ? item.MIN_QTY : item.min_qty) || 0;
-            const maxQty = parseFloat(item.MAX_QTY !== undefined ? item.MAX_QTY : item.max_qty) || 0;
-            const updateTime = item.UPDATE_TIME || item.updated_at || "";
+            // ใช้ Nullish Coalescing (??) ป้องกันกรณีรหัสเป็น 0 แล้วกลายเป็นค่าว่าง
+            const rawCode = item.PROD_CD ?? item.item_code ?? item.prod_cd ?? "";
+            const pCode = String(rawCode).trim();
+            
+            const rawName = item.PROD_NM ?? item.item_name ?? item.prod_nm ?? "";
+            const pName = String(rawName).trim();
+            
+            const qty = parseFloat(item.QTY ?? item.stock_qty ?? item.qty ?? 0) || 0;
+            const minQty = parseFloat(item.MIN_QTY ?? item.min_qty ?? 0) || 0;
+            const maxQty = parseFloat(item.MAX_QTY ?? item.max_qty ?? 0) || 0;
+            const updateTime = String(item.UPDATE_TIME ?? item.updated_at ?? "").trim();
 
-            // หากมี updateTime และไม่อยู่ในฟอร์แมต 0008 ให้เก็บค่าไว้
             if (updateTime && !lastUpdateTime && !updateTime.startsWith('0008') && !updateTime.startsWith('0000')) {
                 lastUpdateTime = updateTime;
             }
@@ -105,7 +107,7 @@ async function fetchStockData() {
             };
         }).filter(item => item.PROD_CD !== "" && !isExcludedItem(item.PROD_NM));
         
-        // แสดงเวลาอัปเดตล่าสุดที่จัดฟอร์แมตแล้ว หรือแสดงเวลาปัจจุบันที่มีการโหลดข้อมูลสำเร็จ
+        // แสดงเวลาอัปเดตล่าสุด
         const lastUpdateElem = document.getElementById("last-update");
         if (lastUpdateElem) {
             if (lastUpdateTime) {
@@ -196,16 +198,19 @@ function setCriticalFilter(status) {
 }
 
 function applyFilterAndSearch() {
-    const warehouseSelect = document.getElementById("warehouse-select");
-    const warehouse = warehouseSelect ? warehouseSelect.value : "all";
+    const warehouseSelect = document.getElementById("warehouse-select") || document.getElementById("warehouse-select-minmax");
+    const warehouse = warehouseSelect ? warehouseSelect.value.trim() : "all";
     const searchInput = document.getElementById("barcode-input");
     const keyword = searchInput ? searchInput.value.trim().toLowerCase() : "";
 
     filteredStockData = rawStockData.filter(item => {
         if (isExcludedItem(item.PROD_NM)) return false;
 
-        if (warehouse !== "all") {
-            if (!item.PROD_NM || !item.PROD_NM.includes(`(${warehouse})`)) {
+        // 📌 ปรับปรุงการกรองคลังสินค้าให้ยืดหยุ่น ยอมรับทั้งแบบชื่อคลัง และรหัสคลัง
+        if (warehouse !== "all" && warehouse !== "") {
+            const nameLower = (item.PROD_NM || "").toLowerCase();
+            const whLower = warehouse.toLowerCase();
+            if (!nameLower.includes(`(${whLower})`) && !nameLower.includes(whLower)) {
                 return false;
             }
         }
@@ -259,7 +264,7 @@ function updateCountCards() {
     let diffPlusCount = 0;
 
     filteredStockData.forEach(item => {
-        const code = item.PROD_CD;
+        const code = String(item.PROD_CD).trim();
         if (countedData.hasOwnProperty(code) && countedData[code] !== "" && countedData[code] !== null) {
             countedCount++;
             const actual = parseFloat(countedData[code]) || 0;
@@ -292,15 +297,20 @@ function renderMinMaxTable() {
     if (!tbody) return;
 
     if (filteredStockData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">ไม่พบรายการสินค้าที่ตรงตามเงื่อนไข</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">ไม่พบรายการสินค้าที่ตรงตามเงื่อนไข</td></tr>`;
         return;
     }
 
     let html = "";
     filteredStockData.forEach(item => {
-        const isChecked = selectedMinMaxItems.has(item.PROD_CD) ? "checked" : "";
+        const code = String(item.PROD_CD).trim();
+        const isChecked = selectedMinMaxItems.has(code) ? "checked" : "";
         const qty = parseFloat(item.QTY) || 0;
         const minQty = parseFloat(item.MIN_QTY) || 0;
+        const maxQty = parseFloat(item.MAX_QTY) || 0;
+
+        // คำนวณค่าอัตโนมัติ (หรือใช้ AUTO_QTY หากมีข้อมูลจาก DB)
+        const autoQty = item.AUTO_QTY !== undefined ? item.AUTO_QTY : (minQty > 0 ? Math.ceil(minQty / 3) : 1);
 
         let badgeHtml = "";
         if (qty <= 0) {
@@ -313,23 +323,41 @@ function renderMinMaxTable() {
 
         html += `
             <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <!-- 1. Checkbox -->
                 <td class="py-2.5 px-4 text-center">
-                    <input type="checkbox" onchange="toggleSelectItem('${item.PROD_CD}', this.checked)" ${isChecked} class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                    <input type="checkbox" onchange="toggleSelectItem('${code}', this.checked)" ${isChecked} class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
                 </td>
-                <td class="py-2.5 px-4 font-mono font-medium text-slate-800">${item.PROD_CD}</td>
+                
+                <!-- 2. รหัสสินค้า -->
+                <td class="py-2.5 px-4 font-mono font-medium text-slate-800">${code}</td>
+                
+                <!-- 3. ชื่อสินค้า / รายละเอียด -->
                 <td class="py-2.5 px-4">
                     <div class="font-medium text-slate-800">${item.PROD_NM}</div>
                     ${badgeHtml}
                 </td>
+                
+                <!-- 4. ค่าคำนวณอัตโนมัติ (ช่องที่ขาดไป) -->
                 <td class="py-2.5 px-4 text-center">
-                    <input type="number" id="min-${item.PROD_CD}" value="${item.MIN_QTY}" class="w-20 text-center border border-slate-300 rounded-md py-1 px-1 focus:ring-emerald-500 focus:border-emerald-500 text-xs">
+                    <input type="text" value="${autoQty}" disabled class="w-20 text-center border border-slate-200 bg-slate-50 rounded-md py-1 px-1 text-xs text-slate-500 font-mono shadow-inner">
                 </td>
+                
+                <!-- 5. ต่ำสุด (Min) -->
                 <td class="py-2.5 px-4 text-center">
-                    <input type="number" id="max-${item.PROD_CD}" value="${item.MAX_QTY}" class="w-20 text-center border border-slate-300 rounded-md py-1 px-1 focus:ring-emerald-500 focus:border-emerald-500 text-xs">
+                    <input type="number" id="min-${code}" value="${minQty}" class="w-20 text-center border border-slate-300 rounded-md py-1 px-1 focus:ring-emerald-500 focus:border-emerald-500 text-xs font-semibold">
                 </td>
+                
+                <!-- 6. สูงสุด (Max) -->
+                <td class="py-2.5 px-4 text-center">
+                    <input type="number" id="max-${code}" value="${maxQty}" class="w-20 text-center border border-slate-300 rounded-md py-1 px-1 focus:ring-emerald-500 focus:border-emerald-500 text-xs font-semibold">
+                </td>
+                
+                <!-- 7. คงเหลือ -->
                 <td class="py-2.5 px-4 text-right ${qtyClass}">${qty.toFixed(2)}</td>
+                
+                <!-- 8. การจัดการ -->
                 <td class="py-2.5 px-4 text-center">
-                    <button onclick="saveMinMax('${item.PROD_CD}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-md text-xs font-semibold shadow-sm transition flex items-center justify-center gap-1 mx-auto cursor-pointer">
+                    <button onclick="saveMinMax('${code}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-md text-xs font-semibold shadow-sm transition flex items-center justify-center gap-1 mx-auto cursor-pointer">
                         <i class="fa-solid fa-floppy-disk"></i> บันทึกค่า
                     </button>
                 </td>
@@ -342,19 +370,20 @@ function renderMinMaxTable() {
 }
 
 async function saveMinMax(prodCode) {
-    const minInput = document.getElementById(`min-${prodCode}`);
-    const maxInput = document.getElementById(`max-${prodCode}`);
+    const cleanCode = String(prodCode).trim();
+    const minInput = document.getElementById(`min-${cleanCode}`);
+    const maxInput = document.getElementById(`max-${cleanCode}`);
     const minVal = minInput ? minInput.value : 0;
     const maxVal = maxInput ? maxInput.value : 0;
 
-    showToast(`กำลังบันทึกข้อมูล ${prodCode}...`, "info");
+    showToast(`กำลังบันทึกข้อมูล ${cleanCode}...`, "info");
 
     try {
         const response = await fetch(`${PYTHON_API_URL}/save-minmax-item`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                PROD_CD: prodCode,
+                PROD_CD: cleanCode,
                 MIN_QTY: minVal,
                 MAX_QTY: maxVal
             })
@@ -362,8 +391,8 @@ async function saveMinMax(prodCode) {
 
         const resData = await response.json();
         if (resData.status === "SUCCESS") {
-            showToast(`บันทึก Min/Max ของ ${prodCode} ลง BigQuery และ ECOUNT เรียบร้อยแล้ว`, "success");
-            const item = rawStockData.find(i => i.PROD_CD === prodCode);
+            showToast(`บันทึก Min/Max ของ ${cleanCode} เรียบร้อยแล้ว`, "success");
+            const item = rawStockData.find(i => String(i.PROD_CD).trim() === cleanCode);
             if (item) {
                 item.MIN_QTY = parseFloat(minVal);
                 item.MAX_QTY = parseFloat(maxVal);
@@ -377,7 +406,6 @@ async function saveMinMax(prodCode) {
     }
 }
 
-// 📌 เพิ่มฟังก์ชันสำหรับบันทึกกลุ่มสินค้าที่เลือกไว้ไปยัง BigQuery และ ECOUNT รวดเดียว
 async function saveMinMaxBulk() {
     if (selectedMinMaxItems.size === 0) {
         showToast("กรุณาเลือกรายการสินค้าที่ต้องการบันทึกก่อน", "error");
@@ -386,13 +414,14 @@ async function saveMinMaxBulk() {
 
     const itemsToUpdate = [];
     selectedMinMaxItems.forEach(code => {
-        const minInput = document.getElementById(`min-${code}`);
-        const maxInput = document.getElementById(`max-${code}`);
+        const cleanCode = String(code).trim();
+        const minInput = document.getElementById(`min-${cleanCode}`);
+        const maxInput = document.getElementById(`max-${cleanCode}`);
         const minVal = minInput ? parseFloat(minInput.value) || 0 : 0;
         const maxVal = maxInput ? parseFloat(maxInput.value) || 0 : 0;
 
         itemsToUpdate.push({
-            PROD_CD: code,
+            PROD_CD: cleanCode,
             MIN_QTY: minVal,
             MAX_QTY: maxVal
         });
@@ -411,9 +440,8 @@ async function saveMinMaxBulk() {
         if (resData.status === "SUCCESS") {
             showToast(`บันทึกกลุ่มสินค้าสำเร็จ ${itemsToUpdate.length} รายการ`, "success");
             
-            // อัปเดตข้อมูลในหน่วยความจำ local
             itemsToUpdate.forEach(up => {
-                const item = rawStockData.find(i => i.PROD_CD === up.PROD_CD);
+                const item = rawStockData.find(i => String(i.PROD_CD).trim() === up.PROD_CD);
                 if (item) {
                     item.MIN_QTY = up.MIN_QTY;
                     item.MAX_QTY = up.MAX_QTY;
@@ -429,15 +457,17 @@ async function saveMinMaxBulk() {
 }
 
 function toggleSelectItem(code, isChecked) {
-    if (isChecked) selectedMinMaxItems.add(code);
-    else selectedMinMaxItems.delete(code);
+    const cleanCode = String(code).trim();
+    if (isChecked) selectedMinMaxItems.add(cleanCode);
+    else selectedMinMaxItems.delete(cleanCode);
     updateSelectedCountUI();
 }
 
 function toggleSelectAll(isChecked) {
     filteredStockData.forEach(item => {
-        if (isChecked) selectedMinMaxItems.add(item.PROD_CD);
-        else selectedMinMaxItems.delete(item.PROD_CD);
+        const cleanCode = String(item.PROD_CD).trim();
+        if (isChecked) selectedMinMaxItems.add(cleanCode);
+        else selectedMinMaxItems.delete(cleanCode);
     });
 
     const chk1 = document.getElementById("select-all-checkbox");
@@ -454,7 +484,7 @@ function selectAllCritical() {
         const qty = parseFloat(item.QTY) || 0;
         const minQty = parseFloat(item.MIN_QTY) || 0;
         if (qty <= minQty) {
-            selectedMinMaxItems.add(item.PROD_CD);
+            selectedMinMaxItems.add(String(item.PROD_CD).trim());
         }
     });
     renderMinMaxTable();
@@ -501,7 +531,7 @@ function renderCountTable() {
 
     let html = "";
     filteredStockData.forEach((item, index) => {
-        const code = item.PROD_CD;
+        const code = String(item.PROD_CD).trim();
         const systemQty = parseFloat(item.QTY) || 0;
         const actualVal = countedData.hasOwnProperty(code) ? countedData[code] : "";
         const isChecked = selectedCountItems.has(code) ? "checked" : "";
@@ -553,13 +583,14 @@ function renderCountTable() {
 }
 
 function updateCountVal(code, val, event) {
+    const cleanCode = String(code).trim();
     if (val === "" || val === null) {
-        delete countedData[code];
+        delete countedData[cleanCode];
     } else {
-        countedData[code] = val;
+        countedData[cleanCode] = val;
     }
 
-    const item = rawStockData.find(i => String(i.PROD_CD) === String(code));
+    const item = rawStockData.find(i => String(i.PROD_CD).trim() === cleanCode);
     const systemQty = item ? (parseFloat(item.QTY) || 0) : 0;
 
     let diffText = "-";
@@ -601,15 +632,17 @@ function updateCountVal(code, val, event) {
 }
 
 function toggleSelectCountItem(code, isChecked) {
-    if (isChecked) selectedCountItems.add(code);
-    else selectedCountItems.delete(code);
+    const cleanCode = String(code).trim();
+    if (isChecked) selectedCountItems.add(cleanCode);
+    else selectedCountItems.delete(cleanCode);
     updateSelectedCountPrintUI();
 }
 
 function toggleSelectAllCount(isChecked) {
     filteredStockData.forEach(item => {
-        if (isChecked) selectedCountItems.add(item.PROD_CD);
-        else selectedCountItems.delete(item.PROD_CD);
+        const cleanCode = String(item.PROD_CD).trim();
+        if (isChecked) selectedCountItems.add(cleanCode);
+        else selectedCountItems.delete(cleanCode);
     });
 
     const chkTop = document.getElementById("select-all-count-top");
@@ -673,7 +706,7 @@ function printDiffReport() {
         rows.forEach(row => {
             const prodCode = row.getAttribute("data-prod-code");
             if (hasSelection && prodCode) {
-                if (!selectedCountItems.has(prodCode)) {
+                if (!selectedCountItems.has(String(prodCode).trim())) {
                     row.classList.add("print-hidden-row");
                 } else {
                     row.classList.remove("print-hidden-row");
@@ -747,7 +780,7 @@ function exportToEcountExcel() {
     let exportList = [];
 
     if (selectedMinMaxItems.size > 0) {
-        exportList = rawStockData.filter(item => selectedMinMaxItems.has(item.PROD_CD));
+        exportList = rawStockData.filter(item => selectedMinMaxItems.has(String(item.PROD_CD).trim()));
     } else {
         exportList = filteredStockData.filter(item => {
             const qty = parseFloat(item.QTY) || 0;
@@ -807,4 +840,4 @@ function showToast(message, type = "info") {
     setTimeout(() => {
         toast.classList.add("hidden");
     }, 4000);
-}
+}  
