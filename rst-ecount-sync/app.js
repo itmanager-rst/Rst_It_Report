@@ -1,7 +1,10 @@
 // ==========================================
 // Config & Global Variables
 // ==========================================
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwf-5C_zTUBWfdARhEfjjhlCnF7H2Q2B6EoYWhknCO_mprhJDwzNg2Myvh_JWYutgyhlQ/exec"; 
+// URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT
+const PYTHON_API_URL = "http://localhost:5000/api"; 
+// เก็บ URL เดิมไว้เผื่ออ้างอิง
+// const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwf-5C_zTUBWfdARhEfjjhlCnF7H2Q2B6EoYWhknCO_mprhJDwzNg2Myvh_JWYutgyhlQ/exec"; 
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
@@ -18,7 +21,44 @@ let filterCriticalStatus = 'all';
 let html5QrCode = null;              
 
 // ==========================================
-// Initialization & Data Fetching
+// Date Formatting Helper
+// ==========================================
+/**
+ * ฟังก์ชันสำหรับแปลงรูปแบบวันที่ให้อ่านง่าย และแก้ไขปัญหาปีผิดพลาด เช่น 0008 หรือ 0000
+ */
+function formatThaiDateTime(dateStr) {
+    if (!dateStr || dateStr === '-' || dateStr === 'None' || dateStr === 'null') return '-';
+    
+    try {
+        let cleanStr = String(dateStr).trim();
+
+        // แก้ไขกรณีที่ปีในฐานข้อมูลส่งมาเป็น 0008 หรือ 0000 ให้แทนที่ด้วยปีปัจจุบัน
+        if (cleanStr.startsWith('0008') || cleanStr.startsWith('0000')) {
+            const currentYear = new Date().getFullYear();
+            cleanStr = cleanStr.replace(/^(0008|0000)/, currentYear);
+        }
+
+        const d = new Date(cleanStr);
+        if (isNaN(d.getTime())) {
+            return dateStr;
+        }
+
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear(); // หากต้องการ พ.ศ. ให้ใช้ d.getFullYear() + 543
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+
+        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+    } catch (e) {
+        console.error("Error formatting date:", e);
+        return dateStr;
+    }
+}
+
+// ==========================================
+// Initialization & Data Fetching (BigQuery Ready)
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
     fetchStockData();
@@ -30,24 +70,54 @@ function isExcludedItem(itemName) {
 }
 
 async function fetchStockData() {
-    showToast("กำลังดึงข้อมูลสต็อกล่าสุด...", "info");
+    showToast("กำลังดึงข้อมูลสต็อกล่าสุดจาก BigQuery...", "info");
     const refreshIcon = document.getElementById("refresh-icon");
     if (refreshIcon) refreshIcon.classList.add("fa-spin");
 
     try {
-        const response = await fetch(WEB_APP_URL);
-        if (!response.ok) throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Google Apps Script ได้");
+        const response = await fetch(`${PYTHON_API_URL}/get-stock`);
+        if (!response.ok) throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Python/BigQuery ได้");
         
         const data = await response.json();
-        rawStockData = data.filter(item => !isExcludedItem(item.PROD_NM));
         
-        const now = new Date();
-        const timeString = now.toLocaleDateString('th-TH') + ' ' + now.toLocaleTimeString('th-TH');
+        // 📌 Mapping ฟิลด์ให้อยู่ในโครงสร้างมาตรฐาน (รองรับทั้ง Schema BigQuery และ ECOUNT)
+        let lastUpdateTime = null;
+        rawStockData = data.map(item => {
+            const pCode = String(item.PROD_CD || item.item_code || "").trim();
+            const pName = String(item.PROD_NM || item.item_name || "").trim();
+            const qty = parseFloat(item.QTY !== undefined ? item.QTY : item.stock_qty) || 0;
+            const minQty = parseFloat(item.MIN_QTY !== undefined ? item.MIN_QTY : item.min_qty) || 0;
+            const maxQty = parseFloat(item.MAX_QTY !== undefined ? item.MAX_QTY : item.max_qty) || 0;
+            const updateTime = item.UPDATE_TIME || item.updated_at || "";
+
+            // หากมี updateTime และไม่อยู่ในฟอร์แมต 0008 ให้เก็บค่าไว้
+            if (updateTime && !lastUpdateTime && !updateTime.startsWith('0008') && !updateTime.startsWith('0000')) {
+                lastUpdateTime = updateTime;
+            }
+
+            return {
+                PROD_CD: pCode,
+                PROD_NM: pName,
+                QTY: qty,
+                MIN_QTY: minQty,
+                MAX_QTY: maxQty,
+                UPDATE_TIME: updateTime
+            };
+        }).filter(item => item.PROD_CD !== "" && !isExcludedItem(item.PROD_NM));
+        
+        // แสดงเวลาอัปเดตล่าสุดที่จัดฟอร์แมตแล้ว หรือแสดงเวลาปัจจุบันที่มีการโหลดข้อมูลสำเร็จ
         const lastUpdateElem = document.getElementById("last-update");
-        if (lastUpdateElem) lastUpdateElem.innerText = timeString;
+        if (lastUpdateElem) {
+            if (lastUpdateTime) {
+                lastUpdateElem.innerText = formatThaiDateTime(lastUpdateTime);
+            } else {
+                const now = new Date();
+                lastUpdateElem.innerText = formatThaiDateTime(now.toISOString());
+            }
+        }
 
         applyFilterAndSearch();
-        showToast("โหลดข้อมูลสต็อกเรียบร้อยแล้ว", "success");
+        showToast(`โหลดข้อมูลสำเร็จ ${rawStockData.length} รายการ`, "success");
     } catch (error) {
         console.error("Error fetching data:", error);
         showToast("เกิดข้อผิดพลาดในการดึงข้อมูล: " + error.message, "error");
@@ -67,17 +137,17 @@ function switchTab(tabName) {
     const btnCount = document.getElementById("tab-count-btn");
 
     if (tabName === 'minmax') {
-        viewMinMax.classList.remove("hidden");
-        viewCount.classList.add("hidden");
+        if (viewMinMax) viewMinMax.classList.remove("hidden");
+        if (viewCount) viewCount.classList.add("hidden");
 
-        btnMinMax.className = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
-        btnCount.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
+        if (btnMinMax) btnMinMax.className = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
+        if (btnCount) btnCount.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
     } else {
-        viewMinMax.classList.add("hidden");
-        viewCount.classList.remove("hidden");
+        if (viewMinMax) viewMinMax.classList.add("hidden");
+        if (viewCount) viewCount.classList.remove("hidden");
 
-        btnCount.className = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
-        btnMinMax.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
+        if (btnCount) btnCount.className = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
+        if (btnMinMax) btnMinMax.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
     }
 }
 
@@ -92,7 +162,7 @@ function syncWarehouseSelection(value) {
 }
 
 // ==========================================
-// Filter & Search Logic (ปรับปรุงแก้ไขการพิมพ์ค้นหา)
+// Filter & Search Logic
 // ==========================================
 
 function checkSearchEnter(event) {
@@ -102,7 +172,6 @@ function checkSearchEnter(event) {
     }
 }
 
-// ฟังก์ชันรองรับเมื่อลบข้อความในช่องค้นหาจนว่างเปล่า
 function handleSearchInput(event) {
     if (event.target.value.trim() === "") {
         applyFilterAndSearch();
@@ -116,11 +185,11 @@ function setCriticalFilter(status) {
     const btnCritical = document.getElementById("btn-filter-critical");
 
     if (status === 'critical') {
-        btnCritical.className = "px-3 py-1 rounded-md font-semibold transition text-white bg-red-600 shadow-sm";
-        btnAll.className = "px-3 py-1 rounded-md font-semibold transition text-slate-500 hover:text-slate-700";
+        if (btnCritical) btnCritical.className = "px-3 py-1 rounded-md font-semibold transition text-white bg-red-600 shadow-sm";
+        if (btnAll) btnAll.className = "px-3 py-1 rounded-md font-semibold transition text-slate-500 hover:text-slate-700";
     } else {
-        btnAll.className = "px-3 py-1 rounded-md font-semibold transition text-slate-700 bg-white shadow-sm";
-        btnCritical.className = "px-3 py-1 rounded-md font-semibold transition text-slate-500 hover:text-red-600";
+        if (btnAll) btnAll.className = "px-3 py-1 rounded-md font-semibold transition text-slate-700 bg-white shadow-sm";
+        if (btnCritical) btnCritical.className = "px-3 py-1 rounded-md font-semibold transition text-slate-500 hover:text-red-600";
     }
 
     applyFilterAndSearch();
@@ -273,37 +342,89 @@ function renderMinMaxTable() {
 }
 
 async function saveMinMax(prodCode) {
-    const minVal = document.getElementById(`min-${prodCode}`).value;
-    const maxVal = document.getElementById(`max-${prodCode}`).value;
+    const minInput = document.getElementById(`min-${prodCode}`);
+    const maxInput = document.getElementById(`max-${prodCode}`);
+    const minVal = minInput ? minInput.value : 0;
+    const maxVal = maxInput ? maxInput.value : 0;
 
     showToast(`กำลังบันทึกข้อมูล ${prodCode}...`, "info");
 
     try {
-        const response = await fetch(WEB_APP_URL, {
+        const response = await fetch(`${PYTHON_API_URL}/save-minmax-item`, {
             method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                action: "update_min_max",
                 PROD_CD: prodCode,
                 MIN_QTY: minVal,
                 MAX_QTY: maxVal
             })
         });
 
-        const resultText = await response.text();
-        if (resultText.includes("Success")) {
-            showToast(`บันทึก Min/Max ของ ${prodCode} เรียบร้อยแล้ว`, "success");
+        const resData = await response.json();
+        if (resData.status === "SUCCESS") {
+            showToast(`บันทึก Min/Max ของ ${prodCode} ลง BigQuery และ ECOUNT เรียบร้อยแล้ว`, "success");
             const item = rawStockData.find(i => i.PROD_CD === prodCode);
             if (item) {
-                item.MIN_QTY = minVal;
-                item.MAX_QTY = maxVal;
+                item.MIN_QTY = parseFloat(minVal);
+                item.MAX_QTY = parseFloat(maxVal);
             }
         } else {
-            throw new Error(resultText);
+            throw new Error(resData.message || "เซิร์ฟเวอร์ตอบกลับผิดพลาด");
         }
     } catch (error) {
         console.error("Save error:", error);
         showToast("เกิดข้อผิดพลาดในการบันทึก: " + error.message, "error");
+    }
+}
+
+// 📌 เพิ่มฟังก์ชันสำหรับบันทึกกลุ่มสินค้าที่เลือกไว้ไปยัง BigQuery และ ECOUNT รวดเดียว
+async function saveMinMaxBulk() {
+    if (selectedMinMaxItems.size === 0) {
+        showToast("กรุณาเลือกรายการสินค้าที่ต้องการบันทึกก่อน", "error");
+        return;
+    }
+
+    const itemsToUpdate = [];
+    selectedMinMaxItems.forEach(code => {
+        const minInput = document.getElementById(`min-${code}`);
+        const maxInput = document.getElementById(`max-${code}`);
+        const minVal = minInput ? parseFloat(minInput.value) || 0 : 0;
+        const maxVal = maxInput ? parseFloat(maxInput.value) || 0 : 0;
+
+        itemsToUpdate.push({
+            PROD_CD: code,
+            MIN_QTY: minVal,
+            MAX_QTY: maxVal
+        });
+    });
+
+    showToast(`กำลังบันทึก ${itemsToUpdate.length} รายการไปยัง BigQuery & ECOUNT...`, "info");
+
+    try {
+        const response = await fetch(`${PYTHON_API_URL}/save-minmax-bulk`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: itemsToUpdate })
+        });
+
+        const resData = await response.json();
+        if (resData.status === "SUCCESS") {
+            showToast(`บันทึกกลุ่มสินค้าสำเร็จ ${itemsToUpdate.length} รายการ`, "success");
+            
+            // อัปเดตข้อมูลในหน่วยความจำ local
+            itemsToUpdate.forEach(up => {
+                const item = rawStockData.find(i => i.PROD_CD === up.PROD_CD);
+                if (item) {
+                    item.MIN_QTY = up.MIN_QTY;
+                    item.MAX_QTY = up.MAX_QTY;
+                }
+            });
+        } else {
+            throw new Error(resData.message || "เซิร์ฟเวอร์ตอบกลับผิดพลาด");
+        }
+    } catch (error) {
+        console.error("Bulk save error:", error);
+        showToast("เกิดข้อผิดพลาดในการบันทึกกลุ่ม: " + error.message, "error");
     }
 }
 
@@ -431,7 +552,6 @@ function renderCountTable() {
     updateSelectedCountPrintUI();
 }
 
-// อัปเดตเฉพาะ Cell ในตารางเพื่อความรวดเร็ว ไม่กระตุก ไม่ Re-render ทั้งตาราง
 function updateCountVal(code, val, event) {
     if (val === "" || val === null) {
         delete countedData[code];
