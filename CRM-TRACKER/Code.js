@@ -1190,5 +1190,5 @@ function testDailyLeadReportDirect() {
     onlyManyChat: false
   });
 
-  Logger.log(JSON.stringify(result));  
+  Logger.log(JSON.stringify(result));
 }
