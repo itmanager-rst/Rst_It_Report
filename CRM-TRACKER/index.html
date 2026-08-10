@@ -457,10 +457,41 @@
 
         <!-- ===== หน้าที่ 3: รายงาน ===== -->
         <div id="page-report" class="page-view" style="display:none;">
+            <!-- แก้ไข (2026-08-10): ย้ายตัวกรอง (เดิมอยู่ในการ์ด "รายงานลีดต่อวัน" ด้านล่าง มีผลแค่ตารางนั้น)
+                 ขึ้นมาไว้บนสุดของหน้า และขยายผลให้ครอบคลุมทุกรายงานในหน้านี้ (สรุปสถิติ/Top5/Facebook count/
+                 แยกตามความสนใจ/รายงานลีดต่อวัน) ผ่านฟังก์ชัน refreshReportPage() ตัวเดียว ไม่ใช่กรองแค่ส่วน
+                 รายงานลีดต่อวัน(Facebook) เหมือนเดิมอีกต่อไป -->
+            <div class="card">
+                <div class="card-title">
+                    <span>🔍 ตัวกรองรายงาน (ใช้ร่วมกันกับทุกรายงานในหน้านี้)</span>
+                </div>
+                <div class="search-grid filter-grid" style="margin-bottom:4px;">
+                    <div class="form-group">
+                        <label>วันที่ (เริ่ม)</label>
+                        <input type="date" id="report-start-date" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>วันที่ (ถึง)</label>
+                        <input type="date" id="report-end-date" class="form-control">
+                    </div>
+                    <div class="form-group" style="justify-content:flex-end;">
+                        <label style="visibility:hidden;">.</label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; color:#475569; white-space:nowrap;">
+                            <input type="checkbox" id="report-only-manychat" style="width:auto;"> เฉพาะที่มาจาก ManyChat (มีผลกับตาราง "รายงานลีดต่อวัน" ด้านล่างเท่านั้น)
+                        </label>
+                    </div>
+                    <div class="form-group" style="justify-content:flex-end;">
+                        <label style="visibility:hidden;">.</label>
+                        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="refreshReportPage()">🔄 ดึงรายงาน (ทั้งหน้า)</button>
+                    </div>
+                </div>
+                <div style="font-size:10.5px; color:#94a3b8;">ช่วงวันที่ด้านบนนี้ใช้ร่วมกับทุกการ์ดในหน้ารายงาน — สรุปสถิติ, Top 5 สินค้า, จำนวน Lead จาก Facebook/ManyChat (รวมแยกตามความสนใจ) และรายงานลีดต่อวัน</div>
+            </div>
+
             <div class="report-row">
                 <div class="dash-card">
                     <div class="dash-title">
-                        <span>📊 สรุปสถิติ (จากผลลัพธ์การกรองล่าสุดในหน้าประวัติ)</span>
+                        <span>📊 สรุปสถิติ (ตามช่วงวันที่ที่กรองด้านบน)</span>
                     </div>
                     <div id="dash-type-list"></div>
                 </div>
@@ -475,33 +506,21 @@
                         <span>📱 Lead จาก Facebook/ManyChat</span>
                     </div>
                     <div id="dash-manychat-count" style="font-size:28px; font-weight:700; color:#1877F2; text-align:center; padding:8px 0 2px;">0</div>
-                    <div style="font-size:10.5px; color:#94a3b8; text-align:center;">รายชื่อ (จากผลลัพธ์การกรองปัจจุบัน)</div>
+                    <div style="font-size:10.5px; color:#94a3b8; text-align:center;">รายชื่อ (ตามช่วงวันที่ที่กรองด้านบน)</div>
                 </div>
             </div>
 
             <div class="card">
                 <div class="card-title">
-                    <span>📅 รายงานจำนวนลีดที่เข้ามาต่อวัน (รวมเบอร์/ชื่อที่ส่งซ้ำด้วย)</span>
+                    <span>📱 Lead จาก Facebook/ManyChat แยกตามความสนใจ (วิเคราะห์จากคำในหมายเหตุ)</span>
                 </div>
-                <div class="search-grid filter-grid" style="margin-bottom:10px;">
-                    <div class="form-group">
-                        <label>วันที่ (เริ่ม)</label>
-                        <input type="date" id="report-start-date" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>วันที่ (ถึง)</label>
-                        <input type="date" id="report-end-date" class="form-control">
-                    </div>
-                    <div class="form-group" style="justify-content:flex-end;">
-                        <label style="visibility:hidden;">.</label>
-                        <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; color:#475569; white-space:nowrap;">
-                            <input type="checkbox" id="report-only-manychat" style="width:auto;"> เฉพาะที่มาจาก ManyChat
-                        </label>
-                    </div>
-                    <div class="form-group" style="justify-content:flex-end;">
-                        <label style="visibility:hidden;">.</label>
-                        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="fetchDailyLeadReport()">🔄 ดึงรายงาน</button>
-                    </div>
+                <div id="dash-fb-interest-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;"></div>
+                <div id="dash-fb-interest-note" style="font-size:10.5px; color:#94a3b8;"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span>📅 รายงานจำนวนลีดที่เข้ามาต่อวัน (รวมเบอร์/ชื่อที่ส่งซ้ำด้วย)</span>
                 </div>
                 <div class="table-responsive" style="max-height:50vh;">
                     <table id="daily-report-table">
@@ -717,7 +736,7 @@
         let currentRenderedData = [];
         let lastSavedCustomer = null;
         let duplicatePhoneMatch = null; // { phone, name } ถ้าเบอร์ที่กำลังกรอกอยู่มีลูกค้ารายนี้ในระบบแล้ว
-        let dailyReportLoadedOnce = false; // โหลดรายงานประจำวันครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น (ครั้งต่อไปกดปุ่ม "ดึงรายงาน" เอง)
+        let dailyReportLoadedOnce = false; // โหลดรายงานทั้งหน้า (สรุปสถิติ/Top5/FB/แยกความสนใจ/ลีดต่อวัน) ครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น (ครั้งต่อไปกดปุ่ม "ดึงรายงาน" เอง)
         // แก้ไข (2026-08-10): เดิมค่านี้ถูกบังคับใส่ให้ทุกรายการใหม่โดยอัตโนมัติผ่าน
         // resetGeoSelectsToDefault() แม้พนักงานยังไม่ได้เปิด "📍 กรอกที่อยู่" เลย — ทำให้ทุกลูกค้า
         // (รวมลีดจาก ManyChat ที่พนักงานคีย์ชื่อ/เบอร์เร็วๆโดยไม่กรอกที่อยู่) ถูกบันทึกจังหวัดเป็น
@@ -801,7 +820,7 @@
             document.getElementById('fab-container').style.display = (name === 'history') ? 'block' : 'none';
             if (name === 'report' && !dailyReportLoadedOnce) {
                 dailyReportLoadedOnce = true;
-                fetchDailyLeadReport();
+                refreshReportPage();
             }
         }
 
@@ -877,6 +896,101 @@
             })
             .catch(error => {
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว: ' + escapeHtml(error.message || 'ลองใหม่อีกครั้ง') + '</td></tr>';
+            });
+        }
+
+        /* ===== เพิ่ม (2026-08-10): ตัวกรองรายงานรวม (บนสุดของหน้ารายงาน) ครอบคลุมทั้งหน้า ===== */
+
+        // ใช้ช่วงวันที่จากตัวกรองบนสุดของหน้ารายงาน ประกอบเป็น filters object รูปแบบเดียวกับ
+        // ที่หน้าประวัติ/ค้นหาส่งให้ backend เสมอ (ใส่ทุกคีย์แม้ไม่ได้ใช้ เผื่อ backend อ่านค่าที่ไม่มีคีย์ไม่ได้)
+        function buildReportDateFilters(extra) {
+            const base = {
+                keyword: '', exactPhone: '', types: [],
+                startDate: document.getElementById('report-start-date').value,
+                endDate: document.getElementById('report-end-date').value,
+                appdate: '', followupStartDate: '', followupEndDate: '',
+                productCategory: '', productModel: '',
+                province: '', subdistrict: '', district: '', note: ''
+            };
+            return Object.assign(base, extra || {});
+        }
+
+        // กดปุ่ม "🔄 ดึงรายงาน (ทั้งหน้า)" หรือเข้าแท็บ "รายงาน" ครั้งแรก — รีเฟรชทุกการ์ดในหน้านี้
+        // ด้วยตัวกรองวันที่เดียวกัน ไม่ใช่แค่ตารางรายงานลีดต่อวัน/Facebook เหมือนเดิมอีกต่อไป
+        function refreshReportPage() {
+            fetchDashboardSummary(buildReportDateFilters());
+            fetchDailyLeadReport();
+            fetchFbInterestBreakdown();
+        }
+
+        // จำกัดจำนวนแถวที่ดึงมาคำนวณ "แยกตามความสนใจ" ต่อครั้ง กันดึงข้อมูลทั้งฐาน (450,000+ แถว) มาทีเดียว —
+        // ถ้าช่วงวันที่ที่เลือกมีมากกว่านี้ จะมีข้อความเตือนต่อท้ายว่าคำนวณจากแค่บางส่วน ไม่ใช่ยอดจริงทั้งหมด
+        const FB_INTEREST_FETCH_CAP = 3000;
+
+        // หมวดหมู่ความสนใจ วิเคราะห์จากคำในหมายเหตุ (remark) แบบเดียวกับตัวอย่างจริงที่พบ เช่น
+        // "[Lead จาก Facebook] สนใจ : รถแทรกเตอร์" — เรียงลำดับตรวจจากคำที่เจาะจงกว่าก่อน (Solis ก่อนรถแทรกเตอร์
+        // เพราะ Solis ก็เป็นรถแทรกเตอร์ยี่ห้อหนึ่ง), ไม่พบคำที่ตรงเลยจะตกไปกลุ่ม "อื่นๆ / ไม่ระบุ"
+        // หมายเหตุ: เป็นการเดาจากคำ (keyword match) ยังไม่ได้ยืนยันกับข้อความ remark จริงทั้งหมดในระบบ —
+        // ถ้าพบคำเรียกสินค้าที่พิมพ์ต่างไปจากนี้ (เช่นสะกดผิด/เรียกย่อ) ให้เพิ่มคำในลิสต์นี้ตามจริง
+        const FB_INTEREST_CATEGORIES = [
+            { label: 'Solis', test: t => t.includes('solis') },
+            { label: 'รถแทรกเตอร์ (Yanmar)', test: t => t.includes('แทรกเตอร์') || t.includes('yanmar') || t.includes('tractor') },
+            { label: 'รถเกี่ยว', test: t => t.includes('เกี่ยว') || t.includes('harvest') },
+            { label: 'รถขุด', test: t => t.includes('ขุด') || t.includes('excavat') }
+        ];
+
+        function categorizeFbInterest(remark) {
+            const text = (remark || '').toLowerCase();
+            for (const cat of FB_INTEREST_CATEGORIES) {
+                if (cat.test(text)) return cat.label;
+            }
+            return 'อื่นๆ / ไม่ระบุ';
+        }
+
+        // ดึงลีดในช่วงวันที่ที่กรอง (ทุกช่องทาง ไม่ใช่แค่ Facebook) แล้วกรอง/แยกหมวดหมู่ที่ฝั่งเว็บเอง
+        // โดยเช็คคำว่า "facebook" ใน remark ตรงๆ (ไม่ผ่านตัวกรอง note ของ backend เพราะไม่แน่ใจว่า backend
+        // เทียบตัวพิมพ์เล็ก/ใหญ่ยังไง — เช็คเองฝั่งนี้ชัวร์กว่า สอดคล้องกับ FB_LEAD_MARKER ที่ backend ใช้ล่าสุด)
+        function fetchFbInterestBreakdown() {
+            const container = document.getElementById('dash-fb-interest-list');
+            const noteEl = document.getElementById('dash-fb-interest-note');
+            container.innerHTML = '<div style="font-size:11px; color:#94a3b8;">🔄 กำลังโหลด...</div>';
+            noteEl.textContent = '';
+            const filters = buildReportDateFilters();
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'search', page: 1, pageSize: FB_INTEREST_FETCH_CAP, sortBy: 'created_date', filters: filters })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) {
+                    container.innerHTML = '<div style="font-size:11px; color:#ef4444;">❌ ดึงข้อมูลไม่สำเร็จ: ' + escapeHtml(resData ? resData.message : 'ไม่ทราบสาเหตุ') + '</div>';
+                    return;
+                }
+                const rows = resData.data || [];
+                const fbRows = rows.filter(r => (r.remark || '').toLowerCase().includes('facebook'));
+                const counts = {};
+                fbRows.forEach(r => {
+                    const cat = categorizeFbInterest(r.remark);
+                    counts[cat] = (counts[cat] || 0) + 1;
+                });
+                const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+                container.innerHTML = sorted.length
+                    ? sorted.map(([label, count]) => `
+                        <div class="dash-item" style="flex:1 1 150px;">
+                            <span>${escapeHtml(label)}</span>
+                            <span class="dash-count">${count.toLocaleString()} ราย</span>
+                        </div>
+                    `).join('')
+                    : '<div style="font-size:11px; color:#94a3b8;">ไม่พบ Lead จาก Facebook/ManyChat ในช่วงวันที่นี้</div>';
+                let noteText = `วิเคราะห์จากคำในหมายเหตุของ Lead ที่มีคำว่า "Facebook" — พบ ${fbRows.length.toLocaleString()} ราย จาก ${rows.length.toLocaleString()} รายการที่ตรวจในช่วงวันที่นี้ (ทุกช่องทาง)`;
+                if ((resData.totalCount || 0) > rows.length) {
+                    noteText += ` ⚠️ ช่วงวันที่นี้มีข้อมูลทั้งหมด ${Number(resData.totalCount).toLocaleString()} รายการ แต่รายงานนี้คำนวณจากแค่ ${rows.length.toLocaleString()} รายการล่าสุด (เกินขีดจำกัด ${FB_INTEREST_FETCH_CAP.toLocaleString()} แถวต่อครั้ง) — แคบช่วงวันที่ให้สั้นลงเพื่อความแม่นยำ`;
+                }
+                noteEl.textContent = noteText;
+            })
+            .catch(() => {
+                container.innerHTML = '<div style="font-size:11px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</div>';
             });
         }
 
