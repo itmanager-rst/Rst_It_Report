@@ -186,6 +186,106 @@
       color: #fff;
       border-color: #0d6efd;
     }
+
+    .matrix-legend {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+    }
+
+    /* ตรึงหัวคอลัมน์ไว้ขณะเลื่อนรายการของทั้ง 3 ตาราง */
+    #containerDashboardTable,
+    #containerHistoryTable,
+    #containerMatrixTable {
+      position: relative;
+      scrollbar-gutter: stable;
+    }
+
+    #tbDashboardTable thead th,
+    #tbHistoryTable thead th,
+    #tbMatrixTable thead th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background-color: #f8f9fa;
+      box-shadow: 0 2px 0 #dee2e6;
+      background-clip: padding-box;
+    }
+
+    .workflow-cell {
+      cursor: pointer;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+      min-width: 118px;
+    }
+
+    .workflow-cell:hover,
+    .workflow-cell:focus {
+      background-color: #fff8e8;
+      box-shadow: inset 0 0 0 1px #ffc107;
+      outline: none;
+    }
+
+    .workflow-progress-label {
+      color: #6c757d;
+      font-size: 0.65rem;
+      margin-top: 3px;
+    }
+
+    .workflow-timeline {
+      position: relative;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .workflow-step {
+      position: relative;
+      display: flex;
+      gap: 12px;
+      padding-bottom: 18px;
+    }
+
+    .workflow-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 28px;
+      left: 14px;
+      width: 2px;
+      height: calc(100% - 12px);
+      background: #dee2e6;
+    }
+
+    .workflow-step-dot {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 30px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #e9ecef;
+      color: #6c757d;
+    }
+
+    .workflow-step.is-complete .workflow-step-dot { background: #198754; color: #fff; }
+    .workflow-step.is-active .workflow-step-dot { background: #ffc107; color: #212529; }
+    .workflow-step.is-waiting .workflow-step-dot { background: #6f42c1; color: #fff; }
+    .workflow-step.is-skipped .workflow-step-dot { background: #adb5bd; color: #fff; }
+
+    .workflow-step-title {
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+
+    .workflow-step-detail {
+      color: #6c757d;
+      font-size: 0.78rem;
+    }
   </style>
 </head>
 <body>
@@ -198,11 +298,11 @@
       <form id="loginForm" onsubmit="handleLogin(event)">
         <div class="mb-3 text-start">
           <label class="form-label form-label-sm">ชื่อผู้ใช้งาน (User)</label>
-          <input type="text" id="loginUser" class="form-control" required placeholder="ระบุชื่อผู้ใช้">
+          <input type="text" id="loginUser" class="form-control" required placeholder="ระบุชื่อผู้ใช้" autocomplete="username">
         </div>
         <div class="mb-4 text-start">
           <label class="form-label form-label-sm">รหัสผ่าน (Password)</label>
-          <input type="password" id="loginPass" class="form-control" required placeholder="ระบุรหัสผ่าน">
+          <input type="password" id="loginPass" class="form-control" required placeholder="ระบุรหัสผ่าน" autocomplete="current-password">
         </div>
         <button type="submit" id="btnLoginSubmit" class="btn btn-danger w-100 fw-bold py-2">
           <i class="fa-solid fa-right-to-bracket me-1"></i> เข้าสู่ระบบ
@@ -236,8 +336,11 @@
         <button class="nav-link active me-2" data-bs-toggle="pill" data-bs-target="#tab-dashboard" type="button" onclick="loadDashboardData()">
           <i class="fa-solid fa-table-cells me-2"></i> ตารางสถานะเครื่องจักร
         </button>
-        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" onclick="loadHistoryData()">
+        <button class="nav-link me-2" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" onclick="loadHistoryData()">
           <i class="fa-solid fa-clock-rotate-left me-2"></i> บันทึกประวัติการทำ PM
+        </button>
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-matrix" type="button" onclick="loadPMMatrix()">
+          <i class="fa-solid fa-diagram-project me-2"></i> สถานะ PM Matrix (Workflow)
         </button>
       </div>
       <div>
@@ -320,6 +423,7 @@
                       <th>สถานะการอนุมัติ</th>
                       <th>อัปเดตโดย</th>
                       <th>รายการอะไหล่</th>
+                      <th>รหัสผู้ขาย</th>
                       <th>เลขที่ใบเสร็จ(IV..)</th>
                       <th>สถานะอะไหล่</th>
                       <th class="text-center">รูปใบเสร็จ</th>
@@ -329,7 +433,7 @@
                     </tr>
                   </thead>
                   <tbody id="tbDashboard">
-                    <tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
+                    <tr><td colspan="20" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -527,6 +631,127 @@
         </div>
       </div>
 
+      <!-- แท็บ 3: ตารางติดตามสถานะ PM Progress Matrix (Workflow) -->
+      <div class="tab-pane fade" id="tab-matrix">
+        <div class="table-container">
+          <div class="row g-2 mb-3 align-items-center">
+            <div class="col-md-6">
+              <div class="input-group input-group-sm">
+                <input type="text" id="searchMatrix" class="form-control" placeholder="พิมพ์ค้นหา (รหัสเครื่อง / รุ่น / ชื่อลูกค้า)..." onkeyup="filterMatrixTable()">
+                <button class="btn btn-danger" type="button" onclick="filterMatrixTable()">
+                  <i class="fa-solid fa-magnifying-glass me-1"></i> ค้นหา
+                </button>
+              </div>
+            </div>
+            <div class="col-md-6 text-end">
+              <button class="btn btn-sm btn-excel me-2" onclick="exportToExcel('tbMatrixTable', 'PM_Workflow_Matrix')">
+                <i class="fa-solid fa-file-excel me-1"></i> ส่งออก Excel
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="loadPMMatrix(true)">
+                <i class="fa-solid fa-rotate me-1"></i> รีเฟรช Matrix
+              </button>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-diagram-project me-1 text-danger"></i> ตารางติดตามสถานะขั้นตอน PM Progress Matrix (Workflow)</h6>
+          </div>
+
+          <!-- 🎨 แถบ Legend สำหรับอธิบายสถานะสีใน Matrix -->
+          <div class="matrix-legend mb-3 d-flex flex-wrap gap-2 align-items-center">
+            <span class="fw-bold text-secondary me-2"><i class="fa-solid fa-palette me-1"></i> สัญลักษณ์สถานะ:</span>
+            <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #e9ecef; color: #6c757d;">⚪ รอดำเนินการ</span>
+            <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #0dcaf0; color: #000;"><i class="fa-solid fa-box-seam me-1"></i>ส่งอะไหล่</span>
+            <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #ffc107; color: #000;"><i class="fa-solid fa-wrench me-1"></i>เข้าเปลี่ยน</span>
+            <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #6f42c1; color: #fff;"><i class="fa-solid fa-hand-holding-dollar me-1"></i>ค้างคูปอง</span>
+            <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #fd7e14; color: #fff;"><i class="fa-solid fa-clock-rotate-left me-1"></i>ค้างอะไหล่</span>
+            <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #198754; color: #fff;"><i class="fa-solid fa-circle-check me-1"></i>เสร็จสิ้น/ส่งครบ</span>
+          </div>
+
+          <div class="table-responsive" id="containerMatrixTable" style="max-height: 600px; overflow-y: auto;">
+            <table class="table table-hover align-middle text-center" id="tbMatrixTable">
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>รหัสเครื่องจักร (Machine ID)</th>
+                  <th>รุ่น (Model)</th>
+                  <th>ชื่อลูกค้า</th>
+                  <th>50 ชม.</th>
+                  <th>250 ชม.</th>
+                  <th>500 ชม.</th>
+                  <th>750 ชม.</th>
+                  <th>1,000 ชม.</th>
+                  <th>1,250 ชม.</th>
+                  <th>1,500 ชม.</th>
+                  <th>1,750 ชม.</th>
+                  <th>2,000 ชม.</th>
+                </tr>
+              </thead>
+              <tbody id="tbMatrix">
+                <tr><td colspan="13" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล Matrix...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 🧭 MODAL รายละเอียดขั้นตอน PM แต่ละรอบชั่วโมง -->
+  <div class="modal fade" id="workflowDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-dark text-white py-2">
+          <div>
+            <h6 class="modal-title fw-bold mb-1"><i class="fa-solid fa-route me-2 text-warning"></i>ขั้นตอนงาน PM <span id="workflowRoundTitle"></span></h6>
+            <div class="small text-white-50" id="workflowMachineTitle">-</div>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">
+              <div class="border rounded p-2 h-100">
+                <div class="text-muted small">ลูกค้า</div>
+                <div class="fw-semibold" id="workflowCustomer">-</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="border rounded p-2 h-100">
+                <div class="text-muted small">ชั่วโมงปัจจุบัน</div>
+                <div class="fw-semibold" id="workflowCurrentHours">-</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="border rounded p-2 h-100">
+                <div class="text-muted small">ความคืบหน้า</div>
+                <div class="fw-semibold" id="workflowProgressText">0/5 ขั้นตอน</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="progress mb-4" style="height: 9px;">
+            <div id="workflowProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+          </div>
+
+          <ul class="workflow-timeline" id="workflowTimeline"></ul>
+
+          <div class="rounded border bg-light p-3 mt-1">
+            <div class="row g-2 small">
+              <div class="col-md-4"><span class="text-muted">สถานะอะไหล่:</span> <strong id="workflowPartsStatus">-</strong></div>
+              <div class="col-md-4"><span class="text-muted">เลขที่บิล:</span> <strong id="workflowPartsBill">-</strong></div>
+              <div class="col-md-4"><span class="text-muted">คูปอง:</span> <strong id="workflowCoupon">-</strong></div>
+              <div class="col-12"><span class="text-muted">รายการอะไหล่:</span> <span id="workflowPartsList">-</span></div>
+              <div class="col-12"><span class="text-muted">หมายเหตุ:</span> <span id="workflowRemark">-</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <span class="me-auto text-muted small"><i class="fa-solid fa-circle-info me-1"></i>สถานะคำนวณจากข้อมูล PM ล่าสุด</span>
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -622,22 +847,27 @@
     </div>
   </div>
 
-  
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // 🔗 ระบุ URL สำหรับเชื่อมต่อกับ Google Apps Script / Backend
-    const API_URL = "https://script.google.com/macros/s/AKfycbzkeRM0jIXh3HYEKjaiRgbObHVHIB-KErw98SGvojAd3ArmDQrXBpbPovPEESMKquy4eQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbwUVtyHVTxWG-l5wmLPDGsNczHKj1ks1Sx7exIatTBN5_KOi94ncEwA8TBA4QoG5PjwHg/exec";
 
     let currentUser = null;
     let currentRole = null;
     let rawDashboardData = [];
     let rawHistoryData = [];
+    let rawMatrixData = [];
+    let dashboardLoadPromise = null;
     let activeFilter = 'all';   
 
     function escapeHtml(str) {
       if (!str) return '';
-      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;');
     }
 
     function isImageUrl(url) {
@@ -742,7 +972,7 @@
 
         const pmRound = Number(item.pmRound || 0);
 
-        if (val === 0 && pmRound > 0) {
+        if (val === 0 && pmRound > 0 && hasCouponEntitlement(item)) {
           val = 4000;
         }
 
@@ -752,9 +982,25 @@
       document.getElementById("statCouponSum").innerText = totalCoupon.toLocaleString('th-TH') + " บาท";
     }
 
+    function hasCouponEntitlement(item) {
+      const partsStatus = String(item.partsStatus || item.parts_status || '').trim();
+      const partsStore = String(item.partsStore || item.parts_store || '').trim();
+      const partsBillNo = String(item.partsBillNo || item.parts_bill_no || '').trim().toUpperCase();
+      const hasPendingParts = partsStatus === "ส่งบางส่วน" || partsStatus === "ค้างส่งอะไหล่";
+      const hasPartsList = partsStore !== "" && partsStore !== "-";
+      const hasPartsBill = partsBillNo !== "" && partsBillNo !== "-" && partsBillNo !== "NA";
+
+      return partsStatus !== "ไม่ได้เบิกอะไหล่" && (hasPendingParts || hasPartsList || hasPartsBill);
+    }
+
     function refreshAllData() {
-      loadHistoryData();
-      loadDashboardData();
+      const dashboardRequest = loadDashboardData().then(() => {
+        rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
+        renderMatrixTable(rawMatrixData);
+      });
+      const historyRequest = loadHistoryData();
+
+      return Promise.all([dashboardRequest, historyRequest]);
     }
 
     async function handleLogin(e) {
@@ -802,10 +1048,12 @@
     }
 
     function loadDashboardData() {
-      const tbody = document.getElementById("tbDashboard");
-      tbody.innerHTML = '<tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+      if (dashboardLoadPromise) return dashboardLoadPromise;
 
-      fetch(`${API_URL}?action=getDashboard`)
+      const tbody = document.getElementById("tbDashboard");
+      tbody.innerHTML = '<tr><td colspan="20" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+
+      dashboardLoadPromise = fetch(`${API_URL}?action=getDashboard`)
         .then(res => res.json())
         .then(data => {
           document.getElementById("statPmAlertCount").innerText = data.pmAlertCount || 0;
@@ -815,8 +1063,13 @@
           renderDashboardTable(rawDashboardData);
         })
         .catch(err => {
-          tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="20" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        })
+        .finally(() => {
+          dashboardLoadPromise = null;
         });
+
+      return dashboardLoadPromise;
     }
 
     function renderDashboardTable(list) {
@@ -824,7 +1077,7 @@
       tbody.innerHTML = "";
 
       if (!list || list.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="19" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="20" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
         updateActionColumnsVisibility();
         return;
       }
@@ -871,7 +1124,7 @@
           
           partsStatusDisplay = `
             <div class="mb-1">
-              <span class="badge ${badgeClass} text-wrap">ค้างส่ง: ${item.partsStore || 'อะไหล่ PM'}${item.lastPm ? ` (${item.lastPm} ชม.)` : ''}</span>
+              <span class="badge ${badgeClass} text-wrap">ค้างส่ง: ${escapeHtml(item.partsStore || 'อะไหล่ PM')}${item.lastPm ? ` (${item.lastPm} ชม.)` : ''}</span>
               ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimPartsModal('${escapeHtml(item.machineId)}')">รับอะไหล่</button>` : ''}
             </div>
           `;
@@ -881,6 +1134,10 @@
 
         if (lastPmRound === 0) {
           couponDisplay = `<span class="text-muted small">⚪ ยังไม่ถึงรอบ PM</span>`;
+        } else if (pStatus === "ไม่ได้เบิกอะไหล่") {
+          couponDisplay = `<span class="text-muted small">⚪ ไม่มีสิทธิ์คูปองรอบนี้</span>`;
+        } else if (!hasCouponEntitlement(item)) {
+          couponDisplay = `<span class="text-muted small">⚪ ไม่มีข้อมูลยืนยันสิทธิ์คูปอง</span>`;
         } else {
           const matchedHistory = rawHistoryData.find(h => 
             String(h.machineId).trim() === String(item.machineId).trim() && 
@@ -928,25 +1185,26 @@
 
         tr.innerHTML = `
           <td class="text-center text-muted fw-bold">${index + 1}</td>
-          <td><strong>${item.machineId || '-'}</strong></td>
-          <td>${item.model || '-'}</td>
-          <td>${item.customer || '-'}</td>
+          <td><strong>${escapeHtml(item.machineId) || '-'}</strong></td>
+          <td>${escapeHtml(item.model) || '-'}</td>
+          <td>${escapeHtml(item.customer) || '-'}</td>
           <td><span class="badge bg-light text-dark border">${displayCusId}</span></td>
-          <td>${item.phone || '-'}</td>
+          <td>${escapeHtml(item.phone) || '-'}</td>
           <td>${formatDate(item.contractDate)}</td>
           <td class="fw-bold text-center">${hrs}</td>
           <td class="text-center">${lastPmRound}</td>
           <td class="text-center ${isPmAlert ? 'text-danger fw-bold' : ''}">${nextPm} ${isPmAlert ? '<i class="fa-solid fa-bell text-danger ms-1"></i>' : ''}</td>
-          <td><span class="badge ${item.status === 'Approved' ? 'badge-approved' : 'badge-pending'}">${item.status || 'Pending'}</span></td>
-          <td><small class="text-muted">${item.updatedBy || '-'}</small></td>
-          <td>${item.partsStore || '-'}</td>
-          <td>${item.partsBillNo || '-'}</td>
+          <td><span class="badge ${item.status === 'Approved' ? 'badge-approved' : 'badge-pending'}">${escapeHtml(item.status) || 'Pending'}</span></td>
+          <td><small class="text-muted">${escapeHtml(item.updatedBy) || '-'}</small></td>
+          <td>${escapeHtml(item.partsStore) || '-'}</td>
+          <td><span class="badge bg-light text-dark border">${escapeHtml(item.supplierId) || '-'}</span></td>
+          <td>${escapeHtml(item.partsBillNo) || '-'}</td>
           <td>${partsStatusDisplay}</td>
           <td class="text-center">
             ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
           </td>
           <td class="text-end">${couponDisplay}</td>
-          <td><small>${item.remark || '-'}</small></td>
+          <td><small>${escapeHtml(item.remark) || '-'}</small></td>
           ${actionTd}
         `;
         tbody.appendChild(tr);
@@ -956,11 +1214,9 @@
       document.getElementById("containerDashboardTable").scrollTop = 0;
     }
 
-    // 💡 ฟังก์ชันเปิด Modal อัปเดตสถานะการรับอะไหล่ (แก้ไขดึงข้อมูลให้ชัวร์ขึ้น)
     function openClaimPartsModal(machineId) {
       const item = rawDashboardData.find(x => String(x.machineId).trim() === String(machineId).trim());
       
-      // ดึงรายการอะไหล่แบบครอบคลุม property Name
       let partsName = "";
       if (item) {
         partsName = item.partsStore || item.parts || item.partsList || item.spareParts || "";
@@ -971,7 +1227,6 @@
       document.getElementById("claimPartsMachineId").value = machineId;
       document.getElementById("claimPartsMachineDisplay").value = machineId;
       
-      // แสดงรายการเดิมลงกล่อง
       document.getElementById("claimPartsListInput").value = partsName;
       document.getElementById("claimPartsRemarkInput").value = "";
       
@@ -994,7 +1249,6 @@
       }
     }
 
-    // 💡 ฟังก์ชันบันทึกการอัปเดตอะไหล่
     async function submitClaimParts() {
       const machineId = document.getElementById("claimPartsMachineId").value;
       let newStatus = document.getElementById("claimPartsStatusSelect").value;
@@ -1003,7 +1257,6 @@
 
       if (!machineId) return;
 
-      // หากผู้ใช้ลบรายการค้างส่งออกจนหมดแล้ว ให้ปรับสถานะเป็น "ส่งครบแล้ว" โดยอัตโนมัติ
       if (newStatus === "ส่งบางส่วน" && remainingParts === "") {
         newStatus = "ส่งครบแล้ว";
       }
@@ -1133,7 +1386,7 @@
       const tbody = document.getElementById("tbHistory");
       tbody.innerHTML = '<tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดประวัติ...</td></tr>';
 
-      fetch(`${API_URL}?action=getReportList`)
+      return fetch(`${API_URL}?action=getReportList`)
         .then(res => res.json())
         .then(data => {
           rawHistoryData = data || [];
@@ -1198,6 +1451,10 @@
           couponDisplay = `<span class="text-success fw-bold">${couponVal.toLocaleString('th-TH')}</span>`;
         } else if (pmRound === 0) {
           couponDisplay = `<span class="text-muted small">⚪ ยังไม่ถึงรอบ PM</span>`;
+        } else if (pStatus === "ไม่ได้เบิกอะไหล่") {
+          couponDisplay = `<span class="text-muted small">⚪ ไม่มีสิทธิ์คูปองรอบนี้</span>`;
+        } else if (!hasCouponEntitlement(item)) {
+          couponDisplay = `<span class="text-muted small">⚪ ไม่มีข้อมูลยืนยันสิทธิ์คูปอง</span>`;
         } else {
           couponDisplay = `<span class="badge badge-warning-custom">ค้างส่งคูปอง (สิทธิ์ 4,000.-)</span>`;
         }
@@ -1210,25 +1467,25 @@
 
         tr.innerHTML = `
           <td class="text-center text-muted fw-bold">${index + 1}</td>
-          <td><span class="badge bg-secondary">${item.ticketId || '-'}</span></td>
-          <td><strong>${item.machineId || '-'}</strong></td>
-          <td>${item.model || '-'}</td>
-          <td>${item.customerName || item.customer || '-'}</td>
+          <td><span class="badge bg-secondary">${escapeHtml(item.ticketId) || '-'}</span></td>
+          <td><strong>${escapeHtml(item.machineId) || '-'}</strong></td>
+          <td>${escapeHtml(item.model) || '-'}</td>
+          <td>${escapeHtml(item.customerName || item.customer) || '-'}</td>
           <td><span class="badge bg-light text-dark border">${displayCusId}</span></td>
-          <td>${item.phone || '-'}</td>
+          <td>${escapeHtml(item.phone) || '-'}</td>
           <td class="text-center">${pmRound}</td>
           <td class="text-center">${item.actualHours || 0}</td>
           <td>${formattedDate}</td>
           <td class="text-end">${Number(item.cost || 0).toLocaleString()}</td>
-          <td>${item.partsStore || '-'}</td>
-          <td><span class="badge bg-light text-dark border">${item.supplierId || '-'}</span></td>
-          <td>${item.partsBillNo || '-'}</td>
+          <td>${escapeHtml(item.partsStore) || '-'}</td>
+          <td><span class="badge bg-light text-dark border">${escapeHtml(item.supplierId) || '-'}</span></td>
+          <td>${escapeHtml(item.partsBillNo) || '-'}</td>
           <td>${partsStatusDisplay}</td>
           <td class="text-center">
             ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
           </td>
           <td class="text-end">${couponDisplay}</td>
-          <td><small>${item.remark || '-'}</small></td>
+          <td><small>${escapeHtml(item.remark) || '-'}</small></td>
           ${actionTd}
         `;
         tbody.appendChild(tr);
@@ -1236,6 +1493,331 @@
 
       updateActionColumnsVisibility();
       document.getElementById("containerHistoryTable").scrollTop = 0;
+    }
+
+    function buildPMMatrixFromDashboard(list) {
+      const checkpoints = [50, 250, 500, 750, 1000, 1250, 1500, 1750, 2000];
+
+      return (list || []).map(item => {
+        const lastPm = Number(item.lastPm || item.last_pm_round || 0);
+        const currentHours = Number(item.currentHours || item.current_Hours || 0);
+        const couponAmount = Number(String(item.yanmarCoupon || item.yanmar_coupon || 0).replace(/,/g, '')) || 0;
+        const partsStatus = String(item.partsStatus || item.parts_status || '').trim();
+        const matrix = {};
+
+        checkpoints.forEach(cp => {
+          if (cp === lastPm && lastPm > 0) {
+            const statuses = [];
+            if (partsStatus === "ส่งบางส่วน" || partsStatus === "ค้างส่งอะไหล่") {
+              statuses.push("ค้างอะไหล่");
+            }
+            if (couponAmount <= 0 && hasCouponEntitlement(item)) {
+              statuses.push("ค้างคูปอง");
+            }
+            matrix[cp] = statuses.length > 0 ? statuses : ["เสร็จสิ้น"];
+          } else if (lastPm >= cp) {
+            matrix[cp] = ["เสร็จสิ้น"];
+          } else if (currentHours >= cp) {
+            matrix[cp] = ["เข้าบริการ"];
+          } else {
+            matrix[cp] = ["รอดำเนินการ"];
+          }
+        });
+
+        return {
+          machine_id: item.machineId || item.machine_id || '',
+          machineId: item.machineId || item.machine_id || '',
+          model: item.model || '',
+          customer: item.customer || item.customerName || '',
+          current_Hours: currentHours,
+          currentHours: currentHours,
+          last_pm_round: lastPm,
+          lastPm: lastPm,
+          partsStore: item.partsStore || item.parts_store || '',
+          partsBillNo: item.partsBillNo || item.parts_bill_no || '',
+          partsStatus: partsStatus,
+          yanmarCoupon: couponAmount,
+          remark: item.remark || '',
+          matrix: matrix,
+          pm50: matrix[50],
+          pm250: matrix[250],
+          pm500: matrix[500],
+          pm750: matrix[750],
+          pm1000: matrix[1000],
+          pm1250: matrix[1250],
+          pm1500: matrix[1500],
+          pm1750: matrix[1750],
+          pm2000: matrix[2000]
+        };
+      });
+    }
+
+    function loadPMMatrix(forceRefresh = false) {
+      const tbody = document.getElementById("tbMatrix");
+
+      const renderFromDashboard = () => {
+        rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
+        renderMatrixTable(rawMatrixData);
+      };
+
+      if (!forceRefresh && rawDashboardData.length > 0) {
+        renderFromDashboard();
+        return Promise.resolve(rawMatrixData);
+      }
+
+      tbody.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล Workflow Matrix...</td></tr>';
+
+      return loadDashboardData()
+        .then(() => {
+          renderFromDashboard();
+          return rawMatrixData;
+        })
+        .catch(err => {
+          tbody.innerHTML = `<tr><td colspan="13" class="text-center py-4 text-danger">เกิดข้อผิดพลาดในการโหลด Matrix: ${err}</td></tr>`;
+        });
+    }
+
+    function getPMWorkflowDetails(item, round) {
+      const lastPm = Number(item.lastPm || item.last_pm_round || 0);
+      const currentHours = Number(item.currentHours || item.current_Hours || 0);
+      const partsStatus = String(item.partsStatus || item.parts_status || '').trim();
+      const couponAmount = Number(String(item.yanmarCoupon || item.yanmar_coupon || 0).replace(/,/g, '')) || 0;
+      const partsPending = partsStatus === "ส่งบางส่วน" || partsStatus === "ค้างส่งอะไหล่";
+      const noPartsRequired = partsStatus === "ไม่ได้เบิกอะไหล่";
+      const couponRequired = hasCouponEntitlement(item);
+      const couponPending = couponRequired && couponAmount <= 0;
+      const isCompletedRound = lastPm > round;
+      const isCurrentRound = lastPm === round && lastPm > 0;
+      const isDue = !isCurrentRound && !isCompletedRound && currentHours >= round;
+
+      let steps;
+
+      if (isCompletedRound) {
+        steps = [
+          { title: "ส่งอะไหล่", detail: "ดำเนินการแล้วในรอบนี้", status: "complete" },
+          { title: "เข้าเปลี่ยน / ทำ PM", detail: "เข้าบริการเรียบร้อยแล้ว", status: "complete" },
+          { title: "รับคูปอง / เงิน", detail: "ปิดขั้นตอนแล้ว", status: "complete" },
+          { title: "รับอะไหล่คืน", detail: "ปิดขั้นตอนแล้ว", status: "complete" },
+          { title: "เสร็จสิ้น", detail: "ปิดงาน PM รอบนี้แล้ว", status: "complete" }
+        ];
+      } else if (isCurrentRound) {
+        steps = [
+          {
+            title: "ส่งอะไหล่",
+            detail: noPartsRequired ? "รอบนี้ไม่ได้เบิกอะไหล่" : "มีการบันทึกรายการอะไหล่แล้ว",
+            status: noPartsRequired ? "skipped" : "complete"
+          },
+          { title: "เข้าเปลี่ยน / ทำ PM", detail: "บันทึกชั่วโมงบริการแล้ว", status: "complete" },
+          {
+            title: "รับคูปอง / เงิน",
+            detail: couponPending ? "ยังค้างรับคูปอง 4,000 บาท" : (couponRequired ? "รับคูปองแล้ว" : "ไม่มีข้อมูลยืนยันสิทธิ์ในรอบนี้"),
+            status: couponPending ? "waiting" : (couponRequired ? "complete" : "skipped")
+          },
+          {
+            title: "รับอะไหล่คืน",
+            detail: partsPending ? "ยังมีอะไหล่ค้างรับคืน/ค้างส่ง" : (noPartsRequired ? "ไม่มีอะไหล่ที่ต้องติดตาม" : "รับอะไหล่ครบแล้ว"),
+            status: partsPending ? "waiting" : (noPartsRequired ? "skipped" : "complete")
+          },
+          {
+            title: "เสร็จสิ้น",
+            detail: couponPending || partsPending ? "รอปิดขั้นตอนที่ยังค้างอยู่" : "ปิดงาน PM รอบนี้แล้ว",
+            status: couponPending || partsPending ? "pending" : "complete"
+          }
+        ];
+      } else if (isDue) {
+        steps = [
+          { title: "ส่งอะไหล่", detail: "ถึงกำหนดแล้ว เตรียม/ตรวจสอบการส่งอะไหล่", status: "active" },
+          { title: "เข้าเปลี่ยน / ทำ PM", detail: "รอบริการตามรอบชั่วโมง", status: "pending" },
+          { title: "รับคูปอง / เงิน", detail: "เริ่มหลังบันทึกงาน PM", status: "pending" },
+          { title: "รับอะไหล่คืน", detail: "เริ่มหลังบันทึกงาน PM", status: "pending" },
+          { title: "เสร็จสิ้น", detail: "ยังไม่ปิดงาน", status: "pending" }
+        ];
+      } else {
+        steps = [
+          { title: "ส่งอะไหล่", detail: "ยังไม่ถึงรอบ PM", status: "pending" },
+          { title: "เข้าเปลี่ยน / ทำ PM", detail: "ยังไม่ถึงรอบ PM", status: "pending" },
+          { title: "รับคูปอง / เงิน", detail: "ยังไม่ถึงรอบ PM", status: "pending" },
+          { title: "รับอะไหล่คืน", detail: "ยังไม่ถึงรอบ PM", status: "pending" },
+          { title: "เสร็จสิ้น", detail: "ยังไม่ถึงรอบ PM", status: "pending" }
+        ];
+      }
+
+      const completed = steps.filter(step => step.status === "complete" || step.status === "skipped").length;
+      return { steps, completed, total: steps.length, couponPending, partsPending };
+    }
+
+    function openWorkflowModal(machineId, round) {
+      const item = rawMatrixData.find(row => String(row.machineId || row.machine_id) === String(machineId));
+      if (!item) return;
+
+      const workflow = getPMWorkflowDetails(item, Number(round));
+      const couponAmount = Number(item.yanmarCoupon || 0);
+      const couponText = couponAmount > 0
+        ? `${couponAmount.toLocaleString('th-TH')} บาท`
+        : (workflow.couponPending ? "ค้าง 4,000 บาท" : "ไม่มีข้อมูลยืนยันสิทธิ์");
+
+      document.getElementById("workflowRoundTitle").innerText = `${Number(round).toLocaleString('th-TH')} ชม.`;
+      document.getElementById("workflowMachineTitle").innerText = `${item.machineId || item.machine_id || '-'} • ${item.model || '-'}`;
+      document.getElementById("workflowCustomer").innerText = item.customer || item.customerName || '-';
+      document.getElementById("workflowCurrentHours").innerText = `${Number(item.currentHours || item.current_Hours || 0).toLocaleString('th-TH')} ชม.`;
+      document.getElementById("workflowProgressText").innerText = `${workflow.completed}/${workflow.total} ขั้นตอน`;
+      document.getElementById("workflowProgressBar").style.width = `${(workflow.completed / workflow.total) * 100}%`;
+      document.getElementById("workflowPartsStatus").innerText = item.partsStatus || '-';
+      document.getElementById("workflowPartsBill").innerText = item.partsBillNo || '-';
+      document.getElementById("workflowCoupon").innerText = couponText;
+      document.getElementById("workflowPartsList").innerText = item.partsStore || '-';
+      document.getElementById("workflowRemark").innerText = item.remark || '-';
+
+      document.getElementById("workflowTimeline").innerHTML = workflow.steps.map((step, index) => {
+        const stateClass = step.status === "complete" ? "is-complete"
+          : step.status === "active" ? "is-active"
+          : step.status === "waiting" ? "is-waiting"
+          : step.status === "skipped" ? "is-skipped" : "";
+        const icon = step.status === "complete" ? "fa-check"
+          : step.status === "active" ? "fa-play"
+          : step.status === "waiting" ? "fa-hourglass-half"
+          : step.status === "skipped" ? "fa-minus" : "fa-clock";
+
+        return `
+          <li class="workflow-step ${stateClass}">
+            <span class="workflow-step-dot"><i class="fa-solid ${icon}"></i></span>
+            <div>
+              <div class="workflow-step-title">${index + 1}. ${escapeHtml(step.title)}</div>
+              <div class="workflow-step-detail">${escapeHtml(step.detail)}</div>
+            </div>
+          </li>`;
+      }).join("");
+
+      new bootstrap.Modal(document.getElementById("workflowDetailModal")).show();
+    }
+
+    function renderMatrixTable(list) {
+      const tbody = document.getElementById("tbMatrix");
+      tbody.innerHTML = "";
+
+      if (!list || list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" class="text-center py-4 text-muted">ไม่พบข้อมูล Workflow</td></tr>`;
+        return;
+      }
+
+      list.forEach((item, index) => {
+        const tr = document.createElement("tr");
+
+        const roundKeys = [
+          { num: 50, keys: ['pm_50', 'pm50', '50', '50 ชม.', 'pm_50_status'] },
+          { num: 250, keys: ['pm_250', 'pm250', '250', '250 ชม.', 'pm_250_status'] },
+          { num: 500, keys: ['pm_500', 'pm500', '500', '500 ชม.', 'pm_500_status'] },
+          { num: 750, keys: ['pm_750', 'pm750', '750', '750 ชม.', 'pm_750_status'] },
+          { num: 1000, keys: ['pm_1000', 'pm1000', '1000', '1000 ชม.', 'pm_1000_status'] },
+          { num: 1250, keys: ['pm_1250', 'pm1250', '1250', '1250 ชม.', 'pm_1250_status'] },
+          { num: 1500, keys: ['pm_1500', 'pm1500', '1500', '1500 ชม.', 'pm_1500_status'] },
+          { num: 1750, keys: ['pm_1750', 'pm1750', '1750', '1750 ชม.', 'pm_1750_status'] },
+          { num: 2000, keys: ['pm_2000', 'pm2000', '2000', '2000 ชม.', 'pm_2000_status'] }
+        ];
+
+        let roundCellsHtml = "";
+
+        roundKeys.forEach(r => {
+          let val = null;
+          
+          for (let k of r.keys) {
+            if (item[k] !== undefined && item[k] !== null && item[k] !== "") {
+              val = item[k];
+              break;
+            }
+          }
+
+          if (!val) {
+            const lastPm = Number(item.lastPm || item.last_pm || item.pmRound || 0);
+            if (lastPm === r.num) {
+              val = item.partsStatus || item.parts_status || "เข้าบริการ";
+            } else if (lastPm > r.num) {
+              val = "ส่งครบแล้ว";
+            } else {
+              val = "รอดำเนินการ";
+            }
+          }
+
+          const statuses = Array.isArray(val) ? val : [val];
+          const workflow = getPMWorkflowDetails(item, r.num);
+          const badgesHtml = statuses.map(rawStatus => {
+            let status = String(rawStatus || "รอดำเนินการ").trim();
+            let badgeStyle = "background-color: #e9ecef; color: #6c757d;";
+            let icon = "";
+
+            switch (status) {
+              case "ส่งอะไหล่":
+                badgeStyle = "background-color: #0dcaf0; color: #000;";
+                icon = '<i class="fa-solid fa-box-seam me-1"></i>';
+                break;
+              case "เข้าเปลี่ยน":
+              case "เข้าบริการ":
+              case "ถึงกำหนดบริการ":
+              case "อยู่ระหว่างทำ":
+              case "กำลังดำเนินการ":
+              case "in_progress":
+                badgeStyle = "background-color: #ffc107; color: #000;";
+                icon = '<i class="fa-solid fa-wrench me-1"></i>';
+                break;
+              case "ค้างคูปอง":
+              case "รอเงิน":
+              case "รอคูปอง":
+                badgeStyle = "background-color: #6f42c1; color: #fff;";
+                icon = '<i class="fa-solid fa-hand-holding-dollar me-1"></i>';
+                break;
+              case "ค้างอะไหล่":
+              case "รออะไหล่คืน":
+              case "ส่งบางส่วน":
+              case "ค้างส่งอะไหล่":
+                badgeStyle = "background-color: #fd7e14; color: #fff;";
+                icon = '<i class="fa-solid fa-clock-rotate-left me-1"></i>';
+                break;
+              case "ส่งครบแล้ว":
+              case "เสร็จสิ้น":
+              case "เรียบร้อย":
+              case "completed":
+                badgeStyle = "background-color: #198754; color: #fff;";
+                icon = '<i class="fa-solid fa-circle-check me-1"></i>';
+                break;
+              default:
+                status = "รอดำเนินการ";
+                break;
+            }
+
+            return `<span class="badge rounded-pill fw-normal px-2 py-1" style="${badgeStyle}">${icon}${escapeHtml(status)}</span>`;
+          }).join("");
+
+          roundCellsHtml += `
+            <td class="workflow-cell" role="button" tabindex="0"
+                data-machine-id="${escapeHtml(item.machineId || item.machine_id || '')}"
+                aria-label="ดูขั้นตอน PM รอบ ${r.num} ชั่วโมง"
+                onclick="openWorkflowModal(this.dataset.machineId, ${r.num})"
+                onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); this.click(); }">
+              <div class="d-flex flex-wrap justify-content-center gap-1">${badgesHtml}</div>
+              <div class="workflow-progress-label"><i class="fa-solid fa-list-check me-1"></i>${workflow.completed}/${workflow.total} ขั้นตอน · คลิกดู</div>
+            </td>`;
+        });
+
+        tr.innerHTML = `
+          <td class="text-center text-muted fw-bold">${index + 1}</td>
+          <td><strong>${escapeHtml(item.machine_id || item.machineId || item.id) || '-'}</strong></td>
+          <td>${escapeHtml(item.machine_model || item.model) || '-'}</td>
+          <td>${escapeHtml(item.customer_name || item.customer || item.customerName) || '-'}</td>
+          ${roundCellsHtml}
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function filterMatrixTable() {
+      const search = document.getElementById("searchMatrix").value.toLowerCase().trim();
+      let filtered = rawMatrixData.filter(item => {
+        const mId = String(item.machine_id || item.machineId || '').toLowerCase();
+        const mModel = String(item.machine_model || item.model || '').toLowerCase();
+        const mCus = String(item.customer_name || item.customer || item.customerName || '').toLowerCase();
+        return mId.includes(search) || mModel.includes(search) || mCus.includes(search);
+      });
+      renderMatrixTable(filtered);
     }
 
     function openClaimModal(ticketId, pmRound) {
