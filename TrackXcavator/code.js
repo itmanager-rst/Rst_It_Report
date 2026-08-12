@@ -48,8 +48,28 @@ function runBigQuery(sqlQuery) {
  * Helper Function ส่งคืนค่า JSON (พร้อมรองรับ CORS)
  */
 function responseJSON(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+  var out = ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+  try {
+    out.setHeader && out.setHeader('Access-Control-Allow-Origin', '*');
+    out.setHeader && out.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    out.setHeader && out.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  } catch (e) {
+    // setHeader may not be available in some runtimes; ignore if so
+  }
+  return out;
+}
+
+// Basic handler for preflight OPTIONS requests (may be invoked by the runtime)
+function doOptions(e) {
+  var out = ContentService.createTextOutput('').setMimeType(ContentService.MimeType.JSON);
+  try {
+    out.setHeader && out.setHeader('Access-Control-Allow-Origin', '*');
+    out.setHeader && out.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    out.setHeader && out.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  } catch (err) {
+    // ignore
+  }
+  return out;
 }
 
 /**
@@ -253,7 +273,7 @@ function getDashboardData() {
 }
 
 // ==========================================
-// 3. ดึงข้อมูล ประวัติทำ PM (PM_Log)
+// 3. ดึงข้อมูล ประวัติทำ PM (PM_Log) - พร้อมระบบ Auto-Detect สลับคอลัมน์
 // ==========================================
 function getReportList() {
   try {
@@ -267,8 +287,21 @@ function getReportList() {
       var tId = row.string_field_18 || row.ticket_id || row.ticketId || ("TK-" + (row.no || (i + 1)));
       var mId = row.machine_id || row.machineId || "";
       var mdl = row.model || "";
-      var cName = row.customer || row.customerName || "";
-      var cId = row.customer_id || row.customerId || "";
+      
+      var rawCustomer = String(row.customer || row.customerName || "").trim();
+      var rawCustomerId = String(row.customer_id || row.customerId || "").trim();
+      var rawPhone = String(row.phone_number || row.phone || "").trim();
+
+      var finalCustomerName = rawCustomer;
+      var finalCustomerId = rawCustomerId;
+      var finalPhone = rawPhone;
+
+      // เช็กสลับคอลัมน์: ถ้า customer เก็บชื่อรุ่นรถ แล้ว customer_id เก็บชื่อลูกค้า
+      if (rawCustomer.indexOf("รถขุด") !== -1 || rawCustomer.indexOf("OLD-") !== -1) {
+        finalCustomerName = rawCustomerId;
+        finalCustomerId = rawPhone;
+        finalPhone = "-";
+      }
 
       result.push({
         no: row.no || (i + 1),
@@ -278,12 +311,12 @@ function getReportList() {
         machineId: mId,
         machine_id: mId,
         model: mdl,
-        customerName: cName,
-        customer: cName,
-        customerId: cId,
-        customer_id: cId,
-        phone: row.phone_number || row.phone || "-",
-        phone_number: row.phone_number || row.phone || "-",
+        customerName: finalCustomerName,
+        customer: finalCustomerName,
+        customerId: finalCustomerId,
+        customer_id: finalCustomerId,
+        phone: finalPhone,
+        phone_number: finalPhone,
         pmRound: Number(row.last_pm_round) || 0,
         last_pm_round: Number(row.last_pm_round) || 0,
         actualHours: Number(row.current_Hours) || 0,
@@ -314,7 +347,7 @@ function getReportList() {
 }
 
 // ==========================================
-// 3.1 แก้ไขปัญหา Matrix ขึ้น "รอดำเนินการ"
+// 3.1 ดึงข้อมูล PM Progress Matrix
 // ==========================================
 function getPMProgressMatrix() {
   try {
@@ -415,7 +448,7 @@ function getPMProgressMatrix() {
 }
 
 // ==========================================
-// 4. บันทึก / แก้ไข ใบงานบริการ (ปรับปรุง SQL Query)
+// 4. บันทึก / แก้ไข ใบงานบริการ (ปรับปรุงการ Mapping คอลัมน์ให้ตรงเป๊ะ)
 // ==========================================
 function insertOrUpdateTicket(p) {
   try {
@@ -439,7 +472,7 @@ function insertOrUpdateTicket(p) {
     var safeRemark = escapeSql(p.remark);
     var safeUpdatedBy = escapeSql(p.updatedBy || p.updated_by);
 
-    // 1. INSERT ลง pm_log
+    // 1. INSERT ลง pm_log (กำหนดย้ายคอลัมน์ให้อยู่ตรงช่อง)
     var queryLog = `INSERT INTO \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\` 
       (no, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark, string_field_18)
       VALUES (
@@ -591,5 +624,128 @@ function deleteReport(ticketId) {
     return responseJSON({ status: "success" });
   } catch (err) {
     return responseJSON({ status: "error", message: err.toString() });
+  }
+}
+
+// ==========================================
+// Utilities to detect and fix swapped fields in pm_log
+// ==========================================
+function _looksLikeDate(val) {
+  if (!val) return false;
+  val = String(val).trim();
+  // ISO date YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return true;
+  // DD/MM/YYYY or D/M/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(val)) return true;
+  // Year present (e.g., 2023, 2000) with separators
+  if (/\d{4}/.test(val) && /[-\/]/.test(val)) return true;
+  return false;
+}
+
+function _looksLikePhone(val) {
+  if (!val) return false;
+  var s = String(val).trim();
+  // contains digits and common phone separators, and has at least 7 digits
+  var digits = s.replace(/[^0-9]/g, '');
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+function detectPmLogSwaps() {
+  try {
+    var rows = runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``);
+    var candidates = [];
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var ticket = r.string_field_18 || r.ticket_id || r.ticketId || (r.no || i+1);
+      var customer = String(r.customer || r.customerName || r.customer_name || '').trim();
+      var phone = String(r.phone_number || r.phone || '').trim();
+      var serviceDate = String(r.contract_date || r.serviceDate || r.service_date || '').trim();
+
+      var custIsDate = _looksLikeDate(customer);
+      var custIsPhone = _looksLikePhone(customer);
+      var phoneIsDate = _looksLikeDate(phone);
+      var phoneIsPhone = _looksLikePhone(phone);
+      var dateIsDate = _looksLikeDate(serviceDate);
+      var dateIsPhone = _looksLikePhone(serviceDate);
+
+      var needs = {};
+
+      // if phone contains a date and serviceDate contains phone, swap them
+      if (phoneIsDate && dateIsPhone) {
+        needs.action = 'swap_phone_date';
+        needs.suggested = { phone: serviceDate, contract_date: phone };
+      }
+
+      // if customer field contains phone number but phone field looks like a name, swap
+      if (custIsPhone && !phoneIsPhone) {
+        needs.action = needs.action || 'swap_customer_phone';
+        needs.suggested = needs.suggested || {};
+        needs.suggested.customer = phone || '';
+        needs.suggested.phone = customer || '';
+      }
+
+      // if customer contains a date (likely swapped with date), swap customer and date
+      if (custIsDate && !dateIsDate) {
+        needs.action = needs.action || 'swap_customer_date';
+        needs.suggested = needs.suggested || {};
+        needs.suggested.customer = serviceDate || '';
+        needs.suggested.contract_date = customer || '';
+      }
+
+      if (Object.keys(needs).length > 0) {
+        candidates.push({ ticketId: ticket, original: { customer: customer, phone: phone, contract_date: serviceDate }, issue: needs });
+      }
+    }
+
+    return responseJSON({ status: 'success', candidates: candidates });
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() });
+  }
+}
+
+function fixPmLogSwaps(payload) {
+  // payload should be { ticketId: 'TK-..' } or { tickets: [ ... ] } or { fixes: [{ ticketId, set: {customer, phone, contract_date}}] }
+  try {
+    var fixes = [];
+    if (!payload) return responseJSON({ status: 'error', message: 'Missing payload' });
+
+    if (payload.fixes && Array.isArray(payload.fixes)) {
+      fixes = payload.fixes;
+    } else if (payload.tickets && Array.isArray(payload.tickets)) {
+      // run detection and apply suggested fixes for these tickets
+      var detected = detectPmLogSwaps().getContent ? JSON.parse(detectPmLogSwaps().getContent()) : detectPmLogSwaps();
+      var map = {};
+      (detected.candidates || []).forEach(function(c){ map[String(c.ticketId)] = c; });
+      payload.tickets.forEach(function(t){ if (map[t]) fixes.push({ ticketId: t, set: map[t].issue.suggested }); });
+    } else if (payload.ticketId) {
+      var det = detectPmLogSwaps();
+      var detObj = det.getContent ? JSON.parse(det.getContent()) : det;
+      var found = (detObj.candidates || []).find(function(c){ return String(c.ticketId) === String(payload.ticketId); });
+      if (found) fixes.push({ ticketId: payload.ticketId, set: found.issue.suggested });
+    } else {
+      return responseJSON({ status: 'error', message: 'Invalid payload format' });
+    }
+
+    var applied = [];
+    fixes.forEach(function(f) {
+      var t = String(f.ticketId).replace(/'/g, "\\'");
+      var sets = [];
+      if (f.set.customer !== undefined) sets.push(`customer = '${escapeSql(f.set.customer)}'`);
+      if (f.set.phone !== undefined) sets.push(`phone_number = '${escapeSql(f.set.phone)}'`);
+      if (f.set.contract_date !== undefined) sets.push(`contract_date = '${escapeSql(f.set.contract_date)}'`);
+      if (sets.length === 0) return;
+      var sql = `UPDATE \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\` SET ${sets.join(', ')} WHERE string_field_18 = '${t}' OR ticket_id = '${t}' LIMIT 1`;
+      try {
+        runBigQuery(sql);
+        applied.push({ ticketId: f.ticketId, applied: f.set });
+      } catch (e) {
+        applied.push({ ticketId: f.ticketId, error: e.toString() });
+      }
+    });
+
+    return responseJSON({ status: 'success', applied: applied });
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() });
   }
 }
