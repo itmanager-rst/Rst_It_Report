@@ -850,19 +850,17 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbz717bMrkAM-hJug8P3IEo_KUtpFzDlYXNX-VCI_qJplfUvA--iUU56rv0oDVThgCpM5Q/exec"; // updated exec URL
+    const API_URL = "https://script.google.com/macros/s/AKfycbxDR7uWen1t_83gUF5MzzjOej4pSz-11bRgnjz2xhS8ScgZ0FvHHdIywwtgA0ronZ8F4w/exec";
 
-      // Safe fetch helper that returns parsed JSON or throws with server text for easier debugging
-      async function fetchJson(url, options) {
-        const res = await fetch(url, options);
-        const ct = res.headers.get('content-type') || '';
-        const text = await res.text();
-        if (ct.indexOf('application/json') !== -1) {
-          try { return JSON.parse(text); } catch (e) { throw new Error('Invalid JSON response from server: ' + text.slice(0, 1000)); }
-        }
-        // not JSON — surface the body for debugging (likely HTML error page)
-        throw new Error('Server returned non-JSON response: ' + text.slice(0, 1000));
+    async function fetchJson(url, options) {
+      const res = await fetch(url, options);
+      const ct = res.headers.get('content-type') || '';
+      const text = await res.text();
+      if (ct.indexOf('application/json') !== -1) {
+        try { return JSON.parse(text); } catch (e) { throw new Error('Invalid JSON response from server: ' + text.slice(0, 1000)); }
       }
+      throw new Error('Server returned non-JSON response: ' + text.slice(0, 1000));
+    }
 
     let currentUser = null;
     let currentRole = null;
@@ -1897,6 +1895,11 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังบันทึก...';
 
+      // 🔒 SAFEGUARD: กำหนดวันที่และแปลงชนิดข้อมูลให้แน่นอน ป้องกันปัญหาสลับคอลัมน์ BigQuery
+      const today = new Date().toISOString().split('T')[0];
+      const parsedPmRound = Number(document.getElementById("inpPmRound").value) || 0;
+      const parsedActualHours = Number(document.getElementById("inpActualHours").value) || 0;
+
       const payload = {
         action: "insertTicket",
         ticketId: document.getElementById("inpTicketId").value,
@@ -1905,14 +1908,16 @@
         customerName: document.getElementById("inpCustomerName").value.trim(),
         customerId: document.getElementById("inpCustomerId").value.trim(),
         phone: document.getElementById("inpPhone").value.trim(),
-        pmRound: document.getElementById("inpPmRound").value,
-        actualHours: document.getElementById("inpActualHours").value,
+        serviceDate: today, // ส่งวันที่ชัดเจน
+        contractDate: today,
+        pmRound: parsedPmRound, // ส่งเฉพาะตัวเลขรอบ PM
+        actualHours: parsedActualHours,
         partsStore: document.getElementById("inpPartsStore").value.trim(),
         supplierId: document.getElementById("inpSupplierId").value.trim(),
         partsBillNo: document.getElementById("inpPartsBillNo").value.trim(),
         partsStatus: document.getElementById("inpPartsStatus").value,
         receiptImage: document.getElementById("inpReceiptImageBase64").value,
-        yanmarCoupon: document.getElementById("inpYanmarCoupon").value || 0,
+        yanmarCoupon: Number(document.getElementById("inpYanmarCoupon").value) || 0,
         remark: document.getElementById("inpRemark").value.trim(),
         updatedBy: currentUser
       };
@@ -2004,12 +2009,21 @@
       }
 
       if (!confirm(`ต้องการลบข้อมูล Machine ID: ${machineId} ใช่หรือไม่?`)) return;
-      await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "deleteDashboard", machineId: machineId })
-      });
-      loadDashboardData();
+      try {
+        const res = await fetchJson(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "deleteDashboard", machineId: machineId })
+        });
+        if (res.status === 'success') {
+          alert('ลบข้อมูลเรียบร้อยแล้ว');
+          loadDashboardData();
+        } else {
+          alert('ลบไม่สำเร็จ: ' + (res.message || JSON.stringify(res)));
+        }
+      } catch (err) {
+        alert('เกิดข้อผิดพลาดขณะลบ: ' + err.message);
+      }
     }
 
     async function deleteHistoryItem(ticketId) {
@@ -2019,12 +2033,21 @@
       }
 
       if (!confirm(`ต้องการลบรายการประวัติ Ticket: ${ticketId} ใช่หรือไม่?`)) return;
-      await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "deleteReport", ticketId: ticketId })
-      });
-      refreshAllData();
+      try {
+        const res = await fetchJson(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "deleteReport", ticketId: ticketId })
+        });
+        if (res.status === 'success') {
+          alert('ลบประวัติเรียบร้อยแล้ว');
+          refreshAllData();
+        } else {
+          alert('ลบไม่สำเร็จ: ' + (res.message || JSON.stringify(res)));
+        }
+      } catch (err) {
+        alert('เกิดข้อผิดพลาดขณะลบ: ' + err.message);
+      }
     }
 
     function showImageModal(url) {
