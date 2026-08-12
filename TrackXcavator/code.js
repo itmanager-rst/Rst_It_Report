@@ -6,7 +6,7 @@ const BQ_DATASET_ID = 'ExcavatorsDB';
 
 /**
  * ฟังก์ชันกลางสำหรับส่ง SQL Query ไปยัง BigQuery
- * พร้อมระบบ Retry เมื่อเจอ Job ไม่เสร็จสมบูรณ์
+ * แก้ไขป้องกันปัญหา TypeError: is not an iterable or ArrayLike
  */
 function runBigQuery(sqlQuery) {
   const request = {
@@ -25,18 +25,40 @@ function runBigQuery(sqlQuery) {
       if (sleepTime < 1000) sleepTime += 200; // Exponential backoff
     }
 
+    // ตรวจสอบเช็กความปลอดภัย หากเป็นคำสั่ง INSERT/UPDATE/DELETE หรือไม่มีข้อมูลตอบกลับ
+    if (!queryResults || !queryResults.rows || !queryResults.schema || !queryResults.schema.fields) {
+      return [];
+    }
+
     const rows = queryResults.rows;
-    if (!rows) return [];
+    const fields = queryResults.schema.fields;
 
-    const headers = queryResults.schema.fields.map(field => field.name);
+    // ดึงรายชื่อ Header แบบปลอดภัย
+    const headers = [];
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i] && fields[i].name) {
+        headers.push(fields[i].name);
+      }
+    }
 
-    return rows.map(row => {
-      let item = {};
-      row.f.forEach((cell, index) => {
-        item[headers[index]] = cell ? cell.v : null;
-      });
-      return item;
-    });
+    // แปลงผลลัพธ์เป็น Array of Objects
+    const result = [];
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      var item = {};
+      if (row && row.f && Array.isArray(row.f)) {
+        for (var c = 0; c < row.f.length; c++) {
+          var cell = row.f[c];
+          var headerName = headers[c];
+          if (headerName) {
+            item[headerName] = (cell && cell.v !== null && cell.v !== undefined) ? cell.v : null;
+          }
+        }
+      }
+      result.push(item);
+    }
+
+    return result;
 
   } catch (error) {
     Logger.log('BigQuery Error: ' + error.toString());
@@ -144,15 +166,16 @@ function doPost(e) {
 }
 
 // ==========================================
-// 1. ตรวจสอบ Login (ส่ง Dual Key ให้รองรับทุกหน้า)
+// 1. ตรวจสอบ Login (ครอบ Backtick คำสงวน user/password)
 // ==========================================
 function verifyLogin(username, password) {
   try {
     var cleanUser = escapeSql(username);
     var cleanPass = escapeSql(password);
 
+    // ครอบคำสงวน `user` และ `password` ด้วย Backtick เพื่อป้องกัน BigQuery Syntax Error
     var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.users\` ` +
-              `WHERE LOWER(user) = LOWER('${cleanUser}') AND CAST(password AS STRING) = '${cleanPass}' ` +
+              `WHERE LOWER(\`user\`) = LOWER('${cleanUser}') AND CAST(\`password\` AS STRING) = '${cleanPass}' ` +
               `LIMIT 1`;
 
     var results = runBigQuery(sql);
@@ -400,21 +423,23 @@ function getPMProgressMatrix() {
 
     // Map ข้อมูลรอบ PM Log เข้ากับตัวเครื่อง พร้อมสถานะหลังเข้าบริการ
     var pmRoundsMap = {};
-    logs.forEach(function(l) {
-      var mId = String(l.machine_id || "").trim();
-      var round = Number(l.last_pm_round) || 0;
-      if (mId && round > 0) {
-        if (!pmRoundsMap[mId]) pmRoundsMap[mId] = {};
-        pmRoundsMap[mId][round] = {
-          completed: true,
-          actualHours: Number(l.current_Hours) || 0,
-          date: l.contract_date || "",
-          statuses: getWorkflowStatuses(l.parts_status, l.yanmar_coupon, l.parts_store, l.parts_bill_no)
-        };
-      }
-    });
+    if (Array.isArray(logs)) {
+      logs.forEach(function(l) {
+        var mId = String(l.machine_id || "").trim();
+        var round = Number(l.last_pm_round) || 0;
+        if (mId && round > 0) {
+          if (!pmRoundsMap[mId]) pmRoundsMap[mId] = {};
+          pmRoundsMap[mId][round] = {
+            completed: true,
+            actualHours: Number(l.current_Hours) || 0,
+            date: l.contract_date || "",
+            statuses: getWorkflowStatuses(l.parts_status, l.yanmar_coupon, l.parts_store, l.parts_bill_no)
+          };
+        }
+      });
+    }
 
-    var matrixData = services.map(function(s) {
+    var matrixData = Array.isArray(services) ? services.map(function(s) {
       var mId = String(s.machine_id || "").trim();
       var hrs = Number(s.current_Hours) || 0;
       var lastPm = Number(s.last_pm_round) || 0;
@@ -454,7 +479,7 @@ function getPMProgressMatrix() {
         pm750: matrix[750],
         pm1000: matrix[1000]
       };
-    });
+    }) : [];
 
     return responseJSON({ status: "success", data: matrixData });
   } catch (e) {
@@ -498,18 +523,18 @@ function insertOrUpdateTicket(p) {
     var safeRemark = escapeSql(p.remark);
     var safeUpdatedBy = escapeSql(p.updatedBy || p.updated_by);
 
-    // 1. INSERT ลง pm_log (ใส่ Backticks ครอบ `no` ป้องกัน Keyword Error)
+    // 1. INSERT ลง pm_log ( last_pm_round ใน pm_log เป็น STRING )
     var queryLog = `INSERT INTO \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\` 
       (\`no\`, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark)
       VALUES (
         '${ticketId}', '${safeMachineId}', '${safeModel}', '${safeCustomerName}', '${safeCustomerId}', '${safePhone}', 
-        '${escapeSql(strDate)}', ${actualHours}, ${pmRound}, ${nextPm}, 'Approved', '${safeUpdatedBy}', 
+        '${escapeSql(strDate)}', CAST('${actualHours}' AS INT64), '${pmRound}', CAST('${nextPm}' AS INT64), 'Approved', '${safeUpdatedBy}', 
         '${safePartsStore}', '${safePartsBillNo}', '${safePartsStatus}', '${safeReceiptImage}', 
         ${Number(p.yanmarCoupon) || 0}, '${safeRemark}'
       )`;
     runBigQuery(queryLog);
 
-    // 2. MERGE/UPDATE ลง service_report
+    // 2. MERGE/UPDATE ลง service_report ( last_pm_round ใน service_report เป็น INT64 )
     var queryDash = `
       MERGE \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\` T
       USING (SELECT '${safeMachineId}' AS machine_id) S
@@ -521,9 +546,9 @@ function insertOrUpdateTicket(p) {
           customer_id = '${safeCustomerId}', 
           phone_number = '${safePhone}', 
           contract_date = '${escapeSql(strDate)}',
-          current_Hours = ${actualHours}, 
-          last_pm_round = ${pmRound}, 
-          next_pm_round = ${nextPm}, 
+          current_Hours = CAST('${actualHours}' AS INT64), 
+          last_pm_round = CAST('${pmRound}' AS INT64), 
+          next_pm_round = CAST('${nextPm}' AS INT64), 
           status = 'Approved',
           updated_by = '${safeUpdatedBy}', 
           parts_store = '${safePartsStore}', 
@@ -536,7 +561,7 @@ function insertOrUpdateTicket(p) {
         INSERT (\`no\`, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark)
         VALUES (
           '', '${safeMachineId}', '${safeModel}', '${safeCustomerName}', '${safeCustomerId}', '${safePhone}', 
-          '${escapeSql(strDate)}', ${actualHours}, ${pmRound}, ${nextPm}, 'Approved', '${safeUpdatedBy}', 
+          '${escapeSql(strDate)}', CAST('${actualHours}' AS INT64), CAST('${pmRound}' AS INT64), CAST('${nextPm}' AS INT64), 'Approved', '${safeUpdatedBy}', 
           '${safePartsStore}', '${safePartsBillNo}', '${safePartsStatus}', '${safeReceiptImage}', 
           ${Number(p.yanmarCoupon) || 0}, '${safeRemark}'
         )
@@ -639,7 +664,7 @@ function deleteDashboard(machineId) {
 }
 
 // ==========================================
-// 9. ลบข้อมูลใน PM_Log (แก้ไขจุดที่เป็นปัญหา Syntax Error)
+// 9. ลบข้อมูลใน PM_Log
 // ==========================================
 function deleteReport(ticketId) {
   try {
