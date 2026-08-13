@@ -104,6 +104,22 @@ function escapeSql(str) {
     .replace(/'/g, "\\'");
 }
 
+function tableHasColumn(tableName, columnName) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'schema_' + tableName + '_' + columnName;
+  var cached = cache.get(cacheKey);
+  if (cached !== null) return cached === '1';
+
+  var sql = `SELECT COUNT(1) AS total
+             FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.INFORMATION_SCHEMA.COLUMNS\`
+             WHERE table_name = '${escapeSql(tableName)}'
+               AND column_name = '${escapeSql(columnName)}'`;
+  var rows = runBigQuery(sql);
+  var exists = rows.length > 0 && Number(rows[0].total) > 0;
+  cache.put(cacheKey, exists ? '1' : '0', 21600);
+  return exists;
+}
+
 // ==========================================
 // WEB APP ENTRY POINTS (doGet / doPost)
 // ==========================================
@@ -162,6 +178,28 @@ function doPost(e) {
 
   } catch (err) {
     return responseJSON({ status: "error", message: err.toString() });
+  }
+}
+
+/**
+ * Entry point สำหรับหน้า HTML ที่รันอยู่ใน Apps Script โดยตรง
+ * คืนค่าเป็น object ธรรมดาเพื่อให้ google.script.run รับผลลัพธ์ได้
+ * และหลีกเลี่ยงปัญหา CORS/redirect ของ fetch ตอนบันทึกข้อมูล
+ */
+function apiRequest(data) {
+  var output = doPost({
+    postData: { contents: JSON.stringify(data || {}) },
+    parameter: data || {}
+  });
+
+  if (!output || typeof output.getContent !== 'function') {
+    return { status: 'error', message: 'Invalid response from server' };
+  }
+
+  try {
+    return JSON.parse(output.getContent());
+  } catch (err) {
+    return { status: 'error', message: 'Invalid JSON response: ' + err.toString() };
   }
 }
 
@@ -510,6 +548,7 @@ function insertOrUpdateTicket(p) {
     var nextPm = pmRound > 0 ? (pmRound + 250) : 50;
 
     var safeMachineId = escapeSql(p.machineId || p.machine_id);
+    var safeOriginalMachineId = escapeSql(p.originalMachineId || p.original_machine_id || p.machineId || p.machine_id);
     var safeModel = escapeSql(p.model);
     var safeCustomerName = escapeSql(p.customerName || p.customer);
     var safeCustomerId = escapeSql(p.customerId || p.customer_id);
@@ -522,14 +561,24 @@ function insertOrUpdateTicket(p) {
     var safeReceiptImage = escapeSql(p.receiptImage || p.receipt_image);
     var safeRemark = escapeSql(p.remark);
     var safeUpdatedBy = escapeSql(p.updatedBy || p.updated_by);
+    var logHasSupplierId = tableHasColumn('pm_log', 'supplier_id');
+    var dashboardHasSupplierId = tableHasColumn('service_report', 'supplier_id');
+    var logSupplierColumn = logHasSupplierId ? ', supplier_id' : '';
+    var logSupplierValue = logHasSupplierId ? `, '${safeSupplierId}'` : '';
+    var dashboardSupplierUpdate = dashboardHasSupplierId ? `, supplier_id = '${safeSupplierId}'` : '';
+    var dashboardSupplierColumn = dashboardHasSupplierId ? ', supplier_id' : '';
+    var dashboardSupplierValue = dashboardHasSupplierId ? `, '${safeSupplierId}'` : '';
+    var dashboardReceiptAssignment = safeReceiptImage !== ''
+      ? `receipt_image = '${safeReceiptImage}',`
+      : 'receipt_image = receipt_image,';
 
     // 1. INSERT ลง pm_log ( last_pm_round ใน pm_log เป็น STRING )
     var queryLog = `INSERT INTO \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\` 
-      (\`no\`, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark)
+      (\`no\`, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store${logSupplierColumn}, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark)
       VALUES (
         '${ticketId}', '${safeMachineId}', '${safeModel}', '${safeCustomerName}', '${safeCustomerId}', '${safePhone}', 
         '${escapeSql(strDate)}', CAST('${actualHours}' AS INT64), '${pmRound}', CAST('${nextPm}' AS INT64), 'Approved', '${safeUpdatedBy}', 
-        '${safePartsStore}', '${safePartsBillNo}', '${safePartsStatus}', '${safeReceiptImage}', 
+        '${safePartsStore}'${logSupplierValue}, '${safePartsBillNo}', '${safePartsStatus}', '${safeReceiptImage}', 
         ${Number(p.yanmarCoupon) || 0}, '${safeRemark}'
       )`;
     runBigQuery(queryLog);
@@ -537,10 +586,11 @@ function insertOrUpdateTicket(p) {
     // 2. MERGE/UPDATE ลง service_report ( last_pm_round ใน service_report เป็น INT64 )
     var queryDash = `
       MERGE \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\` T
-      USING (SELECT '${safeMachineId}' AS machine_id) S
-      ON LOWER(T.machine_id) = LOWER(S.machine_id)
+      USING (SELECT '${safeOriginalMachineId}' AS lookup_machine_id, '${safeMachineId}' AS machine_id) S
+      ON LOWER(T.machine_id) = LOWER(S.lookup_machine_id)
       WHEN MATCHED THEN
         UPDATE SET 
+          machine_id = S.machine_id,
           model = '${safeModel}', 
           customer = '${safeCustomerName}', 
           customer_id = '${safeCustomerId}', 
@@ -551,18 +601,18 @@ function insertOrUpdateTicket(p) {
           next_pm_round = CAST('${nextPm}' AS INT64), 
           status = 'Approved',
           updated_by = '${safeUpdatedBy}', 
-          parts_store = '${safePartsStore}', 
+          parts_store = '${safePartsStore}'${dashboardSupplierUpdate},
           parts_bill_no = '${safePartsBillNo}', 
           parts_status = '${safePartsStatus}', 
-          receipt_image = '${safeReceiptImage}', 
+          ${dashboardReceiptAssignment}
           yanmar_coupon = ${Number(p.yanmarCoupon) || 0}, 
           remark = '${safeRemark}'
       WHEN NOT MATCHED THEN
-        INSERT (\`no\`, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark)
+        INSERT (\`no\`, machine_id, model, customer, customer_id, phone_number, contract_date, current_Hours, last_pm_round, next_pm_round, status, updated_by, parts_store${dashboardSupplierColumn}, parts_bill_no, parts_status, receipt_image, yanmar_coupon, remark)
         VALUES (
           '', '${safeMachineId}', '${safeModel}', '${safeCustomerName}', '${safeCustomerId}', '${safePhone}', 
           '${escapeSql(strDate)}', CAST('${actualHours}' AS INT64), CAST('${pmRound}' AS INT64), CAST('${nextPm}' AS INT64), 'Approved', '${safeUpdatedBy}', 
-          '${safePartsStore}', '${safePartsBillNo}', '${safePartsStatus}', '${safeReceiptImage}', 
+          '${safePartsStore}'${dashboardSupplierValue}, '${safePartsBillNo}', '${safePartsStatus}', '${safeReceiptImage}', 
           ${Number(p.yanmarCoupon) || 0}, '${safeRemark}'
         )
     `;
