@@ -7,16 +7,17 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght=400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; font-family: 'Sarabun', sans-serif; }
-        body { margin: 0; padding: 0; background-color: #f8fafc; color: #1e293b; font-size: 14px; }
+        * { box-sizing: border-box; font-family: 'Sarabun', sans-serif; transition: transform 0.1s ease, box-shadow 0.15s ease, background-color 0.2s ease; }
+        body { margin: 0; padding: 0; background-color: #f1f5f9; color: #1e293b; font-size: 14px; }
         
         .app-header { 
             background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); 
             color: white; padding: 20px 30px; 
             border-bottom: 5px solid #3b82f6;
             display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
         .app-title h1 { margin: 0; font-size: 24px; font-weight: 700; }
         .app-title p { margin: 5px 0 0 0; color: #93c5fd; font-size: 14px; }
@@ -25,48 +26,160 @@
         .sidebar { flex: 1; min-width: 350px; max-width: 420px; }
         .content-area { flex: 2; min-width: 600px; }
 
-        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); border: 1px solid #e2e8f0; }
-        .card-header { font-weight: bold; font-size: 16px; color: #1e3a8a; border-bottom: 2px solid #f1f5f9; margin-bottom: 15px; padding-bottom: 10px; }
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); border: 1px solid #cbd5e1; }
+        .card-header { font-weight: bold; font-size: 16px; color: #1e3a8a; border-bottom: 2px solid #f1f5f9; margin-bottom: 15px; padding-bottom: 10px; display: flex; align-items: center; }
+
+        /* Step Badge Styling */
+        .step-num {
+            background: #1e3a8a;
+            color: #ffffff;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            margin-right: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            flex-shrink: 0;
+        }
 
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #475569; }
-        .form-control { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; transition: 0.15s; }
-        .form-control:focus { outline: none; border-color: #3b82f6; background: white; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #f8fafc; }
+        .form-control:focus { outline: none; border-color: #3b82f6; background: white; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
         
         .found-item { background-color: #fffbeb !important; border: 2px solid #f59e0b !important; font-weight: bold; }
         .new-item { background-color: #fef2f2 !important; border: 2px solid #ef4444 !important; }
 
-        .btn { cursor: pointer; border: none; border-radius: 8px; padding: 12px 20px; font-weight: bold; width: 100%; font-size: 15px; transition: 0.2s; display: inline-flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none; }
-        .btn-add { background: #2563eb; color: white; margin-top: 5px; }
-        .btn-add:hover { background: #1d4ed8; }
-        
-        .action-buttons { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
-        
-        .btn-submit { background: #16a34a; color: white; font-size: 16px; padding: 15px; }
-        .btn-submit:hover { background: #15803d; }
-        .btn-print { background: #4f46e5; color: white; font-size: 15px; padding: 12px; }
-        .btn-print:hover { background: #4338ca; }
-        .btn-excel { background: #0284c7; color: white; font-size: 15px; padding: 12px; }
-        .btn-excel:hover { background: #0369a1; }
-        
-        .btn-link-filter { background: #f59e0b; color: #0f172a; font-size: 15px; padding: 12px; text-align: center; }
-        .btn-link-filter:hover { background: #d97706; color: white; }
+        /* Standard Buttons */
+        .btn { 
+            cursor: pointer; border: none; border-radius: 8px; padding: 12px 18px; font-weight: bold; width: 100%; font-size: 14px; 
+            display: inline-flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none;
+            position: relative;
+        }
+        .btn-add { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; margin-top: 5px; box-shadow: 0 4px 6px rgba(37,99,235,0.2); }
+        .btn-scan { background: linear-gradient(135deg, #334155, #0f172a); color: white; margin-bottom: 15px; }
 
-        .btn-manual { background: #581c87; color: white; font-size: 15px; padding: 12px; text-align: center; }
-        .btn-manual:hover { background: #4c1d95; }
+        /* =========================================================
+           Visual Basic Style GroupBox & Desktop Action Buttons Grid
+           ========================================================= */
+        .vb-groupbox {
+            border: 2px solid #94a3b8;
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 18px 15px 15px 15px;
+            margin-top: 15px;
+            position: relative;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+        }
 
-        .btn-clear-all { background: #94a3b8; color: #0f172a; }
-        .btn-clear-all:hover { background: #cbd5e1; }
-        .btn-scan { background: #0f172a; color: white; margin-bottom: 15px; }
+        .vb-groupbox-title {
+            position: absolute;
+            top: -13px;
+            left: 15px;
+            background: #ffffff;
+            padding: 0 10px;
+            font-weight: 700;
+            color: #1e3a8a;
+            font-size: 13px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
 
-        .table-responsive { overflow-x: auto; margin-bottom: 20px; max-height: 500px; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .vb-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(0,0,0,0.15);
+            background: #ffffff;
+            color: #1e293b;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            position: relative;
+            box-shadow: 0 4px 0 0 rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0,0,0,0.08);
+            min-height: 85px;
+        }
+
+        .vb-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 0 rgba(0, 0, 0, 0.18), 0 6px 10px rgba(0,0,0,0.12);
+            filter: brightness(1.03);
+        }
+
+        .vb-btn:active:not(:disabled) {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .vb-btn:disabled {
+            opacity: 0.55;
+            background: #e2e8f0 !important;
+            color: #94a3b8 !important;
+            border-color: #cbd5e1 !important;
+            box-shadow: none !important;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* VB Button Badges & Icon */
+        .vb-btn .step-tag {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            background: rgba(0,0,0,0.12);
+            color: inherit;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .vb-btn-icon {
+            font-size: 22px;
+            margin-bottom: 4px;
+            line-height: 1;
+        }
+
+        .vb-btn-text {
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        /* Distinct Colors for VB Buttons */
+        .vb-btn-p5 { background: linear-gradient(180deg, #22c55e 0%, #15803d 100%); color: white; }
+        .vb-btn-p6 { background: linear-gradient(180deg, #6366f1 0%, #4338ca 100%); color: white; }
+        .vb-btn-p7 { background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%); color: white; }
+        .vb-btn-p8 { background: linear-gradient(180deg, #f59e0b 0%, #b45309 100%); color: white; }
+        .vb-btn-p9 { background: linear-gradient(180deg, #a855f7 0%, #7e22ce 100%); color: white; }
+        .vb-btn-p10 { background: linear-gradient(180deg, #64748b 0%, #334155 100%); color: white; }
+
+        .table-responsive { overflow-x: auto; margin-bottom: 15px; max-height: 420px; border: 1px solid #e2e8f0; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 950px; }
-        th { background: #f8fafc; text-align: left; padding: 12px 10px; border-bottom: 2px solid #e2e8f0; color: #475569; font-weight: bold; position: sticky; top: 0; }
+        th { background: #f8fafc; text-align: left; padding: 12px 10px; border-bottom: 2px solid #e2e8f0; color: #475569; font-weight: bold; position: sticky; top: 0; z-index: 10; }
         td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #334155; }
         tr:hover { background-color: #f8fafc; }
         
-        .btn-delete { background: #fee2e2; color: #b91c1c; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .btn-delete:hover { background: #fca5a5; }
+        .btn-delete { 
+            background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 2px 0 0 #f87171;
+        }
+        .btn-delete:hover { background: #ef4444; color: white; transform: translateY(-1px); box-shadow: 0 3px 0 0 #dc2626; }
+        .btn-delete:active { transform: translateY(1px); box-shadow: 0 1px 0 0 #dc2626; }
         
         #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; }
         .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; background: #dcfce7; color: #166534; }
@@ -76,9 +189,7 @@
         .close-modal { color: #94a3b8; float: right; font-size: 30px; font-weight: bold; cursor: pointer; }
         .close-modal:hover { color: #1e293b; }
 
-        /* =================================================== */
-        /* 🖨️ STYLE สำหรับใบบันทึกขอซื้อมาตรฐาน (MO 30 วัน) สั่งพิมพ์ */
-        /* =================================================== */
+        /* Print Styling */
         #print-paper { 
             display: none; 
             background: #ffffff; 
@@ -112,23 +223,12 @@
             padding-bottom: 10px; 
         }
         
-        .print-table-wrapper {
-            width: 100%;
-            padding-right: 2px;
-            box-sizing: border-box;
-        }
-
-        .print-table { 
-            width: 100%; 
-            margin-bottom: 20px; 
-            border-collapse: collapse; 
-            table-layout: fixed; 
-            box-sizing: border-box;
-        }
+        .print-table-wrapper { width: 100%; padding-right: 2px; box-sizing: border-box; }
+        .print-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; table-layout: fixed; box-sizing: border-box; }
         .print-table th, .print-table td { 
             border: 1px solid #000000 !important; 
-            padding: 6px 4px; 
-            font-size: 12px; 
+            padding: 8px 6px; 
+            font-size: 13px; 
             text-align: left; 
             word-wrap: break-word; 
             word-break: break-word;
@@ -137,13 +237,7 @@
         }
         .print-table th { background-color: #f1f5f9; text-align: center; font-weight: bold; }
 
-        .print-signatures { 
-            display: grid; 
-            grid-template-columns: 1fr 1fr 1fr; 
-            gap: 15px; 
-            text-align: center; 
-            margin-top: 30px; 
-        }
+        .print-signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; text-align: center; margin-top: 30px; }
         .sig-box { border-top: 1px dotted #000000; padding-top: 8px; font-size: 12px; }
 
         @media print {
@@ -175,8 +269,9 @@
 
 <div class="main-container">
     <div class="sidebar">
+        <!-- Step 1 -->
         <div class="card">
-            <div class="card-header">🎥 สแกนรหัสอะไหล่</div>
+            <div class="card-header"><span class="step-num">1</span> 🎥 สแกนรหัสอะไหล่</div>
             <div id="reader"></div>
             <button class="btn btn-scan" onclick="startScanner()">🔄 เปิดกล้องสแกน</button>
             <div class="form-group">
@@ -185,8 +280,9 @@
             </div>
         </div>
 
+        <!-- Step 2 -->
         <div class="card">
-            <div class="card-header">📝 ข้อมูลใบขอซื้ออะไหล่</div>
+            <div class="card-header"><span class="step-num">2</span> 📝 ข้อมูลใบขอซื้ออะไหล่</div>
             
             <div class="form-group">
                 <label>สาขา</label>
@@ -223,14 +319,22 @@
                 <textarea id="remarks" class="form-control" rows="1"></textarea>
             </div>
 
-            <button class="btn btn-add" onclick="addItemToBasket()">➕ เพิ่มรายการนี้เข้าใบขอซื้อชั่วคราว</button>
+            <!-- Step 3 -->
+            <button class="btn btn-add" onclick="addItemToBasket()">
+                <span style="font-size:16px;">➕</span>
+                <span>[Step 3] เพิ่มรายการเข้าใบขอซื้อ</span>
+            </button>
         </div>
     </div>
 
+    <!-- Content Area -->
     <div class="content-area">
         <div class="card" style="position: sticky; top: 20px;">
+            <!-- Step 4 -->
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; margin-bottom: 15px; padding-bottom: 10px;">
-                <span style="font-weight: bold; font-size: 16px; color: #1e3a8a;">📋 รายการในใบขอซื้อที่พร้อมส่ง</span>
+                <span style="font-weight: bold; font-size: 16px; color: #1e3a8a; display:flex; align-items:center;">
+                    <span class="step-num">4</span> 📋 รายการในใบขอซื้อที่พร้อมส่ง
+                </span>
                 <span id="item-count" style="font-weight: bold; color: #2563eb; font-size: 15px;">0 รายการ</span>
             </div>
             
@@ -238,16 +342,16 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 60px; text-align: center;">ลำดับที่</th>
-                            <th style="width: 140px;">วันเวลา</th>
+                            <th style="width: 50px; text-align: center;">ลำดับ</th>
+                            <th style="width: 130px;">วันเวลา</th>
                             <th>สาขา</th>
                             <th>รหัสอะไหล่</th>
                             <th>ชื่ออะไหล่</th>
-                            <th style="text-align: right; width: 90px;">Stockเดิม</th>
-                            <th style="text-align: right; width: 140px; color: #1e3a8a;">รายการที่ขอซื้อจริง</th>
-                            <th>พนักงานผู้คีย์</th>
+                            <th style="text-align: right; width: 80px;">Stock</th>
+                            <th style="text-align: right; width: 110px; color: #1e3a8a;">ขอซื้อจริง</th>
+                            <th>ผู้คีย์</th>
                             <th>หมายเหตุ</th>
-                            <th style="width: 60px; text-align: center;">จัดการ</th>
+                            <th style="width: 50px; text-align: center;">ลบ</th>
                         </tr>
                     </thead>
                     <tbody id="basket-table">
@@ -256,60 +360,79 @@
                 </table>
             </div>
 
-            <div class="action-buttons">
-                <!-- ปุ่มพิมพ์ใบขอซื้อ PDF -->
-                <button class="btn btn-print" id="btn-print-pdf" onclick="openPrintPreview()" disabled style="background: #cbd5e1; color: #64748b; cursor: not-allowed;">
-                    🖨️ พิมพ์ใบขอซื้ออะไหล่มาตรฐาน (MO 30 วัน) [PDF]
-                </button>
-
-                <button class="btn btn-excel" id="btn-export-excel" onclick="exportBasketToExcel()" disabled style="background: #cbd5e1; color: #64748b; cursor: not-allowed;">
-                    📥 Export Excel ใบขอซื้อชุดนี้สำรองไว้ (.xlsx)
-                </button>
+            <!-- Visual Basic Style Action Box (Grouped Control Panel) -->
+            <div class="vb-groupbox">
+                <div class="vb-groupbox-title">🕹️ Action Commands (แผงควบคุมระบบ)</div>
                 
-                <button class="btn btn-submit" id="btn-submit-all" onclick="submitAllBasketToSheet()" disabled style="background: #cbd5e1; color: #64748b; cursor: not-allowed;">
-                    🚀 ส่งข้อมูลใบขอซื้อทั้งหมดลง Google Sheets (แถว A-I)
-                </button>
+                <div class="action-grid">
+                    <!-- Step 5 -->
+                    <button class="vb-btn vb-btn-p5" id="btn-submit-all" onclick="submitAllBasketToSheet()" disabled>
+                        <span class="step-tag">STEP 5</span>
+                        <div class="vb-btn-icon">🚀</div>
+                        <div class="vb-btn-text" id="text-submit-btn">ส่งข้อมูลลง Database</div>
+                    </button>
 
-                <a href="https://docs.google.com/spreadsheets/d/1OULfZUQ6ZZYwp1ayOvjbi-IOlXaq-MCT_b68Sm-BJnI/edit?gid=795258232#gid=795258232&fvid=582747468" 
-                   target="_blank" 
-                   class="btn btn-link-filter">
-                    🔍 เปิดดูตารางกรองข้อมูลการสลับ (แผ่นงาน Change-HQYM)
-                </a>
+                    <!-- Step 6 -->
+                    <button class="vb-btn vb-btn-p6" id="btn-print-pdf" onclick="openPrintPreview()" disabled>
+                        <span class="step-tag">STEP 6</span>
+                        <div class="vb-btn-icon">🖨️</div>
+                        <div class="vb-btn-text">พิมพ์ใบขอซื้อ (PDF)</div>
+                    </button>
 
-                <button class="btn btn-manual" onclick="toggleManualModal(true)">
-                    📖 เปิดดูคู่มือการใช้งานระบบ / ดาวน์โหลดไฟล์สัญญานคู่มือ
-                </button>
-                
-                <button class="btn btn-clear-all" onclick="clearWholeForm()">🧹 เคลียร์หน้าจอทั้งหมด</button>
+                    <!-- Step 7 -->
+                    <button class="vb-btn vb-btn-p7" id="btn-export-excel" onclick="exportBasketToExcel()" disabled>
+                        <span class="step-tag">STEP 7</span>
+                        <div class="vb-btn-icon">📥</div>
+                        <div class="vb-btn-text">Export Excel (.xlsx)</div>
+                    </button>
+
+                    <!-- Step 8 -->
+                    <a href="https://docs.google.com/spreadsheets/d/1OULfZUQ6ZZYwp1ayOvjbi-IOlXaq-MCT_b68Sm-BJnI/edit?gid=795258232#gid=795258232&fvid=582747468" 
+                       target="_blank" class="vb-btn vb-btn-p8">
+                        <span class="step-tag">STEP 8</span>
+                        <div class="vb-btn-icon">🔍</div>
+                        <div class="vb-btn-text">ตารางกรองการสลับ</div>
+                    </a>
+
+                    <!-- Step 9 -->
+                    <button class="vb-btn vb-btn-p9" onclick="toggleManualModal(true)">
+                        <span class="step-tag">STEP 9</span>
+                        <div class="vb-btn-icon">📖</div>
+                        <div class="vb-btn-text">คู่มือการใช้งาน</div>
+                    </button>
+
+                    <!-- Step 10 -->
+                    <button class="vb-btn vb-btn-p10" onclick="clearWholeForm()">
+                        <span class="step-tag">STEP 10</span>
+                        <div class="vb-btn-icon">🧹</div>
+                        <div class="vb-btn-text">เคลียร์หน้าจอทั้งหมด</div>
+                    </button>
+                </div>
             </div>
+
         </div>
     </div>
 </div>
 
-<!-- ======================================= -->
-<!-- 📄 หน้าต่างพรีวิวเอกสารพิมพ์ใบขอซื้อ (Modal) -->
-<!-- ======================================= -->
+<!-- Modal พรีวิวเอกสารพิมพ์ -->
 <div id="printModal" class="modal">
     <div class="modal-content">
         <span class="close-modal" onclick="togglePrintModal(false)">&times;</span>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
             <h3 style="margin:0; color:#1e3a8a;">🖼️ ตัวอย่างเอกสารก่อนสั่งพิมพ์</h3>
-            <button class="btn btn-print" style="width:auto; padding:8px 20px;" onclick="window.print()">🖨️ กดยืนยันพิมพ์เอกสาร</button>
+            <button class="btn btn-add" style="width:auto; padding:8px 20px;" onclick="window.print()">🖨️ กดยืนยันพิมพ์เอกสาร</button>
         </div>
         
-        <!-- กระดาษตัวอย่างพิมพ์จริง -->
         <div id="print-paper-preview">
-            <!-- โครงสร้างเดียวกับหน้าพิมพ์จริง -->
+            <!-- โครงสร้างกระดาษจะถูกคัดลอกมาวางที่นี่ -->
         </div>
     </div>
 </div>
 
-<!-- ======================================= -->
-<!-- 🖨️ กระดาษพิมพ์ A4 ของระบบ (Hidden for Print) -->
-<!-- ======================================= -->
+<!-- กระดาษพิมพ์ A4 -->
 <div id="print-paper">
     <div class="print-header">
-        <div class="print-doc-no" id="print-doc-code">TK69/35</div>
+        <div class="print-doc-no" id="print-doc-code">TK69/1</div>
         <div class="print-title">ใบขอซื้ออะไหล่มาตรฐาน (MO 30 วัน)</div>
     </div>
 
@@ -324,12 +447,12 @@
         <table class="print-table">
             <thead>
                 <tr>
-                    <th style="width: 40px;">ลำดับ</th>
-                    <th style="width: 140px;">รหัสอะไหล่</th>
+                    <th style="width: 45px;">ลำดับ</th>
+                    <th style="width: 150px;">รหัสอะไหล่</th>
                     <th>ชื่ออะไหล่</th>
-                    <th style="width: 60px;">Stock</th>
-                    <th style="width: 80px;">จำนวนขอซื้อ</th>
-                    <th style="width: 120px;">หมายเหตุ</th>
+                    <th style="width: 70px;">Stock</th>
+                    <th style="width: 90px;">จำนวนขอซื้อ</th>
+                    <th style="width: 140px;">หมายเหตุ</th>
                 </tr>
             </thead>
             <tbody id="print-table-body">
@@ -358,11 +481,11 @@
 </div>
 
 <script>
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1XgL7ctqghpXX70M1tZjxIM5F-R_h9nOlRwUNZGZiAQmv7aBN64P_y0DIA2XR6cVz/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzHwQiZKtCo0hgS-8SGHual6WBPnAi6PF2M2MduE98IKH0sP1LC3FSCWVBVLxhumR8Z/exec";
 
     let masterParts = {};  
     let branchMap = {};
-    let nextSeq = 1;
+    let branchSeqMap = {}; 
     let basketItems = [];
     let html5QrScanner;
 
@@ -370,34 +493,38 @@
         try {
             const resp = await fetch(WEB_APP_URL);
             const data = await resp.json();
-            masterParts = data.masterParts;
+            masterParts = data.masterParts || {};
             branchMap = data.branchMap || {};
-            nextSeq = data.nextSeq || 1;
+            branchSeqMap = data.branchSeqMap || {}; 
 
             const recSel = document.getElementById('recorder');
             recSel.innerHTML = '<option value="">-- เลือกพนักงานผู้คีย์ --</option>';
-            data.smeList.forEach(n => { let o = document.createElement('option'); o.value = o.text = n; recSel.add(o); });
+            (data.smeList || []).forEach(n => { let o = document.createElement('option'); o.value = o.text = n; recSel.add(o); });
 
             const brSel = document.getElementById('branch');
             brSel.innerHTML = '<option value="">-- เลือกสาขา --</option>';
-            data.branchList.forEach(b => { let o = document.createElement('option'); o.value = o.text = b; brSel.add(o); });
+            (data.branchList || []).forEach(b => { let o = document.createElement('option'); o.value = o.text = b; brSel.add(o); });
             
             document.getElementById('status-text').innerHTML = "● ออนไลน์พร้อมใช้งาน";
         } catch (e) { alert("❌ เชื่อมต่อหลังบ้านไม่ได้ เช็ค WEB_APP_URL ครับ"); }
     }
 
-    // คำนวณรหัสเลขที่เอกสารมุมขวาบน เช่น TK69/35
     function generateDocCode(branchName) {
+        if (!branchName) return "TK69/1";
+
         let code = branchMap[branchName] || "TK"; 
-        
-        // แปลงปี ค.ศ. เป็น พ.ศ. 2 หลัก (เช่น 2026 -> 2569 -> 69)
         let currentYearBE = (new Date().getFullYear() + 543).toString().slice(-2);
         
-        return `${code}${currentYearBE}/${nextSeq}`;
+        let lastSeq = parseInt(branchSeqMap[branchName] || 0, 10);
+        let nextBranchSeq = lastSeq + 1;
+        
+        return `${code}${currentYearBE}/${nextBranchSeq}`;
     }
 
     function updateDocNumberPreview() {
-        // อัปเดตพรีวิวรหัสเอกสารตามสาขาที่เลือก
+        if (basketItems.length > 0) {
+            renderBasketTable();
+        }
     }
 
     function lookupPartName(val) {
@@ -461,22 +588,20 @@
         const submitBtn = document.getElementById('btn-submit-all');
         const excelBtn = document.getElementById('btn-export-excel');
         const printBtn = document.getElementById('btn-print-pdf');
+        const submitText = document.getElementById('text-submit-btn');
+        
+        submitText.innerText = "ส่งข้อมูลลง Database";
         
         tbody.innerHTML = "";
         countBadge.innerHTML = `${basketItems.length} รายการ`;
 
         if(basketItems.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 40px; color: #94a3b8;">🛒 ยังไม่มีรายการใบขอซื้อ</td></tr>`;
-            [submitBtn, excelBtn, printBtn].forEach(b => {
-                b.disabled = true; b.style.background = "#cbd5e1"; b.style.color = "#64748b"; b.style.cursor = "not-allowed";
-            });
+            [submitBtn, excelBtn, printBtn].forEach(b => { b.disabled = true; });
             return;
         }
 
-        submitBtn.disabled = excelBtn.disabled = printBtn.disabled = false;
-        submitBtn.style.background = "#16a34a"; submitBtn.style.color = "white"; submitBtn.style.cursor = "pointer";
-        excelBtn.style.background = "#0284c7"; excelBtn.style.color = "white"; excelBtn.style.cursor = "pointer";
-        printBtn.style.background = "#4f46e5"; printBtn.style.color = "white"; printBtn.style.cursor = "pointer";
+        [submitBtn, excelBtn, printBtn].forEach(b => { b.disabled = false; });
 
         basketItems.forEach((item, index) => {
             let tr = document.createElement('tr');
@@ -501,7 +626,6 @@
         renderBasketTable();
     }
 
-    // 🖨️ ฟังก์ชันเตรียมและเปิดพรีวิวพิมพ์ใบขอซื้อ MO 30 วัน
     function openPrintPreview() {
         if(basketItems.length === 0) return;
         
@@ -529,7 +653,6 @@
             tbody.appendChild(tr);
         });
 
-        // คัดลอกไปใส่ในกล่อง Preview
         document.getElementById('print-paper-preview').innerHTML = document.getElementById('print-paper').innerHTML;
         togglePrintModal(true);
     }
@@ -539,74 +662,115 @@
     }
 
     function toggleManualModal(show) {
-        // เปิด/ปิด Modal คู่มือการใช้งาน
+        alert("📖 สำหรับเปิดดูคู่มือระบบ");
     }
 
-    // 📥 ฟังก์ชัน Export Excel ผ่าน ExcelJS (พร้อมตีเส้นตารางและจัดระเบียบสวยงาม)
     async function exportBasketToExcel() {
         if (basketItems.length === 0) return;
 
         let firstItem = basketItems[0];
-        let docCode = generateDocCode(firstItem.branch);
+        let targetBranch = firstItem.branch;
+        let docCode = generateDocCode(targetBranch);
         let todayStr = new Date().toLocaleDateString('th-TH');
 
-        // สร้าง Workbook และ Worksheet ใหม่
+        try {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = WEB_APP_URL;
+            form.target = 'hidden_iframe_worker';
+
+            const exportPayload = basketItems.map(item => ({
+                ...item,
+                docCode: docCode,
+                action: 'export_excel',
+                targetBranch: targetBranch
+            }));
+
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'contents';
+            input.value = JSON.stringify(exportPayload);
+            form.appendChild(input);
+
+            let iframe = document.getElementById('hidden_iframe_worker');
+            if (!iframe) {
+                iframe = document.createElement('iframe');
+                iframe.id = 'hidden_iframe_worker';
+                iframe.name = 'hidden_iframe_worker';
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
+            }
+
+            document.body.appendChild(form);
+            form.submit();
+            setTimeout(() => { if (document.body.contains(form)) document.body.removeChild(form); }, 1000);
+        } catch (e) {
+            console.log("บันทึกตัวนับหลังบ้านล้มเหลว:", e);
+        }
+
+        branchSeqMap[targetBranch] = (parseInt(branchSeqMap[targetBranch] || 0, 10) + 1);
+
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('ใบขอซื้อ');
 
-        // กำหนดความกว้างคอลัมน์ A - F
         worksheet.columns = [
-            { width: 10 }, // A: ลำดับ
-            { width: 22 }, // B: รหัสอะไหล่
-            { width: 42 }, // C: ชื่ออะไหล่
-            { width: 12 }, // D: Stock
-            { width: 16 }, // E: จำนวนขอซื้อ
-            { width: 30 }  // F: หมายเหตุ
+            { width: 16 }, // A: ลำดับ
+            { width: 35 }, // B: รหัสอะไหล่
+            { width: 80 }, // C: ชื่ออะไหล่
+            { width: 22 }, // D: Stock
+            { width: 25 }, // E: จำนวนขอซื้อ
+            { width: 50 }  // F: หมายเหตุ
         ];
 
-        // 1. เลขที่เอกสารมุมขวาบน (A1:F1)
         const r1 = worksheet.addRow(['', '', '', '', '', docCode]);
+        r1.height = 32;
         r1.getCell(6).font = { bold: true, size: 14, name: 'Sarabun' };
         r1.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
 
-        // 2. ชื่อหัวข้อเอกสาร (A2:F2)
         const r2 = worksheet.addRow(['ใบขอซื้ออะไหล่มาตรฐาน (MO 30 วัน)']);
+        r2.height = 45;
         worksheet.mergeCells('A2:F2');
-        r2.getCell(1).font = { bold: true, size: 16, name: 'Sarabun' };
+        r2.getCell(1).font = { bold: true, size: 18, name: 'Sarabun' };
         r2.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 3. ข้อมูลผู้สั่งซื้อ
-        worksheet.addRow([]); // เว้นบรรทัด
+        const emptyR3 = worksheet.addRow([]);
+        emptyR3.height = 20;
         
-        const r4 = worksheet.addRow([`สาขา: ${firstItem.branch}`, '', '', `วันที่: ${todayStr}`]);
-        r4.getCell(1).font = { name: 'Sarabun' };
-        r4.getCell(4).font = { name: 'Sarabun' };
+        const r4 = worksheet.addRow([`สาขา: ${firstItem.branch}`, '', '', `วันที่: ${todayStr}`, '', '']);
+        r4.height = 30;
+        worksheet.mergeCells('A4:C4');
+        worksheet.mergeCells('D4:F4');
+        r4.getCell(1).font = { name: 'Sarabun', size: 12, bold: true };
+        r4.getCell(4).font = { name: 'Sarabun', size: 12 };
+        r4.getCell(1).alignment = { vertical: 'middle' };
+        r4.getCell(4).alignment = { vertical: 'middle' };
 
-        const r5 = worksheet.addRow([`ผู้ขอซื้อ: ${firstItem.recorder}`, '', '', 'เบอร์โทร: -']);
-        r5.getCell(1).font = { name: 'Sarabun' };
-        r5.getCell(4).font = { name: 'Sarabun' };
+        const r5 = worksheet.addRow([`ผู้ขอซื้อ: ${firstItem.recorder}`, '', '', 'เบอร์โทร: -', '', '']);
+        r5.height = 30;
+        worksheet.mergeCells('A5:C5');
+        worksheet.mergeCells('D5:F5');
+        r5.getCell(1).font = { name: 'Sarabun', size: 12 };
+        r5.getCell(4).font = { name: 'Sarabun', size: 12 };
+        r5.getCell(1).alignment = { vertical: 'middle' };
+        r5.getCell(4).alignment = { vertical: 'middle' };
 
-        worksheet.addRow([]); // เว้นบรรทัด
+        const emptyR6 = worksheet.addRow([]);
+        emptyR6.height = 20;
 
-        // 4. หัวตาราง (Row 7)
         const headerRow = worksheet.addRow(['ลำดับ', 'รหัสอะไหล่', 'ชื่ออะไหล่', 'Stock', 'จำนวนขอซื้อ', 'หมายเหตุ']);
+        headerRow.height = 40;
         headerRow.eachCell((cell) => {
-            cell.font = { bold: true, size: 11, name: 'Sarabun' };
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'F1F5F9' } // พื้นหลังสีเทาอ่อน
-            };
+            cell.font = { bold: true, size: 13, name: 'Sarabun' };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = {
-                top: { style: 'thin' },
-                left: { style: 'thin' },
-                bottom: { style: 'thin' },
-                right: { style: 'thin' }
+            cell.border = { 
+                top: { style: 'thin', color: { argb: '94A3B8' } }, 
+                left: { style: 'thin', color: { argb: '94A3B8' } }, 
+                bottom: { style: 'medium', color: { argb: '475569' } }, 
+                right: { style: 'thin', color: { argb: '94A3B8' } } 
             };
         });
 
-        // 5. รายการสินค้าพร้อมตีเส้นตารางทุกช่อง
         basketItems.forEach((item, idx) => {
             const row = worksheet.addRow([
                 idx + 1,
@@ -617,29 +781,32 @@
                 item.remarks || '-'
             ]);
 
+            row.height = 36; 
+
             row.eachCell((cell, colNumber) => {
-                cell.font = { name: 'Sarabun', size: 11 };
-                cell.border = {
-                    top: { style: 'thin' },
-                    left: { style: 'thin' },
-                    bottom: { style: 'thin' },
-                    right: { style: 'thin' }
+                cell.font = { name: 'Sarabun', size: 12 };
+                cell.border = { 
+                    top: { style: 'thin', color: { argb: 'CBD5E1' } }, 
+                    left: { style: 'thin', color: { argb: 'CBD5E1' } }, 
+                    bottom: { style: 'thin', color: { argb: 'CBD5E1' } }, 
+                    right: { style: 'thin', color: { argb: 'CBD5E1' } } 
                 };
                 
-                // จัดตำแหน่งคอลัมน์
-                if (colNumber === 1 || colNumber === 4 || colNumber === 5) {
+                if (colNumber === 1) {
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                } else if (colNumber === 2) {
+                    cell.font = { bold: true, name: 'Sarabun', size: 12 };
+                    cell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+                } else if (colNumber === 3) {
+                    cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
+                } else if (colNumber === 4 || colNumber === 5) {
                     cell.alignment = { horizontal: 'center', vertical: 'middle' };
                 } else {
-                    cell.alignment = { horizontal: 'left', vertical: 'middle' };
-                }
-
-                if (colNumber === 2) {
-                    cell.font = { bold: true, name: 'Sarabun', size: 11 };
+                    cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
                 }
             });
         });
 
-        // 6. บันทึกและส่งไฟล์ดาวน์โหลดให้อัตโนมัติ (.xlsx)
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `ใบขอซื้อ_${docCode.replace('/', '-')}_${firstItem.branch}.xlsx`);
@@ -648,9 +815,14 @@
     function submitAllBasketToSheet() {
         if(basketItems.length === 0) return;
         const submitBtn = document.getElementById('btn-submit-all');
+        const submitText = document.getElementById('text-submit-btn');
+        const firstItem = basketItems[0];
+        const docCode = generateDocCode(firstItem.branch);
         
-        submitBtn.innerHTML = `⏳ กำลังส่งข้อมูลแบบรวดเดียว ${basketItems.length} รายการ...`;
+        submitText.innerText = `กำลังส่งข้อมูล...`;
         submitBtn.disabled = true;
+
+        const payload = basketItems.map(item => ({ ...item, docCode }));
 
         const form = document.createElement('form');
         form.method = 'POST';
@@ -660,7 +832,7 @@
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = 'contents';
-        input.value = JSON.stringify(basketItems);
+        input.value = JSON.stringify(payload);
         form.appendChild(input);
 
         let iframe = document.getElementById('hidden_iframe_worker');
@@ -675,8 +847,10 @@
         document.body.appendChild(form);
         form.submit();
 
+        branchSeqMap[firstItem.branch] = (parseInt(branchSeqMap[firstItem.branch] || 0, 10) + 1);
+
         setTimeout(() => {
-            document.body.removeChild(form);
+            if (document.body.contains(form)) document.body.removeChild(form);
             alert(`🎉 ส่งข้อมูลใบขอซื้อทั้งหมดเข้าคอลัมน์ระบบออนไลน์เรียบร้อยแล้วครับ!`);
             clearWholeForm();
         }, 1500);
