@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HR SITEASSET TRACKER</title>
+  <title>HR SITEASSET TRACKER - EXECUTIVE DASHBOARD</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <style>
     body { font-family: 'Sarabun', sans-serif; }
@@ -20,106 +20,217 @@
     
     @media print {
       body * { visibility: hidden; }
-      #printArea, #printArea * { visibility: visible; }
-      #printArea { position: absolute; left: 0; top: 0; width: 100%; }
+      #prPrintTemplate, #prPrintTemplate * { visibility: visible; }
+      #prPrintTemplate { 
+        position: absolute; 
+        left: 0; 
+        top: 0; 
+        width: 100%; 
+        display: block !important;
+      }
       .no-print { display: none !important; }
       tr { page-break-inside: avoid; }
     }
   </style>
 </head>
-<body class="bg-slate-50 min-h-screen py-6 px-4">
+<body class="bg-slate-100 min-h-screen py-6 px-4">
 
-  <div class="max-w-6xl mx-auto space-y-6">
+  <div class="max-w-7xl mx-auto space-y-6">
     
-    <div class="bg-blue-900 p-6 rounded-xl text-white text-center shadow-md">
-      <div class="text-xl font-bold tracking-wide">HR SITEASSET TRACKER</div>
-      <p class="text-xs text-blue-200 mt-1">ระบบบริหารจัดการและรายงานตรวจสอบยอดอุปกรณ์สำนักงานประจำสำนักงาน</p>
+    <!-- Header Banner -->
+    <div class="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-6 rounded-2xl text-white shadow-lg flex flex-col md:flex-row justify-between items-center gap-4">
+      <div>
+        <div class="text-2xl font-black tracking-wide flex items-center gap-2">
+          <span>📦</span> HR SITEASSET TRACKER & ANALYTICS
+        </div>
+        <p class="text-xs text-blue-200 mt-1 font-light">ระบบบริหารจัดการ ตรวจสอบยอดคงเหลือจริง และรายงานการเบิกจ่ายอุปกรณ์สำนักงาน</p>
+      </div>
+      <button onclick="loadData()" class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold py-2.5 px-4 rounded-xl backdrop-blur-md shadow-sm transition-all cursor-pointer flex items-center gap-2">
+        🔄 อัปเดตข้อมูล Real-time
+      </button>
     </div>
 
-    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <div class="flex items-center justify-between border-b border-gray-100 pb-2 mb-4">
-        <div class="flex items-center space-x-2 text-blue-900 font-bold">
-          <span>📋</span> <h2>บันทึกการเบิกอุปกรณ์สำนักงาน / ตัดสต็อกอุปกรณ์สำนักงาน</h2>
+    <!-- 📊 HR Executive KPI Dashboard -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการอุปกรณ์ทั้งหมด</p>
+          <h3 id="kpiTotalTypes" class="text-2xl font-black text-slate-800 mt-1">0</h3>
+          <p class="text-[11px] text-slate-400 mt-0.5">หมวดหมู่พัสดุในระบบ</p>
         </div>
-        <button onclick="openAddModal()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow-sm transition-all cursor-pointer">
-          ➕ เพิ่มอุปกรณ์ใหม่เข้าคลัง
+        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-xl font-bold">📁</div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">คงเหลือในคลังพร้อมใช้</p>
+          <h3 id="kpiTotalRemaining" class="text-2xl font-black text-emerald-600 mt-1">0</h3>
+          <p class="text-[11px] text-slate-400 mt-0.5">ชิ้น / เครื่อง พร้อมเบิก</p>
+        </div>
+        <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-xl font-bold">✅</div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">ยอดเบิกจ่ายสะสม</p>
+          <h3 id="kpiTotalBorrowed" class="text-2xl font-black text-indigo-600 mt-1">0</h3>
+          <p class="text-[11px] text-slate-400 mt-0.5">ชิ้น / เครื่อง ถูกเบิกไป</p>
+        </div>
+        <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl font-bold">📤</div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">สต็อกต้องเฝ้าระวัง</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <h3 id="kpiLowStock" class="text-2xl font-black text-amber-500">0</h3>
+            <span class="text-xs text-slate-400">ใกล้หมด</span>
+            <span class="text-slate-300">|</span>
+            <h3 id="kpiOutOfStock" class="text-2xl font-black text-rose-600">0</h3>
+            <span class="text-xs text-slate-400">หมด</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">รายการที่ต้องวางแผนจัดซื้อ</p>
+        </div>
+        <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-xl font-bold">⚠️</div>
+      </div>
+    </div>
+
+    <!-- ฟอร์มเบิกจ่ายอุปกรณ์ -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <div class="flex items-center space-x-2 text-blue-900 font-bold">
+          <span>📋</span> <h2 class="text-base font-bold">บันทึกการเบิกอุปกรณ์สำนักงาน / ตัดสต็อก</h2>
+        </div>
+        <button onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5">
+          <span>➕</span> เพิ่มอุปกรณ์ใหม่เข้าคลัง
         </button>
       </div>
 
       <form id="assetForm" onsubmit="handleSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">เลือกอุปกรณ์สำนักงานที่ต้องการเบิก <span class="text-red-500">*</span></label>
-          <select id="assetSelect" required class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">เลือกอุปกรณ์สำนักงานที่ต้องการเบิก <span class="text-red-500">*</span></label>
+          <select id="assetSelect" required class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
             <option value="">-- กำลังเรียกดูรายการอุปกรณ์... --</option>
           </select>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">จำนวนที่เบิก <span class="text-red-500">*</span></label>
-          <input type="number" id="quantity" min="1" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ใส่จำนวน">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">จำนวนที่เบิก <span class="text-red-500">*</span></label>
+          <input type="number" id="quantity" min="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ใส่จำนวน">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">ชื่อผู้บันทึกข้อมูล/ผู้เบิก <span class="text-red-500">*</span></label>
-          <input type="text" id="staffName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ระบุชื่อ-นามสกุล">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อผู้บันทึกข้อมูล/ผู้เบิก <span class="text-red-500">*</span></label>
+          <input type="text" id="staffName" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ระบุชื่อ-นามสกุล">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">แผนก <span class="text-red-500">*</span></label>
-          <input type="text" id="department" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น IT, HR">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">แผนก <span class="text-red-500">*</span></label>
+          <input type="text" id="department" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น IT, HR">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">สาขา <span class="text-red-500">*</span></label>
-          <input type="text" id="branch" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น สำนักงานใหญ่">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">สาขา <span class="text-red-500">*</span></label>
+          <input type="text" id="branch" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น สำนักงานใหญ่">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">อัปโหลดรูปภาพหลักฐานการเบิก <span class="text-red-500">*</span></label>
-          <input type="file" id="assetImage" accept="image/*" required class="w-full text-xs p-1 border border-gray-300 rounded-lg bg-gray-50">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">อัปโหลดรูปภาพหลักฐานการเบิก <span class="text-red-500">*</span></label>
+          <input type="file" id="assetImage" accept="image/*" required class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50">
         </div>
         
         <div class="md:col-span-3">
-          <label class="block text-xs font-semibold text-gray-600 mb-1">เหตุผลการเบิก / หมายเหตุเพิ่มเติม</label>
-          <input type="text" id="requisitionNotes" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น ใช้สำหรับเปิดสาขาใหม่, เบิกทดแทนของเดิมที่ชำรุด">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">เหตุผลการเบิก / หมายเหตุเพิ่มเติม</label>
+          <input type="text" id="requisitionNotes" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น ใช้สำหรับเปิดสาขาใหม่, เบิกทดแทนของเดิมที่ชำรุด">
         </div>
 
-        <div id="previewContainer" class="md:col-span-3 hidden flex items-center space-x-3 p-2 bg-gray-50 rounded-lg">
-          <img id="imagePreview" src="" alt="Preview" class="h-16 w-16 object-cover rounded-md border cursor-pointer hover:opacity-80 transition-opacity" onclick="openZoomModal(this.src)">
-          <span class="text-xs text-green-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย (คลิกเพื่อซูม)</span>
+        <div id="previewContainer" class="md:col-span-3 hidden flex items-center space-x-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+          <img id="imagePreview" src="" alt="Preview" class="h-16 w-16 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity" onclick="openZoomModal(this.src)">
+          <span class="text-xs text-emerald-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย (คลิกเพื่อซูม)</span>
         </div>
 
         <div class="md:col-span-3 pt-2">
-          <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg text-sm shadow-sm transition-all cursor-pointer">
+          <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-md transition-all cursor-pointer">
             <span id="btnText">💾 บันทึกข้อมูลและตัดยอดสต็อก</span>
           </button>
         </div>
       </form>
     </div>
 
-    <!-- ตารางรายการอุปกรณ์สำนักงาน -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <div class="p-4 bg-slate-100 border-b border-gray-200 flex justify-between items-center">
-        <div class="flex items-center space-x-2 text-gray-800 font-bold">
-          <span>📊</span> <h2>รายการอุปกรณ์สำนักงานคงเหลือในคลังและการจัดการ</h2>
+    <!-- 🔍 ตารางรายการอุปกรณ์สำนักงาน + Smart Search & Action Bar -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <!-- Header Section -->
+      <div class="p-5 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <div class="flex items-center space-x-2 font-bold text-base">
+            <span>📦</span> <h2>รายงานสถานะสต็อกอุปกรณ์คงเหลือจริง (HR Inventory Master)</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">ตรวจสอบยอดคงเหลือ ติ๊กเลือกรายการเพื่อออกใบขออนุมัติจัดซื้อเสนอผู้บริหาร</p>
         </div>
-        <button onclick="loadData()" class="text-xs bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1 rounded-md shadow-sm cursor-pointer">🔄 รีเฟรชตารางสต็อก</button>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="autoSelectNeedPurchase()" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl shadow-xs transition-all cursor-pointer">
+            ⚡ เลือกรายการใกล้หมด/หมดคลัง
+          </button>
+          <!-- ⚡ ปุ่มล้างตัวเลือกที่ติ๊กเลือกไว้ทั้งหมด -->
+          <button onclick="clearAllSelections()" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-3 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1">
+            🧹 เคลียร์ที่เลือก
+          </button>
+          <button onclick="preparePRModal()" class="bg-emerald-500 hover:bg-emerald-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1">
+            📄 พิมพ์ใบขออนุมัติจัดซื้อ (<span id="selectedCountBadge">0</span>)
+          </button>
+        </div>
       </div>
 
+      <!-- Filter Controls Bar -->
+      <div class="p-4 bg-slate-50 border-b border-slate-200/80 grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
+        <div class="relative sm:col-span-1">
+          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">🔍</span>
+          <input type="text" id="searchInput" oninput="applyFilters()" placeholder="ค้นหารหัส หรือชื่ออุปกรณ์..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        </div>
+
+        <div>
+          <select id="statusFilter" onchange="applyFilters()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="ALL">-- สถานะทั้งหมด --</option>
+            <option value="NORMAL">🟢 ปกติ (พร้อมเบิก)</option>
+            <option value="LOW">🟡 สต็อกต่ำ (<= 2 ชิ้น)</option>
+            <option value="OUT">🔴 ของหมดคลัง (0 ชิ้น)</option>
+          </select>
+        </div>
+
+        <div>
+          <select id="categoryFilter" onchange="applyFilters()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="ALL">-- หมวดหมู่ทั้งหมด --</option>
+          </select>
+        </div>
+
+        <!-- ⚡ ปุ่มล้างค่าค้นหา/ตัวกรอง -->
+        <div>
+          <button onclick="clearSearchFilters()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1">
+            🔄 รีเซ็ตตัวกรอง
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Search Stock Result Box -->
+      <div id="searchResultCard" class="hidden p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 border-b border-indigo-100 transition-all"></div>
+
+      <!-- Inventory Table -->
       <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse text-sm text-gray-600">
+        <table class="w-full text-left border-collapse text-sm text-slate-600">
           <thead>
-            <tr class="bg-slate-50 border-b border-gray-200 text-gray-700 font-semibold text-xs uppercase tracking-wider">
-              <th class="p-3 text-center w-12">ลำดับ</th>
-              <th class="p-3">รหัสอุปกรณ์สำนักงาน</th>
-              <th class="p-3">รูปภาพจริง</th>
-              <th class="p-3">รายละเอียดอุปกรณ์สำนักงาน</th>
-              <th class="p-3">หมายเหตุอุปกรณ์</th>
-              <th class="p-3">สาขาที่เบิกไป</th>
-              <th class="p-3">ผู้เบิกจ่ายล่าสุด</th>
-              <th class="p-3 text-center">คงเหลือในคลัง</th>
+            <tr class="bg-slate-100/70 border-b border-slate-200 text-slate-700 font-semibold text-xs uppercase tracking-wider">
+              <th class="p-3 text-center w-10">
+                <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer">
+              </th>
+              <th class="p-3">รหัสอุปกรณ์</th>
+              <th class="p-3 text-center">รูปภาพ</th>
+              <th class="p-3">รายละเอียดอุปกรณ์</th>
+              <th class="p-3">หมายเหตุ/สถานที่เก็บ</th>
+              <th class="p-3">ผู้เบิกล่าสุด</th>
+              <th class="p-3 text-center">ยอดทั้งหมด</th>
+              <th class="p-3 text-center w-36">สถานะสต็อกคงเหลือจริง</th>
               <th class="p-3 text-center">สถานะ</th>
               <th class="p-3 text-center">จัดการ</th>
             </tr>
           </thead>
           <tbody id="assetTableBody">
             <tr>
-              <td colspan="10" class="p-8 text-center text-gray-400">กำลังโหลดข้อมูลอุปกรณ์สำนักงาน...</td>
+              <td colspan="10" class="p-8 text-center text-slate-400">กำลังดึงข้อมูลสต็อกสินค้า...</td>
             </tr>
           </tbody>
         </table>
@@ -127,26 +238,22 @@
     </div>
 
     <!-- ตารางรายงานประวัติ -->
-    <div id="printArea" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div id="printArea" class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
       <div class="p-4 bg-slate-800 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div class="flex items-center space-x-2 font-bold">
           <span>📜</span> <h2>รายงานประวัติการเบิกจ่ายอุปกรณ์สำนักงานล่าสุด</h2>
         </div>
         <div class="flex items-center gap-2 no-print">
-          <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white flex items-center font-bold">
+          <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl shadow-sm cursor-pointer text-white flex items-center font-bold gap-1">
             🟢 Export Excel (.csv)
           </button>
-          <button onclick="printReport()" class="text-xs bg-amber-500 hover:bg-amber-600 border border-amber-400 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-slate-900 flex items-center font-bold">
-            🖨️ พิมพ์รายงาน / Save PDF
-          </button>
-          <button onclick="loadData()" class="text-xs bg-slate-700 border border-slate-600 hover:bg-slate-600 px-3 py-1.5 rounded-md shadow-sm cursor-pointer text-white">🔄 รีเฟรช</button>
         </div>
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse text-xs text-gray-600">
+        <table class="w-full text-left border-collapse text-xs text-slate-600">
           <thead>
-            <tr class="bg-slate-100 border-b border-gray-200 text-gray-700 font-semibold uppercase tracking-wider">
+            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider">
               <th class="p-3 text-center w-12">ลำดับ</th>
               <th class="p-3">วัน-เวลา</th>
               <th class="p-3">รหัส/ชื่ออุปกรณ์สำนักงาน</th>
@@ -159,7 +266,7 @@
           </thead>
           <tbody id="logTableBody">
             <tr>
-              <td colspan="8" class="p-6 text-center text-gray-400">กำลังดึงข้อมูลรายงานประวัติ...</td>
+              <td colspan="8" class="p-6 text-center text-slate-400">กำลังดึงข้อมูลรายงานประวัติ...</td>
             </tr>
           </tbody>
         </table>
@@ -168,56 +275,159 @@
 
   </div>
 
+  <!-- 🛒 Modal สำหรับกำหนดรายละเอียดใบเสนอขอสั่งซื้อ (PR Form Modal) -->
+  <div id="prFormModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <span>📄</span> กำหนดรายละเอียดใบขออนุมัติจัดซื้อ (Purchase Requisition)
+        </h3>
+        <button onclick="togglePRModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">เลขที่ใบเสนอซื้อ (PR No.)</label>
+          <input type="text" id="prNumber" class="w-full px-3 py-2 border rounded-xl font-mono text-slate-800" readonly>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">วันที่ออกเอกสาร</label>
+          <input type="text" id="prDate" class="w-full px-3 py-2 border rounded-xl text-slate-800" readonly>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">ผู้ขอสั่งซื้อ / แผนก</label>
+          <input type="text" id="prRequester" value="ฝ่ายทรัพยากรบุคคล (HR)" class="w-full px-3 py-2 border rounded-xl text-slate-800">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">วัตถุประสงค์การสั่งซื้อ</label>
+          <input type="text" id="prPurpose" value="จัดซื้อพัสดุอุปกรณ์สำนักงานทดแทนสต็อกที่หมด/ใกล้หมด" class="w-full px-3 py-2 border rounded-xl text-slate-800">
+        </div>
+      </div>
+
+      <div class="border-t border-slate-100 pt-3">
+        <h4 class="text-xs font-bold text-slate-700 mb-2">ระบุจำนวนที่ต้องการสั่งซื้อเพิ่มสำหรับแต่ละรายการ:</h4>
+        <div id="prItemsList" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
+      </div>
+
+      <div class="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="togglePRModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="button" onclick="generateAndPrintPR()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-md">
+          🖨️ พิมพ์ใบขอเสนอสั่งซื้อ (PR)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🖨️ 🔥 [EXCLUSIVE PRINT TEMPLATE] เอกสารใบขอเสนอซื้อพัสดุ (สำหรับพิมพ์ติดแนบ) -->
+  <div id="prPrintTemplate" class="hidden p-8 bg-white text-slate-900 leading-relaxed">
+    <div class="text-center border-b-2 border-slate-900 pb-4 mb-6">
+      <h1 class="text-2xl font-black uppercase tracking-wide">ใบขออนุมัติจัดซื้อพัสดุ / อุปกรณ์สำนักงาน</h1>
+      <p class="text-sm font-semibold text-slate-600 mt-1">PURCHASE REQUISITION FORM (HR SITEASSET MANAGEMENT)</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 text-xs mb-6 bg-slate-50 p-4 rounded-lg border border-slate-300">
+      <div>
+        <p><strong>เลขที่เอกสาร (PR No.):</strong> <span id="printPRNo"></span></p>
+        <p class="mt-1"><strong>หน่วยงานที่ขอซื้อ:</strong> <span id="printPRRequester"></span></p>
+      </div>
+      <div>
+        <p><strong>วันที่ขออนุมัติ:</strong> <span id="printPRDate"></span></p>
+        <p class="mt-1"><strong>วัตถุประสงค์:</strong> <span id="printPRPurpose"></span></p>
+      </div>
+    </div>
+
+    <table class="w-full text-xs text-left border-collapse border border-slate-400 mb-8">
+      <thead>
+        <tr class="bg-slate-200 text-slate-900 border-b border-slate-400 font-bold">
+          <th class="border border-slate-400 p-2 text-center w-10">ลำดับ</th>
+          <th class="border border-slate-400 p-2 w-28">รหัสอุปกรณ์</th>
+          <th class="border border-slate-400 p-2">รายการพัสดุ / อุปกรณ์</th>
+          <th class="border border-slate-400 p-2 text-center w-20">หมวดหมู่</th>
+          <th class="border border-slate-400 p-2 text-center w-24">คงเหลือในคลัง</th>
+          <th class="border border-slate-400 p-2 text-center w-24 font-bold text-blue-900">จำนวนขอซื้อเพิ่ม</th>
+          <th class="border border-slate-400 p-2 w-32">หมายเหตุ/สเปกเพิ่มเติม</th>
+        </tr>
+      </thead>
+      <tbody id="printPRTableBody"></tbody>
+    </table>
+
+    <!-- ลายเซ็นอนุมัติ 3 ฝ่าย -->
+    <div class="grid grid-cols-3 gap-6 text-center text-xs mt-12 pt-6">
+      <div class="border border-slate-300 p-4 rounded-lg">
+        <p class="font-bold mb-10">ผู้ขออนุมัติจัดซื้อ</p>
+        <p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p>
+        <p>(..........................................................)</p>
+        <p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: เจ้าหน้าที่ HR / ผู้ดูแลคลัง</p>
+        <p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p>
+      </div>
+
+      <div class="border border-slate-300 p-4 rounded-lg">
+        <p class="font-bold mb-10">ผู้ตรวจสอบรายการ</p>
+        <p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p>
+        <p>(..........................................................)</p>
+        <p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: หัวหน้าแผนก / ผู้จัดการ HR</p>
+        <p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p>
+      </div>
+
+      <div class="border border-slate-300 p-4 rounded-lg">
+        <p class="font-bold mb-10">ผู้อนุมัติการจัดซื้อ</p>
+        <p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p>
+        <p>(..........................................................)</p>
+        <p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: ผู้บริหาร / ผู้อำนวยการ</p>
+        <p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal สำหรับเพิ่ม/แก้ไขอุปกรณ์ -->
   <div id="addAssetModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
-    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl mx-4">
-      <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-        <h3 id="modalTitle" class="text-lg font-bold text-gray-800">➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง</h3>
-        <button onclick="toggleModal(false)" class="text-gray-400 hover:text-gray-600 text-xl font-bold cursor-pointer">&times;</button>
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl mx-4">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
+        <h3 id="modalTitle" class="text-lg font-bold text-slate-800">➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง</h3>
+        <button onclick="toggleModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
       </div>
       
       <form id="newAssetForm" onsubmit="handleAssetSubmit(event)" class="space-y-4">
         <input type="hidden" id="formAction" value="addAsset">
 
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">รหัสอุปกรณ์สำนักงาน (Asset ID) <span class="text-red-500">*</span></label>
-          <input type="text" id="newAssetId" placeholder="เช่น Asset 001" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">รหัสอุปกรณ์สำนักงาน (Asset ID) <span class="text-red-500">*</span></label>
+          <input type="text" id="newAssetId" placeholder="เช่น Asset 001" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">ชื่ออุปกรณ์สำนักงาน <span class="text-red-500">*</span></label>
-          <input type="text" id="newAssetName" placeholder="เช่น Printer Brother, กล้อง CCTV" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่ออุปกรณ์สำนักงาน <span class="text-red-500">*</span></label>
+          <input type="text" id="newAssetName" placeholder="เช่น Printer Brother, กล้อง CCTV" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">หมวดหมู่ / ประเภท <span class="text-red-500">*</span></label>
-          <input type="text" id="newAssetCategory" placeholder="เช่น อุปกรณ์สำนักงาน, ไอที" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">หมวดหมู่ / ประเภท <span class="text-red-500">*</span></label>
+          <input type="text" id="newAssetCategory" placeholder="เช่น อุปกรณ์สำนักงาน, ไอที" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
         </div>
         <div>
-          <label id="totalLabel" class="block text-xs font-semibold text-gray-600 mb-1">จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span></label>
-          <input type="number" id="newAssetTotal" min="1" placeholder="1" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label id="totalLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span></label>
+          <input type="number" id="newAssetTotal" min="1" placeholder="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">หมายเหตุประจำอุปกรณ์ (ข้อมูลเพิ่มเติม/สถานที่เก็บ)</label>
-          <input type="text" id="newAssetNotes" placeholder="เช่น เก็บไว้ที่ห้องควบคุม, ประกันหมดปี 2027" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">หมายเหตุประจำอุปกรณ์ (ข้อมูลเพิ่มเติม/สถานที่เก็บ)</label>
+          <input type="text" id="newAssetNotes" placeholder="เช่น เก็บไว้ที่ห้องควบคุม, ประกันหมดปี 2027" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">อัปโหลดรูปภาพจริง <span id="imgOptionalNote" class="text-gray-400 font-normal"></span></label>
-          <input type="file" id="newAssetImage" accept="image/*" class="w-full text-xs p-1 border border-gray-300 rounded-lg bg-gray-50">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">อัปโหลดรูปภาพจริง <span id="imgOptionalNote" class="text-slate-400 font-normal"></span></label>
+          <input type="file" id="newAssetImage" accept="image/*" class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50">
         </div>
         
-        <div class="flex justify-end space-x-2 pt-2 border-t border-gray-100">
-          <button type="button" onclick="toggleModal(false)" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold py-2 px-4 rounded-lg cursor-pointer">ยกเลิก</button>
-          <button type="submit" id="addBtn" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-4 rounded-lg cursor-pointer">บันทึกข้อมูล</button>
+        <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="toggleModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+          <button type="submit" id="addBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-4 rounded-xl cursor-pointer">บันทึกข้อมูล</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- 🔍 Modal สำหรับ Zoom ดูรูปภาพขนาดใหญ่ -->
+  <!-- Zoom Modal -->
   <div id="imageZoomModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4 transition-all" onclick="closeZoomModal()">
     <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onclick="event.stopPropagation()">
-      <button onclick="closeZoomModal()" class="absolute -top-10 right-0 text-white text-3xl font-bold hover:text-gray-300 cursor-pointer">&times;</button>
-      <img id="zoomedImage" src="" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border-2 border-white/20">
-      <p class="text-white/70 text-xs mt-2 font-light">คลิกที่ไหนก็ได้ด้านนอก หรือกด ESC เพื่อปิดหน้าต่าง</p>
+      <button onclick="closeZoomModal()" class="absolute -top-10 right-0 text-white text-3xl font-bold hover:text-slate-300 cursor-pointer">&times;</button>
+      <img id="zoomedImage" src="" class="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-2 border-white/20">
     </div>
   </div>
 
@@ -228,13 +438,13 @@
     let newAssetBase64 = "";
     let globalLogData = []; 
     let cachedAssets = []; 
+    let selectedAssetsForPR = new Set();
 
     window.onload = function() {
       loadData();
       setupImageListeners();
     };
 
-    // --- ระบบ Zoom รูปภาพ ---
     function openZoomModal(imgSrc) {
       if(!imgSrc) return;
       document.getElementById("zoomedImage").src = imgSrc;
@@ -250,6 +460,7 @@
       if (event.key === "Escape") {
         closeZoomModal();
         toggleModal(false);
+        togglePRModal(false);
       }
     });
 
@@ -289,9 +500,7 @@
       toggleModal(true);
     }
 
-    // ฟังก์ชันโหลดข้อมูลทั้งหมด
     async function loadData() {
-      const select = document.getElementById("assetSelect");
       const tableBody = document.getElementById("assetTableBody");
       const logTableBody = document.getElementById("logTableBody");
 
@@ -307,112 +516,70 @@
         globalLogData = logs || [];
         cachedAssets = assets || [];
 
-        // ดึงข้อมูลการเบิกล่าสุด
-        const lastBorrowMap = {};
-        globalLogData.forEach(log => {
-          const aId = String(log.assetId);
-          if (!lastBorrowMap[aId]) {
-            lastBorrowMap[aId] = {
-              staffName: log.staffName || "-",
-              branch: log.branch || "-"
-            };
-          }
+        let totalRemainingCount = 0;
+        let totalBorrowedCount = 0;
+        let lowStockCount = 0;
+        let outOfStockCount = 0;
+        const categoriesSet = new Set();
+
+        cachedAssets.forEach(asset => {
+          let rem = parseInt(asset.remaining);
+          if(isNaN(rem)) rem = parseInt(asset.total) || 0;
+          if(rem < 0) rem = 0;
+
+          const tot = parseInt(asset.total) || 0;
+          const borrowed = tot - rem > 0 ? tot - rem : 0;
+
+          totalRemainingCount += rem;
+          totalBorrowedCount += borrowed;
+
+          if(rem === 0) outOfStockCount++;
+          else if(rem <= 2) lowStockCount++;
+
+          if(asset.category) categoriesSet.add(asset.category);
         });
 
-        // 2. แสดงผลตารางสต็อกสินค้าโดยใช้ค่า remaining จาก Google Sheets โดยตรง
-        select.innerHTML = '<option value="">-- กรุณาเลือกอุปกรณ์สำนักงาน--</option>';
-        tableBody.innerHTML = '';
+        document.getElementById("kpiTotalTypes").innerText = cachedAssets.length;
+        document.getElementById("kpiTotalRemaining").innerText = totalRemainingCount.toLocaleString();
+        document.getElementById("kpiTotalBorrowed").innerText = totalBorrowedCount.toLocaleString();
+        document.getElementById("kpiLowStock").innerText = lowStockCount;
+        document.getElementById("kpiOutOfStock").innerText = outOfStockCount;
 
-        if (cachedAssets.length === 0) {
-          select.innerHTML = '<option value="">ไม่พบข้อมูลอุปกรณ์สำนักงานในสต็อก</option>';
-          tableBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-gray-400">ยังไม่มีอุปกรณ์สำนักงานถูกเพิ่มเข้ามาในคลัง</td></tr>';
-        } else {
-          cachedAssets.forEach((asset, index) => {
-            const aId = String(asset.id);
-            const total = parseInt(asset.total) || 0;
-            
-            // 💡 แก้ไข: ดึงยอดคงเหลือ (remaining) ที่บันทึกไว้จริงในคอลัมน์ E มาแสดงตรงๆ
-            let remaining = parseInt(asset.remaining);
-            if (isNaN(remaining)) remaining = total;
-            if (remaining < 0) remaining = 0;
+        const categoryFilter = document.getElementById("categoryFilter");
+        categoryFilter.innerHTML = '<option value="ALL">-- หมวดหมู่ทั้งหมด --</option>';
+        categoriesSet.forEach(cat => {
+          const opt = document.createElement("option");
+          opt.value = cat;
+          opt.innerText = cat;
+          categoryFilter.appendChild(opt);
+        });
 
-            const lastBorrow = lastBorrowMap[aId] || {
-              staffName: asset.lastBorrower || "-",
-              branch: asset.lastBranch || "-"
-            };
+        renderAssetTable(cachedAssets);
 
-            // อัปเดตตัวเลือกใน Dropdown
-            const option = document.createElement("option");
-            option.value = asset.id;
-            option.text = `${asset.name} (คงเหลือ: ${remaining})`;
-            if (remaining <= 0) { 
-              option.disabled = true; 
-              option.text += " [ของหมด]"; 
-            }
-            select.appendChild(option);
-
-            // แสดงผลรูปภาพ
-            const imgHtml = asset.image 
-              ? `<img src="${asset.image}" onclick="openZoomModal('${asset.image}')" class="h-12 w-12 object-cover rounded-md border shadow-sm cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
-              : `<div class="h-12 w-12 bg-gray-100 flex items-center justify-center text-xs text-gray-400 rounded-md border">ไม่มีรูป</div>`;
-
-            const statusBadge = remaining > 0 
-              ? `<span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">ปกติ</span>`
-              : `<span class="bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded">ของหมดคลัง</span>`;
-
-            const row = `
-              <tr class="border-b border-gray-100 hover:bg-slate-50/50 transition-colors">
-                <td class="p-3 text-center font-semibold text-gray-500">${index + 1}</td>
-                <td class="p-3 font-mono font-semibold text-gray-900">${asset.id}</td>
-                <td class="p-3">${imgHtml}</td>
-                <td class="p-3">
-                  <div class="font-bold text-gray-800">${asset.name}</div>
-                  <div class="text-xs text-gray-400 mt-0.5">หมวดหมู่: ${asset.category} | ทั้งหมด: ${total}</div>
-                </td>
-                <td class="p-3 text-gray-600 text-xs max-w-[150px] break-words">${asset.notes || '-'}</td>
-                <td class="p-3 text-gray-700 text-xs font-medium">${lastBorrow.branch}</td>
-                <td class="p-3 text-gray-700 text-xs font-medium">${lastBorrow.staffName}</td>
-                <td class="p-3 text-center font-bold text-base ${remaining > 0 ? 'text-blue-600' : 'text-red-500'}">${remaining}</td>
-                <td class="p-3 text-center">${statusBadge}</td>
-                <td class="p-3 text-center whitespace-nowrap">
-                  <button onclick="openEditModal('${asset.id}')" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs py-1 px-2.5 rounded-md shadow-sm transition-all cursor-pointer mr-1 font-bold">
-                    ✏️ แก้ไข
-                  </button>
-                  <button onclick="handleDeleteAsset('${asset.id}', '${asset.name}')" class="bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2.5 rounded-md shadow-sm transition-all cursor-pointer">
-                    🗑️ ลบ
-                  </button>
-                </td>
-              </tr>
-            `;
-            tableBody.insertAdjacentHTML('beforeend', row);
-          });
-        }
-
-        // 3. แสดงผลตารางรายงานประวัติ
         logTableBody.innerHTML = '';
         if (globalLogData.length === 0) {
-          logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-gray-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
+          logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
         } else {
           globalLogData.forEach((log, index) => {
             const proofImg = log.image 
-              ? `<img src="${log.image}" onclick="openZoomModal('${log.image}')" class="h-10 w-10 object-cover rounded border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
-              : `<span class="text-gray-400 text-[10px]">ไม่มีรูป</span>`;
+              ? `<img src="${log.image}" onclick="openZoomModal('${log.image}')" class="h-10 w-10 object-cover rounded-lg border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
+              : `<span class="text-slate-400 text-[10px]">ไม่มีรูป</span>`;
 
             const row = `
-              <tr class="border-b border-gray-100 hover:bg-gray-50">
-                <td class="p-3 text-center font-semibold text-gray-500">${index + 1}</td>
-                <td class="p-3 text-gray-500 whitespace-nowrap">${log.timestamp}</td>
+              <tr class="border-b border-slate-100 hover:bg-slate-50">
+                <td class="p-3 text-center font-semibold text-slate-500">${index + 1}</td>
+                <td class="p-3 text-slate-500 whitespace-nowrap">${log.timestamp}</td>
                 <td class="p-3">
-                  <div class="font-bold text-gray-800">${log.assetName}</div>
-                  <div class="text-[10px] text-gray-400 font-mono">${log.assetId}</div>
+                  <div class="font-bold text-slate-800">${log.assetName}</div>
+                  <div class="text-[10px] text-slate-400 font-mono">${log.assetId}</div>
                 </td>
-                <td class="p-3 text-center font-bold text-gray-900">${log.quantity}</td>
+                <td class="p-3 text-center font-bold text-slate-900">${log.quantity}</td>
                 <td class="p-3">
                   <div class="font-medium">${log.staffName}</div>
-                  <div class="text-[10px] text-gray-400">แผนก: ${log.department}</div>
+                  <div class="text-[10px] text-slate-400">แผนก: ${log.department}</div>
                 </td>
-                <td class="p-3 text-gray-700">${log.branch}</td>
-                <td class="p-3 text-gray-600 max-w-[200px] break-words">${log.notes || '-'}</td>
+                <td class="p-3 text-slate-700">${log.branch}</td>
+                <td class="p-3 text-slate-600 max-w-[200px] break-words">${log.notes || '-'}</td>
                 <td class="p-3 no-print">${proofImg}</td>
               </tr>
             `;
@@ -427,7 +594,316 @@
       }
     }
 
-    function printReport() { window.print(); }
+    function renderAssetTable(assetsToDisplay) {
+      const select = document.getElementById("assetSelect");
+      const tableBody = document.getElementById("assetTableBody");
+
+      const lastBorrowMap = {};
+      globalLogData.forEach(log => {
+        const aId = String(log.assetId);
+        if (!lastBorrowMap[aId]) {
+          lastBorrowMap[aId] = {
+            staffName: log.staffName || "-",
+            branch: log.branch || "-"
+          };
+        }
+      });
+
+      select.innerHTML = '<option value="">-- กรุณาเลือกอุปกรณ์สำนักงาน--</option>';
+      tableBody.innerHTML = '';
+
+      if (assetsToDisplay.length === 0) {
+        select.innerHTML = '<option value="">ไม่พบข้อมูลอุปกรณ์สำนักงาน</option>';
+        tableBody.innerHTML = '<tr><td colspan="10" class="p-8 text-center text-slate-400">ไม่พบรายการอุปกรณ์ที่ตรงกับเงื่อนไขการค้นหา</td></tr>';
+        return;
+      }
+
+      cachedAssets.forEach(asset => {
+        let remaining = parseInt(asset.remaining);
+        if (isNaN(remaining)) remaining = parseInt(asset.total) || 0;
+        if (remaining < 0) remaining = 0;
+
+        const option = document.createElement("option");
+        option.value = asset.id;
+        option.text = `${asset.name} (คงเหลือ: ${remaining})`;
+        if (remaining <= 0) { 
+          option.disabled = true; 
+          option.text += " [ของหมด]"; 
+        }
+        select.appendChild(option);
+      });
+
+      assetsToDisplay.forEach((asset, index) => {
+        const aId = String(asset.id);
+        const total = parseInt(asset.total) || 0;
+        
+        let remaining = parseInt(asset.remaining);
+        if (isNaN(remaining)) remaining = total;
+        if (remaining < 0) remaining = 0;
+
+        const lastBorrow = lastBorrowMap[aId] || {
+          staffName: asset.lastBorrower || "-",
+          branch: asset.lastBranch || "-"
+        };
+
+        const imgHtml = asset.image 
+          ? `<img src="${asset.image}" onclick="openZoomModal('${asset.image}')" class="h-12 w-12 object-cover rounded-xl border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all mx-auto" title="คลิกเพื่อขยายรูปภาพ">` 
+          : `<div class="h-12 w-12 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 rounded-xl border mx-auto">ไม่มีรูป</div>`;
+
+        const stockPercent = total > 0 ? Math.min(100, Math.round((remaining / total) * 100)) : 0;
+        
+        let progressBg = "bg-emerald-500";
+        let statusBadge = `<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-lg">ปกติ</span>`;
+        
+        if (remaining === 0) {
+          progressBg = "bg-rose-500";
+          statusBadge = `<span class="bg-rose-100 text-rose-800 text-xs font-semibold px-2.5 py-1 rounded-lg">ของหมดคลัง</span>`;
+        } else if (remaining <= 2) {
+          progressBg = "bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-lg";
+          statusBadge = `<span class="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-lg">สต็อกต่ำ</span>`;
+        }
+
+        const isChecked = selectedAssetsForPR.has(aId) ? 'checked' : '';
+
+        const row = `
+          <tr class="border-b border-slate-100 hover:bg-slate-50/80 transition-colors">
+            <td class="p-3 text-center">
+              <input type="checkbox" value="${asset.id}" ${isChecked} onchange="toggleItemSelection('${asset.id}', this.checked)" class="asset-checkbox rounded text-blue-600 focus:ring-blue-500 cursor-pointer">
+            </td>
+            <td class="p-3 font-mono font-bold text-slate-900 text-xs">${asset.id}</td>
+            <td class="p-3 text-center">${imgHtml}</td>
+            <td class="p-3">
+              <div class="font-bold text-slate-800 text-sm">${asset.name}</div>
+              <div class="text-xs text-slate-400 mt-0.5">หมวดหมู่: ${asset.category}</div>
+            </td>
+            <td class="p-3 text-slate-600 text-xs max-w-[140px] break-words">${asset.notes || '-'}</td>
+            <td class="p-3 text-xs">
+              <div class="font-medium text-slate-800">${lastBorrow.staffName}</div>
+              <div class="text-[10px] text-slate-400">${lastBorrow.branch}</div>
+            </td>
+            <td class="p-3 text-center font-bold text-slate-700 text-sm">${total}</td>
+            <td class="p-3">
+              <div class="flex items-center justify-between text-xs font-bold mb-1">
+                <span class="${remaining > 0 ? 'text-slate-800' : 'text-rose-600'}">${remaining} ชิ้น</span>
+                <span class="text-[10px] text-slate-400 font-normal">${stockPercent}%</span>
+              </div>
+              <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div class="${progressBg} h-2 rounded-full transition-all duration-500" style="width: ${stockPercent}%"></div>
+              </div>
+            </td>
+            <td class="p-3 text-center whitespace-nowrap">${statusBadge}</td>
+            <td class="p-3 text-center whitespace-nowrap">
+              <button onclick="openEditModal('${asset.id}')" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs py-1 px-2.5 rounded-lg shadow-xs transition-all cursor-pointer mr-1 font-bold">✏️ แก้ไข</button>
+              <button onclick="handleDeleteAsset('${asset.id}', '${asset.name}')" class="bg-rose-500 hover:bg-rose-600 text-white text-xs py-1 px-2.5 rounded-lg shadow-xs transition-all cursor-pointer">🗑️ ลบ</button>
+            </td>
+          </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', row);
+      });
+
+      updateBadge();
+    }
+
+    function toggleItemSelection(id, isChecked) {
+      if(isChecked) selectedAssetsForPR.add(id);
+      else selectedAssetsForPR.delete(id);
+      updateBadge();
+    }
+
+    function toggleSelectAll(masterCheckbox) {
+      const checkboxes = document.querySelectorAll('.asset-checkbox');
+      checkboxes.forEach(cb => {
+        cb.checked = masterCheckbox.checked;
+        if(masterCheckbox.checked) selectedAssetsForPR.add(cb.value);
+        else selectedAssetsForPR.delete(cb.value);
+      });
+      updateBadge();
+    }
+
+    /* ⚡ ฟังก์ชันเพิ่มเติม: ล้างตัวเลือกที่ติ๊กไว้ทั้งหมด */
+    function clearAllSelections() {
+      selectedAssetsForPR.clear();
+      const masterCheckbox = document.getElementById("selectAllCheckbox");
+      if(masterCheckbox) masterCheckbox.checked = false;
+      
+      const checkboxes = document.querySelectorAll('.asset-checkbox');
+      checkboxes.forEach(cb => cb.checked = false);
+      
+      updateBadge();
+    }
+
+    /* ⚡ ฟังก์ชันเพิ่มเติม: รีเซ็ตค่าการค้นหาและ Filter ทั้งหมด */
+    function clearSearchFilters() {
+      document.getElementById("searchInput").value = "";
+      document.getElementById("statusFilter").value = "ALL";
+      document.getElementById("categoryFilter").value = "ALL";
+      applyFilters();
+    }
+
+    function autoSelectNeedPurchase() {
+      selectedAssetsForPR.clear();
+      cachedAssets.forEach(asset => {
+        let remaining = parseInt(asset.remaining);
+        if (isNaN(remaining)) remaining = parseInt(asset.total) || 0;
+        if (remaining <= 2) {
+          selectedAssetsForPR.add(asset.id);
+        }
+      });
+      applyFilters(); // แสดงผลตารางใหม่ตามที่ติ๊กเลือก
+    }
+
+    function updateBadge() {
+      document.getElementById("selectedCountBadge").innerText = selectedAssetsForPR.size;
+    }
+
+    function togglePRModal(show) {
+      const modal = document.getElementById("prFormModal");
+      if(show) modal.classList.remove("hidden");
+      else modal.classList.add("hidden");
+    }
+
+    function preparePRModal() {
+      if(selectedAssetsForPR.size === 0) {
+        alert("กรุณาติ๊กเลือกอุปกรณ์ที่ต้องการขออนุมัติจัดซื้ออย่างน้อย 1 รายการครับ");
+        return;
+      }
+
+      const today = new Date();
+      const dateStr = today.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+      const prNo = "PR-HR-" + today.getFullYear() + String(today.getMonth()+1).padStart(2, '0') + String(today.getDate()).padStart(2, '0') + "-" + Math.floor(100 + Math.random() * 900);
+
+      document.getElementById("prNumber").value = prNo;
+      document.getElementById("prDate").value = dateStr;
+
+      const itemsList = document.getElementById("prItemsList");
+      itemsList.innerHTML = "";
+
+      selectedAssetsForPR.forEach(id => {
+        const item = cachedAssets.find(a => a.id === id);
+        if(!item) return;
+
+        let remaining = parseInt(item.remaining);
+        if (isNaN(remaining)) remaining = parseInt(item.total) || 0;
+
+        const row = `
+          <div class="flex items-center justify-between p-2.5 bg-slate-50 border rounded-xl gap-2 text-xs">
+            <div class="flex-1">
+              <div class="font-bold text-slate-800">${item.name} <span class="font-mono text-slate-400 font-normal">(${item.id})</span></div>
+              <div class="text-[11px] text-slate-500">คงเหลือในคลัง: <span class="font-bold text-rose-600">${remaining}</span> ชิ้น</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <label class="font-semibold text-slate-600">จำนวนที่เสนอซื้อ:</label>
+              <input type="number" id="prQty_${item.id}" value="5" min="1" class="w-16 px-2 py-1 border rounded-lg text-center font-bold text-blue-900 bg-white">
+              <span class="text-slate-500">ชิ้น</span>
+            </div>
+          </div>
+        `;
+        itemsList.insertAdjacentHTML('beforeend', row);
+      });
+
+      togglePRModal(true);
+    }
+
+    function generateAndPrintPR() {
+      document.getElementById("printPRNo").innerText = document.getElementById("prNumber").value;
+      document.getElementById("printPRDate").innerText = document.getElementById("prDate").value;
+      document.getElementById("printPRRequester").innerText = document.getElementById("prRequester").value;
+      document.getElementById("printPRPurpose").innerText = document.getElementById("prPurpose").value;
+
+      const printBody = document.getElementById("printPRTableBody");
+      printBody.innerHTML = "";
+
+      let count = 1;
+      selectedAssetsForPR.forEach(id => {
+        const item = cachedAssets.find(a => a.id === id);
+        if(!item) return;
+
+        let remaining = parseInt(item.remaining);
+        if (isNaN(remaining)) remaining = parseInt(item.total) || 0;
+
+        const buyQtyInput = document.getElementById(`prQty_${item.id}`);
+        const buyQty = buyQtyInput ? buyQtyInput.value : 1;
+
+        const tr = `
+          <tr class="border-b border-slate-300">
+            <td class="border border-slate-400 p-2 text-center">${count++}</td>
+            <td class="border border-slate-400 p-2 font-mono font-bold">${item.id}</td>
+            <td class="border border-slate-400 p-2 font-bold">${item.name}</td>
+            <td class="border border-slate-400 p-2 text-center">${item.category}</td>
+            <td class="border border-slate-400 p-2 text-center">${remaining} ชิ้น</td>
+            <td class="border border-slate-400 p-2 text-center font-black text-slate-900 bg-slate-100">${buyQty} ชิ้น</td>
+            <td class="border border-slate-400 p-2 text-slate-600">${item.notes || '-'}</td>
+          </tr>
+        `;
+        printBody.insertAdjacentHTML('beforeend', tr);
+      });
+
+      togglePRModal(false);
+      window.print();
+    }
+
+    function applyFilters() {
+      const searchVal = document.getElementById("searchInput").value.toLowerCase().trim();
+      const statusVal = document.getElementById("statusFilter").value;
+      const categoryVal = document.getElementById("categoryFilter").value;
+      const searchCard = document.getElementById("searchResultCard");
+
+      const filtered = cachedAssets.filter(asset => {
+        const matchesSearch = asset.name.toLowerCase().includes(searchVal) || asset.id.toLowerCase().includes(searchVal);
+        const matchesCategory = categoryVal === "ALL" || asset.category === categoryVal;
+
+        let remaining = parseInt(asset.remaining);
+        if (isNaN(remaining)) remaining = parseInt(asset.total) || 0;
+        if (remaining < 0) remaining = 0;
+
+        let matchesStatus = true;
+        if (statusVal === "NORMAL") matchesStatus = remaining > 2;
+        else if (statusVal === "LOW") matchesStatus = remaining > 0 && remaining <= 2;
+        else if (statusVal === "OUT") matchesStatus = remaining === 0;
+
+        return matchesSearch && matchesCategory && matchesStatus;
+      });
+
+      if (searchVal !== "") {
+        searchCard.classList.remove("hidden");
+        if (filtered.length === 1) {
+          const item = filtered[0];
+          const total = parseInt(item.total) || 0;
+          let remaining = parseInt(item.remaining);
+          if (isNaN(remaining)) remaining = total;
+          const borrowed = total - remaining > 0 ? total - remaining : 0;
+          const stockPercent = total > 0 ? Math.min(100, Math.round((remaining / total) * 100)) : 0;
+
+          searchCard.innerHTML = `
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                ${item.image ? `<img src="${item.image}" onclick="openZoomModal('${item.image}')" class="h-14 w-14 object-cover rounded-xl border shadow-sm cursor-pointer">` : `<div class="h-14 w-14 bg-slate-200 rounded-xl flex items-center justify-center text-xs text-slate-500">ไม่มีรูป</div>`}
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs bg-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">${item.id}</span>
+                  </div>
+                  <h4 class="text-base font-black text-slate-900 mt-0.5">${item.name}</h4>
+                  <p class="text-xs text-slate-500">หมวดหมู่: ${item.category} | สถานที่เก็บ: ${item.notes || '-'}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-6 bg-white p-3 rounded-xl border border-slate-200 shadow-xs w-full md:w-auto justify-around">
+                <div class="text-center"><p class="text-[10px] font-semibold text-slate-400">ทั้งหมด</p><p class="text-base font-black text-slate-700">${total}</p></div>
+                <div class="h-8 w-[1px] bg-slate-200"></div>
+                <div class="text-center"><p class="text-[10px] font-semibold text-slate-400">เบิกแล้ว</p><p class="text-base font-black text-indigo-600">${borrowed}</p></div>
+                <div class="h-8 w-[1px] bg-slate-200"></div>
+                <div class="text-center px-2"><p class="text-[10px] font-bold text-emerald-600">คงเหลือจริง</p><p class="text-2xl font-black ${remaining > 0 ? 'text-emerald-600' : 'text-rose-600'}">${remaining} <span class="text-xs font-normal">(${stockPercent}%)</span></p></div>
+              </div>
+            </div>
+          `;
+        } else {
+          searchCard.innerHTML = `<div class="text-xs text-slate-600 font-medium">🔍 ผลการค้นหาสำหรับ "<strong>${searchVal}</strong>": พบทั้งหมด <strong>${filtered.length}</strong> รายการ</div>`;
+        }
+      } else {
+        searchCard.classList.add("hidden");
+      }
+
+      renderAssetTable(filtered);
+    }
 
     function exportToCSV() {
       if(globalLogData.length === 0) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
