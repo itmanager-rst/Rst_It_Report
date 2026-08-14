@@ -130,6 +130,25 @@ tbody tr:hover td{background:rgba(255,255,255,.02);cursor:pointer;}
 .fn:focus,.fs:focus,.ft:focus{border-color:var(--blue);}
 .fs option{background:var(--bg2);}
 .ft{resize:vertical;min-height:72px;}
+.asset-picker{position:relative;}
+.asset-search-wrap{position:relative;}
+.asset-search-wrap::before{content:'⌕';position:absolute;left:11px;top:50%;transform:translateY(-52%);color:var(--text2);font-size:18px;pointer-events:none;}
+.asset-search{padding-left:36px;padding-right:34px;}
+.asset-search::-webkit-search-cancel-button{display:none;}
+.asset-search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--text2);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:16px;}
+.asset-search-clear:hover{background:var(--bg4);color:var(--text);}
+.asset-picker.has-value .asset-search-clear{display:flex;}
+.asset-results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 5px);max-height:245px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;box-shadow:0 14px 34px rgba(0,0,0,.45);display:none;}
+.asset-picker.open .asset-results{display:block;}
+.asset-result{width:100%;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);padding:10px 12px;text-align:left;font-family:'IBM Plex Sans Thai',sans-serif;cursor:pointer;}
+.asset-result:last-child{border-bottom:0;}
+.asset-result:hover,.asset-result:focus{background:rgba(79,142,247,.1);outline:none;}
+.asset-result-title{font-size:12px;font-weight:500;display:flex;gap:7px;align-items:center;}
+.asset-result-id{color:var(--blue);font-family:'IBM Plex Mono',monospace;}
+.asset-result-meta{font-size:10px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.asset-result-empty{padding:18px 12px;text-align:center;font-size:12px;color:var(--text2);}
+.asset-selected{margin-top:6px;padding:8px 10px;border-radius:7px;background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.18);font-size:10px;color:var(--text2);display:none;line-height:1.5;}
+.asset-picker.has-value .asset-selected{display:block;}
 
 .srow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
 .srow.c3{grid-template-columns:repeat(3,1fr);}
@@ -615,8 +634,17 @@ if (action === 'sendLine') {
             <option value="branch">🏢 โอนข้ามสาขา</option>
             <option value="return">📥 คืนทรัพย์สิน</option>
           </select></div>
-        <div class="fi"><label class="fl">รหัสทรัพย์สิน *</label>
-          <select class="fs" id="tr-asset"><option value="">เลือกทรัพย์สิน</option></select></div>
+        <div class="fi"><label class="fl" for="tr-asset-search">ค้นหาทรัพย์สิน *</label>
+          <div class="asset-picker" id="tr-asset-picker">
+            <input type="hidden" id="tr-asset">
+            <div class="asset-search-wrap">
+              <input class="fn asset-search" id="tr-asset-search" type="search" autocomplete="off" placeholder="ค้นหารหัส รุ่น ผู้ใช้ หรือสาขา..." oninput="searchTransferAssets(this.value)" onfocus="searchTransferAssets(this.value)" onkeydown="handleTransferAssetKey(event)">
+              <button class="asset-search-clear" type="button" onclick="clearTransferAsset(true)" aria-label="ล้างทรัพย์สินที่เลือก">×</button>
+            </div>
+            <div class="asset-results" id="tr-asset-results" role="listbox"></div>
+            <div class="asset-selected" id="tr-asset-selected"></div>
+          </div>
+        </div>
         <div class="fi"><label class="fl">วันที่</label><input class="fn" type="date" id="tr-date"></div>
         <div class="fi"><label class="fl">จากสาขา/แผนก</label>
           <select class="fs" id="tr-from"><option value="">เลือก</option><option>สาขาศรีเมืองใหม่</option><option>สาขาตระการ</option><option>สาขาเดชอุดม</option><option>สาขาขุขันธ์</option><option>สาขากุฉินารายณ์</option><option>สำนักงานใหญ่</option><option>สาขาเบญจลักษณ์</option><option>สาขาบางนา</option><option>คลังกลาง</option></select></div>
@@ -1380,9 +1408,112 @@ function renderTransfers(){
   }).join('');
 }
 
+function transferAssetLabel(asset){
+  return [asset.id, [asset.brand,asset.model].filter(Boolean).join(' ')].filter(Boolean).join(' - ');
+}
+
+function transferAssetSearchText(asset){
+  return [asset.id,asset.type,asset.brand,asset.model,asset.serial,asset.user,asset.dept,asset.branch]
+    .filter(Boolean).join(' ').toLocaleLowerCase('th');
+}
+
+function searchTransferAssets(query){
+  const picker = document.getElementById('tr-asset-picker');
+  const input = document.getElementById('tr-asset-search');
+  const selectedId = document.getElementById('tr-asset').value;
+  const selected = assets.find(a => a.id === selectedId);
+  const isCurrentSelection = !!selected && input.value === transferAssetLabel(selected);
+  if(selected && !isCurrentSelection){
+    document.getElementById('tr-asset').value = '';
+    picker.classList.remove('has-value');
+    document.getElementById('tr-asset-selected').textContent = '';
+  }
+
+  const q = isCurrentSelection ? '' : String(query || '').trim().toLocaleLowerCase('th');
+  const matches = assets.filter(a => !q || transferAssetSearchText(a).includes(q)).slice(0,50);
+  const results = document.getElementById('tr-asset-results');
+  results.replaceChildren();
+
+  if(!matches.length){
+    const empty = document.createElement('div');
+    empty.className = 'asset-result-empty';
+    empty.textContent = assets.length ? 'ไม่พบทรัพย์สินที่ตรงกับคำค้นหา' : 'ยังไม่มีข้อมูลทรัพย์สิน';
+    results.appendChild(empty);
+  } else {
+    matches.forEach(asset => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'asset-result';
+      button.setAttribute('role','option');
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => chooseTransferAsset(asset.id));
+
+      const title = document.createElement('div');
+      title.className = 'asset-result-title';
+      const id = document.createElement('span');
+      id.className = 'asset-result-id';
+      id.textContent = asset.id || '-';
+      const name = document.createElement('span');
+      name.textContent = [asset.brand,asset.model].filter(Boolean).join(' ') || asset.type || 'ไม่ระบุรายละเอียด';
+      title.append(id,name);
+
+      const meta = document.createElement('div');
+      meta.className = 'asset-result-meta';
+      meta.textContent = [asset.type,asset.user,asset.dept,asset.branch,asset.serial && 'S/N '+asset.serial].filter(Boolean).join(' • ') || 'ไม่มีข้อมูลเพิ่มเติม';
+      button.append(title,meta);
+      results.appendChild(button);
+    });
+  }
+  picker.classList.add('open');
+}
+
+function chooseTransferAsset(assetId){
+  const asset = assets.find(a => a.id === assetId);
+  if(!asset) return;
+  document.getElementById('tr-asset').value = asset.id;
+  document.getElementById('tr-asset-search').value = transferAssetLabel(asset);
+  document.getElementById('tr-asset-selected').textContent = [asset.type,asset.user && 'ผู้ใช้: '+asset.user,asset.dept,asset.branch,asset.serial && 'S/N '+asset.serial].filter(Boolean).join(' • ');
+  const picker = document.getElementById('tr-asset-picker');
+  picker.classList.add('has-value');
+  picker.classList.remove('open');
+}
+
+function clearTransferAsset(focusSearch){
+  document.getElementById('tr-asset').value = '';
+  document.getElementById('tr-asset-search').value = '';
+  document.getElementById('tr-asset-selected').textContent = '';
+  const picker = document.getElementById('tr-asset-picker');
+  picker.classList.remove('has-value','open');
+  if(focusSearch){
+    const input = document.getElementById('tr-asset-search');
+    input.focus();
+    searchTransferAssets('');
+  }
+}
+
+function handleTransferAssetKey(event){
+  const picker = document.getElementById('tr-asset-picker');
+  if(event.key === 'Escape'){
+    picker.classList.remove('open');
+    return;
+  }
+  if(event.key === 'ArrowDown'){
+    const first = document.querySelector('#tr-asset-results .asset-result');
+    if(first){ event.preventDefault(); first.focus(); }
+  }
+  if(event.key === 'Enter'){
+    const first = document.querySelector('#tr-asset-results .asset-result');
+    if(first && picker.classList.contains('open')){ event.preventDefault(); first.click(); }
+  }
+}
+
+document.addEventListener('click', event => {
+  const picker = document.getElementById('tr-asset-picker');
+  if(picker && !picker.contains(event.target)) picker.classList.remove('open');
+});
+
 function openTransferAdd(){
-  const sel = document.getElementById('tr-asset');
-  sel.innerHTML = '<option value="">เลือกทรัพย์สิน</option>' + assets.map(a => `<option value="${a.id}">${a.id} - ${a.brand} ${a.model}</option>`).join('');
+  clearTransferAsset(false);
   document.getElementById('tr-date').value = new Date().toISOString().slice(0,10);
   ['tr-receiver','tr-approver','tr-note'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('trOverlay').classList.add('show');
