@@ -1,8 +1,8 @@
 // ==========================================
 // Config & Global Variables
 // ==========================================
-// URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT
-const PYTHON_API_URL = "http://localhost:5000/api"; 
+// URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT (ใช้ Port 8000 ตาม app.py และ ngrok)
+const PYTHON_API_URL = "http://localhost:8000/api"; 
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
@@ -17,6 +17,32 @@ let selectedMinMaxItems = new Set();
 let selectedCountItems = new Set();  
 let filterCriticalStatus = 'all';    
 let html5QrCode = null;              
+let selectedDeadstockDays = 'all';
+
+// ชื่อสาขาบางแห่งในข้อมูลเก่าจาก ECOUNT สะกดไม่ตรงกับชื่อใน dropdown
+// ทำให้การกรองด้วยข้อความแบบตรงตัวหาแถวที่มีอยู่จริงไม่เจอ
+const WAREHOUSE_NAME_ALIASES = {
+    "เบญจลักษ์": "เบญจลักษณ์"
+};
+
+function normalizeWarehouseName(value) {
+    const cleaned = String(value || "")
+        .normalize("NFC")
+        .toLowerCase()
+        .replace(/^(คลัง|สาขา|สำนักงาน)\s*/u, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return Object.entries(WAREHOUSE_NAME_ALIASES).reduce(
+        (normalized, [legacyName, canonicalName]) => normalized.replaceAll(legacyName, canonicalName),
+        cleaned
+    );
+}
+
+function normalizeWarehouseCode(value) {
+    const cleaned = String(value || "").trim().toLowerCase();
+    return /^\d+$/.test(cleaned) ? String(Number(cleaned)) : cleaned;
+}
 
 // ==========================================
 // Date Formatting Helper
@@ -78,7 +104,7 @@ async function fetchStockData() {
         
         const data = await response.json();
         
-        // 📌 Mapping ฟิลด์ให้อยู่ในโครงสร้างมาตรฐาน (แก้ไขจุด Falsy Data Loss)
+        // 📌 Mapping ฟิลด์ให้อยู่ในโครงสร้างมาตรฐาน
         let lastUpdateTime = null;
         rawStockData = data.map(item => {
             // ใช้ Nullish Coalescing (??) ป้องกันกรณีรหัสเป็น 0 แล้วกลายเป็นค่าว่าง
@@ -88,10 +114,19 @@ async function fetchStockData() {
             const rawName = item.PROD_NM ?? item.item_name ?? item.prod_nm ?? "";
             const pName = String(rawName).trim();
             
+            // ดึงชื่อ/รหัสคลังเพิ่มเติมกรณี DB มีฟิลด์คลังแยก
+            const whName = String(item.WH_NM ?? item.wh_nm ?? item.SL_NM ?? item.warehouse_name ?? "").trim();
+            const whCode = String(item.WH_CD ?? item.wh_cd ?? item.SL_CD ?? item.warehouse_code ?? "").trim();
+
             const qty = parseFloat(item.QTY ?? item.stock_qty ?? item.qty ?? 0) || 0;
             const minQty = parseFloat(item.MIN_QTY ?? item.min_qty ?? 0) || 0;
             const maxQty = parseFloat(item.MAX_QTY ?? item.max_qty ?? 0) || 0;
             const updateTime = String(item.UPDATE_TIME ?? item.updated_at ?? "").trim();
+            
+            // รองรับทั้งยอดขาย วันที่ขาย ยอดเคลื่อนไหวสต็อก และวันที่เคลื่อนไหวล่าสุด
+            const lastSaleDate = String(item.LAST_SALE_DATE ?? item.last_sale_date ?? item.LAST_SELL_DATE ?? item.last_sell_date ?? "").trim();
+            const movementQty = parseFloat(item.MOVEMENT_QTY ?? item.movement_qty ?? item.OUT_QTY ?? item.out_qty ?? 0) || 0;
+            const lastMoveDate = String(item.LAST_MOVE_DATE ?? item.last_move_date ?? item.IN_OUT_DATE ?? item.in_out_date ?? "").trim();
 
             if (updateTime && !lastUpdateTime && !updateTime.startsWith('0008') && !updateTime.startsWith('0000')) {
                 lastUpdateTime = updateTime;
@@ -100,10 +135,15 @@ async function fetchStockData() {
             return {
                 PROD_CD: pCode,
                 PROD_NM: pName,
+                WH_NM: whName,
+                WH_CD: whCode,
                 QTY: qty,
                 MIN_QTY: minQty,
                 MAX_QTY: maxQty,
-                UPDATE_TIME: updateTime
+                UPDATE_TIME: updateTime,
+                LAST_SALE_DATE: lastSaleDate,
+                MOVEMENT_QTY: movementQty,
+                LAST_MOVE_DATE: lastMoveDate
             };
         }).filter(item => item.PROD_CD !== "" && !isExcludedItem(item.PROD_NM));
         
@@ -129,27 +169,41 @@ async function fetchStockData() {
 }
 
 // ==========================================
-// Tab Switching & Warehouse Sync
+// Tab Switcher Logic
 // ==========================================
 
 function switchTab(tabName) {
     const viewMinMax = document.getElementById("view-minmax");
     const viewCount = document.getElementById("view-count");
+    const viewDeadstock = document.getElementById("view-deadstock");
+
     const btnMinMax = document.getElementById("tab-minmax-btn");
     const btnCount = document.getElementById("tab-count-btn");
+    const btnDeadstock = document.getElementById("tab-deadstock-btn");
+
+    // ซ่อนทั้งหมดก่อน
+    if (viewMinMax) viewMinMax.classList.add("hidden");
+    if (viewCount) viewCount.classList.add("hidden");
+    if (viewDeadstock) viewDeadstock.classList.add("hidden");
+
+    // รีเซ็ตสไตล์ปุ่ม
+    const activeStyle = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
+    const inactiveStyle = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
+
+    if (btnMinMax) btnMinMax.className = inactiveStyle;
+    if (btnCount) btnCount.className = inactiveStyle;
+    if (btnDeadstock) btnDeadstock.className = inactiveStyle;
 
     if (tabName === 'minmax') {
         if (viewMinMax) viewMinMax.classList.remove("hidden");
-        if (viewCount) viewCount.classList.add("hidden");
-
-        if (btnMinMax) btnMinMax.className = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
-        if (btnCount) btnCount.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
-    } else {
-        if (viewMinMax) viewMinMax.classList.add("hidden");
+        if (btnMinMax) btnMinMax.className = activeStyle;
+    } else if (tabName === 'count') {
         if (viewCount) viewCount.classList.remove("hidden");
-
-        if (btnCount) btnCount.className = "bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 shadow cursor-pointer";
-        if (btnMinMax) btnMinMax.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 border border-slate-700 cursor-pointer";
+        if (btnCount) btnCount.className = activeStyle;
+    } else if (tabName === 'deadstock') {
+        if (viewDeadstock) viewDeadstock.classList.remove("hidden");
+        if (btnDeadstock) btnDeadstock.className = activeStyle;
+        renderDeadstockTable();
     }
 }
 
@@ -198,19 +252,42 @@ function setCriticalFilter(status) {
 }
 
 function applyFilterAndSearch() {
-    const warehouseSelect = document.getElementById("warehouse-select") || document.getElementById("warehouse-select-minmax");
+    const warehouseSelect = document.getElementById("warehouse-select") || document.getElementById("warehouse") || document.getElementById("warehouse-select-minmax");
     const warehouse = warehouseSelect ? warehouseSelect.value.trim() : "all";
+    
+    // 💡 ดึงข้อความชื่อสาขาที่แสดงใน Dropdown อย่างปลอดภัย
+    let warehouseText = "";
+    if (warehouseSelect && warehouseSelect.selectedOptions && warehouseSelect.selectedOptions[0]) {
+        warehouseText = warehouseSelect.selectedOptions[0].text;
+    } else if (warehouseSelect && warehouseSelect.options && warehouseSelect.selectedIndex >= 0) {
+        warehouseText = warehouseSelect.options[warehouseSelect.selectedIndex].text;
+    }
+
     const searchInput = document.getElementById("barcode-input");
     const keyword = searchInput ? searchInput.value.trim().toLowerCase() : "";
 
     filteredStockData = rawStockData.filter(item => {
         if (isExcludedItem(item.PROD_NM)) return false;
 
-        // 📌 ปรับปรุงการกรองคลังสินค้าให้ยืดหยุ่น ยอมรับทั้งแบบชื่อคลัง และรหัสคลัง
+        // 📌 Smart Warehouse Matching: กรองคลังสินค้าอย่างยืดหยุ่น
         if (warehouse !== "all" && warehouse !== "") {
-            const nameLower = (item.PROD_NM || "").toLowerCase();
-            const whLower = warehouse.toLowerCase();
-            if (!nameLower.includes(`(${whLower})`) && !nameLower.includes(whLower)) {
+            // ตัดคำที่ไม่จำเป็นออก ให้เหลือเฉพาะชื่อสาขาหลัก
+            const cleanText = normalizeWarehouseName(warehouseText.replace(/\(.*\)/g, ""));
+            const cleanVal = normalizeWarehouseName(warehouse);
+
+            const nameLower = normalizeWarehouseName(item.PROD_NM || item.item_name || "");
+            const whNameLower = normalizeWarehouseName(item.WH_NM || item.wh_name || "");
+            const whCodeLower = normalizeWarehouseCode(item.WH_CD || item.wh_code || "");
+
+            // 🔍 เช็กเงื่อนไข:
+            // 1. รหัสคลังตรงกัน
+            const matchCode = whCodeLower !== "" && whCodeLower === normalizeWarehouseCode(warehouse);
+            // 2. ชื่อคลังตรงกับค่า value หรือ Text
+            const matchWhName = (whNameLower !== "") && (whNameLower.includes(cleanVal) || (cleanText !== "" && whNameLower.includes(cleanText)));
+            // 3. ชื่อสาขาไปปรากฏอยู่ในชื่อสินค้า (เช่น มีคำว่า เบญจลักษณ์ ในชื่อสินค้า)
+            const matchProdName = (cleanText !== "" && nameLower.includes(cleanText)) || (cleanVal !== "" && nameLower.includes(cleanVal));
+
+            if (!matchCode && !matchWhName && !matchProdName) {
                 return false;
             }
         }
@@ -234,6 +311,7 @@ function applyFilterAndSearch() {
 
     renderMinMaxTable();
     renderCountTable();
+    renderDeadstockTable();
     updateSummaryCards();
 }
 
@@ -337,7 +415,7 @@ function renderMinMaxTable() {
                     ${badgeHtml}
                 </td>
                 
-                <!-- 4. ค่าคำนวณอัตโนมัติ (ช่องที่ขาดไป) -->
+                <!-- 4. ค่าคำนวณอัตโนมัติ -->
                 <td class="py-2.5 px-4 text-center">
                     <input type="text" value="${autoQty}" disabled class="w-20 text-center border border-slate-200 bg-slate-50 rounded-md py-1 px-1 text-xs text-slate-500 font-mono shadow-inner">
                 </td>
@@ -668,6 +746,134 @@ function updateSelectedCountPrintUI() {
 }
 
 // ==========================================
+// Mode 3: Deadstock / Non-moving Table Logic
+// ==========================================
+
+/**
+ * 📌 คำนวณจำนวนวันที่ไม่เคลื่อนไหว:
+ * - ใช้วันที่ขายล่าสุด หรือ วันเคลื่อนไหวล่าสุด
+ * - หากไม่มีข้อมูล จะคืนค่า 999 (แทนค่ารายการที่ไม่มีประวัติ)
+ */
+function getDaysInactive(dateStr) {
+    if (!dateStr || dateStr === '-' || dateStr === 'None' || dateStr === 'null' || String(dateStr).trim() === '') {
+        return 999;
+    }
+    
+    let cleanStr = String(dateStr).trim();
+    if (cleanStr.startsWith('0008') || cleanStr.startsWith('0000')) {
+        const currentYear = new Date().getFullYear();
+        cleanStr = cleanStr.replace(/^(0008|0000)/, currentYear);
+    }
+
+    const lastDate = new Date(cleanStr);
+    const today = new Date();
+    if (isNaN(lastDate.getTime())) return 999;
+
+    const diffTime = today - lastDate;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays < 0 ? 0 : diffDays;
+}
+
+function setDeadstockFilter(days) {
+    selectedDeadstockDays = days;
+
+    const btnAll = document.getElementById("btn-deadstock-all");
+    const btn30 = document.getElementById("btn-deadstock-30");
+    const btn60 = document.getElementById("btn-deadstock-60");
+    const btn90 = document.getElementById("btn-deadstock-90");
+
+    const defaultBtn = "px-3 py-1 rounded-md font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200";
+
+    if (btnAll) btnAll.className = days === 'all' ? "px-3 py-1 rounded-md font-semibold bg-emerald-600 text-white shadow-sm" : defaultBtn;
+    if (btn30) btn30.className = days === 30 ? "px-3 py-1 rounded-md font-semibold bg-amber-500 text-white shadow-sm" : defaultBtn;
+    if (btn60) btn60.className = days === 60 ? "px-3 py-1 rounded-md font-semibold bg-orange-500 text-white shadow-sm" : defaultBtn;
+    if (btn90) btn90.className = days === 90 ? "px-3 py-1 rounded-md font-semibold bg-red-600 text-white shadow-sm" : defaultBtn;
+
+    renderDeadstockTable();
+}
+
+function renderDeadstockTable() {
+    const tbody = document.getElementById("deadstock-table-body");
+    if (!tbody) return;
+
+    // 1. ดึงรายการสินค้าที่มีสต็อก > 0 และคำนวณจำนวนวัน
+    const allList = filteredStockData.map(item => {
+        const effectiveDate = item.LAST_SALE_DATE || item.LAST_MOVE_DATE || "";
+        const days = getDaysInactive(effectiveDate);
+        return { ...item, daysInactive: days, effectiveDate: effectiveDate };
+    }).filter(item => item.QTY > 0);
+
+    // 2. คำนวณยอดการ์ดสรุป 3 ช่องด้านบน (แบ่งช่วงให้เห็นชัดเจน)
+    const count30Only = allList.filter(i => i.daysInactive >= 30 && i.daysInactive < 60).length;
+    const count60Only = allList.filter(i => i.daysInactive >= 60 && i.daysInactive < 90).length;
+    const count90Plus  = allList.filter(i => i.daysInactive >= 90).length; // รวมทั้ง >= 90 และ 999 (ไม่มีประวัติ)
+
+    if (document.getElementById("deadstock-30-count")) {
+        document.getElementById("deadstock-30-count").innerText = `${count30Only.toLocaleString()} รายการ`;
+    }
+    if (document.getElementById("deadstock-60-count")) {
+        document.getElementById("deadstock-60-count").innerText = `${count60Only.toLocaleString()} รายการ`;
+    }
+    if (document.getElementById("deadstock-90-count")) {
+        document.getElementById("deadstock-90-count").innerText = `${count90Plus.toLocaleString()} รายการ`;
+    }
+
+    // 3. กรองรายการแสดงผลในตารางตามปุ่มช่วงเวลาที่กดเลือก (สะสมขึ้นไป)
+    let displayList = allList;
+
+    if (selectedDeadstockDays === '30' || selectedDeadstockDays === 30) {
+        // "30 วันขึ้นไป" = เอาตั้งแต่ 30 วัน ไปจนถึง Deadstock (>= 30 ทั้งหมด)
+        displayList = allList.filter(i => i.daysInactive >= 30);
+    } else if (selectedDeadstockDays === '60' || selectedDeadstockDays === 60) {
+        // "60 วันขึ้นไป" = เอาตั้งแต่ 60 วัน ไปจนถึง Deadstock (>= 60 ทั้งหมด)
+        displayList = allList.filter(i => i.daysInactive >= 60);
+    } else if (selectedDeadstockDays === '90' || selectedDeadstockDays === 90) {
+        // "90 วันขึ้นไป" = เอาเฉพาะ 90 วันขึ้นไป และไม่มีประวัติ (>= 90 ทั้งหมด)
+        displayList = allList.filter(i => i.daysInactive >= 90);
+    }
+
+    // 4. กรณีไม่มีข้อมูล
+    if (displayList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400">ไม่พบสินค้าค้างสต็อกตามเงื่อนไขที่เลือก</td></tr>`;
+        return;
+    }
+
+    // 5. Render แถวตาราง
+    let html = "";
+    displayList.forEach((item, index) => {
+        let badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">ปกติ</span>`;
+        
+        if (item.daysInactive >= 90) {
+            badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">🚨 ไม่เคลื่อนไหว > 90 วัน</span>`;
+        } else if (item.daysInactive >= 60) {
+            badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">⚠️ ไม่เคลื่อนไหว > 60 วัน</span>`;
+        } else if (item.daysInactive >= 30) {
+            badge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">⚡ ไม่เคลื่อนไหว > 30 วัน</span>`;
+        }
+
+        const formattedLastSale = item.effectiveDate ? formatThaiDateTime(item.effectiveDate) : '-';
+
+        html += `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="py-2.5 px-4 text-center font-mono text-[11px] text-slate-400">${index + 1}</td>
+                <td class="py-2.5 px-4 font-mono font-medium text-slate-800">${item.PROD_CD}</td>
+                <td class="py-2.5 px-6 font-medium text-slate-800">
+                    ${item.PROD_NM}
+                    ${item.WH_NM ? `<span class="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">${item.WH_NM}</span>` : ''}
+                </td>
+                <td class="py-2.5 px-4 text-right font-semibold text-slate-700">${item.QTY.toFixed(2)}</td>
+                <td class="py-2.5 px-4 text-center text-slate-500 font-mono text-[11px]">${formattedLastSale}</td>
+                <td class="py-2.5 px-4 text-center font-bold text-slate-700">${item.daysInactive >= 999 ? '<span class="text-rose-600 font-bold">ไม่มีประวัติ</span>' : item.daysInactive + ' วัน'}</td>
+                <td class="py-2.5 px-4 text-center">${badge}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+// ==========================================
 // Print Diff Report Function
 // ==========================================
 
@@ -840,4 +1046,4 @@ function showToast(message, type = "info") {
     setTimeout(() => {
         toast.classList.add("hidden");
     }, 4000);
-}  
+}
