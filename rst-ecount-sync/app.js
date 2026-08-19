@@ -99,7 +99,12 @@ async function fetchStockData() {
     if (refreshIcon) refreshIcon.classList.add("fa-spin");
 
     try {
-        const response = await fetch(`${PYTHON_API_URL}/api/get-stock`);
+        // เพิ่ม Header ข้ามหน้าเตือนของ ngrok เพื่อแก้ปัญหา fetch ข้อมูลไม่มา
+        const response = await fetch(`${PYTHON_API_URL}/api/get-stock`, {
+            headers: {
+                "ngrok-skip-browser-warning": "true"
+            }
+        });
         if (!response.ok) throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Python/BigQuery ได้");
         
         const data = await response.json();
