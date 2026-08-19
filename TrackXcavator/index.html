@@ -124,12 +124,25 @@
     }
 
     .operation-card {
-      width: min(90vw, 360px);
-      padding: 28px 24px;
-      border-radius: 14px;
+      width: min(90vw, 400px);
+      padding: 30px 26px 26px;
+      border-radius: 16px;
       background: #fff;
       box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
       text-align: center;
+    }
+
+    .operation-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 58px;
+      height: 58px;
+      margin-bottom: 14px;
+      border-radius: 50%;
+      background: #fff0f1;
+      color: var(--primary-red);
+      font-size: 1.45rem;
     }
 
     .operation-spinner {
@@ -339,9 +352,9 @@
 
   <div id="operationOverlay" role="status" aria-live="polite" aria-busy="true">
     <div class="operation-card">
-      <div class="spinner-border operation-spinner mb-3" aria-hidden="true"></div>
+      <div id="operationIcon" class="operation-icon" aria-hidden="true"><i class="fa-solid fa-arrows-rotate fa-spin"></i></div>
       <h5 id="operationMessage" class="fw-bold mb-2">กำลังดำเนินการ...</h5>
-      <div class="text-muted small">กรุณารอสักครู่ และอย่าปิดหน้าต่างนี้</div>
+      <div id="operationDetail" class="text-muted small">กรุณารอสักครู่ และอย่าปิดหน้าต่างนี้</div>
     </div>
   </div>
 
@@ -908,13 +921,27 @@
       });
     }
 
-    function showOperation(message) {
+    function showOperation(message, icon = 'fa-arrows-rotate', detail = 'กรุณารอสักครู่ และอย่าปิดหน้าต่างนี้') {
       document.getElementById('operationMessage').innerText = message;
+      document.getElementById('operationIcon').innerHTML = `<i class="fa-solid ${icon} fa-spin"></i>`;
+      document.getElementById('operationDetail').innerText = detail;
       document.getElementById('operationOverlay').style.display = 'flex';
     }
 
     function hideOperation() {
       document.getElementById('operationOverlay').style.display = 'none';
+    }
+
+    let dataLoadingCount = 0;
+
+    function showDataLoading(message, detail = 'กำลังเชื่อมต่อฐานข้อมูล BigQuery') {
+      dataLoadingCount += 1;
+      showOperation(message, 'fa-database', detail);
+    }
+
+    function hideDataLoading() {
+      dataLoadingCount = Math.max(0, dataLoadingCount - 1);
+      if (dataLoadingCount === 0) hideOperation();
     }
 
     let currentUser = null;
@@ -1217,6 +1244,7 @@
 
       const tbody = document.getElementById("tbDashboard");
       tbody.innerHTML = '<tr><td colspan="20" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+      showDataLoading('กำลังโหลดข้อมูลลูกค้า', 'กำลังดึงข้อมูลสถานะเครื่องจักรล่าสุด');
 
       dashboardLoadPromise = fetchJson(`${API_URL}?action=getDashboard`, { cache: 'no-store' })
         .then(data => {
@@ -1237,6 +1265,7 @@
         })
         .finally(() => {
           dashboardLoadPromise = null;
+          hideDataLoading();
         });
 
       return dashboardLoadPromise;
@@ -1438,7 +1467,7 @@
       const modalEl = document.getElementById('claimPartsModal');
       const modal = bootstrap.Modal.getInstance(modalEl);
 
-      showOperation('กำลังบันทึกข้อมูลอะไหล่...');
+      showOperation('กำลังบันทึกข้อมูลอะไหล่...', 'fa-boxes-stacked', 'กำลังอัปเดตสถานะอะไหล่ในระบบ');
       try {
         const res = await postJson({
           action: "updatePartsStatus",
@@ -1562,6 +1591,7 @@
 
       const tbody = document.getElementById("tbHistory");
       tbody.innerHTML = '<tr><td colspan="19" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดประวัติ...</td></tr>';
+      showDataLoading('กำลังโหลดประวัติ PM', 'กำลังดึงรายการใบงานย้อนหลัง');
 
       historyLoadPromise = fetchJson(`${API_URL}?action=getReportList`, { cache: 'no-store' })
         .then(data => {
@@ -1580,6 +1610,7 @@
         })
         .finally(() => {
           historyLoadPromise = null;
+          hideDataLoading();
         });
 
       return historyLoadPromise;
@@ -1743,6 +1774,7 @@
       const tbody = document.getElementById("tbMatrix");
 
       tbody.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล Workflow Matrix...</td></tr>';
+      showDataLoading('กำลังโหลด PM Matrix', 'กำลังคำนวณสถานะงานตามรอบ PM');
 
       return postJson({ action: "getPMProgressMatrix" })
         .then(result => {
@@ -1755,7 +1787,8 @@
         })
         .catch(err => {
           tbody.innerHTML = `<tr><td colspan="13" class="text-center py-4 text-danger">เกิดข้อผิดพลาดในการโหลด Matrix: ${err}</td></tr>`;
-        });
+        })
+        .finally(() => hideDataLoading());
     }
 
     function getPMWorkflowDetails(item, round) {
@@ -2082,7 +2115,7 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังบันทึก...';
 
-      showOperation('กำลังบันทึกข้อมูลคูปอง...');
+      showOperation('กำลังบันทึกข้อมูลคูปอง...', 'fa-hand-holding-dollar', 'กำลังอัปเดตยอดคูปอง Yanmar');
       try {
         const res = await postJson({
           action: "claimCoupon",
@@ -2168,7 +2201,7 @@
         editExisting: Boolean(document.getElementById("inpTicketId").value)
       };
 
-      showOperation('กำลังบันทึกใบงาน PM...');
+      showOperation('กำลังบันทึกใบงาน PM...', 'fa-file-pen', 'กำลังบันทึกข้อมูลบริการและอัปเดต Matrix');
       try {
         const res = await postJson(payload);
         hideOperation();
@@ -2248,7 +2281,7 @@
       }
 
       if (!confirm(`ยืนยันการอนุมัติสถานะ Machine ID: ${machineId} ?`)) return;
-      showOperation('กำลังอนุมัติข้อมูล...');
+      showOperation('กำลังอนุมัติข้อมูล...', 'fa-circle-check', 'กำลังเปลี่ยนสถานะข้อมูลเครื่องจักร');
       try {
         const res = await postJson({ action: "approveMachine", machineId: machineId });
         hideOperation();
@@ -2273,7 +2306,7 @@
       }
 
       if (!confirm(`ต้องการลบข้อมูล Machine ID: ${machineId} ใช่หรือไม่?`)) return;
-      showOperation('กำลังลบข้อมูลเครื่องจักร...');
+      showOperation('กำลังลบข้อมูลเครื่องจักร...', 'fa-trash-can', 'กำลังลบข้อมูลเครื่องจักรและข้อมูลที่เกี่ยวข้อง');
       try {
         const res = await postJson({ action: "deleteDashboard", machineId: machineId });
         hideOperation();
@@ -2298,7 +2331,7 @@
       }
 
       if (!confirm(`ต้องการลบรายการประวัติ Ticket: ${ticketId} ใช่หรือไม่?`)) return;
-      showOperation('กำลังลบประวัติใบงาน...');
+      showOperation('กำลังลบประวัติใบงาน...', 'fa-trash-can', 'กำลังลบรายการ PM จากประวัติ');
       try {
         const res = await postJson({ action: "deleteReport", ticketId: ticketId });
         hideOperation();
