@@ -2,7 +2,7 @@
 // Config & Global Variables
 // ==========================================
 // URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT (ใช้ Port 8000 ตาม app.py และ ngrok)
-const PYTHON_API_URL = "http://localhost:8000/api"; 
+const PYTHON_API_URL = "https://spindle-unusable-clinic.ngrok-free.dev -> http://localhost:8000"; 
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
