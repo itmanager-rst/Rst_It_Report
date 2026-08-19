@@ -491,8 +491,13 @@
                     <input type="text" id="inpMachineId" class="form-control form-control-sm" required placeholder="เช่น VMRVIO55...">
                   </div>
                   <div class="col-md-4">
-                    <label class="form-label form-label-sm">รุ่นรถ (Model) *</label>
-                    <input type="text" id="inpModel" class="form-control form-control-sm" required placeholder="รุ่นรถขุด">
+                    <label class="form-label form-label-sm"><i class="fa-solid fa-truck-front text-danger me-1"></i>รุ่นรถ (Model) *</label>
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text" title="เลือกจากรายการรุ่นรถได้"><i class="fa-solid fa-list"></i></span>
+                      <input type="text" id="inpModel" class="form-control" list="modelOptions" required placeholder="พิมพ์หรือ คลิกเลือก รุ่นรถ auto" onchange="loadModelParts(this.value)" onblur="loadModelParts(this.value)">
+                    </div>
+                    <small class="text-muted"><i class="fa-solid fa-circle-info me-1"></i>เลือกจากรายการ หรือพิมพ์รุ่นเอง</small>
+                    <datalist id="modelOptions"></datalist>
                   </div>
                   <div class="col-md-4">
                     <label class="form-label form-label-sm">เบอร์โทรศัพท์</label>
@@ -514,7 +519,9 @@
                 <div class="row g-2 mb-1">
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">รอบ PM ที่ทำ (Target) *</label>
-                    <input type="number" id="inpPmRound" class="form-control form-control-sm" placeholder="เช่น 0 หรือ 500" value="0" required onchange="handlePmRoundChange(this.value)">
+                    <select id="inpPmRound" class="form-select form-select-sm" required onchange="handlePmRoundChange(this.value)">
+                      <option value="0">0 ชม. (ลูกค้าใหม่)</option>
+                    </select>
                   </div>
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">ชั่วโมงจริง (Actual) *</label>
@@ -523,6 +530,9 @@
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">เบิกอะไหล่บริษัท / รายการอะไหล่</label>
                     <input type="text" id="inpPartsStore" class="form-control form-control-sm" placeholder="พิมพ์ หรือ เลือกอะไหล่ด้านล่าง">
+                    <select id="inpModelPartSelector" class="form-select form-select-sm mt-1" onchange="appendSelectedModelPart(this)" disabled>
+                      <option value="">เลือกรุ่นรถก่อน เพื่อโหลดรายการอะไหล่</option>
+                    </select>
                   </div>
                   <div class="col-md-3">
                     <label class="form-label form-label-sm">รหัสผู้ขาย (Supplier ID)</label>
@@ -530,40 +540,10 @@
                   </div>
                 </div>
 
-                <!-- 🛒 เลือกรายการอะไหล่สำเร็จรูป -->
+                <!-- เลือกรายการอะไหล่ตามรุ่นรถ -->
                 <div class="row g-2 mb-2">
                   <div class="col-md-12">
-                    <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">คลิกเพื่อเลือกอะไหล่ลงในช่องเบิกอะไหล่:</span>
-                    <div class="d-flex flex-wrap gap-1">
-                      <span class="parts-badge" onclick="appendPartItem('กรองน้ำมันเชื้อเพลิง')">+ กรองน้ำมันเชื้อเพลิง</span>
-                      <span class="parts-badge" onclick="appendPartItem('กรองน้ำมันเครื่อง')">+ กรองน้ำมันเครื่อง</span>
-                      <span class="parts-badge" onclick="appendPartItem('น้ำมันเครื่อง YES 5 ลิตร')">+ น้ำมันเครื่อง YES 5L</span>
-                      <span class="parts-badge" onclick="appendPartItem('น้ำมันเครื่อง YES 1 ลิตร')">+ น้ำมันเครื่อง YES 1L</span>
-                      <span class="parts-badge" onclick="appendPartItem('น้ำมันไฮโดรลิกรถขุด 18 ลิตร')">+ น้ำมันไฮโดรลิก 18L</span>
-                      <span class="parts-badge" onclick="appendPartItem('กรองน้ำมันไฮโดรลิก')">+ กรองน้ำมันไฮโดรลิก</span>
-                      <span class="parts-badge" onclick="appendPartItem('น้ำมันเกียร์ 1 ลิตร')">+ น้ำมันเกียร์ 1L</span>
-                      <span class="parts-badge" onclick="appendPartItem('น้ำยาหล่อเย็นยันม่าร์')">+ น้ำยาหล่อเย็นยันม่าร์</span>
-                      <span class="parts-badge" onclick="appendPartItem('กรองอากาศตัวนอก')">+ กรองอากาศตัวนอก</span>
-                      <span class="parts-badge" onclick="appendPartItem('กรองอากาศตัวใน')">+ กรองอากาศตัวใน</span>
-                      <span class="parts-badge" onclick="appendPartItem('กรองดักน้ำ')">+ กรองดักน้ำ</span>
-                      <span class="parts-badge" onclick="appendPartItem('ชุดบำรุงรักษา PM')">+ ชุดบำรุงรักษา PM</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="row g-2 mb-2">
-                  <div class="col-md-12">
-                    <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">เลือกรอบ PM ด่วน:</span>
-                    <div class="d-flex flex-wrap gap-1">
-                      <span class="preset-badge" onclick="setPmRound(0)">0 ชม. (ลูกค้าใหม่)</span>
-                      <span class="preset-badge" onclick="setPmRound(50)">50 ชม.</span>
-                      <span class="preset-badge" onclick="setPmRound(250)">250 ชม.</span>
-                      <span class="preset-badge" onclick="setPmRound(500)">500 ชม.</span>
-                      <span class="preset-badge" onclick="setPmRound(750)">750 ชม.</span>
-                      <span class="preset-badge" onclick="setPmRound(1000)">1000 ชม.</span>
-                      <span class="preset-badge" onclick="setPmRound(1500)">1500 ชม.</span>
-                      <span class="preset-badge" onclick="setPmRound(2000)">2000 ชม.</span>
-                    </div>
+                    <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">เลือกรุ่นรถด้านบน แล้วเลือกอะไหล่จากรายการที่ตรงกับรุ่น:</span>
                   </div>
                 </div>
 
@@ -885,7 +865,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwmdOcQgzzJBUHyBnGajPwZKuzvk_i0ZTQDvqEEE5zViN2ZWuxDFLDHCLvGHD8RBUJSrA/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycby7jU79L8NYkWE3JLjdZqBDN8IVJao5DRyPQxXEwlmLYVDrKoD4x4xx1T5ncH8yj5LIrg/exec";
 
     async function fetchJson(url, options) {
       let res;
@@ -947,6 +927,33 @@
     let dashboardLoaded = false;
     let historyLoaded = false;
     let activeFilter = 'all';   
+    const PM_ROUNDS = [50, 250, 500, 750, 1000, 1250, 1500, 1750, 2000];
+
+    function initializePmRoundOptions() {
+      const select = document.getElementById('inpPmRound');
+      if (!select) return;
+
+      PM_ROUNDS.forEach(round => {
+        select.insertAdjacentHTML('beforeend', `<option value="${round}">${round} ชม.</option>`);
+      });
+    }
+
+    initializePmRoundOptions();
+
+    async function initializeModelOptions() {
+      const datalist = document.getElementById('modelOptions');
+      if (!datalist) return;
+
+      try {
+        const result = await postJson({ action: 'getModels' });
+        const models = Array.isArray(result && result.data) ? result.data : [];
+        datalist.innerHTML = models.map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
+      } catch (error) {
+        console.error('โหลดรายการรุ่นรถไม่สำเร็จ:', error);
+      }
+    }
+
+    initializeModelOptions();
 
     function escapeHtml(str) {
       if (!str) return '';
@@ -971,6 +978,11 @@
         return strId.padStart(4, '0');
       }
       return strId;
+    }
+
+    function parsePmRound(value) {
+      const match = String(value ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+      return match ? Number(match[0]) || 0 : 0;
     }
 
     function formatDate(rawDate) {
@@ -1037,10 +1049,58 @@
 
     function appendPartItem(itemName) {
       const input = document.getElementById("inpPartsStore");
-      if (input.value.trim() === "") {
+      const part = String(itemName || '').trim();
+      if (!part) return;
+      const existingParts = input.value.split(',').map(value => value.trim()).filter(Boolean);
+      if (existingParts.some(value => value.toLowerCase() === part.toLowerCase())) return;
+      if (existingParts.length === 0) {
         input.value = itemName;
       } else {
-        input.value += ", " + itemName;
+        input.value += ", " + part;
+      }
+    }
+
+    function appendSelectedModelPart(select) {
+      appendPartItem(select.value);
+      select.value = '';
+    }
+
+    async function loadModelParts(model, selectedParts) {
+      const select = document.getElementById('inpModelPartSelector');
+      const cleanModel = String(model || '').trim();
+      if (!select) return;
+
+      select.innerHTML = '<option value="">กำลังโหลดรายการอะไหล่...</option>';
+      select.disabled = true;
+      if (!cleanModel) {
+        select.innerHTML = '<option value="">เลือกรุ่นรถก่อน เพื่อโหลดรายการอะไหล่</option>';
+        return;
+      }
+
+      try {
+        const result = await postJson({ action: 'getModelParts', model: cleanModel });
+        const parts = Array.isArray(result && result.data) ? result.data : [];
+        const selected = String(selectedParts || document.getElementById('inpPartsStore').value || '')
+          .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+
+        select.innerHTML = '<option value="">-- เลือกรายการอะไหล่ --</option>';
+        parts.forEach(part => {
+          const value = part.maintenancePart || part.partNo;
+          const label = [part.partNo, part.maintenancePart].filter(Boolean).join(' - ');
+          if (!value) return;
+          const option = new Option(label, value);
+          option.selected = selected.includes(value.toLowerCase());
+          select.add(option);
+        });
+
+        if (parts.length === 0) {
+          select.innerHTML = '<option value="">ไม่พบรายการอะไหล่สำหรับรุ่นนี้</option>';
+        } else {
+          select.disabled = false;
+        }
+      } catch (error) {
+        select.innerHTML = '<option value="">โหลดรายการอะไหล่ไม่สำเร็จ</option>';
+        console.error('โหลดรายการอะไหล่ไม่สำเร็จ:', error);
       }
     }
 
@@ -1070,25 +1130,26 @@
       document.getElementById("statCouponSum").innerText = totalCoupon.toLocaleString('th-TH') + " บาท";
     }
 
-    function hasCouponEntitlement(item) {
+    function hasCouponEntitlement(item, pmRound) {
       const partsStatus = String(item.partsStatus || item.parts_status || '').trim();
       const partsStore = String(item.partsStore || item.parts_store || '').trim();
       const partsBillNo = String(item.partsBillNo || item.parts_bill_no || '').trim().toUpperCase();
       const hasPendingParts = partsStatus === "ส่งบางส่วน" || partsStatus === "ค้างส่งอะไหล่";
       const hasPartsList = partsStore !== "" && partsStore !== "-";
       const hasPartsBill = partsBillNo !== "" && partsBillNo !== "-" && partsBillNo !== "NA";
+      const round = Number(pmRound ?? item.pmRound ?? item.lastPm ?? item.last_pm_round) || 0;
 
-      return partsStatus !== "ไม่ได้เบิกอะไหล่" && (hasPendingParts || hasPartsList || hasPartsBill);
+      return round > 0 && partsStatus !== "ไม่ได้เบิกอะไหล่";
     }
 
     function loadAllData(forceRefresh = false) {
       const dashboardRequest = loadDashboardData(forceRefresh).then(() => {
-        rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
-        renderMatrixTable(rawMatrixData);
+        return rawDashboardData;
       });
       const historyRequest = loadHistoryData(forceRefresh);
+      const matrixRequest = loadPMMatrix(true);
 
-      return Promise.all([dashboardRequest, historyRequest]);
+      return Promise.all([dashboardRequest, historyRequest, matrixRequest]);
     }
 
     function refreshAllData() {
@@ -1615,10 +1676,10 @@
     }
 
     function buildPMMatrixFromDashboard(list) {
-      const checkpoints = [50, 250, 500, 750, 1000, 1250, 1500, 1750, 2000];
+      const checkpoints = PM_ROUNDS;
 
       return (list || []).map(item => {
-        const lastPm = Number(item.lastPm || item.last_pm_round || 0);
+        const lastPm = parsePmRound(item.lastPm ?? item.last_pm_round);
         const currentHours = Number(item.currentHours || item.current_Hours || 0);
         const couponAmount = Number(String(item.yanmarCoupon || item.yanmar_coupon || 0).replace(/,/g, '')) || 0;
         const partsStatus = String(item.partsStatus || item.parts_status || '').trim();
@@ -1674,21 +1735,15 @@
     function loadPMMatrix(forceRefresh = false) {
       const tbody = document.getElementById("tbMatrix");
 
-      const renderFromDashboard = () => {
-        rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
-        renderMatrixTable(rawMatrixData);
-      };
-
-      if (!forceRefresh && rawDashboardData.length > 0) {
-        renderFromDashboard();
-        return Promise.resolve(rawMatrixData);
-      }
-
       tbody.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล Workflow Matrix...</td></tr>';
 
-      return loadDashboardData(forceRefresh)
-        .then(() => {
-          renderFromDashboard();
+      return postJson({ action: "getPMProgressMatrix" })
+        .then(result => {
+          if (!result || result.status !== "success") {
+            throw new Error(result && result.message ? result.message : "ไม่สามารถโหลดข้อมูล Matrix ได้");
+          }
+          rawMatrixData = Array.isArray(result.data) ? result.data : [];
+          renderMatrixTable(rawMatrixData);
           return rawMatrixData;
         })
         .catch(err => {
@@ -1697,16 +1752,18 @@
     }
 
     function getPMWorkflowDetails(item, round) {
-      const lastPm = Number(item.lastPm || item.last_pm_round || 0);
+      const lastPm = parsePmRound(item.lastPm ?? item.last_pm_round);
       const currentHours = Number(item.currentHours || item.current_Hours || 0);
-      const partsStatus = String(item.partsStatus || item.parts_status || '').trim();
-      const couponAmount = Number(String(item.yanmarCoupon || item.yanmar_coupon || 0).replace(/,/g, '')) || 0;
+      const roundRecord = item.roundRecords && item.roundRecords[round];
+      const source = roundRecord || item;
+      const partsStatus = String(source.partsStatus || source.parts_status || '').trim();
+      const couponAmount = Number(String(source.yanmarCoupon || source.yanmar_coupon || 0).replace(/,/g, '')) || 0;
       const partsPending = partsStatus === "ส่งบางส่วน" || partsStatus === "ค้างส่งอะไหล่";
       const noPartsRequired = partsStatus === "ไม่ได้เบิกอะไหล่";
-      const couponRequired = hasCouponEntitlement(item);
+      const couponRequired = hasCouponEntitlement(source, round);
       const couponPending = couponRequired && couponAmount <= 0;
-      const isCompletedRound = lastPm > round;
-      const isCurrentRound = lastPm === round && lastPm > 0;
+      const isCompletedRound = !roundRecord && lastPm > round;
+      const isCurrentRound = Boolean(roundRecord) || (lastPm === round && lastPm > 0);
       const isDue = !isCurrentRound && !isCompletedRound && currentHours >= round;
 
       let steps;
@@ -1762,7 +1819,7 @@
       }
 
       const completed = steps.filter(step => step.status === "complete" || step.status === "skipped").length;
-      return { steps, completed, total: steps.length, couponPending, partsPending };
+      return { steps, completed, total: steps.length, couponPending, partsPending, record: roundRecord };
     }
 
     function openWorkflowModal(machineId, round) {
@@ -1770,7 +1827,8 @@
       if (!item) return;
 
       const workflow = getPMWorkflowDetails(item, Number(round));
-      const couponAmount = Number(item.yanmarCoupon || 0);
+      const roundRecord = workflow.record || item;
+      const couponAmount = Number(roundRecord.yanmarCoupon || roundRecord.yanmar_coupon || 0);
       const couponText = couponAmount > 0
         ? `${couponAmount.toLocaleString('th-TH')} บาท`
         : (workflow.couponPending ? "ค้าง 4,000 บาท" : "ไม่มีข้อมูลยืนยันสิทธิ์");
@@ -1781,11 +1839,11 @@
       document.getElementById("workflowCurrentHours").innerText = `${Number(item.currentHours || item.current_Hours || 0).toLocaleString('th-TH')} ชม.`;
       document.getElementById("workflowProgressText").innerText = `${workflow.completed}/${workflow.total} ขั้นตอน`;
       document.getElementById("workflowProgressBar").style.width = `${(workflow.completed / workflow.total) * 100}%`;
-      document.getElementById("workflowPartsStatus").innerText = item.partsStatus || '-';
-      document.getElementById("workflowPartsBill").innerText = item.partsBillNo || '-';
+      document.getElementById("workflowPartsStatus").innerText = roundRecord.partsStatus || roundRecord.parts_status || '-';
+      document.getElementById("workflowPartsBill").innerText = roundRecord.partsBillNo || roundRecord.parts_bill_no || '-';
       document.getElementById("workflowCoupon").innerText = couponText;
-      document.getElementById("workflowPartsList").innerText = item.partsStore || '-';
-      document.getElementById("workflowRemark").innerText = item.remark || '-';
+      document.getElementById("workflowPartsList").innerText = roundRecord.partsStore || roundRecord.parts_store || '-';
+      document.getElementById("workflowRemark").innerText = roundRecord.remark || '-';
 
       document.getElementById("workflowTimeline").innerHTML = workflow.steps.map((step, index) => {
         const stateClass = step.status === "complete" ? "is-complete"
@@ -1822,17 +1880,10 @@
       list.forEach((item, index) => {
         const tr = document.createElement("tr");
 
-        const roundKeys = [
-          { num: 50, keys: ['pm_50', 'pm50', '50', '50 ชม.', 'pm_50_status'] },
-          { num: 250, keys: ['pm_250', 'pm250', '250', '250 ชม.', 'pm_250_status'] },
-          { num: 500, keys: ['pm_500', 'pm500', '500', '500 ชม.', 'pm_500_status'] },
-          { num: 750, keys: ['pm_750', 'pm750', '750', '750 ชม.', 'pm_750_status'] },
-          { num: 1000, keys: ['pm_1000', 'pm1000', '1000', '1000 ชม.', 'pm_1000_status'] },
-          { num: 1250, keys: ['pm_1250', 'pm1250', '1250', '1250 ชม.', 'pm_1250_status'] },
-          { num: 1500, keys: ['pm_1500', 'pm1500', '1500', '1500 ชม.', 'pm_1500_status'] },
-          { num: 1750, keys: ['pm_1750', 'pm1750', '1750', '1750 ชม.', 'pm_1750_status'] },
-          { num: 2000, keys: ['pm_2000', 'pm2000', '2000', '2000 ชม.', 'pm_2000_status'] }
-        ];
+        const roundKeys = PM_ROUNDS.map(num => ({
+          num,
+          keys: [`pm_${num}`, `pm${num}`, String(num), `${num} ชม.`, `pm_${num}_status`]
+        }));
 
         let roundCellsHtml = "";
 
@@ -1847,7 +1898,7 @@
           }
 
           if (!val) {
-            const lastPm = Number(item.lastPm || item.last_pm || item.pmRound || 0);
+            const lastPm = parsePmRound(item.lastPm ?? item.last_pm ?? item.pmRound);
             if (lastPm === r.num) {
               val = item.partsStatus || item.parts_status || "เข้าบริการ";
             } else if (lastPm > r.num) {
@@ -1857,8 +1908,12 @@
             }
           }
 
-          const statuses = Array.isArray(val) ? val : [val];
           const workflow = getPMWorkflowDetails(item, r.num);
+          const statuses = workflow.record && Array.isArray(workflow.record.statuses)
+            ? workflow.record.statuses
+            : (Array.isArray(val) ? val : [val]);
+          const roundRecord = workflow.record;
+          const canEditRound = roundRecord && (workflow.partsPending || workflow.couponPending) && isAdmin();
           const badgesHtml = statuses.map(rawStatus => {
             let status = String(rawStatus || "รอดำเนินการ").trim();
             let badgeStyle = "background-color: #e9ecef; color: #6c757d;";
@@ -1906,6 +1961,12 @@
             return `<span class="badge rounded-pill fw-normal px-2 py-1" style="${badgeStyle}">${icon}${escapeHtml(status)}</span>`;
           }).join("");
 
+          const editRoundHtml = canEditRound
+            ? `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 mt-1 matrix-edit-round" title="แก้ไขข้อมูล PM รอบนี้"
+              data-machine-id="${escapeHtml(item.machineId || item.machine_id || '')}" data-round="${r.num}">
+                 <i class="fa-solid fa-pen-to-square me-1"></i>แก้ไขรอบนี้</button>`
+            : '';
+
           roundCellsHtml += `
             <td class="workflow-cell" role="button" tabindex="0"
                 data-machine-id="${escapeHtml(item.machineId || item.machine_id || '')}"
@@ -1913,7 +1974,8 @@
                 onclick="openWorkflowModal(this.dataset.machineId, ${r.num})"
                 onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); this.click(); }">
               <div class="d-flex flex-wrap justify-content-center gap-1">${badgesHtml}</div>
-              <div class="workflow-progress-label"><i class="fa-solid fa-list-check me-1"></i>${workflow.completed}/${workflow.total} ขั้นตอน · คลิกดู</div>
+                <div class="workflow-progress-label"><i class="fa-solid fa-list-check me-1"></i>${workflow.completed}/${workflow.total} ขั้นตอน · คลิกดู</div>
+                ${editRoundHtml}
             </td>`;
         });
 
@@ -1926,6 +1988,57 @@
         `;
         tbody.appendChild(tr);
       });
+
+      tbody.querySelectorAll('.matrix-edit-round').forEach(button => {
+        button.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          editMatrixRound(button.dataset.machineId, Number(button.dataset.round));
+        });
+      });
+    }
+
+    function editMatrixRound(machineId, round) {
+      if (!isAdmin()) {
+        alert("สิทธิ์ผู้ใช้ของคุณไม่สามารถแก้ไขข้อมูลได้");
+        return;
+      }
+
+      const item = rawMatrixData.find(row => String(row.machineId || row.machine_id).trim() === String(machineId).trim());
+      const record = item && item.roundRecords
+        ? (item.roundRecords[round] || item.roundRecords[String(round)])
+        : null;
+      if (!item || !record || !record.ticketId) {
+        alert("ไม่พบเลขที่ใบงานของ PM รอบนี้ กรุณารีเฟรช Matrix แล้วลองใหม่");
+        return;
+      }
+
+      document.getElementById("inpTicketId").value = record.ticketId;
+      document.getElementById("inpOriginalMachineId").value = item.machineId || item.machine_id || machineId;
+      document.getElementById("inpMachineId").value = item.machineId || item.machine_id || machineId;
+      document.getElementById("inpModel").value = record.model || item.model || "";
+      document.getElementById("inpCustomerName").value = record.customer || item.customer || "";
+      document.getElementById("inpCustomerId").value = formatCustomerId(record.customerId || "");
+      document.getElementById("inpPhone").value = record.phone || "";
+      document.getElementById("inpPmRound").value = round;
+      document.getElementById("inpActualHours").value = record.actualHours || 0;
+      document.getElementById("inpPartsStore").value = record.partsStore || "";
+      loadModelParts(document.getElementById("inpModel").value, record.partsStore || "");
+      document.getElementById("inpSupplierId").value = record.supplierId || "";
+      document.getElementById("inpPartsBillNo").value = record.partsBillNo || "";
+      document.getElementById("inpPartsStatus").value = record.partsStatus || "ค้างส่งอะไหล่";
+      document.getElementById("inpReceiptImageBase64").value = "";
+      document.getElementById("inpReceiptFile").value = "";
+      document.getElementById("inpYanmarCoupon").value = record.yanmarCoupon || 0;
+      document.getElementById("inpRemark").value = record.remark || "";
+
+      const dashboardTab = document.querySelector('[data-bs-target="#tab-dashboard"]');
+      if (dashboardTab && window.bootstrap) {
+        bootstrap.Tab.getOrCreateInstance(dashboardTab).show();
+      }
+      const formSection = document.getElementById("formSection");
+      formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById("inpMachineId").focus();
     }
 
     function filterMatrixTable() {
@@ -2044,7 +2157,8 @@
         receiptImage: document.getElementById("inpReceiptImageBase64").value,
         yanmarCoupon: Number(document.getElementById("inpYanmarCoupon").value) || 0,
         remark: document.getElementById("inpRemark").value.trim(),
-        updatedBy: currentUser
+        updatedBy: currentUser,
+        editExisting: Boolean(document.getElementById("inpTicketId").value)
       };
 
       showOperation('กำลังบันทึกใบงาน PM...');
@@ -2089,6 +2203,7 @@
       document.getElementById("inpPmRound").value = pmRoundVal;
       document.getElementById("inpActualHours").value = item.currentHours || 0;
       document.getElementById("inpPartsStore").value = item.partsStore || item.parts || "";
+      loadModelParts(document.getElementById("inpModel").value, document.getElementById("inpPartsStore").value);
       document.getElementById("inpSupplierId").value = item.supplierId || "";
       document.getElementById("inpPartsBillNo").value = item.partsBillNo || "";
       
@@ -2112,6 +2227,8 @@
       document.getElementById("inpReceiptFile").value = "";
       document.getElementById("inpPmRound").value = 0;
       document.getElementById("inpActualHours").value = 0;
+      document.getElementById("inpModelPartSelector").innerHTML = '<option value="">เลือกรุ่นรถก่อน เพื่อโหลดรายการอะไหล่</option>';
+      document.getElementById("inpModelPartSelector").disabled = true;
       
       document.getElementById("inpPartsStatus").value = "ไม่ได้เบิกอะไหล่"; 
       document.getElementById("inpYanmarCoupon").value = 0;
@@ -2161,7 +2278,7 @@
         }
       } catch (err) {
         hideOperation();
-        alert('เกิดข้อผิดพลาดขณะลบ: ' + err.message); 
+        alert('เกิดข้อผิดพลาดขณะลบ: ' + err.message);
       } finally {
         hideOperation();
       }

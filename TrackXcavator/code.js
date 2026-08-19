@@ -104,6 +104,20 @@ function escapeSql(str) {
     .replace(/'/g, "\\'");
 }
 
+function parsePmRound(value) {
+  var normalized = String(value === null || value === undefined ? "" : value)
+    .replace(/,/g, "")
+    .trim();
+  var match = normalized.match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) || 0 : 0;
+}
+
+function normalizeMachineKey(value) {
+  return String(value === null || value === undefined ? "" : value)
+    .trim()
+    .toLowerCase();
+}
+
 function tableHasColumn(tableName, columnName) {
   var cache = CacheService.getScriptCache();
   var cacheKey = 'schema_' + tableName + '_' + columnName;
@@ -166,6 +180,12 @@ function doPost(e) {
       return claimCoupon(data);
     } else if (action === "updatePartsStatus") {
       return updatePartsStatus(data);
+    } else if (action === "getPMProgressMatrix") {
+      return getPMProgressMatrix();
+    } else if (action === "getModelParts") {
+      return getModelParts(data.model);
+    } else if (action === "getModels") {
+      return getModels();
     } else if (action === "approveMachine") {
       return approveMachine(data.machineId);
     } else if (action === "deleteDashboard") {
@@ -178,6 +198,50 @@ function doPost(e) {
 
   } catch (err) {
     return responseJSON({ status: "error", message: err.toString() });
+  }
+}
+
+function getModelParts(model) {
+  try {
+    var safeModel = escapeSql(model);
+    if (!safeModel.trim()) return responseJSON({ status: "success", data: [] });
+
+    var sql = `SELECT DISTINCT partno, maintenanceparts
+               FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.modelpart\`
+              WHERE LOWER(TRIM(model)) = LOWER(TRIM('${safeModel}'))
+                OR LOWER(TRIM('${safeModel}')) LIKE CONCAT(LOWER(TRIM(model)), '%')
+                OR LOWER(TRIM(model)) LIKE CONCAT(LOWER(TRIM('${safeModel}')), '%')
+                 AND (NULLIF(TRIM(partno), '') IS NOT NULL
+                   OR NULLIF(TRIM(maintenanceparts), '') IS NOT NULL)
+               ORDER BY maintenanceparts, partno`;
+    var rows = runBigQuery(sql).map(function(row) {
+      return {
+        partNo: String(row.partno || '').trim(),
+        maintenancePart: String(row.maintenanceparts || '').trim()
+      };
+    }).filter(function(row) {
+      return row.partNo || row.maintenancePart;
+    });
+
+    return responseJSON({ status: "success", data: rows });
+  } catch (e) {
+    return responseJSON({ status: "error", data: [], message: e.toString() });
+  }
+}
+
+function getModels() {
+  try {
+    var sql = `SELECT DISTINCT TRIM(model) AS model
+               FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.modelpart\`
+               WHERE NULLIF(TRIM(model), '') IS NOT NULL
+               ORDER BY model`;
+    var models = runBigQuery(sql).map(function(row) {
+      return String(row.model || '').trim();
+    }).filter(Boolean);
+
+    return responseJSON({ status: "success", data: models });
+  } catch (e) {
+    return responseJSON({ status: "error", data: [], message: e.toString() });
   }
 }
 
@@ -430,13 +494,13 @@ function getReportList() {
 function getPMProgressMatrix() {
   try {
     var sqlService = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``;
-    var sqlLogs = `SELECT machine_id, last_pm_round, current_Hours, contract_date, parts_store, parts_bill_no, parts_status, yanmar_coupon FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
+    var sqlLogs = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
     
     var services = runBigQuery(sqlService);
     var logs = runBigQuery(sqlLogs);
 
     // งาน PM ที่บันทึกแล้วอาจยังไม่จบ workflow หากยังค้างคูปองหรืออะไหล่
-    function getWorkflowStatuses(partsStatus, yanmarCoupon, partsStore, partsBillNo) {
+    function getWorkflowStatuses(partsStatus, yanmarCoupon, partsStore, partsBillNo, pmRound) {
       var statuses = [];
       var normalizedPartsStatus = String(partsStatus || "").trim();
       var couponAmount = Number(String(yanmarCoupon || 0).replace(/,/g, "")) || 0;
@@ -445,8 +509,7 @@ function getPMProgressMatrix() {
       var hasPendingParts = normalizedPartsStatus === "ส่งบางส่วน" || normalizedPartsStatus === "ค้างส่งอะไหล่";
       var hasPartsList = normalizedPartsStore !== "" && normalizedPartsStore !== "-";
       var hasPartsBill = normalizedPartsBillNo !== "" && normalizedPartsBillNo !== "-" && normalizedPartsBillNo !== "NA";
-      var hasCouponEntitlement = normalizedPartsStatus !== "ไม่ได้เบิกอะไหล่" &&
-        (hasPendingParts || hasPartsList || hasPartsBill);
+      var hasCouponEntitlement = Number(pmRound) > 0 && normalizedPartsStatus !== "ไม่ได้เบิกอะไหล่";
 
       if (hasPendingParts) {
         statuses.push("ค้างอะไหล่");
@@ -463,35 +526,49 @@ function getPMProgressMatrix() {
     var pmRoundsMap = {};
     if (Array.isArray(logs)) {
       logs.forEach(function(l) {
-        var mId = String(l.machine_id || "").trim();
-        var round = Number(l.last_pm_round) || 0;
+        var mId = normalizeMachineKey(l.machine_id);
+        var round = parsePmRound(l.last_pm_round);
         if (mId && round > 0) {
           if (!pmRoundsMap[mId]) pmRoundsMap[mId] = {};
           pmRoundsMap[mId][round] = {
             completed: true,
             actualHours: Number(l.current_Hours) || 0,
             date: l.contract_date || "",
-            statuses: getWorkflowStatuses(l.parts_status, l.yanmar_coupon, l.parts_store, l.parts_bill_no)
+            ticketId: l.no || l.ticket_id || l.ticketId || "",
+            machineId: mId,
+            model: l.model || "",
+            customer: l.customer || "",
+            customerId: l.customer_id || l.customerId || "",
+            phone: l.phone_number || l.phone || "",
+            partsStore: l.parts_store || "",
+            supplierId: l.supplier_id || l.supplierId || "",
+            partsBillNo: l.parts_bill_no || "",
+            partsStatus: l.parts_status || "ส่งครบแล้ว",
+            receiptImage: l.receipt_image || "",
+            yanmarCoupon: Number(l.yanmar_coupon) || 0,
+            remark: l.remark || "",
+            statuses: getWorkflowStatuses(l.parts_status, l.yanmar_coupon, l.parts_store, l.parts_bill_no, round)
           };
         }
       });
     }
 
     var matrixData = Array.isArray(services) ? services.map(function(s) {
-      var mId = String(s.machine_id || "").trim();
+      var mId = String(s.machine_id || s.machineId || "").trim();
+      var matrixMachineKey = normalizeMachineKey(mId);
       var hrs = Number(s.current_Hours) || 0;
-      var lastPm = Number(s.last_pm_round) || 0;
-      var roundsHistory = pmRoundsMap[mId] || {};
+      var lastPm = parsePmRound(s.last_pm_round || s.last_pm || s.lastPm);
+      var roundsHistory = pmRoundsMap[matrixMachineKey] || {};
 
       // รอบ PM มาตรฐาน
       var pmCheckpoints = [50, 250, 500, 750, 1000, 1250, 1500, 1750, 2000];
       var matrix = {};
 
       pmCheckpoints.forEach(function(cp) {
-        if (cp === lastPm && lastPm > 0) {
-          matrix[cp] = getWorkflowStatuses(s.parts_status, s.yanmar_coupon, s.parts_store, s.parts_bill_no);
-        } else if (roundsHistory[cp]) {
+        if (roundsHistory[cp]) {
           matrix[cp] = roundsHistory[cp].statuses;
+        } else if (cp === lastPm && lastPm > 0) {
+          matrix[cp] = getWorkflowStatuses(s.parts_status, s.yanmar_coupon, s.parts_store, s.parts_bill_no, lastPm);
         } else if (lastPm >= cp) {
           matrix[cp] = ["เสร็จสิ้น"];
         } else if (hrs >= cp) {
@@ -510,12 +587,17 @@ function getPMProgressMatrix() {
         currentHours: hrs,
         last_pm_round: lastPm,
         lastPm: lastPm,
+        roundRecords: roundsHistory,
         matrix: matrix,
         pm50: matrix[50],
         pm250: matrix[250],
         pm500: matrix[500],
         pm750: matrix[750],
-        pm1000: matrix[1000]
+        pm1000: matrix[1000],
+        pm1250: matrix[1250],
+        pm1500: matrix[1500],
+        pm1750: matrix[1750],
+        pm2000: matrix[2000]
       };
     }) : [];
 
@@ -571,6 +653,22 @@ function insertOrUpdateTicket(p) {
     var dashboardReceiptAssignment = safeReceiptImage !== ''
       ? `receipt_image = '${safeReceiptImage}',`
       : 'receipt_image = receipt_image,';
+
+    // แก้ไขใบงานเดิมของรอบก่อนหน้าโดยไม่เขียนทับสถานะล่าสุดใน service_report
+    if (p.editExisting && p.ticketId) {
+      var updateLogSql = `UPDATE \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\`
+        SET model = '${safeModel}', customer = '${safeCustomerName}', customer_id = '${safeCustomerId}',
+            phone_number = '${safePhone}', contract_date = '${escapeSql(strDate)}',
+            current_Hours = CAST('${actualHours}' AS INT64), last_pm_round = '${pmRound}',
+            next_pm_round = CAST('${nextPm}' AS INT64), updated_by = '${safeUpdatedBy}',
+            parts_store = '${safePartsStore}'${logHasSupplierId ? `, supplier_id = '${safeSupplierId}'` : ''},
+            parts_bill_no = '${safePartsBillNo}', parts_status = '${safePartsStatus}',
+            ${safeReceiptImage !== '' ? `receipt_image = '${safeReceiptImage}',` : 'receipt_image = receipt_image,'}
+            yanmar_coupon = ${Number(p.yanmarCoupon) || 0}, remark = '${safeRemark}'
+        WHERE \`no\` = '${ticketId}'`;
+      runBigQuery(updateLogSql);
+      return responseJSON({ status: "success", ticketId: ticketId, editedExisting: true });
+    }
 
     // 1. INSERT ลง pm_log ( last_pm_round ใน pm_log เป็น STRING )
     var queryLog = `INSERT INTO \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\` 
