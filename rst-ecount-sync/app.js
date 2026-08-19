@@ -1,8 +1,8 @@
 // ==========================================
 // Config & Global Variables
 // ==========================================
-// URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT (ใช้ Port 8000 ตาม app.py และ ngrok)
-const PYTHON_API_URL = "https://spindle-unusable-clinic.ngrok-free.dev -> http://localhost:8000"; 
+// URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT (แก้ไขรูปแบบ URL ให้ถูกต้อง)
+const PYTHON_API_URL = "https://spindle-unusable-clinic.ngrok-free.dev"; 
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
@@ -99,7 +99,7 @@ async function fetchStockData() {
     if (refreshIcon) refreshIcon.classList.add("fa-spin");
 
     try {
-        const response = await fetch(`${PYTHON_API_URL}/get-stock`);
+        const response = await fetch(`${PYTHON_API_URL}/api/get-stock`);
         if (!response.ok) throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Python/BigQuery ได้");
         
         const data = await response.json();
@@ -457,7 +457,7 @@ async function saveMinMax(prodCode) {
     showToast(`กำลังบันทึกข้อมูล ${cleanCode}...`, "info");
 
     try {
-        const response = await fetch(`${PYTHON_API_URL}/save-minmax-item`, {
+        const response = await fetch(`${PYTHON_API_URL}/api/save-minmax-item`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -508,7 +508,7 @@ async function saveMinMaxBulk() {
     showToast(`กำลังบันทึก ${itemsToUpdate.length} รายการไปยัง BigQuery & ECOUNT...`, "info");
 
     try {
-        const response = await fetch(`${PYTHON_API_URL}/save-minmax-bulk`, {
+        const response = await fetch(`${PYTHON_API_URL}/api/save-minmax-bulk`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ items: itemsToUpdate })
