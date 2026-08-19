@@ -355,6 +355,8 @@ function getDashboardData() {
         phone_number: row.phone_number || row.phone || "",
         contractDate: row.contract_date || "",
         contract_date: row.contract_date || "",
+        updatedAt: row.updated_at || row.updatedAt || row.timestamp || "",
+        updated_at: row.updated_at || row.updatedAt || row.timestamp || "",
         currentHours: hrs,
         current_Hours: hrs,
         lastPm: lastPm,
