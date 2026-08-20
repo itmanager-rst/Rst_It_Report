@@ -61,6 +61,35 @@ var FB_LEAD_MATCH_COND = "LOWER(IFNULL(remark, '')) LIKE @fbMarker";
 var FB_LEAD_MATCH_PARAM = { name: 'fbMarker', value: '%' + FB_LEAD_MARKER + '%' };
 
 // =================================================================
+// เบอร์โทรที่ไม่ควรถูกนับเป็น "ลูกค้า" เลย (เช่น เบอร์เซลล์ที่ให้ลูกค้าโทรกลับ)
+// =================================================================
+// ลูกค้าบางคนกดคัดลอกเบอร์ติดต่อของเซลล์จากข้อความ/โพสต์ แล้วส่งเบอร์นั้นกลับมาผ่าน
+// ManyChat โดยเข้าใจผิดว่าต้องส่งเบอร์ (เป็นเบอร์เซลล์ ไม่ใช่เบอร์ลูกค้าจริง) ทำให้เบอร์นี้
+// ถูกบันทึกเข้าระบบซ้ำไปเรื่อยๆ และทำให้ตัวเลขในรายงาน/ยอดลูกค้าเพี้ยน — เบอร์ในลิสต์นี้
+// จะถูกกันไว้ 2 ชั้น: (1) addCustomerHTML จะไม่สร้าง/ไม่อัปเดตแถวลูกค้าใดๆ และไม่ log เข้า
+// lead_intake_log เลยถ้าเบอร์ที่ส่งมาตรงกับลิสต์นี้ (กันไม่ให้นับเข้าไปตั้งแต่ต้น) และ
+// (2) รายงาน/หน้าดูรายละเอียด (getDailyLeadReportHTML, getLeadIntakeLogDetailHTML) กรอง
+// แถว lead_intake_log เก่าที่มีเบอร์นี้ออกจากการนับด้วย เผื่อมีแถวเก่าที่บันทึกไปแล้วก่อนเพิ่ม
+// ลิสต์นี้ — เทียบกับเบอร์ที่ผ่าน formatPhoneNumber แล้วเสมอ (รูปแบบ 10 หลัก ขึ้นต้นด้วย 0)
+// เพิ่มเบอร์อื่นในลิสต์นี้ได้เรื่อยๆ ถ้าเจอปัญหาแบบเดียวกัน (เบอร์ทีม/เบอร์ร้าน ฯลฯ)
+var EXCLUDED_PHONE_NUMBERS = ['0864609120'];
+
+// สร้างเงื่อนไข WHERE (สำหรับ query กับ lead_intake_log) ที่กันเบอร์ใน
+// EXCLUDED_PHONE_NUMBERS ออกจากการนับ — คืนค่าเป็น '' ถ้าลิสต์ว่าง (ไม่ต้องเติมเงื่อนไข)
+function buildExcludedPhoneCondition_() {
+  if (!EXCLUDED_PHONE_NUMBERS || EXCLUDED_PHONE_NUMBERS.length === 0) return '';
+  var placeholders = EXCLUDED_PHONE_NUMBERS.map(function(_, i) { return '@excludedPhone' + i; });
+  return "IFNULL(phone, '') NOT IN (" + placeholders.join(', ') + ")";
+}
+// พารามิเตอร์คู่กับ buildExcludedPhoneCondition_() ด้านบน — ต้อง concat เข้ากับ params
+// ทุกครั้งที่ใช้เงื่อนไขนี้ ไม่งั้น BigQuery จะ error ว่าไม่รู้จัก @excludedPhoneN
+function buildExcludedPhoneParams_() {
+  return (EXCLUDED_PHONE_NUMBERS || []).map(function(p, i) {
+    return { name: 'excludedPhone' + i, value: p };
+  });
+}
+
+// =================================================================
 // ตาราง Log การรับลีดเข้ามา (lead_intake_log)
 // =================================================================
 // เหตุผลที่ต้องมีตารางนี้แยกจาก customers: เวลาลีดที่ส่งเข้ามาซ้ำ (ชื่อ Facebook เดิม
@@ -735,6 +764,17 @@ function addCustomerHTML(cust) {
     var newPhoneForDup = formatPhoneNumber(cust.phone1 || cust.phone);
     var isManyChatLead = (cleanStr(cust.remark || cust.note).toLowerCase().indexOf(FB_LEAD_MARKER) !== -1);
 
+    // กันเบอร์ที่อยู่ใน EXCLUDED_PHONE_NUMBERS (เช่นเบอร์เซลล์เอง ที่ลูกค้ากดคัดลอกส่งกลับมา
+    // โดยไม่ได้ตั้งใจ) ไม่ให้ถูกนับเป็นลูกค้าเลย — ไม่สร้าง/ไม่อัปเดตแถวใน customers และไม่ log
+    // เข้า lead_intake_log เลย (ทำก่อนเช็ค/ทำอย่างอื่นทั้งหมด เพื่อไม่ให้ตัวเลขรายงานเพี้ยน)
+    if (newPhoneForDup && EXCLUDED_PHONE_NUMBERS.indexOf(newPhoneForDup) !== -1) {
+      return {
+        success: true,
+        skipped: true,
+        message: 'เบอร์นี้อยู่ในรายการเบอร์ที่ไม่นับเป็นลูกค้า (เช่น เบอร์เซลล์) — ไม่ได้บันทึกเข้าระบบและไม่นับเข้ารายงาน'
+      };
+    }
+
     // กันข้อมูลซ้ำด้วยชื่อ Facebook หรือเบอร์โทร (อย่างใดอย่างหนึ่งตรงกันก็ถือว่าซ้ำ):
     // ถ้าคนเดิมส่งเบอร์มาอีกรอบผ่าน Facebook/ManyChat (ไม่ว่าจะชื่อ Facebook เดิมแต่เบอร์เปลี่ยน
     // เพราะรอบแรกพิมพ์ผิด, หรือเบอร์เดิมแต่ชื่อ Facebook ไม่ตรงกัน) ไม่สร้างรายชื่อใหม่
@@ -980,6 +1020,13 @@ function getDailyLeadReportHTML(reqPayload) {
     if (onlyManyChat) {
       whereClauses.push("is_manychat = TRUE");
     }
+    // กันเบอร์ใน EXCLUDED_PHONE_NUMBERS (เช่นเบอร์เซลล์เอง) ออกจากการนับ — เผื่อมีแถวเก่า
+    // ที่บันทึกไปแล้วก่อนเพิ่มลิสต์นี้ (ของใหม่จะไม่ถูกบันทึกเข้ามาอยู่แล้วตาม addCustomerHTML)
+    var excludedPhoneCond = buildExcludedPhoneCondition_();
+    if (excludedPhoneCond) {
+      whereClauses.push(excludedPhoneCond);
+      params = params.concat(buildExcludedPhoneParams_());
+    }
     var whereSql = whereClauses.length > 0 ? (" WHERE " + whereClauses.join(" AND ")) : "";
 
     var sql = "SELECT CAST(received_date AS STRING) AS day, " +
@@ -1058,6 +1105,13 @@ function getLeadIntakeLogDetailHTML(reqPayload) {
     // เว้นแต่ filter ที่กดมาเป็น 'manychat' อยู่แล้ว (กันเขียนเงื่อนไขซ้ำสองรอบเฉยๆ)
     if (onlyManyChat && filter !== 'manychat') {
       whereClauses.push("is_manychat = TRUE");
+    }
+    // กันเบอร์ใน EXCLUDED_PHONE_NUMBERS ออกจากรายการ drill-down ด้วย (สอดคล้องกับตัวเลขที่
+    // ถูกกรองออกไปแล้วใน getDailyLeadReportHTML — ไม่ให้เห็นแถวที่ไม่ได้ถูกนับในรายการละเอียด)
+    var excludedPhoneCondDetail = buildExcludedPhoneCondition_();
+    if (excludedPhoneCondDetail) {
+      whereClauses.push(excludedPhoneCondDetail);
+      params = params.concat(buildExcludedPhoneParams_());
     }
 
     var whereSql = whereClauses.length > 0 ? (" WHERE " + whereClauses.join(" AND ")) : "";
