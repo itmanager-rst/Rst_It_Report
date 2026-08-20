@@ -182,6 +182,10 @@ function doGet(e) {
     return createJsonResponse(checkBigQueryStatus());
   } else if (action === 'getDailyLeadReport') {
     return createJsonResponse(getDailyLeadReportHTML(e.parameter));
+  } else if (action === 'getLeadIntakeLogDetail') {
+    // รายละเอียดที่ประกอบเป็นตัวเลขในรายงานรายวัน (ดู getLeadIntakeLogDetailHTML)
+    // รองรับ GET ด้วยเผื่ออยากทดสอบผ่าน URL ตรงๆ — หน้าเว็บจริงเรียกผ่าน doPost
+    return createJsonResponse(getLeadIntakeLogDetailHTML(e.parameter));
   }
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -228,6 +232,10 @@ function doPost(e) {
     } else if (action === 'getDailyLeadReport') {
       // รายงานจำนวนลีดที่ส่งเข้ามาต่อวัน (รวมที่ซ้ำด้วย) — ดูฟังก์ชัน getDailyLeadReportHTML
       result = getDailyLeadReportHTML(contents.payload || contents);
+    } else if (action === 'getLeadIntakeLogDetail') {
+      // รายละเอียด (รายชื่อ/เบอร์/สถานะ) ที่ประกอบเป็นตัวเลขในตารางรายงานรายวัน
+      // ใช้ตอนกดตัวเลขในหน้ารายงาน (index.html) — ดูฟังก์ชัน getLeadIntakeLogDetailHTML
+      result = getLeadIntakeLogDetailHTML(contents.payload || contents);
     }
     return createJsonResponse(result);
   } catch (err) {
@@ -992,6 +1000,88 @@ function getDailyLeadReportHTML(reqPayload) {
       };
     });
     return { success: true, report: report };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// =================================================================
+// รายละเอียด (รายชื่อ/เบอร์/สถานะ) ที่ประกอบเป็นตัวเลขในตารางรายงานรายวัน
+// =================================================================
+// ใช้ตอนพนักงานกดตัวเลข (ยอดรวม/ลูกค้าใหม่/ส่งซ้ำ/จาก ManyChat) ในหน้ารายงาน
+// (index.html) เพื่อดูว่าตัวเลขนั้นประกอบด้วยรายการอะไรบ้าง — คิวรีจาก
+// lead_intake_log ตัวเดียวกับที่ getDailyLeadReportHTML ใช้นับตัวเลข
+//
+// payload รองรับ:
+//   - date: 'YYYY-MM-DD'                 → ระบุวันเดียว (กดจากแถวรายวัน)
+//   - startDate / endDate: 'YYYY-MM-DD'  → ระบุช่วงวัน (กดจากแถว "รวมทั้งหมด")
+//     (ถ้าส่ง date มา จะใช้ date เป็นหลัก ไม่สนใจ startDate/endDate)
+//   - filter: 'total' | 'new' | 'duplicate' | 'manychat' (ไม่ส่งมา = 'total')
+//   - onlyManyChat: true/false → เหมือนใน getDailyLeadReport ถ้าเปิดไว้ตอนกด
+//     จะกรอง is_manychat = TRUE ซ้อนอีกชั้น (เว้นแต่ filter เป็น 'manychat' อยู่แล้ว)
+// จำกัดผลลัพธ์ไว้ที่ 500 แถวล่าสุด (เรียงใหม่สุดก่อน) กันโหลดหนักเกินไปถ้าช่วงวันที่กว้าง
+function getLeadIntakeLogDetailHTML(reqPayload) {
+  try {
+    var payload = reqPayload || {};
+    var filter = cleanStr(payload.filter) || 'total';
+    var onlyManyChat = (payload.onlyManyChat === true || payload.onlyManyChat === 'true');
+
+    var singleDate = cleanStr(payload.date);
+    var startDate = cleanStr(payload.startDate);
+    var endDate = cleanStr(payload.endDate);
+
+    var whereClauses = [];
+    var params = [];
+
+    if (singleDate) {
+      whereClauses.push("received_date = SAFE_CAST(@d AS DATE)");
+      params.push({ name: 'd', value: singleDate });
+    } else {
+      if (startDate) {
+        whereClauses.push("received_date >= SAFE_CAST(@sd AS DATE)");
+        params.push({ name: 'sd', value: startDate });
+      }
+      if (endDate) {
+        whereClauses.push("received_date <= SAFE_CAST(@ed AS DATE)");
+        params.push({ name: 'ed', value: endDate });
+      }
+    }
+
+    if (filter === 'new') {
+      whereClauses.push("is_duplicate = FALSE");
+    } else if (filter === 'duplicate') {
+      whereClauses.push("is_duplicate = TRUE");
+    } else if (filter === 'manychat') {
+      whereClauses.push("is_manychat = TRUE");
+    }
+    // กรองซ้ำอีกชั้นถ้าเปิดเช็คบ็อก "เฉพาะ ManyChat" ไว้ตอนกด (เหมือน getDailyLeadReportHTML)
+    // เว้นแต่ filter ที่กดมาเป็น 'manychat' อยู่แล้ว (กันเขียนเงื่อนไขซ้ำสองรอบเฉยๆ)
+    if (onlyManyChat && filter !== 'manychat') {
+      whereClauses.push("is_manychat = TRUE");
+    }
+
+    var whereSql = whereClauses.length > 0 ? (" WHERE " + whereClauses.join(" AND ")) : "";
+
+    var sql = "SELECT FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', received_at, 'Asia/Bangkok') AS received_at_str, " +
+              "phone, facebook, first_name, last_name, is_duplicate, match_type, is_manychat " +
+              "FROM " + LOG_TABLE_FULL_PATH + whereSql +
+              " ORDER BY received_at DESC LIMIT 500";
+    var rows = runParamQueryFetch(sql, params);
+
+    var result = (rows || []).map(function(r) {
+      return {
+        receivedAt: r.received_at_str || '',
+        phone: formatPhoneNumber(r.phone),
+        facebook: r.facebook || '',
+        firstName: r.first_name || '',
+        lastName: r.last_name || '',
+        isDuplicate: (r.is_duplicate === 'true' || r.is_duplicate === true),
+        matchType: r.match_type || '',
+        isManychat: (r.is_manychat === 'true' || r.is_manychat === true)
+      };
+    });
+
+    return { success: true, rows: result };
   } catch (err) {
     return { success: false, message: err.toString() };
   }
