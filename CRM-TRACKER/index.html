@@ -97,6 +97,9 @@
         .badge-track { background: #f3e8ff; color: #6b21a8; }
         .badge-contract { background: #ccfbf1; color: #0f766e; }
         .badge-deliver { background: #fae8ff; color: #86198f; }
+        /* ===== ตัวเลขในตารางรายงานรายวันที่คลิกดูรายละเอียดได้ ===== */
+        .report-num-link { cursor: pointer; text-decoration: underline dotted; text-decoration-color: #94a3b8; text-underline-offset: 2px; }
+        .report-num-link:hover { color: var(--primary-color); font-weight: 700; }
         /* ===== Modal ข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน ===== */
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 2000; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 15px; }
         .modal-overlay.show { display: flex; }
@@ -588,6 +591,37 @@
             <button type="button" class="btn-done" onclick="closeHistoryModal()">✓ ปิดหน้าต่าง</button>
         </div>
     </div>
+    <!-- Modal รายละเอียดตัวเลขในตารางรายงานรายวัน (คลิกตัวเลขในหน้ารายงาน เพื่อดูว่าเป็นรายชื่อไหนบ้าง) -->
+    <div id="intake-detail-modal-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:660px;">
+            <div class="modal-header">
+                <span id="intake-detail-title">🔎 รายละเอียด</span>
+                <button type="button" class="modal-close-btn" onclick="closeIntakeDetailModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="intake-detail-summary" style="font-size:12px; color:#64748b; margin-bottom:10px;"></div>
+                <div class="table-responsive" style="max-height:55vh;">
+                    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">วันเวลาที่ส่งเข้ามา</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">ชื่อ</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">เบอร์โทร</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">Facebook</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">สถานะ</th>
+                                <th style="text-align:center; padding:6px; background:#f8fafc; position:sticky; top:0;">ManyChat</th>
+                                <th style="padding:6px; background:#f8fafc; position:sticky; top:0;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="intake-detail-tbody">
+                            <tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <button type="button" class="btn-done" onclick="closeIntakeDetailModal()">✓ ปิดหน้าต่าง</button>
+        </div>
+    </div>
     <!-- แบบฟอร์มติดตามลูกค้า สำหรับพิมพ์ -->
     <div id="print-form-area">
         <div class="pf-page">
@@ -758,6 +792,17 @@
             d.setDate(d.getDate() - daysAgo);
             return d.toISOString().split('T')[0];
         }
+        // เก็บช่วงวันที่ของรายงานรอบล่าสุดไว้ ใช้ตอนคลิกตัวเลขที่แถว "รวมทั้งหมด"
+        // (แถวรวมไม่มีวันที่เดียวให้ระบุ ต้องส่งเป็นช่วงเริ่ม-ถึงแทน)
+        let _lastReportRange = { startDate: '', endDate: '' };
+        // แปลงตัวเลขในตารางรายงานให้เป็นลิงก์คลิกได้ (0 ไม่ต้องคลิกได้ เพราะไม่มีอะไรให้ดู)
+        function renderIntakeNumLink(count, dayOrIsTotalRow, filterType) {
+            const n = Number(count) || 0;
+            if (!n) return String(n);
+            const argExpr = (dayOrIsTotalRow === true) ? '_lastReportRange' : `'${escapeAttr(dayOrIsTotalRow)}'`;
+            const isRangeExpr = (dayOrIsTotalRow === true) ? 'true' : 'false';
+            return `<span class="report-num-link" onclick="openIntakeDetailModal(${argExpr}, '${filterType}', ${isRangeExpr})">${n.toLocaleString()}</span>`;
+        }
         function fetchDailyLeadReport() {
             const tbody = document.getElementById('daily-report-tbody');
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
@@ -766,6 +811,7 @@
                 endDate: document.getElementById('report-end-date').value,
                 onlyManyChat: document.getElementById('report-only-manychat').checked
             };
+            _lastReportRange = { startDate: payload.startDate, endDate: payload.endDate };
             // รายงานเรียกผ่าน GET เพื่อให้เข้า doGet ของ Backend โดยตรง
             // และหลีกเลี่ยงปัญหา Invalid Action จาก doPost เวอร์ชันเก่า
             const params = new URLSearchParams({
@@ -794,24 +840,94 @@
                     totalAll += r.total; totalNew += r.newCount; totalDup += r.duplicateCount; totalMc += r.manychatCount;
                     return `<tr>
                         <td>${escapeHtml(r.day)}</td>
-                        <td><b>${r.total}</b></td>
-                        <td style="color:#10b981;">${r.newCount}</td>
-                        <td style="color:#ef4444;">${r.duplicateCount}</td>
-                        <td style="color:#1877F2;">${r.manychatCount}</td>
+                        <td><b>${renderIntakeNumLink(r.total, r.day, 'total')}</b></td>
+                        <td style="color:#10b981;">${renderIntakeNumLink(r.newCount, r.day, 'new')}</td>
+                        <td style="color:#ef4444;">${renderIntakeNumLink(r.duplicateCount, r.day, 'duplicate')}</td>
+                        <td style="color:#1877F2;">${renderIntakeNumLink(r.manychatCount, r.day, 'manychat')}</td>
                     </tr>`;
                 }).join('');
                 html += `<tr style="background:#f8fafc; font-weight:600;">
                     <td>รวมทั้งหมด</td>
-                    <td>${totalAll}</td>
-                    <td style="color:#10b981;">${totalNew}</td>
-                    <td style="color:#ef4444;">${totalDup}</td>
-                    <td style="color:#1877F2;">${totalMc}</td>
+                    <td>${renderIntakeNumLink(totalAll, true, 'total')}</td>
+                    <td style="color:#10b981;">${renderIntakeNumLink(totalNew, true, 'new')}</td>
+                    <td style="color:#ef4444;">${renderIntakeNumLink(totalDup, true, 'duplicate')}</td>
+                    <td style="color:#1877F2;">${renderIntakeNumLink(totalMc, true, 'manychat')}</td>
                 </tr>`;
                 tbody.innerHTML = html;
             })
             .catch(error => {
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว: ' + escapeHtml(error.message || 'ลองใหม่อีกครั้ง') + '</td></tr>';
             });
+        }
+        // คลิกตัวเลขในตารางรายงานรายวัน (หรือแถว "รวมทั้งหมด") เพื่อเปิดดูว่าตัวเลขนั้นประกอบด้วยรายชื่อ/ข้อมูลอะไรบ้าง
+        // dateOrIsRange: ถ้าเป็น string 'YYYY-MM-DD' คือคลิกจากแถวรายวันเดียว, ถ้าเป็น object {startDate,endDate} (หรือ true → ใช้ _lastReportRange) คือคลิกจากแถวรวม
+        const INTAKE_FILTER_LABELS = {
+            total: 'ยอดที่ส่งเข้ามาทั้งหมด',
+            new: 'ลูกค้าใหม่',
+            duplicate: 'ส่งซ้ำ (มีในระบบแล้ว)',
+            manychat: 'จาก ManyChat'
+        };
+        function openIntakeDetailModal(dateOrRange, filterType, isRange) {
+            const overlay = document.getElementById('intake-detail-modal-overlay');
+            const tbody = document.getElementById('intake-detail-tbody');
+            const titleEl = document.getElementById('intake-detail-title');
+            const summaryEl = document.getElementById('intake-detail-summary');
+            const label = INTAKE_FILTER_LABELS[filterType] || filterType;
+            const rangeObj = isRange ? _lastReportRange : null;
+            titleEl.textContent = isRange
+                ? `🔎 รายละเอียด: ${label} (${rangeObj.startDate || '...'} ถึง ${rangeObj.endDate || '...'})`
+                : `🔎 รายละเอียด: ${label} (วันที่ ${dateOrRange})`;
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
+            summaryEl.textContent = '';
+            overlay.classList.add('show');
+            const reqPayload = isRange
+                ? { startDate: rangeObj.startDate, endDate: rangeObj.endDate, filter: filterType, onlyManyChat: document.getElementById('report-only-manychat').checked }
+                : { date: dateOrRange, filter: filterType, onlyManyChat: document.getElementById('report-only-manychat').checked };
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getLeadIntakeLogDetail', payload: reqPayload })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) {
+                    const errorMessage = resData ? (resData.message || resData.error || 'ไม่ทราบสาเหตุ') : 'ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:#ef4444;">❌ ดึงรายละเอียดไม่สำเร็จ: ' + escapeHtml(errorMessage) +
+                        '<br><span style="font-size:11px; color:#94a3b8; font-weight:normal;">(ฟีเจอร์นี้ต้องมี action ใหม่ "getLeadIntakeLogDetail" ฝั่ง Code.gs — ถ้ายังไม่ได้เพิ่ม/deploy จะเจอข้อความนี้)</span></td></tr>';
+                    return;
+                }
+                const rows = resData.rows || [];
+                summaryEl.textContent = `พบทั้งหมด ${rows.length.toLocaleString()} รายการ` + (rows.length >= 500 ? ' (แสดงสูงสุด 500 รายการล่าสุด — ลองย่อช่วงวันที่ถ้าต้องการดูครบทุกรายการ)' : '');
+                if (rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบข้อมูล</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = rows.map(r => {
+                    const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+                    const statusBadge = r.isDuplicate
+                        ? `<span class="badge" style="background:#fee2e2; color:#b91c1c;">ส่งซ้ำ${r.matchType ? ' (' + escapeHtml(r.matchType) + ')' : ''}</span>`
+                        : `<span class="badge" style="background:#dcfce7; color:#15803d;">ลูกค้าใหม่</span>`;
+                    const mcBadge = r.isManychat ? '📱 ใช่' : '-';
+                    const jumpBtn = r.phone
+                        ? `<button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:10px;" onclick="closeIntakeDetailModal(); jumpToExistingCustomerTimeline('${escapeAttr(r.phone)}')">🕓 ดูลูกค้า</button>`
+                        : '';
+                    return `<tr>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.receivedAt || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(name)}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.phone || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.facebook || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${statusBadge}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7; text-align:center;">${mcBadge}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${jumpBtn}</td>
+                    </tr>`;
+                }).join('');
+            })
+            .catch(() => {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง</td></tr>';
+            });
+        }
+        function closeIntakeDetailModal() {
+            document.getElementById('intake-detail-modal-overlay').classList.remove('show');
         }
         document.addEventListener('DOMContentLoaded', () => {
             switchPage('add');
