@@ -1,10 +1,16 @@
-from datetime import datetime, timezone, timedelta
 import os
 import sys
-import requests
 import time
+import json
+import requests
+from datetime import datetime, timezone, timedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv  # โหลด .env สำหรับ Local Development
+
+# โหลด Environment Variables จากไฟล์ .env (ถ้ามี)
+load_dotenv()
 
 # โหลดไลบรารี Google Cloud BigQuery & Service Account Authentication
 try:
@@ -19,42 +25,57 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+# =====================================================================
+# ⚙️ CONFIGURATION (รองรับ Render Environment Variables)
+# =====================================================================
 CONFIG = {
-    "COM_CODE": "915297",
-    "USER_ID": "ITRST01",
-    "API_CERT_KEY": "5b3c2d9aa2f7d4fc4a5f4dd9ce78fd0b47", 
-    "LAN_TYPE": "th-TH",
-    "ZONE": "IA",
-    "PORT": 8000,  # 📌 รันด้วย Port 8000 ตรงตาม ngrok http 8000
+    "COM_CODE": os.getenv("COM_CODE", "915297"),
+    "USER_ID": os.getenv("USER_ID", "ITRST01"),
+    "API_CERT_KEY": os.getenv("API_CERT_KEY", "5b3c2d9aa2f7d4fc4a5f4dd9ce78fd0b47"), 
+    "LAN_TYPE": os.getenv("LAN_TYPE", "th-TH"),
+    "ZONE": os.getenv("ZONE", "IA"),
+    "PORT": int(os.getenv("PORT", 8000)),
     
-    # 📌 ชื่อไฟล์ JSON Credentials
-    "KEY_FILE": "credentials.json", 
-    
-    # 📌 การตั้งค่า Google BigQuery
-    "GCP_PROJECT": "rst-ecount-sync-py",
-    "BQ_DATASET": "rst_ecount_py",
-    "BQ_TABLE": "Stock_Data",
-    "BQ_MASTER_TABLE": "master_products",
-    "BQ_MINMAX_TABLE": "Product_MinMax"
+    # Credentials & GCP BigQuery
+    "KEY_FILE": os.getenv("KEY_FILE", "credentials.json"),
+    "GCP_CREDENTIALS_JSON": os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", ""), # สำหรับ Render
+    "GCP_PROJECT": os.getenv("GCP_PROJECT", "rst-ecount-sync-py"),
+    "BQ_DATASET": os.getenv("BQ_DATASET", "rst_ecount_py"),
+    "BQ_TABLE": os.getenv("BQ_TABLE", "Stock_Data"),
+    "BQ_MASTER_TABLE": os.getenv("BQ_MASTER_TABLE", "master_products"),
+    "BQ_MINMAX_TABLE": os.getenv("BQ_MINMAX_TABLE", "Product_MinMax")
 }
 
-# ตั้งค่า Environment Variable สำหรับ Google Credentials
+# ตั้งค่า Environment Variable สำหรับ Google Credentials (กรณี Local)
 if os.path.exists(CONFIG["KEY_FILE"]):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = CONFIG["KEY_FILE"]
 
 app = Flask(__name__)
-CORS(app)  # รองรับการเรียกจาก app.js / GitHub Pages / Localhost
+CORS(app)  # รองรับ CORS สำหรับ Frontend / Github Pages / Cross-Origin requests
 
+# =====================================================================
+# 🛠️ HELPER FUNCTIONS & BIGQUERY CLIENT
+# =====================================================================
 def get_bq_client():
-    """สร้าง Client สำหรับเชื่อมต่อ BigQuery โดยใช้ Service Account JSON Key"""
+    """สร้าง Client สำหรับเชื่อมต่อ BigQuery รองรับทั้ง Render Env Var, ไฟล์ local และ Default Credentials"""
     if not HAS_BIGQUERY:
         print("⚠️ ไม่พบไลบรารี google-cloud-bigquery")
         return None
     try:
+        # 1. เช็กกรณี รันบน Render (ใส่ Content JSON ใน Environment Variable)
+        raw_json = CONFIG.get("GCP_CREDENTIALS_JSON")
+        if raw_json:
+            info = json.loads(raw_json)
+            credentials = service_account.Credentials.from_service_account_info(info)
+            return bigquery.Client(project=CONFIG["GCP_PROJECT"], credentials=credentials)
+
+        # 2. เช็กกรณี รัน Local (มีไฟล์ credentials.json)
         key_path = CONFIG.get("KEY_FILE", "credentials.json")
         if key_path and os.path.exists(key_path):
             credentials = service_account.Credentials.from_service_account_file(key_path)
             return bigquery.Client(project=CONFIG["GCP_PROJECT"], credentials=credentials)
+
+        # 3. Fallback ใช้ Default Environment
         return bigquery.Client(project=CONFIG["GCP_PROJECT"])
     except Exception as e:
         print(f"⚠️ ไม่สามารถเชื่อมต่อ BigQuery Client ได้: {e}")
@@ -134,14 +155,22 @@ def save_min_max_to_ecount(items_to_update, passed_session_id=None):
 # 🌐 API ENDPOINTS
 # =====================================================================
 
+@app.route('/', methods=['GET'])
+def health_check():
+    """Endpoint ตรวจสอบสถานะการทำงานบน Render"""
+    return jsonify({
+        "status": "online",
+        "system": "Stock & Min/Max Sync System",
+        "timestamp": datetime.now(timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M:%S")
+    }), 200
+
 @app.route('/api/get-stock', methods=['GET'])
 def handle_get_stock():
-    """ดึงข้อมูล สต็อก + Min/Max + วันที่เคลื่อนไหว/วันขายล่าสุดจาก BigQuery"""
+    """ดึงข้อมูล สต็อก + Min/Max + วันเวลาไทย จาก BigQuery"""
     bq_client = get_bq_client()
     
     if bq_client:
         try:
-            # ใช้ SAFE_CAST ป้องกัน Crash กรณี Schema บน BigQuery ไม่ตรง
             query = f"""
                 WITH Cleaned_MinMax AS (
                     SELECT 
@@ -154,17 +183,17 @@ def handle_get_stock():
                     GROUP BY exact_code, norm_code
                 )
                 SELECT 
-                    SAFE_CAST(s.item_code AS STRING) AS PROD_CD, 
-                    COALESCE(SAFE_CAST(s.item_name AS STRING), SAFE_CAST(p.item_name AS STRING), '') AS PROD_NM, 
-                    COALESCE(SAFE_CAST(s.stock_qty AS FLOAT64), 0.0) AS QTY, 
-                    COALESCE(SAFE_CAST(s.updated_at AS STRING), '') AS UPDATE_TIME, 
+                    CAST(s.item_code AS STRING) AS PROD_CD, 
+                    COALESCE(CAST(s.item_name AS STRING), CAST(p.item_name AS STRING)) AS PROD_NM, 
+                    s.stock_qty AS QTY, 
+                    COALESCE(
+                        FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', SAFE_CAST(s.updated_at AS TIMESTAMP), 'Asia/Bangkok'),
+                        CAST(s.updated_at AS STRING)
+                    ) AS UPDATE_TIME, 
                     COALESCE(m1.min_qty, m2.min_qty, SAFE_CAST(s.min_qty AS INT64), 0) AS MIN_QTY, 
                     COALESCE(m1.max_qty, m2.max_qty, SAFE_CAST(s.max_qty AS INT64), 0) AS MAX_QTY,
-                    '' AS LAST_SALE_DATE,
-                    0.0 AS MOVEMENT_QTY,
-                    '' AS LAST_MOVE_DATE,
-                    COALESCE(SAFE_CAST(s.wh_cd AS STRING), '') AS WH_CD,
-                    COALESCE(SAFE_CAST(s.wh_nm AS STRING), '') AS WH_NM
+                    CAST(COALESCE(s.wh_cd, '') AS STRING) AS WH_CD,
+                    CAST(COALESCE(s.wh_nm, '') AS STRING) AS WH_NM
                 FROM `{CONFIG['GCP_PROJECT']}.{CONFIG['BQ_DATASET']}.{CONFIG['BQ_TABLE']}` s
                 LEFT JOIN `{CONFIG['GCP_PROJECT']}.{CONFIG['BQ_DATASET']}.{CONFIG['BQ_MASTER_TABLE']}` p
                     ON UPPER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(CAST(s.item_code AS STRING)), r'\\.0+$', ''), r'[^a-zA-Z0-9]', '')) 
@@ -185,7 +214,7 @@ def handle_get_stock():
                 update_time = str(row.UPDATE_TIME) if row.UPDATE_TIME else ""
                 min_val = int(row.MIN_QTY) if row.MIN_QTY is not None else 0
                 max_val = int(row.MAX_QTY) if row.MAX_QTY is not None else 0
-
+                
                 stock_data.append({
                     "PROD_CD": prod_cd,
                     "prod_cd": prod_cd,
@@ -226,6 +255,7 @@ def handle_save_minmax_item():
     prod_nm = str(req_data.get("PROD_NM") or req_data.get("item_name") or "").strip()
     min_qty = float(req_data.get("MIN_QTY", req_data.get("min_qty", 0)))
     max_qty = float(req_data.get("MAX_QTY", req_data.get("max_qty", 0)))
+    wh_cd = clean_code(req_data.get("WH_CD") or req_data.get("wh_cd") or "00001")
 
     if not prod_cd:
         return jsonify({"status": "FAIL", "message": "ไม่พบรหัสสินค้า (PROD_CD)"}), 400
@@ -233,7 +263,7 @@ def handle_save_minmax_item():
     print(f"📡 บันทึก Min/Max รายชิ้น: {prod_cd} -> Min: {min_qty}, Max: {max_qty}")
 
     # 1. บันทึกลง ECOUNT
-    ecount_res = save_min_max_to_ecount([{"PROD_CD": prod_cd, "MIN_QTY": min_qty, "WH_CD": "00001"}])
+    ecount_res = save_min_max_to_ecount([{"PROD_CD": prod_cd, "MIN_QTY": min_qty, "WH_CD": wh_cd}])
 
     # 2. บันทึกลง BigQuery
     bq_client = get_bq_client()
@@ -256,13 +286,13 @@ def handle_save_minmax_item():
 
             update_stock_query = f"""
                 UPDATE `{CONFIG['GCP_PROJECT']}.{CONFIG['BQ_DATASET']}.{CONFIG['BQ_TABLE']}`
-                SET min_qty = {int(min_qty)}, max_qty = {int(max_qty)}, updated_at = CURRENT_TIMESTAMP()
+                SET min_qty = {int(min_qty)}, max_qty = {int(max_qty)}
                 WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(CAST(item_code AS STRING)), r'\\.0+$', ''), r'[^a-zA-Z0-9]', '')) 
                     = UPPER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM('{clean_cd_str}'), r'\\.0+$', ''), r'[^a-zA-Z0-9]', ''))
             """
             bq_client.query(update_stock_query).result()
             
-            print(f"✅ บันทึก BigQuery สำหรับสินค้า {prod_cd} เรียบร้อย")
+            print(f"✅ บันทึก/อัปเดต BigQuery สำหรับสินค้า {prod_cd} เรียบร้อย")
         except Exception as e:
             print(f"❌ บันทึกลง BigQuery ไม่สำเร็จ: {e}")
 
@@ -270,7 +300,7 @@ def handle_save_minmax_item():
 
 @app.route('/api/save-minmax-bulk', methods=['POST'])
 def handle_save_minmax_bulk():
-    """อัปเดต Min/Max สินค้าแบบกลุ่ม (อัปเดตทั้ง ECOUNT และ BigQuery แบบ Batch)"""
+    """อัปเดต Min/Max สินค้าแบบกลุ่ม (อัปเดตทั้ง ECOUNT และ BigQuery)"""
     req_data = request.json or {}
     items_to_update = req_data.get("items", [])
     
@@ -292,14 +322,11 @@ def handle_save_minmax_bulk():
                 success_count += len(chunk)
             time.sleep(0.3)
 
-    # 2. บันทึกลง BigQuery แบบ Batch (UPDATE CASE WHEN)
+    # 2. บันทึกลง BigQuery แบบ Batch
     bq_client = get_bq_client()
     if bq_client:
         try:
-            min_cases = []
-            max_cases = []
-            codes = []
-
+            min_cases, max_cases, codes = [], [], []
             for item in items_to_update:
                 p_cd = clean_code(item.get("PROD_CD") or item.get("item_code") or "").replace("'", "\\'")
                 mn_q = float(item.get("MIN_QTY", 0))
@@ -319,8 +346,7 @@ def handle_save_minmax_bulk():
                     UPDATE `{CONFIG['GCP_PROJECT']}.{CONFIG['BQ_DATASET']}.{CONFIG['BQ_TABLE']}`
                     SET 
                         min_qty = CASE {min_sql} ELSE min_qty END,
-                        max_qty = CASE {max_sql} ELSE max_qty END,
-                        updated_at = CURRENT_TIMESTAMP()
+                        max_qty = CASE {max_sql} ELSE max_qty END
                     WHERE item_code IN ({codes_sql})
                 """
                 bq_client.query(batch_query).result()
@@ -328,21 +354,24 @@ def handle_save_minmax_bulk():
         except Exception as e:
             print(f"❌ บันทึก Bulk ลง BigQuery ไม่สำเร็จ: {e}")
 
-    return jsonify({"status": "SUCCESS", "message": f"อัปเดตสำเร็จ {len(items_to_update)} รายการ"}), 200
+    return jsonify({"status": "SUCCESS", "message": f"อัปเดตสำเร็จ {success_count}/{len(items_to_update)} รายการ"}), 200
 
 # =====================================================================
-# 🔄 ระบบซิงค์ข้อมูลจาก ECOUNT ลง BigQuery
+# 🔄 ระบบซิงค์ข้อมูลจาก ECOUNT ลง BigQuery (Background Job)
 # =====================================================================
 def sync_current_stock():
     """ดึงข้อมูลสต็อกและสต็อกปลอดภัยจาก ECOUNT แล้วเขียนทับเข้า BigQuery"""
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🎬 เริ่มกระบวนการดึงข้อมูลจาก ECOUNT...")
+    tz_thai = timezone(timedelta(hours=7))
+    now_thai = datetime.now(tz_thai)
+    
+    print(f"[{now_thai.strftime('%H:%M:%S')}] 🎬 เริ่มกระบวนการดึงข้อมูลจาก ECOUNT...")
     
     session_id = get_ecount_session()
     if not session_id:
         print("❌ ยืนยันสิทธิ์ระบบ ECOUNT ล้มเหลว")
         return
     
-    today_str = datetime.now().strftime("%Y%m%d")
+    today_str = now_thai.strftime("%Y%m%d")
     
     # STEP 1: ดึงสต็อกคงเหลือปัจจุบันรายคลัง
     print("📡 1/2 กำลังโหลดสต็อกคงเหลือปัจจุบัน...")
@@ -390,8 +419,7 @@ def sync_current_stock():
     }
 
     bq_json_rows = []
-    thai_tz = timezone(timedelta(hours=7))
-    update_time_str = datetime.now(thai_tz).strftime("%Y-%m-%d %H:%M:%S")
+    update_time_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # STEP 3: แปลงข้อมูลสร้าง JSON Row
     for item in raw_stock_list:
@@ -430,7 +458,7 @@ def sync_current_stock():
     total_records = len(bq_json_rows)
     print(f"📦 ประกอบก้อนข้อมูลเสร็จแล้ว ยอดรวมทั้งสิ้น: {total_records} แถว")
 
-    # STEP 4: อัปเดตข้อมูลลง BigQuery
+    # STEP 4: อัปเดตข้อมูลลง BigQuery แบบ WRITE_TRUNCATE
     bq_client = get_bq_client()
     if bq_client:
         try:
@@ -444,8 +472,25 @@ def sync_current_stock():
         except Exception as e:
             print(f"⚠️ บันทึกลง BigQuery ขัดข้อง: {e}")
 
-    print(f"\n🎉 [เสร็จสิ้นเรียบร้อย!] ข้อมูลพร้อมใช้งานบน BigQuery แล้ว")
+    print(f"🎉 [เสร็จสิ้นเรียบร้อย!] ข้อมูลพร้อมใช้งานบน BigQuery แล้ว")
 
+# Initialize Background Scheduler (ทำงานทุกๆ 15 นาที)
+scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
+scheduler.add_job(func=sync_current_stock, trigger="interval", minutes=15)
+scheduler.start()
+
+# =====================================================================
+# 🚀 MAIN APPLICATION ENTRYPOINT
+# =====================================================================
 if __name__ == "__main__":
-    print(f"\n🚀 เซิร์ฟเวอร์เปิดใช้งานปกติ! รอรับคำสั่งที่พอร์ต {CONFIG['PORT']}...")
-    app.run(host="0.0.0.0", port=CONFIG["PORT"], debug=True)
+    print("🚀 กำลังเริ่มซิงค์ข้อมูลสต็อกรอบแรกเมื่อเปิดเซิร์ฟเวอร์...")
+    try:
+        sync_current_stock()
+    except Exception as e:
+        print(f"⚠️ การซิงค์รอบแรกขัดข้อง: {e}")
+
+    print(f"\n🚀 เซิร์ฟเวอร์พร้อมทำงาน! เปิดฟังที่พอร์ต {CONFIG['PORT']}...")
+    try:
+        app.run(host="0.0.0.0", port=CONFIG["PORT"], debug=False)
+    except (KeyboardInterrupt, SystemExit):
+        scheduler.shutdown()
