@@ -1,8 +1,11 @@
 // ==========================================
 // Config & Global Variables
 // ==========================================
-// URL ชี้ไปยัง Python API Server สำหรับเชื่อมต่อ BigQuery / ECOUNT (แก้ไขรูปแบบ URL ให้ถูกต้อง)
-const PYTHON_API_URL = "https://spindle-unusable-clinic.ngrok-free.dev"; 
+// ตรวจสอบ Domain อัตโนมัติ: ถ้าเปิดบน Local (127.0.0.1 หรือ localhost) ให้ยิงไป Port 8000
+// ถ้าเปิดบน Production ให้ยิงไป Render อัตโนมัติ
+const PYTHON_API_URL = (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost")
+    ? "http://127.0.0.1:8000"
+    : "https://rst-ecount-sync.onrender.com";
 
 const EXCLUDED_KEYWORDS = [
     "***สินค้าซ่อม***",
@@ -99,12 +102,7 @@ async function fetchStockData() {
     if (refreshIcon) refreshIcon.classList.add("fa-spin");
 
     try {
-        // เพิ่ม Header ข้ามหน้าเตือนของ ngrok เพื่อแก้ปัญหา fetch ข้อมูลไม่มา
-        const response = await fetch(`${PYTHON_API_URL}/api/get-stock`, {
-            headers: {
-                "ngrok-skip-browser-warning": "true"
-            }
-        });
+        const response = await fetch(`${PYTHON_API_URL}/api/get-stock`);
         if (!response.ok) throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Python/BigQuery ได้");
         
         const data = await response.json();

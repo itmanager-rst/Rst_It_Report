@@ -51,7 +51,17 @@ if os.path.exists(CONFIG["KEY_FILE"]):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = CONFIG["KEY_FILE"]
 
 app = Flask(__name__)
-CORS(app)  # รองรับ CORS สำหรับ Frontend / Github Pages / Cross-Origin requests
+
+# ตั้งค่า CORS ให้รองรับ Cross-Origin จาก GitHub Pages และเปิดให้รองรับ Preflight (OPTIONS)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+@app.after_request
+def after_request(response):
+    """ปลดล็อก CORS Headers สำหรับทุก Endpoint เพื่อรองรับการเรียกผ่าน Web Browser/GitHub Pages"""
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 # =====================================================================
 # 🛠️ HELPER FUNCTIONS & BIGQUERY CLIENT
@@ -164,13 +174,17 @@ def health_check():
         "timestamp": datetime.now(timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M:%S")
     }), 200
 
-@app.route('/api/get-stock', methods=['GET'])
+@app.route('/api/get-stock', methods=['GET', 'OPTIONS'])
 def handle_get_stock():
     """ดึงข้อมูล สต็อก + Min/Max + วันเวลาไทย จาก BigQuery"""
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
     bq_client = get_bq_client()
     
     if bq_client:
         try:
+            # 📌 ปรับปรุง SQL Query: แปลง Type (Cast) ของทุกพารามิเตอร์ใน COALESCE ให้ตรงกันอย่างสมบูรณ์
             query = f"""
                 WITH Cleaned_MinMax AS (
                     SELECT 
@@ -184,16 +198,17 @@ def handle_get_stock():
                 )
                 SELECT 
                     CAST(s.item_code AS STRING) AS PROD_CD, 
-                    COALESCE(CAST(s.item_name AS STRING), CAST(p.item_name AS STRING)) AS PROD_NM, 
-                    s.stock_qty AS QTY, 
+                    COALESCE(CAST(s.item_name AS STRING), CAST(p.item_name AS STRING), '') AS PROD_NM, 
+                    SAFE_CAST(s.stock_qty AS FLOAT64) AS QTY, 
                     COALESCE(
                         FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', SAFE_CAST(s.updated_at AS TIMESTAMP), 'Asia/Bangkok'),
-                        CAST(s.updated_at AS STRING)
+                        CAST(s.updated_at AS STRING),
+                        ''
                     ) AS UPDATE_TIME, 
-                    COALESCE(m1.min_qty, m2.min_qty, SAFE_CAST(s.min_qty AS INT64), 0) AS MIN_QTY, 
-                    COALESCE(m1.max_qty, m2.max_qty, SAFE_CAST(s.max_qty AS INT64), 0) AS MAX_QTY,
-                    CAST(COALESCE(s.wh_cd, '') AS STRING) AS WH_CD,
-                    CAST(COALESCE(s.wh_nm, '') AS STRING) AS WH_NM
+                    COALESCE(SAFE_CAST(m1.min_qty AS INT64), SAFE_CAST(m2.min_qty AS INT64), SAFE_CAST(s.min_qty AS INT64), 0) AS MIN_QTY, 
+                    COALESCE(SAFE_CAST(m1.max_qty AS INT64), SAFE_CAST(m2.max_qty AS INT64), SAFE_CAST(s.max_qty AS INT64), 0) AS MAX_QTY,
+                    CAST(COALESCE(CAST(s.wh_cd AS STRING), '') AS STRING) AS WH_CD,
+                    CAST(COALESCE(CAST(s.wh_nm AS STRING), '') AS STRING) AS WH_NM
                 FROM `{CONFIG['GCP_PROJECT']}.{CONFIG['BQ_DATASET']}.{CONFIG['BQ_TABLE']}` s
                 LEFT JOIN `{CONFIG['GCP_PROJECT']}.{CONFIG['BQ_DATASET']}.{CONFIG['BQ_MASTER_TABLE']}` p
                     ON UPPER(REGEXP_REPLACE(REGEXP_REPLACE(TRIM(CAST(s.item_code AS STRING)), r'\\.0+$', ''), r'[^a-zA-Z0-9]', '')) 
@@ -247,9 +262,12 @@ def handle_get_stock():
 
     return jsonify([]), 200
 
-@app.route('/api/save-minmax-item', methods=['POST'])
+@app.route('/api/save-minmax-item', methods=['POST', 'OPTIONS'])
 def handle_save_minmax_item():
     """อัปเดต Min/Max สินค้ารายชิ้น (อัปเดตทั้ง ECOUNT และ BigQuery)"""
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
     req_data = request.json or {}
     prod_cd = clean_code(req_data.get("PROD_CD") or req_data.get("item_code") or req_data.get("prod_cd"))
     prod_nm = str(req_data.get("PROD_NM") or req_data.get("item_name") or "").strip()
@@ -298,9 +316,12 @@ def handle_save_minmax_item():
 
     return jsonify({"status": "SUCCESS", "message": f"อัปเดต Min/Max ของ {prod_cd} เรียบร้อยแล้ว", "ecount": ecount_res}), 200
 
-@app.route('/api/save-minmax-bulk', methods=['POST'])
+@app.route('/api/save-minmax-bulk', methods=['POST', 'OPTIONS'])
 def handle_save_minmax_bulk():
     """อัปเดต Min/Max สินค้าแบบกลุ่ม (อัปเดตทั้ง ECOUNT และ BigQuery)"""
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
     req_data = request.json or {}
     items_to_update = req_data.get("items", [])
     
