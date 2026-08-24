@@ -425,7 +425,7 @@ def extract_receipt_data(image_bytes: bytes) -> list:
     for attempt in range(max_retries):
         try:
             response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash', # ปรับไปใช้ 2.5-flash มีความเสถียรและเร็วสูง
+                model='gemini-1.5-flash', # ปรับเปลี่ยนเป็น gemini-1.5-flash แล้ว
                 contents=[image, prompt],
                 config=types.GenerateContentConfig(response_mime_type="application/json")
             )
