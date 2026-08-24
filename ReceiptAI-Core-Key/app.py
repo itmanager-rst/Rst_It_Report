@@ -172,11 +172,9 @@ def validate_ecount_config() -> dict:
 
 def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") -> list:
     ecount_config = validate_ecount_config()
-    
-    # 📌 แก้ไขจุดนี้: ดึงและแปลงวันที่ใบเสร็จเพื่อใส่ใน Column A (ถ้าไม่มีใช้วันที่ปัจจุบัน)
-    raw_date = extracted_data.get("date", "")
-    parsed_date_str = format_ecount_date(raw_date)
-    formatted_date = f"{parsed_date_str[:4]}-{parsed_date_str[4:6]}-{parsed_date_str[6:]}" if len(parsed_date_str) == 8 else parsed_date_str
+    # The Payment Voucher upload template leaves this blank so ECOUNT assigns
+    # the current accounting date.
+    ecount_date = ""
     
     try:
         amount = float(extracted_data.get("total", 0))
@@ -187,6 +185,8 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     
     vendor_name = extracted_data.get("vendor_name", "-")
     tax_id = extracted_data.get("tax_id", "-")
+    # Keep ECOUNT identifiers as strings so leading zeroes survive Google
+    # Sheets and Web Upload (for example 00001 and 00006).
     customer_code = normalize_ecount_code(
         generate_customer_code(vendor_name, tax_id), width=5
     )
@@ -216,20 +216,20 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     remark = " ".join(remark_parts) if remark_parts else f"{vendor_name} - "
     
     return [
-        formatted_date,                       # Column A: ใส่ วันที่ ลงใน Google Sheet 
-        sequence,                             # Column B: ลำดับ
-        receipt_no,                           # Column C: เลขที่ใบสำคัญบัญชี
-        ecount_config["finance"],             # Column D: การเงิน
-        ecount_config["withdraw_account"],    # Column E: รหัสบัญชีเงินถอน
-        ecount_config["expense_account"],     # Column F: รหัสบัญชี
-        customer_code,                        # Column G: รหัสลูกค้า/ผู้ขาย
-        vendor_name,                          # Column H: ชื่อลูกค้า/ผู้ขาย
-        amount,                               # Column I: จำนวนเงิน
-        0,                                    # Column J: หัก ณ ที่จ่าย
-        0,                                    # Column K: ค่าธรรมเนียม
-        remark,                               # Column L: หมายเหตุ
-        ecount_config["project"],             # Column M: โครงการ
-        department_code,                      # Column N: แผนก
+        ecount_date,                          
+        sequence,                             
+        receipt_no,                           
+        ecount_config["finance"],             
+        ecount_config["withdraw_account"],    
+        ecount_config["expense_account"],     
+        customer_code,                        
+        vendor_name,                          
+        amount,                               
+        0,                                    
+        0,                                    
+        remark,                               
+        ecount_config["project"],             
+        department_code,
     ]
 
 
@@ -306,12 +306,16 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         invoice_payload = {
             "InvoiceAutoList": [{
                 "BulkDatas": {
+                    # This ECOUNT company currently rejects an explicit API date.
+                    # Blank lets ECOUNT use its current document date.
                     "TRX_DATE": trx_date if ECOUNT_USE_RECEIPT_DATE else "",
                     "ACCT_DOC_NO": receipt_no,                          
                     "TAX_GUBUN": ECOUNT_TAX_GUBUN,
                     "S_NO": "",
                     "CUST": customer_code,                              
                     "CUST_DES": vendor_name,                            
+                    # Payment Vouchers in this company are saved without a
+                    # tax type; the full receipt total is the voucher amount.
                     "SUPPLY_AMT": f"{total_amount:.2f}",
                     "VAT_AMT": "0",
                     "ACCT_NO": ecount_config["withdraw_account"],       
@@ -351,7 +355,6 @@ def upload_image_to_drive(image_bytes: bytes, filename: str) -> str:
         drive_service = build('drive', 'v3', credentials=creds)
         file_metadata = {'name': filename, 'parents': [GOOGLE_DRIVE_FOLDER_ID]}
         media = MediaIoBaseUpload(io.BytesIO(image_bytes), mimetype='image/jpeg')
-        # เพิ่ม supportsAllDrives=True ทั้ง create และ permissions เพื่อรองรับ Shared Drive / Shared Folder
         file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink', supportsAllDrives=True).execute()
         drive_service.permissions().create(fileId=file.get('id'), body={'type': 'anyone', 'role': 'reader'}, supportsAllDrives=True).execute()
         return file.get('webViewLink', '-')
@@ -387,13 +390,10 @@ def generate_tax_report_summary() -> str:
         return f"เกิดข้อผิดพลาดในการดึงรายงานภาษี: {str(e)}"
 
 
-def extract_receipt_data(image_bytes: bytes) -> list:
+def extract_receipt_data(image_bytes: bytes) -> dict:
     image = Image.open(io.BytesIO(image_bytes))
     prompt = """
-    คุณคือผู้เชี่ยวชาญด้านการบัญชีและภาษีอากร โปรดสกัดข้อมูลจากรูปภาพใบเสร็จ/ใบกำกับภาษีนี้ (ภาษาไทย)
-    หมายเหตุ: ในรูปภาพ 1 รูป อาจจะมีใบเสร็จซ้อนกันหรือวางอยู่หลายใบ โปรดแกะข้อมูลแยกทีละใบเสร็จให้ครบถ้วนทุกใบ!
-
-    รายละเอียดของใบเสร็จแต่ละใบ:
+    คุณคือผู้เชี่ยวชาญด้านการบัญชีและภาษีอากร โปรดสกัดข้อมูลจากรูปภาพใบเสร็จ/ใบกำกับภาษีนี้ (ภาษาไทย):
     - date: วันที่ตามใบเสร็จ ฟอร์แมต YYYY-MM-DD
     - vendor_name: ชื่อร้านค้า/ผู้ขาย/สถานประกอบการ
     - tax_id: เลขประจำตัวผู้เสียภาษี 13 หลัก (ถ้ามี หากไม่มีให้ระบุ "-")
@@ -404,41 +404,25 @@ def extract_receipt_data(image_bytes: bytes) -> list:
     - total: ยอดรวมสุทธิ (ตัวเลข float)
     - category: หมวดหมู่รายจ่าย
 
-    ตอบกลับเฉพาะ JSON structure ที่เป็น Array/List ของ Object ดังนี้เท่านั้น:
-    [
-        {
-            "date": "YYYY-MM-DD",
-            "vendor_name": "...",
-            "tax_id": "...",
-            "receipt_no": "...",
-            "items": "...",
-            "subtotal": 0.0,
-            "vat": 0.0,
-            "total": 0.0,
-            "category": "..."
-        }
-    ]
+    ตอบกลับเฉพาะ JSON structure นี้เท่านั้น:
+    {
+        "date": "YYYY-MM-DD",
+        "vendor_name": "...",
+        "tax_id": "...",
+        "receipt_no": "...",
+        "items": "...",
+        "subtotal": 0.0,
+        "vat": 0.0,
+        "total": 0.0,
+        "category": "..."
+    }
     """
-    
-    # เพิ่มระบบ Retry หากเกิด 503 (Service Unavailable)
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = gemini_client.models.generate_content(
-                model='gemini-1.5-flash', # ปรับเปลี่ยนเป็น gemini-1.5-flash แล้ว
-                contents=[image, prompt],
-                config=types.GenerateContentConfig(response_mime_type="application/json")
-            )
-            data = json.loads(response.text.strip())
-            # ถ้า AI คืนค่ามาเป็น dict เดี่ยว ให้ครอบด้วย list เพื่อความสม่ำเสมอ
-            if isinstance(data, dict):
-                return [data]
-            return data
-        except Exception as e:
-            logger.warning(f"Retry Gemini API attempt {attempt+1}/{max_retries} due to: {e}")
-            if attempt == max_retries - 1:
-                raise e
-            time.sleep(2)
+    response = gemini_client.models.generate_content(
+        model='gemini-3.6-flash',
+        contents=[image, prompt],
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text.strip())
 
 
 def process_image_event(event: MessageEvent):
@@ -452,14 +436,14 @@ def process_image_event(event: MessageEvent):
         try:
             image_bytes = line_bot_blob_api.get_message_content(message_id=message_id)
             
-            # 1. Drive Upload
+            # 1. Drive
             drive_filename = f"receipt_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
             drive_link = upload_image_to_drive(image_bytes, drive_filename)
             
-            # 2. Gemini Extraction (อ่านหลายใบเสร็จได้)
-            receipts_data = extract_receipt_data(image_bytes)
+            # 2. Gemini
+            extracted_data = extract_receipt_data(image_bytes)
             
-            # 3. Google Sheet & ECOUNT Processing
+            # 3. Google Sheet
             sheet = get_google_sheet()
             existing_headers = sheet.row_values(1)
             if existing_headers[:len(ECOUNT_HEADERS)] != ECOUNT_HEADERS:
@@ -470,48 +454,46 @@ def process_image_event(event: MessageEvent):
             for existing_row in existing_rows:
                 if len(existing_row) > 1 and str(existing_row[1]).strip().isdigit():
                     sequence_values.append(int(existing_row[1]))
+            next_sequence = max(sequence_values, default=0) + 1
             
-            current_sequence = max(sequence_values, default=0)
+            row = build_ecount_row(extracted_data, next_sequence, drive_link)
+            next_row = len(existing_rows) + 2
+            sheet.format(f"G{next_row}", {"numberFormat": {"type": "TEXT"}})
+            sheet.format(f"N{next_row}", {"numberFormat": {"type": "TEXT"}})
+            sheet.append_row(row, value_input_option="RAW")
+            logger.info(f"✅ Saved row {next_sequence} to Google Sheet")
             
-            reply_lines = []
-            reply_lines.append(f"🟢 **ตรวจพบเอกสารทั้งหมด {len(receipts_data)} ใบ**\n")
+            if ECOUNT_DIRECT_SAVE_ENABLED:
+                ecount_result = post_to_ecount_erp(extracted_data, next_sequence)
 
-            # วน Loop ทำงานทุกใบเสร็จที่ AI ตรวจพบในรูป
-            for idx, extracted_data in enumerate(receipts_data, start=1):
-                current_sequence += 1
-                row = build_ecount_row(extracted_data, current_sequence, drive_link)
-                
-                # Append row เข้า Google Sheet
-                next_row = len(sheet.get_all_values()) + 1
-                sheet.format(f"G{next_row}", {"numberFormat": {"type": "TEXT"}})
-                sheet.format(f"N{next_row}", {"numberFormat": {"type": "TEXT"}})
-                sheet.append_row(row, value_input_option="USER_ENTERED")
-                logger.info(f"✅ Saved row {current_sequence} to Google Sheet")
-
-                ecount_status_str = ""
-                if ECOUNT_DIRECT_SAVE_ENABLED:
-                    ecount_result = post_to_ecount_erp(extracted_data, current_sequence)
-
-                    if ecount_result.get("success"):
-                        ecount_status_str = f"✅ ECOUNT Slip: {ecount_result.get('slip_no')}"
-                    else:
-                        ecount_status_str = f"⚠️ ECOUNT Error: {ecount_result.get('message')}"
+                if ecount_result.get("success"):
+                    ecount_status_str = (
+                        "✅ บันทึก ECOUNT สมุดบัญชีรายวันแล้ว "
+                        f"(เลขที่สลิป: {ecount_result.get('slip_no')})"
+                    )
                 else:
-                    ecount_status_str = "✅ Google Sheet เรียบร้อย"
-
-                reply_lines.append(
-                    f"**รายการที่ {current_sequence}**\n"
-                    f"ร้านค้า: {extracted_data.get('vendor_name')}\n"
-                    f"📦 สินค้า: {extracted_data.get('items', '-')}\n"
-                    f"ยอดรวมสุทธิ: {parse_amount(extracted_data.get('total')):,.2f} บาท\n"
-                    f"สถานะ: {ecount_status_str}\n"
+                    ecount_status_str = (
+                        "⚠️ บันทึก Google Sheet แล้ว แต่ ECOUNT ไม่สำเร็จ: "
+                        f"{ecount_result.get('message')}"
+                    )
+            else:
+                ecount_status_str = (
+                    "✅ บันทึก Google Sheet รูปแบบใบสำคัญจ่ายแล้ว "
+                    "พร้อมนำเข้าที่ ECOUNT → เว็บอัปโหลด → ใบสำคัญทั่วไป"
                 )
-            
-            reply_text = "\n".join(reply_lines)
+
+            reply_text = (
+                f"🟢 **บันทึกรายการที่ {next_sequence} เรียบร้อยครับ!**\n\n"
+                f"ร้านค้า: {extracted_data.get('vendor_name')}\n"
+                f"📦 สินค้า: {extracted_data.get('items', '-')}\n"
+                f"รหัสลูกค้า: {row[6]} (สำหรับ ECOUNT)\n"
+                f"ยอดรวมสุทธิ: {extracted_data.get('total'):,.2f} บาท\n\n"
+                f"{ecount_status_str}"
+            )
             
         except Exception as e:
             logger.error(f"❌ Error processing image: {e}", exc_info=True)
-            reply_text = f"❌ เกิดข้อผิดพลาด: {str(e)[:150]}"
+            reply_text = f"❌ เกิดข้อผิดพลาด: {str(e)[:100]}"
             
         line_bot_api.reply_message(
             ReplyMessageRequest(
