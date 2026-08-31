@@ -53,7 +53,7 @@ CONFIG = {
     "ALLOW_ECOUNT_PO_LIST": str(os.getenv("ALLOW_ECOUNT_PO_LIST", "true")).strip().lower() in {"1", "true", "yes", "y"}
 }
 
-# 💡 ฟังก์ชันจัดการ Login และขอ Session ECOUNT
+# 💡 ฟังก์ชันจัดการ Login และขอ Session ECOUNT (เพิ่ม Log ตรวจสอบและ Auto-Clear Cache)
 def get_ecount_session(force_refresh: bool = False):
     global ECOUNT_SESSION_ID, ECOUNT_HOST_URL
 
@@ -66,6 +66,7 @@ def get_ecount_session(force_refresh: bool = False):
 
     api_key = CONFIG["ECOUNT_API_KEY"]
     if not api_key:
+        print("[ECOUNT DEBUG] ECOUNT_API_KEY is missing or empty!")
         return None, None
 
     login_url = f"https://oapi{CONFIG['ZONE'].lower()}.ecount.com/OAPI/V2/OAPILogin"
@@ -77,13 +78,24 @@ def get_ecount_session(force_refresh: bool = False):
         "ZONE": CONFIG["ZONE"].upper()
     }
     try:
-        res = requests.post(login_url, json=login_payload, timeout=30).json()
-        datas = res.get("Data", {}).get("Datas", {})
-        ECOUNT_SESSION_ID = datas.get("SESSION_ID")
-        ECOUNT_HOST_URL = datas.get("HOST_URL")
-        return ECOUNT_SESSION_ID, ECOUNT_HOST_URL
+        response = requests.post(login_url, json=login_payload, timeout=30)
+        res = response.json()
+        print(f"[ECOUNT LOGIN RESPONSE]: Status={res.get('Status')}, Errors={res.get('Errors')}")
+        
+        if str(res.get("Status")) == "200":
+            datas = res.get("Data", {}).get("Datas", {})
+            ECOUNT_SESSION_ID = datas.get("SESSION_ID")
+            ECOUNT_HOST_URL = datas.get("HOST_URL")
+            return ECOUNT_SESSION_ID, ECOUNT_HOST_URL
+        else:
+            ECOUNT_SESSION_ID = None
+            ECOUNT_HOST_URL = None
+            print(f"[ECOUNT LOGIN FAILED]: {res.get('Errors')}")
+            return None, None
     except Exception as e:
-        print(f"Login Exception: {e}")
+        ECOUNT_SESSION_ID = None
+        ECOUNT_HOST_URL = None
+        print(f"[ECOUNT LOGIN EXCEPTION]: {e}")
         return None, None
 
 # --- Pydantic Schemas ---
