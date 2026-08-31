@@ -305,9 +305,9 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         invoice_payload = {
             "InvoiceAutoList": [{
                 "BulkDatas": {
-                    "TRX_DATE": trx_date,  # ส่งวันที่สกัดจากใบเสร็จเข้า ECOUNT โดยตรงเสมอ
+                    "TRX_DATE": trx_date if ECOUNT_USE_RECEIPT_DATE else "",
                     "ACCT_DOC_NO": receipt_no,                          
-                    "TAX_GUBUN": ECOUNT_TAX_GUBUN,    
+                    "TAX_GUBUN": ECOUNT_TAX_GUBUN,
                     "S_NO": "",
                     "CUST": customer_code,                              
                     "CUST_DES": vendor_name,                            
