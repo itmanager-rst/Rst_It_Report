@@ -78,6 +78,9 @@ ECOUNT_SESSION_ID = ""
 ECOUNT_SESSION_CREATED_AT = 0.0
 ECOUNT_SESSION_CACHE_SECONDS = 600
 
+# Cache ป้องกันประมวลผล LINE Message ID ซ้ำซ้อน
+PROCESSED_MESSAGE_IDS = set()
+
 ECOUNT_HEADERS = [
     "วันที่", "ลำดับ", "เลขที่ใบสำคัญบัญชี", "การเงิน", "รหัสบัญชีเงินถอน",
     "รหัสบัญชี", "รหัสลูกค้า/ผู้ขาย", "ชื่อลูกค้า/ผู้ขาย", "จำนวนเงิน",
@@ -103,11 +106,26 @@ SCOPE = [
 def get_google_credentials():
     return Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
 
-def get_google_sheet():
+def get_google_sheet(sheet_name: str = None):
+    """
+    ดึงหรือสร้าง Sheet Tab รายวันตามวันที่ (รูปแบบ YYYY-MM-DD)
+    """
     creds = get_google_credentials()
     client = gspread.authorize(creds)
-    sheet = client.open_by_key(GOOGLE_SHEET_ID).worksheet("Receipt")
-    return sheet
+    spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+
+    if not sheet_name:
+        sheet_name = datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        worksheet = spreadsheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # ถ้ายังไม่มี Sheet Tab ของวันนี้ ให้สร้างใหม่ และใส่ Header
+        worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=20)
+        worksheet.update("A1:N1", [ECOUNT_HEADERS])
+        logger.info(f"✨ Created new worksheet tab: {sheet_name}")
+
+    return worksheet
 
 
 def normalize_ecount_code(value, default: str = "", width: int = 5) -> str:
@@ -130,11 +148,10 @@ def format_ecount_date(value) -> str:
         logger.warning("Invalid or missing receipt date %r; using today's date", raw_value)
         parsed_date = datetime.now()
 
-    # Thai receipts sometimes contain a Buddhist Era year.
     if parsed_date.year >= 2400:
         parsed_date = parsed_date.replace(year=parsed_date.year - 543)
 
-    return parsed_date.strftime("%Y%m%d")
+    return parsed_date.strftime("%Y-%m-%d")
 
 
 def parse_amount(value, default: float = 0.0) -> float:
@@ -172,9 +189,8 @@ def validate_ecount_config() -> dict:
 def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") -> list:
     ecount_config = validate_ecount_config()
     
-    # ดึงวันที่จากใบเสร็จและแปลงเป็นรูปแบบ YYYYMMDD สำหรับ ECOUNT
     receipt_date_raw = extracted_data.get("date")
-    ecount_date = format_ecount_date(receipt_date_raw)
+    ecount_date_sheet = format_ecount_date(receipt_date_raw).replace("-", "")
     
     try:
         amount = float(extracted_data.get("total", 0))
@@ -215,7 +231,7 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     remark = " ".join(remark_parts) if remark_parts else f"{vendor_name} - "
     
     return [
-        ecount_date,                          
+        ecount_date_sheet,                    
         sequence,                             
         receipt_no,                           
         ecount_config["finance"],             
@@ -360,10 +376,11 @@ def upload_image_to_drive(image_bytes: bytes, filename: str) -> str:
 
 def generate_tax_report_summary() -> str:
     try:
-        sheet = get_google_sheet()
+        today_sheet_name = datetime.now().strftime("%Y-%m-%d")
+        sheet = get_google_sheet(today_sheet_name)
         records = sheet.get_all_records()
         if not records:
-            return "📊 ยังไม่มีรายการบันทึกใบกำกับภาษีในระบบครับ"
+            return f"📊 ยังไม่มีรายการบันทึกใบกำกับภาษีในประจำวันที่ {today_sheet_name} ครับ"
             
         total_sum = 0.0
         total_items = len(records)
@@ -374,12 +391,12 @@ def generate_tax_report_summary() -> str:
                 continue
 
         return (
-            "📑 **สรุปรายงานภาษีซื้อ (สำหรับยื่น ภ.พ.30)**\n"
+            f"📑 **สรุปรายการประจำวันที่ {today_sheet_name}**\n"
             f"--------------------------------\n"
-            f"จำนวนเอกสารทั้งหมด: {total_items} ใบ\n"
-            f"💰 ยอดรวมสุทธิทั้งสิ้น: {total_sum:,.2f} บาท\n"
+            f"จำนวนเอกสารวันนี้: {total_items} ใบ\n"
+            f"💰 ยอดรวมสุทธิวันนี้: {total_sum:,.2f} บาท\n"
             f"--------------------------------\n"
-            f"💡 สามารถดูรูปภาพใบกำกับภาษีฉบับจริงได้จากลิงก์ใน Google Sheet ครับ"
+            f"💡 ดูรูปภาพและข้อมูลเต็มได้ที่ Sheet Tab: [{today_sheet_name}] ครับ"
         )
     except Exception as e:
         return f"เกิดข้อผิดพลาดในการดึงรายงานภาษี: {str(e)}"
@@ -412,18 +429,38 @@ def extract_receipt_data(image_bytes: bytes) -> dict:
         "category": "..."
     }
     """
-    response = gemini_client.models.generate_content(
-        model='gemini-3.6-flash',
-        contents=[image, prompt],
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-    return json.loads(response.text.strip())
+    
+    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash']
+
+    for model_name in models_to_try:
+        for attempt in range(3):
+            try:
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=[image, prompt],
+                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                )
+                return json.loads(response.text.strip())
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} with {model_name} failed: {e}")
+                if attempt < 2:
+                    time.sleep(2)
+
+    raise RuntimeError("Gemini API ไม่พร้อมใช้งานชั่วคราว กรุณาลองส่งรูปใหม่อีกครั้งใน 1-2 นาทีครับ")
 
 
 def process_image_event(event: MessageEvent):
     reply_token = event.reply_token
     message_id = event.message.id
     
+    if message_id in PROCESSED_MESSAGE_IDS:
+        logger.warning(f"⚠️ Duplicate message_id detected: {message_id}, skipping.")
+        return
+    
+    PROCESSED_MESSAGE_IDS.add(message_id)
+    if len(PROCESSED_MESSAGE_IDS) > 1000:
+        PROCESSED_MESSAGE_IDS.pop()
+
     with ApiClient(configuration) as api_client:
         line_bot_blob_api = MessagingApiBlob(api_client)
         line_bot_api = MessagingApi(api_client)
@@ -438,8 +475,10 @@ def process_image_event(event: MessageEvent):
             # 2. Gemini
             extracted_data = extract_receipt_data(image_bytes)
             
-            # 3. Google Sheet
-            sheet = get_google_sheet()
+            # 3. เลือก Sheet Tab แยกตามวันที่ของใบเสร็จ (หรือวันที่ปัจจุบัน)
+            receipt_date = format_ecount_date(extracted_data.get("date"))
+            sheet = get_google_sheet(sheet_name=receipt_date)
+            
             existing_headers = sheet.row_values(1)
             if existing_headers[:len(ECOUNT_HEADERS)] != ECOUNT_HEADERS:
                 sheet.update("A1:N1", [ECOUNT_HEADERS])
@@ -449,6 +488,8 @@ def process_image_event(event: MessageEvent):
             for existing_row in existing_rows:
                 if len(existing_row) > 1 and str(existing_row[1]).strip().isdigit():
                     sequence_values.append(int(existing_row[1]))
+            
+            # นับลำดับใหม่ของวันนั้นๆ (เริ่ม 1 ใหม่ในทุก Sheet Tab)
             next_sequence = max(sequence_values, default=0) + 1
             
             row = build_ecount_row(extracted_data, next_sequence, drive_link)
@@ -457,7 +498,7 @@ def process_image_event(event: MessageEvent):
             sheet.format(f"G{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.format(f"N{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.append_row(row, value_input_option="RAW")
-            logger.info(f"✅ Saved row {next_sequence} to Google Sheet")
+            logger.info(f"✅ Saved row {next_sequence} to Google Sheet Tab: {receipt_date}")
             
             if ECOUNT_DIRECT_SAVE_ENABLED:
                 ecount_result = post_to_ecount_erp(extracted_data, next_sequence)
@@ -479,7 +520,7 @@ def process_image_event(event: MessageEvent):
                 )
 
             reply_text = (
-                f"🟢 **บันทึกรายการที่ {next_sequence} เรียบร้อยครับ!**\n\n"
+                f"🟢 **บันทึกรายการที่ {next_sequence} (แท็บ {receipt_date}) เรียบร้อยครับ!**\n\n"
                 f"📅 วันที่: {extracted_data.get('date', '-')}\n"
                 f"ร้านค้า: {extracted_data.get('vendor_name')}\n"
                 f"📦 สินค้า: {extracted_data.get('items', '-')}\n"
