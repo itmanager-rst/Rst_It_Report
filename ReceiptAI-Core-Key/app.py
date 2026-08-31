@@ -122,7 +122,8 @@ def get_google_sheet(sheet_name: str = None):
     except gspread.exceptions.WorksheetNotFound:
         # ถ้ายังไม่มี Sheet Tab ของวันนี้ ให้สร้างใหม่ และใส่ Header
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=20)
-        worksheet.update("A1:N1", [ECOUNT_HEADERS])
+        time.sleep(1) # ป้องกัน Race condition กับ API
+        worksheet.update(range_name="A1:N1", values=[ECOUNT_HEADERS])
         logger.info(f"✨ Created new worksheet tab: {sheet_name}")
 
     return worksheet
@@ -481,7 +482,7 @@ def process_image_event(event: MessageEvent):
             
             existing_headers = sheet.row_values(1)
             if existing_headers[:len(ECOUNT_HEADERS)] != ECOUNT_HEADERS:
-                sheet.update("A1:N1", [ECOUNT_HEADERS])
+                sheet.update(range_name="A1:N1", values=[ECOUNT_HEADERS])
 
             existing_rows = sheet.get_all_values()[1:]
             sequence_values = []
