@@ -78,9 +78,6 @@ ECOUNT_SESSION_ID = ""
 ECOUNT_SESSION_CREATED_AT = 0.0
 ECOUNT_SESSION_CACHE_SECONDS = 600
 
-# Cache ป้องกันประมวลผล LINE Message ID ซ้ำซ้อน
-PROCESSED_MESSAGE_IDS = set()
-
 ECOUNT_HEADERS = [
     "วันที่", "ลำดับ", "เลขที่ใบสำคัญบัญชี", "การเงิน", "รหัสบัญชีเงินถอน",
     "รหัสบัญชี", "รหัสลูกค้า/ผู้ขาย", "ชื่อลูกค้า/ผู้ขาย", "จำนวนเงิน",
@@ -137,8 +134,7 @@ def format_ecount_date(value) -> str:
     if parsed_date.year >= 2400:
         parsed_date = parsed_date.replace(year=parsed_date.year - 543)
 
-    # ส่งกลับรูปแบบ YYYY-MM-DD สำหรับ ECOUNT API SaveInvoiceAuto
-    return parsed_date.strftime("%Y-%m-%d")
+    return parsed_date.strftime("%Y%m%d")
 
 
 def parse_amount(value, default: float = 0.0) -> float:
@@ -176,9 +172,9 @@ def validate_ecount_config() -> dict:
 def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") -> list:
     ecount_config = validate_ecount_config()
     
-    # ดึงวันที่จากใบเสร็จ และแปลงเป็นรูปแบบ YYYYMMDD สำหรับการอัปโหลดไฟล์ใน Google Sheet
+    # ดึงวันที่จากใบเสร็จและแปลงเป็นรูปแบบ YYYYMMDD สำหรับ ECOUNT
     receipt_date_raw = extracted_data.get("date")
-    ecount_date_sheet = format_ecount_date(receipt_date_raw).replace("-", "")
+    ecount_date = format_ecount_date(receipt_date_raw)
     
     try:
         amount = float(extracted_data.get("total", 0))
@@ -219,7 +215,7 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     remark = " ".join(remark_parts) if remark_parts else f"{vendor_name} - "
     
     return [
-        ecount_date_sheet,                    
+        ecount_date,                          
         sequence,                             
         receipt_no,                           
         ecount_config["finance"],             
@@ -300,7 +296,7 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         customer_code = generate_customer_code(vendor_name, tax_id)
         
         total_amount = parse_amount(extracted_data.get("total"))
-        trx_date = format_ecount_date(extracted_data.get("date"))  # คืนค่า YYYY-MM-DD
+        trx_date = format_ecount_date(extracted_data.get("date"))
         receipt_no = extracted_data.get("receipt_no", "")
         remark = extracted_data.get("items") or vendor_name
 
@@ -416,40 +412,18 @@ def extract_receipt_data(image_bytes: bytes) -> dict:
         "category": "..."
     }
     """
-    
-    # โมเดลหลัก และโมเดลสำรองกรณีเจอ Gemini Error 503
-    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash']
-
-    for model_name in models_to_try:
-        for attempt in range(3):
-            try:
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=[image, prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                )
-                return json.loads(response.text.strip())
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} with {model_name} failed: {e}")
-                if attempt < 2:
-                    time.sleep(2)
-
-    raise RuntimeError("Gemini API ไม่พร้อมใช้งานชั่วคราว กรุณาลองส่งรูปใหม่อีกครั้งใน 1-2 นาทีครับ")
+    response = gemini_client.models.generate_content(
+        model='gemini-3.6-flash',
+        contents=[image, prompt],
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text.strip())
 
 
 def process_image_event(event: MessageEvent):
     reply_token = event.reply_token
     message_id = event.message.id
     
-    # กันบันทึกเบิ้ลกรณี LINE ส่ง Webhook เข้ามาซ้ำ
-    if message_id in PROCESSED_MESSAGE_IDS:
-        logger.warning(f"⚠️ Duplicate message_id detected: {message_id}, skipping.")
-        return
-    
-    PROCESSED_MESSAGE_IDS.add(message_id)
-    if len(PROCESSED_MESSAGE_IDS) > 1000:
-        PROCESSED_MESSAGE_IDS.pop()
-
     with ApiClient(configuration) as api_client:
         line_bot_blob_api = MessagingApiBlob(api_client)
         line_bot_api = MessagingApi(api_client)
