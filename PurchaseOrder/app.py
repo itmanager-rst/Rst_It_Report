@@ -14,7 +14,11 @@ load_dotenv()
 
 app = FastAPI(title="ECOUNT PO Web Form System")
 
-# --- อนุญาต CORS ให้รองรับ Live Server (Port 5500) และ Render ---
+# Global Variables สำหรับเก็บ Cache Session ของ ECOUNT
+ECOUNT_SESSION_ID = None
+ECOUNT_HOST_URL = None
+
+# --- อนุญาต CORS ให้รองรับ Live Server, Localhost, GitHub Pages และ Render ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,14 +47,23 @@ DATASET_ID = "po_asia"
 CONFIG = {
     "COM_CODE": os.getenv("COM_CODE", "913560"),
     "USER_ID": os.getenv("USER_ID", "ITASIA"),
-    "ECOUNT_API_KEY": os.getenv("ECOUNT_API_KEY", "").strip(),
-    "TEST_API_KEY": os.getenv("TEST_API_KEY", "4f75631bc98ae4c6ea927946b1b45e9c86"),
+    "ECOUNT_API_KEY": os.getenv("ECOUNT_API_KEY", "4f75631bc98ae4c6ea927946b1b45e9c86").strip(),
     "LAN_TYPE": os.getenv("LAN_TYPE", "th-TH"),
     "ZONE": os.getenv("ZONE", "IA"),
     "ALLOW_ECOUNT_PO_LIST": str(os.getenv("ALLOW_ECOUNT_PO_LIST", "true")).strip().lower() in {"1", "true", "yes", "y"}
 }
 
-def get_ecount_session():
+# 💡 ฟังก์ชันจัดการ Login และขอ Session ECOUNT
+def get_ecount_session(force_refresh: bool = False):
+    global ECOUNT_SESSION_ID, ECOUNT_HOST_URL
+
+    if force_refresh:
+        ECOUNT_SESSION_ID = None
+        ECOUNT_HOST_URL = None
+
+    if ECOUNT_SESSION_ID and ECOUNT_HOST_URL:
+        return ECOUNT_SESSION_ID, ECOUNT_HOST_URL
+
     api_key = CONFIG["ECOUNT_API_KEY"]
     if not api_key:
         return None, None
@@ -66,7 +79,9 @@ def get_ecount_session():
     try:
         res = requests.post(login_url, json=login_payload, timeout=30).json()
         datas = res.get("Data", {}).get("Datas", {})
-        return datas.get("SESSION_ID"), datas.get("HOST_URL")
+        ECOUNT_SESSION_ID = datas.get("SESSION_ID")
+        ECOUNT_HOST_URL = datas.get("HOST_URL")
+        return ECOUNT_SESSION_ID, ECOUNT_HOST_URL
     except Exception as e:
         print(f"Login Exception: {e}")
         return None, None
@@ -108,7 +123,6 @@ def to_ecount_yyyymmdd(value: str, field_name: str) -> str:
     try:
         clean_val = str(value).split("T")[0].strip()
 
-        # รูปแบบที่ ECOUNT ใช้จริง: DD/MM/YYYY (พ.ศ.) เช่น 29/08/2569
         if clean_val.count("/") == 2:
             parts = clean_val.split("/")
             if len(parts) == 3:
@@ -133,7 +147,6 @@ def to_ecount_yyyymmdd(value: str, field_name: str) -> str:
             except ValueError:
                 continue
 
-        # ถ้าเป็นรูปแบบ ISO หรือ YYYY-MM-DD ที่พยายามส่งเข้ามา
         try:
             parsed = datetime.fromisoformat(clean_val)
             return f"{parsed.day:02d}/{parsed.month:02d}/{parsed.year + 543}"
@@ -162,7 +175,7 @@ def health_check():
 
     ecount_status = False
     try:
-        session_id, host_url = get_ecount_session()
+        session_id, host_url = get_ecount_session(force_refresh=True)
         if session_id and host_url:
             ecount_status = True
     except Exception as e:
@@ -174,7 +187,7 @@ def health_check():
         "ecount": ecount_status
     }
 
-# --- Get Purchase Order List API ---
+# --- API ดึงรายการสั่งซื้อ ECOUNT ---
 
 @app.get("/api/get-po-list")
 async def get_po_list(
@@ -188,26 +201,9 @@ async def get_po_list(
             "disabled_by_config": True,
         }
 
-    try:
-        session_id, host_url = get_ecount_session()
-
-        if not session_id or not host_url:
-            return {
-                "success": False,
-                "message": "ไม่สามารถเข้าสู่ระบบ ECOUNT ได้ กรุณาตรวจสอบ API Key ในไฟล์ .env",
-            }
-
-        today = datetime.now()
-        from_date = DATE_FROM or (today - timedelta(days=29)).strftime("%Y%m%d")
-        to_date = DATE_TO or today.strftime("%Y%m%d")
-
-        # ลบขีดหรือสแลชออกจากวันที่ถ้ามี
-        from_date = from_date.replace("-", "").replace("/", "")
-        to_date = to_date.replace("-", "").replace("/", "")
-
-        list_url = f"https://{host_url}/OAPI/V2/Purchases/GetPurchasesOrderList?SESSION_ID={session_id}"
-
-        list_payload = {
+    def fetch_from_ecount(session_id, host_url, from_date, to_date):
+        url = f"https://{host_url}/OAPI/V2/Purchases/GetPurchasesOrderList?SESSION_ID={session_id}"
+        payload = {
             "PROD_CD": "",
             "CUST_CD": "",
             "ListParam": {
@@ -217,26 +213,31 @@ async def get_po_list(
                 "BASE_DATE_TO": to_date,
             },
         }
+        return requests.post(url, json=payload, timeout=30)
 
-        response = requests.post(list_url, json=list_payload, timeout=30)
-        
-        # กรณี ECOUNT ตอบกลับ 412 ให้ทำการ Login ใหม่ 1 ครั้ง
-        if response.status_code == 412:
-            session_id, host_url = get_ecount_session()
+    try:
+        session_id, host_url = get_ecount_session()
+        if not session_id or not host_url:
+            return {"success": False, "message": "ไม่สามารถเข้าสู่ระบบ ECOUNT ได้"}
+
+        today = datetime.now()
+        from_date = (DATE_FROM or (today - timedelta(days=29)).strftime("%Y%m%d")).replace("-", "").replace("/", "")
+        to_date = (DATE_TO or today.strftime("%Y%m%d")).replace("-", "").replace("/", "")
+
+        res = fetch_from_ecount(session_id, host_url, from_date, to_date)
+
+        if res.status_code in [412, 500, 401] or "json" not in res.headers.get("Content-Type", "").lower():
+            session_id, host_url = get_ecount_session(force_refresh=True)
             if session_id and host_url:
-                list_url = f"https://{host_url}/OAPI/V2/Purchases/GetPurchasesOrderList?SESSION_ID={session_id}"
-                response = requests.post(list_url, json=list_payload, timeout=30)
-
-        raw_text = response.text.strip()
-
-        if not raw_text:
-            return {"success": False, "message": "ECOUNT ตอบกลับว่างเปล่า (empty response)"}
+                res = fetch_from_ecount(session_id, host_url, from_date, to_date)
 
         try:
-            response_data = response.json()
-        except ValueError:
-            print(f"ECOUNT non-JSON response: {raw_text[:500]}")
-            return {"success": False, "message": "ECOUNT ส่งข้อมูลไม่ใช่ JSON หรือเซิร์ฟเวอร์ไม่ตอบกลับตามรูปแบบที่คาดหวัง"}
+            response_data = res.json()
+        except Exception:
+            return {
+                "success": False, 
+                "message": f"ECOUNT Server ตอบกลับไม่ตรงรูปแบบ JSON (HTTP Status: {res.status_code})"
+            }
 
         if str(response_data.get("Status")) == "200":
             raw_data = response_data.get("Data", {})
@@ -257,38 +258,32 @@ async def get_po_list(
 
                 row = {
                     "IO_NO": pick("IO_NO", "ORD_NO", "DOC_NO", "PO_NO", "PO_NUM", "NO"),
-                    "IO_DATE": pick("IO_DATE", "ORD_DATE", "DATE", "CREATED_DATE", "BASE_DATE", "PROD_DATE"),
-                    "PR_NO": pick("PR_NO", "PUR_REQ_NO", "REQ_NO", "REL_NO", "U_MEMO2", "REQ_DOC_NO"),
-                    "PJT_DES": pick("PJT_DES", "PJT_NAME", "PROJECT_DES", "PROJECT_NAME"),
+                    "PO_NO": pick("PO_NO", "ORD_NO", "DOC_NO", "IO_NO", "PO_NUM"),
+                    "IO_DATE": pick("IO_DATE", "ORD_DATE", "DATE", "BASE_DATE", "PROD_DATE"),
+                    "PR_NO": pick("PR_NO", "PUR_REQ_NO", "REQ_NO", "REL_NO", "U_MEMO2", "ORDER_REQ_NO"),
+                    "PJT_DES": pick("PJT_DES", "PJT_NAME", "PROJECT_DES"),
                     "PJT_CD": pick("PJT_CD", "PROJECT_CD"),
-                    "CUST_DES": pick("CUST_DES", "CUST_NAME", "CUSTOMER_NAME", "PARTNER_NAME"),
-                    "CUST": pick("CUST", "CUST_CD", "CUSTOMER_CD"),
-                    "EMP_DES": pick("EMP_DES", "EMP_NAME", "USER_NAME", "PERSON_NAME", "PIC_NAME"),
-                    "EMP_CD": pick("EMP_CD", "PIC_CD", "USER_CD"),
-                    "PROD_DES": pick("PROD_DES", "ITEM_DES", "PROD_NAME", "PRODUCT_NAME"),
-                    "PROD_CD": pick("PROD_CD", "ITEM_CD", "PRODUCT_CD"),
+                    "CUST_DES": pick("CUST_DES", "CUST_NAME", "CUSTOMER_NAME"),
+                    "CUST": pick("CUST", "CUST_CD"),
+                    "EMP_DES": pick("EMP_DES", "EMP_NAME", "PIC_NAME"),
+                    "EMP_CD": pick("EMP_CD", "PIC_CD"),
+                    "PROD_DES": pick("PROD_DES", "ITEM_DES", "PROD_NAME"),
+                    "PROD_CD": pick("PROD_CD", "ITEM_CD"),
                     "SIZE_DES": pick("SIZE_DES", "SIZE", "SPEC"),
-                    "DELIVERY_DATE": pick("DELIVERY_DATE", "TIME_DATE", "REQ_DATE", "DUE_DATE", "DELIVERY_DATE_ITEM"),
-                    "QTY": pick("QTY", "QUANTITY", "TOT_QTY"),
-                    "TOTAL_AMT": pick("TOTAL_AMT", "TOTAL_PRICE", "SUPPLY_AMT", "AMT", "TOTAL", "AMOUNT"),
+                    "DELIVERY_DATE": pick("DELIVERY_DATE", "TIME_DATE", "REQ_DATE", "DUE_DATE"),
+                    "QTY": pick("QTY", "QUANTITY"),
+                    "TOTAL_AMT": pick("TOTAL_AMT", "TOTAL_PRICE", "SUPPLY_AMT", "AMT"),
                     "CONFIRM_TYPE": pick("CONFIRM_TYPE", "STATUS", "APPROVAL_STATUS"),
-                    "REF_NO": pick("REF_NO", "REFERENCE_NO", "REMARKS", "U_MEMO1", "CUST_REF_NO", "MEMO"),
+                    "REF_NO": pick("REF_NO", "REFERENCE_NO", "REMARKS", "REMARK", "MEMO", "U_MEMO1"),
                     "SEQ": pick("SEQ", "LINE_NO", "IO_SEQ")
                 }
                 normalized.append(row)
 
             return {"success": True, "data": normalized}
         else:
-            error_msg = "ดึงข้อมูลจาก ECOUNT ไม่สำเร็จ"
-            if response_data.get("Errors") and len(response_data["Errors"]) > 0:
-                error_msg = response_data["Errors"][0].get("Message", error_msg)
-            elif response_data.get("Error"):
-                error_msg = response_data["Error"].get("Message", error_msg)
-
-            return {"success": False, "message": error_msg}
+            return {"success": False, "message": f"ECOUNT Error: {response_data.get('Errors', 'ไม่ทราบสาเหตุ')}"}
 
     except Exception as e:
-        print(f"get_po_list Exception: {e}")
         return {"success": False, "message": f"Server Error: {str(e)}"}
 
 # --- Duplicate Check API ---
@@ -315,11 +310,10 @@ def check_po_duplicate(po_no: str = "", pr_no: str = ""):
 
     return {"success": True, "is_duplicate": False, "message": "เลขที่เอกสารสามารถใช้ได้"}
 
-# --- Master Data Search API (ดึงรหัสผู้ค้า/ลูกค้าจาก BigQuery ตาราง cust_cd) ---
+# --- Master Data Search API ---
 
 @app.get("/api/search/customer")
 def search_customer():
-    # 1. ดึงข้อมูลจาก BigQuery ตาราง po-asia.po_asia.cust_cd
     if bq_client:
         try:
             query = f"""
@@ -347,7 +341,6 @@ def search_customer():
         except Exception as e:
             print(f"BigQuery Customer Error: {e}")
 
-    # 2. Fallback: ดึงข้อมูลจาก ECOUNT API โดยตรงกรณี BigQuery มีปัญหา
     session_id, host_url = get_ecount_session()
     if session_id and host_url:
         try:
@@ -503,19 +496,14 @@ def save_po_api(data: POSchema):
     if not session_id or not host_url:
         raise HTTPException(status_code=500, detail="ไม่สามารถติดต่อ Login ECOUNT ได้")
 
-    # แปลงวันที่ให้เป็น YYYYMMDD
     io_date_str = to_ecount_yyyymmdd(data.io_date, "วันที่เอกสาร")
-
-    # --- ส่วนประกอบ bulk_data ใน save_po_api ---
 
     po_list = []
     for item in data.items:
         item_remark = item.remarks or item.remark or ""
-        
-        # ดึงเลขที่ PO ที่ส่งมาจาก Frontend (po_no หรือ doc_no)
         target_po_no = data.po_no or data.doc_no or ""
-
         add_txt_02 = data.u_txt02 or "-"
+        
         bulk_data = {
             "IO_DATE": io_date_str,
             "UPLOAD_SER_NO": "1",
@@ -538,7 +526,6 @@ def save_po_api(data: POSchema):
             "REMARKS": item_remark,
         }
 
-        # หากมีเลขที่ใบขอซื้อ (PR) ต้องการแมปเชื่อมโยง
         if data.pr_no:
             bulk_data["REL_NO"] = data.pr_no
 
@@ -554,11 +541,19 @@ def save_po_api(data: POSchema):
 
         po_list.append({"BulkDatas": bulk_data})
 
-    # Endpoint บันทึกใบสั่งซื้อ ECOUNT API
-    save_url = f"https://{host_url}/OAPI/V2/Purchases/SavePurchaseOrder?SESSION_ID={session_id}"
+    def send_save_request(s_id, h_url):
+        url = f"https://{h_url}/OAPI/V2/Purchases/SavePurchaseOrder?SESSION_ID={s_id}"
+        return requests.post(url, json={"PurchaseOrderList": po_list}, timeout=30)
+
     try:
-        res = requests.post(save_url, json={"PurchaseOrderList": po_list}, timeout=30).json()
-        res_data = res.get("Data", {})
+        res = send_save_request(session_id, host_url)
+
+        if res.status_code in [412, 500, 401] or "json" not in res.headers.get("Content-Type", "").lower():
+            session_id, host_url = get_ecount_session(force_refresh=True)
+            if session_id and host_url:
+                res = send_save_request(session_id, host_url)
+
+        res_data = res.json().get("Data", {})
         
         if res_data and isinstance(res_data, dict) and res_data.get("SuccessCnt", 0) > 0:
             return {
@@ -569,7 +564,7 @@ def save_po_api(data: POSchema):
         else:
             return {
                 "success": False,
-                "details": res_data.get("ResultDetails", []) if res_data else res
+                "details": res_data.get("ResultDetails", []) if res_data else res.text
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการเชื่อมต่อ ECOUNT: {str(e)}")
