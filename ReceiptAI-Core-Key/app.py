@@ -34,7 +34,9 @@ from google.genai import types
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load this project's .env as the source of truth.
+# Load this project's .env as the source of truth.  ``override=True`` is
+# important on Windows because a stale key in the parent PowerShell process
+# would otherwise win over the production key stored in this file.
 ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
@@ -50,11 +52,9 @@ ECOUNT_ZONE = os.getenv("ECOUNT_ZONE", "IA")
 ECOUNT_LAN_TYPE = os.getenv("ECOUNT_LAN_TYPE", "th-TH")
 ECOUNT_API_DOMAIN = os.getenv("ECOUNT_API_DOMAIN", "oapi").strip().lower() or "oapi"
 ECOUNT_TAX_GUBUN = os.getenv("ECOUNT_TAX_GUBUN", "").strip()
-
-# ตั้งค่า Default เป็น True เสมอ เพื่อให้ ECOUNT ใช้วันที่ตามใบเสร็จ
-_ecount_use_date_env = os.getenv("ECOUNT_USE_RECEIPT_DATE", "true").strip().lower()
-ECOUNT_USE_RECEIPT_DATE = _ecount_use_date_env not in {"0", "false", "no", "off"}
-
+ECOUNT_USE_RECEIPT_DATE = os.getenv("ECOUNT_USE_RECEIPT_DATE", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 ECOUNT_DIRECT_SAVE_ENABLED = os.getenv(
     "ECOUNT_DIRECT_SAVE_ENABLED", "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -73,13 +73,11 @@ ECOUNT_CUSTOMER_CODE = os.getenv("ECOUNT_CUSTOMER_CODE", "00001") or "00001"
 ECOUNT_PROJECT = os.getenv("ECOUNT_PROJECT", "")
 ECOUNT_DEPARTMENT = os.getenv("ECOUNT_DEPARTMENT", "00006") or "00006"
 
-# Reuse ECOUNT login session
+# Reuse the ECOUNT login session so receipts submitted close together do not
+# repeatedly hit the production login endpoint.
 ECOUNT_SESSION_ID = ""
 ECOUNT_SESSION_CREATED_AT = 0.0
 ECOUNT_SESSION_CACHE_SECONDS = 600
-
-# Cache ป้องกันประมวลผล LINE Message ID ซ้ำซ้อน
-PROCESSED_MESSAGE_IDS = set()
 
 ECOUNT_HEADERS = [
     "วันที่", "ลำดับ", "เลขที่ใบสำคัญบัญชี", "การเงิน", "รหัสบัญชีเงินถอน",
@@ -108,7 +106,7 @@ def get_google_credentials():
 
 def get_google_sheet(sheet_name: str = None):
     """
-    ดึงหรือสร้าง Sheet Tab รายวันตามวันที่ (รูปแบบ YYYY-MM-DD)
+    ดึงหรือสร้าง Sheet Tab รายวันตามชื่อวันที่ (รูปแบบ YYYY-MM-DD)
     """
     creds = get_google_credentials()
     client = gspread.authorize(creds)
@@ -120,9 +118,9 @@ def get_google_sheet(sheet_name: str = None):
     try:
         worksheet = spreadsheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
-        # ถ้ายังไม่มี Sheet Tab ของวันนี้ ให้สร้างใหม่ และใส่ Header
+        # หากยังไม่มี Sheet Tab ของวันนั้นๆ ระบบจะสร้าง Tab ใหม่พร้อมใส่ Header ให้อัตโนมัติ
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=20)
-        time.sleep(1) # ป้องกัน Race condition กับ API
+        time.sleep(1) # ป้องกัน API Rate limit / Race condition
         worksheet.update(range_name="A1:N1", values=[ECOUNT_HEADERS])
         logger.info(f"✨ Created new worksheet tab: {sheet_name}")
 
@@ -149,6 +147,7 @@ def format_ecount_date(value) -> str:
         logger.warning("Invalid or missing receipt date %r; using today's date", raw_value)
         parsed_date = datetime.now()
 
+    # Thai receipts sometimes contain a Buddhist Era year.
     if parsed_date.year >= 2400:
         parsed_date = parsed_date.replace(year=parsed_date.year - 543)
 
@@ -189,9 +188,9 @@ def validate_ecount_config() -> dict:
 
 def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") -> list:
     ecount_config = validate_ecount_config()
-    
-    receipt_date_raw = extracted_data.get("date")
-    ecount_date_sheet = format_ecount_date(receipt_date_raw).replace("-", "")
+    # The Payment Voucher upload template leaves this blank so ECOUNT assigns
+    # the current accounting date.
+    ecount_date = ""
     
     try:
         amount = float(extracted_data.get("total", 0))
@@ -202,7 +201,8 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     
     vendor_name = extracted_data.get("vendor_name", "-")
     tax_id = extracted_data.get("tax_id", "-")
-    
+    # Keep ECOUNT identifiers as strings so leading zeroes survive Google
+    # Sheets and Web Upload (for example 00001 and 00006).
     customer_code = normalize_ecount_code(
         generate_customer_code(vendor_name, tax_id), width=5
     )
@@ -232,7 +232,7 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     remark = " ".join(remark_parts) if remark_parts else f"{vendor_name} - "
     
     return [
-        ecount_date_sheet,                    
+        ecount_date,                          
         sequence,                             
         receipt_no,                           
         ecount_config["finance"],             
@@ -313,7 +313,7 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         customer_code = generate_customer_code(vendor_name, tax_id)
         
         total_amount = parse_amount(extracted_data.get("total"))
-        trx_date = format_ecount_date(extracted_data.get("date"))
+        trx_date = format_ecount_date(extracted_data.get("date")).replace("-", "")
         receipt_no = extracted_data.get("receipt_no", "")
         remark = extracted_data.get("items") or vendor_name
 
@@ -322,12 +322,16 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         invoice_payload = {
             "InvoiceAutoList": [{
                 "BulkDatas": {
+                    # This ECOUNT company currently rejects an explicit API date.
+                    # Blank lets ECOUNT use its current document date.
                     "TRX_DATE": trx_date if ECOUNT_USE_RECEIPT_DATE else "",
                     "ACCT_DOC_NO": receipt_no,                          
                     "TAX_GUBUN": ECOUNT_TAX_GUBUN,
                     "S_NO": "",
                     "CUST": customer_code,                              
                     "CUST_DES": vendor_name,                            
+                    # Payment Vouchers in this company are saved without a
+                    # tax type; the full receipt total is the voucher amount.
                     "SUPPLY_AMT": f"{total_amount:.2f}",
                     "VAT_AMT": "0",
                     "ACCT_NO": ecount_config["withdraw_account"],       
@@ -381,7 +385,7 @@ def generate_tax_report_summary() -> str:
         sheet = get_google_sheet(today_sheet_name)
         records = sheet.get_all_records()
         if not records:
-            return f"📊 ยังไม่มีรายการบันทึกใบกำกับภาษีในประจำวันที่ {today_sheet_name} ครับ"
+            return f"📊 ยังไม่มีรายการบันทึกใบกำกับภาษีประจำวันที่ {today_sheet_name} ครับ"
             
         total_sum = 0.0
         total_items = len(records)
@@ -430,38 +434,18 @@ def extract_receipt_data(image_bytes: bytes) -> dict:
         "category": "..."
     }
     """
-    
-    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash']
-
-    for model_name in models_to_try:
-        for attempt in range(3):
-            try:
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=[image, prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                )
-                return json.loads(response.text.strip())
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} with {model_name} failed: {e}")
-                if attempt < 2:
-                    time.sleep(2)
-
-    raise RuntimeError("Gemini API ไม่พร้อมใช้งานชั่วคราว กรุณาลองส่งรูปใหม่อีกครั้งใน 1-2 นาทีครับ")
+    response = gemini_client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=[image, prompt],
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text.strip())
 
 
 def process_image_event(event: MessageEvent):
     reply_token = event.reply_token
     message_id = event.message.id
     
-    if message_id in PROCESSED_MESSAGE_IDS:
-        logger.warning(f"⚠️ Duplicate message_id detected: {message_id}, skipping.")
-        return
-    
-    PROCESSED_MESSAGE_IDS.add(message_id)
-    if len(PROCESSED_MESSAGE_IDS) > 1000:
-        PROCESSED_MESSAGE_IDS.pop()
-
     with ApiClient(configuration) as api_client:
         line_bot_blob_api = MessagingApiBlob(api_client)
         line_bot_api = MessagingApi(api_client)
@@ -476,7 +460,7 @@ def process_image_event(event: MessageEvent):
             # 2. Gemini
             extracted_data = extract_receipt_data(image_bytes)
             
-            # 3. เลือก Sheet Tab แยกตามวันที่ของใบเสร็จ (หรือวันที่ปัจจุบัน)
+            # 3. Google Sheet Tab รายวัน (สร้าง Tab ใหม่ตามวันที่ของใบเสร็จ หรือ วันปัจจุบันอัตโนมัติ)
             receipt_date = format_ecount_date(extracted_data.get("date"))
             sheet = get_google_sheet(sheet_name=receipt_date)
             
@@ -490,7 +474,7 @@ def process_image_event(event: MessageEvent):
                 if len(existing_row) > 1 and str(existing_row[1]).strip().isdigit():
                     sequence_values.append(int(existing_row[1]))
             
-            # นับลำดับใหม่ของวันนั้นๆ (เริ่ม 1 ใหม่ในทุก Sheet Tab)
+            # นับลำดับใหม่ของ Tab วันนั้นๆ (เริ่ม 1 ใหม่เมื่อสร้าง Tab วันใหม่)
             next_sequence = max(sequence_values, default=0) + 1
             
             row = build_ecount_row(extracted_data, next_sequence, drive_link)
