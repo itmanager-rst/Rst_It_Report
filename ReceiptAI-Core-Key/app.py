@@ -50,9 +50,11 @@ ECOUNT_ZONE = os.getenv("ECOUNT_ZONE", "IA")
 ECOUNT_LAN_TYPE = os.getenv("ECOUNT_LAN_TYPE", "th-TH")
 ECOUNT_API_DOMAIN = os.getenv("ECOUNT_API_DOMAIN", "oapi").strip().lower() or "oapi"
 ECOUNT_TAX_GUBUN = os.getenv("ECOUNT_TAX_GUBUN", "").strip()
-ECOUNT_USE_RECEIPT_DATE = os.getenv("ECOUNT_USE_RECEIPT_DATE", "true").strip().lower() in {
-    "1", "true", "yes", "on"
-}
+
+# ตั้งค่า Default เป็น True เสมอ เพื่อให้ ECOUNT ใช้วันที่ตามใบเสร็จ
+_ecount_use_date_env = os.getenv("ECOUNT_USE_RECEIPT_DATE", "true").strip().lower()
+ECOUNT_USE_RECEIPT_DATE = _ecount_use_date_env not in {"0", "false", "no", "off"}
+
 ECOUNT_DIRECT_SAVE_ENABLED = os.getenv(
     "ECOUNT_DIRECT_SAVE_ENABLED", "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
