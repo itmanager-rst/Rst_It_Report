@@ -34,9 +34,7 @@ from google.genai import types
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load this project's .env as the source of truth.  ``override=True`` is
-# important on Windows because a stale key in the parent PowerShell process
-# would otherwise win over the production key stored in this file.
+# Load this project's .env as the source of truth.
 ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
@@ -52,7 +50,7 @@ ECOUNT_ZONE = os.getenv("ECOUNT_ZONE", "IA")
 ECOUNT_LAN_TYPE = os.getenv("ECOUNT_LAN_TYPE", "th-TH")
 ECOUNT_API_DOMAIN = os.getenv("ECOUNT_API_DOMAIN", "oapi").strip().lower() or "oapi"
 ECOUNT_TAX_GUBUN = os.getenv("ECOUNT_TAX_GUBUN", "").strip()
-ECOUNT_USE_RECEIPT_DATE = os.getenv("ECOUNT_USE_RECEIPT_DATE", "false").strip().lower() in {
+ECOUNT_USE_RECEIPT_DATE = os.getenv("ECOUNT_USE_RECEIPT_DATE", "true").strip().lower() in {
     "1", "true", "yes", "on"
 }
 ECOUNT_DIRECT_SAVE_ENABLED = os.getenv(
@@ -73,8 +71,7 @@ ECOUNT_CUSTOMER_CODE = os.getenv("ECOUNT_CUSTOMER_CODE", "00001") or "00001"
 ECOUNT_PROJECT = os.getenv("ECOUNT_PROJECT", "")
 ECOUNT_DEPARTMENT = os.getenv("ECOUNT_DEPARTMENT", "00006") or "00006"
 
-# Reuse the ECOUNT login session so receipts submitted close together do not
-# repeatedly hit the production login endpoint.
+# Reuse ECOUNT login session
 ECOUNT_SESSION_ID = ""
 ECOUNT_SESSION_CREATED_AT = 0.0
 ECOUNT_SESSION_CACHE_SECONDS = 600
@@ -172,9 +169,10 @@ def validate_ecount_config() -> dict:
 
 def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") -> list:
     ecount_config = validate_ecount_config()
-    # The Payment Voucher upload template leaves this blank so ECOUNT assigns
-    # the current accounting date.
-    ecount_date = ""
+    
+    # ดึงวันที่จากใบเสร็จและแปลงเป็นรูปแบบ YYYYMMDD สำหรับ ECOUNT
+    receipt_date_raw = extracted_data.get("date")
+    ecount_date = format_ecount_date(receipt_date_raw)
     
     try:
         amount = float(extracted_data.get("total", 0))
@@ -185,8 +183,7 @@ def build_ecount_row(extracted_data: dict, sequence: int, drive_link: str = "") 
     
     vendor_name = extracted_data.get("vendor_name", "-")
     tax_id = extracted_data.get("tax_id", "-")
-    # Keep ECOUNT identifiers as strings so leading zeroes survive Google
-    # Sheets and Web Upload (for example 00001 and 00006).
+    
     customer_code = normalize_ecount_code(
         generate_customer_code(vendor_name, tax_id), width=5
     )
@@ -306,16 +303,12 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         invoice_payload = {
             "InvoiceAutoList": [{
                 "BulkDatas": {
-                    # This ECOUNT company currently rejects an explicit API date.
-                    # Blank lets ECOUNT use its current document date.
                     "TRX_DATE": trx_date if ECOUNT_USE_RECEIPT_DATE else "",
                     "ACCT_DOC_NO": receipt_no,                          
                     "TAX_GUBUN": ECOUNT_TAX_GUBUN,
                     "S_NO": "",
                     "CUST": customer_code,                              
                     "CUST_DES": vendor_name,                            
-                    # Payment Vouchers in this company are saved without a
-                    # tax type; the full receipt total is the voucher amount.
                     "SUPPLY_AMT": f"{total_amount:.2f}",
                     "VAT_AMT": "0",
                     "ACCT_NO": ecount_config["withdraw_account"],       
@@ -458,6 +451,7 @@ def process_image_event(event: MessageEvent):
             
             row = build_ecount_row(extracted_data, next_sequence, drive_link)
             next_row = len(existing_rows) + 2
+            sheet.format(f"A{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.format(f"G{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.format(f"N{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.append_row(row, value_input_option="RAW")
@@ -484,6 +478,7 @@ def process_image_event(event: MessageEvent):
 
             reply_text = (
                 f"🟢 **บันทึกรายการที่ {next_sequence} เรียบร้อยครับ!**\n\n"
+                f"📅 วันที่: {extracted_data.get('date', '-')}\n"
                 f"ร้านค้า: {extracted_data.get('vendor_name')}\n"
                 f"📦 สินค้า: {extracted_data.get('items', '-')}\n"
                 f"รหัสลูกค้า: {row[6]} (สำหรับ ECOUNT)\n"
