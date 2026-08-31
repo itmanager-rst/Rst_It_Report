@@ -1,4 +1,6 @@
-const BASE_URL = window.location.port === '5500' ? 'http://127.0.0.1:8000' : '';
+const BASE_URL = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') 
+    ? 'http://127.0.0.1:8000' 
+    : 'https://purchaseorder-yxjy.onrender.com';
 
 let currentTargetInputId = null;
 let currentTargetRow = null;
