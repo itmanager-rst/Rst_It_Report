@@ -103,11 +103,27 @@ SCOPE = [
 def get_google_credentials():
     return Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
 
-def get_google_sheet():
+def get_google_sheet(sheet_name: str = None):
+    """
+    ดึงหรือสร้าง Sheet Tab รายวันตามชื่อวันที่ (รูปแบบ YYYY-MM-DD)
+    """
     creds = get_google_credentials()
     client = gspread.authorize(creds)
-    sheet = client.open_by_key(GOOGLE_SHEET_ID).worksheet("Receipt")
-    return sheet
+    spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+
+    if not sheet_name:
+        sheet_name = datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        worksheet = spreadsheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # หากยังไม่มี Sheet Tab ของวันนั้นๆ ระบบจะสร้าง Tab ใหม่พร้อมใส่ Header ให้อัตโนมัติ
+        worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=20)
+        time.sleep(1) # ป้องกัน API Rate limit / Race condition
+        worksheet.update(range_name="A1:N1", values=[ECOUNT_HEADERS])
+        logger.info(f"✨ Created new worksheet tab: {sheet_name}")
+
+    return worksheet
 
 
 def normalize_ecount_code(value, default: str = "", width: int = 5) -> str:
@@ -360,10 +376,11 @@ def upload_image_to_drive(image_bytes: bytes, filename: str) -> str:
 
 def generate_tax_report_summary() -> str:
     try:
-        sheet = get_google_sheet()
+        today_sheet_name = datetime.now().strftime("%Y-%m-%d")
+        sheet = get_google_sheet(today_sheet_name)
         records = sheet.get_all_records()
         if not records:
-            return "📊 ยังไม่มีรายการบันทึกใบกำกับภาษีในระบบครับ"
+            return f"📊 ยังไม่มีรายการบันทึกใบกำกับภาษีประจำวันที่ {today_sheet_name} ครับ"
             
         total_sum = 0.0
         total_items = len(records)
@@ -374,12 +391,12 @@ def generate_tax_report_summary() -> str:
                 continue
 
         return (
-            "📑 **สรุปรายงานภาษีซื้อ (สำหรับยื่น ภ.พ.30)**\n"
+            f"📑 **สรุปรายการประจำวันที่ {today_sheet_name}**\n"
             f"--------------------------------\n"
-            f"จำนวนเอกสารทั้งหมด: {total_items} ใบ\n"
-            f"💰 ยอดรวมสุทธิทั้งสิ้น: {total_sum:,.2f} บาท\n"
+            f"จำนวนเอกสารวันนี้: {total_items} ใบ\n"
+            f"💰 ยอดรวมสุทธิวันนี้: {total_sum:,.2f} บาท\n"
             f"--------------------------------\n"
-            f"💡 สามารถดูรูปภาพใบกำกับภาษีฉบับจริงได้จากลิงก์ใน Google Sheet ครับ"
+            f"💡 ดูรูปภาพและข้อมูลเต็มได้ที่ Sheet Tab: [{today_sheet_name}] ครับ"
         )
     except Exception as e:
         return f"เกิดข้อผิดพลาดในการดึงรายงานภาษี: {str(e)}"
@@ -438,17 +455,28 @@ def process_image_event(event: MessageEvent):
             # 2. Gemini
             extracted_data = extract_receipt_data(image_bytes)
             
-            # 3. Google Sheet
-            sheet = get_google_sheet()
+            # 3. แปลงฟอร์แมตวันที่สำหรับสร้าง Tab (YYYY-MM-DD)
+            raw_date_str = extracted_data.get("date")
+            try:
+                parsed_dt = datetime.strptime(raw_date_str, "%Y-%m-%d")
+            except Exception:
+                parsed_dt = datetime.now()
+            tab_name = parsed_dt.strftime("%Y-%m-%d")
+
+            # 4. ดึง/สร้าง Google Sheet Tab รายวัน
+            sheet = get_google_sheet(sheet_name=tab_name)
+            
             existing_headers = sheet.row_values(1)
             if existing_headers[:len(ECOUNT_HEADERS)] != ECOUNT_HEADERS:
-                sheet.update("A1:N1", [ECOUNT_HEADERS])
+                sheet.update(range_name="A1:N1", values=[ECOUNT_HEADERS])
 
             existing_rows = sheet.get_all_values()[1:]
             sequence_values = []
             for existing_row in existing_rows:
                 if len(existing_row) > 1 and str(existing_row[1]).strip().isdigit():
                     sequence_values.append(int(existing_row[1]))
+            
+            # นับลำดับ 1 ใหม่เมื่อสร้าง Tab วันใหม่
             next_sequence = max(sequence_values, default=0) + 1
             
             row = build_ecount_row(extracted_data, next_sequence, drive_link)
@@ -457,7 +485,7 @@ def process_image_event(event: MessageEvent):
             sheet.format(f"G{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.format(f"N{next_row}", {"numberFormat": {"type": "TEXT"}})
             sheet.append_row(row, value_input_option="RAW")
-            logger.info(f"✅ Saved row {next_sequence} to Google Sheet")
+            logger.info(f"✅ Saved row {next_sequence} to Google Sheet Tab: {tab_name}")
             
             if ECOUNT_DIRECT_SAVE_ENABLED:
                 ecount_result = post_to_ecount_erp(extracted_data, next_sequence)
@@ -479,7 +507,7 @@ def process_image_event(event: MessageEvent):
                 )
 
             reply_text = (
-                f"🟢 **บันทึกรายการที่ {next_sequence} เรียบร้อยครับ!**\n\n"
+                f"🟢 **บันทึกรายการที่ {next_sequence} (แท็บ {tab_name}) เรียบร้อยครับ!**\n\n"
                 f"📅 วันที่: {extracted_data.get('date', '-')}\n"
                 f"ร้านค้า: {extracted_data.get('vendor_name')}\n"
                 f"📦 สินค้า: {extracted_data.get('items', '-')}\n"
