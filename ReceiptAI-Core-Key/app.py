@@ -51,10 +51,6 @@ ECOUNT_LAN_TYPE = os.getenv("ECOUNT_LAN_TYPE", "th-TH")
 ECOUNT_API_DOMAIN = os.getenv("ECOUNT_API_DOMAIN", "oapi").strip().lower() or "oapi"
 ECOUNT_TAX_GUBUN = os.getenv("ECOUNT_TAX_GUBUN", "").strip()
 
-# ตั้งค่า Default เป็น True เสมอ เพื่อให้ ECOUNT ใช้วันที่ตามใบเสร็จ
-_ecount_use_date_env = os.getenv("ECOUNT_USE_RECEIPT_DATE", "true").strip().lower()
-ECOUNT_USE_RECEIPT_DATE = _ecount_use_date_env not in {"0", "false", "no", "off"}
-
 ECOUNT_DIRECT_SAVE_ENABLED = os.getenv(
     "ECOUNT_DIRECT_SAVE_ENABLED", "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -305,7 +301,7 @@ def post_to_ecount_erp(extracted_data: dict, sequence: int) -> dict:
         invoice_payload = {
             "InvoiceAutoList": [{
                 "BulkDatas": {
-                    "TRX_DATE": trx_date if ECOUNT_USE_RECEIPT_DATE else "",
+                    "TRX_DATE": trx_date,                             # บังคับส่งวันที่สกัดจากใบเสร็จโดยตรง ไม่ผ่านเงื่อนไขใดๆ
                     "ACCT_DOC_NO": receipt_no,                          
                     "TAX_GUBUN": ECOUNT_TAX_GUBUN,
                     "S_NO": "",
@@ -537,4 +533,4 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)  
