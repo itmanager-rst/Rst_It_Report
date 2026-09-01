@@ -7,10 +7,16 @@ let currentTargetRow = null;
 let currentSearchData = [];
 let searchModal = null;
 let loadingModal = null;
+let excelModal = null;
 
 document.addEventListener("DOMContentLoaded", function() {
-    searchModal = new bootstrap.Modal(document.getElementById('searchModal'));
-    loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    const searchModalEl = document.getElementById('searchModal');
+    const loadingModalEl = document.getElementById('loadingModal');
+    const excelModalEl = document.getElementById('excelModal');
+
+    if (searchModalEl) searchModal = new bootstrap.Modal(searchModalEl);
+    if (loadingModalEl) loadingModal = new bootstrap.Modal(loadingModalEl);
+    if (excelModalEl) excelModal = new bootstrap.Modal(excelModalEl);
     
     const today = new Date().toISOString().split('T')[0];
     const ioDateEl = document.getElementById('io_date');
@@ -22,10 +28,138 @@ document.addEventListener("DOMContentLoaded", function() {
     generateDocNumber();
     if (ioDateEl) ioDateEl.addEventListener('change', generateDocNumber);
     
+    // เพิ่มรายการสินค้าเริ่มต้น 1 แถว
+    addRow();
+
+    // เช็คสถานะการเชื่อมต่อ ECOUNT และ BigQuery
     checkSystemStatus();
-    loadPOList(); // เรียกดึงรายการใบสั่งซื้อเมื่อโหลดหน้าเว็บ
+
+    // ดึงรายการใบสั่งซื้อที่มีใน ECOUNT
+    loadPOList();
+
+    // เพิ่ม Event Listener สำหรับการอัปโหลดไฟล์ Excel
+    const excelForm = document.getElementById('excelUploadForm');
+    if (excelForm) {
+        excelForm.addEventListener('submit', handleExcelUpload);
+    }
 });
 
+// ----------------------------------------------------
+// 1. ระบบเช็คสถานะการเชื่อมต่อ (ECOUNT & BigQuery)
+// ----------------------------------------------------
+async function checkSystemStatus() {
+    const ecountBadge = document.getElementById('ecountStatusBadge');
+    const bqBadge = document.getElementById('bqStatusBadge');
+
+    try {
+        const res = await fetch(BASE_URL + '/api/health-check');
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        
+        const textData = await res.text();
+        if (!textData || !textData.trim()) throw new Error("Empty Response");
+        
+        const data = JSON.parse(textData);
+
+        // อัปเดตสถานะ ECOUNT Badge
+        if (ecountBadge) {
+            if (data.ecount) {
+                ecountBadge.className = 'badge bg-success border border-light d-flex align-items-center gap-1 fw-normal';
+                ecountBadge.innerHTML = `<i class="bi bi-check-circle-fill"></i> เชื่อมต่อ ECOUNT สำเร็จ`;
+            } else {
+                ecountBadge.className = 'badge bg-danger border border-light d-flex align-items-center gap-1 fw-normal';
+                ecountBadge.innerHTML = `<i class="bi bi-x-circle-fill"></i> เชื่อมต่อ ECOUNT ล้มเหลว`;
+            }
+        }
+
+        // อัปเดตสถานะ BigQuery Badge
+        if (bqBadge) {
+            if (data.bigquery) {
+                bqBadge.className = 'badge bg-info text-dark border border-light d-flex align-items-center gap-1 fw-normal';
+                bqBadge.innerHTML = `<i class="bi bi-database-check"></i> BigQuery: Connected`;
+            } else {
+                bqBadge.className = 'badge bg-secondary border border-light d-flex align-items-center gap-1 fw-normal';
+                bqBadge.innerHTML = `<i class="bi bi-database-slash"></i> BigQuery: Disconnected`;
+            }
+        }
+    } catch (err) {
+        if (ecountBadge) {
+            ecountBadge.className = 'badge bg-danger border border-light d-flex align-items-center gap-1 fw-normal';
+            ecountBadge.innerHTML = `<i class="bi bi-x-circle-fill"></i> ไม่สามารถเชื่อมต่อระบบ ECOUNT ได้`;
+        }
+        if (bqBadge) {
+            bqBadge.className = 'badge bg-secondary border border-light d-flex align-items-center gap-1 fw-normal';
+            bqBadge.innerHTML = `<i class="bi bi-database-slash"></i> BigQuery: Disconnected`;
+        }
+    }
+}
+
+// ----------------------------------------------------
+// 2. ฟังก์ชันเกี่ยวกับการอัปโหลด Excel (Auto PO Batch 10)
+// ----------------------------------------------------
+function updateFileNameDisplay(input) {
+    const fileNameDiv = document.getElementById('selectedFileName');
+    const btnUpload = document.getElementById('btnUploadExcel');
+    
+    if (input.files && input.files[0]) {
+        if (fileNameDiv) fileNameDiv.textContent = `ไฟล์ที่เลือก: ${input.files[0].name}`;
+        if (btnUpload) btnUpload.disabled = false;
+    } else {
+        if (fileNameDiv) fileNameDiv.textContent = '';
+        if (btnUpload) btnUpload.disabled = true;
+    }
+}
+
+async function handleExcelUpload(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('excelFileInput');
+    if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+        alert('กรุณาเลือกไฟล์ Excel');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    if (excelModal) excelModal.hide();
+    const loadingText = document.getElementById('loadingText');
+    if (loadingText) loadingText.textContent = 'กำลังส่งข้อมูลเข้า ECOUNT ( Auto PO ครั้งละ 10 รายการ )...';
+    if (loadingModal) loadingModal.show();
+
+    try {
+        const res = await fetch(BASE_URL + '/api/upload-excel-po', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await res.json();
+        if (loadingModal) loadingModal.hide();
+
+        if (res.ok && result.success) {
+            let message = `🎉 สร้าง Auto PO สำเร็จทั้งหมด ${result.total_batches} ใบ!\n\n`;
+            if (Array.isArray(result.summary)) {
+                result.summary.forEach(batch => {
+                    if (batch.status === 'success') {
+                        message += `• Batch ${batch.batch} (${batch.item_count} รายการ) -> เลขที่ PO: ${batch.slip_nos}\n`;
+                    } else {
+                        message += `• Batch ${batch.batch} -> ❌ ล้มเหลว\n`;
+                    }
+                });
+            }
+            alert(message);
+            location.reload();
+        } else {
+            alert('❌ เกิดข้อผิดพลาด: ' + (result.detail || JSON.stringify(result)));
+        }
+    } catch (err) {
+        if (loadingModal) loadingModal.hide();
+        alert('❌ ไม่สามารถเชื่อมต่อ Server ได้: ' + err.message);
+    }
+}
+
+// ----------------------------------------------------
+// 3. ฟังก์ชันการจัดการฟอร์ม Manual PO
+// ----------------------------------------------------
 function generateDocNumber() {
     const ioDateEl = document.getElementById('io_date');
     if (!ioDateEl) return;
@@ -68,38 +202,16 @@ async function checkDuplicatePO() {
     }
 }
 
-async function checkSystemStatus() {
-    const bqEl = document.getElementById('bqStatus');
-    const ecountEl = document.getElementById('ecountStatus');
-
-    if (!bqEl || !ecountEl) return;
-
-    try {
-        const res = await fetch(BASE_URL + '/api/health-check');
-        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-        
-        const textData = await res.text();
-        if (!textData || !textData.trim()) throw new Error("Empty Response");
-        
-        const data = JSON.parse(textData);
-
-        bqEl.className = data.bigquery ? 'status-badge status-online' : 'status-badge status-offline';
-        bqEl.innerHTML = `<span class="status-dot"></span> BigQuery: ${data.bigquery ? 'Connected' : 'Disconnected'}`;
-
-        ecountEl.className = data.ecount ? 'status-badge status-online' : 'status-badge status-offline';
-        ecountEl.innerHTML = `<span class="status-dot"></span> ECOUNT: ${data.ecount ? 'Connected' : 'Disconnected'}`;
-    } catch (err) {
-        bqEl.className = 'status-badge status-offline';
-        ecountEl.className = 'status-badge status-offline';
-    }
-}
-
+// Modal ค้นหา Master Data
 async function openModal(type, targetInputId) {
     currentTargetInputId = targetInputId;
     currentTargetRow = null;
-    document.getElementById('modalTitle').innerText = 'ค้นหาข้อมูล ' + type.toUpperCase();
-    document.getElementById('modalTableBody').innerHTML = '<tr><td colspan="3" class="text-center py-4">กำลังโหลด...</td></tr>';
-    searchModal.show();
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalTableBody');
+    
+    if (modalTitle) modalTitle.innerText = 'ค้นหาข้อมูล ' + type.toUpperCase();
+    if (modalBody) modalBody.innerHTML = '<tr><td colspan="3" class="text-center py-4">กำลังโหลด...</td></tr>';
+    if (searchModal) searchModal.show();
 
     try {
         const res = await fetch(BASE_URL + '/api/search/' + type);
@@ -113,19 +225,22 @@ async function openModal(type, targetInputId) {
             currentSearchData = result.data;
             renderSearchTable(currentSearchData);
         } else {
-            document.getElementById('modalTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">ไม่พบข้อมูล</td></tr>';
+            if (modalBody) modalBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">ไม่พบข้อมูล</td></tr>';
         }
     } catch(e) {
-        document.getElementById('modalTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">เกิดข้อผิดพลาดในการโหลด</td></tr>';
+        if (modalBody) modalBody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">เกิดข้อผิดพลาดในการโหลด</td></tr>';
     }
 }
 
 async function openProductModal(btn) {
     currentTargetInputId = null;
     currentTargetRow = btn.closest('tr');
-    document.getElementById('modalTitle').innerText = 'ค้นหารายการสินค้า';
-    document.getElementById('modalTableBody').innerHTML = '<tr><td colspan="3" class="text-center py-4">กำลังโหลด...</td></tr>';
-    searchModal.show();
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalTableBody');
+
+    if (modalTitle) modalTitle.innerText = 'ค้นหารายการสินค้า';
+    if (modalBody) modalBody.innerHTML = '<tr><td colspan="3" class="text-center py-4">กำลังโหลด...</td></tr>';
+    if (searchModal) searchModal.show();
 
     try {
         const res = await fetch(BASE_URL + '/api/search/product');
@@ -139,15 +254,16 @@ async function openProductModal(btn) {
             currentSearchData = result.data;
             renderSearchTable(currentSearchData);
         } else {
-            document.getElementById('modalTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">ไม่พบรายการสินค้า</td></tr>';
+            if (modalBody) modalBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">ไม่พบรายการสินค้า</td></tr>';
         }
     } catch(e) {
-        document.getElementById('modalTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">เกิดข้อผิดพลาดในการโหลด</td></tr>';
+        if (modalBody) modalBody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">เกิดข้อผิดพลาดในการโหลด</td></tr>';
     }
 }
 
 function renderSearchTable(data) {
     const tbody = document.getElementById('modalTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
     data.forEach(item => {
         const tr = document.createElement('tr');
@@ -161,7 +277,9 @@ function renderSearchTable(data) {
 }
 
 function filterSearchTable() {
-    const term = document.getElementById('searchInput').value.toLowerCase();
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput) return;
+    const term = searchInput.value.toLowerCase();
     const filtered = currentSearchData.filter(i => 
         (i.code && i.code.toLowerCase().includes(term)) || 
         (i.name && i.name.toLowerCase().includes(term))
@@ -171,17 +289,23 @@ function filterSearchTable() {
 
 function selectItem(code, name) {
     if (currentTargetInputId) {
-        document.getElementById(currentTargetInputId).value = code;
+        const targetEl = document.getElementById(currentTargetInputId);
+        if (targetEl) targetEl.value = code;
     } else if (currentTargetRow) {
-        currentTargetRow.querySelector('.prod-cd').value = code;
-        currentTargetRow.querySelector('.prod-des').value = name || '';
+        const prodCd = currentTargetRow.querySelector('.prod-cd');
+        const prodDes = currentTargetRow.querySelector('.prod-des');
+        if (prodCd) prodCd.value = code;
+        if (prodDes) prodDes.value = name || '';
     }
-    searchModal.hide();
-    document.getElementById('searchInput').value = '';
+    if (searchModal) searchModal.hide();
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.value = '';
 }
 
+// เพิ่ม/ลบ แถวรายการสินค้า
 function addRow() {
     const tbody = document.getElementById('itemRows');
+    if (!tbody) return;
     const rowCount = tbody.children.length + 1;
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -194,13 +318,13 @@ function addRow() {
         </td>
         <td><input type="text" class="form-control form-control-sm prod-des"></td>
         <td><input type="text" class="form-control form-control-sm size-des"></td>
-        <td><input type="number" class="form-control form-control-sm text-end qty" value="1" min="1" step="0.01" onchange="calcRow(this)" required></td>
-        <td><input type="number" class="form-control form-control-sm text-end price" value="0" step="0.01" onchange="calcRow(this)"></td>
-        <td><input type="number" class="form-control form-control-sm text-end discount-rate" value="0" step="0.01" onchange="calcRow(this)"></td>
-        <td><input type="number" class="form-control form-control-sm text-end discount-amt" value="0" step="0.01" onchange="calcRow(this)"></td>
-        <td><input type="number" class="form-control form-control-sm text-end supply-amt" value="0.00" step="0.01" readonly></td>
-        <td><input type="number" class="form-control form-control-sm text-end total-amt" value="0.00" step="0.01" readonly></td>
-        <td><input type="number" class="form-control form-control-sm text-end vat-amt" value="0.00" step="0.01" onchange="calcRow(this)"></td>
+        <td><input type="number" class="form-control form-control-sm text-end qty" value="1" min="0.01" step="any" onchange="calcRow(this)" required></td>
+        <td><input type="number" class="form-control form-control-sm text-end price" value="0" step="any" onchange="calcRow(this)"></td>
+        <td><input type="number" class="form-control form-control-sm text-end discount-rate" value="0" step="any" onchange="calcRow(this)"></td>
+        <td><input type="number" class="form-control form-control-sm text-end discount-amt" value="0" step="any" onchange="calcRow(this)"></td>
+        <td><input type="number" class="form-control form-control-sm text-end supply-amt" value="0.00" step="any" readonly></td>
+        <td><input type="number" class="form-control form-control-sm text-end total-amt" value="0.00" step="any" readonly></td>
+        <td><input type="number" class="form-control form-control-sm text-end vat-amt" value="0.00" step="any" onchange="calcRow(this)"></td>
         <td><input type="date" class="form-control form-control-sm item-delivery-date"></td>
         <td><input type="text" class="form-control form-control-sm remarks"></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger p-0 px-1" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
@@ -211,7 +335,7 @@ function addRow() {
 
 function removeRow(btn) {
     const tbody = document.getElementById('itemRows');
-    if(tbody.children.length > 1) {
+    if(tbody && tbody.children.length > 1) {
         btn.closest('tr').remove();
         updateRowNumbers();
         updateTotals();
@@ -220,37 +344,44 @@ function removeRow(btn) {
 
 function updateRowNumbers() {
     document.querySelectorAll('#itemRows tr').forEach((tr, index) => {
-        tr.querySelector('.row-num').innerText = index + 1;
+        const numEl = tr.querySelector('.row-num');
+        if (numEl) numEl.innerText = index + 1;
     });
 }
 
 function calcRow(el) {
     const tr = el.closest('tr');
-    const qty = parseFloat(tr.querySelector('.qty').value) || 0;
-    const price = parseFloat(tr.querySelector('.price').value) || 0;
-    const discountRate = parseFloat(tr.querySelector('.discount-rate').value) || 0;
+    if (!tr) return;
+
+    const qty = parseFloat(tr.querySelector('.qty')?.value) || 0;
+    const price = parseFloat(tr.querySelector('.price')?.value) || 0;
+    const discountRate = parseFloat(tr.querySelector('.discount-rate')?.value) || 0;
     
     let baseAmount = qty * price;
-    let discountAmt = parseFloat(tr.querySelector('.discount-amt').value) || 0;
+    let discountAmt = parseFloat(tr.querySelector('.discount-amt')?.value) || 0;
 
     if (discountRate > 0) {
         discountAmt = baseAmount * (discountRate / 100);
-        tr.querySelector('.discount-amt').value = discountAmt.toFixed(2);
+        const discInput = tr.querySelector('.discount-amt');
+        if (discInput) discInput.value = discountAmt.toFixed(2);
     }
 
     const supplyAmt = Math.max(0, baseAmount - discountAmt);
-    tr.querySelector('.supply-amt').value = supplyAmt.toFixed(2);
+    const supplyInput = tr.querySelector('.supply-amt');
+    if (supplyInput) supplyInput.value = supplyAmt.toFixed(2);
 
     const ioTypeEl = document.getElementById('io_type');
     const ioType = ioTypeEl ? ioTypeEl.value : '';
-    let vatAmt = parseFloat(tr.querySelector('.vat-amt').value) || 0;
+    let vatAmt = parseFloat(tr.querySelector('.vat-amt')?.value) || 0;
     if (ioType === 'VAT') {
         vatAmt = supplyAmt * 0.07;
-        tr.querySelector('.vat-amt').value = vatAmt.toFixed(2);
+        const vatInput = tr.querySelector('.vat-amt');
+        if (vatInput) vatInput.value = vatAmt.toFixed(2);
     }
 
     const totalAmt = supplyAmt + vatAmt;
-    tr.querySelector('.total-amt').value = totalAmt.toFixed(2);
+    const totalInput = tr.querySelector('.total-amt');
+    if (totalInput) totalInput.value = totalAmt.toFixed(2);
 
     updateTotals();
 }
@@ -259,11 +390,11 @@ function updateTotals() {
     let totQty = 0, totDisc = 0, totSupply = 0, totVat = 0, totGrand = 0;
 
     document.querySelectorAll('#itemRows tr').forEach(tr => {
-        totQty += parseFloat(tr.querySelector('.qty').value) || 0;
-        totDisc += parseFloat(tr.querySelector('.discount-amt').value) || 0;
-        totSupply += parseFloat(tr.querySelector('.supply-amt').value) || 0;
-        totVat += parseFloat(tr.querySelector('.vat-amt').value) || 0;
-        totGrand += parseFloat(tr.querySelector('.total-amt').value) || 0;
+        totQty += parseFloat(tr.querySelector('.qty')?.value) || 0;
+        totDisc += parseFloat(tr.querySelector('.discount-amt')?.value) || 0;
+        totSupply += parseFloat(tr.querySelector('.supply-amt')?.value) || 0;
+        totVat += parseFloat(tr.querySelector('.vat-amt')?.value) || 0;
+        totGrand += parseFloat(tr.querySelector('.total-amt')?.value) || 0;
     });
 
     const totalQtyEl = document.getElementById('totalQty');
@@ -279,7 +410,9 @@ function updateTotals() {
     if (grandTotalEl) grandTotalEl.innerText = totGrand.toFixed(2);
 }
 
-// ฟังก์ชันช่วยจัดรูปแบบวันที่ให้อยู่ในรูปแบบ DD/MM/YYYY (พ.ศ.)
+// ----------------------------------------------------
+// 4. ฟังก์ชันดึงรายการใบสั่งซื้อจาก ECOUNT ERP (ปรับปรุงดึงยอดเงิน)
+// ----------------------------------------------------
 function formatThaiDate(dateStr) {
     if (!dateStr || dateStr === '-') return '-';
     let cleanStr = String(dateStr).replace(/[^0-9]/g, '');
@@ -287,18 +420,81 @@ function formatThaiDate(dateStr) {
         let year = parseInt(cleanStr.substring(0, 4));
         let month = cleanStr.substring(4, 6);
         let day = cleanStr.substring(6, 8);
-        if (year < 2500) year += 543; // แปลงเป็น พ.ศ.
+        if (year < 2500) year += 543;
         return `${day}/${month}/${year}`;
     }
     return dateStr;
 }
 
-// ปรับปรุงฟังก์ชัน loadPOList ดึงข้อมูล ใบขอซื้อ, เลขใบสั่งซื้อ, อ้างอิง และวันที่ส่งมอบ ครบถ้วน
-async function loadPOList() {
+function parseNumber(val) {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    const cleaned = String(val).replace(/,/g, '').trim();
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+}
+
+// ฟังก์ชันค้นหายอดเงินแบบละเอียด ครอบคลุมทุก Key จาก ECOUNT
+function extractAmountFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+
+    const normalizeKey = (key) => String(key || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    const directCandidates = [
+        'TOTALAMT', 'TOTALAMOUNT', 'POAMT', 'POAMOUNT', 'BUYAMT', 'BUYAMTF',
+        'SUPPLYAMT', 'SUPPLYAMOUNT', 'NETAMT', 'NETAMOUNT', 'SUMAMT', 'SUMAMOUNT',
+        'TOTALPRICE', 'TOTALPRICEVAT', 'TOTALAMTVAT', 'TOTALAFTERVAT',
+        'TOTALBEFOREVAT', 'OUTAMT', 'PRODAMT', 'EXCHBUYAMT', 'AMTF', 'AMT',
+        'AMOUNT', 'TOTAMT', 'TOTAL', 'NETH', 'NETTOTAL', 'TOTALNET', 'PO_TOTAL', 'DOCAMT'
+    ];
+
+    const values = [];
+
+    const walk = (value) => {
+        if (!value || typeof value !== 'object') {
+            return;
+        }
+
+        if (Array.isArray(value)) {
+            value.forEach(walk);
+            return;
+        }
+
+        for (const [key, propValue] of Object.entries(value)) {
+            const normalizedKey = normalizeKey(key);
+            if (directCandidates.includes(normalizedKey)) {
+                const parsed = parseNumber(propValue);
+                if (parsed !== 0 || String(propValue ?? '').trim() === '0' || String(propValue ?? '').trim() === '0.00') {
+                    values.push(parsed);
+                }
+            }
+            if (propValue && typeof propValue === 'object') {
+                walk(propValue);
+            }
+        }
+    };
+
+    walk(obj);
+
+    if (values.length > 0) {
+        return values.reduce((sum, value) => sum + value, 0);
+    }
+
+    // fallback: ถ้าระบบส่ง Quantity * Price แทนยอดรวม
+    const qty = parseNumber(obj.QTY || obj.BUY_QTY || obj.QUANTITY || obj.QTY_1);
+    const price = parseNumber(obj.PRICE || obj.BUY_PRICE || obj.UNIT_PRICE || obj.PUR_PRICE);
+    if (qty > 0 && price > 0) {
+        return qty * price;
+    }
+
+    return 0;
+}
+
+async function loadPOList(retryCount = 0) {
     const listTableBody = document.getElementById('poListTableBody');
     if (!listTableBody) return;
 
-    listTableBody.innerHTML = '<tr><td colspan="14" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลดข้อมูลจาก ECOUNT...</td></tr>';
+    listTableBody.innerHTML = '<tr><td colspan="16" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลดข้อมูลจาก ECOUNT...</td></tr>';
 
     try {
         const today = new Date();
@@ -325,144 +521,138 @@ async function loadPOList() {
             DATE_TO: endDateStr
         });
 
-        const res = await fetch(`${BASE_URL}/api/get-po-list?${queryParams.toString()}`);
+        let res = await fetch(`${BASE_URL}/api/get-po-list?${queryParams.toString()}`);
 
-        // 1. ตรวจสอบสถานะ HTTP Status 412 (Session Expired / Precondition Failed)
-        if (res.status === 412) {
-            throw new Error("ECOUNT Session หมดอายุ หรือพารามิเตอร์ไม่ถูกต้อง (Status 412)");
-        }
-
-        if (!res.ok) {
-            throw new Error(`Server returned status code: ${res.status} (${res.statusText})`);
-        }
-
-        // 2. ดึงข้อความตอบกลับเป็นข้อความดิบก่อน
         const textData = await res.text();
-
-        if (!textData || !textData.trim()) {
-            throw new Error("Server ตอบกลับด้วยค่าว่าง (Empty Response)");
-        }
-
-        // 3. แปลงเป็น JSON ด้วยความปลอดภัย
-        let result;
+        let result = null;
         try {
-            result = JSON.parse(textData);
-        } catch (parseErr) {
-            throw new Error("Server Response ไม่ใช่ JSON ที่ถูกต้อง (อาจเป็น HTML Error Page)");
+            result = textData && textData.trim() ? JSON.parse(textData) : null;
+        } catch (e) {
+            console.error("JSON Parse Error:", e);
         }
 
-        // 4. นำข้อมูลไป Render ลงตารางพร้อมค้นหา Key สำรองทุกรูปแบบจาก ECOUNT
-        if (result.success && result.data && result.data.length > 0) {
+        // จัดการกรณี ECOUNT Session 412: ทำการ Auto Re-login ให้อัตโนมัติสูงสุด 2 ครั้ง
+        const isSessionExpired = res.status === 412 || (result && result.message && result.message.includes('412'));
+        
+        if (isSessionExpired && retryCount < 2) {
+            console.warn(`ECOUNT Session 412 Detected. Auto relogging (Attempt ${retryCount + 1})...`);
+            await fetch(`${BASE_URL}/api/health-check`); // กระตุ้นการ Re-login ฝั่ง Backend
+            await new Promise(resolve => setTimeout(resolve, 1200)); // หน่วงเวลา 1.2 วินาที
+            return loadPOList(retryCount + 1); // โหลดรายการซ้ำอีกครั้ง
+        }
+
+        if (!res.ok && !isSessionExpired) {
+            throw new Error(`Server status: ${res.status} (${res.statusText})`);
+        }
+
+        if (result && result.success && result.data && result.data.length > 0) {
             listTableBody.innerHTML = '';
             
+            console.log("ECOUNT Raw Data Sample:", result.data[0]);
+
             result.data.forEach((item, index) => {
                 const tr = document.createElement('tr');
 
-                // วันที่และลำดับ
-                const rawDate = item.IO_DATE || item.ORD_DATE || item.PROD_DATE || item.DATE || '';
+                const rawDate = item.ORD_DATE || item.IO_DATE || item.TIME_DATE || '';
                 const thaiDate = formatThaiDate(rawDate);
-                const seqNo = item.SEQ || item.LINE_NO || item.IO_SEQ || (index + 1);
+                const seqNo = item.ORD_NO || item.SEQ || (index + 1);
+                const dateSeqStr = `${thaiDate} -${seqNo}`;
 
-                // อ้างอิง (REF_NO / REMARKS / U_MEMO1)
-                const refNo = item.REF_NO || item.REFERENCE_NO || item.REMARKS || item.U_MEMO1 || item.CUST_REF_NO || '-';
+                const projectName = item.PJT_DES || item.PJT_CD || '-';
+                const prReceiveDate = formatThaiDate(item.ORD_DATE || item.IO_DATE);
+                const prReqDate = formatThaiDate(item.TIME_DATE || item.IO_DATE);
+                const seoType = item.P_DES1 || item.SEO_TYPE || '-';
+                const locationName = item.WH_DES || item.WH_CD || 'สำนักงานใหญ่';
 
-                // โครงการ
-                const projectName = item.PJT_DES || item.PJT_NAME || item.PJT_CD || '-';
+                let poNo = item.ORD_NO ? `PO-${rawDate}-${item.ORD_NO}` : (item.PO_NO || item.SLIP_NO || '-');
 
-                // ใบขอซื้อเลขที่ (PR_NO / REQ_NO / REL_NO / PUR_REQ_NO / U_MEMO2)
-                const prNo = item.PR_NO || item.REQ_NO || item.PUR_REQ_NO || item.REL_NO || item.U_MEMO2 || '-';
+                const prodName = item.PROD_DES || item.PROD_CD || '-';
+                const sizeSpec = item.SIZE_DES ? ` [${item.SIZE_DES}]` : '';
+                const fullProdDisplay = `${prodName}${sizeSpec}`;
 
-                // เลขที่ใบสั่งซื้อ (PO_NO / IO_NO / ORD_NO / DOC_NO)
-                const poNo = item.PO_NO || item.IO_NO || item.ORD_NO || item.DOC_NO || item.PO_NUM || 
-                             (item.U_MEMO1 && item.U_MEMO1.startsWith('PO') ? item.U_MEMO1 : '-') || '-';
+                const deliveryDate = formatThaiDate(item.TIME_DATE || item.IO_DATE);
+                
+                // คำนวณดึงยอดรวมสุทธิ
+                const totalAmt = extractAmountFromObject(item);
 
-                // ลูกค้า/ผู้ขาย
-                const customerName = item.CUST_DES || item.CUST_NAME || item.CUST || item.CUSTOMER_NAME || '-';
+                const custName = item.CUST_DES || item.CUST_NAME || item.CUST || '-';
+                const picName = item.CUST_NAME || item.EMP_CD || item.WRITER_ID || '-';
+                const remarkText = item.REF_DES || item.TTL_CTT || '-';
 
-                // PIC
-                const empName = item.EMP_DES || item.EMP_NAME || item.PIC_NAME || item.EMP_CD || '-';
-
-                // สินค้า และ ข้อมูลจำเพาะ
-                const productName = item.PROD_DES || item.PROD_NAME || item.ITEM_DES || item.PROD_CD || '-';
-                const sizeName = item.SIZE_DES || item.SIZE || item.SPEC || '';
-
-                // วันที่ส่งมอบ (DELIVERY_DATE / TIME_DATE / REQ_DATE / DUE_DATE)
-                const rawDeliveryDate = item.DELIVERY_DATE || item.TIME_DATE || item.REQ_DATE || item.DUE_DATE || item.DELIVERY_DATE_ITEM || '';
-                const deliveryDateFormatted = rawDeliveryDate ? formatThaiDate(rawDeliveryDate) : '-';
-
-                // ยอดรวม
-                const totalValue = parseFloat(item.TOTAL_AMT || item.TOTAL_PRICE || item.SUPPLY_AMT || item.AMT || item.QTY || 0);
-
-                // สถานะ
-                const confirm = item.CONFIRM_TYPE || item.STATUS || item.APPROVAL_STATUS || 'N';
+                const isCompleted = item.P_FLAG === '9' || item.P_FLAG === 9 || item.CONFIRM_TYPE === 'Y';
+                const statusBadge = isCompleted 
+                    ? `<span class="text-success fw-bold">เสร็จสิ้น</span>` 
+                    : `<span class="text-secondary">กำลังดำเนินการ</span>`;
 
                 tr.innerHTML = `
-                    <td class="text-center"><input type="checkbox" value="${poNo}"></td>
-                    <td class="text-center text-nowrap">${thaiDate}${rawDate ? `-${seqNo}` : '-'}</td>
-                    <td>${refNo}</td>
+                    <td class="text-center text-nowrap">${dateSeqStr}</td>
                     <td>${projectName}</td>
-                    <td class="text-nowrap">${prNo}</td>
-                    <td class="fw-bold text-primary text-nowrap">${poNo}</td>
-                    <td>${customerName}</td>
-                    <td>${empName}</td>
-                    <td>${productName}${sizeName ? ` [${sizeName}]` : ''}</td>
-                    <td class="text-center text-nowrap">${deliveryDateFormatted}</td>
-                    <td class="text-end fw-bold">${Number.isFinite(totalValue) && totalValue > 0 ? totalValue.toLocaleString('th-TH', {minimumFractionDigits: 2}) : '0.00'}</td>
-                    <td class="text-center">
-                        <span class="status-badge-ecount ${confirm === 'Y' || confirm === 'Approved' || confirm === 'APPROVED' || confirm === 'COMPLETED' ? 'status-completed' : 'status-in-progress'}">
-                            ${confirm === 'Y' || confirm === 'Approved' || confirm === 'APPROVED' || confirm === 'COMPLETED' ? 'เสร็จสิ้น' : 'กำลังดำเนินการ'}
-                        </span>
-                    </td>
-                    <td class="text-center">-</td>
-                    <td class="text-center"><button class="btn btn-sm btn-link p-0 text-secondary"><i class="bi bi-printer"></i></button></td>
+                    <td class="text-center text-nowrap">${prReceiveDate}</td>
+                    <td class="text-center text-nowrap">${prReqDate}</td>
+                    <td>${seoType}</td>
+                    <td>${locationName}</td>
+                    <td class="fw-bold text-nowrap">${poNo}</td>
+                    <td>${fullProdDisplay}</td>
+                    <td class="text-center text-nowrap">${deliveryDate}</td>
+                    <td class="text-end fw-bold text-primary">${totalAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td>${custName}</td>
+                    <td class="text-center">${statusBadge}</td>
+                    <td class="text-center">${picName}</td>
+                    <td class="text-center"><a href="#" class="text-decoration-none">ดู</a></td>
+                    <td class="text-center"><button class="btn btn-sm btn-warning text-white py-0 px-2 fw-bold">พิมพ์</button></td>
+                    <td class="small text-muted">${remarkText}</td>
                 `;
                 listTableBody.appendChild(tr);
             });
         } else {
-            const message = result && result.message ? result.message : 'ไม่พบรายการใบสั่งซื้อในระบบ';
-            listTableBody.innerHTML = `<tr><td colspan="14" class="text-center py-4 ${message.includes('ECOUNT') ? 'text-warning' : 'text-muted'}">${message}</td></tr>`;
+            const message = result && result.message ? result.message : 'ECOUNT Session หมดอายุ กรุณากดปุ่ม \'โหลดรายการใหม่\' อีกครั้ง';
+            listTableBody.innerHTML = `<tr><td colspan="16" class="text-center py-4 text-warning fw-bold">${message}</td></tr>`;
         }
     } catch (err) {
         console.error("Error loading PO list:", err);
-        listTableBody.innerHTML = `<tr><td colspan="14" class="text-center text-danger py-4">❌ ไม่สามารถดึงข้อมูลได้: ${err.message}</td></tr>`;
+        listTableBody.innerHTML = `<tr><td colspan="16" class="text-center text-danger py-4">❌ ไม่สามารถดึงข้อมูลได้: ${err.message}</td></tr>`;
     }
 }
 
+// Submit Manual PO Form
 const poFormEl = document.getElementById('poForm');
 if (poFormEl) {
     poFormEl.addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const btnSubmit = document.getElementById('btnSubmit');
+        const loadingText = document.getElementById('loadingText');
+
         if (btnSubmit) btnSubmit.disabled = true;
+        if (loadingText) loadingText.textContent = 'กำลังบันทึกข้อมูลใบสั่งซื้อ...';
         if (loadingModal) loadingModal.show();
 
         const items = [];
         document.querySelectorAll('#itemRows tr').forEach(tr => {
             items.push({
-                prod_cd: tr.querySelector('.prod-cd').value.trim(),
-                prod_des: tr.querySelector('.prod-des').value.trim(),
-                size_des: tr.querySelector('.size-des').value.trim(),
-                qty: parseFloat(tr.querySelector('.qty').value) || 0,
-                price: parseFloat(tr.querySelector('.price').value) || 0,
-                supply_amt: parseFloat(tr.querySelector('.supply-amt').value) || 0,
-                vat_amt: parseFloat(tr.querySelector('.vat-amt').value) || 0,
-                remarks: tr.querySelector('.remarks').value.trim() || '-'
+                prod_cd: tr.querySelector('.prod-cd')?.value.trim() || '',
+                prod_des: tr.querySelector('.prod-des')?.value.trim() || '',
+                size_des: tr.querySelector('.size-des')?.value.trim() || '',
+                qty: parseFloat(tr.querySelector('.qty')?.value) || 0,
+                price: parseFloat(tr.querySelector('.price')?.value) || 0,
+                supply_amt: parseFloat(tr.querySelector('.supply-amt')?.value) || 0,
+                vat_amt: parseFloat(tr.querySelector('.vat-amt')?.value) || 0,
+                remarks: tr.querySelector('.remarks')?.value.trim() || '-'
             });
         });
 
         const payload = {
-            po_no: document.getElementById('po_no').value.trim(),
-            pr_no: document.getElementById('pr_no').value.trim(),
-            cust_cd: document.getElementById('cust_cd').value.trim(),
-            io_date: document.getElementById('io_date').value,
-            req_date: document.getElementById('req_date').value,
-            wh_cd: document.getElementById('wh_cd').value.trim(),
-            emp_cd: document.getElementById('emp_cd').value.trim(),
-            pjt_cd: document.getElementById('pjt_cd').value.trim(),
-            io_type: document.getElementById('io_type').value,
-            exchange_type: document.getElementById('exchange_type').value,
-            u_memo1: document.getElementById('u_memo1').value.trim(),
+            po_no: document.getElementById('po_no')?.value.trim() || '',
+            pr_no: document.getElementById('pr_no')?.value.trim() || '',
+            cust_cd: document.getElementById('cust_cd')?.value.trim() || '',
+            io_date: document.getElementById('io_date')?.value || '',
+            req_date: document.getElementById('req_date')?.value || '',
+            wh_cd: document.getElementById('wh_cd')?.value.trim() || '',
+            emp_cd: document.getElementById('emp_cd')?.value.trim() || '',
+            pjt_cd: document.getElementById('pjt_cd')?.value.trim() || '',
+            io_type: document.getElementById('io_type')?.value || '',
+            exchange_type: document.getElementById('exchange_type')?.value || '',
+            u_memo1: document.getElementById('u_memo1')?.value.trim() || '',
             items: items
         };
 

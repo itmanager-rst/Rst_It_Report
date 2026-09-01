@@ -45,15 +45,15 @@ PROJECT_ID = "po-asia"
 DATASET_ID = "po_asia"
 
 CONFIG = {
-    "COM_CODE": os.getenv("COM_CODE", "913560"),
-    "USER_ID": os.getenv("USER_ID", "ITASIA"),
-    "ECOUNT_API_KEY": os.getenv("ECOUNT_API_KEY", "4f75631bc98ae4c6ea927946b1b45e9c86").strip(),
+    "COM_CODE": os.getenv("COM_CODE", "915297"),
+    "USER_ID": os.getenv("USER_ID", "ITRST01"),
+    "ECOUNT_API_KEY": os.getenv("ECOUNT_API_KEY", "5b3c2d9aa2f7d4fc4a5f4dd9ce78fd0b47").strip(),
     "LAN_TYPE": os.getenv("LAN_TYPE", "th-TH"),
     "ZONE": os.getenv("ZONE", "IA"),
     "ALLOW_ECOUNT_PO_LIST": str(os.getenv("ALLOW_ECOUNT_PO_LIST", "true")).strip().lower() in {"1", "true", "yes", "y"}
 }
 
-# 💡 ฟังก์ชันจัดการ Login และขอ Session ECOUNT (เพิ่ม Log ตรวจสอบและ Auto-Clear Cache)
+# 💡 ฟังก์ชันจัดการ Login และขอ Session ECOUNT
 def get_ecount_session(force_refresh: bool = False):
     global ECOUNT_SESSION_ID, ECOUNT_HOST_URL
 
@@ -199,7 +199,7 @@ def health_check():
         "ecount": ecount_status
     }
 
-# --- API ดึงรายการสั่งซื้อ ECOUNT ---
+# --- API ดึงรายการสั่งซื้อ ECOUNT (ปรับปรุงการขยาย Field Keys สำหรับ PR และ Ref No.) ---
 
 @app.get("/api/get-po-list")
 async def get_po_list(
@@ -228,27 +228,34 @@ async def get_po_list(
         return requests.post(url, json=payload, timeout=30)
 
     try:
-        session_id, host_url = get_ecount_session()
-        if not session_id or not host_url:
-            return {"success": False, "message": "ไม่สามารถเข้าสู่ระบบ ECOUNT ได้"}
-
         today = datetime.now()
         from_date = (DATE_FROM or (today - timedelta(days=29)).strftime("%Y%m%d")).replace("-", "").replace("/", "")
         to_date = (DATE_TO or today.strftime("%Y%m%d")).replace("-", "").replace("/", "")
 
+        # 1. ขอ Session ปัจจุบัน
+        session_id, host_url = get_ecount_session()
+        if not session_id or not host_url:
+            return {"success": False, "message": "ไม่สามารถเข้าสู่ระบบ ECOUNT ได้"}
+
+        # 2. ยิง Request ครั้งแรก
         res = fetch_from_ecount(session_id, host_url, from_date, to_date)
 
-        if res.status_code in [412, 500, 401] or "json" not in res.headers.get("Content-Type", "").lower():
+        # 3. ตรวจสอบว่าโดน 412 หรือ Response ไม่ใช่ JSON หรือไม่ หากใช่ ให้บังคับ Re-login ใหม่ทันที (Force Refresh)
+        content_type = res.headers.get("Content-Type", "").lower()
+        if res.status_code in [412, 401, 500] or "application/json" not in content_type:
+            print("[ECOUNT] Session Expired หรือได้รับ Response ที่ไม่ใช่ JSON -> พยายาม Re-login ใหม่...")
             session_id, host_url = get_ecount_session(force_refresh=True)
             if session_id and host_url:
                 res = fetch_from_ecount(session_id, host_url, from_date, to_date)
 
+        # 4. แปลงผลลัพธ์เป็น JSON
         try:
             response_data = res.json()
-        except Exception:
+        except Exception as json_err:
+            print(f"[ECOUNT Error] ไม่สามารถแปลง JSON ได้ Raw Content: {res.text[:200]}")
             return {
                 "success": False, 
-                "message": f"ECOUNT Server ตอบกลับไม่ตรงรูปแบบ JSON (HTTP Status: {res.status_code})"
+                "message": f"ECOUNT Session หมดอายุ กรุณากดปุ่ม 'โหลดรายการใหม่' อีกครั้ง (HTTP Status: {res.status_code})"
             }
 
         if str(response_data.get("Status")) == "200":
@@ -264,15 +271,37 @@ async def get_po_list(
 
                 def pick(*keys):
                     for key in keys:
-                        if key in item and item[key] not in (None, ""):
+                        if key in item and item[key] not in (None, "", "-"):
                             return item[key]
                     return ""
 
+                # ดึงเลขที่ใบสั่งซื้อ และตรวจสอบไม่ให้หยิบตัวเลขลำดับสั้นๆ
+                raw_po = pick("IO_NO", "SLIP_NO", "DOC_NO", "PO_NO", "ORD_NO", "PO_NUM")
+                io_date_val = pick("IO_DATE", "ORD_DATE", "DATE", "BASE_DATE", "PROD_DATE")
+                seq_val = pick("UPLOAD_SER_NO", "LINE_NO", "IO_SEQ", "SEQ")
+
+                if not raw_po or (str(raw_po).isdigit() and len(str(raw_po)) <= 3):
+                    po_number = pick("SLIP_NO", "DOC_NO") or (f"PO-{io_date_val}-{seq_val}" if io_date_val else "-")
+                else:
+                    po_number = str(raw_po)
+
+                # 💡 ขยายตัวเลือก Keys ครอบคลุมฟิลด์ทั้งหมดของ ECOUNT ERP
+                pr_number = pick(
+                    "REL_NO", "PR_NO", "PUR_REQ_NO", "REQ_NO", "U_MEMO2", 
+                    "ORDER_REQ_NO", "PURCHASE_REQ_NO", "ADD_TXT_01", "U_TXT01"
+                )
+                
+                ref_number = pick(
+                    "U_MEMO1", "REF_NO", "REFER_NO", "REFERENCE_NO", "REMARKS", 
+                    "REMARK", "ADD_TXT_02", "U_TXT02", "MEMO"
+                )
+
                 row = {
-                    "IO_NO": pick("IO_NO", "ORD_NO", "DOC_NO", "PO_NO", "PO_NUM", "NO"),
-                    "PO_NO": pick("PO_NO", "ORD_NO", "DOC_NO", "IO_NO", "PO_NUM"),
-                    "IO_DATE": pick("IO_DATE", "ORD_DATE", "DATE", "BASE_DATE", "PROD_DATE"),
-                    "PR_NO": pick("PR_NO", "PUR_REQ_NO", "REQ_NO", "REL_NO", "U_MEMO2", "ORDER_REQ_NO"),
+                    "IO_NO": po_number,
+                    "PO_NO": po_number,
+                    "PR_NO": pr_number,
+                    "REF_NO": ref_number,
+                    "IO_DATE": io_date_val,
                     "PJT_DES": pick("PJT_DES", "PJT_NAME", "PROJECT_DES"),
                     "PJT_CD": pick("PJT_CD", "PROJECT_CD"),
                     "CUST_DES": pick("CUST_DES", "CUST_NAME", "CUSTOMER_NAME"),
@@ -282,16 +311,24 @@ async def get_po_list(
                     "PROD_DES": pick("PROD_DES", "ITEM_DES", "PROD_NAME"),
                     "PROD_CD": pick("PROD_CD", "ITEM_CD"),
                     "SIZE_DES": pick("SIZE_DES", "SIZE", "SPEC"),
-                    "DELIVERY_DATE": pick("DELIVERY_DATE", "TIME_DATE", "REQ_DATE", "DUE_DATE"),
+                    "DELIVERY_DATE": pick("TIME_DATE", "DELIVERY_DATE", "REQ_DATE", "DUE_DATE"),
                     "QTY": pick("QTY", "QUANTITY"),
-                    "TOTAL_AMT": pick("TOTAL_AMT", "TOTAL_PRICE", "SUPPLY_AMT", "AMT"),
+                    "TOTAL_AMT": pick(
+                        "TOTAL_AMT", "TOTAL_AMOUNT", "PO_AMT", "PO_AMOUNT", "BUY_AMT",
+                        "BUY_AMT_F", "NET_AMT", "NET_AMOUNT", "SUPPLY_AMT", "SUPPLY_AMOUNT",
+                        "TOTAL_PRICE", "TOTAL_PRICE_VAT", "TOTAL_AMT_VAT", "AMT", "AMOUNT",
+                        "SUM_AMT", "SUM_AMOUNT", "OUT_AMT", "PROD_AMT", "EXCH_BUY_AMT", "AMT_F"
+                    ),
+                    "VAT_AMT": pick("VAT_AMT", "VAT_AMOUNT", "TAX_AMT", "TAX_AMOUNT"),
                     "CONFIRM_TYPE": pick("CONFIRM_TYPE", "STATUS", "APPROVAL_STATUS"),
-                    "REF_NO": pick("REF_NO", "REFERENCE_NO", "REMARKS", "REMARK", "MEMO", "U_MEMO1"),
-                    "SEQ": pick("SEQ", "LINE_NO", "IO_SEQ")
+                    "SEQ": seq_val
                 }
                 normalized.append(row)
 
             return {"success": True, "data": normalized}
+        elif str(response_data.get("Status")) == "412":
+            get_ecount_session(force_refresh=True)
+            return {"success": False, "message": "ECOUNT Session หมดอายุ ระบบได้ทำการเคลียร์ Session แล้ว กรุณากด 'โหลดรายการใหม่'"}
         else:
             return {"success": False, "message": f"ECOUNT Error: {response_data.get('Errors', 'ไม่ทราบสาเหตุ')}"}
 

@@ -6,400 +6,241 @@
     <title>รายการใบสั่งซื้อ (ECOUNT ERP Style)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 12px; }
-        .card-header { background-color: #1a56be; color: white; }
-        .form-label { font-weight: 600; margin-bottom: 2px; color: #444; font-size: 12px; }
-        .table-input input { min-width: 70px; font-size: 12px; }
-        .search-btn { border-top-left-radius: 0; border-bottom-left-radius: 0; }
-        .modal-body-scroll { max-height: 400px; overflow-y: auto; }
-        
-        .status-badge {
-            padding: 3px 8px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-        .status-checking { background-color: #e0e0e0; color: #666; }
-        .status-checking .status-dot { background-color: #999; }
-        .status-online { background-color: #d1e7dd; color: #0f5132; }
-        .status-online .status-dot { background-color: #198754; }
-        .status-offline { background-color: #f8d7da; color: #842029; }
-        .status-offline .status-dot { background-color: #dc3545; }
-        
-        /* ECOUNT Style Custom Styling */
-        .ecount-tabs .nav-link { color: #444; background-color: #e9ecef; margin-right: 2px; border-radius: 12px 12px 0 0; font-size: 12px; padding: 4px 12px; }
-        .ecount-tabs .nav-link.active { background-color: #2b5cb8; color: white; font-weight: bold; }
-        .table-ecount { font-size: 12px; border-color: #dee2e6; }
-        .table-ecount th { background-color: #f1f3f5; text-align: center; vertical-align: middle; font-weight: 600; color: #333; }
-        .status-badge-ecount { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .status-in-progress { color: #0d6efd; }
-        .status-completed { color: #d97706; }
-        
-        .nav-tabs-main .nav-link { color: #ffffff; font-weight: 600; border: none; }
-        .nav-tabs-main .nav-link.active { background-color: #ffffff; color: #1a56be; border-top: 3px solid #1a56be; }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body class="py-3">
-    <div class="container-fluid" style="max-width: 1550px;">
-        <div class="card shadow-sm border-0">
-            <!-- Main Header Bar -->
-            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-3">
-                    <h5 class="m-0 fw-bold"><i class="bi bi-file-earmark-text-fill me-2"></i>ระบบใบสั่งซื้อ (ECOUNT ERP)</h5>
-                    <ul class="nav nav-tabs nav-tabs-main card-header-tabs border-bottom-0" id="mainTab" role="tablist">
-                        <li class="nav-item">
-                            <button class="nav-link active" id="form-tab" data-bs-toggle="tab" data-bs-target="#formTabContent" type="button"><i class="bi bi-pencil-square me-1"></i>บันทึกใบสั่งซื้อ</button>
-                        </li>
-                        <li class="nav-item">
-                            <button class="nav-link" id="list-tab" data-bs-toggle="tab" data-bs-target="#listTabContent" type="button" onclick="loadPOList()"><i class="bi bi-list-task me-1"></i>รายการใบสั่งซื้อ</button>
-                        </li>
-                    </ul>
+<body>
+    <div class="container-fluid py-3">
+        <!-- Header & Action Buttons -->
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <div class="d-flex align-items-center gap-2">
+                    <h6 class="m-0 font-weight-bold"><i class="bi bi-cart-check-fill me-2"></i>บันทึกใบสั่งซื้อ ECOUNT ERP</h6>
+                    <!-- ปุ่ม/Badge แสดงสถานะการเชื่อมต่อ ECOUNT -->
+                    <span class="badge bg-secondary border border-light d-flex align-items-center gap-1 fw-normal" id="ecountStatusBadge">
+                        <span class="spinner-border spinner-border-sm" style="width: 10px; height: 10px;" role="status"></span>
+                        กำลังตรวจสอบสถานะ ECOUNT...
+                    </span>
+                    <!-- Badge แสดงสถานะ BigQuery (ถ้ามี) -->
+                    <span class="badge bg-secondary border border-light d-flex align-items-center gap-1 fw-normal" id="bqStatusBadge">
+                        BigQuery: Checking...
+                    </span>
                 </div>
-                
-                <div class="d-flex gap-2">
-                    <div id="bqStatus" class="status-badge status-checking">
-                        <span class="status-dot"></span><span>BigQuery: Checking...</span>
-                    </div>
-                    <div id="ecountStatus" class="status-badge status-checking">
-                        <span class="status-dot"></span><span>ECOUNT: Checking...</span>
-                    </div>
+                <div>
+                    <!-- ปุ่มเปิด Modal อัปโหลด Excel -->
+                    <button type="button" class="btn btn-success btn-sm me-2" data-bs-toggle="modal" data-bs-target="#excelModal">
+                        <i class="bi bi-file-earmark-excel me-1"></i> อัปโหลด Excel (Auto PO 10 รายการ)
+                    </button>
+                    <button type="button" class="btn btn-light btn-sm text-dark" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise me-1"></i> รีเฟรช
+                    </button>
                 </div>
             </div>
             
-            <div class="card-body p-3">
-                <div class="tab-content" id="mainTabContent">
-                    
-                    <!-- TAB 1: หน้าบันทึกใบสั่งซื้อ (คงเดิมครบทุกช่อง) -->
-                    <div class="tab-pane fade show active" id="formTabContent" role="tabpanel">
-                        <form id="poForm">
-                            <div class="row g-2 mb-3 p-3 bg-light rounded border">
-                                <!-- ฝั่งซ้าย -->
-                                <div class="col-md-6">
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">ลูกค้า/ผู้ขาย *:</label>
-                                        <div class="col-sm-8">
-                                            <div class="input-group input-group-sm">
-                                                <input type="text" id="cust_cd" class="form-control" placeholder="รหัสลูกค้า/ผู้ขาย" required>
-                                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('customer', 'cust_cd')"><i class="bi bi-search"></i></button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">วันที่ *:</label>
-                                        <div class="col-sm-8">
-                                            <input type="date" id="io_date" class="form-control form-control-sm" required>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">เลขที่ใบสั่งซื้อ:</label>
-                                        <div class="col-sm-8">
-                                            <div class="input-group input-group-sm">
-                                                <input type="text" id="po_no" class="form-control fw-bold text-primary" placeholder="เจนให้อัตโนมัติ">
-                                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown"><i>Fn</i></button>
-                                                <ul class="dropdown-menu dropdown-menu-end shadow">
-                                                    <li><a class="dropdown-item" href="#" onclick="generateDocNumber(); return false;"><i class="bi bi-magic me-2"></i>สร้างหมายเลข</a></li>
-                                                    <li><a class="dropdown-item" href="#" onclick="checkDuplicatePO(); return false;"><i class="bi bi-shield-check me-2 text-warning"></i>ตรวจสอบรายการซ้ำ</a></li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">วันที่ส่งมอบ:</label>
-                                        <div class="col-sm-8">
-                                            <input type="date" id="req_date" class="form-control form-control-sm">
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">เงื่อนไขการชำระเงิน:</label>
-                                        <div class="col-sm-8">
-                                            <input type="text" id="pay_terms" class="form-control form-control-sm">
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">ใบขอซื้อเลขที่:</label>
-                                        <div class="col-sm-8">
-                                            <input type="text" id="pr_no" class="form-control form-control-sm" placeholder="เลขที่ใบขอซื้อ">
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">รูปแบบการจัดส่ง:</label>
-                                        <div class="col-sm-8">
-                                            <select id="ship_type" class="form-select form-select-sm">
-                                                <option value="">== เลือกรูปแบบ ==</option>
-                                                <option value="EXW">EXW - รับเอง</option>
-                                                <option value="DDP">DDP - จัดส่งถึงที่</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">หมายเหตุ:</label>
-                                        <div class="col-sm-8">
-                                            <input type="text" id="u_memo1" class="form-control form-control-sm" placeholder="หมายเหตุหัวเอกสาร">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- ฝั่งขวา -->
-                                <div class="col-md-6">
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">PIC:</label>
-                                        <div class="col-sm-8">
-                                            <div class="input-group input-group-sm">
-                                                <input type="text" id="emp_cd" class="form-control" value="00028" required>
-                                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('employee', 'emp_cd')"><i class="bi bi-search"></i></button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">สถานที่รับเข้า:</label>
-                                        <div class="col-sm-8">
-                                            <div class="input-group input-group-sm">
-                                                <input type="text" id="wh_cd" class="form-control" value="00005" required>
-                                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('warehouse', 'wh_cd')"><i class="bi bi-search"></i></button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">ประเภทธุรกรรม:</label>
-                                        <div class="col-sm-8">
-                                            <select id="io_type" class="form-select form-select-sm">
-                                                <option value="VAT">VAT (ภาษีมูลค่าเพิ่ม)</option>
-                                                <option value="NON">NON-VAT (ไม่มีภาษี)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">Cc.:</label>
-                                        <div class="col-sm-8">
-                                            <input type="text" id="cc_email" class="form-control form-control-sm">
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">สกุลเงิน:</label>
-                                        <div class="col-sm-8">
-                                            <select id="exchange_type" class="form-select form-select-sm">
-                                                <option value="">ในประเทศ</option>
-                                                <option value="USD">USD - ดอลลาร์สหรัฐ</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">วันที่รับ PR:</label>
-                                        <div class="col-sm-8">
-                                            <input type="date" id="pr_rcv_date" class="form-control form-control-sm">
-                                        </div>
-                                    </div>
-
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <label class="col-sm-4 form-label text-end">โครงการ:</label>
-                                        <div class="col-sm-8">
-                                            <div class="input-group input-group-sm">
-                                                <input type="text" id="pjt_cd" class="form-control" value="00032">
-                                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('project', 'pjt_cd')"><i class="bi bi-search"></i></button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Table Items -->
-                            <div class="mb-3">
-                                <div class="table-responsive">
-                                    <table class="table table-bordered table-sm align-middle table-input" id="itemsTable">
-                                        <thead class="table-light text-center">
-                                            <tr>
-                                                <th style="width: 3%;">#</th>
-                                                <th style="width: 13%;">รหัสสินค้า *</th>
-                                                <th style="width: 16%;">ชื่อสินค้า</th>
-                                                <th style="width: 10%;">ข้อมูลจำเพาะ</th>
-                                                <th style="width: 7%;">จำนวน *</th>
-                                                <th style="width: 9%;">ราคาต่อหน่วย</th>
-                                                <th style="width: 6%;">ส่วนลด%</th>
-                                                <th style="width: 7%;">ส่วนลด/บาท</th>
-                                                <th style="width: 8%;">จำนวนเงิน</th>
-                                                <th style="width: 9%;">ราคา (รวมภาษี)</th>
-                                                <th style="width: 7%;">ภาษี</th>
-                                                <th style="width: 8%;">วันที่ส่งมอบ</th>
-                                                <th style="width: 8%;">หมายเหตุ</th>
-                                                <th style="width: 3%;">ลบ</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="itemRows">
-                                            <tr>
-                                                <td class="text-center row-num">1</td>
-                                                <td>
-                                                    <div class="input-group input-group-sm">
-                                                        <input type="text" class="form-control prod-cd" required>
-                                                        <button class="btn btn-outline-secondary search-btn" type="button" onclick="openProductModal(this)"><i class="bi bi-search"></i></button>
-                                                    </div>
-                                                </td>
-                                                <td><input type="text" class="form-control form-control-sm prod-des"></td>
-                                                <td><input type="text" class="form-control form-control-sm size-des"></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end qty" value="1" min="1" step="0.01" onchange="calcRow(this)" required></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end price" value="0" step="0.01" onchange="calcRow(this)"></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end discount-rate" value="0" step="0.01" onchange="calcRow(this)"></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end discount-amt" value="0" step="0.01" onchange="calcRow(this)"></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end supply-amt" value="0.00" step="0.01" readonly></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end total-amt" value="0.00" step="0.01" readonly></td>
-                                                <td><input type="number" class="form-control form-control-sm text-end vat-amt" value="0.00" step="0.01" onchange="calcRow(this)"></td>
-                                                <td><input type="date" class="form-control form-control-sm item-delivery-date"></td>
-                                                <td><input type="text" class="form-control form-control-sm remarks"></td>
-                                                <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger p-0 px-1" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
-                                            </tr>
-                                        </tbody>
-                                        <tfoot class="table-light fw-bold">
-                                            <tr>
-                                                <td colspan="4" class="text-end">รวมทั้งสิ้น:</td>
-                                                <td id="totalQty" class="text-end">0</td>
-                                                <td></td>
-                                                <td></td>
-                                                <td id="totalDiscount" class="text-end">0.00</td>
-                                                <td id="totalSupply" class="text-end">0.00</td>
-                                                <td id="grandTotal" class="text-end">0.00</td>
-                                                <td id="totalVat" class="text-end">0.00</td>
-                                                <td colspan="3"></td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
-                                </div>
-                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="addRow()"><i class="bi bi-plus-circle me-1"></i>เพิ่มรายการสินค้า</button>
-                            </div>
-
-                            <div class="d-flex gap-2 justify-content-start border-top pt-3">
-                                <button type="submit" id="btnSubmit" class="btn btn-primary px-4"><i class="bi bi-save me-1"></i>บันทึก (F8)</button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="location.reload();">รีเซ็ต</button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <!-- TAB 2: หน้าตาราง "รายการใบสั่งซื้อ" ดีไซน์ถอดแบบ ECOUNT -->
-                    <div class="tab-pane fade" id="listTabContent" role="tabpanel">
-                        <!-- ECOUNT Filter Sub-Tabs & Controls Top Bar -->
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <ul class="nav nav-pills ecount-tabs" id="ecountFilterTabs">
-                                <li class="nav-item"><a class="nav-link active" href="#" onclick="filterByStatus('ALL', this); return false;">ทั้งหมด</a></li>
-                                <li class="nav-item"><a class="nav-link" href="#" onclick="filterByStatus('PENDING_APPROVAL', this); return false;">รอการอนุมัติอิเล็กทรอนิกส์</a></li>
-                                <li class="nav-item"><a class="nav-link" href="#" onclick="filterByStatus('UNCONFIRMED', this); return false;">ไม่ยืนยัน</a></li>
-                                <li class="nav-item"><a class="nav-link" href="#" onclick="filterByStatus('CONFIRMED', this); return false;">ยืนยัน <i class="bi bi-caret-down-fill small"></i></a></li>
-                                <li class="nav-item"><a class="nav-link" href="#" onclick="filterByStatus('IN_PROGRESS', this); return false;">กำลังดำเนินการ</a></li>
-                                <li class="nav-item"><a class="nav-link" href="#" onclick="filterByStatus('COMPLETED', this); return false;">เสร็จสิ้น</a></li>
-                            </ul>
-
-                            <div class="d-flex gap-1 align-items-center">
-                                <div class="input-group input-group-sm" style="width: 200px;">
-                                    <input type="text" id="ecountSearchInput" class="form-control" placeholder="ระบุและกด [Enter]" onkeyup="if(event.key==='Enter') filterPOTable();">
-                                    <button class="btn btn-primary btn-sm" type="button" onclick="filterPOTable()"><i class="bi bi-search me-1"></i>ค้นหา(F3)</button>
-                                </div>
-                                <button class="btn btn-outline-secondary btn-sm">ตัวเลือก</button>
-                                <button class="btn btn-outline-secondary btn-sm">ช่วยเหลือ</button>
+            <div class="card-body">
+                <form id="poForm">
+                    <!-- Form Header Info -->
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">เลขที่ใบสั่งซื้อ (PO No.)</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="po_no" class="form-control" placeholder="สร้างให้อัตโนมัติ">
+                                <button class="btn btn-outline-secondary" type="button" onclick="checkDuplicatePO()"><i class="bi bi-shield-check"></i> เช็ค</button>
                             </div>
                         </div>
-
-                        <!-- Date range info & Pagination header -->
-                        <div class="d-flex justify-content-between align-items-center mb-2 px-1 text-muted" style="font-size: 11px;">
-                            <div class="d-flex align-items-center gap-1">
-                                <span class="badge bg-primary rounded-circle">1</span>
-                                <span>2 3 4 5 6 7 8 9 10 &gt; &gt;&gt;</span>
-                                <input type="text" class="form-control form-control-sm text-center p-0" value="1" style="width: 30px; height: 20px;">
-                                <span>/ 23</span>
-                            </div>
-                            <div>
-                                <span id="ecountDateRangeText">01 ม.ค. 2569 ~ 31 ธ.ค. 2569</span>
+                        <div class="col-md-2">
+                            <label class="form-label">เลขที่ใบขอซื้อ (PR No.)</label>
+                            <input type="text" id="pr_no" class="form-control form-control-sm" placeholder="ระบุเลขที่ PR (ถ้ามี)">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">วันที่เอกสาร</label>
+                            <input type="date" id="io_date" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">วันที่ส่งมอบ</label>
+                            <input type="date" id="req_date" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">ผู้รับผิดชอบ (PIC)</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="emp_cd" class="form-control" value="00028" placeholder="รหัส PIC">
+                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('employee', 'emp_cd')"><i class="bi bi-search"></i></button>
                             </div>
                         </div>
-
-                        <!-- Main ECOUNT Grid Table -->
-                        <div class="table-responsive">
-                            <table class="table table-bordered table-hover align-middle table-ecount" id="poListTable">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 3%;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"></th>
-                                        <th style="width: 10%;">วันที่-ลำดับ</th>
-                                        <th style="width: 11%;">อ้างอิง</th>
-                                        <th style="width: 11%;">ชื่อโครงการ</th>
-                                        <th style="width: 9%;">ใบขอซื้อเลขที่</th>
-                                        <th style="width: 10%;">เลขที่ใบสั่งซื้อ</th>
-                                        <th style="width: 14%;">ชื่อลูกค้า/ผู้ขาย</th>
-                                        <th style="width: 7%;">ชื่อ PIC</th>
-                                        <th style="width: 13%;">ชื่อสินค้า [ชื่อข้อมูลจำเพาะ]</th>
-                                        <th style="width: 8%;">วันที่ส่งมอบ</th>
-                                        <th style="width: 8%;">ยอดรวมจำนวนเงินในใบสั่งซื้อ</th>
-                                        <th style="width: 8%;">สถานะความคืบหน้า</th>
-                                        <th style="width: 4%;">เอกสารที่สร้าง</th>
-                                        <th style="width: 4%;">พิมพ์</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="poListTableBody">
-                                    <tr>
-                                        <td colspan="14" class="text-center py-4 text-muted">กดแท็บ "รายการใบสั่งซื้อ" หรือค้นหาเพื่อดึงข้อมูลจาก ECOUNT</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <!-- ECOUNT Style Bottom Action Bar -->
-                        <div class="d-flex gap-1 align-items-center mt-2 p-1 bg-light border rounded">
-                            <button class="btn btn-primary btn-sm fw-bold px-3" onclick="switchToFormTab()"><i class="bi bi-plus-lg me-1"></i>สร้าง (F2)</button>
-                            <button class="btn btn-outline-secondary btn-sm">อีเมล</button>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">เปลี่ยนสถานะ</button>
+                        <div class="col-md-2">
+                            <label class="form-label">สถานที่รับเข้า (คลัง)</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="wh_cd" class="form-control" value="00005" placeholder="รหัสคลัง">
+                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('warehouse', 'wh_cd')"><i class="bi bi-search"></i></button>
                             </div>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">ส่ง</button>
-                            </div>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">พิมพ์</button>
-                            </div>
-                            <button class="btn btn-outline-secondary btn-sm">บาร์โค้ด (สินค้า)</button>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">สร้างเอกสารอื่น</button>
-                            </div>
-                            <button class="btn btn-outline-secondary btn-sm">ยื่นอนุมัติอิเล็กทรอนิกส์</button>
-                            <button class="btn btn-outline-secondary btn-sm text-danger">ลบที่เลือก</button>
-                            <button class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>
-                            <button class="btn btn-outline-secondary btn-sm">ประวัติ</button>
                         </div>
                     </div>
 
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label">โครงการ</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="pjt_cd" class="form-control" value="00032" placeholder="โครงการ">
+                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('project', 'pjt_cd')"><i class="bi bi-search"></i></button>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">ผู้ขาย / ลูกค้า</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="cust_cd" class="form-control" placeholder="รหัสผู้ขาย" required>
+                                <button class="btn btn-outline-secondary search-btn" type="button" onclick="openModal('customer', 'cust_cd')"><i class="bi bi-search"></i></button>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">วัตถุประสงค์</label>
+                            <input type="text" id="u_memo1" class="form-control form-control-sm" placeholder="วัตถุประสงค์ในการสั่งซื้อ">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">ประเภท VAT</label>
+                            <select id="io_type" class="form-select form-select-sm">
+                                <option value="00">รวม VAT 7%</option>
+                                <option value="VAT">แยก VAT 7%</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">สกุลเงิน</label>
+                            <select id="exchange_type" class="form-select form-select-sm">
+                                <option value="THB">THB - บาท</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Items Table -->
+                    <div class="table-responsive mb-2">
+                        <table class="table table-bordered table-sm align-middle mb-0" id="itemsTable">
+                            <thead class="table-light text-center">
+                                <tr>
+                                    <th style="width: 35px;">#</th>
+                                    <th style="width: 140px;">รหัสสินค้า</th>
+                                    <th>ชื่อสินค้า / รายละเอียด</th>
+                                    <th style="width: 120px;">สเปค / ขนาด</th>
+                                    <th style="width: 80px;">จำนวน</th>
+                                    <th style="width: 100px;">ราคา/หน่วย</th>
+                                    <th style="width: 80px;">ส่วนลด (%)</th>
+                                    <th style="width: 90px;">ส่วนลด (บาท)</th>
+                                    <th style="width: 110px;">มูลค่าสินค้า</th>
+                                    <th style="width: 110px;">ยอดรวม</th>
+                                    <th style="width: 90px;">ภาษี (7%)</th>
+                                    <th style="width: 110px;">วันที่ส่งมอบ</th>
+                                    <th>หมายเหตุ</th>
+                                    <th style="width: 40px;">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemRows">
+                                <!-- แถวรายการสินค้าจะสร้างผ่าน JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addRow()">
+                            <i class="bi bi-plus-circle me-1"></i> เพิ่มรายการสินค้า
+                        </button>
+                        <div class="text-end fw-bold">
+                            <span class="me-3">จำนวนรวม: <span id="totalQty" class="text-primary">0</span></span>
+                            <span class="me-3">ส่วนลดรวม: <span id="totalDiscount" class="text-danger">0.00</span></span>
+                            <span class="me-3">มูลค่าสินค้ารวม: <span id="totalSupply">0.00</span></span>
+                            <span class="me-3">ภาษีรวม: <span id="totalVat">0.00</span></span>
+                            <span>ยอดเงินรวมสุทธิ: <span id="grandTotal" class="text-success fs-6">0.00</span> THB</span>
+                        </div>
+                    </div>
+
+                    <div class="text-end border-top pt-2">
+                        <button type="submit" id="btnSubmit" class="btn btn-primary btn-sm px-4">
+                            <i class="bi bi-save me-1"></i> บันทึกใบสั่งซื้อ (Manual)
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- PO List Section (ปรับโครงสร้างเป็น 16 คอลัมน์) -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-dark"><i class="bi bi-list-stars me-2"></i>รายการใบสั่งซื้อในระบบ ECOUNT (<span id="ecountDateRangeText">30 วันล่าสุด</span>)</h6>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadPOList()"><i class="bi bi-arrow-repeat me-1"></i> โหลดรายการใหม่</button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped table-sm mb-0 align-middle fs-7">
+                        <thead class="table-secondary text-center text-nowrap">
+                            <tr>
+                                <th style="width: 110px;">วันที่-ลำดับ</th>
+                                <th>ชื่อโครงการ</th>
+                                <th style="width: 100px;">วันที่รับ PR</th>
+                                <th style="width: 100px;">วันที่ต้องการ PR</th>
+                                <th style="width: 90px;">แบบ SEOคน</th>
+                                <th>ชื่อสถานที่</th>
+                                <th style="width: 130px;">เลขที่ใบสั่งซื้อ</th>
+                                <th>ชื่อสินค้า [ข้อมูลเฉพาะ]</th>
+                                <th style="width: 100px;">วันที่ส่งมอบ</th>
+                                <th style="width: 120px;">ยอดรวมจำนวนเงินใบสั่งซื้อ</th>
+                                <th>ชื่อลูกค้า/ผู้ขาย</th>
+                                <th style="width: 110px;">สถานะความคืบหน้า</th>
+                                <th style="width: 90px;">ชื่อ PIC</th>
+                                <th style="width: 80px;">เอกสารที่สร้าง</th>
+                                <th style="width: 60px;">พิมพ์</th>
+                                <th>หมายเหตุ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="poListTableBody">
+                            <tr><td colspan="16" class="text-center py-4 text-muted">กำลังโหลดข้อมูล...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Search Modal -->
-    <div class="modal fade" id="searchModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+    <!-- Modal สำหรับอัปโหลด Excel -->
+    <div class="modal fade" id="excelModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header bg-primary text-white py-2">
-                    <h6 class="modal-title" id="modalTitle"><i class="bi bi-search me-2"></i>ค้นหาข้อมูล</h6>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <div class="modal-header bg-success text-white py-2">
+                    <h6 class="modal-title"><i class="bi bi-file-earmark-excel me-2"></i>อัปโหลดไฟล์ Excel (Auto PO Batch ละ 10 รายการ)</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <input type="text" id="searchInput" class="form-control form-control-sm mb-3" placeholder="พิมพ์คำค้นหา..." onkeyup="filterSearchTable()">
-                    <div class="modal-body-scroll">
-                        <table class="table table-hover table-striped border">
-                            <thead class="table-light sticky-top">
+                    <form id="excelUploadForm">
+                        <div class="excel-upload-zone mb-3" onclick="document.getElementById('excelFileInput').click()">
+                            <i class="bi bi-cloud-arrow-up-fill mb-2 d-block"></i>
+                            <p class="mb-1 fw-bold text-dark">คลิกเพื่อเลือกไฟล์ Excel หรือลากไฟล์มาวางที่นี่</p>
+                            <small class="text-muted">รองรับไฟล์ .xlsx / .xls (ระบบจะตัด Auto PO ให้ใบละ 10 รายการ)</small>
+                            <input type="file" id="excelFileInput" accept=".xlsx, .xls" class="d-none" onchange="updateFileNameDisplay(this)">
+                        </div>
+                        <div id="selectedFileName" class="text-center text-primary fw-bold mb-3"></div>
+                        <div class="d-grid">
+                            <button type="submit" id="btnUploadExcel" class="btn btn-success" disabled>
+                                <i class="bi bi-send-fill me-1"></i> เริ่มส่งข้อมูลเข้า ECOUNT
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ค้นหา Master Data -->
+    <div class="modal fade" id="searchModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title" id="modalTitle">ค้นหาข้อมูล</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="searchInput" class="form-control form-control-sm mb-2" placeholder="พิมพ์เพื่อค้นหา..." onkeyup="filterSearchTable()">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead>
                                 <tr>
-                                    <th style="width: 30%;">รหัส (Code)</th>
-                                    <th style="width: 55%;">ชื่อ (Name)</th>
-                                    <th style="width: 15%;">เลือก</th>
+                                    <th>รหัส</th>
+                                    <th>ชื่อ / รายละเอียด</th>
+                                    <th style="width: 60px;">เลือก</th>
                                 </tr>
                             </thead>
                             <tbody id="modalTableBody"></tbody>
@@ -410,84 +251,17 @@
         </div>
     </div>
 
-    <!-- Modal แสดงรายละเอียด PO -->
-    <div class="modal fade" id="poDetailModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white py-2">
-                    <h6 class="modal-title"><i class="bi bi-file-earmark-text me-2"></i>รายละเอียดใบสั่งซื้อ</h6>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="poDetailContent" class="p-2"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Loading Modal -->
     <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-sm">
-            <div class="modal-content text-center p-4 border-0 shadow-lg">
-                <div class="modal-body p-0">
-                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
-                    <h6 class="fw-bold text-dark m-0">กำลังเชื่อมโยงข้อมูลกับ ECOUNT...</h6>
-                </div>
+            <div class="modal-content text-center p-3">
+                <div class="spinner-border text-primary mx-auto mb-2" role="status"></div>
+                <div class="fw-bold" id="loadingText">กำลังประมวลผล...</div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="script.js"></script>
-    <script>
-        // ฟังก์ชันสำหรับควบคุมการเปลี่ยนแท็บและตัวกรอง ECOUNT
-        function switchToFormTab() {
-            const formTabBtn = document.getElementById('form-tab');
-            if (formTabBtn) {
-                const tab = new bootstrap.Tab(formTabBtn);
-                tab.show();
-            }
-        }
-
-        function toggleSelectAll(master) {
-            const checkboxes = document.querySelectorAll('#poListTableBody input[type="checkbox"]');
-            checkboxes.forEach(cb => cb.checked = master.checked);
-        }
-
-        function filterByStatus(status, element) {
-            if (element) {
-                document.querySelectorAll('#ecountFilterTabs .nav-link').forEach(el => el.classList.remove('active'));
-                element.classList.add('active');
-            }
-            filterPOTable(status);
-        }
-
-        function filterPOTable(status = 'ALL') {
-            const input = document.getElementById('ecountSearchInput');
-            const filter = input ? input.value.toLowerCase() : '';
-            const rows = document.querySelectorAll('#poListTableBody tr');
-
-            rows.forEach(row => {
-                if (row.cells.length <= 1) return; // ข้ามแถวข้อความโหลด/ไม่พบข้อมูล
-                const text = row.textContent.toLowerCase();
-                const matchesSearch = text.includes(filter);
-                
-                // ตรวจสอบเงื่อนไขการกรองสถานะ
-                let matchesStatus = true;
-                if (status === 'COMPLETED') {
-                    matchesStatus = text.includes('เสร็จสิ้น');
-                } else if (status === 'IN_PROGRESS') {
-                    matchesStatus = text.includes('กำลังดำเนินการ');
-                }
-
-                if (matchesSearch && matchesStatus) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-        }
-    </script>
-    
 </body>
 </html>
