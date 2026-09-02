@@ -1,16 +1,54 @@
 import os
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
 from dotenv import load_dotenv
 
+# นำเข้าฟังก์ชันดึงข้อมูลจาก sync_worker เพื่อทำ Auto-sync ในตัว
+try:
+    from sync_worker import fetch_all_company_data, SYNC_INTERVAL_SECONDS
+except ImportError:
+    # กัน Error กรณีไฟล์ sync_worker ไม่ได้อยู่ใน Directory เดียวกัน
+    fetch_all_company_data = None
+    SYNC_INTERVAL_SECONDS = 1800
+
 load_dotenv()
 
 PROJECT_ID = os.getenv("GCP_PROJECT_ID", "multi-compan-inventory").strip()
 DATASET_ID = "multi_company_inventory"
 
-app = FastAPI(title="Multi-Company Inventory API")
+
+# ฟังก์ชันรันวนลูปดึงข้อมูลอัตโนมัติเบื้องหลัง
+async def start_auto_sync():
+    # รอ 5 วินาทีแรกให้ Server เริ่มต้นเรียบร้อยก่อนเริ่มรอบแรก
+    await asyncio.sleep(5)
+    while True:
+        if fetch_all_company_data:
+            try:
+                print("\n⏰ Render Background Task: เริ่มกระบวนการ Auto Sync...")
+                await asyncio.to_thread(fetch_all_company_data)
+                print("🎉 Auto Sync สำเร็จ!")
+            except Exception as exc:
+                print(f"❌ Auto Sync Error: {exc}")
+        else:
+            print("⚠️ ไม่พบฟังก์ชัน fetch_all_company_data ใน sync_worker.py")
+        
+        await asyncio.sleep(SYNC_INTERVAL_SECONDS)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # เริ่มทำงาน Background Task เมื่อ Web Service สตาร์ท
+    sync_task = asyncio.create_task(start_auto_sync())
+    yield
+    # ปิด Task เมื่อ Web Service หยุดทำงาน
+    sync_task.cancel()
+
+
+app = FastAPI(title="Multi-Company Inventory API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,7 +98,7 @@ def get_inventory(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RU
     if company_id != "ALL":
         where_clause = f"WHERE UPPER(b.company_id) = '{company_id.upper()}'"
 
-    # แก้ไขโดยดึง b.wh_cd มาใช้ทั้ง wh_cd และ wh_des เพื่อป้องกัน 400 Error
+    # ดึง b.wh_cd มาใช้ทั้ง wh_cd และ wh_des เพื่อป้องกัน 400 Error
     query = f"""
         SELECT 
             b.company_id,
