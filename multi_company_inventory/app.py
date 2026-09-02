@@ -17,7 +17,8 @@ except ImportError:
 
 load_dotenv()
 
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "multi-compan-inventory").strip()
+# แก้ไข Default Project ID เป็น rst-ecount-sync-py ให้ตรงตาม GCP
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "rst-ecount-sync-py").strip()
 DATASET_ID = "multi_company_inventory"
 
 
