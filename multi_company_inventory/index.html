@@ -136,6 +136,18 @@
     <script>
         let rawItems = [];
 
+        // ตรวจสอบตำแหน่งที่รันเพื่อเลือก API Base URL อัตโนมัติ (รันได้ทั้ง Localhost และ Render)
+        const getApiBaseUrl = () => {
+            const host = window.location.hostname;
+            if (host === 'localhost' || host === '127.0.0.1' || window.location.protocol === 'file:') {
+                return 'http://127.0.0.1:8000';
+            }
+            // ถ้ารันบน Render หรือ GitHub Pages
+            return 'https://multi-company-inventory-api.onrender.com';
+        };
+
+        const API_BASE_URL = getApiBaseUrl();
+
         function normalizeItems(responseData) {
             if (!responseData || typeof responseData !== 'object') return [];
 
@@ -166,7 +178,8 @@
             tableBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-blue-600 block"></i>กำลังดึงข้อมูลจาก BigQuery...</td></tr>`;
 
             try {
-                const res = await fetch(`http://127.0.0.1:8000/api/inventory?company_id=${company}`);
+                // เรียกผ่าน API_BASE_URL ที่คำนวณไว้
+                const res = await fetch(`${API_BASE_URL}/api/inventory?company_id=${company}`);
                 let data = {};
 
                 try {
@@ -189,7 +202,7 @@
                 applyFilters();
             } catch (err) {
                 console.error(err);
-                tableBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-red-500 font-medium">❌ ไม่สามารถเชื่อมต่อ API ได้ (ตรวจสอบว่า uvicorn ทำงานอยู่หรือไม่)</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-red-500 font-medium">❌ ไม่สามารถเชื่อมต่อ API ได้ (${API_BASE_URL})</td></tr>`;
             }
         }
 
