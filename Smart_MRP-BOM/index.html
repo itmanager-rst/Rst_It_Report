@@ -457,12 +457,23 @@ function nowDateStr(){ try{ return new Date().toISOString().slice(0,10); }catch(
 const TODAY = nowDateStr();
 
 /* ======================= RBAC =======================
-   Round K: per-role module permissions are now USER-CONFIGURABLE (ตั้งค่า > กำหนดสิทธิ์) instead of
-   fixed in code. ROLES below keeps each role's Thai label and its ORIGINAL/DEFAULT edits list (used
-   only to seed state.rolePermissions the first time, and as a fallback if that's ever missing) —
-   canEdit() itself reads the live, editable copy on state.rolePermissions. Moved above seedData()
-   (which needs it to build that default) — declared with const so it must load before seedData()
-   runs at boot; nothing here depends on anything declared later in the file. */
+   Round K: per-role module permissions became USER-CONFIGURABLE (ตั้งค่า > กำหนดสิทธิ์) instead of
+   fixed in code, but roles themselves were still a fixed hardcoded list with a plain edit/no-edit
+   toggle per module.
+   Round M: roles are now ALSO user-manageable (add a new role, rename any role's label, delete a
+   CUSTOM role) via ตั้งค่า > กำหนดสิทธิ์, and each role×module cell is a 3-level access setting
+   instead of a checkbox: 'edit' (ดู+แก้ไข), 'view' (ดูอย่างเดียว), 'none' (ซ่อนโมดูลนี้ทั้งหมด — ไม่
+   แสดงในเมนูด้านซ้าย, redirect ออกทันทีถ้ากำลังเปิดอยู่ — see ensureViewAccessible()).
+   ROLES below is now only the BUILT-IN SEED DATA: each built-in role's Thai label + its
+   ORIGINAL/DEFAULT edit-module list, used just once to seed state.roles/state.rolePermissions on a
+   fresh system, and as a defensive fallback if either is ever missing. All live role/permission data
+   the app actually reads lives on state.roles (array of {id,label,builtin}) and
+   state.rolePermissions (roleId -> {moduleId: 'edit'|'view'|'none'}). Built-in roles can be renamed
+   but never deleted (a handful of narrower checks elsewhere in the app, e.g. the "จำนวนสั่งซื้อขั้นต่ำ"
+   field on the Stock page, key off the RAW ROLE ID 'purchasing'/'admin' directly rather than through
+   canEdit() — deleting those ids out from under that code would silently strand the feature with no
+   way to reach it again). Declared with const so it must load before seedData() runs at boot; nothing
+   here depends on anything declared later in the file. */
 const ROLES = {
   admin:      {label:'ผู้ดูแลระบบ',      edits:['bom','cost','mrp','pr','wo','shopfloor','stock','wip','fg','overview','ai','settings','kanban','purchaseStatus']},
   manager:    {label:'ผู้จัดการโรงงาน',  edits:['bom','cost','mrp','pr','wo','shopfloor','stock','wip','fg','overview','ai','settings','kanban','purchaseStatus']},
@@ -482,11 +493,31 @@ const PERMISSION_MODULES = [
   {id:'purchaseStatus', label:'สถานะการซื้อ'}, {id:'wip', label:'คลังสินค้าระหว่างทำ'}, {id:'fg', label:'สินค้าสำเร็จรูป'},
   {id:'ai', label:'AI & LINE Notify'}, {id:'settings', label:'ตั้งค่า'},
 ];
-function canEdit(mod){
-  const perms = state.rolePermissions && state.rolePermissions[ui.role];
-  const edits = Array.isArray(perms) ? perms : ROLES[ui.role].edits;
-  return edits.indexOf(mod) !== -1;
+const PERMISSION_LEVELS = ['edit','view','none'];
+// Default built-in roles list, {id,label,builtin:true} — the live/editable copy is state.roles.
+const DEFAULT_ROLES = Object.keys(ROLES).map(function(r){ return {id:r, label:ROLES[r].label, builtin:true}; });
+function defaultRolePermissionsFor(roleId){
+  const builtin = ROLES[roleId];
+  const obj = {};
+  PERMISSION_MODULES.forEach(function(m){ obj[m.id] = (builtin && builtin.edits.indexOf(m.id)!==-1) ? 'edit' : 'view'; });
+  return obj;
 }
+function defaultRolePermissions(){
+  const acc = {};
+  DEFAULT_ROLES.forEach(function(r){ acc[r.id] = defaultRolePermissionsFor(r.id); });
+  return acc;
+}
+// 'edit' | 'view' | 'none' — falls back sanely if state.roles/state.rolePermissions is ever missing
+// an entry for the current role (shouldn't happen once migrateState has run, but defensive).
+function roleModulePerm(role, mod){
+  const perms = state.rolePermissions && state.rolePermissions[role];
+  if(perms && typeof perms==='object' && !Array.isArray(perms) && PERMISSION_LEVELS.indexOf(perms[mod])!==-1) return perms[mod];
+  return 'view';
+}
+function canEdit(mod){ return roleModulePerm(ui.role, mod)==='edit'; }
+// A module set to 'none' for the current role is fully hidden — no sidebar entry, and any direct
+// navigation to it gets redirected away (see ensureViewAccessible(), called every render()).
+function canView(mod){ return roleModulePerm(ui.role, mod)!=='none'; }
 
 function seedData(){
   return {
@@ -583,9 +614,13 @@ function seedData(){
     operators: DEFAULT_OPERATORS.slice(),
     projects: DEFAULT_PROJECTS.slice(),
     locations: DEFAULT_LOCATIONS.slice(),
-    // Editable copy of each role's module permissions (ตั้งค่า > กำหนดสิทธิ์) — seeded from ROLES'
-    // built-in defaults above so a fresh system behaves exactly as before until someone changes it.
-    rolePermissions: Object.keys(ROLES).reduce(function(acc, r){ acc[r] = ROLES[r].edits.slice(); return acc; }, {}),
+    // Round M: editable list of roles (ตั้งค่า > กำหนดสิทธิ์) — seeded from the built-in ROLES above,
+    // but users can add their own roles from here on, so this (not ROLES) is the source of truth.
+    roles: DEFAULT_ROLES.map(function(r){ return Object.assign({}, r); }),
+    // Editable copy of each role's per-module access level ('edit'/'view'/'none') — seeded from
+    // ROLES' built-in defaults above so a fresh system behaves exactly as before until someone changes it.
+    rolePermissions: defaultRolePermissions(),
+    nextRoleSeq: 1,
     purchasePriceHistory: [],
     productionPlans: [],
     stepLaborRates: {},
@@ -621,8 +656,38 @@ function migrateState(s){
     if(typeof loc.name!=='string') loc.name = '';
     if(typeof loc.type!=='string') loc.type = '';
   });
-  if(!s.rolePermissions || typeof s.rolePermissions!=='object') s.rolePermissions = d.rolePermissions;
-  else Object.keys(ROLES).forEach(function(r){ if(!Array.isArray(s.rolePermissions[r])) s.rolePermissions[r] = ROLES[r].edits.slice(); });
+  // Round M: state.roles is now the live/editable roles list (id/label/builtin) — backfill it from
+  // the built-in defaults if this is an older cached state that predates it.
+  if(!Array.isArray(s.roles) || !s.roles.length) s.roles = d.roles.slice().map(function(r){ return Object.assign({}, r); });
+  else s.roles.forEach(function(r){
+    if(typeof r.id!=='string' || !r.id) r.id = 'role_'+Math.random().toString(36).slice(2,8);
+    if(typeof r.label!=='string' || !r.label) r.label = r.id;
+    r.builtin = !!r.builtin;
+  });
+  if(typeof s.nextRoleSeq!=='number') s.nextRoleSeq = 1;
+  if(!s.rolePermissions || typeof s.rolePermissions!=='object') s.rolePermissions = defaultRolePermissions();
+  else {
+    // Round K stored this as a plain array of edit-module-ids; Round M reshapes it into a per-module
+    // 'edit'/'view'/'none' object. Anything that was in the old edit array becomes 'edit'; anything
+    // NOT in it becomes 'view' (not 'none') so upgrading never silently hides a module someone could
+    // already see before this change — only an explicit new choice can hide a module now.
+    Object.keys(s.rolePermissions).forEach(function(r){
+      const val = s.rolePermissions[r];
+      if(Array.isArray(val)){
+        const obj = {};
+        PERMISSION_MODULES.forEach(function(m){ obj[m.id] = val.indexOf(m.id)!==-1 ? 'edit' : 'view'; });
+        s.rolePermissions[r] = obj;
+      } else if(val && typeof val==='object'){
+        PERMISSION_MODULES.forEach(function(m){ if(PERMISSION_LEVELS.indexOf(val[m.id])===-1) val[m.id] = 'view'; });
+      } else {
+        s.rolePermissions[r] = defaultRolePermissionsFor(r);
+      }
+    });
+  }
+  // Every role in state.roles must have a permissions entry (a role added since the last save, or one
+  // whose entry never made it through a partial sync, otherwise falls through to roleModulePerm()'s
+  // own 'view' default anyway — this just keeps the settings-page matrix showing real saved values).
+  s.roles.forEach(function(r){ if(!s.rolePermissions[r.id]) s.rolePermissions[r.id] = defaultRolePermissionsFor(r.id); });
   if(!Array.isArray(s.purchasePriceHistory)) s.purchasePriceHistory = [];
   if(typeof s.webhookUrl!=='string') s.webhookUrl = '';
   if(!s.prEcountDefaults || typeof s.prEcountDefaults!=='object') s.prEcountDefaults = d.prEcountDefaults;
@@ -733,9 +798,20 @@ function clearAllBusinessData(selectedKeys){
  * publish เป็นเว็บสาธารณะบน GitHub Pages)
  */
 const CONFIG_KEY = 'agriforgeMrp_config_v1';
+// Round L: the Apps Script Web App URL is no longer something each user pastes in for themselves at
+// ตั้งค่า > การเชื่อมต่อ — it's the SAME shared backend for everyone using this file, so it's now a
+// fixed constant baked directly into index.html instead of a per-browser Settings field. When the
+// backend logic (apps-script/Code.gs) changes, redeploy it as a NEW VERSION of the SAME EXISTING
+// deployment (Apps Script editor: Deploy > Manage deployments > ✏️ Edit > Version: "New version" >
+// Deploy) — NOT a brand-new deployment, which would generate a different URL. That keeps this exact
+// URL working, so everyone already using this file automatically gets the updated backend with
+// nothing to reconfigure.
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbyN4BAPIa4xleM0cf0W_-Zv8ASHXbFoSz1YyCNcHNHIImyJ-8tH8znuGRZL9dEt3SdXxQ/exec';
 function loadConfig(){
-  try{ const raw = localStorage.getItem(CONFIG_KEY); if(raw) return Object.assign({sheetApiUrl:'', autoSync:false}, JSON.parse(raw)); }catch(e){}
-  return { sheetApiUrl:'', autoSync:false };
+  // sheetApiUrl is always forced to the constant above, regardless of what (if anything) is sitting
+  // in localStorage from before this change — only autoSync remains a genuine per-browser preference.
+  try{ const raw = localStorage.getItem(CONFIG_KEY); if(raw) return Object.assign({autoSync:false}, JSON.parse(raw), {sheetApiUrl:SHEET_API_URL}); }catch(e){}
+  return { sheetApiUrl:SHEET_API_URL, autoSync:false };
 }
 function saveConfig(){ try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); }catch(e){} }
 let config = loadConfig();
@@ -1165,9 +1241,25 @@ function sparklineArea(points, opts){
 function safeRun_(label, fn){
   try{ fn(); }catch(err){ console.error('UI error in "'+label+'":', err); }
 }
+// Round M: a module set to 'none' for the CURRENT role must be unreachable, not just hidden from the
+// sidebar — if ui.view is currently pointing at one (stale from before a permission change, a role
+// switch, or a direct nav that's since been revoked), bounce to the first module this role can still
+// view. If literally nothing is viewable (a role with every module set to 'none' — only possible via
+// a deliberate, unusual configuration) leave ui.view as-is rather than looping forever; the role
+// switcher in the sidebar footer is always available to get back to a role that can see something.
+function ensureViewAccessible(){
+  if(canView(ui.view)) return;
+  const firstVisible = NAV.find(function(n){ return canView(n.id); });
+  if(firstVisible) ui.view = firstVisible.id;
+}
 function render(){
+  safeRun_('ensureViewAccessible', ensureViewAccessible);
   safeRun_('renderSidebarNav', renderSidebarNav);
-  safeRun_('roleTag', function(){ document.getElementById('roleTag').textContent = ROLES[ui.role].label; });
+  safeRun_('roleSelect', renderRoleSelect);
+  safeRun_('roleTag', function(){
+    const r = state.roles.find(function(x){ return x.id===ui.role; });
+    document.getElementById('roleTag').textContent = r ? r.label : ui.role;
+  });
   safeRun_('viewTitle/viewSub', function(){
     const nav = NAV.find(function(n){ return n.id===ui.view; });
     document.getElementById('viewTitle').textContent = nav? nav.label : '';
@@ -1213,6 +1305,7 @@ function renderSidebarNav(){
   try{ shortageCount = state.materials.filter(function(m){ return !m.pending && stockStatus(m)!=='good'; }).length; }catch(e){ console.error('shortageCount badge error:', e); }
   try{ pendingPr = state.purchaseRequests.filter(function(r){ return r.status==='รออนุมัติ'; }).length; }catch(e){ console.error('pendingPr badge error:', e); }
   NAV.forEach(function(n){
+    if(!canView(n.id)) return; // Round M: 'none' access hides the module from the menu entirely
     try{
       const item = el('<div class="nav-item'+(ui.view===n.id?' active':'')+'"><span class="ic">'+n.ic+'</span><span>'+n.label+'</span></div>');
       if(n.id==='stock' && shortageCount>0) item.appendChild(el('<span class="badge-mini">'+shortageCount+'</span>'));
@@ -4855,17 +4948,31 @@ function previewLocationImport(rows){
     });
   }
 }
-// ---- Round K: กำหนดสิทธิ์ (module permissions) tab — role × module edit-permission matrix ----
+// ---- Round K/M: กำหนดสิทธิ์ (module permissions) tab — role × module access-level matrix, plus
+// role management (add/rename/delete) since Round M ----
 function settingsPermissionsHtml(editable){
-  let html = '<div class="table-wrap"><table><thead><tr><th>บทบาท</th>'+
+  const addRow = editable
+    ? '<div class="btn-row" style="margin-bottom:12px"><input type="text" id="newRoleInput" placeholder="ชื่อบทบาทใหม่ เช่น ช่างเทคนิค" style="max-width:240px"/><button type="button" class="btn sm primary" id="addRoleBtn">+ เพิ่มบทบาท</button></div>'
+    : '';
+  let html = addRow+'<div class="table-wrap"><table><thead><tr><th>บทบาท</th>'+
     PERMISSION_MODULES.map(function(m){ return '<th style="text-align:center;font-size:11px;white-space:nowrap">'+esc(m.label)+'</th>'; }).join('')+
     '</tr></thead><tbody>';
-  Object.keys(ROLES).forEach(function(r){
-    const perms = state.rolePermissions[r]||[];
-    html += '<tr><td style="white-space:nowrap"><b>'+esc(ROLES[r].label)+'</b></td>'+
+  state.roles.forEach(function(r){
+    const perms = state.rolePermissions[r.id]||{};
+    const labelCell = editable
+      ? '<input type="text" class="role-label-input mono" data-role="'+esc(r.id)+'" value="'+esc(r.label)+'" style="min-width:110px"/>'
+      : '<b>'+esc(r.label)+'</b>';
+    const rmBtn = (editable && !r.builtin)
+      ? ' <button type="button" class="btn sm danger" data-rm-role="'+esc(r.id)+'" title="ลบบทบาทนี้">ลบ</button>' : '';
+    const builtinTag = r.builtin? ' <span class="helptext" style="font-size:10px;white-space:nowrap">(บทบาทหลัก — ลบไม่ได้)</span>' : '';
+    html += '<tr><td style="white-space:nowrap">'+labelCell+builtinTag+rmBtn+'</td>'+
       PERMISSION_MODULES.map(function(m){
-        const checked = perms.indexOf(m.id)!==-1;
-        return '<td style="text-align:center"><input type="checkbox" class="perm-chk" data-role="'+r+'" data-mod="'+m.id+'" '+(checked?'checked':'')+' '+(editable?'':'disabled')+'/></td>';
+        const val = PERMISSION_LEVELS.indexOf(perms[m.id])!==-1 ? perms[m.id] : 'view';
+        return '<td style="text-align:center"><select class="perm-select" data-role="'+esc(r.id)+'" data-mod="'+m.id+'" '+(editable?'':'disabled')+'>'+
+          '<option value="edit"'+(val==='edit'?' selected':'')+'>แก้ไข</option>'+
+          '<option value="view"'+(val==='view'?' selected':'')+'>ใช้งาน</option>'+
+          '<option value="none"'+(val==='none'?' selected':'')+'>ไม่ใช้งาน</option>'+
+        '</select></td>';
       }).join('')+
     '</tr>';
   });
@@ -4900,11 +5007,10 @@ function settingsIntegrationsHtml(editable){
   })();
   return (
     '<div class="section-title" style="margin-top:0">🗄 ฐานข้อมูล Google Sheet</div>'+
-    '<p class="helptext">เชื่อมระบบนี้เข้ากับ Google Sheet ผ่าน Apps Script Web App เพื่อเก็บข้อมูลกลางที่ทุกคนที่เกี่ยวข้องเข้าถึงได้ — ดูขั้นตอนติดตั้งใน README.md ของ repo (สร้าง Google Sheet ใหม่ → Extensions > Apps Script → วางโค้ด apps-script/Code.gs → Deploy เป็น Web App → คัดลอก URL มาวางด้านล่าง)</p>'+
-    '<div class="field" style="max-width:640px"><label>Apps Script Web App URL</label><input type="text" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec" value="'+esc(config.sheetApiUrl||'')+'" '+(editable?'':'disabled')+'/></div>'+
+    '<p class="helptext">ระบบนี้เชื่อมกับ Google Sheet ผ่าน Apps Script Web App ตัวเดียวกันสำหรับทุกคนที่ใช้ไฟล์นี้ — URL ถูกฝังไว้ในตัวไฟล์เรียบร้อยแล้ว ไม่ต้องตั้งค่าจากหน้านี้อีก ถ้าทีมพัฒนาปรับปรุงระบบฝั่ง Apps Script แล้ว Deploy เป็นเวอร์ชันใหม่ทับ Deployment เดิม (URL เดิม) ทุกคนที่ใช้ไฟล์นี้จะได้รับการอัปเดตโดยอัตโนมัติโดยไม่ต้องทำอะไรเพิ่ม</p>'+
+    '<div class="field" style="max-width:640px"><label>Apps Script Web App URL (ฝังไว้ในระบบแล้ว — แก้ไขจากหน้านี้ไม่ได้)</label><input type="text" value="'+esc(config.sheetApiUrl||'')+'" disabled/></div>'+
     (editable? (
       '<div class="btn-row" style="margin-top:8px">'+
-        '<button class="btn sm primary" id="saveSheetUrlBtn">💾 บันทึก URL</button>'+
         '<button class="btn sm" id="testSheetBtn">🔌 ทดสอบการเชื่อมต่อ</button>'+
         '<button class="btn sm" id="pullBtn">⬇ ดึงข้อมูลจาก Sheet</button>'+
         '<button class="btn sm" id="pushBtn">⬆ ส่งข้อมูลขึ้น Sheet</button>'+
@@ -4965,7 +5071,7 @@ function renderSettings(){
     operators: {title:'ผู้ปฏิบัติงาน', desc:'รายชื่อผู้ปฏิบัติงานสำหรับเลือกที่หน้าใบสั่งงานย่อย (ใบสั่งผลิต)'},
     projects: {title:'โครงการ', desc:'รายชื่อโครงการสำหรับเลือกตอนออกใบขอซื้อ (PR) — เพิ่มทีละรายการหรือนำเข้าจาก Excel ก็ได้ — เพิ่มแล้วจะอยู่ในระบบถาวร ไม่หายแม้รีเฟรชหน้าเว็บ จนกว่าจะลบออกเองที่นี่'},
     locations: {title:'สถานที่', desc:'รายชื่อสถานที่ (คลัง/โรงงาน/หน้างาน ฯลฯ) — รหัสสถานที่/ชื่อสถานที่/ประเภท — เพิ่มทีละรายการหรือนำเข้าจาก Excel ก็ได้'},
-    permissions: {title:'กำหนดสิทธิ์', desc:'กำหนดว่าแต่ละบทบาทผู้ใช้งานแก้ไขข้อมูลในโมดูล (หน้า) ใดได้บ้าง — ติ๊กช่องเพื่อเปิด/ปิดสิทธิ์แก้ไขทันที (ทุกบทบาทยังดูข้อมูลได้เสมอ ต่างกันแค่แก้ไขได้หรือไม่)'},
+    permissions: {title:'กำหนดสิทธิ์', desc:'เพิ่มบทบาทใหม่ได้เอง (บทบาทหลักของระบบลบไม่ได้ แต่เปลี่ยนชื่อได้) และกำหนดสิทธิ์การเข้าถึงแต่ละโมดูล (หน้า) ต่อบทบาทได้ 3 ระดับ: แก้ไข = ดู+แก้ไขข้อมูลได้, ใช้งาน = ดูได้อย่างเดียว, ไม่ใช้งาน = ซ่อนเมนูนี้ทั้งหมดสำหรับบทบาทนั้น'},
     subBom: {title:'BOM ย่อย', desc:'สินค้าระหว่างทำที่มีสูตรการผลิตของตัวเอง (สูตรย่อย) — เลือกใช้เป็นวัตถุดิบ/ส่วนประกอบในสูตรการผลิตอื่นได้จากหน้า "สูตรการผลิต"'},
     integrations: {title:'การเชื่อมต่อ', desc:'เชื่อมฐานข้อมูล Google Sheet และ ECOUNT API สำหรับใช้งานร่วมกันทั้งทีม'},
     resetData: {title:'ล้างข้อมูล', desc:'ล้างข้อมูลตัวอย่าง/ข้อมูลทดสอบทั้งหมด ก่อนเริ่มใช้งานระบบจริง'},
@@ -5033,16 +5139,9 @@ function renderSettings(){
       return;
     }
 
-    if(e.target.id==='saveSheetUrlBtn'){
-      const val = (document.getElementById('sheetUrlInput').value||'').trim();
-      config.sheetApiUrl = val; saveConfig(); render();
-      toast(val? 'บันทึก Web App URL แล้ว' : 'ล้างการเชื่อมต่อ Google Sheet แล้ว', 'good');
-      return;
-    }
     if(e.target.id==='testSheetBtn'){
-      const url = (document.getElementById('sheetUrlInput').value||'').trim();
-      if(!url) return toast('กรุณากรอก Apps Script Web App URL ก่อน','critical');
-      const resultEl = document.getElementById('ecountTestResult');
+      const url = config.sheetApiUrl;
+      if(!url) return toast('ยังไม่ได้ฝัง Apps Script Web App URL ไว้ในระบบ','critical');
       toast('กำลังทดสอบการเชื่อมต่อ...', 'good');
       fetch(url+'?action=ping').then(function(r){ return r.json(); }).then(function(res){
         toast(res.ok? 'เชื่อมต่อ Google Sheet สำเร็จ ✓' : 'เชื่อมต่อไม่สำเร็จ: '+res.message, res.ok?'good':'critical');
@@ -5194,27 +5293,80 @@ function renderSettings(){
     }
   });
 
-  // ---- Round K: กำหนดสิทธิ์ (module permissions) matrix ----
+  // ---- Round K/M: กำหนดสิทธิ์ (module permissions + role management) ----
+  // Never let the LAST role holding "edit" access to the "settings" module lose it — that would lock
+  // everyone out of ever reopening this tab to undo the change (or add a role back) again.
+  function settingsEditHolderCount(exceptRole){
+    return state.roles.filter(function(r){
+      return r.id!==exceptRole && state.rolePermissions[r.id] && state.rolePermissions[r.id].settings==='edit';
+    }).length;
+  }
   wrap.addEventListener('change', function(e){
-    if(!e.target.classList.contains('perm-chk')) return;
-    if(!editable) return;
-    const role = e.target.dataset.role, mod = e.target.dataset.mod;
-    if(!state.rolePermissions[role]) state.rolePermissions[role] = [];
-    const arr = state.rolePermissions[role];
-    const idx = arr.indexOf(mod);
-    if(e.target.checked){
-      if(idx===-1) arr.push(mod);
-    } else {
-      // Safety net: never let the LAST role holding "settings" access lose it via this matrix —
-      // that would lock everyone out of ever reopening this tab to undo the change again.
-      if(mod==='settings'){
-        const stillHasSettings = Object.keys(state.rolePermissions).some(function(r){ return r!==role && state.rolePermissions[r].indexOf('settings')!==-1; });
-        if(!stillHasSettings){ e.target.checked = true; return toast('ต้องมีอย่างน้อย 1 บทบาทที่แก้ไข "ตั้งค่า" ได้เสมอ — ป้องกันการถูกล็อกออกจากหน้านี้','critical'); }
+    if(e.target.classList.contains('perm-select')){
+      if(!editable) return;
+      const role = e.target.dataset.role, mod = e.target.dataset.mod;
+      const newVal = e.target.value;
+      if(!state.rolePermissions[role]) state.rolePermissions[role] = defaultRolePermissionsFor(role);
+      const oldVal = state.rolePermissions[role][mod];
+      if(mod==='settings' && oldVal==='edit' && newVal!=='edit' && settingsEditHolderCount(role)===0){
+        e.target.value = 'edit';
+        return toast('ต้องมีอย่างน้อย 1 บทบาทที่ "แก้ไข" โมดูล "ตั้งค่า" ได้เสมอ — ป้องกันการถูกล็อกออกจากหน้านี้','critical');
       }
-      if(idx!==-1) arr.splice(idx,1);
+      state.rolePermissions[role][mod] = newVal;
+      saveState(); render();
+      const roleLabel = (state.roles.find(function(r){ return r.id===role; })||{}).label || role;
+      const modLabel = (PERMISSION_MODULES.find(function(m){ return m.id===mod; })||{}).label || mod;
+      const levelLabel = {edit:'แก้ไข', view:'ใช้งาน', none:'ไม่ใช้งาน (ซ่อนเมนู)'}[newVal] || newVal;
+      toast('ปรับสิทธิ์ "'+roleLabel+'" ('+modLabel+') เป็น "'+levelLabel+'" แล้ว','good');
+      return;
     }
-    saveState(); render();
-    toast('ปรับสิทธิ์ "'+ROLES[role].label+'" ('+(PERMISSION_MODULES.find(function(m){ return m.id===mod; })||{}).label+') แล้ว','good');
+    if(e.target.classList.contains('role-label-input')){
+      if(!editable) return;
+      const id = e.target.dataset.role;
+      const val = (e.target.value||'').trim();
+      const role = state.roles.find(function(r){ return r.id===id; });
+      if(!role) return;
+      if(!val){ e.target.value = role.label; return toast('ชื่อบทบาทห้ามว่าง','critical'); }
+      if(state.roles.some(function(r){ return r.id!==id && r.label===val; })){ e.target.value = role.label; return toast('มีบทบาทชื่อนี้อยู่แล้ว','critical'); }
+      role.label = val; saveState(); render();
+      return;
+    }
+  });
+  wrap.addEventListener('click', function(e){
+    if(e.target.id==='addRoleBtn'){
+      if(!editable) return;
+      const input = document.getElementById('newRoleInput');
+      const label = (input.value||'').trim();
+      if(!label) return toast('กรุณาระบุชื่อบทบาทใหม่','critical');
+      if(state.roles.some(function(r){ return r.label===label; })) return toast('มีบทบาทชื่อนี้อยู่แล้ว','critical');
+      const id = 'role_'+(state.nextRoleSeq++);
+      // New custom roles start able to VIEW every module but EDIT none — a safe, visible-but-inert
+      // default the admin then dials in per module, rather than either extreme (full access or fully
+      // hidden) by surprise.
+      state.roles.push({id:id, label:label, builtin:false});
+      state.rolePermissions[id] = defaultRolePermissionsFor(id);
+      PERMISSION_MODULES.forEach(function(m){ state.rolePermissions[id][m.id] = 'view'; });
+      saveState(); render();
+      toast('เพิ่มบทบาท "'+label+'" แล้ว — ตั้งค่าสิทธิ์แต่ละโมดูลได้จากตารางด้านล่าง','good');
+      return;
+    }
+    const rmRoleBtn = e.target.closest('[data-rm-role]');
+    if(rmRoleBtn){
+      if(!editable) return;
+      const id = rmRoleBtn.dataset.rmRole;
+      const role = state.roles.find(function(r){ return r.id===id; });
+      if(!role) return;
+      if(role.builtin) return toast('บทบาทหลักของระบบลบไม่ได้','critical');
+      if(ui.role===id) return toast('ไม่สามารถลบบทบาทที่กำลังใช้งานอยู่ในขณะนี้ได้ — สลับไปบทบาทอื่นที่มุมซ้ายล่างก่อน','critical');
+      if(state.rolePermissions[id] && state.rolePermissions[id].settings==='edit' && settingsEditHolderCount(id)===0){
+        return toast('ลบบทบาทนี้ไม่ได้ — เป็นบทบาทเดียวที่เหลือที่ "แก้ไข" โมดูล "ตั้งค่า" ได้ (ป้องกันล็อกทุกคนออกจากหน้านี้)','critical');
+      }
+      state.roles = state.roles.filter(function(r){ return r.id!==id; });
+      delete state.rolePermissions[id];
+      saveState(); render();
+      toast('ลบบทบาท "'+role.label+'" แล้ว','good');
+      return;
+    }
   });
 
   return wrap;
@@ -5226,11 +5378,24 @@ const VIEW_RENDERERS = {
   wo: renderWO, kanban: renderKanban, shopfloor: renderShopfloor, stock: renderStock, purchaseStatus: renderPurchaseStatus, wip: renderWIP, fg: renderFG,
   ai: renderAI, settings: renderSettings,
 };
-function initRoleSelect(){
+// Round M: roles are user-manageable now (add/rename/delete at ตั้งค่า > กำหนดสิทธิ์), so this
+// dropdown's options can no longer be built once at boot — it's rebuilt every render() from the
+// live state.roles, but only actually touches the DOM (and re-wires its listener) when the role
+// list has actually changed since last time, so it doesn't fight the browser's own <select> focus.
+function renderRoleSelect(){
   const sel = document.getElementById('roleSelect');
-  Object.keys(ROLES).forEach(function(k){ sel.appendChild(el('<option value="'+k+'">'+ROLES[k].label+'</option>')); });
+  if(!sel) return;
+  const signature = state.roles.map(function(r){ return r.id+''+r.label; }).join('');
+  if(sel.dataset.builtFor !== signature){
+    sel.innerHTML = '';
+    state.roles.forEach(function(r){ sel.appendChild(el('<option value="'+esc(r.id)+'">'+esc(r.label)+'</option>')); });
+    sel.dataset.builtFor = signature;
+    if(!sel.dataset.wired){
+      sel.addEventListener('change', function(){ ui.role = sel.value; render(); });
+      sel.dataset.wired = '1';
+    }
+  }
   sel.value = ui.role;
-  sel.addEventListener('change', function(){ ui.role = sel.value; render(); });
 }
 document.getElementById('themeToggle').addEventListener('click', function(){
   const rootEl = document.documentElement;
@@ -5249,7 +5414,6 @@ document.getElementById('menuBtn').addEventListener('click', function(){ documen
 document.getElementById('syncStatusTag').addEventListener('click', function(){ ui.view='settings'; ui.settingsTab='integrations'; render(); });
 
 try{
-  initRoleSelect();
   render();
   if(apiConfigured() && config.autoSync){ syncPull(true); }
 }catch(bootErr){
