@@ -1048,9 +1048,15 @@ function fmtHM(v){
   return h+' ชม. '+mm+' นาที';
 }
 function laborCostByStep(p){
+  // Labor time entered per step is for the WHOLE lot (productLotSize(p) units of output) when the
+  // formula is lot-based — mirrors how BOM line quantities work (see productMaterialCostAfterScrap).
+  // Divide by lot size here to land on a PER-UNIT labor cost, which is what every downstream cost
+  // function (stdCost/marginInfo/Cost page/laborAccrued) expects. lotSize defaults to 1, so this is
+  // a no-op for every pre-existing formula.
   const raw = productLaborByStep(p);
+  const lot = productLotSize(p);
   const o = {};
-  Object.keys(raw).forEach(function(k){ o[k] = hmToDecimalHours(raw[k].hours||0)*(raw[k].rate||0); });
+  Object.keys(raw).forEach(function(k){ o[k] = hmToDecimalHours(raw[k].hours||0)*(raw[k].rate||0)/lot; });
   return o;
 }
 function laborTotal(product){
@@ -1553,7 +1559,7 @@ function renderBOM(){
       costLine('ต้นทุนวัตถุดิบหลังหักสูญเสีย/หน่วย', fmtTHB(matCost/(1-p.scrapPct/100))) +
       state.productionSteps.filter(function(s){ return (laborRawP[s].hours||0)>0 || (laborRawP[s].rate||0)>0; }).map(function(s){
         const hr = laborRawP[s];
-        return costLine('ค่าแรง — '+s+' ('+fmtHM(hr.hours)+' × '+fmtTHB(hr.rate)+'/ชม.)', fmtTHB(hmToDecimalHours(hr.hours)*hr.rate));
+        return costLine('ค่าแรง — '+s+' ('+fmtHM(hr.hours)+' × '+fmtTHB(hr.rate)+'/ชม.'+(lotSizeQ>1?'/Lot':'')+')', fmtTHB(hmToDecimalHours(hr.hours)*hr.rate/lotSizeQ));
       }).join('') +
       costLine('ค่าโสหุ้ยการผลิต (Overhead '+fmtNum(productOverheadPct(p),1)+'%)', fmtTHB(overheadAmount(p))) +
       '<div class="divider"></div>' + costLine('ต้นทุนการผลิตจริง/หน่วย', fmtTHB(m.cost), true);
@@ -2049,7 +2055,8 @@ function renderCreateFormulaModal(){
     '<div class="divider"></div>'+
     '<div class="section-title" style="margin-top:14px">ค่าแรงตามขั้นตอนการผลิต</div>'+
     '<p class="helptext" style="margin-bottom:8px">กรอกเวลาที่ใช้ผลิตแบบ ชม.นาที (เช่น พิมพ์ 0.10 = 10 นาที, พิมพ์ 1.30 = 1 ชั่วโมง 30 นาที) และค่าแรง/ชม. แยกตามแต่ละขั้นตอนการผลิต — ระบบจะคำนวณค่าแรงรวมให้อัตโนมัติ เฉพาะขั้นตอนที่ใช้จริงในสูตรนี้ก็พอ ที่เหลือปล่อยเป็น 0 ได้</p>'+
-    '<div class="table-wrap" id="nfLaborGrid"><table><thead><tr><th>ขั้นตอนการผลิต</th><th class="th-num">เวลาที่ใช้ผลิต (ชม.นาที)</th><th class="th-num">ค่าแรง/ชม. (บาท)</th><th class="th-num">รวม (บาท)</th></tr></thead><tbody>'+
+    '<p class="helptext" id="nfLaborLotHint" style="margin-top:-4px;margin-bottom:8px"></p>'+
+    '<div class="table-wrap" id="nfLaborGrid"><table><thead><tr><th>ขั้นตอนการผลิต</th><th class="th-num">เวลาที่ใช้ผลิต (ชม.นาที)</th><th class="th-num">ค่าแรง/ชม. (บาท)</th><th class="th-num" id="nfLaborColHeader">รวม (บาท)</th></tr></thead><tbody>'+
       state.productionSteps.map(function(s){
         const hr = (d.laborByStep && d.laborByStep[s]) ? d.laborByStep[s] : {hours:0, rate:stepDefaultLaborRate(s)};
         return '<tr><td>'+esc(s)+'</td>'+
@@ -2057,7 +2064,7 @@ function renderCreateFormulaModal(){
           '<td class="num"><input type="number" step="0.01" min="0" class="nf-labor-rate" data-step="'+esc(s)+'" value="'+esc(hr.rate||0)+'" style="width:100px;text-align:right"/></td>'+
           '<td class="num mono nf-labor-line-total" data-step="'+esc(s)+'">'+fmtTHB(hmToDecimalHours(hr.hours||0)*(hr.rate||0))+'</td></tr>';
       }).join('')+
-      '<tr><td colspan="3" style="text-align:right;font-weight:700">ต้นทุนค่าแรงรวม</td><td class="num mono" id="nfLaborGrandTotal" style="font-weight:700">'+fmtTHB(nfLaborTotal(d))+'</td></tr>'+
+      '<tr><td colspan="3" style="text-align:right;font-weight:700" id="nfLaborGrandTotalLabel">ต้นทุนค่าแรงรวม</td><td class="num mono" id="nfLaborGrandTotal" style="font-weight:700">'+fmtTHB(nfLaborTotal(d))+'</td></tr>'+
     '</tbody></table></div>'+
     '<div class="form-grid" style="margin-top:14px">'+
       field('% Scrap / Loss','nfScrap','number',d.scrapPct)+
@@ -2139,24 +2146,35 @@ function updateNfCostSummary(){
     const hr = d.laborByStep[hint.dataset.step]||{hours:0,rate:0};
     hint.textContent = fmtHM(hr.hours||0);
   });
-  const laborSum = nfLaborTotal(d);
+  // ค่าแรงในตารางด้านบนคือเวลา/ต้นทุนที่กรอกไว้ "ต่อ 1 สูตร (Lot)" เช่นเดียวกับจำนวนวัตถุดิบใน BOM —
+  // laborSum จึงเป็นยอดรวมค่าแรงต่อ Lot ต้องหารด้วย lot เพื่อให้ได้ค่าแรงต่อหน่วยก่อนนำไปรวมต้นทุน
+  const laborSumForLot = nfLaborTotal(d);
   const grandTotalEl = document.getElementById('nfLaborGrandTotal');
-  if(grandTotalEl) grandTotalEl.textContent = fmtTHB(laborSum);
+  if(grandTotalEl) grandTotalEl.textContent = fmtTHB(laborSumForLot);
   const lot = Math.max(1, d.lotSize||1);
+  const laborSumPerUnit = laborSumForLot/lot;
+  const grandTotalLabelEl = document.getElementById('nfLaborGrandTotalLabel');
+  if(grandTotalLabelEl) grandTotalLabelEl.textContent = lot>1? 'ต้นทุนค่าแรงรวม/Lot' : 'ต้นทุนค่าแรงรวม';
+  const laborColHeaderEl = document.getElementById('nfLaborColHeader');
+  if(laborColHeaderEl) laborColHeaderEl.textContent = lot>1? 'รวม/Lot (บาท)' : 'รวม (บาท)';
   const matCostForLot = d.lines.reduce(function(s,l){ return s+l.qty*nfLineUnitCost(l); },0);
   const matCostPerUnit = matCostForLot/lot;
   const afterScrap = matCostPerUnit/(1-(d.scrapPct||0)/100);
-  const overheadAmt = (afterScrap+laborSum)*(d.overheadPct||0)/100;
-  const cost = afterScrap+laborSum+overheadAmt;
+  const overheadAmt = (afterScrap+laborSumPerUnit)*(d.overheadPct||0)/100;
+  const cost = afterScrap+laborSumPerUnit+overheadAmt;
   const price = cost*(1+d.markupPct/100);
   const summaryEl = document.getElementById('nfCostSummary');
   if(summaryEl) summaryEl.innerHTML =
     (lot>1? 'ต้นทุนวัตถุดิบรวม/Lot ('+fmtNum(lot)+' '+esc(d.unit||'หน่วย')+') '+fmtTHB(matCostForLot)+' &nbsp;÷&nbsp; Lot &nbsp;=&nbsp; ' : '')+
-    'ต้นทุนวัตถุดิบ/หน่วย (หลังหักสูญเสีย) '+fmtTHB(afterScrap)+' &nbsp;+&nbsp; ค่าแรงรวม '+fmtTHB(laborSum)+' &nbsp;+&nbsp; ค่าโสหุ้ย ('+fmtNum(d.overheadPct,1)+'%) '+fmtTHB(overheadAmt)+' &nbsp;=&nbsp; ต้นทุนรวม/หน่วย <span style="color:var(--accent-strong)">'+fmtTHB(cost)+'</span> &nbsp;|&nbsp; ราคาขายแนะนำ '+fmtTHB(price);
+    'ต้นทุนวัตถุดิบ/หน่วย (หลังหักสูญเสีย) '+fmtTHB(afterScrap)+' &nbsp;+&nbsp; '+
+    (lot>1? 'ค่าแรงรวม/Lot '+fmtTHB(laborSumForLot)+' &nbsp;÷&nbsp; Lot &nbsp;=&nbsp; ค่าแรง/หน่วย '+fmtTHB(laborSumPerUnit) : 'ค่าแรงรวม '+fmtTHB(laborSumPerUnit))+
+    ' &nbsp;+&nbsp; ค่าโสหุ้ย ('+fmtNum(d.overheadPct,1)+'%) '+fmtTHB(overheadAmt)+' &nbsp;=&nbsp; ต้นทุนรวม/หน่วย <span style="color:var(--accent-strong)">'+fmtTHB(cost)+'</span> &nbsp;|&nbsp; ราคาขายแนะนำ '+fmtTHB(price);
   const qtyLabel = document.getElementById('nfLineQtyLabel');
   if(qtyLabel) qtyLabel.textContent = lot>1? ('จำนวนที่ใช้/Lot ('+fmtNum(lot)+' '+(d.unit||'หน่วย')+')') : 'จำนวนที่ใช้/หน่วยผลิต';
   const lotHint = document.getElementById('nfLotSizeHint');
   if(lotHint) lotHint.textContent = lot>1? ('รายการวัตถุดิบด้านล่างนี้ให้กรอกจำนวนที่ใช้ "ต่อ 1 สูตร (Lot)" คือผลิตได้ '+fmtNum(lot)+' '+(d.unit||'หน่วย')+' — ระบบจะคำนวณต้นทุนต่อหน่วยให้อัตโนมัติที่หน้าต้นทุนการผลิต') : '';
+  const laborLotHint = document.getElementById('nfLaborLotHint');
+  if(laborLotHint) laborLotHint.textContent = lot>1? ('💡 เวลาที่กรอกในตารางด้านล่างนี้คือเวลารวมที่ใช้ผลิต "ต่อ 1 Lot" ('+fmtNum(lot)+' '+(d.unit||'หน่วย')+') ไม่ใช่ต่อหน่วย — ระบบจะหารด้วยขนาด Lot ให้อัตโนมัติเพื่อคำนวณค่าแรงต่อหน่วย') : '';
 }
 function wireCreateFormulaModal(){
   document.getElementById('modalCancel').addEventListener('click', closeModal);
@@ -2395,17 +2413,20 @@ function openAddLineModal(pid, idx){
 
 /* ======================= VIEW: PRODUCTION COST ======================= */
 function costBreakdownHtml(p){
-  const matCost = p.bom.reduce(function(s,c){ return s+c.qty*effectiveUnitCost(materialById(c.materialId)); },0);
+  const lot = productLotSize(p);
+  const matCostForLot = p.bom.reduce(function(s,c){ return s+c.qty*effectiveUnitCost(materialById(c.materialId)); },0);
+  const matCost = matCostForLot/lot;
   const afterScrap = matCost/(1-(p.scrapPct||0)/100);
   const m = marginInfo(p);
   const laborRawP = productLaborByStep(p);
   return '<div class="grid grid-2" style="gap:6px 24px">'+
+    (lot>1? costLine('ต้นทุนวัตถุดิบรวม/Lot', fmtTHB(matCostForLot)) : '') +
     costLine('ต้นทุนวัตถุดิบ/หน่วย', fmtTHB(matCost)) +
     costLine('อัตราสูญเสีย (Scrap/Loss)', p.scrapPct+'%') +
     costLine('ต้นทุนวัตถุดิบหลังหักสูญเสีย', fmtTHB(afterScrap)) +
     state.productionSteps.filter(function(s){ return (laborRawP[s].hours||0)>0 || (laborRawP[s].rate||0)>0; }).map(function(s){
       const hr = laborRawP[s];
-      return costLine('ค่าแรง — '+s+' ('+fmtHM(hr.hours)+' × '+fmtTHB(hr.rate)+'/ชม.)', fmtTHB(hmToDecimalHours(hr.hours)*hr.rate));
+      return costLine('ค่าแรง — '+s+' ('+fmtHM(hr.hours)+' × '+fmtTHB(hr.rate)+'/ชม.'+(lot>1?'/Lot':'')+')', fmtTHB(hmToDecimalHours(hr.hours)*hr.rate/lot));
     }).join('') +
     costLine('ค่าโสหุ้ยการผลิต (Overhead '+fmtNum(productOverheadPct(p),1)+'%)', fmtTHB(overheadAmount(p))) +
     '</div><div class="divider"></div>' + costLine('ต้นทุนการผลิตจริง/หน่วย', fmtTHB(m.cost), true);
