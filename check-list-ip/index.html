@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HQ IP Address Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: '#00F0FF',
+            darkbg: '#0F172A',
+            cardbg: '#1E293B'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* CSS Styling สำหรับการ Print / Export PDF */
+    @media print {
+      body {
+        background-color: white !important;
+        color: black !important;
+        padding: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-only {
+        display: block !important;
+      }
+      .bg-cardbg, .bg-slate-900\/60, .bg-slate-800\/80 {
+        background-color: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #0f172a !important;
+      }
+      h1, h2, h3, p, span, div {
+        color: #0f172a !important;
+      }
+      #ipGrid div {
+        border: 1px solid #cbd5e1 !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen p-6 font-sans">
+
+  <div class="max-w-7xl mx-auto space-y-6">
+    
+    <!-- Top Header & Dashboard Stats -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-cardbg p-6 rounded-2xl border border-slate-700/50 shadow-xl">
+      <div>
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-cyan-400 animate-pulse no-print"></span>
+            HQ IP Address Management
+          </h1>
+          <!-- Database Status Indicator -->
+          <div id="dbStatus" class="no-print flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+            กำลังเชื่อมต่อฐานข้อมูล...
+          </div>
+        </div>
+        <p class="text-slate-400 text-sm mt-1">Network Subnet: 192.168.10.0/24 (DHCP Auto: .50 - .200)</p>
+      </div>
+      <div class="flex gap-4">
+        <div class="bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700 text-center">
+          <div class="text-xs text-slate-400">Fix IP ที่ใช้ไป</div>
+          <div id="statUsed" class="text-xl font-bold text-cyan-400">0</div>
+        </div>
+        <div class="bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700 text-center">
+          <div class="text-xs text-slate-400">Fix IP ว่างอยู่</div>
+          <div id="statAvailable" class="text-xl font-bold text-emerald-400">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network IP Policy Banner -->
+    <div class="bg-cardbg p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <div>
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 no-print"></span>
+            HQ Subnet Architecture Policy (192.168.10.0/24)
+          </h3>
+          <p class="text-xs text-slate-400 mt-0.5">นโยบายการจัดสรรช่วง IP Address เพื่อป้องกัน IP ชนกันภายในสำนักงานใหญ่</p>
+        </div>
+        <span class="px-3 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-mono rounded-full">
+          Network Standard
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Zone 1: Infrastructure -->
+        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider">Static Infrastructure</span>
+            <span class="text-xs font-mono px-2 py-0.5 bg-slate-800 text-slate-300 rounded">.1 - .49</span>
+          </div>
+          <p class="text-xs text-slate-300 font-medium">Core Devices Zone</p>
+          <p class="text-[11px] text-slate-400 mt-1">MikroTik Gateway, Core Switch, Access Point, Main Server</p>
+        </div>
+
+        <!-- Zone 2: DHCP Auto -->
+        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider">DHCP Dynamic Pool</span>
+            <span class="text-xs font-mono px-2 py-0.5 bg-slate-800 text-slate-300 rounded">.50 - .200</span>
+          </div>
+          <p class="text-xs text-slate-300 font-medium">Auto-Allocation Zone</p>
+          <p class="text-[11px] text-slate-400 mt-1">เครื่องพนักงานทั่วไป, โน้ตบุ๊ก, โทรศัพท์มือถือ (MikroTik คุม)</p>
+        </div>
+
+        <!-- Zone 3: Office Peripherals & Reserved -->
+        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Static Peripherals</span>
+            <span class="text-xs font-mono px-2 py-0.5 bg-slate-800 text-slate-300 rounded">.201 - .254</span>
+          </div>
+          <p class="text-xs text-slate-300 font-medium">Office Equipment &amp; IoT</p>
+          <p class="text-[11px] text-slate-400 mt-1">Printer, เครื่องถ่ายเอกสาร, CCTV, Smart TV, VIP Workstation</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Allocation Helper & Search -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- IP Allocation Form (hidden on print) -->
+      <div class="no-print bg-cardbg p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-4">
+        <h2 class="text-lg font-semibold text-white border-b border-slate-700 pb-2">บันทึก / แก้ไข Fix IP</h2>
+        
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">IP Address</label>
+          <input type="text" id="inputIP" placeholder="192.168.10.X" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400">
+          <p id="ipWarning" class="text-xs text-amber-400 mt-1 hidden">⚠️ IP นี้อยู่ในช่วง DHCP (.50 - .200) โปรดระวังชน!</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">ชื่ออุปกรณ์ / Device Name</label>
+          <input type="text" id="inputDevice" placeholder="เช่น PRN-HQ-01, Server-ERP" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">ประเภทอุปกรณ์</label>
+            <select id="inputType" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400">
+              <option value="Router">Router / Gateway</option>
+              <option value="Switch">Switch / VLAN</option>
+              <option value="Access Point">Access Point (Wi-Fi)</option>
+              <option value="Server">Server</option>
+              <option value="Printer">Printer / Copier</option>
+              <option value="CCTV">CCTV / NVR</option>
+              <option value="VIP User">VIP User / Workstation</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">แผนก</label>
+            <input type="text" id="inputDept" placeholder="เช่น IT, HR, Account" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">MAC Address (Optional)</label>
+          <input type="text" id="inputMAC" placeholder="AA:BB:CC:11:22:33" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400">
+        </div>
+
+        <button id="btnSave" onclick="saveIPData()" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold py-2.5 rounded-lg transition duration-200 flex justify-center items-center gap-2">
+          บันทึกข้อมูล IP
+        </button>
+      </div>
+
+      <!-- Visual IP Grid View (192.168.10.1 - .254) -->
+      <div class="lg:col-span-2 bg-cardbg p-6 rounded-2xl border border-slate-700/50 shadow-xl flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-white">แผนผัง IP Address (Visual Grid)</h2>
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-3 text-xs">
+                <span class="flex items-center gap-1"><span class="w-3 h-3 bg-emerald-500/20 border border-emerald-500 rounded"></span> ว่าง</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 bg-cyan-500 border border-cyan-400 rounded"></span> Fix IP</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 bg-slate-700 border border-slate-600 rounded"></span> DHCP</span>
+              </div>
+              <!-- Print / PDF Button -->
+              <button onclick="window.print()" class="no-print bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+                🖨️ พิมพ์ / Export PDF
+              </button>
+            </div>
+          </div>
+          
+          <!-- Quick Status Boxes -->
+          <div id="ipGrid" class="grid grid-cols-10 sm:grid-cols-12 md:grid-cols-16 gap-1.5 max-h-[320px] overflow-y-auto p-1 border border-slate-800 rounded-xl bg-slate-900/50">
+            <!-- Dynamic IP Badges Generated by JS -->
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500 mt-4 border-t border-slate-800 pt-3 flex justify-between items-center">
+          <span class="no-print">* คลิกที่ช่อง IP บน Grid เพื่อเลือกและแก้ไขข้อมูลได้ทันที</span>
+          <button onclick="fetchIPData()" class="no-print text-cyan-400 hover:underline text-xs">🔄 รีเฟรชข้อมูล</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWSFd8kqkMoJtEl51yc_2YrYihyDw5sbqlW4O2hBgd_WNOgzSHmdx_7n1uaHTlGkAP4Q/exec';
+    
+    let ipDatabase = {};
+
+    // Update Status Badge UI
+    function updateStatus(status, text) {
+      const dbStatus = document.getElementById('dbStatus');
+      if (status === 'loading') {
+        dbStatus.className = 'no-print flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20';
+        dbStatus.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> ${text}`;
+      } else if (status === 'connected') {
+        dbStatus.className = 'no-print flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        dbStatus.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> ${text}`;
+      } else {
+        dbStatus.className = 'no-print flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+        dbStatus.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> ${text}`;
+      }
+    }
+
+    // Check DHCP warning logic
+    document.getElementById('inputIP').addEventListener('input', (e) => {
+      const ip = e.target.value.trim();
+      const lastOctet = parseInt(ip.split('.')[3]);
+      const warning = document.getElementById('ipWarning');
+      
+      if (lastOctet >= 50 && lastOctet <= 200) {
+        warning.classList.remove('hidden');
+      } else {
+        warning.classList.add('hidden');
+      }
+    });
+
+    // Render 254 IP Grid Boxes
+    function renderGrid() {
+      const grid = document.getElementById('ipGrid');
+      grid.innerHTML = '';
+      let usedCount = 0;
+
+      for (let i = 1; i <= 254; i++) {
+        const ip = `192.168.10.${i}`;
+        const data = ipDatabase[ip];
+        const isDHCP = i >= 50 && i <= 200;
+
+        const el = document.createElement('div');
+        el.className = `h-7 text-[10px] font-mono flex items-center justify-center rounded cursor-pointer transition border `;
+        
+        if (data && (data.status === 'In Use' || data.status === 'Reserved')) {
+          el.className += 'bg-cyan-500 text-slate-950 font-bold border-cyan-400 hover:scale-110';
+          usedCount++;
+        } else if (isDHCP) {
+          el.className += 'bg-slate-800/50 text-slate-500 border-slate-700/50 hover:bg-slate-700';
+        } else {
+          el.className += 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20';
+        }
+
+        el.innerText = `.${i}`;
+        el.title = data ? `${ip} - ${data.DeviceName || 'Fix IP'} (${data.Department || '-'})` : (isDHCP ? `${ip} (DHCP Pool)` : `${ip} (Free Static)`);
+        
+        el.onclick = () => selectIP(ip);
+        grid.appendChild(el);
+      }
+
+      // Update Dashboard Stats
+      document.getElementById('statUsed').innerText = usedCount;
+      document.getElementById('statAvailable').innerText = (104 - usedCount); // 104 คือจำนวน Fix IP (.1-.49 และ .201-.254)
+    }
+
+    function selectIP(ip) {
+      document.getElementById('inputIP').value = ip;
+      document.getElementById('inputIP').dispatchEvent(new Event('input'));
+      
+      if (ipDatabase[ip]) {
+        const item = ipDatabase[ip];
+        document.getElementById('inputDevice').value = item.DeviceName || '';
+        document.getElementById('inputType').value = item.Type || 'Router';
+        document.getElementById('inputDept').value = item.Department || '';
+        document.getElementById('inputMAC').value = item.MACAddress || '';
+      } else {
+        document.getElementById('inputDevice').value = '';
+        document.getElementById('inputDept').value = '';
+        document.getElementById('inputMAC').value = '';
+      }
+    }
+
+    // Fetch IP Data from Google Sheets
+    async function fetchIPData() {
+      updateStatus('loading', 'กำลังโหลดข้อมูล...');
+      try {
+        const res = await fetch(GOOGLE_SCRIPT_URL);
+        const data = await res.json();
+        ipDatabase = {};
+        
+        data.forEach(row => {
+          if (row['IP Address']) {
+            ipDatabase[row['IP Address']] = {
+              DeviceName: row['Device Name'],
+              Type: row['Type'],
+              Department: row['Department'],
+              MACAddress: row['MAC Address'],
+              status: row['Status'] || 'In Use'
+            };
+          }
+        });
+        
+        renderGrid();
+        updateStatus('connected', 'เชื่อมต่อฐานข้อมูลแล้ว');
+      } catch (err) {
+        console.error('Error loading data:', err);
+        renderGrid();
+        updateStatus('error', 'เชื่อมต่อฐานข้อมูลล้มเหลว');
+      }
+    }
+
+    // Save IP Data to Google Sheets
+    async function saveIPData() {
+      const btnSave = document.getElementById('btnSave');
+      const payload = {
+        ip: document.getElementById('inputIP').value.trim(),
+        deviceName: document.getElementById('inputDevice').value.trim(),
+        type: document.getElementById('inputType').value,
+        department: document.getElementById('inputDept').value.trim(),
+        macAddress: document.getElementById('inputMAC').value.trim(),
+        status: 'In Use'
+      };
+
+      if (!payload.ip) return alert('กรุณาระบุ IP Address');
+
+      btnSave.disabled = true;
+      btnSave.innerText = 'กำลังบันทึก...';
+      updateStatus('loading', 'กำลังส่งข้อมูลไป Google Sheets...');
+
+      try {
+        // Update Local State instantly
+        ipDatabase[payload.ip] = {
+          DeviceName: payload.deviceName,
+          Type: payload.type,
+          Department: payload.department,
+          MACAddress: payload.macAddress,
+          status: 'In Use'
+        };
+        renderGrid();
+
+        // Send to Apps Script
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+
+        updateStatus('connected', 'เชื่อมต่อฐานข้อมูลแล้ว');
+        alert('บันทึกข้อมูลเรียบร้อยแล้ว');
+      } catch (err) {
+        console.error('Save error:', err);
+        updateStatus('error', 'บันทึกล้มเหลว');
+        alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      } finally {
+        btnSave.disabled = false;
+        btnSave.innerText = 'บันทึกข้อมูล IP';
+      }
+    }
+
+    // Initial Load
+    fetchIPData();
+  </script>
+</body>
+</html>
