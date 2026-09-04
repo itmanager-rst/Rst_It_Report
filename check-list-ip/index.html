@@ -314,26 +314,29 @@
         const res = await fetch(GOOGLE_SCRIPT_URL);
         const data = await res.json();
         
-        // เคลียร์ฐานข้อมูลเดิมในหน้าเว็บทั้งหมดก่อนรับค่าใหม่จาก Sheet
+        // เคลียร์ฐานข้อมูลในหน้าเว็บเพื่อรีเซ็ตสถานะทั้งหมด
         ipDatabase = {};
         
-        data.forEach(row => {
-          const ip = row['IP Address'] || row['ip'];
-          const deviceName = row['Device Name'] || row['deviceName'];
-          
-          // กรองเฉพาะแถวที่มี IP และมีข้อมูลชื่ออุปกรณ์อยู่จริง
-          if (ip && deviceName) {
-            ipDatabase[ip] = {
-              DeviceName: deviceName,
-              Type: row['Type'] || row['type'] || 'Router',
-              Department: row['Department'] || row['department'] || '',
-              MACAddress: row['MAC Address'] || row['macAddress'] || '',
-              status: 'In Use'
-            };
-          }
-        });
+        if (Array.isArray(data)) {
+          data.forEach(row => {
+            const ip = row['IP Address'] || row['ip'] || row['IP'] || '';
+            const deviceName = row['Device Name'] || row['deviceName'] || row['DeviceName'] || '';
+            const status = row['Status'] || row['status'] || 'In Use';
+            
+            // เพิ่มเงื่อนไขตรวจสอบว่า IP ยังคงมีสถานะถูกจองอยู่จริง
+            if (ip && deviceName && status !== 'Free' && status !== 'ว่าง') {
+              ipDatabase[ip] = {
+                DeviceName: deviceName,
+                Type: row['Type'] || row['type'] || 'Router',
+                Department: row['Department'] || row['department'] || '',
+                MACAddress: row['MAC Address'] || row['macAddress'] || '',
+                status: 'In Use'
+              };
+            }
+          });
+        }
         
-        // เซฟค่าใหม่ลง LocalStorage
+        // บันทึกแคชใหม่ทับอันเดิม
         localStorage.setItem('hq_ip_db', JSON.stringify(ipDatabase));
         renderGrid();
         updateStatus('connected', 'เชื่อมต่อฐานข้อมูลแล้ว');
@@ -405,7 +408,7 @@
       updateStatus('loading', 'กำลังลบข้อมูลจาก Google Sheets...');
 
       try {
-        // ลบค่าออกจากตัวแปรหน้าเว็บทันที
+        // ลบข้อมูลจากตัวแปรในหน้าเว็บและ LocalStorage ทันที
         delete ipDatabase[ip];
         localStorage.setItem('hq_ip_db', JSON.stringify(ipDatabase));
         renderGrid();
