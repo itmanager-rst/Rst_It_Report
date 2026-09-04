@@ -94,7 +94,6 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <!-- Zone 1: Infrastructure -->
         <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
           <div class="flex justify-between items-center mb-2">
             <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider">Static Infrastructure</span>
@@ -104,7 +103,6 @@
           <p class="text-[11px] text-slate-400 mt-1">MikroTik Gateway, Core Switch, Access Point, Main Server</p>
         </div>
 
-        <!-- Zone 2: DHCP Auto -->
         <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
           <div class="flex justify-between items-center mb-2">
             <span class="text-xs font-bold text-amber-400 uppercase tracking-wider">DHCP Dynamic Pool</span>
@@ -114,7 +112,6 @@
           <p class="text-[11px] text-slate-400 mt-1">เครื่องพนักงานทั่วไป, โน้ตบุ๊ก, โทรศัพท์มือถือ (MikroTik คุม)</p>
         </div>
 
-        <!-- Zone 3: Office Peripherals & Reserved -->
         <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
           <div class="flex justify-between items-center mb-2">
             <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Static Peripherals</span>
@@ -129,7 +126,7 @@
     <!-- Quick Allocation Helper & Form -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       
-      <!-- IP Allocation Form (hidden on print) -->
+      <!-- IP Allocation Form -->
       <div class="no-print bg-cardbg p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-4">
         <div class="flex justify-between items-center border-b border-slate-700 pb-2">
           <h2 class="text-lg font-semibold text-white">จัดการข้อมูล IP</h2>
@@ -201,7 +198,6 @@
           
           <!-- IP Grid -->
           <div id="ipGrid" class="grid grid-cols-10 sm:grid-cols-12 md:grid-cols-16 gap-1.5 max-h-[320px] overflow-y-auto p-1 border border-slate-800 rounded-xl bg-slate-900/50">
-            <!-- Dynamic IP Badges -->
           </div>
         </div>
 
@@ -302,7 +298,6 @@
       document.getElementById('ipWarning').classList.add('hidden');
     }
 
-    // Load from LocalCache first for ultra fast rendering
     function loadLocalCache() {
       const cached = localStorage.getItem('hq_ip_db');
       if (cached) {
@@ -318,20 +313,27 @@
       try {
         const res = await fetch(GOOGLE_SCRIPT_URL);
         const data = await res.json();
+        
+        // เคลียร์ฐานข้อมูลเดิมในหน้าเว็บทั้งหมดก่อนรับค่าใหม่จาก Sheet
         ipDatabase = {};
         
         data.forEach(row => {
-          if (row['IP Address']) {
-            ipDatabase[row['IP Address']] = {
-              DeviceName: row['Device Name'],
-              Type: row['Type'],
-              Department: row['Department'],
-              MACAddress: row['MAC Address'],
-              status: row['Status'] || 'In Use'
+          const ip = row['IP Address'] || row['ip'];
+          const deviceName = row['Device Name'] || row['deviceName'];
+          
+          // กรองเฉพาะแถวที่มี IP และมีข้อมูลชื่ออุปกรณ์อยู่จริง
+          if (ip && deviceName) {
+            ipDatabase[ip] = {
+              DeviceName: deviceName,
+              Type: row['Type'] || row['type'] || 'Router',
+              Department: row['Department'] || row['department'] || '',
+              MACAddress: row['MAC Address'] || row['macAddress'] || '',
+              status: 'In Use'
             };
           }
         });
         
+        // เซฟค่าใหม่ลง LocalStorage
         localStorage.setItem('hq_ip_db', JSON.stringify(ipDatabase));
         renderGrid();
         updateStatus('connected', 'เชื่อมต่อฐานข้อมูลแล้ว');
@@ -355,6 +357,7 @@
       };
 
       if (!payload.ip) return alert('กรุณาระบุ IP Address');
+      if (!payload.deviceName) return alert('กรุณาระบุ ชื่ออุปกรณ์');
 
       btnSave.disabled = true;
       btnSave.innerText = 'กำลังบันทึก...';
@@ -402,6 +405,7 @@
       updateStatus('loading', 'กำลังลบข้อมูลจาก Google Sheets...');
 
       try {
+        // ลบค่าออกจากตัวแปรหน้าเว็บทันที
         delete ipDatabase[ip];
         localStorage.setItem('hq_ip_db', JSON.stringify(ipDatabase));
         renderGrid();
