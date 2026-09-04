@@ -349,23 +349,8 @@ function migrateState(s){
   return s;
 }
 function persistLocal(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
-// "Dirty" = this browser has a local edit that has not yet been confirmed pushed to the shared
-// Google Sheet (e.g. the tab was closed before the debounced auto-push in scheduleAutoSync() had
-// a chance to fire). Stored under its own localStorage key — deliberately NOT part of `state` —
-// so it survives a reload and is never itself sent to/merged from the Sheet. See the boot
-// sequence below for how this prevents an automatic pull-on-load from silently overwriting an
-// edit that never made it to the Sheet.
-const DIRTY_KEY = 'agriforgeMrp_dirty_v1';
-function isDirty(){ try{ return localStorage.getItem(DIRTY_KEY)==='1'; }catch(e){ return false; } }
-function markDirty(v){ try{ localStorage.setItem(DIRTY_KEY, v? '1':'0'); }catch(e){} }
-function saveState(){ persistLocal(); markDirty(true); scheduleAutoSync(); }
-function resetData(){
-  state = seedData();
-  // Quiet save — persist locally only, do NOT auto-push. Resetting to demo data should never
-  // silently overwrite the real shared data already on the Google Sheet.
-  persistLocal(); markDirty(false);
-  ui.view='overview'; render(); toast('รีเซ็ตข้อมูลตัวอย่างเรียบร้อยแล้ว','good');
-}
+function saveState(){ persistLocal(); scheduleAutoSync(); }
+function resetData(){ state = seedData(); saveState(); ui.view='overview'; render(); toast('รีเซ็ตข้อมูลตัวอย่างเรียบร้อยแล้ว','good'); }
 /* Selectable data categories for the "ล้างข้อมูล" (clear data) feature — each entry knows how to
    count its own records and how to clear itself + reset any sequence numbers tied to it. Master/
    config data (categories, departments, production steps, operators, Google Sheet/ECOUNT settings
@@ -385,21 +370,22 @@ const RESET_DATA_CATEGORIES = [
 /* Clears only the CHECKED transactional/business-data categories (selectedKeys) to prepare the
    system for real production use. Master/config data under "หน้าตั้งค่า" (categories, departments,
    production steps, operators, Google Sheet/ECOUNT connection settings) is NEVER cleared by this
-   button, regardless of selection — there is simply no checkbox for it. Also persists the cleared
-   state LOCALLY ONLY (no auto-push) so an empty local state is never silently pushed over real
-   data already on the connected Google Sheet — the user must explicitly re-sync afterward. */
+   button, regardless of selection — there is simply no checkbox for it. Also force-disables
+   autoSync so an empty local state is never silently pushed over real data already on a connected
+   Google Sheet — the user must explicitly re-sync afterward. */
 function clearAllBusinessData(selectedKeys){
   const keys = selectedKeys && selectedKeys.length ? selectedKeys : RESET_DATA_CATEGORIES.map(function(c){ return c.key; });
   const cleared = [];
   RESET_DATA_CATEGORIES.forEach(function(c){
     if(keys.indexOf(c.key)!==-1){ c.clear(); cleared.push(c.label); }
   });
-  // Quiet save — persist locally only, do NOT auto-push. The system always syncs automatically,
-  // but a local data-clear must never silently wipe the real shared data on the Google Sheet.
-  persistLocal(); markDirty(false);
+  const hadAutoSync = !!config.autoSync;
+  config.autoSync = false;
+  saveConfig();
+  saveState();
   ui.view = 'settings'; ui.settingsTab = 'resetData';
   render();
-  toast('ล้างข้อมูลเรียบร้อยแล้ว ('+cleared.join(', ')+') — ระบบจะไม่ส่งข้อมูลที่ล้างแล้วขึ้น Google Sheet ให้อัตโนมัติ กรุณาตรวจสอบข้อมูลบน Sheet ก่อน แล้วกด "ส่งข้อมูลขึ้น Sheet" เองถ้าต้องการให้ตรงกัน', 'good');
+  toast('ล้างข้อมูลเรียบร้อยแล้ว ('+cleared.join(', ')+')'+(hadAutoSync? ' — ปิดซิงค์อัตโนมัติให้แล้ว กรุณาตรวจสอบข้อมูลบน Google Sheet ก่อนเปิดใช้อีกครั้ง':''), 'good');
 }
 
 /* ======================= GOOGLE SHEET SYNC (Apps Script Web App) =======================
@@ -421,9 +407,7 @@ const CONFIG_KEY = 'agriforgeMrp_config_v1';
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbyN4BAPIa4xleM0cf0W_-Zv8ASHXbFoSz1YyCNcHNHIImyJ-8tH8znuGRZL9dEt3SdXxQ/exec';
 function loadConfig(){
   // sheetApiUrl is always forced to the constant above, regardless of what (if anything) is sitting
-  // in localStorage from before this change. `autoSync` is kept only so an old persisted config
-  // object doesn't error out on load — it no longer controls anything (Round Y follow-up: both
-  // push and pull now always run automatically, see scheduleAutoSync()/boot sequence).
+  // in localStorage from before this change — only autoSync remains a genuine per-browser preference.
   try{ const raw = localStorage.getItem(CONFIG_KEY); if(raw) return Object.assign({autoSync:false}, JSON.parse(raw), {sheetApiUrl:SHEET_API_URL}); }catch(e){}
   return { sheetApiUrl:SHEET_API_URL, autoSync:false };
 }
@@ -432,16 +416,8 @@ let config = loadConfig();
 let syncState = { status:'idle', lastSyncAt:null, lastError:'' }; // idle | syncing | ok | error
 let syncPushTimer = null;
 function apiConfigured(){ return !!(config.sheetApiUrl && config.sheetApiUrl.trim()); }
-// Round Y follow-up: auto-push now always runs (debounced) whenever the Sheet is configured — no
-// longer gated behind a per-browser "autoSync" opt-in. With boot always auto-PULLING (see below),
-// leaving push as opt-in meant most browsers (autoSync defaults to off, and few people ever find
-// the Settings toggle) never actually sent their edits to the Sheet — so the very next reload's
-// automatic pull would silently overwrite those local edits with the older Sheet data. Making
-// both directions automatic by default is what "the data matches no matter which device opens it"
-// actually requires. `clearAllBusinessData()` and `resetData()` intentionally bypass this (persist
-// locally only) so a local reset/clear is never auto-pushed over real shared data.
 function scheduleAutoSync(){
-  if(!apiConfigured()) return;
+  if(!config.autoSync || !apiConfigured()) return;
   if(syncPushTimer) clearTimeout(syncPushTimer);
   syncPushTimer = setTimeout(function(){ syncPush(true); }, 1500);
 }
@@ -501,7 +477,6 @@ function syncPush(silent){
     .then(function(res){
       if(!res.ok) throw new Error(res.message||'บันทึกข้อมูลไม่สำเร็จ');
       syncState.status='ok'; syncState.lastSyncAt=Date.now(); syncState.lastError='';
-      markDirty(false);
       renderSyncTag();
       if(!silent) toast('ส่งข้อมูลขึ้น Google Sheet เรียบร้อย','good');
     })
@@ -4961,7 +4936,9 @@ function settingsIntegrationsHtml(editable){
         '<button class="btn sm" id="pullBtn">⬇ ดึงข้อมูลจาก Sheet</button>'+
         '<button class="btn sm" id="pushBtn">⬆ ส่งข้อมูลขึ้น Sheet</button>'+
       '</div>'+
-      '<p class="helptext" style="margin-top:12px">🔄 ระบบซิงค์ข้อมูลกับ Google Sheet ให้อัตโนมัติเสมอ ทั้งตอนบันทึกข้อมูล (ส่งขึ้น) และตอนเปิดหน้าเว็บ (ดึงลงมา) — ทุกอุปกรณ์ที่เปิดลิงก์นี้จะเห็นข้อมูลชุดเดียวกัน ไม่ต้องตั้งค่าเพิ่มเติม ใช้ปุ่มด้านบนเฉพาะกรณีต้องการบังคับดึง/ส่งข้อมูลทันทีโดยไม่ต้องรอ</p>'
+      '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer">'+
+        '<input type="checkbox" id="autoSyncToggle" '+(config.autoSync?'checked':'')+'/> ซิงค์ขึ้น Sheet อัตโนมัติทุกครั้งที่มีการบันทึกข้อมูลในระบบ'+
+      '</label>'
     ) : '')+
     '<p class="helptext" id="sheetSyncStatusLine" style="margin-top:8px">สถานะ: '+statusLine+'</p>'+
     '<div class="section-title">🔗 เชื่อมต่อ ECOUNT API</div>'+
@@ -5092,18 +5069,7 @@ function renderSettings(){
       }).catch(function(err){ toast('เชื่อมต่อไม่สำเร็จ: '+err, 'critical'); });
       return;
     }
-    if(e.target.id==='pullBtn'){
-      if(isDirty()){
-        openModal('มีข้อมูลที่ยังไม่ได้ส่งขึ้น Sheet',
-          '<p class="helptext">เครื่องนี้มีข้อมูลที่แก้ไขแล้วแต่ยังไม่ได้ส่งขึ้น Google Sheet — ถ้าดึงข้อมูลตอนนี้ การแก้ไขล่าสุดในเครื่องนี้จะถูกทับด้วยข้อมูลจาก Sheet ต้องการดึงข้อมูลต่อหรือไม่?</p>',
-          '<button class="btn ghost" id="modalCancel">ยกเลิก</button><button class="btn danger" id="confirmPullOverwrite">ดึงข้อมูล (ทับของในเครื่อง)</button>');
-        document.getElementById('modalCancel').addEventListener('click', closeModal);
-        document.getElementById('confirmPullOverwrite').addEventListener('click', function(){ closeModal(); syncPull(false); });
-        return;
-      }
-      syncPull(false);
-      return;
-    }
+    if(e.target.id==='pullBtn'){ syncPull(false); return; }
     if(e.target.id==='pushBtn'){ syncPush(false); return; }
     if(e.target.id==='ecountTestBtn'){
       const resultEl = document.getElementById('ecountTestResult');
@@ -5148,6 +5114,10 @@ function renderSettings(){
       return;
     }
   });
+  wrap.addEventListener('change', function(e){
+    if(e.target.id==='autoSyncToggle'){ config.autoSync = e.target.checked; saveConfig(); toast(config.autoSync? 'เปิดซิงค์อัตโนมัติแล้ว':'ปิดซิงค์อัตโนมัติแล้ว','good'); return; }
+  });
+
   wrap.addEventListener('change', function(e){
     if(!editable) return;
     const input = e.target.closest('[data-rename]'); if(!input) return;
@@ -5366,23 +5336,14 @@ document.getElementById('syncStatusTag').addEventListener('click', function(){ u
 
 try{
   render();
-  // Always sync with the shared Google Sheet on load, so every device shows the same real data
-  // (see the Round Y note in scheduleAutoSync() above for why push is no longer opt-in either).
-  // One thing an unconditional pull-on-boot must NOT do: overwrite a local edit that this same
-  // browser made but never got around to pushing (e.g. the tab was closed before the debounced
-  // auto-push fired, or the device was offline at the time). isDirty() tracks exactly that case.
-  //   - dirty:     push the pending local edit up FIRST, then pull to reconcile with whatever
-  //                else changed on the Sheet meanwhile. If the push itself fails (still offline),
-  //                skip the pull entirely — pulling now would clobber the still-unsynced edit
-  //                with older Sheet data, which is the exact bug this is guarding against.
-  //   - not dirty: nothing local is at risk, so just pull straight away as before.
-  if(apiConfigured()){
-    if(isDirty()){
-      syncPush(true).then(function(){ if(!isDirty()){ syncPull(true); } });
-    } else {
-      syncPull(true);
-    }
-  }
+  // Always pull the shared Google Sheet data on load, regardless of the "ซิงค์ขึ้น Sheet
+  // อัตโนมัติ" (autoSync) toggle — that toggle only controls auto-PUSH on save (see
+  // scheduleAutoSync). Without an unconditional pull here, any device/browser that has never
+  // explicitly turned autoSync on (e.g. an executive opening the GitHub Pages link on their
+  // phone for the first time) would just render seedData()'s local demo data forever and never
+  // see the team's real shared data. syncPull() has safe merge-not-overwrite semantics (never
+  // wipes local state on an empty/failed response), so this is safe to call unconditionally.
+  if(apiConfigured()){ syncPull(true); }
 }catch(bootErr){
   console.error('Fatal boot error:', bootErr);
   document.body.innerHTML =
