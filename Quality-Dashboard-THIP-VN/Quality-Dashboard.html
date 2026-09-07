@@ -899,6 +899,12 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
   </div>
   <div class="chart-grid">
     <div class="chart-box chart-defect chart-span-all">
+      <h3 data-i18n="chartDefectPareto">Pareto Defect (จำนวน vs % สะสม)</h3>
+      <div class="chart-scroll"><div class="chart-inner-size"><canvas id="chart-dash-pareto"></canvas></div></div>
+    </div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-box chart-defect chart-span-all">
       <h3 data-i18n="chartDefectTrend">แนวโน้ม % Defect รายวัน</h3>
       <div class="mini-filter-row">
         <span class="flabel" data-i18n="defectTypeFilterLabel">ประเภท Defect</span>
@@ -1357,6 +1363,18 @@ function recorderNameOf(v){
     if(typeof v.recorder==='string') return v.recorder;
     if(typeof v.Recorder==='string') return v.Recorder;
     if(typeof v.Name==='string') return v.Name;
+    // Legacy corruption guard: an older/buggy Apps Script deployment could spread a plain string into
+    // one property per character instead of wrapping it as {name:"..."} (e.g. "Nattayika" ->
+    // {0:'N',1:'a',2:'t',...}). Detect that exact shape - keys are "0","1","2",... in order - and rejoin
+    // the characters back into the original string, instead of the naive fallback below grabbing just
+    // the first one. See GoogleAppsScript_Code.gs's normalizeRecord_/repairAllMasterLists for the fix
+    // and one-time cleanup on the Sheet side; this is the client-side safety net for the same bug.
+    const keys = Object.keys(v);
+    const looksCharSpread = keys.length>0 && keys.every((k,i)=>k===String(i));
+    if(looksCharSpread){
+      const joined = keys.map(k=>v[k]).join('').trim();
+      if(joined) return joined;
+    }
     const firstStr = Object.values(v).find(x=>typeof x==='string' && x.trim());
     if(firstStr) return firstStr;
     return '';
@@ -1373,8 +1391,16 @@ function getRecorderNames(){
   });
   return out;
 }
-function localDate(d=new Date()){ const off=d.getTimezoneOffset(); return new Date(d.getTime()-off*60000).toISOString().slice(0,10); }
-function localTime(d=new Date()){ return d.toTimeString().slice(0,5); }
+// Fixed to the factory's own offset (Thailand and Vietnam are both UTC+7 year-round, no DST) instead of
+// reading the device's OS/browser timezone. The old getTimezoneOffset()/toTimeString() approach silently
+// produced wrong dates and times on any device whose clock/timezone wasn't set to exactly this zone - a
+// real risk on shared factory tablets/PCs - and was also the mechanism that made a Google-Sheets sync
+// round-trip corruption (see dateOnly/timeOnly below) reconstruct correctly on some devices and not
+// others. A fixed offset makes every device compute the same date/time for the same instant, always.
+const APP_TZ_OFFSET_MIN = 7*60;
+function tzShifted_(d){ return new Date(d.getTime()+APP_TZ_OFFSET_MIN*60000); }
+function localDate(d=new Date()){ return tzShifted_(d).toISOString().slice(0,10); }
+function localTime(d=new Date()){ return tzShifted_(d).toISOString().slice(11,16); }
 // Normalizes any date value to a plain "YYYY-MM-DD" string (date only, no time) - see the comment above
 // restoreFromSync() for why values coming back from a Google Sheets sync sometimes need this. Used both
 // to clean incoming synced data and defensively at every "Recent Entries" date display.
@@ -1402,7 +1428,10 @@ function shiftFromTime(hh,mm){
   if(mins>=840 && mins<1320) return 'B';
   return 'C';
 }
-function shiftFromDate(d){ return shiftFromTime(d.getHours(), d.getMinutes()); }
+// Uses the same fixed UTC+7 offset as localDate/localTime (not d.getHours()/getMinutes(), which read the
+// device's own OS timezone) so the auto-suggested Shift is correct even on a device whose clock/timezone
+// is misconfigured.
+function shiftFromDate(d){ const t=tzShifted_(d); return shiftFromTime(t.getUTCHours(), t.getUTCMinutes()); }
 
 /* ============================================================
    I18N
@@ -1471,6 +1500,7 @@ statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdow
 chartDailyDefect:"แนวโน้ม % Defect (% Defect Trend)", chartDefectByType:"% Defect แยกตามประเภท", chartDefectByMachine:"% Defect แยกตามเครื่องจักร",
 chartDefectTrend:"แนวโน้ม % Defect รายวัน", defectTypeFilterLabel:"ประเภท Defect",
 chartDefectByShift:"% Defect แยกตามกะ", chartBdByMachine:"Breakdown Minute แยกตามเครื่องจักร", chartBdByCause:"Breakdown แยกตามสาเหตุ",
+chartDefectPareto:"Pareto Defect (จำนวน vs % สะสม)", paretoQtyLabel:"จำนวน Defect (ชิ้น)", paretoCumulativeLabel:"% สะสม",
 filterPeriod:"ช่วงเวลา", filterMachine:"เครื่องจักร", periodDaily:"รายวัน", periodWeekly:"รายสัปดาห์ (7 วัน)", periodMonthly:"รายเดือน (30 วัน)", periodAll:"ทั้งหมด",
 allMachines:"ทุกเครื่อง", sectionDefect:"ภาพรวม Defect", sectionBreakdown:"ภาพรวม Breakdown",
 sectionPerformance:"ภาพรวม Performance (กำลังการผลิต)", sectionPerftest:"ภาพรวม Performance Test",
@@ -1544,6 +1574,7 @@ statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdow
 chartDailyDefect:"% Defect Trend", chartDefectByType:"Defect % by Type", chartDefectByMachine:"Defect % by Machine",
 chartDefectTrend:"Daily % Defect Trend", defectTypeFilterLabel:"Defect Type",
 chartDefectByShift:"Defect % by Shift", chartBdByMachine:"Breakdown Minutes by Machine", chartBdByCause:"Breakdown by Cause",
+chartDefectPareto:"Defect Pareto (Qty vs Cumulative %)", paretoQtyLabel:"Defect Qty (pcs)", paretoCumulativeLabel:"Cumulative %",
 filterPeriod:"Period", filterMachine:"Machine", periodDaily:"Daily", periodWeekly:"Weekly (7d)", periodMonthly:"Monthly (30d)", periodAll:"All",
 allMachines:"All Machines", sectionDefect:"Defect Overview", sectionBreakdown:"Breakdown Overview",
 sectionPerformance:"Performance Overview (Production)", sectionPerftest:"Performance Test Overview",
@@ -1617,6 +1648,7 @@ statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdow
 chartDailyDefect:"Xu hướng % Defect", chartDefectByType:"% Defect theo loại", chartDefectByMachine:"% Defect theo máy",
 chartDefectTrend:"Xu hướng % Defect hàng ngày", defectTypeFilterLabel:"Loại Defect",
 chartDefectByShift:"% Defect theo ca", chartBdByMachine:"Số phút Breakdown theo máy", chartBdByCause:"Breakdown theo nguyên nhân",
+chartDefectPareto:"Pareto Defect (Số lượng vs % lũy kế)", paretoQtyLabel:"Số lượng Defect (cái)", paretoCumulativeLabel:"% lũy kế",
 filterPeriod:"Khoảng thời gian", filterMachine:"Máy", periodDaily:"Hàng ngày", periodWeekly:"Hàng tuần (7 ngày)", periodMonthly:"Hàng tháng (30 ngày)", periodAll:"Tất cả",
 allMachines:"Tất cả máy", sectionDefect:"Tổng quan Defect", sectionBreakdown:"Tổng quan Breakdown",
 sectionPerformance:"Tổng quan Performance (Sản xuất)", sectionPerftest:"Tổng quan Performance Test",
@@ -2850,6 +2882,39 @@ function renderCharts(defects, breakdowns){
     const pct = (byType[k]/typeTotal*100).toFixed(1);
     return `<div class="chart-legend-row"><span class="chart-legend-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></span><span class="chart-legend-name">${typeLabel(k)}</span><span class="chart-legend-pct">${pct}%</span></div>`;
   }).join('') : `<div class="chart-legend-row" style="color:var(--muted);">${I18N[currentLang].noData}</div>`;
+
+  // Pareto Defect: reuses the same byType/typeKeys/typeTotal computed just above (typeKeys is already
+  // sorted highest-qty-first, which is exactly the order a Pareto chart needs) - bars show raw Defect
+  // qty per type on the left axis, the line shows the running cumulative % of total qty on a 0-100%
+  // right axis, so the "vital few" types driving ~80% of Defects are visible at a glance (where the
+  // line crosses the ~80% mark).
+  const dictP = I18N[currentLang];
+  let paretoRunning = 0;
+  const paretoCum = typeKeys.map(k=>{ paretoRunning += byType[k]; return +(paretoRunning/typeTotal*100).toFixed(1); });
+  destroyChart('pareto');
+  fitChartCanvas('chart-dash-pareto', typeKeys.length, {minPerItem:70});
+  charts.pareto = new Chart(document.getElementById('chart-dash-pareto'), {
+    data:{
+      labels: typeKeys.map(k=>typeLabel(k)),
+      datasets:[
+        { type:'bar', label:dictP.paretoQtyLabel, data:typeKeys.map(k=>byType[k]), backgroundColor:'#2563eb', order:2, yAxisID:'y' },
+        { type:'line', label:dictP.paretoCumulativeLabel, data:paretoCum, borderColor:'#dc2626', backgroundColor:'#dc2626', tension:0.2, pointRadius:3, order:1, yAxisID:'y1' }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom'},
+        valueLabels:{ show:true, datasets:{
+          0:{ show:true, decimals:0 },
+          1:{ show:true, decimals:1, suffix:'%', color:'#dc2626', position:'below' }
+        } }
+      },
+      scales:{
+        y:{ beginAtZero:true, position:'left' },
+        y1:{ beginAtZero:true, min:0, max:100, position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>v+'%'} }
+      }
+    }
+  });
 
   // % Defect by machine = Defect qty x100 / Production qty, per machine (or by date trend when a single machine is selected)
   destroyChart('machine');
