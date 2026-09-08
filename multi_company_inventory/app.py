@@ -160,7 +160,7 @@ def health_check():
     }
 
 
-# --- MODULE 1: READ-ONLY INVENTORY API ( BigQuery) ---
+# --- MODULE 1: READ-ONLY INVENTORY API (BigQuery) ---
 
 @app.get("/api/inventory")
 def get_inventory(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RUAMSINTHAI หรือ ALL")):
@@ -174,28 +174,29 @@ def get_inventory(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RU
     if company_id != "ALL":
         where_clause = f"WHERE UPPER(b.company_id) = '{company_id.upper()}'"
 
+    # Query แก้ไขให้ค้นหาชื่อสินค้าและคลังสินค้าได้อย่างครอบคลุมทุกบริษัท (ASIA, ROBOTICS, RUAMSINTHAI)
     query = f"""
         SELECT 
             b.company_id,
             b.company_code,
             b.prod_cd,
             COALESCE(
-                CASE
-                    WHEN UPPER(b.company_id) = 'RUAMSINTHAI'
-                        AND TRIM(CAST(m.prod_des AS STRING)) = TRIM(CAST(b.prod_cd AS STRING))
-                    THEN NULL
-                    ELSE NULLIF(TRIM(CAST(m.prod_des AS STRING)), '')
-                END,
-                CASE WHEN UPPER(b.company_id) = 'RUAMSINTHAI' THEN '-' ELSE b.prod_cd END
+                NULLIF(TRIM(CAST(m.prod_des AS STRING)), ''),
+                NULLIF(TRIM(CAST(b.prod_cd AS STRING)), ''),
+                '-'
             ) AS prod_des,
             COALESCE(NULLIF(TRIM(CAST(m.size_des AS STRING)), ''), '') AS size_des,
             COALESCE(NULLIF(TRIM(CAST(b.wh_cd AS STRING)), ''), '-') AS wh_cd,
-            COALESCE(NULLIF(TRIM(CAST(b.wh_cd AS STRING)), ''), '-') AS wh_des,
+            COALESCE(
+                NULLIF(TRIM(CAST(b.wh_cd AS STRING)), ''),
+                '-'
+            ) AS wh_des,
             b.bal_qty,
             b.updated_at
         FROM `{PROJECT_ID}.{DATASET_ID}.inventory_balance` b
         LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.master_products` m
-            ON b.company_id = m.company_id AND b.prod_cd = m.prod_cd
+            ON UPPER(TRIM(CAST(b.company_id AS STRING))) = UPPER(TRIM(CAST(m.company_id AS STRING)))
+            AND TRIM(CAST(b.prod_cd AS STRING)) = TRIM(CAST(m.prod_cd AS STRING))
         {where_clause}
         ORDER BY b.company_id, b.prod_cd
     """
@@ -223,7 +224,7 @@ def get_inventory(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RU
     return {"total": len(data), "items": data}
 
 
-# --- MODULE 2: READ-ONLY PURCHASE ORDERS (PO) API ( ECOUNT) ---
+# --- MODULE 2: READ-ONLY PURCHASE ORDERS (PO) API (ECOUNT) ---
 
 async def get_po_list_legacy(
     DATE_FROM: Optional[str] = Query(None),
@@ -260,7 +261,7 @@ async def get_po_list_legacy(
         f_date = (DATE_FROM or (today - timedelta(days=29)).strftime("%Y%m%d")).replace("-", "").replace("/", "")
         t_date = (DATE_TO or today.strftime("%Y%m%d")).replace("-", "").replace("/", "")
 
-        session_id, host_url = get_ecount_session()
+        session_id, host_url = get_ecount_session(COMPANIES[0])
         if not session_id or not host_url:
             return {"success": False, "message": "ไม่สามารถเข้าสู่ระบบ ECOUNT ได้", "data": []}
 
@@ -268,7 +269,7 @@ async def get_po_list_legacy(
 
         content_type = res.headers.get("Content-Type", "").lower()
         if res.status_code in [412, 401, 500] or "application/json" not in content_type:
-            session_id, host_url = get_ecount_session(force_refresh=True)
+            session_id, host_url = get_ecount_session(COMPANIES[0], force_refresh=True)
             if session_id and host_url:
                 res = fetch_from_ecount(session_id, host_url, f_date, t_date, 1)
 
@@ -279,7 +280,7 @@ async def get_po_list_legacy(
 
         # ECOUNT may return an expired-session error with HTTP 200.
         if str(response_data.get("Status")) != "200":
-            session_id, host_url = get_ecount_session(force_refresh=True)
+            session_id, host_url = get_ecount_session(COMPANIES[0], force_refresh=True)
             if session_id and host_url:
                 retry_response = fetch_from_ecount(session_id, host_url, f_date, t_date, 1)
                 try:
@@ -337,10 +338,8 @@ async def get_po_list_legacy(
                 else:
                     po_number = "-"
 
-                # แมปบริษัทจากข้อมูล
                 comp_id = pick("COMPANY_ID", "COM_CODE") or "ASIA"
 
-                # รองรับการ Filter แยกบริษัท
                 if company_id != "ALL" and comp_id.upper() != company_id.upper():
                     continue
 
