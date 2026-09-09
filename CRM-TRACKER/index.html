@@ -127,6 +127,26 @@
         .row-action-group { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: center; min-width: 88px; }
         .btn-row-icon { flex: 0 0 auto; padding: 3px 6px; font-size: 11px; }
         .btn-row-icon.has-log { background: #f3e8ff; color: #6b21a8; font-weight: 600; }
+        /* ===== ปฏิทินติดตามลูกค้า ===== */
+        .calendar-layout { display: grid; grid-template-columns: minmax(620px, 1.65fr) minmax(320px, 0.85fr); gap: 15px; align-items: start; }
+        .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .calendar-month-title { font-size: 18px; font-weight: 600; color: #0f172a; text-align: center; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+        .calendar-weekday { background: #f1f5f9; padding: 8px 4px; text-align: center; font-size: 12px; font-weight: 600; color: #475569; border-right: 1px solid #e2e8f0; }
+        .calendar-day { min-height: 92px; padding: 7px; background: #fff; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; cursor: pointer; position: relative; }
+        .calendar-day:hover { background: #f0f9ff; }
+        .calendar-day.outside { background: #f8fafc; color: #cbd5e1; cursor: default; }
+        .calendar-day.today { box-shadow: inset 0 0 0 2px #0ea5e9; }
+        .calendar-day.selected { background: #e0f2fe; box-shadow: inset 0 0 0 2px #0284c7; }
+        .calendar-date-number { font-weight: 600; font-size: 12px; }
+        .calendar-count { display: inline-flex; margin-top: 8px; padding: 3px 7px; border-radius: 999px; background: #fef3c7; color: #b45309; font-size: 11px; font-weight: 600; }
+        .calendar-today-summary { background: linear-gradient(135deg,#0284c7,#0ea5e9); color:#fff; border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+        .calendar-today-count { font-size: 28px; font-weight: 700; line-height: 1; }
+        .calendar-customer-list { display: flex; flex-direction: column; gap: 8px; }
+        .calendar-customer { width: 100%; border: 1px solid #e2e8f0; background:#fff; border-radius:9px; padding:10px; text-align:left; cursor:pointer; color:#1e293b; }
+        .calendar-customer:hover { border-color:#38bdf8; background:#f0f9ff; }
+        .calendar-customer-name { font-size:13px; font-weight:600; color:#0369a1; }
+        .calendar-customer-meta { font-size:11.5px; color:#64748b; margin-top:3px; }
         .timeline-list { max-height: 280px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
         .timeline-item { border-left: 3px solid var(--primary-color); padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
         .timeline-date { font-size: 11px; font-weight: 600; color: var(--primary-color); margin-bottom: 3px; }
@@ -168,6 +188,9 @@
             .btn { padding: 10px 14px; font-size: 14px; }
             .card { padding: 12px; }
             .report-row { flex-direction: column; }
+            .calendar-layout { grid-template-columns: 1fr; }
+            .calendar-grid { min-width: 620px; }
+            .calendar-scroll { overflow-x: auto; }
             .card-title { flex-wrap: wrap; gap: 6px; }
             .search-actions { flex-wrap: wrap; gap: 8px; }
             #main-table { width: 2100px; min-width: 2100px; }
@@ -189,6 +212,7 @@
     <div class="page-nav">
         <button id="nav-btn-add" class="page-nav-btn active" onclick="switchPage('add')">➕ เพิ่มข้อมูลลูกค้า</button>
         <button id="nav-btn-history" class="page-nav-btn" onclick="switchPage('history')">📊 ประวัติ / ค้นหา</button>
+        <button id="nav-btn-calendar" class="page-nav-btn" onclick="switchPage('calendar')">📅 ปฏิทินติดตาม</button>
         <button id="nav-btn-report" class="page-nav-btn" onclick="switchPage('report')">📈 รายงาน</button>
     </div>
     <div class="main-layout">
@@ -443,7 +467,37 @@
                 </div>
             </div>
         </div>
-        <!-- ===== หน้าที่ 3: รายงาน ===== -->
+        <!-- ===== หน้าที่ 3: ปฏิทินติดตาม ===== -->
+        <div id="page-calendar" class="page-view" style="display:none;">
+            <div class="calendar-layout">
+                <div class="card">
+                    <div class="calendar-toolbar">
+                        <button type="button" class="btn btn-secondary" onclick="changeCalendarMonth(-1)">◀ เดือนก่อน</button>
+                        <div class="calendar-month-title" id="calendar-month-title"></div>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" class="btn btn-secondary" onclick="goCalendarToday()">วันนี้</button>
+                            <button type="button" class="btn btn-secondary" onclick="changeCalendarMonth(1)">เดือนถัดไป ▶</button>
+                        </div>
+                    </div>
+                    <div class="calendar-scroll">
+                        <div class="calendar-grid" id="followup-calendar-grid"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="calendar-today-summary">
+                        <div style="font-size:12px; opacity:.9;" id="calendar-selected-label">รายการนัดหมายวันนี้</div>
+                        <div style="display:flex; align-items:flex-end; gap:7px; margin-top:5px;">
+                            <span class="calendar-today-count" id="calendar-selected-count">0</span>
+                            <span style="font-size:12px; padding-bottom:2px;">รายชื่อที่ต้องติดตาม</span>
+                        </div>
+                    </div>
+                    <div id="calendar-customer-list" class="calendar-customer-list">
+                        <div style="text-align:center; color:#94a3b8; padding:20px;">กำลังโหลดปฏิทิน...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ===== หน้าที่ 4: รายงาน ===== -->
         <div id="page-report" class="page-view" style="display:none;">
             <div class="report-row">
                 <div class="dash-card">
@@ -707,6 +761,10 @@
         let lastSavedCustomer = null;
         let duplicatePhoneMatch = null; // { phone, name } ถ้าเบอร์ที่กำลังกรอกอยู่มีลูกค้ารายนี้ในระบบแล้ว
         let dailyReportLoadedOnce = false; // โหลดรายงานประจำวันครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น (ครั้งต่อไปกดปุ่ม "ดึงรายงาน" เอง)
+        let calendarLoadedOnce = false;
+        let calendarViewDate = new Date();
+        let calendarSelectedDate = '';
+        let calendarCustomers = [];
         const DEFAULT_PROVINCE = 'อุบลราชธานี';
         const FREE_TEXT_CATEGORY = 'อุปกรณ์ต่อพ่วง';
         const PRODUCT_CATALOG = {
@@ -770,15 +828,133 @@
         function switchPage(name) {
             document.getElementById('page-add').style.display = (name === 'add') ? 'flex' : 'none';
             document.getElementById('page-history').style.display = (name === 'history') ? 'flex' : 'none';
+            document.getElementById('page-calendar').style.display = (name === 'calendar') ? 'flex' : 'none';
             document.getElementById('page-report').style.display = (name === 'report') ? 'flex' : 'none';
             document.getElementById('nav-btn-add').classList.toggle('active', name === 'add');
             document.getElementById('nav-btn-history').classList.toggle('active', name === 'history');
+            document.getElementById('nav-btn-calendar').classList.toggle('active', name === 'calendar');
             document.getElementById('nav-btn-report').classList.toggle('active', name === 'report');
             document.getElementById('fab-container').style.display = (name === 'history') ? 'block' : 'none';
+            if (name === 'calendar' && !calendarLoadedOnce) {
+                calendarLoadedOnce = true;
+                goCalendarToday();
+            }
             if (name === 'report' && !dailyReportLoadedOnce) {
                 dailyReportLoadedOnce = true;
                 fetchDailyLeadReport();
             }
+        }
+
+        function localDateISO(dateObj) {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function goCalendarToday() {
+            calendarViewDate = new Date();
+            calendarViewDate.setDate(1);
+            calendarSelectedDate = localDateISO(new Date());
+            fetchCalendarMonth();
+        }
+
+        function changeCalendarMonth(offset) {
+            calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + offset, 1);
+            calendarSelectedDate = localDateISO(calendarViewDate);
+            fetchCalendarMonth();
+        }
+
+        function fetchCalendarMonth() {
+            const year = calendarViewDate.getFullYear();
+            const month = calendarViewDate.getMonth();
+            const startDate = localDateISO(new Date(year, month, 1));
+            const endDate = localDateISO(new Date(year, month + 1, 0));
+            document.getElementById('calendar-month-title').textContent =
+                calendarViewDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+            document.getElementById('followup-calendar-grid').innerHTML =
+                '<div style="grid-column:1/-1; padding:35px; text-align:center; color:#64748b;">🔄 กำลังโหลดนัดหมาย...</div>';
+            document.getElementById('calendar-customer-list').innerHTML =
+                '<div style="text-align:center; color:#94a3b8; padding:20px;">กำลังโหลดรายชื่อ...</div>';
+
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getFollowupCalendar', payload: { startDate, endDate } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) throw new Error(resData ? resData.message : 'ไม่ได้รับข้อมูล');
+                calendarCustomers = Array.isArray(resData.data) ? resData.data : [];
+                renderFollowupCalendar();
+                selectCalendarDate(calendarSelectedDate, false);
+            })
+            .catch(err => {
+                document.getElementById('followup-calendar-grid').innerHTML =
+                    `<div style="grid-column:1/-1; padding:35px; text-align:center; color:#ef4444;">❌ โหลดปฏิทินไม่สำเร็จ: ${escapeHtml(err.message)}</div>`;
+                document.getElementById('calendar-customer-list').innerHTML = '';
+            });
+        }
+
+        function renderFollowupCalendar() {
+            const grid = document.getElementById('followup-calendar-grid');
+            const weekdays = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+            const counts = {};
+            calendarCustomers.forEach(row => {
+                const key = row.booking_date || row.appdate || '';
+                if (key) counts[key] = (counts[key] || 0) + 1;
+            });
+            const year = calendarViewDate.getFullYear();
+            const month = calendarViewDate.getMonth();
+            const firstWeekday = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = localDateISO(new Date());
+            let html = weekdays.map(d => `<div class="calendar-weekday">${d}</div>`).join('');
+            for (let i = 0; i < firstWeekday; i++) html += '<div class="calendar-day outside"></div>';
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateKey = localDateISO(new Date(year, month, day));
+                const classes = ['calendar-day'];
+                if (dateKey === today) classes.push('today');
+                if (dateKey === calendarSelectedDate) classes.push('selected');
+                const countHtml = counts[dateKey] ? `<div><span class="calendar-count">${counts[dateKey]} นัด</span></div>` : '';
+                html += `<div class="${classes.join(' ')}" data-date="${dateKey}" onclick="selectCalendarDate('${dateKey}')"><div class="calendar-date-number">${day}</div>${countHtml}</div>`;
+            }
+            const used = firstWeekday + daysInMonth;
+            for (let i = used; i < Math.ceil(used / 7) * 7; i++) html += '<div class="calendar-day outside"></div>';
+            grid.innerHTML = html;
+        }
+
+        function selectCalendarDate(dateKey, rerender = true) {
+            calendarSelectedDate = dateKey;
+            if (rerender) renderFollowupCalendar();
+            const rows = calendarCustomers.filter(row => (row.booking_date || row.appdate) === dateKey);
+            const dateObj = new Date(dateKey + 'T00:00:00');
+            const isToday = dateKey === localDateISO(new Date());
+            document.getElementById('calendar-selected-label').textContent =
+                (isToday ? 'รายการนัดหมายวันนี้ · ' : '') + dateObj.toLocaleDateString('th-TH', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+            document.getElementById('calendar-selected-count').textContent = rows.length;
+            const list = document.getElementById('calendar-customer-list');
+            if (!rows.length) {
+                list.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:24px 8px;">✅ ไม่มีรายชื่อต้องติดตามในวันนี้</div>';
+                return;
+            }
+            list.innerHTML = rows.map(row => {
+                const originalIndex = calendarCustomers.indexOf(row);
+                const product = getRowProductParts(row);
+                return `<button type="button" class="calendar-customer" onclick="openCalendarCustomer(${originalIndex})">
+                    <div class="calendar-customer-name">${escapeHtml(row.name)}</div>
+                    <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}</div>
+                    <div class="calendar-customer-meta">🚜 ${escapeHtml([product.category, product.model].filter(v => v && v !== '-').join(' ') || '-')}</div>
+                    <div class="calendar-customer-meta">แตะเพื่อดูประวัติและบันทึกการติดตาม ›</div>
+                </button>`;
+            }).join('');
+        }
+
+        function openCalendarCustomer(calendarIndex) {
+            const row = calendarCustomers[calendarIndex];
+            if (!row) return;
+            currentRenderedData.push(row);
+            openHistoryModal(currentRenderedData.length - 1);
         }
         function toggleAdvancedFilters(forceOpen) {
             const sec = document.getElementById('advanced-filters-section');
@@ -1833,6 +2009,10 @@
                         `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(dateVal)} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(nextBookingDate)}</span>`;
                     document.getElementById('history-new-note').value = '';
                     document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
+                    if (calendarLoadedOnce) {
+                        renderFollowupCalendar();
+                        selectCalendarDate(calendarSelectedDate, false);
+                    }
                 } else {
                     alert('❌ บันทึกการติดตามไม่สำเร็จ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
                 }
