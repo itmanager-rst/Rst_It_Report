@@ -102,6 +102,12 @@
         /* ===== ตัวเลขในตารางรายงานรายวันที่คลิกดูรายละเอียดได้ ===== */
         .report-num-link { cursor: pointer; text-decoration: underline dotted; text-decoration-color: #94a3b8; text-underline-offset: 2px; }
         .report-num-link:hover { color: var(--primary-color); font-weight: 700; }
+        .report-customer-link { color:#0369a1; font-weight:600; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
+        .customer-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+        .customer-detail-card { background:#fff; border:1px solid #e2e8f0; border-radius:9px; padding:10px; }
+        .customer-detail-card.full { grid-column:span 2; }
+        .customer-detail-label { font-size:11px; color:#64748b; margin-bottom:4px; }
+        .customer-detail-value { font-size:12.5px; color:#1e293b; white-space:pre-line; word-break:break-word; }
         /* ===== Modal ข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน ===== */
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 2000; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 15px; }
         .modal-overlay.show { display: flex; }
@@ -151,6 +157,11 @@
         .timeline-item { border-left: 3px solid var(--primary-color); padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
         .timeline-date { font-size: 11px; font-weight: 600; color: var(--primary-color); margin-bottom: 3px; }
         .timeline-note { font-size: 12.5px; color: #334155; white-space: pre-line; word-break: break-word; }
+        .timeline-type { display:inline-flex; align-items:center; margin-left:6px; padding:2px 7px; border-radius:999px; background:#e0f2fe; color:#0369a1; font-size:10.5px; font-weight:600; }
+        .followup-type-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:5px; }
+        .followup-type-btn { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:8px; padding:7px 8px; font-size:11.5px; cursor:pointer; text-align:left; }
+        .followup-type-btn:hover { border-color:#38bdf8; background:#f0f9ff; }
+        .followup-type-btn.active { border-color:#0284c7; background:#e0f2fe; color:#075985; font-weight:600; box-shadow:inset 0 0 0 1px #0284c7; }
         .timeline-empty { font-size: 12px; color: #94a3b8; text-align: center; padding: 16px 0; }
         .timeline-cust-info { font-size: 13px; margin-bottom: 12px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; color: #0f172a; }
         /* ===== แบบฟอร์มติดตามลูกค้า (สำหรับพิมพ์) ===== */
@@ -589,10 +600,18 @@
                     <button type="button" class="toggle-btn" data-val="yes" onclick="setFinancialToggle('regularJob','yes')">✓ มีงานประจำ</button>
                     <button type="button" class="toggle-btn" data-val="no" onclick="setFinancialToggle('regularJob','no')">ไม่มี</button>
                 </div>
+                <div class="item-fields" style="margin:7px 0 10px;">
+                    <div><label>อาชีพ/สถานที่ทำงาน</label><input type="text" id="regular-job-detail" placeholder="เช่น พนักงานบริษัท" oninput="customerFinancial.regularJobDetail=this.value"></div>
+                    <div><label>รายได้ต่อเดือน (บาท)</label><input type="text" id="regular-job-income" placeholder="เช่น 18,000" oninput="customerFinancial.regularJobIncome=this.value"></div>
+                </div>
                 <div class="modal-section-title">💵 รายได้เสริม</div>
                 <div class="toggle-pair" id="toggle-side-income">
                     <button type="button" class="toggle-btn" data-val="yes" onclick="setFinancialToggle('sideIncome','yes')">✓ มีรายได้เสริม</button>
                     <button type="button" class="toggle-btn" data-val="no" onclick="setFinancialToggle('sideIncome','no')">ไม่มี</button>
+                </div>
+                <div class="item-fields" style="margin:7px 0 10px;">
+                    <div><label>รายได้เสริมจากอะไร</label><input type="text" id="side-income-detail" placeholder="เช่น รับจ้างไถนา" oninput="customerFinancial.sideIncomeDetail=this.value"></div>
+                    <div><label>รายได้เฉลี่ยต่อเดือน (บาท)</label><input type="text" id="side-income-amount" placeholder="เช่น 10,000" oninput="customerFinancial.sideIncomeAmount=this.value"></div>
                 </div>
                 <div class="modal-section-title">🚜 เครื่องจักรกลที่มีอยู่แล้ว (รถแทรกเตอร์/รถเกี่ยว/รถขุด)</div>
                 <div id="machinery-container"></div>
@@ -640,6 +659,18 @@
                 <div class="item-fields">
                     <div><label>วันที่ติดต่อ/พูดคุย</label><input type="date" id="history-new-date" class="form-control"></div>
                     <div><label>วันติดตามครั้งต่อไป</label><input type="date" id="history-next-followup-date" class="form-control"></div>
+                    <div class="full">
+                        <label>ประเภทการติดตาม</label>
+                        <input type="hidden" id="history-followup-type" value="">
+                        <div class="followup-type-grid" id="history-followup-type-grid">
+                            <button type="button" class="followup-type-btn" data-value="โทรศัพท์" onclick="selectFollowupType(this)">📞 โทรศัพท์</button>
+                            <button type="button" class="followup-type-btn" data-value="แชท / LINE / Facebook" onclick="selectFollowupType(this)">💬 แชท / LINE / Facebook</button>
+                            <button type="button" class="followup-type-btn" data-value="เข้าพบลูกค้า" onclick="selectFollowupType(this)">🤝 เข้าพบลูกค้า</button>
+                            <button type="button" class="followup-type-btn" data-value="ส่งโปร / ใบเสนอราคา" onclick="selectFollowupType(this)">📄 ส่งโปร / ใบเสนอราคา</button>
+                            <button type="button" class="followup-type-btn" data-value="นัดทดลองรถ / ดูสินค้า" onclick="selectFollowupType(this)">🚜 นัดทดลองรถ / ดูสินค้า</button>
+                            <button type="button" class="followup-type-btn" data-value="อื่น ๆ" onclick="selectFollowupType(this)">🔁 อื่น ๆ</button>
+                        </div>
+                    </div>
                     <div class="full"><label>หมายเหตุ (คุยเรื่องอะไร ผลเป็นอย่างไร)</label><textarea id="history-new-note" class="form-control" rows="2" placeholder="เช่น โทรเสนอโปรโมชั่น Solis30, ลูกค้าขอคิดดูก่อน 1 สัปดาห์"></textarea></div>
                 </div>
                 <button type="button" class="btn-add-item" id="btn-submit-followup" onclick="submitFollowUpEntry()">💾 บันทึกการติดตามนี้</button>
@@ -649,7 +680,7 @@
     </div>
     <!-- Modal รายละเอียดตัวเลขในตารางรายงานรายวัน (คลิกตัวเลขในหน้ารายงาน เพื่อดูว่าเป็นรายชื่อไหนบ้าง) -->
     <div id="intake-detail-modal-overlay" class="modal-overlay">
-        <div class="modal-box" style="width:660px;">
+        <div class="modal-box" style="width:1050px;">
             <div class="modal-header">
                 <span id="intake-detail-title">🔎 รายละเอียด</span>
                 <button type="button" class="modal-close-btn" onclick="closeIntakeDetailModal()">✕</button>
@@ -657,7 +688,7 @@
             <div class="modal-body">
                 <div id="intake-detail-summary" style="font-size:12px; color:#64748b; margin-bottom:10px;"></div>
                 <div class="table-responsive" style="max-height:55vh;">
-                    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                    <table style="width:1020px; font-size:12px; border-collapse:collapse;">
                         <thead>
                             <tr>
                                 <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">วันเวลาที่ส่งเข้ามา</th>
@@ -666,16 +697,25 @@
                                 <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">Facebook</th>
                                 <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">สถานะ</th>
                                 <th style="text-align:center; padding:6px; background:#f8fafc; position:sticky; top:0;">ManyChat</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">รายได้</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">หนี้สิน</th>
                                 <th style="padding:6px; background:#f8fafc; position:sticky; top:0;"></th>
                             </tr>
                         </thead>
                         <tbody id="intake-detail-tbody">
-                            <tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">-</td></tr>
+                            <tr><td colspan="9" style="text-align:center; padding:20px; color:#94a3b8;">-</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
             <button type="button" class="btn-done" onclick="closeIntakeDetailModal()">✓ ปิดหน้าต่าง</button>
+        </div>
+    </div>
+    <div id="report-customer-detail-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:720px;">
+            <div class="modal-header"><span>👤 ข้อมูลลูกค้าฉบับเต็ม</span><button type="button" class="modal-close-btn" onclick="closeReportCustomerDetail()">✕</button></div>
+            <div id="report-customer-detail-body" class="customer-detail-grid"></div>
+            <button type="button" class="btn-done" onclick="closeReportCustomerDetail()">✓ ปิดหน้าต่าง</button>
         </div>
     </div>
     <!-- แบบฟอร์มติดตามลูกค้า สำหรับพิมพ์ -->
@@ -1046,6 +1086,30 @@
             duplicate: 'ส่งซ้ำ (มีในระบบแล้ว)',
             manychat: 'จาก ManyChat'
         };
+        let intakeDetailRows = [];
+        function parseFinancialInfo(raw) {
+            if (!raw) return { farmPlots:[], machinery:[], debts:[] };
+            if (typeof raw === 'object') return raw;
+            try { return JSON.parse(raw) || { farmPlots:[], machinery:[], debts:[] }; }
+            catch (e) { return { farmPlots:[], machinery:[], debts:[] }; }
+        }
+        function moneyText(value) {
+            const s = String(value || '').trim();
+            return s ? `${escapeHtml(s)} บาท` : '-';
+        }
+        function financialIncomeSummary(fin) {
+            const parts = [];
+            const farmIncome = (fin.farmPlots || []).map(p => p.annualIncome).filter(Boolean);
+            if (farmIncome.length) parts.push(`เกษตร ${farmIncome.map(v => moneyText(v)).join(', ')}/ปี`);
+            if (fin.regularJobIncome) parts.push(`ประจำ ${moneyText(fin.regularJobIncome)}/เดือน`);
+            if (fin.sideIncomeAmount) parts.push(`เสริม ${moneyText(fin.sideIncomeAmount)}/เดือน`);
+            return parts.length ? parts.join('<br>') : '-';
+        }
+        function financialDebtSummary(fin) {
+            const debts = fin.debts || [];
+            if (!debts.length) return '-';
+            return debts.map(d => `${escapeHtml(d.creditor || 'หนี้')} ${moneyText(d.balance)}`).join('<br>');
+        }
         function openIntakeDetailModal(dateOrRange, filterType, isRange) {
             const overlay = document.getElementById('intake-detail-modal-overlay');
             const tbody = document.getElementById('intake-detail-tbody');
@@ -1056,7 +1120,7 @@
             titleEl.textContent = isRange
                 ? `🔎 รายละเอียด: ${label} (${rangeObj.startDate || '...'} ถึง ${rangeObj.endDate || '...'})`
                 : `🔎 รายละเอียด: ${label} (วันที่ ${dateOrRange})`;
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
             summaryEl.textContent = '';
             overlay.classList.add('show');
             const reqPayload = isRange
@@ -1071,38 +1135,40 @@
             .then(resData => {
                 if (!resData || !resData.success) {
                     const errorMessage = resData ? (resData.message || resData.error || 'ไม่ทราบสาเหตุ') : 'ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์';
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:#ef4444;">❌ ดึงรายละเอียดไม่สำเร็จ: ' + escapeHtml(errorMessage) +
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:#ef4444;">❌ ดึงรายละเอียดไม่สำเร็จ: ' + escapeHtml(errorMessage) +
                         '<br><span style="font-size:11px; color:#94a3b8; font-weight:normal;">(ฟีเจอร์นี้ต้องมี action ใหม่ "getLeadIntakeLogDetail" ฝั่ง Code.gs — ถ้ายังไม่ได้เพิ่ม/deploy จะเจอข้อความนี้)</span></td></tr>';
                     return;
                 }
                 const rows = resData.rows || [];
+                intakeDetailRows = rows;
                 summaryEl.textContent = `พบทั้งหมด ${rows.length.toLocaleString()} รายการ` + (rows.length >= 500 ? ' (แสดงสูงสุด 500 รายการล่าสุด — ลองย่อช่วงวันที่ถ้าต้องการดูครบทุกรายการ)' : '');
                 if (rows.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบข้อมูล</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบข้อมูล</td></tr>';
                     return;
                 }
-                tbody.innerHTML = rows.map(r => {
+                tbody.innerHTML = rows.map((r, idx) => {
                     const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+                    const fin = parseFinancialInfo(r.financialInfo);
                     const statusBadge = r.isDuplicate
                         ? `<span class="badge" style="background:#fee2e2; color:#b91c1c;">ส่งซ้ำ${r.matchType ? ' (' + escapeHtml(r.matchType) + ')' : ''}</span>`
                         : `<span class="badge" style="background:#dcfce7; color:#15803d;">ลูกค้าใหม่</span>`;
                     const mcBadge = r.isManychat ? '📱 ใช่' : '-';
-                    const jumpBtn = r.phone
-                        ? `<button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:10px;" onclick="closeIntakeDetailModal(); jumpToExistingCustomerTimeline('${escapeAttr(r.phone)}')">🕓 ดูลูกค้า</button>`
-                        : '';
+                    const jumpBtn = `<button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openReportCustomerDetail(${idx})">👤 ดูข้อมูลครบ</button>`;
                     return `<tr>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.receivedAt || '-')}</td>
-                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(name)}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;"><span class="report-customer-link" onclick="openReportCustomerDetail(${idx})">${escapeHtml(name)}</span></td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.phone || '-')}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.facebook || '-')}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${statusBadge}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7; text-align:center;">${mcBadge}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7; min-width:145px;">${financialIncomeSummary(fin)}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7; min-width:130px;">${financialDebtSummary(fin)}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${jumpBtn}</td>
                     </tr>`;
                 }).join('');
             })
             .catch(() => {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง</td></tr>';
             });
         }
         function closeIntakeDetailModal() {
@@ -1214,7 +1280,7 @@
             noteTextarea.value = noteTextarea.value ? (noteTextarea.value + '\n' + logPrefix) : logPrefix;
             noteTextarea.focus();
         }
-        let customerFinancial = { farmPlots: [], regularJob: null, sideIncome: null, machinery: [], debts: [] };
+        let customerFinancial = { farmPlots: [], regularJob: null, regularJobDetail:'', regularJobIncome:'', sideIncome: null, sideIncomeDetail:'', sideIncomeAmount:'', machinery: [], debts: [] };
         function escapeAttr(v) {
             return (v === undefined || v === null ? '' : String(v))
                 .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1231,7 +1297,7 @@
             updateFinancialSummary();
         }
         function resetFinancialData() {
-            customerFinancial = { farmPlots: [], regularJob: null, sideIncome: null, machinery: [], debts: [] };
+            customerFinancial = { farmPlots: [], regularJob: null, regularJobDetail:'', regularJobIncome:'', sideIncome: null, sideIncomeDetail:'', sideIncomeAmount:'', machinery: [], debts: [] };
             updateFinancialSummary();
         }
         function openAddressModal() {
@@ -1270,9 +1336,37 @@
             document.querySelectorAll('#toggle-side-income .toggle-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.val === customerFinancial.sideIncome);
             });
+            document.getElementById('regular-job-detail').value = customerFinancial.regularJobDetail || '';
+            document.getElementById('regular-job-income').value = customerFinancial.regularJobIncome || '';
+            document.getElementById('side-income-detail').value = customerFinancial.sideIncomeDetail || '';
+            document.getElementById('side-income-amount').value = customerFinancial.sideIncomeAmount || '';
         }
+        function detailCard(label, value, full) {
+            return `<div class="customer-detail-card${full ? ' full' : ''}"><div class="customer-detail-label">${label}</div><div class="customer-detail-value">${value || '-'}</div></div>`;
+        }
+        function openReportCustomerDetail(idx) {
+            const r = intakeDetailRows[idx];
+            if (!r) return;
+            const fin = parseFinancialInfo(r.financialInfo);
+            const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+            const address = [r.addressNo, r.moo ? `หมู่ ${r.moo}` : '', r.village, r.subdistrict ? `ต.${r.subdistrict}` : '', r.district ? `อ.${r.district}` : '', r.province ? `จ.${r.province}` : '', r.zipcode].filter(Boolean).join(' ');
+            const farms = (fin.farmPlots || []).map((p,i) => `${i+1}. ${p.type || 'ไม่ระบุชนิด'} ${p.rai ? p.rai+' ไร่' : ''} | เอกสารสิทธิ์: ${p.docOwner || '-'} | รายได้/ปี: ${p.annualIncome || '-'} บาท`).join('\n');
+            const machines = (fin.machinery || []).map((m,i) => `${i+1}. ${m.type || ''} ${m.brandModel || ''} ${m.qty ? m.qty+' คัน' : ''} ${m.note ? '('+m.note+')' : ''}`).join('\n');
+            const debts = (fin.debts || []).map((d,i) => `${i+1}. ${d.creditor || 'ไม่ระบุเจ้าหนี้'} — คงเหลือ ${d.balance || '0'} บาท`).join('\n');
+            const job = fin.regularJob === 'yes' ? `${fin.regularJobDetail || 'มีงานประจำ'} | ${fin.regularJobIncome ? fin.regularJobIncome+' บาท/เดือน' : 'ไม่ระบุรายได้'}` : (fin.regularJob === 'no' ? 'ไม่มีงานประจำ' : '-');
+            const side = fin.sideIncome === 'yes' ? `${fin.sideIncomeDetail || 'มีรายได้เสริม'} | ${fin.sideIncomeAmount ? fin.sideIncomeAmount+' บาท/เดือน' : 'ไม่ระบุรายได้'}` : (fin.sideIncome === 'no' ? 'ไม่มีรายได้เสริม' : '-');
+            document.getElementById('report-customer-detail-body').innerHTML =
+                detailCard('ชื่อ–นามสกุล', escapeHtml(name)) + detailCard('เบอร์โทร', escapeHtml(r.phone || '-')) +
+                detailCard('LINE / Facebook', escapeHtml([r.line, r.facebook].filter(Boolean).join(' / ') || '-')) + detailCard('สินค้าที่สนใจ', escapeHtml(r.product || '-')) +
+                detailCard('ที่อยู่', escapeHtml(address || '-'), true) + detailCard('🌾 การเกษตร / พื้นที่ / รายได้', escapeHtml(farms || '-'), true) +
+                detailCard('📋 งานประจำ', escapeHtml(job)) + detailCard('💵 รายได้เสริม', escapeHtml(side)) +
+                detailCard('🚜 เครื่องจักรที่มี', escapeHtml(machines || '-'), true) + detailCard('📉 หนี้สิน', escapeHtml(debts || '-'), true) +
+                detailCard('📝 หมายเหตุ', escapeHtml(r.remark || '-'), true);
+            document.getElementById('report-customer-detail-overlay').classList.add('show');
+        }
+        function closeReportCustomerDetail() { document.getElementById('report-customer-detail-overlay').classList.remove('show'); }
         function addFarmPlot() {
-            customerFinancial.farmPlots.push({ type: '', rai: '', docOwner: '' });
+            customerFinancial.farmPlots.push({ type: '', rai: '', docOwner: '', annualIncome: '' });
             renderFarmPlots();
         }
         function removeFarmPlot(i) {
@@ -1290,6 +1384,7 @@
                         </div>
                         <div><label>จำนวนไร่</label><input type="text" value="${escapeAttr(p.rai)}" placeholder="เช่น 7" oninput="customerFinancial.farmPlots[${i}].rai=this.value"></div>
                         <div><label>เอกสารสิทธิ์ชื่อใคร</label><input type="text" value="${escapeAttr(p.docOwner)}" placeholder="เช่น ชื่อแม่" oninput="customerFinancial.farmPlots[${i}].docOwner=this.value"></div>
+                        <div class="full"><label>รายได้จากเกษตรต่อปีโดยประมาณ (บาท)</label><input type="text" value="${escapeAttr(p.annualIncome || '')}" placeholder="เช่น 250,000" oninput="customerFinancial.farmPlots[${i}].annualIncome=this.value"></div>
                     </div>
                 </div>
             `).join('');
@@ -1736,6 +1831,12 @@
             populateDistrictSelect('cust-district', document.getElementById('cust-province').value, row.district || '');
             populateSubdistrictSelect('cust-subdistrict', document.getElementById('cust-province').value, row.district || '', row.subdistrict || '');
             document.getElementById('cust-note').value = row.remark || row.note || '';
+            customerFinancial = parseFinancialInfo(row.financialInfo || row.financial);
+            customerFinancial.farmPlots = customerFinancial.farmPlots || [];
+            customerFinancial.machinery = customerFinancial.machinery || [];
+            customerFinancial.debts = customerFinancial.debts || [];
+            renderFinancialToggles();
+            updateFinancialSummary();
             updateAddressSummary();
 
             document.getElementById('form-title').innerText = '✏️ แก้ไขข้อมูลลูกค้า';
@@ -1933,6 +2034,14 @@
         let historyModalRowIdx = null;
         let historyModalKey = null;
         let historyModalEntries = [];
+        function selectFollowupType(button) {
+            document.getElementById('history-followup-type').value = button.dataset.value || '';
+            document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(btn => btn.classList.toggle('active', btn === button));
+        }
+        function resetFollowupType() {
+            document.getElementById('history-followup-type').value = '';
+            document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(btn => btn.classList.remove('active'));
+        }
         function escapeHtml(v) {
             return (v === undefined || v === null ? '' : String(v))
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1949,6 +2058,7 @@
             document.getElementById('history-new-date').value = new Date().toISOString().split('T')[0];
             document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
             document.getElementById('history-new-note').value = '';
+            resetFollowupType();
             const followupBtn = document.getElementById('btn-submit-followup');
             followupBtn.disabled = false;
             followupBtn.innerHTML = '💾 บันทึกการติดตามนี้';
@@ -1967,7 +2077,7 @@
             const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
             container.innerHTML = sorted.map(e => `
                 <div class="timeline-item">
-                    <div class="timeline-date">📅 ${escapeHtml(e.date)}</div>
+                    <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type">${escapeHtml(e.followupType)}</span>` : ''}</div>
                     <div class="timeline-note">${escapeHtml(e.note || '')}</div>
                 </div>
             `).join('');
@@ -1978,12 +2088,13 @@
             const dateVal = document.getElementById('history-new-date').value;
             const noteVal = document.getElementById('history-new-note').value.trim();
             const nextFollowUpVal = document.getElementById('history-next-followup-date').value;
-            if (!dateVal || !noteVal) { alert('กรุณาระบุวันที่และหมายเหตุการติดตามให้ครบ'); return; }
+            const followupTypeVal = document.getElementById('history-followup-type').value;
+            if (!dateVal || !followupTypeVal || !noteVal) { alert('กรุณาระบุวันที่ ประเภท และหมายเหตุการติดตามให้ครบ'); return; }
             if (!historyModalKey) { alert('ไม่พบข้อมูลอ้างอิงลูกค้ารายนี้'); return; }
             const originalBtnHtml = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
-            const newEntry = { date: dateVal, note: noteVal, nextFollowUpDate: nextFollowUpVal };
+            const newEntry = { date: dateVal, followupType: followupTypeVal, note: noteVal, nextFollowUpDate: nextFollowUpVal };
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -2009,6 +2120,7 @@
                         `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(dateVal)} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(nextBookingDate)}</span>`;
                     document.getElementById('history-new-note').value = '';
                     document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
+                    resetFollowupType();
                     if (calendarLoadedOnce) {
                         renderFollowupCalendar();
                         selectCalendarDate(calendarSelectedDate, false);
