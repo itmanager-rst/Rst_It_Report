@@ -1,1433 +1,2176 @@
-// =================================================================
-// CRM-TRACKER : Backend Code.gs (BigQuery Standard Schema - Full Fixed Code)
-// =================================================================
-// เลขเวอร์ชันโค้ด ใช้เช็คว่า deployment ที่หน้าเว็บเรียกอยู่จริง เป็นโค้ดชุดล่าสุด
-// หรือยังเป็นของเก่าที่ค้าง cache อยู่ — เปลี่ยนค่านี้ทุกครั้งที่แก้โค้ดแล้ว deploy ใหม่
-// วิธีเช็ค: เปิด URL เว็บแอพ แล้วต่อท้ายด้วย ?action=checkStatus แล้วดูค่า codeVersion
-// ในผลลัพธ์ JSON ที่ได้ ถ้าไม่ตรงกับค่าล่าสุดในไฟล์นี้ แปลว่า deploy ไม่ติดจริง
-//
-// แก้ไข (2026-08-08 รอบใหม่): ทั้งสองบั๊กที่รายงานเข้ามา —
-//   1) หน้ารายงานขึ้น "Invalid Action" ตอนกดดึงรายงาน
-//   2) ยอด Facebook/ManyChat ขึ้น 0 ทั้งที่มีลีดส่งเข้ามาจริง
-// ทั้งสองอย่างนี้ "แก้อยู่ในโค้ดไฟล์นี้แล้ว" (ดูจุด action==='getDailyLeadReport' ใน
-// doPost ด้านล่าง และ FB_LEAD_MARKER ที่ตัด "/manychat" ออกแล้วด้านล่าง) — ถ้ายังเจอ
-// อาการเดิมอยู่ แปลว่าไฟล์นี้ "ยังไม่ถูก deploy จริง" ไปทับ Apps Script เดิม ให้ทำตาม
-// ขั้นตอน: เปิด Apps Script > วางโค้ดไฟล์นี้ทับของเดิมทั้งไฟล์ > Deploy > Manage
-// deployments > กดไอคอนดินสอ (แก้ไข) ที่ deployment ที่ใช้งานอยู่ (ต้อง URL ตรงกับ
-// WEB_APP_URL ในไฟล์ index.html) > Version เลือก "New version" > Deploy
-// (ถ้าลืมขั้นนี้ กด Save เฉยๆ จะไม่มีผลกับเว็บที่ใช้งานจริงเลย) — เปลี่ยนเลขเวอร์ชัน
-// ด้านล่างนี้ไว้เป็นค่าที่ index_11.html คาดหวัง (ดู EXPECTED_CODE_VERSION ในไฟล์นั้น)
-// เพื่อให้หน้าเว็บเช็คได้เองว่า deploy ติดจริงหรือยัง (จะขึ้นแถบเตือนสีเหลืองถ้ายังไม่ตรง)
-//
-// แก้เพิ่ม (2026-08-08 รอบถัดมา): ผู้ใช้ยืนยันว่าอยากให้ "นับตัวเลขให้ได้ก่อน" เป็นอันดับแรก
-// สุด (ตัดเรื่องดึงชื่อสินค้าจาก remark ออกไปก่อน) — เลยทำ FB_LEAD_MARKER ให้ผิดพลาดยากที่สุด
-// เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
-var CODE_VERSION = 'r9-2026-09-09-followup-calendar';
-var GCP_PROJECT_ID = 'crm-tracker-503906';
-var DATASET_ID = 'crm_tracker';
-var TABLE_ID = 'customers';
-var TABLE_FULL_PATH = '`' + GCP_PROJECT_ID + '.' + DATASET_ID + '.' + TABLE_ID + '`';
-// สร้าง Unique Key แบบ Hexadecimal Text ด้วย MD5 ป้องกันปัญหา JS ปัดเศษตัวเลข BigInt
-var FINGERPRINT_EXPR = "TO_HEX(MD5(CONCAT(IFNULL(CAST(created_date AS STRING),''), IFNULL(first_name,''), IFNULL(last_name,''), IFNULL(CAST(phone AS STRING),''))))";
-// เงื่อนไขในการค้นหาและระบุตัวตนแถวข้อมูล (รองรับทั้ง MD5 Key และ เบอร์โทรศัพท์ทั้งแบบมี/ไม่มีเลข 0)
-var ROW_MATCH_WHERE = "(" + FINGERPRINT_EXPR + " = @key " +
-                      " OR CAST(phone AS STRING) = @key " +
-                      " OR (SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@key, r'\\D', '') AS INT64) " +
-                      "     AND SAFE_CAST(phone AS INT64) IS NOT NULL AND SAFE_CAST(phone AS INT64) != 0))";
-// เครื่องหมายที่ใช้ระบุว่าลูกค้ารายนี้ถูกยิงเข้ามาอัตโนมัติจาก ManyChat/Facebook
-// (ManyChat External Request ยัดข้อความนี้ไว้หน้า remark ทุกครั้งที่ส่งลีดเข้ามา —
-// ดูขั้นตอนผูก ManyChat ใน manychat-to-crm-setup-guide.md)
-//
-// แก้ไข (2026-08-08): เดิมเช็คว่า remark ต้องมีคำว่า "lead จาก facebook/manychat"
-// (มี "/manychat" ต่อท้าย) แต่ automation ตัวจริงที่ผูกไว้ในทุกโฟลว์ ManyChat ตอนนี้
-// ส่ง remark เป็น "[Lead จาก Facebook] ..." เท่านั้น (ไม่มี "/ManyChat" ต่อท้าย) —
-// ทำให้ LIKE เดิมไม่แมตช์เลยสักแถว นับได้ 0 ตลอด ทั้งๆที่มีลีดส่งเข้ามาจริง
-// (เห็นได้จากตัวเลขในหน้ารายงานไม่ขึ้นเลย) ตัด "/manychat" ออกจากคำที่ใช้เช็ค
-// ให้เหลือแค่ "lead จาก facebook" ซึ่งแมตช์ได้ทั้งข้อความเก่า [Lead จาก Facebook/ManyChat]
-// และข้อความจริงที่ใช้อยู่ตอนนี้ [Lead จาก Facebook]
-//
-// แก้เพิ่มอีกรอบ (2026-08-08): แม้แต่ "lead จาก facebook" ก็ยังพึ่งพาคำภาษาไทย "จาก"
-// ต้องสะกด/เว้นวรรคตรงเป๊ะทุกตัวอักษรถึงจะแมตช์ — ถ้า automation ใน ManyChat เปลี่ยนคำ
-// (เช่น "มาจาก" แทน "จาก", เว้นวรรคต่าง, หรือแก้ข้อความใหม่ทั้งประโยค) ตัวเลขจะพัง 0
-// แบบเงียบๆ อีกได้เหมือนที่เคยเกิดมาแล้วสองรอบ ผู้ใช้ระบุชัดว่า "เอาให้นับตัวเลขให้ได้ก่อน"
-// เป็นอันดับแรก เลยตัดคำภาษาไทยออกทั้งหมด เหลือแค่เช็คคำว่า "facebook" คำเดียว (ภาษาอังกฤษ
-// ล้วน ไม่มีปัญหาเรื่องตัวสะกด/รูปประโยคภาษาไทย) — ทุกเวอร์ชันของข้อความที่เคยเห็นมา
-// ("[Lead จาก Facebook/ManyChat]" และ "[Lead จาก Facebook]") มีคำว่า facebook อยู่เสมอ
-// ตัวนี้จึงกว้างที่สุดเท่าที่จะทำได้โดยยังไม่เสี่ยงนับผิดเป็นอย่างอื่น (ระวังไว้อย่างเดียว:
-// ถ้าพนักงานพิมพ์บันทึกเองแล้วบังเอิญมีคำว่า facebook ปนอยู่ เช่น "ลูกค้าถามถึงเพจ Facebook"
-// แถวนั้นจะถูกนับเป็น ManyChat ไปด้วย เป็น edge case ที่หายากกว่าปัญหาตัวเลขเป็น 0 มาก)
-var FB_LEAD_MARKER = 'facebook';
-var FB_LEAD_MATCH_COND = "LOWER(IFNULL(remark, '')) LIKE @fbMarker";
-var FB_LEAD_MATCH_PARAM = { name: 'fbMarker', value: '%' + FB_LEAD_MARKER + '%' };
-
-// =================================================================
-// เบอร์โทรที่ไม่ควรถูกนับเป็น "ลูกค้า" เลย (เช่น เบอร์เซลล์ที่ให้ลูกค้าโทรกลับ)
-// =================================================================
-// ลูกค้าบางคนกดคัดลอกเบอร์ติดต่อของเซลล์จากข้อความ/โพสต์ แล้วส่งเบอร์นั้นกลับมาผ่าน
-// ManyChat โดยเข้าใจผิดว่าต้องส่งเบอร์ (เป็นเบอร์เซลล์ ไม่ใช่เบอร์ลูกค้าจริง) ทำให้เบอร์นี้
-// ถูกบันทึกเข้าระบบซ้ำไปเรื่อยๆ และทำให้ตัวเลขในรายงาน/ยอดลูกค้าเพี้ยน — เบอร์ในลิสต์นี้
-// จะถูกกันไว้ 2 ชั้น: (1) addCustomerHTML จะไม่สร้าง/ไม่อัปเดตแถวลูกค้าใดๆ และไม่ log เข้า
-// lead_intake_log เลยถ้าเบอร์ที่ส่งมาตรงกับลิสต์นี้ (กันไม่ให้นับเข้าไปตั้งแต่ต้น) และ
-// (2) รายงาน/หน้าดูรายละเอียด (getDailyLeadReportHTML, getLeadIntakeLogDetailHTML) กรอง
-// แถว lead_intake_log เก่าที่มีเบอร์นี้ออกจากการนับด้วย เผื่อมีแถวเก่าที่บันทึกไปแล้วก่อนเพิ่ม
-// ลิสต์นี้ — เทียบกับเบอร์ที่ผ่าน formatPhoneNumber แล้วเสมอ (รูปแบบ 10 หลัก ขึ้นต้นด้วย 0)
-// เพิ่มเบอร์อื่นในลิสต์นี้ได้เรื่อยๆ ถ้าเจอปัญหาแบบเดียวกัน (เบอร์ทีม/เบอร์ร้าน ฯลฯ)
-var EXCLUDED_PHONE_NUMBERS = ['0864609120'];
-
-// สร้างเงื่อนไข WHERE (สำหรับ query กับ lead_intake_log) ที่กันเบอร์ใน
-// EXCLUDED_PHONE_NUMBERS ออกจากการนับ — คืนค่าเป็น '' ถ้าลิสต์ว่าง (ไม่ต้องเติมเงื่อนไข)
-function buildExcludedPhoneCondition_() {
-  if (!EXCLUDED_PHONE_NUMBERS || EXCLUDED_PHONE_NUMBERS.length === 0) return '';
-  var placeholders = EXCLUDED_PHONE_NUMBERS.map(function(_, i) { return '@excludedPhone' + i; });
-  return "IFNULL(phone, '') NOT IN (" + placeholders.join(', ') + ")";
-}
-// พารามิเตอร์คู่กับ buildExcludedPhoneCondition_() ด้านบน — ต้อง concat เข้ากับ params
-// ทุกครั้งที่ใช้เงื่อนไขนี้ ไม่งั้น BigQuery จะ error ว่าไม่รู้จัก @excludedPhoneN
-function buildExcludedPhoneParams_() {
-  return (EXCLUDED_PHONE_NUMBERS || []).map(function(p, i) {
-    return { name: 'excludedPhone' + i, value: p };
-  });
-}
-
-// =================================================================
-// ตาราง Log การรับลีดเข้ามา (lead_intake_log)
-// =================================================================
-// เหตุผลที่ต้องมีตารางนี้แยกจาก customers: เวลาลีดที่ส่งเข้ามาซ้ำ (ชื่อ Facebook เดิม
-// หรือเบอร์เดิม) ระบบจะ "ไม่สร้างแถวใหม่" ในตาราง customers (ไปอัปเดต follow_up_log
-// ของแถวเดิมแทน) ดังนั้นถ้าจะนับ "วันนี้ได้กี่เบอร์ทั้งหมด" (รวมที่ส่งซ้ำมาด้วย)
-// จะนับจากตาราง customers อย่างเดียวไม่ได้ ต้องมี Log แยกที่บันทึกทุกครั้งที่มีการ
-// ยิง action:add เข้ามา ไม่ว่าจะจบด้วยการสร้างลูกค้าใหม่หรือไปรวมกับของเดิมก็ตาม
-//
-// ⚠️ ต้องรันคำสั่งนี้ใน BigQuery Console ก่อนใช้งาน (ครั้งเดียว) มิฉะนั้นจะ error
-// เพราะตารางยังไม่มีอยู่ — ใช้ฟังก์ชัน runOneTimeSetup_CreateLeadIntakeLogTable()
-// ด้านล่างของไฟล์นี้ (เลือกจาก dropdown ▶ Run แล้วกดรันครั้งเดียว)
-var LOG_TABLE_ID = 'lead_intake_log';
-var LOG_TABLE_FULL_PATH = '`' + GCP_PROJECT_ID + '.' + DATASET_ID + '.' + LOG_TABLE_ID + '`';
-
-// =================================================================
-// คอลัมน์ last_followup_date — "วันที่ติดตามล่าสุด" แยกจาก created_date
-// =================================================================
-// created_date (คอลัมน์ "วันที่" ที่โชว์ในตาราง) ยังคงหมายถึงวันที่ลูกค้ารายนี้
-// เข้าระบบครั้งแรกเสมอ ไม่ถูกแก้ไขตอนมีการติดตาม เพื่อไม่ให้เสียข้อมูลว่าได้ลูกค้า
-// รายนี้มาตั้งแต่เมื่อไหร่ (กระทบรายงาน/การกรองตามวันที่รับลีดถ้าไปทับค่านี้)
-// last_followup_date คือคอลัมน์ใหม่ที่เก็บ "วันที่ของการติดตามครั้งล่าสุด" แยกไว้
-// ต่างหาก อัปเดตทุกครั้งที่มีการเพิ่มบันทึกลงไทม์ไลน์ follow_up_log (ทั้งจากพนักงาน
-// กดในหน้าเว็บ และจาก ManyChat ส่งข้อมูลซ้ำเข้ามา) — ใช้ sort/filter หน้ารายงานว่า
-// ใคร active ล่าสุดได้ โดยไม่ต้องไปยุ่งกับ created_date เดิม
-//
-// ⚠️ ต้องรันคำสั่งนี้ใน BigQuery Console ก่อนใช้งาน (ครั้งเดียว) — ใช้ฟังก์ชัน
-// runOneTimeSetup_AddLastFollowupDateColumn() ด้านล่างของไฟล์นี้
-
-/**
- * ฟังก์ชันเช็คการเชื่อมต่อ BigQuery
- */
-function checkBigQueryStatus() {
-  try {
-    var sql = "SELECT 1 as status";
-    var res = runParamQueryFetch(sql, []);
-    if (res && res.length > 0) {
-      return { success: true, connected: true, message: 'BigQuery Connected', codeVersion: CODE_VERSION };
-    }
-    return { success: false, connected: false, message: 'No response', codeVersion: CODE_VERSION };
-  } catch (err) {
-    return { success: false, connected: false, message: err.toString(), codeVersion: CODE_VERSION };
-  }
-}
-/**
- * ฟังก์ชันแปลงวันที่ ให้คงรูปแบบ YYYY-MM-DD (ค.ศ.) ตาม BigQuery
- */
-function formatDateStr(val) {
-  if (val === null || val === undefined || val === '') return '';
-
-  // 1. ถ้าได้ประเภท Date Object มาจาก BigQuery
-  if (val instanceof Date) {
-    if (isNaN(val.getTime())) return '';
-    return Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd');
-  }
-  var str = val.toString().trim();
-  if (str === '-' || str === 'null' || str === 'undefined') return '';
-  // ตัดส่วนเวลาออกถ้ามีติดมา (เช่น 2026-08-06T00:00:00Z)
-  if (str.indexOf('T') !== -1) str = str.split('T')[0];
-  if (str.indexOf(' ') !== -1) str = str.split(' ')[0];
-  // 2. ถ้าเป็น YYYY-MM-DD อยู่แล้ว (ตรงกับ BigQuery) ให้ส่งกลับได้ทันที ไม่ต้องคำนวณปีใหม่
-  if (/^\d{4}[-\/\.]\d{2}[-\/\.]\d{2}$/.test(str)) {
-    var parts = str.split(/[-\/\.]/);
-    var y = parseInt(parts[0], 10);
-    var m = parts[1];
-    var d = parts[2];
-    // ป้องกันกรณีหลุดปี พ.ศ. (ต้องมากกว่า 2400 จริงๆ ถึงจะลบ 543)
-    if (y > 2400) {
-      y = y - 543;
-    }
-    return y + '-' + m + '-' + d;
-  }
-  // 3. ถ้าเป็น DD/MM/YYYY (เช่น 31/08/2023 หรือ 31/08/2566)
-  if (/^\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{4}$/.test(str)) {
-    var p = str.split(/[-\/\.]/);
-    var day = p[0].padStart(2, '0');
-    var month = p[1].padStart(2, '0');
-    var year = parseInt(p[2], 10);
-    if (year > 2400) {
-      year = year - 543;
-    }
-    return year + '-' + month + '-' + day;
-  }
-  // 4. แก้เพิ่ม (2026-08-08 รอบ 2): ข้อมูลเก่าบางแถวพิมพ์ปี พ.ศ. แบบย่อแค่ 2 หลัก
-  // เช่น "31/10/67" (หมายถึง 31/10/2567) — เดิมโค้ดข้อ 3 ต้องการปีเต็ม 4 หลัก
-  // เจอปีย่อแบบนี้เลยไม่แมตช์เลย ตกไป return str เดิมๆ (โชว์ "31/10/67" ตรงๆ
-  // ในตาราง ไม่ถูกแปลงเป็นวันที่จริง) เพราะข้อมูลทั้งหมดเป็นของไทย ปีย่อ 2 หลักจึง
-  // ตีความเป็น พ.ศ. เสมอ (ไม่ใช่ปี ค.ศ. ย่อ) แปลงเป็น ค.ศ. ด้วยสูตร 2500+YY-543
-  if (/^\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2}$/.test(str)) {
-    var p2 = str.split(/[-\/\.]/);
-    var day2 = p2[0].padStart(2, '0');
-    var month2 = p2[1].padStart(2, '0');
-    var yy = parseInt(p2[2], 10);
-    var year2 = 2500 + yy - 543; // เทียบเท่า 1957 + yy
-    return year2 + '-' + month2 + '-' + day2;
-  }
-  return str;
-}
-/**
- * จัดการรูปแบบเบอร์โทรศัพท์ เติม 0 ข้างหน้าให้ครบ 10 หลัก
- */
-function formatPhoneNumber(ph) {
-  if (ph === undefined || ph === null) return '';
-  var strPhone = ph.toString().trim();
-  if (!strPhone) return '';
-
-  strPhone = strPhone.replace(/\D/g, '');
-  if (strPhone.length === 9 && !strPhone.startsWith('0')) {
-    strPhone = '0' + strPhone;
-  }
-  return strPhone;
-}
-function doGet(e) {
-  var action = e && e.parameter ? e.parameter.action : '';
-  if (action === 'getInitialData') {
-    return createJsonResponse(getInitialDataHTML());
-  } else if (action === 'getDashboardSummary') {
-    return createJsonResponse(getDashboardSummaryHTML());
-  } else if (action === 'checkStatus') {
-    return createJsonResponse(checkBigQueryStatus());
-  } else if (action === 'getDailyLeadReport') {
-    return createJsonResponse(getDailyLeadReportHTML(e.parameter));
-  } else if (action === 'getLeadIntakeLogDetail') {
-    // รายละเอียดที่ประกอบเป็นตัวเลขในรายงานรายวัน (ดู getLeadIntakeLogDetailHTML)
-    // รองรับ GET ด้วยเผื่ออยากทดสอบผ่าน URL ตรงๆ — หน้าเว็บจริงเรียกผ่าน doPost
-    return createJsonResponse(getLeadIntakeLogDetailHTML(e.parameter));
-  } else if (action === 'getFollowupCalendar') {
-    return createJsonResponse(getFollowupCalendarHTML(e.parameter));
-  }
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
-    .setTitle('CRM-TRACKER ระบบจัดการข้อมูลลูกค้า')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-function doPost(e) {
-  try {
-    var contents = JSON.parse(e.postData.contents);
-    var action = contents.action;
-    // ใส่ codeVersion + action ที่รับมาจริงไว้ใน error message เผื่อ deploy ไม่ติด
-    // (โค้ดที่รันจริงบน server เป็นคนละเวอร์ชันกับที่แก้ไว้ในตัวแก้ไข) จะได้เห็นชัดๆ
-    // ทันทีจาก error message เองว่า server ที่รันอยู่จริงเป็นเวอร์ชันไหน ไม่ต้องเดา
-    var result = { success: false, message: 'Invalid Action: "' + action + '" (codeVersion=' + CODE_VERSION + ')' };
-    if (action === 'checkStatus' || action === 'checkBigQuery') {
-      result = checkBigQueryStatus();
-    } else if (action === 'search' || action === 'searchCustomers') {
-      result = searchCustomersHTML(contents.payload || contents);
-    } else if (action === 'add' || action === 'addCustomer') {
-      result = addCustomerHTML(contents.payload || contents.data || {});
-    } else if (action === 'update' || action === 'editCustomer') {
-      var editData = contents.payload || contents;
-      result = updateCustomerHTML(editData.rowIndex || editData.phoneKey, editData.cust || editData.data || {});
-    } else if (action === 'delete' || action === 'deleteCustomer') {
-      var delData = contents.payload || contents;
-      result = deleteCustomerHTML(delData.phoneKey || delData.rowIndex);
-    } else if (action === 'getByPhone' || action === 'getCustomerByRow') {
-      var getData = contents.payload || contents;
-      result = getCustomerByPhone(getData.phoneKey || getData.rowIndex);
-    } else if (action === 'getInitialData') {
-      result = getInitialDataHTML();
-    } else if (action === 'getDashboardSummary') {
-      result = getDashboardSummaryHTML(contents.payload || contents);
-    } else if (action === 'checkDuplicatePhone') {
-      var checkData = contents.payload || contents;
-      result = checkDuplicatePhoneHTML(checkData.phone);
-    } else if (action === 'exportAll') {
-      result = getAllCustomersExport();
-    } else if (action === 'addFollowUp') {
-      // เพิ่มบันทึกการติดตามลูกค้า 1 รอบ (วันที่ + หมายเหตุ) เข้าไปในไทม์ไลน์
-      var flData = contents.payload || contents;
-      result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {});
-    } else if (action === 'getDailyLeadReport') {
-      // รายงานจำนวนลีดที่ส่งเข้ามาต่อวัน (รวมที่ซ้ำด้วย) — ดูฟังก์ชัน getDailyLeadReportHTML
-      result = getDailyLeadReportHTML(contents.payload || contents);
-    } else if (action === 'getLeadIntakeLogDetail') {
-      // รายละเอียด (รายชื่อ/เบอร์/สถานะ) ที่ประกอบเป็นตัวเลขในตารางรายงานรายวัน
-      // ใช้ตอนกดตัวเลขในหน้ารายงาน (index.html) — ดูฟังก์ชัน getLeadIntakeLogDetailHTML
-      result = getLeadIntakeLogDetailHTML(contents.payload || contents);
-    } else if (action === 'getFollowupCalendar') {
-      result = getFollowupCalendarHTML(contents.payload || contents);
-    }
-    return createJsonResponse(result);
-  } catch (err) {
-    return createJsonResponse({ success: false, message: err.toString() });
-  }
-}
-function createJsonResponse(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-function cleanStr(str) {
-  if (str === null || str === undefined) return '';
-  return str.toString().trim();
-}
-
-// รับข้อมูลจากทั้งหน้าเว็บปัจจุบัน, payload รุ่นเก่า และ automation ภายนอก
-// เพื่อไม่ให้ที่อยู่หายเพียงเพราะชื่อ property ต่างกันเล็กน้อย
-function firstNonEmpty_(obj, keys) {
-  obj = obj || {};
-  for (var i = 0; i < keys.length; i++) {
-    var value = cleanStr(obj[keys[i]]);
-    if (value) return value;
-  }
-  return '';
-}
-
-function customerAddressNo_(cust) {
-  return firstNonEmpty_(cust, ['addressno', 'address_no', 'addressNo', 'address']);
-}
-
-function customerProduct_(cust) {
-  var direct = firstNonEmpty_(cust, ['product']);
-  if (direct) return direct;
-  var category = firstNonEmpty_(cust, ['productCategory', 'product_category']);
-  var model = firstNonEmpty_(cust, ['productModel', 'product_model']);
-  return [category, model].filter(function(v) { return !!v; }).join(' | ');
-}
-function runParamQueryFetch(sql, params) {
-  try {
-    var request = {
-      query: sql,
-      useLegacySql: false,
-      parameterMode: 'NAMED',
-      queryParameters: (params || []).map(function(p) {
-        return { name: p.name, parameterType: { type: 'STRING' }, parameterValue: { value: p.value } };
-      })
-    };
-    var queryResults = BigQuery.Jobs.query(request, GCP_PROJECT_ID);
-    var jobId = queryResults.jobReference.jobId;
-    while (!queryResults.jobComplete) {
-      Utilities.sleep(250);
-      queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobId);
-    }
-    var rows = queryResults.rows;
-    var schema = queryResults.schema ? queryResults.schema.fields : [];
-    var result = [];
-    if (rows) {
-      for (var i = 0; i < rows.length; i++) {
-        var item = {};
-        for (var j = 0; j < schema.length; j++) {
-          item[schema[j].name] = (rows[i].f[j] && rows[i].f[j].v !== null) ? rows[i].f[j].v : '';
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RST CRM-TRACKER Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="thailand-geo.js"></script>
+    <style>
+        :root {
+            --primary-color: #0284c7;
+            --primary-hover: #0369a1;
+            --bg-color: #f8fafc;
+            --text-color: #1e293b;
+            --border-color: #cbd5e1;
+            --card-bg: #ffffff;
+            --accent-color: #f97316;
         }
-        result.push(item);
-      }
-    }
-    return result;
-  } catch (e) {
-    throw new Error('BigQuery Query Error: ' + e.toString());
-  }
-}
-function runParamQuery(sql, params) {
-  try {
-    var request = {
-      query: sql,
-      useLegacySql: false,
-      parameterMode: 'NAMED',
-      queryParameters: (params || []).map(function(p) {
-        return { name: p.name, parameterType: { type: 'STRING' }, parameterValue: { value: p.value } };
-      })
-    };
-    var queryResults = BigQuery.Jobs.query(request, GCP_PROJECT_ID);
-    var jobId = queryResults.jobReference.jobId;
-    while (!queryResults.jobComplete) {
-      Utilities.sleep(250);
-      queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobId);
-    }
-    return true;
-  } catch (e) {
-    throw new Error('BigQuery Execute Error: ' + e.toString());
-  }
-}
-function getInitialDataHTML() {
-  try {
-    var countSQL = "SELECT COUNT(*) as total FROM " + TABLE_FULL_PATH;
-    var countRes = runParamQueryFetch(countSQL, []);
-    var totalCount = (countRes && countRes.length > 0) ? parseInt(countRes[0].total) : 0;
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Prompt', sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); padding: 10px; display: flex; flex-direction: column; min-height: 100vh; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; background: #0f172a; color: white; padding: 12px 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .stats-container { display: flex; gap: 15px; font-size: 13px; }
+        .stat-item { background: rgba(255,255,255,0.1); padding: 5px 12px; border-radius: 8px; }
+        .stat-item span { font-weight: 600; color: #38bdf8; }
+        .main-layout { display: flex; flex-direction: column; gap: 15px; flex-grow: 1; min-height: 0; }
+        /* ===== แยกหน้า: เพิ่มข้อมูล / ประวัติ+ค้นหา+รายงาน ===== */
+        .page-nav { display: flex; gap: 10px; margin-bottom: 10px; }
+        .page-nav-btn { padding: 10px 22px; border-radius: 10px; border: none; background: #e2e8f0; color: #475569; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s, color 0.2s; }
+        .page-nav-btn:hover { background: #cbd5e1; }
+        .page-nav-btn.active { background: var(--primary-color); color: #fff; }
+        .page-nav-btn.active:hover { background: var(--primary-color); }
+        .page-view { display: flex; flex-direction: column; gap: 15px; flex-grow: 1; min-height: 0; }
+        .form-page-wrap { max-width: 820px; width: 100%; margin: 0 auto; }
+        .report-row { display: flex; gap: 15px; }
+        .report-row .dash-card { flex: 1; margin-bottom: 0; }
+        .card { background: var(--card-bg); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); padding: 12px; }
+        .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: #0f172a; display: flex; align-items: center; justify-content: space-between; }
+        .search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+        .form-grid-compact { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        .form-group-phone { grid-column: span 2; }
+        .form-group { display: flex; flex-direction: column; gap: 3px; position: relative; }
+        .form-group label { font-size: 12px; font-weight: 500; color: #475569; }
+        .form-control { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px; width: 100%; outline: none; background: #fff; }
+        .form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(2,132,199,0.1); }
+        .filter-grid { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding-bottom: 6px; }
+        .filter-grid .form-group { flex: 1 1 125px; min-width: 125px; }
+        .filter-grid .form-group.wide { flex: 1.8 1 200px; min-width: 180px; }
+        .filter-grid .form-group label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .filter-grid + .filter-grid { margin-top: 8px; }
+        .btn-toggle-advanced { background: #f1f5f9; color: #475569; border: 1px dashed #94a3b8; padding: 6px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500; cursor: pointer; margin: 4px 0 2px; }
+        .btn-toggle-advanced:hover { background: #e2e8f0; }
+        #advanced-filters-section { border-top: 1px dashed #e2e8f0; padding-top: 10px; margin-top: 4px; }
+        .filter-section-label { font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 2px; width: 100%; }
+        /* Multi-select Dropdown CSS */
+        .multiselect-box { position: relative; width: 100%; }
+        .select-btn { display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #fff; }
+        .checkboxes-dropdown { display: none; position: fixed; width: 170px; background: #fff; border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 1000; max-height: 200px; overflow-y: auto; padding: 5px; }
+        .checkboxes-dropdown.show { display: block; }
+        .checkboxes-dropdown label { display: flex; align-items: center; gap: 6px; padding: 5px; font-size: 12px; cursor: pointer; border-radius: 4px; }
+        .checkboxes-dropdown label:hover { background: #f1f5f9; }
+        .search-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        .btn { padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s; }
+        .btn-primary { background: #10b981; color: white; }
+        .btn-primary:hover { background: #059669; }
+        .btn-secondary { background: #e2e8f0; color: #475569; }
+        .btn-secondary:hover { background: #cbd5e1; }
+        .btn-accent { background: var(--accent-color); color: white; }
+        .btn-accent:hover { background: #ea580c; }
+        .btn-export { background: #0284c7; color: white; }
+        .table-container { flex: 1; min-width: 0; background: var(--card-bg); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); padding: 10px; display: flex; flex-direction: column; overflow: visible; }
+        /* ไม่มีกรอบเลื่อนขึ้น-ลงแยก: ตารางจะสูงตามจำนวนแถวและเลื่อนด้วยทั้งหน้าเว็บ */
+        .table-responsive { overflow-x: auto; max-height: none; border: 1px solid #e2e8f0; border-radius: 8px; }
+        table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; font-size: 11px; }
+        #main-table { width: 2100px; min-width: 2100px; }
+        th { background: #f8fafc; color: #475569; padding: 6px 4px; font-weight: 600; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 10; overflow-wrap: break-word; word-break: normal; line-height: 1.25; }
+        td { padding: 6px 4px; border-bottom: 1px solid #edf2f7; vertical-align: middle; overflow-wrap: break-word; word-break: normal; line-height: 1.35; }
+        tr:hover { background-color: #f1f5f9; }
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 12px; }
+        .dash-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        .dash-title { font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: space-between; }
+        .dash-item { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; margin-bottom: 3px; background: #f8fafc; border-radius: 4px; font-size: 10.5px; word-break: break-word; }
+        .dash-count { font-weight: 600; color: var(--primary-color); background: #e0f2fe; padding: 1px 6px; border-radius: 8px; align-self: flex-start; }
 
-    // จำนวนลูกค้าทั้งหมด (ไม่กรอง) ที่มาจาก ManyChat/Facebook อัตโนมัติ — โชว์เป็นตัวเลขคงที่บนหัวหน้าเว็บ
-    var fbSQL = "SELECT COUNT(*) as cnt FROM " + TABLE_FULL_PATH + " WHERE " + FB_LEAD_MATCH_COND;
-    var fbRes = runParamQueryFetch(fbSQL, [FB_LEAD_MATCH_PARAM]);
-    var manyChatTotalCount = (fbRes && fbRes.length > 0) ? parseInt(fbRes[0].cnt) : 0;
+        .fab-container { position: fixed; bottom: 95px; right: 25px; z-index: 999; }
+        .fab-btn { width: 55px; height: 55px; border-radius: 50%; background: #16a34a; color: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.25); cursor: pointer; border: none; font-size: 22px; transition: transform 0.2s; }
+        .fab-btn:hover { transform: scale(1.08); background: #15803d; }
 
-    return { success: true, totalCount: totalCount, manyChatTotalCount: manyChatTotalCount };
-  } catch (err) {
-    return { success: false, message: err.toString(), totalCount: 0, manyChatTotalCount: 0 };
-  }
-}
-function buildWhereClause(filters) {
-  var whereClauses = [];
-  var params = [];
-  if (filters.keyword) {
-    var cleanKw = cleanStr(filters.keyword).toLowerCase();
-    whereClauses.push("(LOWER(CAST(created_date AS STRING)) LIKE @kw " +
-                      "OR LOWER(IFNULL(first_name, '')) LIKE @kw " +
-                      "OR LOWER(IFNULL(last_name, '')) LIKE @kw " +
-                      "OR LOWER(CAST(phone AS STRING)) LIKE @kw " +
-                      "OR LOWER(IFNULL(product, '')) LIKE @kw " +
-                      "OR LOWER(IFNULL(village, '')) LIKE @kw " +
-                      "OR LOWER(IFNULL(subdistrict, '')) LIKE @kw " +
-                      "OR LOWER(IFNULL(district, '')) LIKE @kw " +
-                      "OR LOWER(IFNULL(remark, '')) LIKE @kw)");
-    params.push({ name: 'kw', value: '%' + cleanKw + '%' });
-  }
-  if (filters.exactPhone) {
-    var cleanP = cleanStr(filters.exactPhone);
-    whereClauses.push("(CAST(phone AS STRING) = @exactPhone OR SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@exactPhone, r'\\D', '') AS INT64))");
-    params.push({ name: 'exactPhone', value: cleanP });
-  }
-  if (filters.types && Array.isArray(filters.types) && filters.types.length > 0) {
-    var typeConditions = [];
-    for (var i = 0; i < filters.types.length; i++) {
-      var paramName = 'type_' + i;
-      typeConditions.push("type = @" + paramName);
-      params.push({ name: paramName, value: cleanStr(filters.types[i]) });
-    }
-    whereClauses.push("(" + typeConditions.join(" OR ") + ")");
-  }
-  if (filters.startDate) {
-    whereClauses.push("CAST(created_date AS STRING) >= @startDate");
-    params.push({ name: 'startDate', value: cleanStr(filters.startDate) });
-  }
-  if (filters.endDate) {
-    whereClauses.push("CAST(created_date AS STRING) <= @endDate");
-    params.push({ name: 'endDate', value: cleanStr(filters.endDate) });
-  }
-  if (filters.appdate) {
-    whereClauses.push("CAST(booking_date AS STRING) LIKE @appdate");
-    params.push({ name: 'appdate', value: '%' + cleanStr(filters.appdate) + '%' });
-  }
-  // กรองตาม "วันที่ติดตามล่าสุด" (last_followup_date) — แยกจาก startDate/endDate ที่กรองตาม
-  // created_date (วันที่รับลีดครั้งแรก) ด้านบน
-  if (filters.followupStartDate) {
-    whereClauses.push("CAST(last_followup_date AS STRING) >= @followupStartDate");
-    params.push({ name: 'followupStartDate', value: cleanStr(filters.followupStartDate) });
-  }
-  if (filters.followupEndDate) {
-    whereClauses.push("CAST(last_followup_date AS STRING) <= @followupEndDate");
-    params.push({ name: 'followupEndDate', value: cleanStr(filters.followupEndDate) });
-  }
-  if (filters.product && filters.product !== 'ALL') {
-    whereClauses.push("product = @product");
-    params.push({ name: 'product', value: cleanStr(filters.product) });
-  }
-  if (filters.subdistrict) {
-    whereClauses.push("LOWER(IFNULL(subdistrict, '')) LIKE @subdistrict");
-    params.push({ name: 'subdistrict', value: '%' + cleanStr(filters.subdistrict).toLowerCase() + '%' });
-  }
-  if (filters.district) {
-    whereClauses.push("LOWER(IFNULL(district, '')) LIKE @district");
-    params.push({ name: 'district', value: '%' + cleanStr(filters.district).toLowerCase() + '%' });
-  }
-  if (filters.note) {
-    whereClauses.push("LOWER(IFNULL(remark, '')) LIKE @note");
-    params.push({ name: 'note', value: '%' + cleanStr(filters.note).toLowerCase() + '%' });
-  }
-  return {
-    sql: whereClauses.length > 0 ? " WHERE " + whereClauses.join(" AND ") : "",
-    params: params
-  };
-}
+        .autocomplete-items { position: absolute; border: 1px solid #cbd5e1; border-top: none; z-index: 99; top: 100%; left: 0; right: 0; background-color: #fff; max-height: 150px; overflow-y: auto; border-radius: 0 0 6px 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .autocomplete-items div { padding: 6px 10px; cursor: pointer; font-size: 12px; }
+        .autocomplete-items div:hover { background-color: #e2e8f0; }
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+        .badge-reg { background: #e0f2fe; color: #0369a1; }
+        .badge-target { background: #fef3c7; color: #d97706; }
+        .badge-book { background: #dcfce7; color: #15803d; }
+        .badge-track { background: #f3e8ff; color: #6b21a8; }
+        .badge-contract { background: #ccfbf1; color: #0f766e; }
+        .badge-deliver { background: #fae8ff; color: #86198f; }
+        /* ===== ตัวเลขในตารางรายงานรายวันที่คลิกดูรายละเอียดได้ ===== */
+        .report-num-link { cursor: pointer; text-decoration: underline dotted; text-decoration-color: #94a3b8; text-underline-offset: 2px; }
+        .report-num-link:hover { color: var(--primary-color); font-weight: 700; }
+        .report-customer-link { color:#0369a1; font-weight:600; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
+        .customer-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+        .customer-detail-card { background:#fff; border:1px solid #e2e8f0; border-radius:9px; padding:10px; }
+        .customer-detail-card.full { grid-column:span 2; }
+        .customer-detail-label { font-size:11px; color:#64748b; margin-bottom:4px; }
+        .customer-detail-value { font-size:12.5px; color:#1e293b; white-space:pre-line; word-break:break-word; }
+        /* ===== Modal ข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน ===== */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 2000; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 15px; }
+        .modal-overlay.show { display: flex; }
+        .modal-box { background: #f1f5f9; border-radius: 14px; width: 420px; max-width: 100%; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 15px; margin-bottom: 12px; color: #0f172a; }
+        .modal-close-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #64748b; }
+        .modal-section-title { font-weight: 600; font-size: 13px; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px; color: #0f172a; }
+        .item-card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .item-card-title { font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .item-remove-btn { background: none; border: 1px solid #fecaca; color: #ef4444; font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+        .item-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .item-fields .full { grid-column: span 2; }
+        .item-fields label { font-size: 11px; color: #64748b; display: block; margin-bottom: 2px; }
+        .item-fields input, .item-fields select { width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; font-family: 'Prompt', sans-serif; }
+        .btn-add-item { width: 100%; background: #fff; border: 1.5px dashed #94a3b8; color: #475569; padding: 8px; border-radius: 8px; font-size: 12px; cursor: pointer; margin-bottom: 4px; }
+        .btn-add-item:hover { background: #e2e8f0; }
+        .toggle-pair { display: flex; gap: 8px; margin-bottom: 4px; }
+        .toggle-btn { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color); background: #fff; color: #475569; font-size: 12px; cursor: pointer; }
+        .toggle-btn.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+        .btn-done { width: 100%; background: #16a34a; color: #fff; border: none; padding: 10px; border-radius: 10px; font-size: 14px; font-weight: 600; margin-top: 14px; cursor: pointer; }
+        .btn-done:hover { background: #15803d; }
+        /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
+        .row-action-group { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: center; min-width: 88px; }
+        .btn-row-icon { flex: 0 0 auto; padding: 3px 6px; font-size: 11px; }
+        .btn-row-icon.has-log { background: #f3e8ff; color: #6b21a8; font-weight: 600; }
+        /* ===== ปฏิทินติดตามลูกค้า ===== */
+        .calendar-layout { display: grid; grid-template-columns: minmax(620px, 1.65fr) minmax(320px, 0.85fr); gap: 15px; align-items: start; }
+        .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .calendar-month-title { font-size: 18px; font-weight: 600; color: #0f172a; text-align: center; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+        .calendar-weekday { background: #f1f5f9; padding: 8px 4px; text-align: center; font-size: 12px; font-weight: 600; color: #475569; border-right: 1px solid #e2e8f0; }
+        .calendar-day { min-height: 92px; padding: 7px; background: #fff; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; cursor: pointer; position: relative; }
+        .calendar-day:hover { background: #f0f9ff; }
+        .calendar-day.outside { background: #f8fafc; color: #cbd5e1; cursor: default; }
+        .calendar-day.today { box-shadow: inset 0 0 0 2px #0ea5e9; }
+        .calendar-day.selected { background: #e0f2fe; box-shadow: inset 0 0 0 2px #0284c7; }
+        .calendar-date-number { font-weight: 600; font-size: 12px; }
+        .calendar-count { display: inline-flex; margin-top: 8px; padding: 3px 7px; border-radius: 999px; background: #fef3c7; color: #b45309; font-size: 11px; font-weight: 600; }
+        .calendar-today-summary { background: linear-gradient(135deg,#0284c7,#0ea5e9); color:#fff; border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+        .calendar-today-count { font-size: 28px; font-weight: 700; line-height: 1; }
+        .calendar-customer-list { display: flex; flex-direction: column; gap: 8px; }
+        .calendar-customer { width: 100%; border: 1px solid #e2e8f0; background:#fff; border-radius:9px; padding:10px; text-align:left; cursor:pointer; color:#1e293b; }
+        .calendar-customer:hover { border-color:#38bdf8; background:#f0f9ff; }
+        .calendar-customer-name { font-size:13px; font-weight:600; color:#0369a1; }
+        .calendar-customer-meta { font-size:11.5px; color:#64748b; margin-top:3px; }
+        .timeline-list { max-height: 280px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
+        .timeline-item { border-left: 3px solid var(--primary-color); padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
+        .timeline-date { font-size: 11px; font-weight: 600; color: var(--primary-color); margin-bottom: 3px; }
+        .timeline-note { font-size: 12.5px; color: #334155; white-space: pre-line; word-break: break-word; }
+        .timeline-type { display:inline-flex; align-items:center; margin-left:6px; padding:2px 7px; border-radius:999px; background:#e0f2fe; color:#0369a1; font-size:10.5px; font-weight:600; }
+        .followup-type-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:5px; }
+        .followup-type-btn { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:8px; padding:7px 8px; font-size:11.5px; cursor:pointer; text-align:left; }
+        .followup-type-btn:hover { border-color:#38bdf8; background:#f0f9ff; }
+        .followup-type-btn.active { border-color:#0284c7; background:#e0f2fe; color:#075985; font-weight:600; box-shadow:inset 0 0 0 1px #0284c7; }
+        .timeline-empty { font-size: 12px; color: #94a3b8; text-align: center; padding: 16px 0; }
+        .timeline-cust-info { font-size: 13px; margin-bottom: 12px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; color: #0f172a; }
+        /* ===== แบบฟอร์มติดตามลูกค้า (สำหรับพิมพ์) ===== */
+        #print-form-area { display: none; }
+        .pf-page { width: 190mm; margin: 0 auto; font-size: 11.5px; line-height: 1.75; color: #000; }
+        .pf-title { text-align: center; font-size: 17px; font-weight: 600; margin-bottom: 10px; text-decoration: underline; }
+        .pf-row { margin-bottom: 3px; }
+        .pf-fill { border-bottom: 1px dotted #000; display: inline-block; min-width: 55px; padding: 0 4px; font-weight: 600; }
+        .pf-fill.wide { min-width: 140px; }
+        .pf-fill.full { display: block; width: 100%; min-height: 15px; }
+        .pf-section-label { font-weight: 600; }
+        .pf-check-list { margin: 1px 0 3px 14px; }
+        .pf-check-list span { margin-right: 16px; display: inline-block; white-space: nowrap; }
+        .pf-blank-line { border-bottom: 1px dotted #000; display: block; height: 17px; }
+        .pf-footer { text-align: right; margin-top: 8px; }
+        .pf-hr { border: none; border-top: 1px solid #94a3b8; margin: 6px 0; }
+        @media print {
+            body * { visibility: hidden; }
+            #print-form-area, #print-form-area * { visibility: visible; }
+            #print-form-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; }
+            @page { margin: 12mm; }
+        }
+        /* ===== มือถือ/จอแคบ (≤680px) ===== */
+        @media (max-width: 680px) {
+            body { padding: 8px; }
+            .header { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; }
+            .header h1 { font-size: 17px; }
+            .stats-container { flex-wrap: wrap; gap: 8px; font-size: 12px; }
+            .page-nav { flex-wrap: wrap; margin-bottom: 10px; }
+            .page-nav-btn { flex: 1 1 auto; padding: 10px 14px; font-size: 13px; }
+            .search-grid, .form-grid-compact { grid-template-columns: 1fr; }
+            .form-group-phone { grid-column: 1 / -1; }
+            .form-control, .item-fields input, .item-fields select { font-size: 16px; padding: 10px 12px; }
+            .form-group label { font-size: 13px; }
+            .btn { padding: 10px 14px; font-size: 14px; }
+            .card { padding: 12px; }
+            .report-row { flex-direction: column; }
+            .calendar-layout { grid-template-columns: 1fr; }
+            .calendar-grid { min-width: 620px; }
+            .calendar-scroll { overflow-x: auto; }
+            .card-title { flex-wrap: wrap; gap: 6px; }
+            .search-actions { flex-wrap: wrap; gap: 8px; }
+            #main-table { width: 2100px; min-width: 2100px; }
+            .fab-btn { width: 50px; height: 50px; font-size: 20px; }
+            .fab-container { bottom: 80px; right: 15px; }
+            .modal-box { width: 100%; padding: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>RST CRM-TRACKER Pro</h1>
+        <div class="stats-container">
+            <div class="stat-item">ฐานข้อมูลทั้งหมด: <span id="stat-total">0</span> รายชื่อ</div>
+            <div class="stat-item">ผลลัพธ์การกรอง: <span id="stat-display">0</span> รายชื่อ</div>
+            <div class="stat-item">📱 จาก Facebook/ManyChat: <span id="stat-manychat">0</span> รายชื่อ</div>
+        </div>
+    </div>
+    <div class="page-nav">
+        <button id="nav-btn-add" class="page-nav-btn active" onclick="switchPage('add')">➕ เพิ่มข้อมูลลูกค้า</button>
+        <button id="nav-btn-history" class="page-nav-btn" onclick="switchPage('history')">📊 ประวัติ / ค้นหา</button>
+        <button id="nav-btn-calendar" class="page-nav-btn" onclick="switchPage('calendar')">📅 ปฏิทินติดตาม</button>
+        <button id="nav-btn-report" class="page-nav-btn" onclick="switchPage('report')">📈 รายงาน</button>
+    </div>
+    <div class="main-layout">
+        <!-- ===== หน้าที่ 1: เพิ่มข้อมูลลูกค้าใหม่ ===== -->
+        <div id="page-add" class="page-view">
+            <div class="form-page-wrap">
+                <div class="card">
+                    <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #0f172a;" id="form-title">➕ เพิ่มข้อมูลลูกค้าใหม่</div>
+                    <form id="customer-form">
+                        <input type="hidden" id="form-row-index" value="">
+                        <div class="search-grid form-grid-compact">
+                            <div class="form-group">
+                                <label>วันที่บันทึก</label>
+                                <input type="date" id="cust-date" class="form-control" required onchange="clampCustDateNotFuture()">
+                            </div>
+                            <div class="form-group">
+                                <label style="color: var(--accent-color); font-weight: 600;">วันนัดหมาย</label>
+                                <input type="date" id="cust-appdate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>ชื่อจริง</label>
+                                <input type="text" id="cust-fname" class="form-control" required>
+                            </div>
+                            <div class="form-group">
+                                <label>นามสกุล</label>
+                                <input type="text" id="cust-lname" class="form-control" required>
+                            </div>
+                            <div class="form-group form-group-phone">
+                                <label>เบอร์โทรศัพท์ <span id="phone-check-msg" style="font-size:11px;"></span></label>
+                                <input type="tel" id="cust-phone" class="form-control" placeholder="0xxxxxxxxx" required onblur="checkDuplicatePhone()">
+                            </div>
+                            <div class="form-group">
+                                <label>LINE ID</label>
+                                <input type="text" id="cust-line" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Facebook</label>
+                                <input type="text" id="cust-facebook" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>ประเภทลูกค้า</label>
+                                <select id="cust-type" class="form-control">
+                                    <option value="ลงทะเบียน">ลงทะเบียน</option>
+                                    <option value="เป้าหมาย">เป้าหมาย</option>
+                                    <option value="จอง">จอง</option>
+                                    <option value="ติดตาม">ติดตาม</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>ประเภทสินค้า</label>
+                                <select id="cust-product-category" class="form-control" onchange="onCustProductCategoryChange()"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>รุ่นรถ / อุปกรณ์</label>
+                                <select id="cust-product-model" class="form-control"></select>
+                                <input type="text" id="cust-product-model-text" class="form-control" placeholder="พิมพ์ชื่ออุปกรณ์ต่อพ่วง" style="display:none;">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <button type="button" class="btn btn-secondary" style="width:100%; justify-content:center;" onclick="openAddressModal()">📍 กรอกที่อยู่</button>
+                                <div id="address-summary" style="font-size:11px; color:#64748b; margin-top:4px;"></div>
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <button type="button" class="btn btn-secondary" style="width:100%; justify-content:center;" onclick="openFinancialModal()">💰 กรอกข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน</button>
+                                <div id="financial-summary" style="font-size:11px; color:#64748b; margin-top:4px;"></div>
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <label>หมายเหตุ</label>
+                                    <button type="button" class="btn btn-secondary" style="padding:1px 6px; font-size:10px;" onclick="addActivityLog()">📌 แปะบันทึกกิจกรรม</button>
+                                </div>
+                                <textarea id="cust-note" class="form-control" rows="2" placeholder="ระบุรายละเอียดเพิ่มเติม..."></textarea>
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 6px;">
+                                <button type="button" class="btn btn-secondary" id="btn-print-last" onclick="printLastSavedCustomer()" disabled title="ต้องบันทึกข้อมูลลูกค้าอย่างน้อย 1 รายในหน้านี้ก่อนถึงจะพิมพ์ได้">🖨️ พิมพ์แบบฟอร์มรายล่าสุด</button>
+                                <button type="button" class="btn btn-secondary" onclick="resetFormState()">ยกเลิก</button>
+                                <button type="submit" class="btn btn-accent" id="btn-submit">💾 บันทึกข้อมูล</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <!-- ===== หน้าที่ 2: ประวัติ / ค้นหาและกรองข้อมูล / รายงาน (รวมกัน) ===== -->
+        <div id="page-history" class="page-view" style="display:none;">
+            <div class="card">
+                <div class="card-title">
+                    <span>🔍 ค้นหาและกรองข้อมูลขั้นสูง</span>
+                    <button class="btn btn-secondary" style="font-size: 11px; padding: 2px 8px;" onclick="runGeoCheckTool()">🛠️ ตรวจสอบชื่อ ที่อยู่ผิดมาตรฐาน</button>
+                </div>
+                <div class="search-grid filter-grid">
+                        <div class="form-group wide">
+                            <label>ชื่อ สกุล</label>
+                            <input type="text" id="filter-keyword" class="form-control" placeholder="พิมพ์คำค้น..." onkeypress="handleSearchKeyPress(event)">
+                        </div>
+                        <div class="form-group">
+                            <label>เบอร์โทร</label>
+                            <input type="text" id="filter-exact-phone" class="form-control" placeholder="เช่น 0812345678" onkeypress="handleSearchKeyPress(event)">
+                        </div>
+                        <div class="form-group">
+                            <label>ประเภทลูกค้า</label>
+                            <div class="multiselect-box">
+                                <div class="form-control select-btn" onclick="toggleTypeDropdown(this)">
+                                    <span id="type-select-label">-- เลือกประเภท --</span>
+                                    <span>▼</span>
+                                </div>
+                                <div class="checkboxes-dropdown" id="type-dropdown">
+                                    <label><input type="checkbox" value="ลงทะเบียน" onchange="updateTypeSelectLabel()"> ลงทะเบียน</label>
+                                    <label><input type="checkbox" value="เป้าหมาย" onchange="updateTypeSelectLabel()"> เป้าหมาย</label>
+                                    <label><input type="checkbox" value="จอง" onchange="updateTypeSelectLabel()"> จอง</label>
+                                    <label><input type="checkbox" value="ติดตาม" onchange="updateTypeSelectLabel()"> ติดตาม</label>
+                                    <label><input type="checkbox" value="ทำสัญญา" onchange="updateTypeSelectLabel()"> ทำสัญญา</label>
+                                    <label><input type="checkbox" value="ส่งมอบ" onchange="updateTypeSelectLabel()"> ส่งมอบ</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>วันที่บันทึก (เริ่ม)</label>
+                            <input type="date" id="filter-start-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>วันที่บันทึก (ถึง)</label>
+                            <input type="date" id="filter-end-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label style="color: var(--accent-color); font-weight: 600;">วันที่นัดหมาย</label>
+                            <input type="date" id="filter-appdate" class="form-control">
+                        </div>
+                </div>
+                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▾</button>
+                <div id="advanced-filters-section" style="display:none;">
+                    <div class="search-grid filter-grid">
+                        <div class="form-group">
+                            <label>ติดตามล่าสุด (เริ่ม)</label>
+                            <input type="date" id="filter-followup-start-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>ติดตามล่าสุด (ถึง)</label>
+                            <input type="date" id="filter-followup-end-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>ประเภทสินค้า</label>
+                            <select id="filter-product-category" class="form-control" onchange="onFilterProductCategoryChange()"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>รุ่นรถ / อุปกรณ์</label>
+                            <select id="filter-product-model" class="form-control"></select>
+                            <input type="text" id="filter-product-model-text" class="form-control" placeholder="พิมพ์ชื่ออุปกรณ์ (เว้นว่าง = ทุกอุปกรณ์)" style="display:none;" onkeypress="handleSearchKeyPress(event)">
+                        </div>
+                    </div>
+                    <div class="search-grid filter-grid">
+                        <span class="filter-section-label">📍 ที่อยู่</span>
+                        <div class="form-group">
+                            <label>จังหวัด</label>
+                            <select id="filter-province" class="form-control" onchange="onFilterProvinceChange()"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>อำเภอ</label>
+                            <select id="filter-district" class="form-control" onchange="onFilterDistrictChange()"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>ตำบล</label>
+                            <select id="filter-subdistrict" class="form-control"></select>
+                        </div>
+                    </div>
+                    <div class="search-grid filter-grid">
+                        <div class="form-group wide">
+                            <label>หมายเหตุ</label>
+                            <input type="text" id="filter-note" class="form-control" placeholder="ค้นความเห็น/หมายเหตุ..." onkeypress="handleSearchKeyPress(event)">
+                        </div>
+                    </div>
+                </div>
+                <div class="search-actions">
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-export" onclick="exportFilteredCSV()">📥 Export CSV</button>
+                        <button class="btn btn-secondary" onclick="clearFilters()">🔄 ล้างเงื่อนไข</button>
+                    </div>
+                    <button class="btn btn-primary" onclick="fetchDataFromServer(1)">🚀 ค้นหาข้อมูล</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <div class="card-title">
+                    <span>📊 รายการข้อมูลผลลัพธ์</span>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size: 11px; font-weight: normal; color: #94a3b8;" id="sort-indicator"></span>
+                        <span style="font-size: 12px; font-weight: normal; color: #64748b;" id="page-info">หน้า 1</span>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table id="main-table">
+                        <colgroup>
+                            <col style="width:120px"><!-- จัดการ (แก้ไข / พิมพ์ / ประวัติติดตาม) -->
+                            <col style="width:105px"><!-- วันที่บันทึก -->
+                            <col style="width:105px"><!-- วันที่นัดหมาย -->
+                            <col style="width:105px"><!-- ติดตามล่าสุด -->
+                            <col style="width:170px"><!-- ชื่อ - นามสกุล -->
+                            <col style="width:120px"><!-- เบอร์โทรศัพท์ -->
+                            <col style="width:95px"><!-- ประเภท -->
+                            <col style="width:120px"><!-- ประเภทสินค้า -->
+                            <col style="width:120px"><!-- รุ่นรถ -->
+                            <col style="width:70px"><!-- บ้านเลขที่ -->
+                            <col style="width:55px"><!-- หมู่ที่ -->
+                            <col style="width:110px"><!-- หมู่บ้าน -->
+                            <col style="width:100px"><!-- ตำบล -->
+                            <col style="width:100px"><!-- อำเภอ -->
+                            <col style="width:110px"><!-- จังหวัด -->
+                            <col style="width:90px"><!-- LINE ID -->
+                            <col style="width:100px"><!-- Facebook -->
+                            <col style="width:305px"><!-- หมายเหตุ (Remark) -->
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>จัดการ</th>
+                                <th>วันที่บันทึก</th>
+                                <th style="color: var(--accent-color);">วันที่นัดหมาย</th>
+                                <th style="color: #6b21a8;">ติดตามล่าสุด</th>
+                                <th>ชื่อ - นามสกุล</th>
+                                <th>เบอร์โทรศัพท์</th>
+                                <th>ประเภท</th>
+                                <th>ประเภทสินค้า</th>
+                                <th>รุ่นรถ</th>
+                                <th>บ้านเลขที่</th>
+                                <th>หมู่ที่</th>
+                                <th>หมู่บ้าน</th>
+                                <th>ตำบล</th>
+                                <th>อำเภอ</th>
+                                <th>จังหวัด</th>
+                                <th>LINE ID</th>
+                                <th>Facebook</th>
+                                <th>หมายเหตุ (Remark)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="18" style="text-align: center; padding: 30px; color: #64748b;">🔄 กำลังโหลดข้อมูล...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination-container">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span>แสดงแถวต่อหน้า:</span>
+                        <select id="filter-pagesize" class="form-control" style="width: auto; padding: 2px 6px;" onchange="fetchDataFromServer(1)">
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-secondary" id="btn-prev-page" onclick="changePage(-1)" disabled>◀ ย้อนกลับ</button>
+                        <button class="btn btn-secondary" id="btn-next-page" onclick="changePage(1)" disabled>ถัดไป ▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ===== หน้าที่ 3: ปฏิทินติดตาม ===== -->
+        <div id="page-calendar" class="page-view" style="display:none;">
+            <div class="calendar-layout">
+                <div class="card">
+                    <div class="calendar-toolbar">
+                        <button type="button" class="btn btn-secondary" onclick="changeCalendarMonth(-1)">◀ เดือนก่อน</button>
+                        <div class="calendar-month-title" id="calendar-month-title"></div>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" class="btn btn-secondary" onclick="goCalendarToday()">วันนี้</button>
+                            <button type="button" class="btn btn-secondary" onclick="changeCalendarMonth(1)">เดือนถัดไป ▶</button>
+                        </div>
+                    </div>
+                    <div class="calendar-scroll">
+                        <div class="calendar-grid" id="followup-calendar-grid"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="calendar-today-summary">
+                        <div style="font-size:12px; opacity:.9;" id="calendar-selected-label">รายการนัดหมายวันนี้</div>
+                        <div style="display:flex; align-items:flex-end; gap:7px; margin-top:5px;">
+                            <span class="calendar-today-count" id="calendar-selected-count">0</span>
+                            <span style="font-size:12px; padding-bottom:2px;">รายชื่อที่ต้องติดตาม</span>
+                        </div>
+                    </div>
+                    <div id="calendar-customer-list" class="calendar-customer-list">
+                        <div style="text-align:center; color:#94a3b8; padding:20px;">กำลังโหลดปฏิทิน...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ===== หน้าที่ 4: รายงาน ===== -->
+        <div id="page-report" class="page-view" style="display:none;">
+            <div class="report-row">
+                <div class="dash-card">
+                    <div class="dash-title">
+                        <span>📊 สรุปสถิติ (จากผลลัพธ์การกรองล่าสุดในหน้าประวัติ)</span>
+                    </div>
+                    <div id="dash-type-list"></div>
+                </div>
+                <div class="dash-card">
+                    <div class="dash-title">
+                        <span>🏆 Top 5 สินค้าที่สนใจ</span>
+                    </div>
+                    <div id="dash-prod-list"></div>
+                </div>
+                <div class="dash-card">
+                    <div class="dash-title">
+                        <span>📱 Lead จาก Facebook/ManyChat</span>
+                    </div>
+                    <div id="dash-manychat-count" style="font-size:28px; font-weight:700; color:#1877F2; text-align:center; padding:8px 0 2px;">0</div>
+                    <div style="font-size:10.5px; color:#94a3b8; text-align:center;">รายชื่อ (จากผลลัพธ์การกรองปัจจุบัน)</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">
+                    <span>📅 รายงานจำนวนลีดที่เข้ามาต่อวัน (รวมเบอร์/ชื่อที่ส่งซ้ำด้วย)</span>
+                </div>
+                <div class="search-grid filter-grid" style="margin-bottom:10px;">
+                    <div class="form-group">
+                        <label>วันที่ (เริ่ม)</label>
+                        <input type="date" id="report-start-date" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>วันที่ (ถึง)</label>
+                        <input type="date" id="report-end-date" class="form-control">
+                    </div>
+                    <div class="form-group" style="justify-content:flex-end;">
+                        <label style="visibility:hidden;">.</label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; color:#475569; white-space:nowrap;">
+                            <input type="checkbox" id="report-only-manychat" style="width:auto;"> เฉพาะที่มาจาก ManyChat
+                        </label>
+                    </div>
+                    <div class="form-group" style="justify-content:flex-end;">
+                        <label style="visibility:hidden;">.</label>
+                        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="fetchDailyLeadReport()">🔄 ดึงรายงาน</button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height:50vh;">
+                    <table id="daily-report-table">
+                        <colgroup>
+                            <col style="width:20%">
+                            <col style="width:20%">
+                            <col style="width:20%">
+                            <col style="width:20%">
+                            <col style="width:20%">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>วันที่</th>
+                                <th>ยอดที่ส่งเข้ามาทั้งหมด</th>
+                                <th>ลูกค้าใหม่</th>
+                                <th>ส่งซ้ำ (มีในระบบแล้ว)</th>
+                                <th>จาก ManyChat</th>
+                            </tr>
+                        </thead>
+                        <tbody id="daily-report-tbody">
+                            <tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">กด "ดึงรายงาน" เพื่อแสดงข้อมูล</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="fab-container" id="fab-container" style="display:none;">
+        <button class="fab-btn" onclick="exportFullExcel()" title="ดาวน์โหลดฐานข้อมูลทั้งหมดเป็น Excel">📗</button>
+    </div>
+    <!-- Modal กรอกข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน -->
+    <div id="financial-modal-overlay" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span>💰 ข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน</span>
+                <button type="button" class="modal-close-btn" onclick="closeFinancialModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section-title">🌾 ทำเกษตร</div>
+                <div id="farm-plots-container"></div>
+                <button type="button" class="btn-add-item" onclick="addFarmPlot()">+ เพิ่มแปลง/ประเภทชนิดรายการ</button>
+                <div class="modal-section-title">📋 งานประจำ</div>
+                <div class="toggle-pair" id="toggle-regular-job">
+                    <button type="button" class="toggle-btn" data-val="yes" onclick="setFinancialToggle('regularJob','yes')">✓ มีงานประจำ</button>
+                    <button type="button" class="toggle-btn" data-val="no" onclick="setFinancialToggle('regularJob','no')">ไม่มี</button>
+                </div>
+                <div class="item-fields" style="margin:7px 0 10px;">
+                    <div><label>อาชีพ/สถานที่ทำงาน</label><input type="text" id="regular-job-detail" placeholder="เช่น พนักงานบริษัท" oninput="customerFinancial.regularJobDetail=this.value"></div>
+                    <div><label>รายได้ต่อเดือน (บาท)</label><input type="text" id="regular-job-income" placeholder="เช่น 18,000" oninput="customerFinancial.regularJobIncome=this.value"></div>
+                </div>
+                <div class="modal-section-title">💵 รายได้เสริม</div>
+                <div class="toggle-pair" id="toggle-side-income">
+                    <button type="button" class="toggle-btn" data-val="yes" onclick="setFinancialToggle('sideIncome','yes')">✓ มีรายได้เสริม</button>
+                    <button type="button" class="toggle-btn" data-val="no" onclick="setFinancialToggle('sideIncome','no')">ไม่มี</button>
+                </div>
+                <div class="item-fields" style="margin:7px 0 10px;">
+                    <div><label>รายได้เสริมจากอะไร</label><input type="text" id="side-income-detail" placeholder="เช่น รับจ้างไถนา" oninput="customerFinancial.sideIncomeDetail=this.value"></div>
+                    <div><label>รายได้เฉลี่ยต่อเดือน (บาท)</label><input type="text" id="side-income-amount" placeholder="เช่น 10,000" oninput="customerFinancial.sideIncomeAmount=this.value"></div>
+                </div>
+                <div class="modal-section-title">🚜 เครื่องจักรกลที่มีอยู่แล้ว (รถแทรกเตอร์/รถเกี่ยว/รถขุด)</div>
+                <div id="machinery-container"></div>
+                <button type="button" class="btn-add-item" onclick="addMachinery()">+ เพิ่มเครื่องจักรอีกคัน</button>
+                <div class="modal-section-title">📉 หนี้สิน</div>
+                <div id="debt-container"></div>
+                <button type="button" class="btn-add-item" onclick="addDebt()">+ เพิ่มรายการหนี้สิน</button>
+            </div>
+            <button type="button" class="btn-done" onclick="closeFinancialModal()">✓ เสร็จแล้ว</button>
+        </div>
+    </div>
+    <!-- Modal กรอกที่อยู่ลูกค้า -->
+    <div id="address-modal-overlay" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span>📍 ที่อยู่ลูกค้า</span>
+                <button type="button" class="modal-close-btn" onclick="closeAddressModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="item-fields">
+                    <div><label>บ้านเลขที่</label><input type="text" id="cust-addressno" class="form-control"></div>
+                    <div><label>หมู่ที่</label><input type="text" id="cust-moo" class="form-control"></div>
+                    <div class="full"><label>ชื่อหมู่บ้าน</label><input type="text" id="cust-village" class="form-control"></div>
+                    <div class="full"><label>จังหวัด</label><select id="cust-province" class="form-control" onchange="onProvinceChange()"></select></div>
+                    <div><label>อำเภอ</label><select id="cust-district" class="form-control" onchange="onDistrictChange()"></select></div>
+                    <div><label>ตำบล</label><select id="cust-subdistrict" class="form-control"></select></div>
+                    <div class="full"><label>รหัสไปรษณีย์</label><input type="text" id="cust-zipcode" class="form-control"></div>
+                </div>
+            </div>
+            <button type="button" class="btn-done" onclick="closeAddressModal()">✓ เสร็จแล้ว</button>
+        </div>
+    </div>
+    <!-- Modal ไทม์ไลน์การติดตามลูกค้า -->
+    <div id="history-modal-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:480px;">
+            <div class="modal-header">
+                <span>🕓 ประวัติการติดตามลูกค้า</span>
+                <button type="button" class="modal-close-btn" onclick="closeHistoryModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="timeline-cust-info" id="history-customer-info"></div>
+                <div class="modal-section-title">📜 ไทม์ไลน์การติดตาม (ล่าสุดขึ้นก่อน)</div>
+                <div class="timeline-list" id="history-timeline-list"></div>
+                <div class="modal-section-title">➕ เพิ่มบันทึกการติดตามรอบใหม่</div>
+                <div class="item-fields">
+                    <div><label>วันที่ติดต่อ/พูดคุย</label><input type="date" id="history-new-date" class="form-control"></div>
+                    <div><label>วันติดตามครั้งต่อไป</label><input type="date" id="history-next-followup-date" class="form-control"></div>
+                    <div class="full">
+                        <label>ประเภทการติดตาม</label>
+                        <input type="hidden" id="history-followup-type" value="">
+                        <div class="followup-type-grid" id="history-followup-type-grid">
+                            <button type="button" class="followup-type-btn" data-value="โทรศัพท์" onclick="selectFollowupType(this)">📞 โทรศัพท์</button>
+                            <button type="button" class="followup-type-btn" data-value="แชท / LINE / Facebook" onclick="selectFollowupType(this)">💬 แชท / LINE / Facebook</button>
+                            <button type="button" class="followup-type-btn" data-value="เข้าพบลูกค้า" onclick="selectFollowupType(this)">🤝 เข้าพบลูกค้า</button>
+                            <button type="button" class="followup-type-btn" data-value="ส่งโปร / ใบเสนอราคา" onclick="selectFollowupType(this)">📄 ส่งโปร / ใบเสนอราคา</button>
+                            <button type="button" class="followup-type-btn" data-value="นัดทดลองรถ / ดูสินค้า" onclick="selectFollowupType(this)">🚜 นัดทดลองรถ / ดูสินค้า</button>
+                            <button type="button" class="followup-type-btn" data-value="อื่น ๆ" onclick="selectFollowupType(this)">🔁 อื่น ๆ</button>
+                        </div>
+                    </div>
+                    <div class="full"><label>หมายเหตุ (คุยเรื่องอะไร ผลเป็นอย่างไร)</label><textarea id="history-new-note" class="form-control" rows="2" placeholder="เช่น โทรเสนอโปรโมชั่น Solis30, ลูกค้าขอคิดดูก่อน 1 สัปดาห์"></textarea></div>
+                </div>
+                <button type="button" class="btn-add-item" id="btn-submit-followup" onclick="submitFollowUpEntry()">💾 บันทึกการติดตามนี้</button>
+            </div>
+            <button type="button" class="btn-done" onclick="closeHistoryModal()">✓ ปิดหน้าต่าง</button>
+        </div>
+    </div>
+    <!-- Modal รายละเอียดตัวเลขในตารางรายงานรายวัน (คลิกตัวเลขในหน้ารายงาน เพื่อดูว่าเป็นรายชื่อไหนบ้าง) -->
+    <div id="intake-detail-modal-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:1050px;">
+            <div class="modal-header">
+                <span id="intake-detail-title">🔎 รายละเอียด</span>
+                <button type="button" class="modal-close-btn" onclick="closeIntakeDetailModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="intake-detail-summary" style="font-size:12px; color:#64748b; margin-bottom:10px;"></div>
+                <div class="table-responsive" style="max-height:55vh;">
+                    <table style="width:1020px; font-size:12px; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">วันเวลาที่ส่งเข้ามา</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">ชื่อ</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">เบอร์โทร</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">Facebook</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">สถานะ</th>
+                                <th style="text-align:center; padding:6px; background:#f8fafc; position:sticky; top:0;">ManyChat</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">รายได้</th>
+                                <th style="text-align:left; padding:6px; background:#f8fafc; position:sticky; top:0;">หนี้สิน</th>
+                                <th style="padding:6px; background:#f8fafc; position:sticky; top:0;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="intake-detail-tbody">
+                            <tr><td colspan="9" style="text-align:center; padding:20px; color:#94a3b8;">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <button type="button" class="btn-done" onclick="closeIntakeDetailModal()">✓ ปิดหน้าต่าง</button>
+        </div>
+    </div>
+    <div id="report-customer-detail-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:720px;">
+            <div class="modal-header"><span>👤 ข้อมูลลูกค้าฉบับเต็ม</span><button type="button" class="modal-close-btn" onclick="closeReportCustomerDetail()">✕</button></div>
+            <div id="report-customer-detail-body" class="customer-detail-grid"></div>
+            <button type="button" class="btn-done" onclick="closeReportCustomerDetail()">✓ ปิดหน้าต่าง</button>
+        </div>
+    </div>
+    <!-- แบบฟอร์มติดตามลูกค้า สำหรับพิมพ์ -->
+    <div id="print-form-area">
+        <div class="pf-page">
+            <div class="pf-title">แบบฟอร์มติดตามลูกค้า</div>
+            <div class="pf-row">
+                ชื่อลูกค้า<span class="pf-fill wide" id="pf-name"></span>
+                เบอร์โทร<span class="pf-fill" id="pf-phone"></span>
+                วันที่<span class="pf-fill" id="pf-date"></span>
+            </div>
+            <div class="pf-row">
+                ที่อยู่เลขที่<span class="pf-fill" id="pf-addressno"></span>
+                หมู่<span class="pf-fill" id="pf-moo"></span>
+                บ้าน<span class="pf-fill" id="pf-village"></span>
+                ตำบล<span class="pf-fill" id="pf-subdistrict"></span>
+                อำเภอ<span class="pf-fill" id="pf-district"></span>
+                จังหวัด<span class="pf-fill" id="pf-province"></span>
+            </div>
+            <div class="pf-row">ข้อมูลเดิม<span class="pf-fill full" id="pf-note"></span></div>
+            <hr class="pf-hr">
+            <div class="pf-row"><span class="pf-section-label">สื่อการขาย</span></div>
+            <div class="pf-check-list">
+                <span>☐ งานโมบาย</span><span>☐ Facebook</span><span>☐ Walk in</span><span>☐ ลูกค้าเก่า</span><span>☐ ลูกค้าใหม่</span>
+            </div>
+            <div class="pf-check-list">
+                <span>☐ เพื่อนบ้าน, นายหน้า</span><span>☐ ป้ายประชาสัมพันธ์</span><span>☐ Tiktok</span><span>☐ Line Official</span>
+            </div>
+            <div class="pf-row"><span class="pf-section-label">สินค้า</span>
+                <span style="margin-left:14px;"><span id="pf-check-tractor">☐</span> แทรกเตอร์รุ่น<span class="pf-fill" id="pf-product-tractor"></span></span>
+                <span style="margin-left:14px;"><span id="pf-check-harvester">☐</span> รถเกี่ยวข้าว<span class="pf-fill" id="pf-product-harvester"></span></span>
+                <span style="margin-left:14px;"><span id="pf-check-other">☐</span> อื่นๆ<span class="pf-fill" id="pf-product-other"></span></span>
+            </div>
+            <div class="pf-row"><span class="pf-section-label">วัตถุประสงค์</span>
+                <span style="margin-left:14px;">☐ ใช้ส่วนตัว</span>
+                <span style="margin-left:14px;">☐ รับจ้าง ปัจจัยที่ทำให้ตัดสินใจซื้อ<span class="pf-fill wide"></span></span>
+            </div>
+            <hr class="pf-hr">
+            <div class="pf-row"><span class="pf-section-label">💰 ข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน</span></div>
+            <div id="pf-financial-summary" style="margin-top:2px;"></div>
+            <hr class="pf-hr">
+            <div class="pf-row"><span class="pf-section-label">ข้อมูลสนทนา</span></div>
+            <span class="pf-blank-line"></span><span class="pf-blank-line"></span><span class="pf-blank-line"></span>
+            <div class="pf-row" style="margin-top:6px;"><span class="pf-section-label">ความคิดเห็นของเพื่อนบ้าน</span></div>
+            <span class="pf-blank-line"></span><span class="pf-blank-line"></span>
+            <hr class="pf-hr">
+            <div class="pf-row"><span class="pf-section-label">แผนการตัดสินใจ</span>
+                <span style="margin-left:14px;">☐ ไม่มีแผนซื้อ</span>
+                <span style="margin-left:14px;">☐ มีแผนซื้อ</span>
+            </div>
+            <div class="pf-check-list">
+                <span>○ ซื้อคันแรก</span><span>○ ซื้อเพิ่ม</span><span>○ ตีเทิร์น</span>
+            </div>
+            <div class="pf-check-list">
+                <span>☐ พิจารณารายละเอียด</span><span>☐ ปรึกษาครอบครัว</span><span>☐ การเงิน</span><span>☐ อื่นๆ<span class="pf-fill"></span></span>
+            </div>
+            <div class="pf-row"><span class="pf-section-label">แผนซื้อภายใน</span>
+                <span style="margin-left:14px;">○ ภายใน 3 เดือน</span>
+                <span style="margin-left:14px;">○ ภายใน 6 เดือน</span>
+                <span style="margin-left:14px;">○ มากกว่า 6 เดือน</span>
+            </div>
+            <div class="pf-row"><span class="pf-section-label">ผลิตภัณฑ์ใหม่ รถแทรกเตอร์ YM</span>
+                <span style="margin-left:14px;">☐ รู้จัก จากช่องทาง<span class="pf-fill"></span></span>
+                <span style="margin-left:14px;">☐ ไม่รู้จัก</span>
+            </div>
+            <div class="pf-row">ถ้ามีโปรโมชั่นสำหรับเปิดตลาดใหม่รถแทรกเตอร์ YM ด้วยเงื่อนไขพิเศษ ท่านสนใจหรือไม่
+                <span style="margin-left:10px;">☐ สนใจ</span>
+                <span style="margin-left:14px;">☐ ไม่สนใจ</span>
+            </div>
+            <hr class="pf-hr">
+            <div class="pf-row"><span class="pf-section-label">เพิ่มเติม/ข้อเสนอแนะ แสดงความคิดเห็น</span></div>
+            <div class="pf-row">1. เกี่ยวกับผลิตภัณฑ์<span class="pf-fill wide" style="min-width:70%;"></span></div>
+            <div class="pf-row">2. การบริการหลังการขายและอะไหล่<span class="pf-fill wide" style="min-width:60%;"></span></div>
+            <div class="pf-row">3. บริการสินเชื่อ<span class="pf-fill wide" style="min-width:70%;"></span></div>
+            <div class="pf-footer">ผู้รายงาน<span class="pf-fill" style="min-width:120px;"></span></div>
+        </div>
+    </div>
+    <script>
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz-HSvIdEhufq73rkE_8VTTMLN26JshZo0p1WD1BGOF3OkKhRa9ZSwZx57LQmWEDM3v/exec';
+        let currentPage = 1;
+        let totalRecords = 0;
+        let currentRenderedData = [];
+        let lastSavedCustomer = null;
+        let duplicatePhoneMatch = null; // { phone, name } ถ้าเบอร์ที่กำลังกรอกอยู่มีลูกค้ารายนี้ในระบบแล้ว
+        let dailyReportLoadedOnce = false; // โหลดรายงานประจำวันครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น (ครั้งต่อไปกดปุ่ม "ดึงรายงาน" เอง)
+        let calendarLoadedOnce = false;
+        let calendarViewDate = new Date();
+        let calendarSelectedDate = '';
+        let calendarCustomers = [];
+        const DEFAULT_PROVINCE = 'อุบลราชธานี';
+        const FREE_TEXT_CATEGORY = 'อุปกรณ์ต่อพ่วง';
+        const PRODUCT_CATALOG = {
+            'Yanmar': ['EF393A / EF393T-45th', 'YM351R', 'YM358R', 'YM358R-L1', 'EF725T'],
+            'Solis': ['Solis 26', 'Solis26', 'YM-Solis22', 'YM-Solis26', 'YM-Solis30', 'YM-Solis30-45th', 'YM-Solis50', 'YM-Solis50-45th', 'YM-Solis 65', 'YM-Solis75', 'YM-Solis75-45th', 'YM-Solis90', 'YM-Solis105', 'YM-Solis 105 Cabin'],
+            'รถเกี่ยว': ['AW82V', 'YH700', 'YH700 Cabin', 'YH850GUW 2.3', 'YH850 Cabin', 'YH1180G26WU-TH'],
+            'รถขุด': ['Vio17', 'Vio23', 'Vio30-7', 'Vio30-Air-7', 'Vio35-7', 'Vio35-Air-7', 'Vio50', 'Vio55 Air', 'Vio80', 'Vio100'],
+            'รถแทรกเตอร์มือ 2': ['EF353T', 'EF393T', 'EF453T', 'EF494T', 'EF514T', 'YM351R', 'YM358R', 'EF725', 'Solis22', 'Solis26', 'Solis30', 'Solis50', 'Solis75', 'Solis90'],
+            'รถเกี่ยวมือ 2': ['AW82V', 'YH700', 'YH700 Cabin', 'YH850GUW 2.3', 'YH850 Cabin', 'YH1180G26WU-TH'],
+            [FREE_TEXT_CATEGORY]: [],
+            'อื่นๆ': ['เครื่องอัดฟาง', 'Drone']
+        };
+        function populateProductCategorySelect(selectId, allLabel) {
+            const sel = document.getElementById(selectId);
+            const categories = Object.keys(PRODUCT_CATALOG);
+            const placeholder = allLabel ? `<option value="ALL">${allLabel}</option>` : '<option value="">-- เลือกประเภทสินค้า --</option>';
+            sel.innerHTML = placeholder + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+        function populateProductModelSelect(selectId, category, selected, allLabel) {
+            const sel = document.getElementById(selectId);
+            const models = PRODUCT_CATALOG[category] || [];
+            const placeholder = allLabel ? `<option value="ALL">${allLabel}</option>` : '<option value="">-- เลือกรุ่นรถ --</option>';
+            sel.innerHTML = placeholder + models.map(m => `<option value="${m}">${m}</option>`).join('');
+            if (selected && models.includes(selected)) sel.value = selected;
+        }
+        function toggleProductModelInputType(baseId, category) {
+            const selectEl = document.getElementById(baseId);
+            const textEl = document.getElementById(baseId + '-text');
+            const isFreeText = category === FREE_TEXT_CATEGORY;
+            selectEl.style.display = isFreeText ? 'none' : '';
+            textEl.style.display = isFreeText ? '' : 'none';
+            if (isFreeText) textEl.value = '';
+        }
+        function getProductModelValue(baseId) {
+            const textEl = document.getElementById(baseId + '-text');
+            if (textEl && textEl.style.display !== 'none') return textEl.value.trim();
+            return document.getElementById(baseId).value;
+        }
+        function onCustProductCategoryChange() {
+            const category = document.getElementById('cust-product-category').value;
+            toggleProductModelInputType('cust-product-model', category);
+            if (category !== FREE_TEXT_CATEGORY) populateProductModelSelect('cust-product-model', category, '');
+        }
+        function onFilterProductCategoryChange() {
+            const category = document.getElementById('filter-product-category').value;
+            toggleProductModelInputType('filter-product-model', category);
+            if (category === FREE_TEXT_CATEGORY) return;
+            if (category === 'ALL' || !category) {
+                document.getElementById('filter-product-model').innerHTML = '<option value="ALL">-- ทุกรุ่น --</option>';
+            } else {
+                populateProductModelSelect('filter-product-model', category, '', '-- ทุกรุ่น --');
+            }
+        }
+        function getRowProductParts(row) {
+            if (row.productCategory || row.productModel) {
+                return { category: row.productCategory || '-', model: row.productModel || '-' };
+            }
+            const parts = String(row.product || '').split(' | ');
+            return { category: parts[0] || '-', model: parts.slice(1).join(' | ') || '-' };
+        }
+        function switchPage(name) {
+            document.getElementById('page-add').style.display = (name === 'add') ? 'flex' : 'none';
+            document.getElementById('page-history').style.display = (name === 'history') ? 'flex' : 'none';
+            document.getElementById('page-calendar').style.display = (name === 'calendar') ? 'flex' : 'none';
+            document.getElementById('page-report').style.display = (name === 'report') ? 'flex' : 'none';
+            document.getElementById('nav-btn-add').classList.toggle('active', name === 'add');
+            document.getElementById('nav-btn-history').classList.toggle('active', name === 'history');
+            document.getElementById('nav-btn-calendar').classList.toggle('active', name === 'calendar');
+            document.getElementById('nav-btn-report').classList.toggle('active', name === 'report');
+            document.getElementById('fab-container').style.display = (name === 'history') ? 'block' : 'none';
+            if (name === 'calendar' && !calendarLoadedOnce) {
+                calendarLoadedOnce = true;
+                goCalendarToday();
+            }
+            if (name === 'report' && !dailyReportLoadedOnce) {
+                dailyReportLoadedOnce = true;
+                fetchDailyLeadReport();
+            }
+        }
 
-// =================================================================
-// แก้บั๊กการเรียงลำดับวันที่ (2026-08-08)
-// =================================================================
-// ปัญหาที่พบ: ตาราง customers มีข้อมูลวันที่ (created_date/booking_date/
-// last_followup_date) ปนกันหลายรูปแบบ เพราะเป็นข้อมูลเก่าที่ import มาจาก
-// สเปรดชีตในหลายรอบ — บางแถวเป็น STRING/DATE รูปแบบ ISO 'YYYY-MM-DD' (แถวใหม่ๆ
-// ที่กรอกผ่านหน้าเว็บปัจจุบัน ซึ่งใช้ <input type="date">) แต่แถวเก่าบางส่วนเป็น
-// ข้อความ 'DD/MM/YYYY' (บางทีปี พ.ศ. เช่น 31/10/2567) ของเดิมก่อนย้ายมาระบบนี้
-//
-// ของเดิม ORDER BY ทำ CAST(...AS STRING) แล้วเรียงแบบ "เรียงตัวอักษร" (lexicographic)
-// ตรงๆ — พอเจอวันที่แบบ 'DD/MM/YYYY' การเรียงจะไปยึดตาม "วันที่" (DD) ตัวหน้าสุดเป็นหลัก
-// ไม่ใช่ปี ทำให้ทุกแถวที่วันที่ (DD) = 31 ลอยขึ้นไปอยู่บนสุดเสมอเมื่อเรียง DESC
-// (เพราะ "31" เป็นสตริงที่มีค่ามากที่สุดในตำแหน่งแรก) ไม่ว่าเดือน/ปีจริงจะเก่าแค่ไหนก็ตาม
-// นี่คือสาเหตุที่เห็นข้อมูลปี พ.ศ. 2566-2567 (เก่ามาก) ลอยขึ้นมาบนสุดของ "เรียงใหม่สุดก่อน"
-//
-// วิธีแก้: แปลงข้อความให้เป็นวันที่จริง (DATE) ก่อนเรียง โดยลองตามลำดับ:
-//   1) ลองแปลงแบบ ISO 'YYYY-MM-DD' ก่อน (ครอบคลุมทั้งแถวใหม่ และแถวที่เป็น DATE
-//      type จริงอยู่แล้ว เพราะ BigQuery จะ CAST(DATE AS STRING) ออกมาเป็น ISO เสมอ)
-//   2) ถ้าแปลงแบบ ISO ไม่ได้ ลองแปลงแบบ 'DD/MM/YYYY' — ถ้าปีที่ได้มากกว่าปีปัจจุบัน
-//      เกิน 50 ปี (เช่น 2567) ให้เดาว่าเป็นปี พ.ศ. แล้วลบ 543 ปีให้เป็นปี ค.ศ.
-//   3) แปลงไม่ได้เลย (ว่าง/ผิดรูปแบบ) ให้ตกไปเป็น '1900-01-01' เหมือนของเดิม
-// ผลคือเรียงตามวันที่จริงถูกต้อง ไม่ว่าแถวนั้นจะเก็บวันที่แบบไหนมาก็ตาม
-//
-// ⚠️ หมายเหตุ: นี่แก้เฉพาะการ "เรียงลำดับ" (ORDER BY) เท่านั้น ตัวกรองช่วงวันที่
-// (filters.startDate/endDate ฯลฯ ใน buildWhereClause) ยังใช้การเทียบ STRING แบบเดิม
-// ซึ่งน่าจะมีปัญหาคล้ายกันกับแถวที่เป็น 'DD/MM/YYYY' — ยังไม่ได้แก้ในรอบนี้ เพราะเป็น
-// คนละส่วนและอาจกระทบประสิทธิภาพการค้นหาบนตารางที่มีข้อมูลจำนวนมาก ถ้าพบว่ากรองช่วง
-// วันที่ได้ผลลัพธ์ไม่ตรง (เช่นแถวเก่าที่เป็น DD/MM/YYYY หลุดออกจากผลกรอง) แจ้งมาได้
-// จะแก้ในส่วนนั้นต่อ
-//
-// แก้เพิ่ม (2026-08-08 รอบ 2): พบว่ายังมีแถวลอยขึ้นบนสุดผิดที่อยู่ (เช่นวันที่โชว์เป็น
-// "31/10/67") ทั้งที่ควรจะเก่ากว่าแถวอื่น — สาเหตุคือแถวเหล่านี้พิมพ์ปี พ.ศ. แบบย่อ
-// แค่ 2 หลัก (เช่น "31/10/67" หมายถึง 31/10/2567) ซึ่งของเดิม dmyParse ('%d/%m/%Y')
-// ไม่ได้ตั้งใจรองรับ แต่ %Y ใน BigQuery ไม่ได้บังคับความยาวหลัก ปล่อยให้กลืนเลขปีย่อ
-// เป็นตัวเลขปีตรงๆ (เช่น "67" กลายเป็นปี ค.ศ. 67 ซึ่งเป็นปีโบราณเกินจริงไปอีกทาง) —
-// ไม่ว่าผลจะออกมาแบบไหนก็ผิดทั้งคู่ (ทั้งกรณีลอยขึ้นบนสุดจากการเรียงตัวอักษรถ้ายังไม่ได้
-// deploy โค้ดใหม่ และกรณี parse ผิดปีถ้า deploy แล้วแต่เจอปีย่อ) จึงแก้โดย "กันเขต" การ
-// แปลงแต่ละแบบด้วย regex เช็ครูปแบบก่อนเสมอ (REGEXP_CONTAINS) ไม่ปล่อยให้ %Y เดามั่ว:
-//   - ถ้ารูปแบบเป็นปีเต็ม 4 หลักเท่านั้น ถึงจะลองแปลงแบบ DD/MM/YYYY (dmyParse)
-//   - ถ้ารูปแบบเป็นปีย่อ 2 หลักเท่านั้น (เช่น 31/10/67) ให้ดึงวัน/เดือน/ปีย่อออกมาด้วย
-//     regex เอง แล้วตีความปีย่อเป็น พ.ศ. เสมอ (ข้อมูลทั้งหมดเป็นของไทย) บวก 1957 เข้ากับ
-//     ปีย่อ (สูตรเทียบเท่า 2500+ปีย่อ-543) ประกอบกลับเป็นสตริง ISO ก่อนแปลงเป็น DATE
-// ทั้งสองแบบจึงไม่มีทางมาปนกัน ไม่ต้องพึ่งพฤติกรรมความยาวหลักของ %Y ที่ไม่ชัดเจน
-//
-// แก้เพิ่ม (2026-08-08 รอบ 3): เจอสาเหตุจริงที่ทำให้แถวเก่ายังลอยขึ้นบนสุดอยู่ — มีแถวที่
-// เก็บวันที่แบบ "YYYY-MM-DD" (เรียงลำดับปี-เดือน-วันแบบ ISO ถูกต้อง) แต่ตัวเลขปีเป็น พ.ศ.
-// ที่ไม่ได้ถูกแปลงเป็น ค.ศ. มาก่อน (เช่น "2563-03-26" หมายถึง 26 มี.ค. 2563 พ.ศ. = ค.ศ. 2020
-// แต่ไม่มีการลบ 543 ปีไว้ตั้งแต่ตอน import) เดิม isoParse ข้างล่างเชื่อว่ารูปแบบ YYYY-MM-DD
-// ต้องเป็นปี ค.ศ. เสมอ (ไม่มีการเช็ค/แก้ปี พ.ศ. เหมือนสาขา DD/MM/YYYY ด้านล่าง) เลย parse
-// ปี "2563" ตรงๆ กลายเป็นปี ค.ศ. 2563 จริงๆ (อนาคตเกินจริงไปกว่า 500 ปี) ทำให้แถวนี้มีค่า
-// วันที่ใหญ่กว่าทุกแถวในตาราง ลอยขึ้นบนสุดเสมอไม่ว่าจะกรอกข้อมูลใหม่วันไหนก็ตาม
-// วิธีแก้: เพิ่มการเช็ค/แปลงปี พ.ศ. (ปี > ปีปัจจุบัน+50 ปี ให้ลบ 543) ให้กับสาขา ISO นี้ด้วย
-// เหมือนที่สาขา DD/MM/YYYY มีอยู่แล้ว
-function buildRobustDateOrderExpr_(colName) {
-  var raw = "CAST(" + colName + " AS STRING)";
-  var isoParseRaw = "SAFE.PARSE_DATE('%Y-%m-%d', " + raw + ")";
-  var isoParse = "IF(" + isoParseRaw + " IS NOT NULL AND " +
-      "EXTRACT(YEAR FROM " + isoParseRaw + ") > EXTRACT(YEAR FROM CURRENT_DATE()) + 50, " +
-      "DATE_SUB(" + isoParseRaw + ", INTERVAL 543 YEAR), " +
-      isoParseRaw + ")";
+        function localDateISO(dateObj) {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
 
-  // DD/MM/YYYY (ปีเต็ม 4 หลัก ค.ศ. หรือ พ.ศ.) — เช็ครูปแบบก่อนด้วย REGEXP_CONTAINS
-  // กันไม่ให้ %Y ไปกลืนสตริงปีย่อ 2 หลักโดยไม่ตั้งใจ
-  var is4DigitYear = "REGEXP_CONTAINS(" + raw + ", r'^\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{4}$')";
-  var dmyParseRaw = "SAFE.PARSE_DATE('%d/%m/%Y', " + raw + ")";
-  var dmyParse = "IF(" + is4DigitYear + ", " + dmyParseRaw + ", NULL)";
-  var dmyResolved = "IF(" + dmyParse + " IS NOT NULL AND " +
-      "EXTRACT(YEAR FROM " + dmyParse + ") > EXTRACT(YEAR FROM CURRENT_DATE()) + 50, " +
-      "DATE_SUB(" + dmyParse + ", INTERVAL 543 YEAR), " +
-      dmyParse + ")";
+        function goCalendarToday() {
+            calendarViewDate = new Date();
+            calendarViewDate.setDate(1);
+            calendarSelectedDate = localDateISO(new Date());
+            fetchCalendarMonth();
+        }
 
-  // DD/MM/YY (ปีย่อ 2 หลัก เช่น 31/10/67) — ตีความเป็น พ.ศ. เสมอ
-  var is2DigitYear = "REGEXP_CONTAINS(" + raw + ", r'^\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2}$')";
-  var dayFromYY2 = "REGEXP_EXTRACT(" + raw + ", r'^(\\d{1,2})[/.-]\\d{1,2}[/.-]\\d{2}$')";
-  var monthFromYY2 = "REGEXP_EXTRACT(" + raw + ", r'^\\d{1,2}[/.-](\\d{1,2})[/.-]\\d{2}$')";
-  var yy2 = "REGEXP_EXTRACT(" + raw + ", r'^\\d{1,2}[/.-]\\d{1,2}[/.-](\\d{2})$')";
-  var yy2ParseRaw = "SAFE.PARSE_DATE('%Y-%m-%d', CONCAT(CAST(1957 + SAFE_CAST(" + yy2 + " AS INT64) AS STRING), '-', " +
-                 monthFromYY2 + ", '-', " + dayFromYY2 + "))";
-  var yy2Parse = "IF(" + is2DigitYear + ", " + yy2ParseRaw + ", NULL)";
+        function changeCalendarMonth(offset) {
+            calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + offset, 1);
+            calendarSelectedDate = localDateISO(calendarViewDate);
+            fetchCalendarMonth();
+        }
 
-  return "COALESCE(" +
-    isoParse + ", " +
-    dmyResolved + ", " +
-    yy2Parse + ", " +
-    "DATE '1900-01-01')";
-}
+        function fetchCalendarMonth() {
+            const year = calendarViewDate.getFullYear();
+            const month = calendarViewDate.getMonth();
+            const startDate = localDateISO(new Date(year, month, 1));
+            const endDate = localDateISO(new Date(year, month + 1, 0));
+            document.getElementById('calendar-month-title').textContent =
+                calendarViewDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+            document.getElementById('followup-calendar-grid').innerHTML =
+                '<div style="grid-column:1/-1; padding:35px; text-align:center; color:#64748b;">🔄 กำลังโหลดนัดหมาย...</div>';
+            document.getElementById('calendar-customer-list').innerHTML =
+                '<div style="text-align:center; color:#94a3b8; padding:20px;">กำลังโหลดรายชื่อ...</div>';
 
-function searchCustomersHTML(reqPayload) {
-  try {
-    var filters = (reqPayload && reqPayload.filters) ? reqPayload.filters : {};
-    var page = (reqPayload && reqPayload.page) ? parseInt(reqPayload.page) : 1;
-    var pageSize = (reqPayload && reqPayload.pageSize) ? parseInt(reqPayload.pageSize) : 50;
-    var offset = (page - 1) * pageSize;
-    var whereObj = buildWhereClause(filters);
-    var countSQL = "SELECT COUNT(*) as total FROM " + TABLE_FULL_PATH + whereObj.sql;
-    var countRes = runParamQueryFetch(countSQL, whereObj.params);
-    var totalCount = (countRes && countRes.length > 0) ? parseInt(countRes[0].total) : 0;
-    // เรียงตามฟิลด์วันที่ที่หน้าเว็บส่งมาได้ (sortBy) — หน้าเว็บจะเลือกส่งค่านี้เองอัตโนมัติ
-    // ตามเงื่อนไขกรองที่กำลังใช้อยู่ (เช่นกรองช่วงวันติดตามล่าสุด ก็ส่ง sortBy เป็น
-    // last_followup_date มาด้วย ไม่ต้องให้ผู้ใช้เลือกเอง) ไม่ส่งมา/ส่งค่าที่ไม่รู้จัก =
-    // เรียงตาม created_date เหมือนเดิม (วันที่บันทึกลูกค้าครั้งแรก ใหม่สุดก่อน) —
-    // จำกัดเป็น whitelist ป้องกัน SQL injection ผ่านชื่อคอลัมน์
-    var ALLOWED_SORT_FIELDS = ['created_date', 'last_followup_date', 'booking_date'];
-    var sortBy = (reqPayload && reqPayload.sortBy) ? cleanStr(reqPayload.sortBy) : 'created_date';
-    var orderByField = (ALLOWED_SORT_FIELDS.indexOf(sortBy) !== -1) ? sortBy : 'created_date';
-    // แก้เพิ่ม (2026-08-08): เรียงตามวันที่ (created_date/booking_date/last_followup_date
-    // แล้วแต่ orderByField) เป็นหลักก่อนเหมือนเดิม แต่ถ้าหลายแถวอยู่ "วันเดียวกัน" (ซึ่ง
-    // เกิดขึ้นบ่อยเพราะคอลัมน์วันที่เก็บแค่ระดับวัน ไม่มีเวลา) ลำดับภายในวันเดียวกันจะไม่
-    // แน่นอน (BigQuery ไม่การันตีลำดับของแถวที่ค่าเรียงเท่ากัน) ทำให้ลูกค้าที่เพิ่งกรอกล่าสุด
-    // ในวันนั้นอาจไม่ได้ขึ้นบนสุดของกลุ่มวันเดียวกัน — เพิ่ม created_at_ts (เวลาบันทึกจริง
-    // ระดับวินาที เก็บอัตโนมัติตอน INSERT ใหม่ ดู addCustomerHTML) เป็นตัวเรียงรองถัดไป
-    // เพื่อไล่จากใหม่สุดไปเก่าสุดภายในวันเดียวกันได้แม่นยำ — แถวเก่าที่ไม่มีค่านี้ (insert
-    // ก่อนจะมีคอลัมน์นี้) จะเป็น NULL ซึ่ง BigQuery จัดให้ NULL อยู่ท้ายสุดเสมอเวลาเรียง DESC
-    // จึงไม่กระทบลำดับของแถวเก่าที่ไม่มีค่านี้ (ยังคงลำดับแบบเดิม ไม่แน่นอนภายในกลุ่มนั้นๆ)
-    var dataSQL = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
-                  "CAST(created_date AS STRING) AS created_date, " +
-                  "CAST(booking_date AS STRING) AS booking_date, " +
-                  "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-                  FINGERPRINT_EXPR + " as row_key " +
-                  "FROM " + TABLE_FULL_PATH + whereObj.sql + " " +
-                  "ORDER BY " + buildRobustDateOrderExpr_(orderByField) + " DESC, created_at_ts DESC " +
-                  "LIMIT " + pageSize + " OFFSET " + offset;
-    var rows = runParamQueryFetch(dataSQL, whereObj.params);
-    var formattedData = rows.map(function(r) {
-      var recDate = formatDateStr(r.created_date || r.date || '');
-      var bookDate = formatDateStr(r.booking_date || '');
-      var lastFollowupDate = formatDateStr(r.last_followup_date || '');
-      var fn = (r.first_name || r.firstname || '').toString().trim();
-      var ln = (r.last_name || r.lastname || '').toString().trim();
-      var lineId = (r.line || '').toString().trim();
-      var fbId = (r.facebook || '').toString().trim();
-      var noteVal = (r.remark || r.note || '').toString().trim();
-      var fullName = (fn && ln && fn !== ln) ? (fn + ' ' + ln) : (fn || ln);
-      if (!fullName) {
-        if (lineId) fullName = '[Line] ' + lineId;
-        else if (fbId) fullName = '[FB] ' + fbId;
-        else fullName = '(ไม่ระบุชื่อ)';
-      }
-      var ph = formatPhoneNumber(r.phone);
-      var uniqueKey = (r.row_key !== undefined && r.row_key !== null && r.row_key !== '')
-                      ? r.row_key.toString()
-                      : (ph || (fn + '_' + ln));
-      var followUpArr = parseFollowUpLog(r.follow_up_log);
-      return {
-        sheetRowIndex: uniqueKey,
-        raw_key: uniqueKey,
-        date: recDate,
-        firstname: fn,
-        lastname: ln,
-        name: fullName,
-        phone: ph,
-        phone1: ph,
-        appdate: bookDate,
-        booking_date: bookDate,
-        lastFollowupDate: lastFollowupDate,
-        type: r.type || 'ลงทะเบียน',
-        product: r.product || '',
-        addressno: r.address_no || '',
-        moo: r.moo || '',
-        village: r.village || '',
-        subdistrict: r.subdistrict || '',
-        district: r.district || '',
-        province: r.province || 'อุบลราชธานี',
-        zipcode: r.zipcode || '',
-        remark: noteVal,
-        note: noteVal,
-        line: lineId,
-        facebook: fbId,
-        followUpLog: followUpArr,
-        followUpCount: followUpArr.length
-      };
-    });
-    return { success: true, totalCount: totalCount, data: formattedData };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getFollowupCalendar', payload: { startDate, endDate } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) throw new Error(resData ? resData.message : 'ไม่ได้รับข้อมูล');
+                calendarCustomers = Array.isArray(resData.data) ? resData.data : [];
+                renderFollowupCalendar();
+                selectCalendarDate(calendarSelectedDate, false);
+            })
+            .catch(err => {
+                document.getElementById('followup-calendar-grid').innerHTML =
+                    `<div style="grid-column:1/-1; padding:35px; text-align:center; color:#ef4444;">❌ โหลดปฏิทินไม่สำเร็จ: ${escapeHtml(err.message)}</div>`;
+                document.getElementById('calendar-customer-list').innerHTML = '';
+            });
+        }
 
-// รายชื่อลูกค้าตามวันนัดหมายสำหรับหน้าปฏิทินติดตาม
-function getFollowupCalendarHTML(reqPayload) {
-  try {
-    var payload = reqPayload || {};
-    var startDate = formatDateStr(payload.startDate);
-    var endDate = formatDateStr(payload.endDate);
-    if (!startDate || !endDate) {
-      return { success: false, message: 'กรุณาระบุช่วงวันที่ของปฏิทิน' };
-    }
+        function renderFollowupCalendar() {
+            const grid = document.getElementById('followup-calendar-grid');
+            const weekdays = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+            const counts = {};
+            calendarCustomers.forEach(row => {
+                const key = row.booking_date || row.appdate || '';
+                if (key) counts[key] = (counts[key] || 0) + 1;
+            });
+            const year = calendarViewDate.getFullYear();
+            const month = calendarViewDate.getMonth();
+            const firstWeekday = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = localDateISO(new Date());
+            let html = weekdays.map(d => `<div class="calendar-weekday">${d}</div>`).join('');
+            for (let i = 0; i < firstWeekday; i++) html += '<div class="calendar-day outside"></div>';
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateKey = localDateISO(new Date(year, month, day));
+                const classes = ['calendar-day'];
+                if (dateKey === today) classes.push('today');
+                if (dateKey === calendarSelectedDate) classes.push('selected');
+                const countHtml = counts[dateKey] ? `<div><span class="calendar-count">${counts[dateKey]} นัด</span></div>` : '';
+                html += `<div class="${classes.join(' ')}" data-date="${dateKey}" onclick="selectCalendarDate('${dateKey}')"><div class="calendar-date-number">${day}</div>${countHtml}</div>`;
+            }
+            const used = firstWeekday + daysInMonth;
+            for (let i = used; i < Math.ceil(used / 7) * 7; i++) html += '<div class="calendar-day outside"></div>';
+            grid.innerHTML = html;
+        }
 
-    var bookingExpr = buildRobustDateOrderExpr_('booking_date');
-    var sql = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
-              "CAST(created_date AS STRING) AS created_date, " +
-              "CAST(booking_date AS STRING) AS booking_date, " +
-              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-              FINGERPRINT_EXPR + " AS row_key FROM " + TABLE_FULL_PATH +
-              " WHERE " + bookingExpr + " BETWEEN SAFE.PARSE_DATE('%Y-%m-%d', @startDate) " +
-              "AND SAFE.PARSE_DATE('%Y-%m-%d', @endDate) " +
-              "ORDER BY " + bookingExpr + " ASC, first_name ASC, last_name ASC";
-    var rows = runParamQueryFetch(sql, [
-      { name: 'startDate', value: startDate },
-      { name: 'endDate', value: endDate }
-    ]);
+        function selectCalendarDate(dateKey, rerender = true) {
+            calendarSelectedDate = dateKey;
+            if (rerender) renderFollowupCalendar();
+            const rows = calendarCustomers.filter(row => (row.booking_date || row.appdate) === dateKey);
+            const dateObj = new Date(dateKey + 'T00:00:00');
+            const isToday = dateKey === localDateISO(new Date());
+            document.getElementById('calendar-selected-label').textContent =
+                (isToday ? 'รายการนัดหมายวันนี้ · ' : '') + dateObj.toLocaleDateString('th-TH', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+            document.getElementById('calendar-selected-count').textContent = rows.length;
+            const list = document.getElementById('calendar-customer-list');
+            if (!rows.length) {
+                list.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:24px 8px;">✅ ไม่มีรายชื่อต้องติดตามในวันนี้</div>';
+                return;
+            }
+            list.innerHTML = rows.map(row => {
+                const originalIndex = calendarCustomers.indexOf(row);
+                const product = getRowProductParts(row);
+                return `<button type="button" class="calendar-customer" onclick="openCalendarCustomer(${originalIndex})">
+                    <div class="calendar-customer-name">${escapeHtml(row.name)}</div>
+                    <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}</div>
+                    <div class="calendar-customer-meta">🚜 ${escapeHtml([product.category, product.model].filter(v => v && v !== '-').join(' ') || '-')}</div>
+                    <div class="calendar-customer-meta">แตะเพื่อดูประวัติและบันทึกการติดตาม ›</div>
+                </button>`;
+            }).join('');
+        }
 
-    var data = (rows || []).map(function(r) {
-      var fn = cleanStr(r.first_name || r.firstname);
-      var ln = cleanStr(r.last_name || r.lastname);
-      var fb = cleanStr(r.facebook);
-      var line = cleanStr(r.line);
-      var fullName = (fn + ' ' + ln).trim() || (fb ? '[FB] ' + fb : (line ? '[Line] ' + line : '(ไม่ระบุชื่อ)'));
-      var ph = formatPhoneNumber(r.phone);
-      var key = cleanStr(r.row_key) || ph || (fn + '_' + ln);
-      var logs = parseFollowUpLog(r.follow_up_log);
-      return {
-        sheetRowIndex: key,
-        raw_key: key,
-        date: formatDateStr(r.created_date),
-        firstname: fn,
-        lastname: ln,
-        name: fullName,
-        phone: ph,
-        phone1: ph,
-        appdate: formatDateStr(r.booking_date),
-        booking_date: formatDateStr(r.booking_date),
-        lastFollowupDate: formatDateStr(r.last_followup_date),
-        type: r.type || 'ลงทะเบียน',
-        product: r.product || '',
-        addressno: r.address_no || '',
-        moo: r.moo || '',
-        village: r.village || '',
-        subdistrict: r.subdistrict || '',
-        district: r.district || '',
-        province: r.province || 'อุบลราชธานี',
-        zipcode: r.zipcode || '',
-        remark: r.remark || '',
-        note: r.remark || '',
-        line: line,
-        facebook: fb,
-        followUpLog: logs,
-        followUpCount: logs.length
-      };
-    });
-    return { success: true, data: data, totalCount: data.length, startDate: startDate, endDate: endDate };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-// รวมเงื่อนไข WHERE ที่มาจาก buildWhereClause() (อาจว่างเปล่า หรือขึ้นต้นด้วย " WHERE ...")
-// เข้ากับเงื่อนไขเพิ่มเติมอีกอันแบบปลอดภัย — ถ้า whereObj.sql มีอยู่แล้วให้ต่อด้วย AND,
-// ถ้าไม่มีให้เปิด WHERE ใหม่ (เดิมโค้ดนี้เอาไปต่อกับ " WHERE ..." ตรงๆ ทำให้ได้ SQL
-// ที่มี WHERE ซ้ำสองครั้งเวลามีการกรองอยู่แล้ว เช่น "...WHERE type=@t WHERE product IS NOT NULL..."
-// ซึ่งจะ error ทันทีที่มีการกรองข้อมูลใดๆ ก่อนเปิดหน้ารายงาน)
-function appendWhereCondition(baseWhereSql, extraCondition) {
-  return baseWhereSql ? (baseWhereSql + " AND " + extraCondition) : (" WHERE " + extraCondition);
-}
+        function openCalendarCustomer(calendarIndex) {
+            const row = calendarCustomers[calendarIndex];
+            if (!row) return;
+            currentRenderedData.push(row);
+            openHistoryModal(currentRenderedData.length - 1);
+        }
+        function toggleAdvancedFilters(forceOpen) {
+            const sec = document.getElementById('advanced-filters-section');
+            const btn = document.getElementById('btn-toggle-advanced-filters');
+            const isHidden = sec.style.display === 'none' || !sec.style.display;
+            const open = (forceOpen === true) ? true : isHidden;
+            sec.style.display = open ? 'block' : 'none';
+            btn.innerHTML = open
+                ? '🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▴'
+                : '🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▾';
+        }
+        function getDateStrOffset(daysAgo) {
+            const d = new Date();
+            d.setDate(d.getDate() - daysAgo);
+            return d.toISOString().split('T')[0];
+        }
+        // เก็บช่วงวันที่ของรายงานรอบล่าสุดไว้ ใช้ตอนคลิกตัวเลขที่แถว "รวมทั้งหมด"
+        // (แถวรวมไม่มีวันที่เดียวให้ระบุ ต้องส่งเป็นช่วงเริ่ม-ถึงแทน)
+        let _lastReportRange = { startDate: '', endDate: '' };
+        // แปลงตัวเลขในตารางรายงานให้เป็นลิงก์คลิกได้ (0 ไม่ต้องคลิกได้ เพราะไม่มีอะไรให้ดู)
+        function renderIntakeNumLink(count, dayOrIsTotalRow, filterType) {
+            const n = Number(count) || 0;
+            if (!n) return String(n);
+            const argExpr = (dayOrIsTotalRow === true) ? '_lastReportRange' : `'${escapeAttr(dayOrIsTotalRow)}'`;
+            const isRangeExpr = (dayOrIsTotalRow === true) ? 'true' : 'false';
+            return `<span class="report-num-link" onclick="openIntakeDetailModal(${argExpr}, '${filterType}', ${isRangeExpr})">${n.toLocaleString()}</span>`;
+        }
+        function fetchDailyLeadReport() {
+            const tbody = document.getElementById('daily-report-tbody');
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
+            const payload = {
+                startDate: document.getElementById('report-start-date').value,
+                endDate: document.getElementById('report-end-date').value,
+                onlyManyChat: document.getElementById('report-only-manychat').checked
+            };
+            _lastReportRange = { startDate: payload.startDate, endDate: payload.endDate };
+            // รายงานเรียกผ่าน GET เพื่อให้เข้า doGet ของ Backend โดยตรง
+            // และหลีกเลี่ยงปัญหา Invalid Action จาก doPost เวอร์ชันเก่า
+            const params = new URLSearchParams({
+                action: 'getDailyLeadReport',
+                startDate: payload.startDate || '',
+                endDate: payload.endDate || '',
+                onlyManyChat: String(payload.onlyManyChat)
+            });
+            fetch(`${WEB_APP_URL}?${params.toString()}`)
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) {
+                    const errorMessage = resData
+                        ? (resData.message || resData.error || 'ไม่ทราบสาเหตุ')
+                        : 'ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์';
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#ef4444;">❌ ดึงรายงานไม่สำเร็จ: ' + escapeHtml(errorMessage) + '</td></tr>';
+                    return;
+                }
+                const report = resData.report || [];
+                if (report.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบข้อมูลในช่วงวันที่ที่เลือก</td></tr>';
+                    return;
+                }
+                let totalAll = 0, totalNew = 0, totalDup = 0, totalMc = 0;
+                let html = report.map(r => {
+                    totalAll += r.total; totalNew += r.newCount; totalDup += r.duplicateCount; totalMc += r.manychatCount;
+                    return `<tr>
+                        <td>${escapeHtml(r.day)}</td>
+                        <td><b>${renderIntakeNumLink(r.total, r.day, 'total')}</b></td>
+                        <td style="color:#10b981;">${renderIntakeNumLink(r.newCount, r.day, 'new')}</td>
+                        <td style="color:#ef4444;">${renderIntakeNumLink(r.duplicateCount, r.day, 'duplicate')}</td>
+                        <td style="color:#1877F2;">${renderIntakeNumLink(r.manychatCount, r.day, 'manychat')}</td>
+                    </tr>`;
+                }).join('');
+                html += `<tr style="background:#f8fafc; font-weight:600;">
+                    <td>รวมทั้งหมด</td>
+                    <td>${renderIntakeNumLink(totalAll, true, 'total')}</td>
+                    <td style="color:#10b981;">${renderIntakeNumLink(totalNew, true, 'new')}</td>
+                    <td style="color:#ef4444;">${renderIntakeNumLink(totalDup, true, 'duplicate')}</td>
+                    <td style="color:#1877F2;">${renderIntakeNumLink(totalMc, true, 'manychat')}</td>
+                </tr>`;
+                tbody.innerHTML = html;
+            })
+            .catch(error => {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว: ' + escapeHtml(error.message || 'ลองใหม่อีกครั้ง') + '</td></tr>';
+            });
+        }
+        // คลิกตัวเลขในตารางรายงานรายวัน (หรือแถว "รวมทั้งหมด") เพื่อเปิดดูว่าตัวเลขนั้นประกอบด้วยรายชื่อ/ข้อมูลอะไรบ้าง
+        // dateOrIsRange: ถ้าเป็น string 'YYYY-MM-DD' คือคลิกจากแถวรายวันเดียว, ถ้าเป็น object {startDate,endDate} (หรือ true → ใช้ _lastReportRange) คือคลิกจากแถวรวม
+        const INTAKE_FILTER_LABELS = {
+            total: 'ยอดที่ส่งเข้ามาทั้งหมด',
+            new: 'ลูกค้าใหม่',
+            duplicate: 'ส่งซ้ำ (มีในระบบแล้ว)',
+            manychat: 'จาก ManyChat'
+        };
+        let intakeDetailRows = [];
+        function parseFinancialInfo(raw) {
+            if (!raw) return { farmPlots:[], machinery:[], debts:[] };
+            if (typeof raw === 'object') return raw;
+            try { return JSON.parse(raw) || { farmPlots:[], machinery:[], debts:[] }; }
+            catch (e) { return { farmPlots:[], machinery:[], debts:[] }; }
+        }
+        function moneyText(value) {
+            const s = String(value || '').trim();
+            return s ? `${escapeHtml(s)} บาท` : '-';
+        }
+        function financialIncomeSummary(fin) {
+            const parts = [];
+            const farmIncome = (fin.farmPlots || []).map(p => p.annualIncome).filter(Boolean);
+            if (farmIncome.length) parts.push(`เกษตร ${farmIncome.map(v => moneyText(v)).join(', ')}/ปี`);
+            if (fin.regularJobIncome) parts.push(`ประจำ ${moneyText(fin.regularJobIncome)}/เดือน`);
+            if (fin.sideIncomeAmount) parts.push(`เสริม ${moneyText(fin.sideIncomeAmount)}/เดือน`);
+            return parts.length ? parts.join('<br>') : '-';
+        }
+        function financialDebtSummary(fin) {
+            const debts = fin.debts || [];
+            if (!debts.length) return '-';
+            return debts.map(d => `${escapeHtml(d.creditor || 'หนี้')} ${moneyText(d.balance)}`).join('<br>');
+        }
+        function openIntakeDetailModal(dateOrRange, filterType, isRange) {
+            const overlay = document.getElementById('intake-detail-modal-overlay');
+            const tbody = document.getElementById('intake-detail-tbody');
+            const titleEl = document.getElementById('intake-detail-title');
+            const summaryEl = document.getElementById('intake-detail-summary');
+            const label = INTAKE_FILTER_LABELS[filterType] || filterType;
+            const rangeObj = isRange ? _lastReportRange : null;
+            titleEl.textContent = isRange
+                ? `🔎 รายละเอียด: ${label} (${rangeObj.startDate || '...'} ถึง ${rangeObj.endDate || '...'})`
+                : `🔎 รายละเอียด: ${label} (วันที่ ${dateOrRange})`;
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
+            summaryEl.textContent = '';
+            overlay.classList.add('show');
+            const reqPayload = isRange
+                ? { startDate: rangeObj.startDate, endDate: rangeObj.endDate, filter: filterType, onlyManyChat: document.getElementById('report-only-manychat').checked }
+                : { date: dateOrRange, filter: filterType, onlyManyChat: document.getElementById('report-only-manychat').checked };
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getLeadIntakeLogDetail', payload: reqPayload })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) {
+                    const errorMessage = resData ? (resData.message || resData.error || 'ไม่ทราบสาเหตุ') : 'ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:#ef4444;">❌ ดึงรายละเอียดไม่สำเร็จ: ' + escapeHtml(errorMessage) +
+                        '<br><span style="font-size:11px; color:#94a3b8; font-weight:normal;">(ฟีเจอร์นี้ต้องมี action ใหม่ "getLeadIntakeLogDetail" ฝั่ง Code.gs — ถ้ายังไม่ได้เพิ่ม/deploy จะเจอข้อความนี้)</span></td></tr>';
+                    return;
+                }
+                const rows = resData.rows || [];
+                intakeDetailRows = rows;
+                summaryEl.textContent = `พบทั้งหมด ${rows.length.toLocaleString()} รายการ` + (rows.length >= 500 ? ' (แสดงสูงสุด 500 รายการล่าสุด — ลองย่อช่วงวันที่ถ้าต้องการดูครบทุกรายการ)' : '');
+                if (rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบข้อมูล</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = rows.map((r, idx) => {
+                    const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+                    const fin = parseFinancialInfo(r.financialInfo);
+                    const statusBadge = r.isDuplicate
+                        ? `<span class="badge" style="background:#fee2e2; color:#b91c1c;">ส่งซ้ำ${r.matchType ? ' (' + escapeHtml(r.matchType) + ')' : ''}</span>`
+                        : `<span class="badge" style="background:#dcfce7; color:#15803d;">ลูกค้าใหม่</span>`;
+                    const mcBadge = r.isManychat ? '📱 ใช่' : '-';
+                    const jumpBtn = `<button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openReportCustomerDetail(${idx})">👤 ดูข้อมูลครบ</button>`;
+                    return `<tr>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.receivedAt || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;"><span class="report-customer-link" onclick="openReportCustomerDetail(${idx})">${escapeHtml(name)}</span></td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.phone || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.facebook || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${statusBadge}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7; text-align:center;">${mcBadge}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7; min-width:145px;">${financialIncomeSummary(fin)}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7; min-width:130px;">${financialDebtSummary(fin)}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${jumpBtn}</td>
+                    </tr>`;
+                }).join('');
+            })
+            .catch(() => {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง</td></tr>';
+            });
+        }
+        function closeIntakeDetailModal() {
+            document.getElementById('intake-detail-modal-overlay').classList.remove('show');
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            switchPage('add');
+            setDefaultDate();
+            populateProvinceSelect('cust-province');
+            resetGeoSelectsToDefault();
+            updateAddressSummary();
+            populateProvinceSelect('filter-province', '-- ทุกจังหวัด --');
+            populateDistrictSelect('filter-district', '', '', '-- ทุกอำเภอ --');
+            populateSubdistrictSelect('filter-subdistrict', '', '', '', '-- ทุกตำบล --');
+            populateProductCategorySelect('cust-product-category');
+            populateProductModelSelect('cust-product-model', document.getElementById('cust-product-category').value, '');
+            populateProductCategorySelect('filter-product-category', '-- ทุกประเภท --');
+            document.getElementById('filter-product-model').innerHTML = '<option value="ALL">-- ทุกรุ่น --</option>';
+            // หมายเหตุ: ตัดการดึงตัวกรองเก่าจาก localStorage ออกแล้ว (2026-08-08) —
+            // ทุกครั้งที่รีเฟรชหน้าเว็บ ตัวกรองจะเริ่มเป็นค่าว่างใหม่เสมอ ไม่ดึงเงื่อนไขค้นหารอบก่อนกลับมาแล้ว
+            document.getElementById('report-start-date').value = getDateStrOffset(6);
+            document.getElementById('report-end-date').value = getDateStrOffset(0);
+            loadInitialMeta();
+            fetchDataFromServer(1);
+            document.getElementById('customer-form').addEventListener('submit', onFormSubmit);
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.multiselect-box')) {
+                    document.getElementById('type-dropdown').classList.remove('show');
+                }
+            });
+            window.addEventListener('scroll', function() {
+                document.getElementById('type-dropdown').classList.remove('show');
+            }, true);
+        });
+        // คืนค่าวันที่ปัจจุบัน (YYYY-MM-DD) ใช้เป็นค่ามาตรฐานสำหรับทั้งค่าเริ่มต้นและเพดานวันที่ของ "วันที่บันทึก"
+        function getTodayISO() {
+            return new Date().toISOString().split('T')[0];
+        }
+        function setDefaultDate() {
+            const todayStr = getTodayISO();
+            const dateInput = document.getElementById('cust-date');
+            dateInput.value = todayStr;
+            // ป้องกันไม่ให้เลือก "วันที่บันทึก" เป็นวันที่ในอนาคตได้ (แต่ยังเลือกวันที่ในอดีตได้ตามปกติ
+            // เผื่อกรณีคีย์ข้อมูลย้อนหลัง/รวมรายการมาคีย์ทีเดียว) — ตั้งค่า max ทุกครั้งที่รีเซ็ตวันที่
+            // เพราะ "วันนี้" เปลี่ยนได้ทุกวัน ถ้าเปิดหน้าทิ้งไว้ข้ามคืนแล้วยังไม่ได้กดบันทึก/รีเซ็ตฟอร์ม
+            dateInput.max = todayStr;
+        }
+        // เรียกทุกครั้งที่ผู้ใช้เปลี่ยนค่า "วันที่บันทึก" — ถ้าดันเลือก/พิมพ์เป็นวันที่ในอนาคตได้
+        // (บางเบราว์เซอร์/มือถือไม่บังคับ attribute max ตอนพิมพ์เอง) ให้ดีดกลับเป็นวันนี้ทันที
+        function clampCustDateNotFuture() {
+            const dateInput = document.getElementById('cust-date');
+            const todayStr = getTodayISO();
+            if (dateInput.value && dateInput.value > todayStr) {
+                alert('⚠️ ไม่สามารถบันทึกวันที่เป็นวันที่ในอนาคตได้ ระบบจะตั้งเป็นวันที่ปัจจุบันให้อัตโนมัติ\n(สามารถเลือกวันที่ย้อนหลังได้ตามปกติ กรณีคีย์ข้อมูลย้อนหลัง)');
+                dateInput.value = todayStr;
+            }
+        }
+        // ใช้เป็นค่า default ของ "วันติดตามครั้งต่อไป" ในหน้าต่างไทม์ไลน์ — พนักงานแก้เป็นวันอื่นได้เอง
+        function getTomorrowDateStr() {
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().split('T')[0];
+        }
+        // เลือกฟิลด์ที่จะใช้เรียงตารางให้อัตโนมัติ ตามตัวกรองวันที่ที่กำลังใช้อยู่จริง —
+        // ไม่ต้องให้พนักงานมาเลือกเรียงเอง: ถ้ากรองช่วง "ติดตามล่าสุด" อยู่ ก็เรียงจาก
+        // ติดตามล่าสุดใหม่สุดก่อน, ถ้ากรอง "วันนัดหมาย" อยู่ก็เรียงจากวันนัดใหม่สุดก่อน,
+        // ถ้าไม่ได้กรองวันที่พิเศษอะไรเลย (ค่าเริ่มต้น) ก็เรียงจากวันที่บันทึกล่าสุดก่อนเสมอ
+        function determineSortBy() {
+            const hasFollowupFilter = document.getElementById('filter-followup-start-date').value ||
+                                      document.getElementById('filter-followup-end-date').value;
+            if (hasFollowupFilter) return 'last_followup_date';
+            const hasAppdateFilter = document.getElementById('filter-appdate').value;
+            if (hasAppdateFilter) return 'booking_date';
+            return 'created_date';
+        }
+        function sortByLabel(field) {
+            if (field === 'last_followup_date') return '↓ เรียงตามติดตามล่าสุด (ใหม่สุดก่อน)';
+            if (field === 'booking_date') return '↓ เรียงตามวันนัดหมาย (ใหม่สุดก่อน)';
+            return '↓ เรียงตามวันที่บันทึก (ใหม่สุดก่อน)';
+        }
+        // หมายเหตุ (2026-08-08): เดิมมี saveFiltersToLocalStorage()/loadFiltersFromLocalStorage()/
+        // openAdvancedFiltersIfNeeded() ไว้จำเงื่อนไขค้นหาข้ามการรีเฟรชหน้า — ตัดออกตามที่ขอ
+        // ตอนนี้ทุกครั้งที่รีเฟรช ตัวกรองจะเริ่มจากค่าว่างใหม่เสมอ ไม่มีการจำ/บันทึกเงื่อนไขค้นหาไว้แล้ว
+        function toggleTypeDropdown(triggerEl) {
+            const dropdown = document.getElementById('type-dropdown');
+            const isOpen = dropdown.classList.contains('show');
+            if (isOpen) {
+                dropdown.classList.remove('show');
+                return;
+            }
+            const trigger = triggerEl || document.querySelector('.multiselect-box .select-btn');
+            const rect = trigger.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + 4) + 'px';
+            dropdown.style.left = rect.left + 'px';
+            dropdown.classList.add('show');
+        }
+        function updateTypeSelectLabel() {
+            const checked = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
+            const label = document.getElementById('type-select-label');
+            if (checked.length === 0) label.innerText = '-- เลือกประเภท --';
+            else if (checked.length === 1) label.innerText = checked[0];
+            else label.innerText = `เลือกแล้ว (${checked.length})`;
+        }
+        function addActivityLog() {
+            const noteTextarea = document.getElementById('cust-note');
+            const now = new Date();
+            const dateStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            const logPrefix = `[${dateStr}] ติดตามลูกค้า: `;
+            noteTextarea.value = noteTextarea.value ? (noteTextarea.value + '\n' + logPrefix) : logPrefix;
+            noteTextarea.focus();
+        }
+        let customerFinancial = { farmPlots: [], regularJob: null, regularJobDetail:'', regularJobIncome:'', sideIncome: null, sideIncomeDetail:'', sideIncomeAmount:'', machinery: [], debts: [] };
+        function escapeAttr(v) {
+            return (v === undefined || v === null ? '' : String(v))
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function openFinancialModal() {
+            document.getElementById('financial-modal-overlay').classList.add('show');
+            renderFarmPlots();
+            renderMachinery();
+            renderDebts();
+            renderFinancialToggles();
+        }
+        function closeFinancialModal() {
+            document.getElementById('financial-modal-overlay').classList.remove('show');
+            updateFinancialSummary();
+        }
+        function resetFinancialData() {
+            customerFinancial = { farmPlots: [], regularJob: null, regularJobDetail:'', regularJobIncome:'', sideIncome: null, sideIncomeDetail:'', sideIncomeAmount:'', machinery: [], debts: [] };
+            updateFinancialSummary();
+        }
+        function openAddressModal() {
+            document.getElementById('address-modal-overlay').classList.add('show');
+        }
+        function closeAddressModal() {
+            document.getElementById('address-modal-overlay').classList.remove('show');
+            updateAddressSummary();
+        }
+        function updateAddressSummary() {
+            const addressno = document.getElementById('cust-addressno').value.trim();
+            const moo = document.getElementById('cust-moo').value.trim();
+            const village = document.getElementById('cust-village').value.trim();
+            const subdistrict = document.getElementById('cust-subdistrict').value;
+            const district = document.getElementById('cust-district').value;
+            const province = document.getElementById('cust-province').value;
+            const zipcode = document.getElementById('cust-zipcode').value.trim();
+            const parts = [];
+            if (addressno) parts.push(`เลขที่ ${addressno}`);
+            if (moo) parts.push(`หมู่ ${moo}`);
+            if (village) parts.push(village);
+            if (subdistrict) parts.push(`ต.${subdistrict}`);
+            if (district) parts.push(`อ.${district}`);
+            if (province) parts.push(`จ.${province}`);
+            if (zipcode) parts.push(zipcode);
+            document.getElementById('address-summary').textContent = parts.length ? ('📍 ' + parts.join(' ')) : '📍 ยังไม่ได้กรอกที่อยู่ (แตะเพื่อกรอก)';
+        }
+        function setFinancialToggle(key, val) {
+            customerFinancial[key] = val;
+            renderFinancialToggles();
+        }
+        function renderFinancialToggles() {
+            document.querySelectorAll('#toggle-regular-job .toggle-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.val === customerFinancial.regularJob);
+            });
+            document.querySelectorAll('#toggle-side-income .toggle-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.val === customerFinancial.sideIncome);
+            });
+            document.getElementById('regular-job-detail').value = customerFinancial.regularJobDetail || '';
+            document.getElementById('regular-job-income').value = customerFinancial.regularJobIncome || '';
+            document.getElementById('side-income-detail').value = customerFinancial.sideIncomeDetail || '';
+            document.getElementById('side-income-amount').value = customerFinancial.sideIncomeAmount || '';
+        }
+        function detailCard(label, value, full) {
+            return `<div class="customer-detail-card${full ? ' full' : ''}"><div class="customer-detail-label">${label}</div><div class="customer-detail-value">${value || '-'}</div></div>`;
+        }
+        function openReportCustomerDetail(idx) {
+            const r = intakeDetailRows[idx];
+            if (!r) return;
+            const fin = parseFinancialInfo(r.financialInfo);
+            const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+            const address = [r.addressNo, r.moo ? `หมู่ ${r.moo}` : '', r.village, r.subdistrict ? `ต.${r.subdistrict}` : '', r.district ? `อ.${r.district}` : '', r.province ? `จ.${r.province}` : '', r.zipcode].filter(Boolean).join(' ');
+            const farms = (fin.farmPlots || []).map((p,i) => `${i+1}. ${p.type || 'ไม่ระบุชนิด'} ${p.rai ? p.rai+' ไร่' : ''} | เอกสารสิทธิ์: ${p.docOwner || '-'} | รายได้/ปี: ${p.annualIncome || '-'} บาท`).join('\n');
+            const machines = (fin.machinery || []).map((m,i) => `${i+1}. ${m.type || ''} ${m.brandModel || ''} ${m.qty ? m.qty+' คัน' : ''} ${m.note ? '('+m.note+')' : ''}`).join('\n');
+            const debts = (fin.debts || []).map((d,i) => `${i+1}. ${d.creditor || 'ไม่ระบุเจ้าหนี้'} — คงเหลือ ${d.balance || '0'} บาท`).join('\n');
+            const job = fin.regularJob === 'yes' ? `${fin.regularJobDetail || 'มีงานประจำ'} | ${fin.regularJobIncome ? fin.regularJobIncome+' บาท/เดือน' : 'ไม่ระบุรายได้'}` : (fin.regularJob === 'no' ? 'ไม่มีงานประจำ' : '-');
+            const side = fin.sideIncome === 'yes' ? `${fin.sideIncomeDetail || 'มีรายได้เสริม'} | ${fin.sideIncomeAmount ? fin.sideIncomeAmount+' บาท/เดือน' : 'ไม่ระบุรายได้'}` : (fin.sideIncome === 'no' ? 'ไม่มีรายได้เสริม' : '-');
+            document.getElementById('report-customer-detail-body').innerHTML =
+                detailCard('ชื่อ–นามสกุล', escapeHtml(name)) + detailCard('เบอร์โทร', escapeHtml(r.phone || '-')) +
+                detailCard('LINE / Facebook', escapeHtml([r.line, r.facebook].filter(Boolean).join(' / ') || '-')) + detailCard('สินค้าที่สนใจ', escapeHtml(r.product || '-')) +
+                detailCard('ที่อยู่', escapeHtml(address || '-'), true) + detailCard('🌾 การเกษตร / พื้นที่ / รายได้', escapeHtml(farms || '-'), true) +
+                detailCard('📋 งานประจำ', escapeHtml(job)) + detailCard('💵 รายได้เสริม', escapeHtml(side)) +
+                detailCard('🚜 เครื่องจักรที่มี', escapeHtml(machines || '-'), true) + detailCard('📉 หนี้สิน', escapeHtml(debts || '-'), true) +
+                detailCard('📝 หมายเหตุ', escapeHtml(r.remark || '-'), true);
+            document.getElementById('report-customer-detail-overlay').classList.add('show');
+        }
+        function closeReportCustomerDetail() { document.getElementById('report-customer-detail-overlay').classList.remove('show'); }
+        function addFarmPlot() {
+            customerFinancial.farmPlots.push({ type: '', rai: '', docOwner: '', annualIncome: '' });
+            renderFarmPlots();
+        }
+        function removeFarmPlot(i) {
+            customerFinancial.farmPlots.splice(i, 1);
+            renderFarmPlots();
+        }
+        function renderFarmPlots() {
+            const c = document.getElementById('farm-plots-container');
+            c.innerHTML = customerFinancial.farmPlots.map((p, i) => `
+                <div class="item-card">
+                    <div class="item-card-title"><span>แปลงที่ ${i + 1}</span><button type="button" class="item-remove-btn" onclick="removeFarmPlot(${i})">✕ ลบ</button></div>
+                    <div class="item-fields">
+                        <div class="full"><label>ทำเกษตรอะไร (เช่น ทำนา, ปลูกอ้อย, มันสำปะหลัง)</label>
+                            <input type="text" value="${escapeAttr(p.type)}" placeholder="เช่น ทำนา" oninput="customerFinancial.farmPlots[${i}].type=this.value">
+                        </div>
+                        <div><label>จำนวนไร่</label><input type="text" value="${escapeAttr(p.rai)}" placeholder="เช่น 7" oninput="customerFinancial.farmPlots[${i}].rai=this.value"></div>
+                        <div><label>เอกสารสิทธิ์ชื่อใคร</label><input type="text" value="${escapeAttr(p.docOwner)}" placeholder="เช่น ชื่อแม่" oninput="customerFinancial.farmPlots[${i}].docOwner=this.value"></div>
+                        <div class="full"><label>รายได้จากเกษตรต่อปีโดยประมาณ (บาท)</label><input type="text" value="${escapeAttr(p.annualIncome || '')}" placeholder="เช่น 250,000" oninput="customerFinancial.farmPlots[${i}].annualIncome=this.value"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        function addMachinery() {
+            customerFinancial.machinery.push({ type: 'รถแทรกเตอร์', brandModel: '', qty: '', note: '' });
+            renderMachinery();
+        }
+        function removeMachinery(i) {
+            customerFinancial.machinery.splice(i, 1);
+            renderMachinery();
+        }
+        function renderMachinery() {
+            const c = document.getElementById('machinery-container');
+            const typeOptions = ['รถแทรกเตอร์', 'รถเกี่ยว', 'รถขุด', 'อื่นๆ'];
+            c.innerHTML = customerFinancial.machinery.map((m, i) => `
+                <div class="item-card">
+                    <div class="item-card-title"><span>เครื่องที่ ${i + 1}</span><button type="button" class="item-remove-btn" onclick="removeMachinery(${i})">✕ ลบ</button></div>
+                    <div class="item-fields">
+                        <div class="full"><label>ประเภท</label>
+                            <select onchange="customerFinancial.machinery[${i}].type=this.value">
+                                ${typeOptions.map(t => `<option value="${t}" ${t === m.type ? 'selected' : ''}>${t}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div><label>ยี่ห้อ/รุ่น</label><input type="text" value="${escapeAttr(m.brandModel)}" placeholder="เช่น Yanmar EF393" oninput="customerFinancial.machinery[${i}].brandModel=this.value"></div>
+                        <div><label>จำนวน (คัน)</label><input type="text" value="${escapeAttr(m.qty)}" placeholder="1" oninput="customerFinancial.machinery[${i}].qty=this.value"></div>
+                        <div class="full"><label>หมายเหตุ (เช่น ผ่อนอยู่/ปลอดภาระ/ยอดคงเหลือ)</label>
+                            <input type="text" value="${escapeAttr(m.note)}" placeholder="เช่น เหลือยอด 136,631" oninput="customerFinancial.machinery[${i}].note=this.value">
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        function addDebt() {
+            customerFinancial.debts.push({ creditor: '', balance: '' });
+            renderDebts();
+        }
+        function removeDebt(i) {
+            customerFinancial.debts.splice(i, 1);
+            renderDebts();
+        }
+        function renderDebts() {
+            const c = document.getElementById('debt-container');
+            c.innerHTML = customerFinancial.debts.map((d, i) => `
+                <div class="item-card">
+                    <div class="item-card-title"><span>หนี้สินที่ ${i + 1}</span><button type="button" class="item-remove-btn" onclick="removeDebt(${i})">✕ ลบ</button></div>
+                    <div class="item-fields">
+                        <div><label>หนี้สิน/เจ้าหนี้</label><input type="text" value="${escapeAttr(d.creditor)}" placeholder="เช่น ธกส." oninput="customerFinancial.debts[${i}].creditor=this.value"></div>
+                        <div><label>ยอดคงเหลือ (บาท)</label><input type="text" value="${escapeAttr(d.balance)}" placeholder="0" oninput="customerFinancial.debts[${i}].balance=this.value"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        function updateFinancialSummary() {
+            const parts = [];
+            if (customerFinancial.farmPlots.length) parts.push(`ทำเกษตร ${customerFinancial.farmPlots.length} แปลง`);
+            if (customerFinancial.regularJob === 'yes') parts.push('มีงานประจำ');
+            if (customerFinancial.sideIncome === 'yes') parts.push('มีรายได้เสริม');
+            if (customerFinancial.machinery.length) parts.push(`เครื่องจักร ${customerFinancial.machinery.length} รายการ`);
+            if (customerFinancial.debts.length) parts.push(`หนี้สิน ${customerFinancial.debts.length} รายการ`);
+            document.getElementById('financial-summary').textContent = parts.length ? ('✓ บันทึกแล้ว: ' + parts.join(', ')) : '';
+        }
+        function loadInitialMeta() {
+            fetch(`${WEB_APP_URL}?action=getInitialData`)
+                .then(res => res.json())
+                .then(data => {
+                    if(data && data.totalCount) document.getElementById('stat-total').innerText = Number(data.totalCount).toLocaleString();
+                    if(data && typeof data.manyChatTotalCount !== 'undefined') document.getElementById('stat-manychat').innerText = Number(data.manyChatTotalCount).toLocaleString();
+                }).catch(err => console.log(err));
+        }
+        function clearFilters() {
+            document.getElementById('filter-keyword').value = '';
+            document.getElementById('filter-exact-phone').value = '';
+            document.querySelectorAll('#type-dropdown input').forEach(cb => cb.checked = false);
+            updateTypeSelectLabel();
+            document.getElementById('filter-start-date').value = '';
+            document.getElementById('filter-end-date').value = '';
+            document.getElementById('filter-appdate').value = '';
+            document.getElementById('filter-followup-start-date').value = '';
+            document.getElementById('filter-followup-end-date').value = '';
+            document.getElementById('filter-product-category').value = 'ALL';
+            onFilterProductCategoryChange();
+            document.getElementById('filter-province').value = '';
+            populateDistrictSelect('filter-district', '', '', '-- ทุกอำเภอ --');
+            populateSubdistrictSelect('filter-subdistrict', '', '', '', '-- ทุกตำบล --');
+            document.getElementById('filter-note').value = '';
+            document.getElementById('filter-pagesize').value = '20';
+            fetchDataFromServer(1);
+        }
+        function handleSearchKeyPress(e) {
+            if(e.key === 'Enter') fetchDataFromServer(1);
+        }
+        function fetchDataFromServer(page = 1) {
+            currentPage = page;
+            const tbody = document.querySelector('#main-table tbody');
+            tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูล...</td></tr>';
+            const selectedTypes = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
+            const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
+            const sortByVal = determineSortBy();
+            document.getElementById('sort-indicator').textContent = sortByLabel(sortByVal);
+            const payload = {
+                action: 'search',
+                page: currentPage,
+                pageSize: pageSizeVal,
+                sortBy: sortByVal,
+                filters: {
+                    keyword: document.getElementById('filter-keyword').value.trim(),
+                    exactPhone: document.getElementById('filter-exact-phone').value.trim(),
+                    types: selectedTypes,
+                    startDate: document.getElementById('filter-start-date').value,
+                    endDate: document.getElementById('filter-end-date').value,
+                    appdate: document.getElementById('filter-appdate').value,
+                    followupStartDate: document.getElementById('filter-followup-start-date').value,
+                    followupEndDate: document.getElementById('filter-followup-end-date').value,
+                    productCategory: document.getElementById('filter-product-category').value,
+                    productModel: getProductModelValue('filter-product-model'),
+                    province: document.getElementById('filter-province').value,
+                    subdistrict: document.getElementById('filter-subdistrict').value.trim(),
+                    district: document.getElementById('filter-district').value.trim(),
+                    note: document.getElementById('filter-note').value.trim()
+                }
+            };
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if(resData && resData.success) {
+                    totalRecords = resData.totalCount || 0;
+                    currentRenderedData = resData.data || [];
+                    document.getElementById('stat-display').innerText = Number(totalRecords).toLocaleString();
+                    renderTableRows(currentRenderedData);
+                    updatePaginationControls();
+                    fetchDashboardSummary(payload.filters);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="18" style="text-align: center; color: red;">❌ เกิดข้อผิดพลาด: ${resData.message}</td></tr>`;
+                }
+            }).catch(err => {
+                tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; color: red;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</td></tr>';
+            });
+        }
+        function fetchDashboardSummary(filters) {
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getDashboardSummary', payload: { filters: filters } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if(resData && resData.success) {
+                    const typeContainer = document.getElementById('dash-type-list');
+                    typeContainer.innerHTML = (resData.typeSummary || []).map(i => `
+                        <div class="dash-item">
+                            <span>${i.type}</span>
+                            <span class="dash-count">${Number(i.count).toLocaleString()} ราย</span>
+                        </div>
+                    `).join('') || '<div style="font-size:11px; color:#94a3b8;">ไม่มีข้อมูล</div>';
+                    const prodContainer = document.getElementById('dash-prod-list');
+                    prodContainer.innerHTML = (resData.topProducts || []).map(i => `
+                        <div class="dash-item">
+                            <span>${i.product}</span>
+                            <span class="dash-count">${Number(i.count).toLocaleString()} ราย</span>
+                        </div>
+                    `).join('') || '<div style="font-size:11px; color:#94a3b8;">ไม่มีข้อมูล</div>';
+                    document.getElementById('dash-manychat-count').innerText = Number(resData.manyChatLeadCount || 0).toLocaleString();
+                }
+            });
+        }
+        /* ปรับแต่งการ Render แถวของตารางเพื่อเอาปุ่มลบออก */
+        function renderTableRows(data) {
+            const tbody = document.querySelector('#main-table tbody');
+            tbody.innerHTML = '';
+            if(!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; padding: 20px; color: #94a3b8;">❌ ไม่พบข้อมูลรายชื่อลูกค้าที่ตรงเงื่อนไข</td></tr>';
+                return;
+            }
+            let html = data.map((row, idx) => {
+                let badgeClass = 'badge-reg';
+                if(row.type === 'เป้าหมาย') badgeClass = 'badge-target';
+                if(row.type === 'จอง') badgeClass = 'badge-book';
+                if(row.type === 'ติดตาม') badgeClass = 'badge-track';
+                if(row.type === 'ทำสัญญา') badgeClass = 'badge-contract';
+                if(row.type === 'ส่งมอบ') badgeClass = 'badge-deliver';
+                const prodParts = getRowProductParts(row);
+                const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
+                return `<tr>
+                    <td style="text-align:center;">
+                        <div class="row-action-group">
+                            <button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>
+                            <button class="btn btn-secondary btn-row-icon" onclick="printRowByIndex(${idx})" title="พิมพ์แบบฟอร์มติดตามลูกค้า">🖨️</button>
+                            <button class="btn btn-secondary btn-row-icon${followCount ? ' has-log' : ''}" onclick="openHistoryModal(${idx})" title="ดูไทม์ไลน์การติดตามลูกค้ารายนี้">🕓${followCount ? ' ' + followCount : ''}</button>
+                        </div>
+                    </td>
+                    <td>${row.date || '-'}</td>
+                    <td style="color: var(--accent-color); font-weight: 600;">${row.booking_date || '-'}</td>
+                    <td style="color: #6b21a8;">${row.lastFollowupDate || '-'}</td>
+                    <td><b>${row.name}</b></td>
+                    <td>${row.phone}</td>
+                    <td><span class="badge ${badgeClass}">${row.type}</span></td>
+                    <td>${prodParts.category}</td>
+                    <td>${prodParts.model}</td>
+                    <td>${row.addressno || '-'}</td>
+                    <td>${row.moo || '-'}</td>
+                    <td>${row.village || '-'}</td>
+                    <td>${row.subdistrict || '-'}</td>
+                    <td>${row.district || '-'}</td>
+                    <td>${row.province || '-'}</td>
+                    <td>${row.line || '-'}</td>
+                    <td>${row.facebook || '-'}</td>
+                    <td style="white-space:pre-line;">${row.remark || '-'}</td>
+                </tr>`;
+            }).join('');
+            tbody.innerHTML = html;
+        }
+        function updatePaginationControls() {
+            const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
+            const totalPages = Math.ceil(totalRecords / pageSizeVal) || 1;
+            document.getElementById('page-info').innerText = `หน้า ${currentPage} จาก ${totalPages}`;
+            document.getElementById('btn-prev-page').disabled = (currentPage <= 1);
+            document.getElementById('btn-next-page').disabled = (currentPage >= totalPages);
+        }
+        function changePage(direction) {
+            fetchDataFromServer(currentPage + direction);
+        }
+        function getProvinceObj(name) {
+            return (typeof THAILAND_GEO_DATA !== 'undefined' ? THAILAND_GEO_DATA : []).find(p => p.n === name);
+        }
+        function getAmphoeObj(provinceName, districtName) {
+            const prov = getProvinceObj(provinceName);
+            if (!prov) return null;
+            return (prov.a || []).find(a => a.n === districtName);
+        }
+        function populateProvinceSelect(selectId, allLabel) {
+            const sel = document.getElementById(selectId);
+            const provinces = (typeof THAILAND_GEO_DATA !== 'undefined' ? THAILAND_GEO_DATA : [])
+                .map(p => p.n)
+                .sort((a, b) => a.localeCompare(b, 'th'));
+            const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกจังหวัด --</option>';
+            sel.innerHTML = placeholder + provinces.map(n => `<option value="${n}">${n}</option>`).join('');
+        }
+        function populateDistrictSelect(selectId, provName, selected, allLabel) {
+            const sel = document.getElementById(selectId);
+            const prov = getProvinceObj(provName);
+            const dists = prov ? (prov.a || []).map(a => a.n).sort((a, b) => a.localeCompare(b, 'th')) : [];
+            const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกอำเภอ --</option>';
+            sel.innerHTML = placeholder + dists.map(n => `<option value="${n}">${n}</option>`).join('');
+            if (selected && dists.includes(selected)) sel.value = selected;
+        }
+        function populateSubdistrictSelect(selectId, provName, distName, selected, allLabel) {
+            const sel = document.getElementById(selectId);
+            const amphoe = getAmphoeObj(provName, distName);
+            const subs = amphoe ? (amphoe.t || []).map(t => t.n).sort((a, b) => a.localeCompare(b, 'th')) : [];
+            const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกตำบล --</option>';
+            sel.innerHTML = placeholder + subs.map(n => `<option value="${n}">${n}</option>`).join('');
+            if (selected && subs.includes(selected)) sel.value = selected;
+        }
+        function onProvinceChange() {
+            const provName = document.getElementById('cust-province').value;
+            populateDistrictSelect('cust-district', provName);
+            populateSubdistrictSelect('cust-subdistrict', provName, '');
+        }
+        function onDistrictChange() {
+            const provName = document.getElementById('cust-province').value;
+            const distName = document.getElementById('cust-district').value;
+            populateSubdistrictSelect('cust-subdistrict', provName, distName);
+        }
+        function resetGeoSelectsToDefault() {
+            const provSel = document.getElementById('cust-province');
+            provSel.value = DEFAULT_PROVINCE;
+            onProvinceChange();
+        }
+        function onFilterProvinceChange() {
+            const provName = document.getElementById('filter-province').value;
+            populateDistrictSelect('filter-district', provName, '', '-- ทุกอำเภอ --');
+            populateSubdistrictSelect('filter-subdistrict', provName, '', '', '-- ทุกตำบล --');
+        }
+        function onFilterDistrictChange() {
+            const provName = document.getElementById('filter-province').value;
+            const distName = document.getElementById('filter-district').value;
+            populateSubdistrictSelect('filter-subdistrict', provName, distName, '', '-- ทุกตำบล --');
+        }
+        function levenshteinDistance(a, b) {
+            const matrix = [];
+            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j - 1] + 1,
+                            matrix[i][j - 1] + 1,
+                            matrix[i - 1][j] + 1
+                        );
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+        function runGeoCheckTool() {
+            let errorCount = 0;
+            currentRenderedData.forEach(row => {
+                const p = row.province;
+                const d = row.district;
+                const provObj = p ? getProvinceObj(p) : null;
+                if (provObj && d) {
+                    const validDists = (provObj.a || []).map(a => a.n);
+                    if (!validDists.includes(d)) {
+                        validDists.forEach(vd => {
+                            if (levenshteinDistance(d, vd) <= 2) {
+                                errorCount++;
+                                console.warn(`ลูกค้า ${row.name}: อำเภอ "${d}" อาจพิมพ์ผิดจาก "${vd}"`);
+                            }
+                        });
+                    }
+                }
+            });
+            if (errorCount > 0) {
+                alert(`🛠️ ตรวจพบชื่ออำเภอ/ตำบลที่อาจสะกดผิดมาตรฐาน ${errorCount} รายการ (ตรวจสอบรายละเอียดใน F12 Console)`);
+            } else {
+                alert('✅ ข้อมูลชื่อจังหวัด/อำเภอ/ตำบลในหน้านี้ ถูกต้องตามมาตรฐาน');
+            }
+        }
+        function checkDuplicatePhone() {
+            const phoneInput = document.getElementById('cust-phone');
+            const msgSpan = document.getElementById('phone-check-msg');
+            const phoneVal = phoneInput.value.trim();
+            const editRowIndex = document.getElementById('form-row-index').value;
+            duplicatePhoneMatch = null; // เคลียร์ผลเช็กเดิมทุกครั้งที่เช็กใหม่ (กันเบอร์เปลี่ยนแล้วค่าเดิมค้าง)
+            if (editRowIndex || phoneVal.length < 9) {
+                msgSpan.innerHTML = '';
+                return;
+            }
+            msgSpan.innerHTML = '⚡ กำลังเช็ก...';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'checkDuplicatePhone', payload: { phone: phoneVal } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success && resData.isDuplicate) {
+                    duplicatePhoneMatch = { phone: phoneVal, name: resData.customerName };
+                    msgSpan.innerHTML = `<b style="color:#ef4444;">⚠️ มีในระบบแล้ว (${escapeAttr(resData.customerName)})</b> ` +
+                        `<button type="button" class="btn btn-accent" style="padding:2px 8px; font-size:10px; vertical-align:middle;" onclick="jumpToExistingCustomerTimeline('${escapeAttr(phoneVal)}')">🕓 ไปหน้าติดตามลูกค้ารายนี้แทน</button>`;
+                } else {
+                    duplicatePhoneMatch = null;
+                    msgSpan.innerHTML = '<b style="color:#10b981;">✓ เบอร์ใช้งานได้</b>';
+                }
+            });
+        }
+        /**
+         * เมื่อเซลล์กดปุ่ม "ไปหน้าติดตามลูกค้ารายนี้แทน" (จากคำเตือนเบอร์ซ้ำ ทั้งตอนกรอกและตอนกดบันทึก):
+         * ดึงข้อมูลลูกค้ารายนั้นด้วยเบอร์โทร, สลับไปหน้าประวัติ/ค้นหา, และเปิดหน้าต่างไทม์ไลน์การติดตามให้ทันที
+         * โดยไม่ต้องให้เซลล์มานั่งค้นหาเองอีกรอบ — ป้องกันการเผลอกดบันทึกเป็นลูกค้าใหม่ซ้ำเบอร์เดิม
+         */
+        function jumpToExistingCustomerTimeline(phoneVal) {
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getByPhone', payload: { phoneKey: phoneVal } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success && resData.data) {
+                    resetFormState();
+                    switchPage('history');
+                    document.getElementById('filter-exact-phone').value = phoneVal;
+                    currentRenderedData = [resData.data];
+                    totalRecords = 1;
+                    document.getElementById('stat-display').innerText = '1';
+                    renderTableRows(currentRenderedData);
+                    updatePaginationControls();
+                    openHistoryModal(0);
+                } else {
+                    alert('❌ ไม่พบข้อมูลลูกค้ารายนี้ในระบบ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'));
+        }
+        function resetFormState() {
+            document.getElementById('customer-form').reset();
+            document.getElementById('form-row-index').value = '';
+            document.getElementById('phone-check-msg').innerHTML = '';
+            duplicatePhoneMatch = null;
+            document.getElementById('form-title').innerText = '➕ เพิ่มข้อมูลลูกค้าใหม่';
+            document.getElementById('btn-submit').innerText = '💾 บันทึกข้อมูล';
+            setDefaultDate();
+            document.getElementById('cust-addressno').value = '';
+            document.getElementById('cust-moo').value = '';
+            document.getElementById('cust-village').value = '';
+            document.getElementById('cust-zipcode').value = '';
+            resetGeoSelectsToDefault();
+            updateAddressSummary();
+            populateProductCategorySelect('cust-product-category');
+            toggleProductModelInputType('cust-product-model', document.getElementById('cust-product-category').value);
+            populateProductModelSelect('cust-product-model', document.getElementById('cust-product-category').value, '');
+            resetFinancialData();
+        }
 
-function getDashboardSummaryHTML(reqPayload) {
-  try {
-    var filters = (reqPayload && reqPayload.filters) ? reqPayload.filters : {};
-    var whereObj = buildWhereClause(filters);
-    var sql1 = "SELECT type, COUNT(*) as count FROM " + TABLE_FULL_PATH +
-               appendWhereCondition(whereObj.sql,
-                 "type IS NOT NULL AND TRIM(type) != '' " +
-                 "AND type IN ('จอง', 'เป้าหมาย', 'ติดตาม', 'ลงทะเบียน', 'ส่งมอบ', 'ปิดการขาย', 'ลูกค้าเก่าดีเลอร์', 'ทำสัญญา', 'สนใจ')") +
-               " GROUP BY type ORDER BY count DESC";
-    var res1 = runParamQueryFetch(sql1, whereObj.params);
-    var sql2 = "SELECT product, COUNT(*) as count FROM " + TABLE_FULL_PATH +
-               appendWhereCondition(whereObj.sql,
-                 "product IS NOT NULL AND TRIM(product) != '' AND product != '-' " +
-                 "AND NOT REGEXP_CONTAINS(TRIM(product), r'^\\d+$')") +
-               " GROUP BY product";
-    var rawProd = runParamQueryFetch(sql2, whereObj.params);
-    var prodGroup = {};
-    (rawProd || []).forEach(function(item) {
-      var name = (item.product || '').toString().trim();
-      var cnt = parseInt(item.count) || 0;
-      if (/^\d+$/.test(name)) return;
-      var cleanName = name;
-      if (/แทรกเตอร์|tractor/i.test(name)) {
-        cleanName = 'รถแทรกเตอร์';
-      } else if (/เกี่ยว|harvester/i.test(name)) {
-        cleanName = 'รถเกี่ยวข้าว';
-      } else if (/อัดฟาง|baler/i.test(name)) {
-        cleanName = 'เครื่องอัดฟาง';
-      } else if (/ขุด|excavator/i.test(name)) {
-        cleanName = 'รถขุด';
-      } else if (/โดรน|drone/i.test(name)) {
-        cleanName = 'Drone';
-      }
-      if (!prodGroup[cleanName]) prodGroup[cleanName] = 0;
-      prodGroup[cleanName] += cnt;
-    });
-    var topProducts = [];
-    for (var pName in prodGroup) {
-      topProducts.push({ product: pName, count: prodGroup[pName] });
-    }
-    topProducts.sort(function(a, b) { return b.count - a.count; });
-    topProducts = topProducts.slice(0, 5);
+        function setSelectValueWithFallback(selectId, value) {
+            const el = document.getElementById(selectId);
+            if (!el) return;
+            const wanted = String(value || '').trim();
+            if (!wanted) { el.value = ''; return; }
+            const exists = Array.from(el.options).some(opt => opt.value === wanted);
+            if (!exists) el.add(new Option(wanted, wanted));
+            el.value = wanted;
+        }
 
-    // ---- จำนวนลูกค้าที่มาจาก ManyChat/Facebook อัตโนมัติ ภายใต้ตัวกรองปัจจุบัน ----
-    var sql3 = "SELECT COUNT(*) as cnt FROM " + TABLE_FULL_PATH + appendWhereCondition(whereObj.sql, FB_LEAD_MATCH_COND);
-    var fbParams = whereObj.params.concat([FB_LEAD_MATCH_PARAM]);
-    var res3 = runParamQueryFetch(sql3, fbParams);
-    var manyChatLeadCount = (res3 && res3.length > 0) ? parseInt(res3[0].cnt) : 0;
+        // เปิดลูกค้าทุกแหล่งที่มา (รวม Facebook/ManyChat) ในแบบฟอร์มเดียวกัน
+        function editCustomerByIndex(idx) {
+            const row = currentRenderedData[idx];
+            if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
 
-    return { success: true, typeSummary: res1, topProducts: topProducts, manyChatLeadCount: manyChatLeadCount };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-function getCustomerByPhone(phoneKey) {
-  try {
-    var rawKey = cleanStr(phoneKey || '');
-    if (!rawKey) return { success: false, message: 'ไม่พบรหัสอ้างอิงลูกค้า' };
-    var sql = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
-              "CAST(created_date AS STRING) AS created_date, " +
-              "CAST(booking_date AS STRING) AS booking_date, " +
-              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-              FINGERPRINT_EXPR + " as row_key FROM " + TABLE_FULL_PATH +
-              " WHERE " + ROW_MATCH_WHERE + " LIMIT 1";
-    var params = [{ name: 'key', value: rawKey }];
-    var rows = runParamQueryFetch(sql, params);
-    if (!rows || rows.length === 0) return { success: false, message: 'ไม่พบข้อมูลลูกค้าในระบบ' };
-    var r = rows[0];
-    var ph = formatPhoneNumber(r.phone);
-    var followUpArr = parseFollowUpLog(r.follow_up_log);
-    return {
-      success: true,
-      data: {
-        sheetRowIndex: r.row_key ? r.row_key.toString() : ph,
-        date: formatDateStr(r.created_date || ''),
-        firstname: r.first_name || '',
-        lastname: r.last_name || '',
-        phone: ph,
-        phone1: ph,
-        appdate: formatDateStr(r.booking_date || ''),
-        lastFollowupDate: formatDateStr(r.last_followup_date || ''),
-        type: r.type || 'ลงทะเบียน',
-        product: r.product || '',
-        addressno: r.address_no || '',
-        moo: r.moo || '',
-        village: r.village || '',
-        subdistrict: r.subdistrict || '',
-        district: r.district || '',
-        province: r.province || 'อุบลราชธานี',
-        zipcode: r.zipcode || '',
-        remark: r.remark || '',
-        line: r.line || '',
-        facebook: r.facebook || '',
-        followUpLog: followUpArr,
-        followUpCount: followUpArr.length
-      }
-    };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-// เช็คว่าชื่อ Facebook นี้มีอยู่ในระบบแล้วหรือไม่ (เทียบแบบไม่สนตัวพิมพ์เล็ก/ใหญ่ และเว้นวรรคหน้า-หลัง)
-// ใช้ป้องกันไม่ให้สร้างรายชื่อลูกค้าซ้ำ เวลาคนเดิมส่งเบอร์มาอีกรอบผ่าน Facebook/ManyChat
-function findCustomerByFacebookName(fbName) {
-  var cleanFb = cleanStr(fbName);
-  if (!cleanFb) return null;
-  var sql = "SELECT follow_up_log FROM " + TABLE_FULL_PATH +
-            " WHERE LOWER(TRIM(IFNULL(facebook, ''))) = LOWER(TRIM(@fb)) LIMIT 1";
-  var rows = runParamQueryFetch(sql, [{ name: 'fb', value: cleanFb }]);
-  return (rows && rows.length > 0) ? rows[0] : null;
-}
+            resetFormState();
+            document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
+            document.getElementById('cust-date').value = row.date || '';
+            document.getElementById('cust-appdate').value = row.booking_date || row.appdate || '';
+            document.getElementById('cust-fname').value = row.firstname || '';
+            document.getElementById('cust-lname').value = row.lastname || '';
+            document.getElementById('cust-phone').value = row.phone || row.phone1 || '';
+            document.getElementById('cust-line').value = row.line || '';
+            document.getElementById('cust-facebook').value = row.facebook || '';
+            setSelectValueWithFallback('cust-type', row.type || 'ลงทะเบียน');
 
-// เช็คว่าเบอร์นี้มีอยู่ในระบบแล้วหรือไม่ (รองรับทั้งแบบมี/ไม่มีเลข 0 นำหน้า เหมือน ROW_MATCH_WHERE)
-// ใช้คู่กับ findCustomerByFacebookName เพื่อจับซ้ำได้ทั้งกรณี "ชื่อ Facebook เดิมแต่เบอร์เปลี่ยน"
-// และกรณี "เบอร์เดิมแต่ชื่อ Facebook ไม่ตรงกัน (เช่น ใช้คนละบัญชี หรือรอบก่อนพิมพ์ชื่อผิด)"
-function findCustomerByPhoneNumber(phone) {
-  var cleanPhone = formatPhoneNumber(phone);
-  if (!cleanPhone) return null;
-  var sql = "SELECT follow_up_log, phone, facebook FROM " + TABLE_FULL_PATH +
-            " WHERE CAST(phone AS STRING) = @phone " +
-            " OR (SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@phone, r'\\D', '') AS INT64) " +
-            "     AND SAFE_CAST(phone AS INT64) IS NOT NULL AND SAFE_CAST(phone AS INT64) != 0) LIMIT 1";
-  var rows = runParamQueryFetch(sql, [{ name: 'phone', value: cleanPhone }]);
-  return (rows && rows.length > 0) ? rows[0] : null;
-}
+            const product = getRowProductParts(row);
+            setSelectValueWithFallback('cust-product-category', product.category === '-' ? '' : product.category);
+            onCustProductCategoryChange();
+            if (document.getElementById('cust-product-model-text').style.display !== 'none') {
+                document.getElementById('cust-product-model-text').value = product.model === '-' ? '' : product.model;
+            } else {
+                setSelectValueWithFallback('cust-product-model', product.model === '-' ? '' : product.model);
+            }
 
-// บันทึกทุกครั้งที่มีการยิง action:add เข้ามา (ไม่ว่าจะสร้างลูกค้าใหม่ หรือไปชนกับของเดิม)
-// ลง lead_intake_log เพื่อให้นับ "วันนี้ได้กี่เบอร์" ได้ครบ รวมที่ส่งซ้ำมาด้วย —
-// ถ้า insert ตารางนี้ล้มเหลว (เช่น ยังไม่ได้รัน one-time setup สร้างตาราง) จะไม่ทำให้
-// การเพิ่ม/อัปเดตลูกค้าหลักพัง แค่เขียน Logger ไว้เฉยๆ
-function logLeadIntake_(info) {
-  try {
-    var sql = "INSERT INTO " + LOG_TABLE_FULL_PATH +
-              " (received_at, received_date, phone, facebook, first_name, last_name, is_duplicate, match_type, is_manychat) " +
-              "VALUES (CURRENT_TIMESTAMP(), CURRENT_DATE('Asia/Bangkok'), @phone, @fb, @fn, @ln, CAST(@dup AS BOOL), @mt, CAST(@mc AS BOOL))";
-    runParamQuery(sql, [
-      { name: 'phone', value: cleanStr(info.phone) },
-      { name: 'fb', value: cleanStr(info.facebook) },
-      { name: 'fn', value: cleanStr(info.firstName) },
-      { name: 'ln', value: cleanStr(info.lastName) },
-      { name: 'dup', value: info.isDuplicate ? 'true' : 'false' },
-      { name: 'mt', value: cleanStr(info.matchType) },
-      { name: 'mc', value: info.isManyChat ? 'true' : 'false' }
-    ]);
-  } catch (e) {
-    Logger.log('logLeadIntake_ error (ข้อมูลลูกค้าหลักถูกบันทึกไปแล้วตามปกติ ไม่กระทบ): ' + e.toString());
-  }
-}
+            document.getElementById('cust-addressno').value = row.addressno || row.address_no || row.address || '';
+            document.getElementById('cust-moo').value = row.moo || '';
+            document.getElementById('cust-village').value = row.village || '';
+            document.getElementById('cust-zipcode').value = row.zipcode || '';
+            setSelectValueWithFallback('cust-province', row.province || DEFAULT_PROVINCE);
+            populateDistrictSelect('cust-district', document.getElementById('cust-province').value, row.district || '');
+            populateSubdistrictSelect('cust-subdistrict', document.getElementById('cust-province').value, row.district || '', row.subdistrict || '');
+            document.getElementById('cust-note').value = row.remark || row.note || '';
+            customerFinancial = parseFinancialInfo(row.financialInfo || row.financial);
+            customerFinancial.farmPlots = customerFinancial.farmPlots || [];
+            customerFinancial.machinery = customerFinancial.machinery || [];
+            customerFinancial.debts = customerFinancial.debts || [];
+            renderFinancialToggles();
+            updateFinancialSummary();
+            updateAddressSummary();
 
-function addCustomerHTML(cust) {
-  try {
-    var fbNameForDup = cleanStr(cust.facebook);
-    var newPhoneForDup = formatPhoneNumber(cust.phone1 || cust.phone);
-    var isManyChatLead = (cleanStr(cust.remark || cust.note).toLowerCase().indexOf(FB_LEAD_MARKER) !== -1);
+            document.getElementById('form-title').innerText = '✏️ แก้ไขข้อมูลลูกค้า';
+            document.getElementById('btn-submit').innerText = '💾 บันทึกการแก้ไข';
+            switchPage('add');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        function onFormSubmit(e) {
+            e.preventDefault();
+            const rid = document.getElementById('form-row-index').value;
+            // ---- กันกดบันทึกซ้ำระหว่างรอผลลัพธ์รอบก่อนหน้า ----
+            const submitBtn = document.getElementById('btn-submit');
+            if (submitBtn.disabled) return;
+            // ---- กันวันที่บันทึกเป็นวันที่ในอนาคต (เผื่อกรณี attribute max ถูกเลี่ยงได้ เช่น พิมพ์เอง/บางเบราว์เซอร์) ----
+            // ยังคงอนุญาตให้เลือกวันที่ย้อนหลังได้ตามปกติ สำหรับกรณีคีย์ข้อมูลย้อนหลัง/รวมรายการมาคีย์ทีเดียว
+            const custDateInput = document.getElementById('cust-date');
+            if (custDateInput.value && custDateInput.value > getTodayISO()) {
+                alert('⚠️ "วันที่บันทึก" ต้องไม่เป็นวันที่ในอนาคต กรุณาแก้ไขวันที่ก่อนบันทึก (เลือกวันที่ย้อนหลังได้ตามปกติ)');
+                custDateInput.value = getTodayISO();
+                custDateInput.focus();
+                return;
+            }
+            // ---- ตัวช่วยกันบันทึกลูกค้าใหม่ซ้ำเบอร์เดิม ----
+            // ถ้ากำลังเพิ่มลูกค้าใหม่ (ไม่ใช่แก้ไข) และเบอร์ที่กรอกตรงกับผลเช็กซ้ำล่าสุด
+            // ให้ถามยืนยันก่อนเสมอ กันเซลล์เผลอกดบันทึกซ้ำทั้งที่มีลูกค้ารายนี้อยู่แล้ว
+            if (!rid && duplicatePhoneMatch && duplicatePhoneMatch.phone === document.getElementById('cust-phone').value.trim()) {
+                const proceedAnyway = confirm(
+                    `⚠️ เบอร์ ${duplicatePhoneMatch.phone} มีอยู่ในระบบแล้ว (${duplicatePhoneMatch.name})\n\n` +
+                    `กด "ตกลง" เพื่อเพิ่มลูกค้ารายใหม่ซ้ำเบอร์นี้ต่อไป (ใช้เมื่อตั้งใจเพิ่มจริงๆ เท่านั้น)\n` +
+                    `กด "ยกเลิก" เพื่อไปหน้าติดตามลูกค้ารายเดิมแทน (แนะนำ)`
+                );
+                if (!proceedAnyway) {
+                    jumpToExistingCustomerTimeline(duplicatePhoneMatch.phone);
+                    return;
+                }
+            }
+            const fname = document.getElementById('cust-fname').value.trim();
+            const lname = document.getElementById('cust-lname').value.trim();
+            const fullName = `${fname} ${lname}`.trim();
+            const addrNo = document.getElementById('cust-addressno').value.trim();
+            const moo = document.getElementById('cust-moo').value.trim();
+            const village = document.getElementById('cust-village').value.trim();
 
-    // กันเบอร์ที่อยู่ใน EXCLUDED_PHONE_NUMBERS (เช่นเบอร์เซลล์เอง ที่ลูกค้ากดคัดลอกส่งกลับมา
-    // โดยไม่ได้ตั้งใจ) ไม่ให้ถูกนับเป็นลูกค้าเลย — ไม่สร้าง/ไม่อัปเดตแถวใน customers และไม่ log
-    // เข้า lead_intake_log เลย (ทำก่อนเช็ค/ทำอย่างอื่นทั้งหมด เพื่อไม่ให้ตัวเลขรายงานเพี้ยน)
-    if (newPhoneForDup && EXCLUDED_PHONE_NUMBERS.indexOf(newPhoneForDup) !== -1) {
-      return {
-        success: true,
-        skipped: true,
-        message: 'เบอร์นี้อยู่ในรายการเบอร์ที่ไม่นับเป็นลูกค้า (เช่น เบอร์เซลล์) — ไม่ได้บันทึกเข้าระบบและไม่นับเข้ารายงาน'
-      };
-    }
-
-    // กันข้อมูลซ้ำด้วยชื่อ Facebook หรือเบอร์โทร (อย่างใดอย่างหนึ่งตรงกันก็ถือว่าซ้ำ):
-    // ถ้าคนเดิมส่งเบอร์มาอีกรอบผ่าน Facebook/ManyChat (ไม่ว่าจะชื่อ Facebook เดิมแต่เบอร์เปลี่ยน
-    // เพราะรอบแรกพิมพ์ผิด, หรือเบอร์เดิมแต่ชื่อ Facebook ไม่ตรงกัน) ไม่สร้างรายชื่อใหม่
-    // แต่บันทึกเป็น "การติดตาม" เพิ่มเข้ารายชื่อเดิม พร้อมตั้งวันนัดติดตามเป็นวันถัดไป
-    // ให้เซลล์กรองวันที่มาดูว่าต้องโทรตามใครต่อ — ข้อมูลเบอร์/ชื่อที่ส่งมาใหม่ล่าสุดจะถูก
-    // เก็บไว้ในบันทึกไทม์ไลน์ (follow_up_log) ของลูกค้ารายเดิมด้วย ไม่ทิ้งไปเฉยๆ
-    var existingByFb = fbNameForDup ? findCustomerByFacebookName(fbNameForDup) : null;
-    var existingByPhone = newPhoneForDup ? findCustomerByPhoneNumber(newPhoneForDup) : null;
-    var existing = existingByFb || existingByPhone;
-
-    if (existing) {
-      var matchType = existingByFb && existingByPhone ? 'facebook+phone' : (existingByFb ? 'facebook' : 'phone');
-      var matchLabel = matchType === 'facebook' ? 'ชื่อ Facebook เดิม' :
-                        matchType === 'phone' ? 'เบอร์โทรเดิม' : 'ชื่อ Facebook และเบอร์โทรเดิม';
-
-      var todayStrForDup = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
-      var followUpBaseForDup = new Date();
-      followUpBaseForDup.setDate(followUpBaseForDup.getDate() + 1);
-      var nextDayStrForDup = Utilities.formatDate(followUpBaseForDup, 'GMT+7', 'yyyy-MM-dd');
-
-      var logArrForDup = parseFollowUpLog(existing.follow_up_log);
-      var noteText = 'ลูกค้าส่งข้อมูลมาอีกรอบผ่าน Facebook/ManyChat (พบซ้ำจาก: ' + matchLabel + ')';
-      if (newPhoneForDup) noteText += ' — เบอร์ที่ส่งมาล่าสุด: ' + newPhoneForDup;
-      if (fbNameForDup) noteText += ' — Facebook: ' + fbNameForDup;
-
-      logArrForDup.push({
-        date: todayStrForDup,
-        note: noteText,
-        loggedAt: new Date().toISOString()
-      });
-
-      var updParamsForDup = [
-        { name: 'log', value: JSON.stringify(logArrForDup) },
-        { name: 'bd', value: nextDayStrForDup },
-        { name: 'lfd', value: todayStrForDup }
-      ];
-      var setClausesForDup = ["follow_up_log = @log", "booking_date = @bd", "last_followup_date = @lfd"];
-      if (newPhoneForDup) {
-        setClausesForDup.push("phone = @ph");
-        updParamsForDup.push({ name: 'ph', value: newPhoneForDup });
-      }
-      if (fbNameForDup) {
-        setClausesForDup.push("facebook = @fb2");
-        updParamsForDup.push({ name: 'fb2', value: fbNameForDup });
-      }
-
-      // WHERE ต้องชี้ไปที่แถวเดิมที่เจอจริง ๆ: ถ้าเจอจาก Facebook ให้ match ด้วย Facebook
-      // (เผื่อกรณีเบอร์เปลี่ยนไปแล้ว การ match ด้วยเบอร์เก่าจะหาไม่เจอ), ถ้าเจอจากเบอร์อย่างเดียว
-      // (ไม่มีชื่อ Facebook ตรงกัน) ให้ match ด้วยเบอร์
-      var whereSqlForDup;
-      if (existingByFb) {
-        whereSqlForDup = "LOWER(TRIM(IFNULL(facebook, ''))) = LOWER(TRIM(@matchFb))";
-        updParamsForDup.push({ name: 'matchFb', value: fbNameForDup });
-      } else {
-        whereSqlForDup = "(CAST(phone AS STRING) = @matchPhone " +
-                         "OR (SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@matchPhone, r'\\D', '') AS INT64) " +
-                         "     AND SAFE_CAST(phone AS INT64) IS NOT NULL AND SAFE_CAST(phone AS INT64) != 0))";
-        updParamsForDup.push({ name: 'matchPhone', value: newPhoneForDup });
-      }
-
-      var updSqlForDup = "UPDATE " + TABLE_FULL_PATH + " SET " + setClausesForDup.join(", ") + " WHERE " + whereSqlForDup;
-      runParamQuery(updSqlForDup, updParamsForDup);
-
-      logLeadIntake_({
-        phone: newPhoneForDup,
-        facebook: fbNameForDup,
-        firstName: cust.firstname || cust.firstName,
-        lastName: cust.lastname || cust.lastName,
-        isDuplicate: true,
-        matchType: matchType,
-        isManyChat: isManyChatLead
-      });
-
-      return {
-        success: true,
-        duplicate: true,
-        message: 'พบข้อมูลลูกค้ารายนี้ในระบบแล้ว (ซ้ำจาก: ' + matchLabel + ') — เพิ่มเป็นการติดตามใหม่ (นัดวันพรุ่งนี้) ไม่ได้สร้างรายชื่อซ้ำ'
-      };
-    }
-
-    // created_at_ts: เวลาบันทึกจริงระดับวินาที (CURRENT_TIMESTAMP() ฝั่ง BigQuery ไม่ใช่
-    // ค่าที่ส่งมาจากพารามิเตอร์) ใช้เป็นตัวเรียงรองใน searchCustomersHTML ตอนหลายแถว
-    // อยู่วันเดียวกัน (ดูคอมเมนต์ที่ ORDER BY ของ searchCustomersHTML) — ต้องรัน
-    // runOneTimeSetup_AddCreatedAtTimestampColumn() ก่อนครั้งเดียวถ้ายังไม่เคยรัน
-    var sql = "INSERT INTO " + TABLE_FULL_PATH + " (" +
-              "created_date, first_name, last_name, phone, booking_date, type, product, " +
-              "address_no, moo, village, subdistrict, district, province, zipcode, remark, line, facebook, follow_up_log, created_at_ts) " +
-              "VALUES (@d0, @d1, @d2, @d3, @d4, @d5, @d6, @d7, @d8, @d9, @d10, @d11, @d12, @d13, @d14, @d15, @d16, @d17, CURRENT_TIMESTAMP())";
-    var inputDate = formatDateStr(cust.date || cust.created_date) || Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
-    var inputBookingDate = formatDateStr(cust.appdate || cust.booking_date);
-
-    // ถ้าไม่ได้ระบุวันนัด/วันติดตามมา (เช่น lead จาก ManyChat ที่ไม่มีข้อมูลนี้)
-    // ให้ default เป็น "วันถัดไปจากวันที่บันทึก" อัตโนมัติ เพื่อเตือนให้พนักงานโทรตามลูกค้าต่อ
-    if (!inputBookingDate) {
-      var followUpBase = new Date(inputDate + 'T00:00:00+07:00');
-      followUpBase.setDate(followUpBase.getDate() + 1);
-      inputBookingDate = Utilities.formatDate(followUpBase, 'GMT+7', 'yyyy-MM-dd');
-    }
-
-    var params = [
-      { name: 'd0', value: inputDate },
-      { name: 'd1', value: cleanStr(cust.firstname || cust.firstName) },
-      { name: 'd2', value: cleanStr(cust.lastname || cust.lastName) },
-      { name: 'd3', value: cleanStr(cust.phone1 || cust.phone) },
-      { name: 'd4', value: inputBookingDate },
-      { name: 'd5', value: cleanStr(cust.type || 'ลงทะเบียน') },
-      { name: 'd6', value: customerProduct_(cust) },
-      { name: 'd7', value: customerAddressNo_(cust) },
-      { name: 'd8', value: cleanStr(cust.moo) },
-      { name: 'd9', value: cleanStr(cust.village) },
-      { name: 'd10', value: cleanStr(cust.subdistrict) },
-      { name: 'd11', value: cleanStr(cust.district) },
-      { name: 'd12', value: cleanStr(cust.province || 'อุบลราชธานี') },
-      { name: 'd13', value: cleanStr(cust.zipcode) },
-      { name: 'd14', value: cleanStr(cust.remark || cust.note) },
-      { name: 'd15', value: cleanStr(cust.line) },
-      { name: 'd16', value: cleanStr(cust.facebook) },
-      { name: 'd17', value: '[]' }
-    ];
-    runParamQuery(sql, params);
-
-    logLeadIntake_({
-      phone: newPhoneForDup,
-      facebook: fbNameForDup,
-      firstName: cust.firstname || cust.firstName,
-      lastName: cust.lastname || cust.lastName,
-      isDuplicate: false,
-      matchType: 'new',
-      isManyChat: isManyChatLead
-    });
-
-    return { success: true, message: 'บันทึกข้อมูลเรียบร้อยแล้ว' };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-function updateCustomerHTML(rowIndex, cust) {
-  try {
-    var rawKey = cleanStr(rowIndex || '');
-    if (!rawKey) return { success: false, message: 'ไม่พบอ้างอิงรายการที่จะแก้ไข' };
-    var inputDate = formatDateStr(cust.date || cust.created_date);
-    var inputBookingDate = formatDateStr(cust.appdate || cust.booking_date);
-    var sql = "UPDATE " + TABLE_FULL_PATH + " SET " +
-              "created_date = @d0, first_name = @d1, last_name = @d2, " +
-              "phone = @d3, booking_date = @d4, type = @d5, " +
-              "product = @d6, address_no = @d7, moo = @d8, " +
-              "village = @d9, subdistrict = @d10, district = @d11, " +
-              "province = @d12, zipcode = @d13, remark = @d14, " +
-              "line = @d15, facebook = @d16 " +
-              "WHERE " + ROW_MATCH_WHERE;
-    var params = [
-      { name: 'd0', value: inputDate },
-      { name: 'd1', value: cleanStr(cust.firstname || cust.firstName) },
-      { name: 'd2', value: cleanStr(cust.lastname || cust.lastName) },
-      { name: 'd3', value: cleanStr(cust.phone1 || cust.phone) },
-      { name: 'd4', value: inputBookingDate },
-      { name: 'd5', value: cleanStr(cust.type || 'ลงทะเบียน') },
-      { name: 'd6', value: customerProduct_(cust) },
-      { name: 'd7', value: customerAddressNo_(cust) },
-      { name: 'd8', value: cleanStr(cust.moo) },
-      { name: 'd9', value: cleanStr(cust.village) },
-      { name: 'd10', value: cleanStr(cust.subdistrict) },
-      { name: 'd11', value: cleanStr(cust.district) },
-      { name: 'd12', value: cleanStr(cust.province || 'อุบลราชธานี') },
-      { name: 'd13', value: cleanStr(cust.zipcode) },
-      { name: 'd14', value: cleanStr(cust.remark || cust.note) },
-      { name: 'd15', value: cleanStr(cust.line) },
-      { name: 'd16', value: cleanStr(cust.facebook) },
-      { name: 'key', value: rawKey }
-    ];
-    runParamQuery(sql, params);
-    return { success: true, message: 'อัปเดตข้อมูลสำเร็จ' };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-function deleteCustomerHTML(phoneKey) {
-  try {
-    var rawKey = cleanStr(phoneKey);
-    if (!rawKey) return { success: false, message: 'ไม่พบรายการที่จะลบ' };
-    var sql = "DELETE FROM " + TABLE_FULL_PATH +
-              " WHERE " + ROW_MATCH_WHERE;
-    runParamQuery(sql, [{ name: 'key', value: rawKey }]);
-    return { success: true, message: 'ลบข้อมูลสำเร็จ' };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-function checkDuplicatePhoneHTML(phone) {
-  try {
-    var cleanPhone = cleanStr(phone);
-    if (!cleanPhone) return { success: true, isDuplicate: false };
-    var sql = "SELECT CONCAT(IFNULL(first_name,''), ' ', IFNULL(last_name,'')) as fullname " +
-              "FROM " + TABLE_FULL_PATH +
-              " WHERE CAST(phone AS STRING) = @phone OR SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@phone, r'\\D', '') AS INT64) LIMIT 1";
-    var res = runParamQueryFetch(sql, [{ name: 'phone', value: cleanPhone }]);
-    if (res && res.length > 0) {
-      return { success: true, isDuplicate: true, customerName: res[0].fullname };
-    }
-    return { success: true, isDuplicate: false };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-function getAllCustomersExport() {
-  try {
-    var sql = "SELECT CAST(created_date AS STRING) AS created_date, " +
-              "CAST(booking_date AS STRING) AS booking_date, " +
-              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-              "first_name, last_name, phone, type, product, address_no, moo, village, subdistrict, district, province, zipcode, line, facebook, remark " +
-              "FROM " + TABLE_FULL_PATH + " ORDER BY " + buildRobustDateOrderExpr_('created_date') + " DESC, created_at_ts DESC LIMIT 50000";
-    var rows = runParamQueryFetch(sql, []);
-    return { success: true, data: rows };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-
-// =================================================================
-// รายงานจำนวนลีดที่ส่งเข้ามาต่อวัน (นับจาก lead_intake_log — รวมที่ส่งซ้ำด้วย)
-// =================================================================
-// payload รองรับ: { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD', onlyManyChat: true/false }
-// ไม่ส่ง startDate/endDate มา = เอาทั้งหมดที่มี Log อยู่
-// ไม่ส่ง onlyManyChat หรือส่ง false = นับทุกช่องทาง, ส่ง true = นับเฉพาะลีดที่มาจาก
-// Facebook/ManyChat (เช็คจาก remark ตอนที่บันทึกเข้ามา)
-function getDailyLeadReportHTML(reqPayload) {
-  try {
-    var payload = reqPayload || {};
-    var startDate = cleanStr(payload.startDate);
-    var endDate = cleanStr(payload.endDate);
-    var onlyManyChat = (payload.onlyManyChat === true || payload.onlyManyChat === 'true');
-
-    var whereClauses = [];
-    var params = [];
-    if (startDate) {
-      whereClauses.push("received_date >= SAFE_CAST(@sd AS DATE)");
-      params.push({ name: 'sd', value: startDate });
-    }
-    if (endDate) {
-      whereClauses.push("received_date <= SAFE_CAST(@ed AS DATE)");
-      params.push({ name: 'ed', value: endDate });
-    }
-    if (onlyManyChat) {
-      whereClauses.push("is_manychat = TRUE");
-    }
-    // กันเบอร์ใน EXCLUDED_PHONE_NUMBERS (เช่นเบอร์เซลล์เอง) ออกจากการนับ — เผื่อมีแถวเก่า
-    // ที่บันทึกไปแล้วก่อนเพิ่มลิสต์นี้ (ของใหม่จะไม่ถูกบันทึกเข้ามาอยู่แล้วตาม addCustomerHTML)
-    var excludedPhoneCond = buildExcludedPhoneCondition_();
-    if (excludedPhoneCond) {
-      whereClauses.push(excludedPhoneCond);
-      params = params.concat(buildExcludedPhoneParams_());
-    }
-    var whereSql = whereClauses.length > 0 ? (" WHERE " + whereClauses.join(" AND ")) : "";
-
-    var sql = "SELECT CAST(received_date AS STRING) AS day, " +
-              "COUNT(*) as total, " +
-              "SUM(CASE WHEN is_duplicate = FALSE THEN 1 ELSE 0 END) as new_count, " +
-              "SUM(CASE WHEN is_duplicate = TRUE THEN 1 ELSE 0 END) as duplicate_count, " +
-              "SUM(CASE WHEN is_manychat = TRUE THEN 1 ELSE 0 END) as manychat_count " +
-              "FROM " + LOG_TABLE_FULL_PATH + whereSql +
-              " GROUP BY day ORDER BY day DESC";
-    var rows = runParamQueryFetch(sql, params);
-    var report = (rows || []).map(function(r) {
-      return {
-        day: r.day,
-        total: parseInt(r.total) || 0,
-        newCount: parseInt(r.new_count) || 0,
-        duplicateCount: parseInt(r.duplicate_count) || 0,
-        manychatCount: parseInt(r.manychat_count) || 0
-      };
-    });
-    return { success: true, report: report };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-
-// =================================================================
-// รายละเอียด (รายชื่อ/เบอร์/สถานะ) ที่ประกอบเป็นตัวเลขในตารางรายงานรายวัน
-// =================================================================
-// ใช้ตอนพนักงานกดตัวเลข (ยอดรวม/ลูกค้าใหม่/ส่งซ้ำ/จาก ManyChat) ในหน้ารายงาน
-// (index.html) เพื่อดูว่าตัวเลขนั้นประกอบด้วยรายการอะไรบ้าง — คิวรีจาก
-// lead_intake_log ตัวเดียวกับที่ getDailyLeadReportHTML ใช้นับตัวเลข
-//
-// payload รองรับ:
-//   - date: 'YYYY-MM-DD'                 → ระบุวันเดียว (กดจากแถวรายวัน)
-//   - startDate / endDate: 'YYYY-MM-DD'  → ระบุช่วงวัน (กดจากแถว "รวมทั้งหมด")
-//     (ถ้าส่ง date มา จะใช้ date เป็นหลัก ไม่สนใจ startDate/endDate)
-//   - filter: 'total' | 'new' | 'duplicate' | 'manychat' (ไม่ส่งมา = 'total')
-//   - onlyManyChat: true/false → เหมือนใน getDailyLeadReport ถ้าเปิดไว้ตอนกด
-//     จะกรอง is_manychat = TRUE ซ้อนอีกชั้น (เว้นแต่ filter เป็น 'manychat' อยู่แล้ว)
-// จำกัดผลลัพธ์ไว้ที่ 500 แถวล่าสุด (เรียงใหม่สุดก่อน) กันโหลดหนักเกินไปถ้าช่วงวันที่กว้าง
-function getLeadIntakeLogDetailHTML(reqPayload) {
-  try {
-    var payload = reqPayload || {};
-    var filter = cleanStr(payload.filter) || 'total';
-    var onlyManyChat = (payload.onlyManyChat === true || payload.onlyManyChat === 'true');
-
-    var singleDate = cleanStr(payload.date);
-    var startDate = cleanStr(payload.startDate);
-    var endDate = cleanStr(payload.endDate);
-
-    var whereClauses = [];
-    var params = [];
-
-    if (singleDate) {
-      whereClauses.push("received_date = SAFE_CAST(@d AS DATE)");
-      params.push({ name: 'd', value: singleDate });
-    } else {
-      if (startDate) {
-        whereClauses.push("received_date >= SAFE_CAST(@sd AS DATE)");
-        params.push({ name: 'sd', value: startDate });
-      }
-      if (endDate) {
-        whereClauses.push("received_date <= SAFE_CAST(@ed AS DATE)");
-        params.push({ name: 'ed', value: endDate });
-      }
-    }
-
-    if (filter === 'new') {
-      whereClauses.push("is_duplicate = FALSE");
-    } else if (filter === 'duplicate') {
-      whereClauses.push("is_duplicate = TRUE");
-    } else if (filter === 'manychat') {
-      whereClauses.push("is_manychat = TRUE");
-    }
-    // กรองซ้ำอีกชั้นถ้าเปิดเช็คบ็อก "เฉพาะ ManyChat" ไว้ตอนกด (เหมือน getDailyLeadReportHTML)
-    // เว้นแต่ filter ที่กดมาเป็น 'manychat' อยู่แล้ว (กันเขียนเงื่อนไขซ้ำสองรอบเฉยๆ)
-    if (onlyManyChat && filter !== 'manychat') {
-      whereClauses.push("is_manychat = TRUE");
-    }
-    // กันเบอร์ใน EXCLUDED_PHONE_NUMBERS ออกจากรายการ drill-down ด้วย (สอดคล้องกับตัวเลขที่
-    // ถูกกรองออกไปแล้วใน getDailyLeadReportHTML — ไม่ให้เห็นแถวที่ไม่ได้ถูกนับในรายการละเอียด)
-    var excludedPhoneCondDetail = buildExcludedPhoneCondition_();
-    if (excludedPhoneCondDetail) {
-      whereClauses.push(excludedPhoneCondDetail);
-      params = params.concat(buildExcludedPhoneParams_());
-    }
-
-    var whereSql = whereClauses.length > 0 ? (" WHERE " + whereClauses.join(" AND ")) : "";
-
-    var sql = "SELECT FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', received_at, 'Asia/Bangkok') AS received_at_str, " +
-              "phone, facebook, first_name, last_name, is_duplicate, match_type, is_manychat " +
-              "FROM " + LOG_TABLE_FULL_PATH + whereSql +
-              " ORDER BY received_at DESC LIMIT 500";
-    var rows = runParamQueryFetch(sql, params);
-
-    var result = (rows || []).map(function(r) {
-      return {
-        receivedAt: r.received_at_str || '',
-        phone: formatPhoneNumber(r.phone),
-        facebook: r.facebook || '',
-        firstName: r.first_name || '',
-        lastName: r.last_name || '',
-        isDuplicate: (r.is_duplicate === 'true' || r.is_duplicate === true),
-        matchType: r.match_type || '',
-        isManychat: (r.is_manychat === 'true' || r.is_manychat === true)
-      };
-    });
-
-    return { success: true, rows: result };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-
-// =================================================================
-// ไทม์ไลน์การติดตามลูกค้า (follow_up_log)
-// =================================================================
-// เก็บเป็น JSON array ของ { date, note, loggedAt } ในคอลัมน์ follow_up_log
-// (STRING) ของตาราง customers เดิม — ไม่ได้แยกเป็นตารางใหม่ เพื่อให้ยังใช้
-// คีย์อ้างอิงลูกค้าเดิม (ROW_MATCH_WHERE / FINGERPRINT_EXPR) ได้โดยไม่ต้อง JOIN
-//
-// ⚠️ ต้องรันคำสั่งนี้ใน BigQuery Console ก่อนใช้งาน (ครั้งเดียว) มิฉะนั้นจะ
-// error เพราะคอลัมน์ยังไม่มีในตาราง:
-//
-//   ALTER TABLE `crm-tracker-503906.crm_tracker.customers`
-//   ADD COLUMN IF NOT EXISTS follow_up_log STRING;
-//
-// หลังเพิ่มคอลัมน์แล้ว ค่อยเอาไฟล์นี้ไปแทนของเดิมใน Apps Script editor แล้ว
-// Deploy > Manage deployments > แก้ไข deployment เดิมให้ใช้เวอร์ชันใหม่
-
-function parseFollowUpLog(raw) {
-  if (!raw) return [];
-  try {
-    var arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function addFollowUpLogHTML(rawKeyInput, entry) {
-  try {
-    var rawKey = cleanStr(rawKeyInput || '');
-    if (!rawKey) return { success: false, message: 'ไม่พบรหัสอ้างอิงลูกค้า' };
-
-    var noteVal = cleanStr(entry && entry.note);
-    var dateVal = cleanStr(entry && entry.date);
-    if (!noteVal || !dateVal) return { success: false, message: 'กรุณาระบุวันที่และหมายเหตุการติดตามให้ครบ' };
-
-    // วันติดตามครั้งต่อไป (booking_date): หน้าเว็บควรโชว์ช่องนี้ให้พนักงานเลือกเอง
-    // โดย default เป็นวันพรุ่งนี้ไว้ก่อน (ส่งมาที่ entry.nextFollowUpDate) — ถ้าไม่ส่งมา
-    // (เช่นเรียก API ตรงๆ โดยไม่ผ่านฟอร์มที่มีช่องนี้) ให้ default เป็นวันพรุ่งนี้ฝั่ง
-    // เซิร์ฟเวอร์เองเหมือนกัน กันพลาด
-    var nextFollowUpDateInput = formatDateStr(entry && (entry.nextFollowUpDate || entry.nextDate || entry.bookingDate));
-    var nextFollowUpDate = nextFollowUpDateInput;
-    if (!nextFollowUpDate) {
-      var defaultNextBase = new Date();
-      defaultNextBase.setDate(defaultNextBase.getDate() + 1);
-      nextFollowUpDate = Utilities.formatDate(defaultNextBase, 'GMT+7', 'yyyy-MM-dd');
-    }
-
-    // 1) ดึง follow_up_log ปัจจุบันของลูกค้ารายนี้มาก่อน
-    var selSql = "SELECT follow_up_log FROM " + TABLE_FULL_PATH +
-                 " WHERE " + ROW_MATCH_WHERE + " LIMIT 1";
-    var selRows = runParamQueryFetch(selSql, [{ name: 'key', value: rawKey }]);
-    if (!selRows || selRows.length === 0) {
-      return { success: false, message: 'ไม่พบข้อมูลลูกค้าในระบบ (ถ้าเพิ่งบันทึกลูกค้าใหม่ ข้อมูลอาจยังอยู่ใน streaming buffer ลองรออีกสักครู่)' };
-    }
-
-    var logArr = parseFollowUpLog(selRows[0].follow_up_log);
-    logArr.push({
-      date: dateVal,
-      note: noteVal,
-      loggedAt: new Date().toISOString()
-    });
-
-    // 2) เขียนกลับทั้ง array ที่อัปเดตแล้ว พร้อมอัปเดต last_followup_date (วันที่ของ
-    // การติดตามรอบนี้) และ booking_date (วันนัดครั้งต่อไป) — created_date (วันที่บันทึก
-    // ลูกค้าครั้งแรก) ไม่ถูกแก้ไขตรงนี้เลย ตั้งใจให้คงเดิมเสมอ
-    var updSql = "UPDATE " + TABLE_FULL_PATH + " SET follow_up_log = @log, " +
-                 "last_followup_date = @lfd, booking_date = @bd " +
-                 "WHERE " + ROW_MATCH_WHERE;
-    runParamQuery(updSql, [
-      { name: 'log', value: JSON.stringify(logArr) },
-      { name: 'lfd', value: dateVal },
-      { name: 'bd', value: nextFollowUpDate },
-      { name: 'key', value: rawKey }
-    ]);
-
-    return {
-      success: true,
-      message: 'บันทึกการติดตามลูกค้าสำเร็จ',
-      followUpLog: logArr,
-      followUpCount: logArr.length,
-      nextFollowUpDate: nextFollowUpDate
-    };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-
-// =================================================================
-// ⚙️ Setup ครั้งเดียว: เพิ่มคอลัมน์ follow_up_log ให้ตาราง customers
-// =================================================================
-// วิธีรัน: เปิดไฟล์นี้ใน Apps Script Editor > เลือกฟังก์ชัน
-// "runOneTimeSetup_AddFollowUpLogColumn" จาก dropdown ข้างปุ่ม ▶ Run (เรียกใช้)
-// ที่แถบด้านบน (อย่าเผลอเลือกฟังก์ชันอื่น) > กด ▶ Run > เช็คแท็บ "Executions"
-// (บันทึกการดำเนินการ) ว่าขึ้นข้อความ "สำเร็จ" จริงก่อนไปทดสอบ ManyChat ต่อ
-// รันครั้งเดียวพอ ไม่ต้องรันซ้ำอีกถ้าสำเร็จแล้ว (ใช้ ADD COLUMN IF NOT EXISTS
-// ป้องกัน error ถ้าเผลอรันซ้ำ)
-function runOneTimeSetup_AddFollowUpLogColumn() {
-  try {
-    var sql = "ALTER TABLE " + TABLE_FULL_PATH + " ADD COLUMN IF NOT EXISTS follow_up_log STRING";
-    runParamQuery(sql, []);
-    Logger.log('สำเร็จ: เพิ่มคอลัมน์ follow_up_log ให้ตาราง customers แล้ว (หรือมีอยู่แล้วก่อนหน้านี้)');
-  } catch (err) {
-    Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
-  }
-}
-
-// =================================================================
-// ⚙️ Setup ครั้งเดียว (ใหม่): สร้างตาราง lead_intake_log สำหรับรายงานจำนวนลีดต่อวัน
-// =================================================================
-// วิธีรัน: เหมือนขั้นตอนด้านบน — เลือกฟังก์ชัน
-// "runOneTimeSetup_CreateLeadIntakeLogTable" จาก dropdown ข้างปุ่ม ▶ Run แล้วกดรัน
-// เช็คแท็บ "Executions" ว่าขึ้น "สำเร็จ" ก่อนใช้งานจริง (ก่อนหน้านั้น action:add
-// จะยังทำงานตามปกติ แค่ log เข้า lead_intake_log จะ error เงียบ ๆ ใน Logger เฉยๆ
-// ไม่กระทบการบันทึกลูกค้าหลัก — แต่รายงานรายวันจะยังไม่มีข้อมูลจนกว่าจะรันขั้นนี้)
-// รันครั้งเดียวพอ ไม่ต้องรันซ้ำอีกถ้าสำเร็จแล้ว (ใช้ CREATE TABLE IF NOT EXISTS
-// ป้องกัน error ถ้าเผลอรันซ้ำ)
-function runOneTimeSetup_CreateLeadIntakeLogTable() {
-  try {
-    var sql = "CREATE TABLE IF NOT EXISTS " + LOG_TABLE_FULL_PATH + " (" +
-      "received_at TIMESTAMP, " +
-      "received_date DATE, " +
-      "phone STRING, " +
-      "facebook STRING, " +
-      "first_name STRING, " +
-      "last_name STRING, " +
-      "is_duplicate BOOL, " +
-      "match_type STRING, " +
-      "is_manychat BOOL" +
-      ") PARTITION BY received_date";
-    runParamQuery(sql, []);
-    Logger.log('สำเร็จ: สร้างตาราง ' + LOG_TABLE_ID + ' แล้ว (หรือมีอยู่แล้วก่อนหน้านี้)');
-  } catch (err) {
-    Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
-  }
-}
-
-// =================================================================
-// ⚙️ Setup ครั้งเดียว (ใหม่): เพิ่มคอลัมน์ last_followup_date ให้ตาราง customers
-// =================================================================
-// วิธีรัน: เหมือนขั้นตอนด้านบน — เลือกฟังก์ชัน
-// "runOneTimeSetup_AddLastFollowupDateColumn" จาก dropdown ข้างปุ่ม ▶ Run แล้วกดรัน
-// เช็คแท็บ "Executions" ว่าขึ้น "สำเร็จ" ก่อนใช้งานจริง (ก่อนรันขั้นนี้ การเพิ่มบันทึก
-// ติดตามยังทำงานได้ปกติ แค่ UPDATE ...SET last_followup_date... จะ error เพราะ
-// คอลัมน์ยังไม่มี — ทำให้ทั้งการบันทึกติดตามครั้งนั้นล้มเหลวไปด้วย ต้องรันขั้นนี้ก่อน
-// ถึงจะใช้ฟีเจอร์ "ติดตามล่าสุด" ได้)
-// รันครั้งเดียวพอ ไม่ต้องรันซ้ำอีกถ้าสำเร็จแล้ว (ใช้ ADD COLUMN IF NOT EXISTS
-// ป้องกัน error ถ้าเผลอรันซ้ำ)
-function runOneTimeSetup_AddLastFollowupDateColumn() {
-  try {
-    var sql = "ALTER TABLE " + TABLE_FULL_PATH + " ADD COLUMN IF NOT EXISTS last_followup_date DATE";
-    runParamQuery(sql, []);
-    Logger.log('สำเร็จ: เพิ่มคอลัมน์ last_followup_date ให้ตาราง customers แล้ว (หรือมีอยู่แล้วก่อนหน้านี้)');
-  } catch (err) {
-    Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
-  }
-}
-
-// =================================================================
-// ⚙️ Setup ครั้งเดียว: เพิ่มคอลัมน์ created_at_ts ให้ตาราง customers
-// =================================================================
-// เหตุผล: created_date เก็บแค่ระดับ "วัน" (ไม่มีเวลา) พอมีลูกค้าหลายรายกรอกเข้ามาใน
-// วันเดียวกัน ระบบเรียง "ใหม่สุดก่อน" จะเรียงได้แค่ระดับวัน ส่วนลำดับ "ภายในวันเดียวกัน"
-// ไม่แน่นอน (BigQuery ไม่การันตีลำดับของแถวที่ค่าที่ใช้เรียงเท่ากันเป๊ะ) ทำให้ลูกค้าที่
-// เพิ่งกรอกล่าสุดของวันนั้นอาจไม่ขึ้นบนสุดของกลุ่มวันเดียวกัน — คอลัมน์นี้เก็บเวลาบันทึก
-// จริงระดับวินาที (ตั้งอัตโนมัติตอน INSERT ใหม่ทุกครั้ง ดู addCustomerHTML) ใช้เป็น
-// ตัวเรียงรองถัดจาก created_date ใน searchCustomersHTML/getAllCustomersExport
-//
-// วิธีรัน: เลือกฟังก์ชัน "runOneTimeSetup_AddCreatedAtTimestampColumn" จาก dropdown
-// ข้างปุ่ม ▶ Run (เรียกใช้) ที่แถบด้านบน (อย่าเผลอเลือกฟังก์ชันอื่น) > กด ▶ Run
-// > เช็คแท็บ Execution log ว่าขึ้นข้อความ "สำเร็จ" จริงก่อนใช้งานต่อ รันครั้งเดียวพอ
-// (ใช้ ADD COLUMN IF NOT EXISTS ป้องกัน error ถ้าเผลอรันซ้ำ)
-//
-// หมายเหตุ: แถวเก่าที่มีอยู่ก่อนรันฟังก์ชันนี้จะมีค่า created_at_ts เป็น NULL ทั้งหมด
-// (ไม่มีทางย้อนไปรู้เวลาบันทึกจริงของแถวเก่าได้) BigQuery จัดให้ NULL อยู่ท้ายสุดเสมอ
-// เวลาเรียง DESC จึงไม่กระทบลำดับของแถวเก่า (ยังคงเรียงแบบเดิมภายในกลุ่มวันเดียวกัน)
-// มีผลเฉพาะแถวใหม่ที่กรอกหลังจากรันฟังก์ชันนี้แล้วเท่านั้น
-function runOneTimeSetup_AddCreatedAtTimestampColumn() {
-  try {
-    var sql = "ALTER TABLE " + TABLE_FULL_PATH + " ADD COLUMN IF NOT EXISTS created_at_ts TIMESTAMP";
-    runParamQuery(sql, []);
-    Logger.log('สำเร็จ: เพิ่มคอลัมน์ created_at_ts ให้ตาราง customers แล้ว (หรือมีอยู่แล้วก่อนหน้านี้)');
-  } catch (err) {
-    Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
-  }
-}
-
-function testDailyLeadReportDirect() {
-  var result = getDailyLeadReportHTML({
-    startDate: '2026-08-08',
-    endDate: '2026-08-08',
-    onlyManyChat: false
-  });
-
-  Logger.log(JSON.stringify(result));
-}
+            let addressParts = [];
+            if (addrNo) addressParts.push(addrNo);
+            if (moo) addressParts.push(`หมู่ ${moo}`);
+            if (village) addressParts.push(village);
+            const addressFull = addressParts.join(' ');
+            const packData = {
+                date: document.getElementById('cust-date').value,
+                booking_date: document.getElementById('cust-appdate').value,
+                appdate: document.getElementById('cust-appdate').value,
+                firstname: fname,
+                lastname: lname,
+                name: fullName,
+                phone: document.getElementById('cust-phone').value.trim(),
+                type: document.getElementById('cust-type').value,
+                productCategory: document.getElementById('cust-product-category').value,
+                productModel: getProductModelValue('cust-product-model'),
+                product: [
+                    document.getElementById('cust-product-category').value,
+                    getProductModelValue('cust-product-model')
+                ].filter(Boolean).join(' | '),
+                addressno: addrNo,
+                moo: moo,
+                village: village,
+                address: addressFull,
+                subdistrict: document.getElementById('cust-subdistrict').value,
+                district: document.getElementById('cust-district').value,
+                province: document.getElementById('cust-province').value,
+                zipcode: document.getElementById('cust-zipcode').value,
+                remark: document.getElementById('cust-note').value,
+                line: document.getElementById('cust-line').value,
+                facebook: document.getElementById('cust-facebook').value,
+                financialInfo: JSON.stringify(customerFinancial)
+            };
+            const actionType = rid ? 'update' : 'add';
+            const payloadReq = rid ? { rowIndex: rid, cust: packData } : packData;
+            const originalBtnHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '⏳ กำลังบันทึก...';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: actionType, payload: payloadReq })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if(resData && resData.success) {
+                    alert('💾 บันทึกข้อมูลสำเร็จ!');
+                    lastSavedCustomer = Object.assign({}, packData, { financial: JSON.parse(JSON.stringify(customerFinancial)) });
+                    const printBtn = document.getElementById('btn-print-last');
+                    printBtn.disabled = false;
+                    printBtn.title = 'พิมพ์แบบฟอร์มติดตามลูกค้าของ ' + fullName;
+                    resetFormState();
+                    fetchDataFromServer(currentPage);
+                } else {
+                    alert('❌ เกิดข้อผิดพลาดในการบันทึก: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(err => {
+                alert('🛑 เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+            })
+            .finally(() => {
+                // resetFormState() (กรณีสำเร็จ) เซ็ตปุ่มกลับเป็นข้อความเดิมให้แล้ว ที่นี่เผื่อกรณี error ให้กลับมากดใหม่ได้
+                submitBtn.disabled = false;
+                if (submitBtn.innerHTML === '⏳ กำลังบันทึก...') submitBtn.innerHTML = originalBtnHtml;
+            });
+        }
+        function fillPrintField(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value || '';
+        }
+        function renderPrintForm(data) {
+            const name = data.name || `${data.firstname || ''} ${data.lastname || ''}`.trim();
+            fillPrintField('pf-name', name);
+            fillPrintField('pf-phone', data.phone);
+            fillPrintField('pf-date', data.date);
+            fillPrintField('pf-addressno', data.addressno);
+            fillPrintField('pf-moo', data.moo);
+            fillPrintField('pf-village', data.village);
+            fillPrintField('pf-subdistrict', data.subdistrict);
+            fillPrintField('pf-district', data.district);
+            fillPrintField('pf-province', data.province);
+            fillPrintField('pf-note', data.remark || data.note);
+            document.getElementById('pf-check-tractor').textContent = '☐';
+            document.getElementById('pf-check-harvester').textContent = '☐';
+            document.getElementById('pf-check-other').textContent = '☐';
+            fillPrintField('pf-product-tractor', '');
+            fillPrintField('pf-product-harvester', '');
+            fillPrintField('pf-product-other', '');
+            const prodParts = getRowProductParts(data);
+            const category = prodParts.category;
+            const model = prodParts.model;
+            const productLabel = (model && model !== '-') ? `${category} ${model}` : category;
+            if (category === 'Yanmar' || category === 'Solis' || category.indexOf('แทรกเตอร์') !== -1) {
+                document.getElementById('pf-check-tractor').textContent = '☑';
+                fillPrintField('pf-product-tractor', productLabel);
+            } else if (category === 'รถเกี่ยว' || category.indexOf('เกี่ยวข้าว') !== -1) {
+                document.getElementById('pf-check-harvester').textContent = '☑';
+                fillPrintField('pf-product-harvester', productLabel);
+            } else if (category && category !== '-') {
+                document.getElementById('pf-check-other').textContent = '☑';
+                fillPrintField('pf-product-other', productLabel);
+            }
+            renderPrintFinancialSummary(data);
+            window.print();
+        }
+        function renderPrintFinancialSummary(data) {
+            let fin = data.financial;
+            if (!fin && data.financialInfo) {
+                try { fin = JSON.parse(data.financialInfo); } catch (e) { fin = null; }
+            }
+            const el = document.getElementById('pf-financial-summary');
+            if (!fin) { el.innerHTML = '<span class="pf-blank-line"></span><span class="pf-blank-line"></span>'; return; }
+            const lines = [];
+            if (fin.farmPlots && fin.farmPlots.length) {
+                fin.farmPlots.forEach((p, i) => {
+                    lines.push(`แปลงที่ ${i + 1}: ${p.type || '-'} ${p.rai ? p.rai + ' ไร่' : ''} ${p.docOwner ? '(เอกสารสิทธิ์: ' + p.docOwner + ')' : ''}`);
+                });
+            }
+            const jobParts = [];
+            if (fin.regularJob === 'yes') jobParts.push('มีงานประจำ');
+            else if (fin.regularJob === 'no') jobParts.push('ไม่มีงานประจำ');
+            if (fin.sideIncome === 'yes') jobParts.push('มีรายได้เสริม');
+            else if (fin.sideIncome === 'no') jobParts.push('ไม่มีรายได้เสริม');
+            if (jobParts.length) lines.push(jobParts.join(' / '));
+            if (fin.machinery && fin.machinery.length) {
+                fin.machinery.forEach(m => {
+                    lines.push(`เครื่องจักร: ${m.type || ''} ${m.brandModel || ''} ${m.qty ? 'x' + m.qty + ' คัน' : ''} ${m.note ? '(' + m.note + ')' : ''}`);
+                });
+            }
+            if (fin.debts && fin.debts.length) {
+                fin.debts.forEach(d => {
+                    lines.push(`หนี้สิน: ${d.creditor || '-'} คงเหลือ ${d.balance || '0'} บาท`);
+                });
+            }
+            el.innerHTML = lines.length
+                ? lines.map(l => `<div class="pf-row">${l}</div>`).join('')
+                : '<span class="pf-blank-line"></span><span class="pf-blank-line"></span>';
+        }
+        function printRowByIndex(idx) {
+            const row = currentRenderedData[idx];
+            if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
+            renderPrintForm(row);
+        }
+        function printLastSavedCustomer() {
+            if (!lastSavedCustomer) {
+                alert('ยังไม่มีข้อมูลลูกค้าที่บันทึกในหน้านี้ กรุณากรอกและบันทึกข้อมูลลูกค้าก่อน');
+                return;
+            }
+            renderPrintForm(lastSavedCustomer);
+        }
+        /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
+        let historyModalRowIdx = null;
+        let historyModalKey = null;
+        let historyModalEntries = [];
+        function selectFollowupType(button) {
+            document.getElementById('history-followup-type').value = button.dataset.value || '';
+            document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(btn => btn.classList.toggle('active', btn === button));
+        }
+        function resetFollowupType() {
+            document.getElementById('history-followup-type').value = '';
+            document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(btn => btn.classList.remove('active'));
+        }
+        function escapeHtml(v) {
+            return (v === undefined || v === null ? '' : String(v))
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function openHistoryModal(idx) {
+            const row = currentRenderedData[idx];
+            if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
+            historyModalRowIdx = idx;
+            historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
+            historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
+            document.getElementById('history-customer-info').innerHTML =
+                `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
+                `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(row.lastFollowupDate || '-')} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(row.booking_date || '-')}</span>`;
+            document.getElementById('history-new-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
+            document.getElementById('history-new-note').value = '';
+            resetFollowupType();
+            const followupBtn = document.getElementById('btn-submit-followup');
+            followupBtn.disabled = false;
+            followupBtn.innerHTML = '💾 บันทึกการติดตามนี้';
+            renderHistoryTimeline();
+            document.getElementById('history-modal-overlay').classList.add('show');
+        }
+        function closeHistoryModal() {
+            document.getElementById('history-modal-overlay').classList.remove('show');
+        }
+        function renderHistoryTimeline() {
+            const container = document.getElementById('history-timeline-list');
+            if (!historyModalEntries.length) {
+                container.innerHTML = '<div class="timeline-empty">ยังไม่มีบันทึกการติดตามลูกค้ารายนี้</div>';
+                return;
+            }
+            const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            container.innerHTML = sorted.map(e => `
+                <div class="timeline-item">
+                    <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type">${escapeHtml(e.followupType)}</span>` : ''}</div>
+                    <div class="timeline-note">${escapeHtml(e.note || '')}</div>
+                </div>
+            `).join('');
+        }
+        function submitFollowUpEntry() {
+            const submitBtn = document.getElementById('btn-submit-followup');
+            if (submitBtn.disabled) return; // กันกดบันทึกซ้ำระหว่างรอผลลัพธ์รอบก่อนหน้า
+            const dateVal = document.getElementById('history-new-date').value;
+            const noteVal = document.getElementById('history-new-note').value.trim();
+            const nextFollowUpVal = document.getElementById('history-next-followup-date').value;
+            const followupTypeVal = document.getElementById('history-followup-type').value;
+            if (!dateVal || !followupTypeVal || !noteVal) { alert('กรุณาระบุวันที่ ประเภท และหมายเหตุการติดตามให้ครบ'); return; }
+            if (!historyModalKey) { alert('ไม่พบข้อมูลอ้างอิงลูกค้ารายนี้'); return; }
+            const originalBtnHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '⏳ กำลังบันทึก...';
+            const newEntry = { date: dateVal, followupType: followupTypeVal, note: noteVal, nextFollowUpDate: nextFollowUpVal };
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success) {
+                    historyModalEntries.push(newEntry);
+                    const nextBookingDate = resData.nextFollowUpDate || nextFollowUpVal;
+                    if (currentRenderedData[historyModalRowIdx]) {
+                        const rowRef = currentRenderedData[historyModalRowIdx];
+                        rowRef.followUpLog = historyModalEntries.slice();
+                        rowRef.followUpCount = historyModalEntries.length;
+                        rowRef.lastFollowupDate = dateVal;
+                        rowRef.booking_date = nextBookingDate;
+                        rowRef.appdate = nextBookingDate;
+                    }
+                    renderHistoryTimeline();
+                    renderTableRows(currentRenderedData);
+                    document.getElementById('history-customer-info').innerHTML =
+                        `<b>${escapeHtml(currentRenderedData[historyModalRowIdx].name)}</b> · 📞 ${escapeHtml(currentRenderedData[historyModalRowIdx].phone || '-')} · <span class="badge badge-track">${escapeHtml(currentRenderedData[historyModalRowIdx].type || '')}</span>` +
+                        `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(dateVal)} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(nextBookingDate)}</span>`;
+                    document.getElementById('history-new-note').value = '';
+                    document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
+                    resetFollowupType();
+                    if (calendarLoadedOnce) {
+                        renderFollowupCalendar();
+                        selectCalendarDate(calendarSelectedDate, false);
+                    }
+                } else {
+                    alert('❌ บันทึกการติดตามไม่สำเร็จ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'))
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHtml;
+            });
+        }
+        function exportFilteredCSV() {
+            if(!currentRenderedData || currentRenderedData.length === 0) {
+                alert('ไม่มีข้อมูลสำหรับส่งออก');
+                return;
+            }
+            let csvContent = "﻿วันที่บันทึก,วันที่นัดหมาย,ติดตามล่าสุด,ชื่อ-สกุล,เบอร์โทร,ประเภท,ประเภทสินค้า,รุ่นรถ,ตำบล,อำเภอ,จังหวัด,หมายเหตุ\n";
+            currentRenderedData.forEach(r => {
+                const prodParts = getRowProductParts(r);
+                csvContent += `"${r.date}","${r.booking_date}","${r.lastFollowupDate || ''}","${r.name}","${r.phone}","${r.type}","${prodParts.category}","${prodParts.model}","${r.subdistrict}","${r.district}","${r.province}","${(r.remark||'').replace(/"/g, '""')}"\n`;
+            });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `CRM_Filtered_Export_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+        function exportFullExcel() {
+            alert('⚡ กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'exportAll' })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if(resData && resData.success && resData.data) {
+                    const ws = XLSX.utils.json_to_sheet(resData.data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Database");
+                    XLSX.writeFile(wb, `CRM_Full_Database_${new Date().toISOString().split('T')[0]}.xlsx`);
+                } else {
+                    alert('❌ ไม่สามารถดึงข้อมูลสำหรับ Excel ได้');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
