@@ -762,7 +762,8 @@
             if (row.productCategory || row.productModel) {
                 return { category: row.productCategory || '-', model: row.productModel || '-' };
             }
-            return { category: row.product || '-', model: '-' };
+            const parts = String(row.product || '').split(' | ');
+            return { category: parts[0] || '-', model: parts.slice(1).join(' | ') || '-' };
         }
         function switchPage(name) {
             document.getElementById('page-add').style.display = (name === 'add') ? 'flex' : 'none';
@@ -1301,6 +1302,7 @@
                 return `<tr>
                     <td style="text-align:center;">
                         <div class="row-action-group">
+                            <button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>
                             <button class="btn btn-secondary btn-row-icon" onclick="printRowByIndex(${idx})" title="พิมพ์แบบฟอร์มติดตามลูกค้า">🖨️</button>
                             <button class="btn btn-secondary btn-row-icon${followCount ? ' has-log' : ''}" onclick="openHistoryModal(${idx})" title="ดูไทม์ไลน์การติดตามลูกค้ารายนี้">🕓${followCount ? ' ' + followCount : ''}</button>
                         </div>
@@ -1512,6 +1514,57 @@
             populateProductModelSelect('cust-product-model', document.getElementById('cust-product-category').value, '');
             resetFinancialData();
         }
+
+        function setSelectValueWithFallback(selectId, value) {
+            const el = document.getElementById(selectId);
+            if (!el) return;
+            const wanted = String(value || '').trim();
+            if (!wanted) { el.value = ''; return; }
+            const exists = Array.from(el.options).some(opt => opt.value === wanted);
+            if (!exists) el.add(new Option(wanted, wanted));
+            el.value = wanted;
+        }
+
+        // เปิดลูกค้าทุกแหล่งที่มา (รวม Facebook/ManyChat) ในแบบฟอร์มเดียวกัน
+        function editCustomerByIndex(idx) {
+            const row = currentRenderedData[idx];
+            if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
+
+            resetFormState();
+            document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
+            document.getElementById('cust-date').value = row.date || '';
+            document.getElementById('cust-appdate').value = row.booking_date || row.appdate || '';
+            document.getElementById('cust-fname').value = row.firstname || '';
+            document.getElementById('cust-lname').value = row.lastname || '';
+            document.getElementById('cust-phone').value = row.phone || row.phone1 || '';
+            document.getElementById('cust-line').value = row.line || '';
+            document.getElementById('cust-facebook').value = row.facebook || '';
+            setSelectValueWithFallback('cust-type', row.type || 'ลงทะเบียน');
+
+            const product = getRowProductParts(row);
+            setSelectValueWithFallback('cust-product-category', product.category === '-' ? '' : product.category);
+            onCustProductCategoryChange();
+            if (document.getElementById('cust-product-model-text').style.display !== 'none') {
+                document.getElementById('cust-product-model-text').value = product.model === '-' ? '' : product.model;
+            } else {
+                setSelectValueWithFallback('cust-product-model', product.model === '-' ? '' : product.model);
+            }
+
+            document.getElementById('cust-addressno').value = row.addressno || row.address_no || row.address || '';
+            document.getElementById('cust-moo').value = row.moo || '';
+            document.getElementById('cust-village').value = row.village || '';
+            document.getElementById('cust-zipcode').value = row.zipcode || '';
+            setSelectValueWithFallback('cust-province', row.province || DEFAULT_PROVINCE);
+            populateDistrictSelect('cust-district', document.getElementById('cust-province').value, row.district || '');
+            populateSubdistrictSelect('cust-subdistrict', document.getElementById('cust-province').value, row.district || '', row.subdistrict || '');
+            document.getElementById('cust-note').value = row.remark || row.note || '';
+            updateAddressSummary();
+
+            document.getElementById('form-title').innerText = '✏️ แก้ไขข้อมูลลูกค้า';
+            document.getElementById('btn-submit').innerText = '💾 บันทึกการแก้ไข';
+            switchPage('add');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
         function onFormSubmit(e) {
             e.preventDefault();
             const rid = document.getElementById('form-row-index').value;
@@ -1564,6 +1617,10 @@
                 type: document.getElementById('cust-type').value,
                 productCategory: document.getElementById('cust-product-category').value,
                 productModel: getProductModelValue('cust-product-model'),
+                product: [
+                    document.getElementById('cust-product-category').value,
+                    getProductModelValue('cust-product-model')
+                ].filter(Boolean).join(' | '),
                 addressno: addrNo,
                 moo: moo,
                 village: village,
