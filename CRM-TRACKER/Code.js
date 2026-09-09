@@ -22,7 +22,7 @@
 // แก้เพิ่ม (2026-08-08 รอบถัดมา): ผู้ใช้ยืนยันว่าอยากให้ "นับตัวเลขให้ได้ก่อน" เป็นอันดับแรก
 // สุด (ตัดเรื่องดึงชื่อสินค้าจาก remark ออกไปก่อน) — เลยทำ FB_LEAD_MARKER ให้ผิดพลาดยากที่สุด
 // เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
-var CODE_VERSION = 'r7-2026-08-08-fb-marker-broaden';
+var CODE_VERSION = 'r9-2026-09-09-followup-calendar';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -215,6 +215,8 @@ function doGet(e) {
     // รายละเอียดที่ประกอบเป็นตัวเลขในรายงานรายวัน (ดู getLeadIntakeLogDetailHTML)
     // รองรับ GET ด้วยเผื่ออยากทดสอบผ่าน URL ตรงๆ — หน้าเว็บจริงเรียกผ่าน doPost
     return createJsonResponse(getLeadIntakeLogDetailHTML(e.parameter));
+  } else if (action === 'getFollowupCalendar') {
+    return createJsonResponse(getFollowupCalendarHTML(e.parameter));
   }
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -265,6 +267,8 @@ function doPost(e) {
       // รายละเอียด (รายชื่อ/เบอร์/สถานะ) ที่ประกอบเป็นตัวเลขในตารางรายงานรายวัน
       // ใช้ตอนกดตัวเลขในหน้ารายงาน (index.html) — ดูฟังก์ชัน getLeadIntakeLogDetailHTML
       result = getLeadIntakeLogDetailHTML(contents.payload || contents);
+    } else if (action === 'getFollowupCalendar') {
+      result = getFollowupCalendarHTML(contents.payload || contents);
     }
     return createJsonResponse(result);
   } catch (err) {
@@ -278,6 +282,29 @@ function createJsonResponse(data) {
 function cleanStr(str) {
   if (str === null || str === undefined) return '';
   return str.toString().trim();
+}
+
+// รับข้อมูลจากทั้งหน้าเว็บปัจจุบัน, payload รุ่นเก่า และ automation ภายนอก
+// เพื่อไม่ให้ที่อยู่หายเพียงเพราะชื่อ property ต่างกันเล็กน้อย
+function firstNonEmpty_(obj, keys) {
+  obj = obj || {};
+  for (var i = 0; i < keys.length; i++) {
+    var value = cleanStr(obj[keys[i]]);
+    if (value) return value;
+  }
+  return '';
+}
+
+function customerAddressNo_(cust) {
+  return firstNonEmpty_(cust, ['addressno', 'address_no', 'addressNo', 'address']);
+}
+
+function customerProduct_(cust) {
+  var direct = firstNonEmpty_(cust, ['product']);
+  if (direct) return direct;
+  var category = firstNonEmpty_(cust, ['productCategory', 'product_category']);
+  var model = firstNonEmpty_(cust, ['productModel', 'product_model']);
+  return [category, model].filter(function(v) { return !!v; }).join(' | ');
 }
 function runParamQueryFetch(sql, params) {
   try {
@@ -600,6 +627,74 @@ function searchCustomersHTML(reqPayload) {
     return { success: false, message: err.toString() };
   }
 }
+
+// รายชื่อลูกค้าตามวันนัดหมายสำหรับหน้าปฏิทินติดตาม
+function getFollowupCalendarHTML(reqPayload) {
+  try {
+    var payload = reqPayload || {};
+    var startDate = formatDateStr(payload.startDate);
+    var endDate = formatDateStr(payload.endDate);
+    if (!startDate || !endDate) {
+      return { success: false, message: 'กรุณาระบุช่วงวันที่ของปฏิทิน' };
+    }
+
+    var bookingExpr = buildRobustDateOrderExpr_('booking_date');
+    var sql = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
+              "CAST(created_date AS STRING) AS created_date, " +
+              "CAST(booking_date AS STRING) AS booking_date, " +
+              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
+              FINGERPRINT_EXPR + " AS row_key FROM " + TABLE_FULL_PATH +
+              " WHERE " + bookingExpr + " BETWEEN SAFE.PARSE_DATE('%Y-%m-%d', @startDate) " +
+              "AND SAFE.PARSE_DATE('%Y-%m-%d', @endDate) " +
+              "ORDER BY " + bookingExpr + " ASC, first_name ASC, last_name ASC";
+    var rows = runParamQueryFetch(sql, [
+      { name: 'startDate', value: startDate },
+      { name: 'endDate', value: endDate }
+    ]);
+
+    var data = (rows || []).map(function(r) {
+      var fn = cleanStr(r.first_name || r.firstname);
+      var ln = cleanStr(r.last_name || r.lastname);
+      var fb = cleanStr(r.facebook);
+      var line = cleanStr(r.line);
+      var fullName = (fn + ' ' + ln).trim() || (fb ? '[FB] ' + fb : (line ? '[Line] ' + line : '(ไม่ระบุชื่อ)'));
+      var ph = formatPhoneNumber(r.phone);
+      var key = cleanStr(r.row_key) || ph || (fn + '_' + ln);
+      var logs = parseFollowUpLog(r.follow_up_log);
+      return {
+        sheetRowIndex: key,
+        raw_key: key,
+        date: formatDateStr(r.created_date),
+        firstname: fn,
+        lastname: ln,
+        name: fullName,
+        phone: ph,
+        phone1: ph,
+        appdate: formatDateStr(r.booking_date),
+        booking_date: formatDateStr(r.booking_date),
+        lastFollowupDate: formatDateStr(r.last_followup_date),
+        type: r.type || 'ลงทะเบียน',
+        product: r.product || '',
+        addressno: r.address_no || '',
+        moo: r.moo || '',
+        village: r.village || '',
+        subdistrict: r.subdistrict || '',
+        district: r.district || '',
+        province: r.province || 'อุบลราชธานี',
+        zipcode: r.zipcode || '',
+        remark: r.remark || '',
+        note: r.remark || '',
+        line: line,
+        facebook: fb,
+        followUpLog: logs,
+        followUpCount: logs.length
+      };
+    });
+    return { success: true, data: data, totalCount: data.length, startDate: startDate, endDate: endDate };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
 // รวมเงื่อนไข WHERE ที่มาจาก buildWhereClause() (อาจว่างเปล่า หรือขึ้นต้นด้วย " WHERE ...")
 // เข้ากับเงื่อนไขเพิ่มเติมอีกอันแบบปลอดภัย — ถ้า whereObj.sql มีอยู่แล้วให้ต่อด้วย AND,
 // ถ้าไม่มีให้เปิด WHERE ใหม่ (เดิมโค้ดนี้เอาไปต่อกับ " WHERE ..." ตรงๆ ทำให้ได้ SQL
@@ -881,8 +976,8 @@ function addCustomerHTML(cust) {
       { name: 'd3', value: cleanStr(cust.phone1 || cust.phone) },
       { name: 'd4', value: inputBookingDate },
       { name: 'd5', value: cleanStr(cust.type || 'ลงทะเบียน') },
-      { name: 'd6', value: cleanStr(cust.product) },
-      { name: 'd7', value: cleanStr(cust.addressno) },
+      { name: 'd6', value: customerProduct_(cust) },
+      { name: 'd7', value: customerAddressNo_(cust) },
       { name: 'd8', value: cleanStr(cust.moo) },
       { name: 'd9', value: cleanStr(cust.village) },
       { name: 'd10', value: cleanStr(cust.subdistrict) },
@@ -932,8 +1027,8 @@ function updateCustomerHTML(rowIndex, cust) {
       { name: 'd3', value: cleanStr(cust.phone1 || cust.phone) },
       { name: 'd4', value: inputBookingDate },
       { name: 'd5', value: cleanStr(cust.type || 'ลงทะเบียน') },
-      { name: 'd6', value: cleanStr(cust.product) },
-      { name: 'd7', value: cleanStr(cust.addressno) },
+      { name: 'd6', value: customerProduct_(cust) },
+      { name: 'd7', value: customerAddressNo_(cust) },
       { name: 'd8', value: cleanStr(cust.moo) },
       { name: 'd9', value: cleanStr(cust.village) },
       { name: 'd10', value: cleanStr(cust.subdistrict) },
