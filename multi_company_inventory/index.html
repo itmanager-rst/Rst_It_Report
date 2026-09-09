@@ -188,12 +188,12 @@
                 </div>
             </div>
 
-            <!-- ตารางใบสั่งซื้อ แสดงผล 16 คอลัมน์ตรงตามแอปเก่า -->
+            <!-- ตารางใบสั่งซื้อ -->
             <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-xs">
                         <thead>
-                            <tr class="bg-slate-800 text-white uppercase tracking-wider text-[11px] text-nowrap">
+                            <tr class="bg-slate-800 text-white uppercase tracking-wider text-[11px] whitespace-nowrap">
                                 <th class="p-3">วันที่-ลำดับ</th>
                                 <th class="p-3">ชื่อโครงการ</th>
                                 <th class="p-3">วันที่รับ PR</th>
@@ -206,7 +206,7 @@
                                 <th class="p-3 text-right">ยอดรวมจำนวนเงินใบสั่งซื้อ</th>
                                 <th class="p-3">ชื่อลูกค้า/ผู้ขาย</th>
                                 <th class="p-3 text-center">สถานะความคืบหน้า</th>
-                                <th class="p-3">ชื่อ PIC</th>
+                                <th class="p-3 text-center">ชื่อ PIC</th>
                                 <th class="p-3 text-center">เอกสารที่สร้าง</th>
                                 <th class="p-3 text-center">พิมพ์</th>
                                 <th class="p-3">หมายเหตุ</th>
@@ -236,7 +236,6 @@
 
         const API_BASE_URL = getApiBaseUrl();
 
-        // ตรวจสอบสถานะการเชื่อมต่อ BigQuery และ ECount API
         async function checkHealth() {
             try {
                 const res = await fetch(`${API_BASE_URL}/api/health-check`);
@@ -258,7 +257,6 @@
             }
         }
 
-        // ฟังก์ชันสลับ Tab หน้าจอ
         function switchTab(tab) {
             const btnInventory = document.getElementById('navInventory');
             const btnPO = document.getElementById('navPO');
@@ -407,8 +405,18 @@
             tableBody.innerHTML = `<tr><td colspan="16" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-purple-600 block"></i>กำลังดึงข้อมูลใบสั่งซื้อจาก ECOUNT...</td></tr>`;
 
             try {
-                const res = await fetch(`${API_BASE_URL}/api/get-po-list?company_id=${comp}`);
-                const data = await res.json();
+                let res;
+                let data;
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    try {
+                        res = await fetch(`${API_BASE_URL}/api/get-po-list?company_id=${encodeURIComponent(comp)}`);
+                        data = await res.json();
+                        if (res.ok && data && data.success) break;
+                    } catch (error) {
+                        if (attempt === 2) throw error;
+                    }
+                    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 800));
+                }
 
                 if (!res.ok || !data.success) {
                     const msg = data.message || 'ไม่สามารถโหลดข้อมูล PO ได้';
@@ -428,7 +436,7 @@
         function updatePOStats(items) {
             const total = items.length;
             const totalQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-            const totalAmt = items.reduce((sum, item) => sum + (Number(item.supply_amt) || Number(item.total_amt) || 0), 0);
+            const totalAmt = items.reduce((sum, item) => sum + (Number(item.total_amt) || Number(item.supply_amt) || 0), 0);
 
             document.getElementById('poStatTotal').innerText = total.toLocaleString();
             document.getElementById('poStatQty').innerText = totalQty.toLocaleString();
@@ -450,168 +458,105 @@
             renderPOTable(filtered);
         }
 
-// ----------------------------------------------------
-// Helper Functions: แปลงวันที่และคำนวณยอดเงิน
-// ----------------------------------------------------
-function formatThaiDate(dateStr) {
-    if (!dateStr || dateStr === '-') return '-';
-    let str = String(dateStr).trim();
-    
-    // แบบ ISO: YYYY-MM-DD
-    if (str.includes('-') && str.length >= 10) {
-        let parts = str.split('T')[0].split('-');
-        if (parts.length === 3) {
-            let year = parseInt(parts[0]);
-            let month = parts[1];
-            let day = parts[2];
-            if (year < 2500) year += 543;
-            return `${day}/${month}/${year}`;
+        function formatThaiDate(dateStr) {
+            if (!dateStr || dateStr === '-') return '-';
+            let str = String(dateStr).trim();
+            
+            if (str.includes('-') && str.length >= 10) {
+                let parts = str.split('T')[0].split('-');
+                if (parts.length === 3) {
+                    let year = parseInt(parts[0]);
+                    let month = parts[1];
+                    let day = parts[2];
+                    if (year < 2500) year += 543;
+                    return `${day}/${month}/${year}`;
+                }
+            }
+
+            let cleanStr = str.replace(/[^0-9]/g, '');
+            if (cleanStr.length === 8) {
+                let year = parseInt(cleanStr.substring(0, 4));
+                let month = cleanStr.substring(4, 6);
+                let day = cleanStr.substring(6, 8);
+                if (year < 2500) year += 543;
+                return `${day}/${month}/${year}`;
+            }
+            return dateStr;
         }
-    }
 
-    // แบบ ECOUNT: YYYYMMDD
-    let cleanStr = str.replace(/[^0-9]/g, '');
-    if (cleanStr.length === 8) {
-        let year = parseInt(cleanStr.substring(0, 4));
-        let month = cleanStr.substring(4, 6);
-        let day = cleanStr.substring(6, 8);
-        if (year < 2500) year += 543;
-        return `${day}/${month}/${year}`;
-    }
-    return dateStr;
-}
-
-function parseNumber(val) {
-    if (val === null || val === undefined || val === '') return 0;
-    if (typeof val === 'number') return isNaN(val) ? 0 : val;
-    const cleaned = String(val).replace(/,/g, '').trim();
-    const num = parseFloat(cleaned);
-    return isNaN(num) ? 0 : num;
-}
-
-function extractAmountFromObject(obj) {
-    if (!obj || typeof obj !== 'object') return 0;
-
-    const candidateKeys = [
-        'total_amt', 'TOTAL_AMT', 'total_amount', 'TOTAL_AMOUNT',
-        'po_amt', 'PO_AMT', 'supply_amt', 'SUPPLY_AMT', 'net_amt', 'NET_AMT',
-        'sum_amt', 'SUM_AMT', 'total_price', 'TOTAL_PRICE', 'amt', 'AMT',
-        'amount', 'AMOUNT', 'buy_amt', 'BUY_AMT', 'doc_amt', 'DOC_AMT'
-    ];
-
-    for (let key of candidateKeys) {
-        if (obj[key] !== undefined && obj[key] !== null && obj[key] !== '') {
-            let val = parseNumber(obj[key]);
-            if (val > 0) return val;
+        function extractAmountFromObject(obj) {
+            if (!obj || typeof obj !== 'object') return 0;
+            if (obj.total_amt !== undefined && obj.total_amt !== null && obj.total_amt !== '') return Number(obj.total_amt) || 0;
+            if (obj.supply_amt !== undefined && obj.supply_amt !== null && obj.supply_amt !== '') return Number(obj.supply_amt) || 0;
+            
+            const qty = Number(obj.qty) || 0;
+            const price = Number(obj.price) || 0;
+            return qty * price;
         }
-    }
 
-    const qty = parseNumber(obj.qty || obj.QTY || obj.buy_qty || obj.BUY_QTY);
-    const price = parseNumber(obj.price || obj.PRICE || obj.buy_price || obj.BUY_PRICE);
-    if (qty > 0 && price > 0) {
-        return qty * price;
-    }
+        function renderPOTable(items) {
+            const tableBody = document.getElementById('poTable');
+            if (!tableBody) return;
 
-    return 0;
-}
+            if (!Array.isArray(items) || items.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="16" class="text-center p-8 text-slate-400">⚠️ ไม่พบรายการใบสั่งซื้อในระบบ</td></tr>`;
+                return;
+            }
 
+            tableBody.innerHTML = items.map((item, idx) => {
+                const rawDate = item.io_date || item.ord_date || '';
+                const thaiDate = formatThaiDate(rawDate);
+                const seqNo = item.seq || (idx + 1);
+                const dateSeq = `${thaiDate} -${seqNo}`;
 
+                const pjtName = item.pjt_des || item.pjt_cd || '-';
+                const prRecvDate = thaiDate;
+                const prReqDate = thaiDate;
+                const seoType = '-';
+                const siteName = 'สำนักงานใหญ่';
 
+                let poNo = item.po_no || '-';
 
+                const prodName = item.prod_des || item.prod_cd || '-';
+                const sizeSpecVal = item.size_des;
+                const sizeSpec = sizeSpecVal ? ` [${sizeSpecVal}]` : '';
+                const fullProdDisplay = `${prodName}${sizeSpec}`;
 
+                const deliveryDate = thaiDate;
+                const totalAmt = extractAmountFromObject(item);
+                const custName = item.cust_des || item.cust_cd || '-';
 
+                const statusBadge = `<span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-semibold">กำลังดำเนินการ</span>`;
 
-       function renderPOTable(items) {
-    const tableBody = document.getElementById('poTable') || document.getElementById('poListTableBody');
-    if (!tableBody) return;
+                // อ่านค่า PIC จาก key pic หรือ emp_des ที่เตรียมไว้ใน backend
+                const picName = item.pic || item.emp_des || '0000';
 
-    if (!Array.isArray(items) || items.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="16" class="text-center py-4 text-warning">⚠️ ไม่พบรายการใบสั่งซื้อในระบบ</td></tr>`;
-        return;
-    }
+                const docCreated = '<span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded text-[10px] font-semibold">PO</span>';
+                const remarkText = item.ref_no || item.pr_no || '-';
 
-    tableBody.innerHTML = items.map((item, idx) => {
-        // 1. วันที่-ลำดับ (รูปแบบ DD/MM/YYYY -ลำดับ)
-        const rawDate = item.io_date || item.IO_DATE || item.ord_date || item.ORD_DATE || item.time_date || item.created_at || '';
-        const thaiDate = formatThaiDate(rawDate);
-        const seqNo = item.seq || item.SEQ || item.ord_no || item.ORD_NO || (idx + 1);
-        const dateSeq = `${thaiDate} -${seqNo}`;
-
-        // 2. ชื่อโครงการ
-        const pjtName = item.pjt_des || item.PJT_DES || item.pjt_cd || item.PJT_CD || item.project_name || '-';
-
-        // 3 & 4. วันที่รับ PR และ วันที่ต้องการ PR
-        const prRecvDate = formatThaiDate(item.pr_recv_date || item.PR_RECV_DATE || rawDate);
-        const prReqDate = formatThaiDate(item.delivery_date || item.DELIVERY_DATE || item.req_date || item.REQ_DATE || rawDate);
-
-        // 5. แบบ SEOคน
-        const seoType = item.p_des1 || item.P_DES1 || item.seo_type || item.SEO_TYPE || '-';
-
-        // 6. ชื่อสถานที่
-        const siteName = item.location_name || item.LOCATION_NAME || item.wh_des || item.WH_DES || item.site_name || 'สำนักงานใหญ่';
-
-        // 7. เลขที่ใบสั่งซื้อ (PO-YYYYMMDD-XX)
-        let poNo = item.po_no || item.PO_NO || item.io_no || item.IO_NO || '';
-        if (!poNo && (item.ord_no || item.ORD_NO)) {
-            const cleanDateStr = String(rawDate).replace(/[^0-9]/g, '');
-            poNo = `PO-${cleanDateStr}-${item.ord_no || item.ORD_NO}`;
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                        <td class="p-3 text-center font-bold">${dateSeq}</td>
+                        <td class="p-3">${pjtName}</td>
+                        <td class="p-3 text-center">${prRecvDate}</td>
+                        <td class="p-3 text-center">${prReqDate}</td>
+                        <td class="p-3 text-center">${seoType}</td>
+                        <td class="p-3">${siteName}</td>
+                        <td class="p-3 font-bold text-blue-600">${poNo}</td>
+                        <td class="p-3">${fullProdDisplay}</td>
+                        <td class="p-3 text-center">${deliveryDate}</td>
+                        <td class="p-3 text-right font-bold text-emerald-600">฿${totalAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-3">${custName}</td>
+                        <td class="p-3 text-center">${statusBadge}</td>
+                        <td class="p-3 text-center font-medium">${picName}</td>
+                        <td class="p-3 text-center">${docCreated}</td>
+                        <td class="p-3 text-center"><button class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-600"><i class="fa-solid fa-print"></i></button></td>
+                        <td class="p-3 text-slate-400">${remarkText}</td>
+                    </tr>
+                `;
+            }).join('');
         }
-        if (!poNo) poNo = '-';
 
-        // 8. ชื่อสินค้า [ข้อมูลเฉพาะ]
-        const prodName = item.prod_des || item.PROD_DES || item.prod_cd || item.PROD_CD || item.product_name || '-';
-        const sizeSpecVal = item.size_des || item.SIZE_DES;
-        const sizeSpec = sizeSpecVal ? ` [${sizeSpecVal}]` : '';
-        const fullProdDisplay = `${prodName}${sizeSpec}`;
-
-        // 9. วันที่ส่งมอบ
-        const deliveryDate = formatThaiDate(item.delivery_date || item.DELIVERY_DATE || item.time_date || item.TIME_DATE || rawDate);
-
-        // 10. ยอดรวมจำนวนเงินใบสั่งซื้อ
-        const totalAmt = typeof extractAmountFromObject === 'function' ? extractAmountFromObject(item) : 0;
-
-        // 11. ชื่อลูกค้า/ผู้ขาย
-        const custName = item.cust_des || item.CUST_DES || item.cust_name || item.CUST_NAME || item.cust || item.CUST || '-';
-
-        // 12. สถานะความคืบหน้า
-        const confirmType = item.confirm_type || item.CONFIRM_TYPE;
-        const pFlag = item.p_flag || item.P_FLAG;
-        const isCompleted = confirmType === 'Y' || confirmType === '9' || pFlag === '9' || pFlag === 9;
-        const statusBadge = isCompleted 
-            ? `<span class="badge bg-success-subtle text-success border border-success-subtle">อนุมัติแล้ว</span>` 
-            : `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">กำลังดำเนินการ</span>`;
-
-        // 13. ชื่อ PIC
-        const picName = item.emp_des || item.EMP_DES || item.emp_cd || item.EMP_CD || item.writer_id || item.WRITER_ID || item.pic_name || '0000';
-
-        // 14. เอกสารที่สร้าง & 16. หมายเหตุ
-        const docCreated = '<span class="badge bg-secondary">PO</span>';
-        const remarkText = item.ref_no || item.REF_NO || item.pr_no || item.PR_NO || item.ref_des || item.REF_DES || item.ttl_ctt || item.TTL_CTT || item.remarks || '-';
-
-        return `
-            <tr>
-                <td class="text-center text-nowrap fw-bold">${dateSeq}</td>
-                <td>${pjtName}</td>
-                <td class="text-center text-nowrap">${prRecvDate}</td>
-                <td class="text-center text-nowrap">${prReqDate}</td>
-                <td class="text-center">${seoType}</td>
-                <td>${siteName}</td>
-                <td class="fw-bold text-nowrap text-primary">${poNo}</td>
-                <td>${fullProdDisplay}</td>
-                <td class="text-center text-nowrap">${deliveryDate}</td>
-                <td class="text-end fw-bold text-success">${totalAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td>${custName}</td>
-                <td class="text-center">${statusBadge}</td>
-                <td class="text-center">${picName}</td>
-                <td class="text-center">${docCreated}</td>
-                <td class="text-center"><button class="btn btn-sm btn-light py-0 px-1 text-dark" title="พิมพ์เอกสาร"><i class="bi bi-printer"></i></button></td>
-                <td class="small text-muted">${remarkText}</td>
-            </tr>
-        `;
-    }).join('');
-}
-
-        // เริ่มต้นการทำงาน
         checkHealth();
         loadInventory();
     </script>

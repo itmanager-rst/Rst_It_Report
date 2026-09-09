@@ -22,7 +22,6 @@ load_dotenv()
 PROJECT_ID = os.getenv("GCP_PROJECT_ID", "rst-ecount-sync-py").strip()
 DATASET_ID = "multi_company_inventory"
 
-# ECOUNT credentials and sessions are kept separately for each company.
 COMPANIES = [
     {
         "id": "ASIA",
@@ -56,7 +55,7 @@ def get_ecount_session(company, force_refresh: bool = False):
     if force_refresh:
         ECOUNT_SESSIONS.pop(company_id, None)
 
-    if company_id in ECOUNT_SESSIONS:
+    if company_id in ECOUNT_SESSIONS and not force_refresh:
         return ECOUNT_SESSIONS[company_id]
 
     api_key = company["api_key"]
@@ -80,7 +79,7 @@ def get_ecount_session(company, force_refresh: bool = False):
             session = (datas.get("SESSION_ID"), datas.get("HOST_URL"))
             if session[0] and session[1]:
                 ECOUNT_SESSIONS[company_id] = session
-            return session
+                return session
         return None, None
     except Exception as e:
         print(f"[ECOUNT LOGIN EXCEPTION - {company_id}]: {e}")
@@ -174,7 +173,6 @@ def get_inventory(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RU
     if company_id != "ALL":
         where_clause = f"WHERE UPPER(b.company_id) = '{company_id.upper()}'"
 
-    # Query แก้ไขให้ค้นหาชื่อสินค้าและคลังสินค้าได้อย่างครอบคลุมทุกบริษัท (ASIA, ROBOTICS, RUAMSINTHAI)
     query = f"""
         SELECT 
             b.company_id,
@@ -278,7 +276,6 @@ async def get_po_list_legacy(
         except Exception:
             return {"success": False, "message": "ECOUNT Session หมดอายุ กรุณารีเฟรชอีกครั้ง", "data": []}
 
-        # ECOUNT may return an expired-session error with HTTP 200.
         if str(response_data.get("Status")) != "200":
             session_id, host_url = get_ecount_session(COMPANIES[0], force_refresh=True)
             if session_id and host_url:
@@ -360,6 +357,8 @@ async def get_po_list_legacy(
                     "price": float(pick("PRICE") or 0),
                     "supply_amt": float(str(pick("SUPPLY_AMT", "SUPPLY_AMOUNT") or 0).replace(",", "")),
                     "total_amt": float(str(pick("TOTAL_AMT", "TOTAL_AMOUNT", "PO_AMT", "BUY_AMT") or 0).replace(",", "")),
+                    "pic": pick("PIC_NAME", "PIC_ID", "EMP_DES", "EMP_NAME", "EMP_CD", "EMP_ID", "WRITER_NAME", "WRITER_ID", "WRITE_ID", "PIC") or "0000",
+                    "emp_des": pick("PIC_NAME", "PIC_ID", "EMP_DES", "EMP_NAME", "EMP_CD", "EMP_ID", "WRITER_NAME", "WRITER_ID", "WRITE_ID", "PIC") or "0000",
                     "seq": seq_val
                 }
                 normalized.append(row)
@@ -396,41 +395,63 @@ def fetch_company_po(company, from_date, to_date):
             timeout=30,
         )
 
+    if not company.get("api_key"):
+        return [], f"ไม่สามารถโหลด PO บริษัท {company['id']} ได้: ไม่ได้ตั้งค่า API KEY"
+
     session_id, host_url = get_ecount_session(company)
+    if not session_id or not host_url:
+        session_id, host_url = get_ecount_session(company, force_refresh=True)
+
     if not session_id or not host_url:
         return [], f"ไม่สามารถเข้าสู่ระบบบริษัท {company['id']} ได้"
 
+    def response_items(response_body):
+        data = response_body.get("Data", {}) or {}
+        items = data.get("Result") or data.get("Datas") or data.get("List") or []
+        if isinstance(items, dict):
+            return [items], data
+        return items if isinstance(items, list) else [], data
+
+    body = {}
     for attempt in range(2):
         try:
             response = request_page(session_id, host_url, 1)
             body = response.json()
-            if str(body.get("Status")) == "200":
+            if response.status_code == 200 and str(body.get("Status")) == "200":
                 break
         except (ValueError, requests.RequestException):
             body = {}
-        session_id, host_url = get_ecount_session(company, force_refresh=True)
+        if attempt == 0:
+            session_id, host_url = get_ecount_session(company, force_refresh=True)
+            if not session_id or not host_url:
+                return [], f"ไม่สามารถโหลด PO บริษัท {company['id']} ได้: session หมดอายุ"
     else:
         return [], f"ไม่สามารถโหลด PO บริษัท {company['id']} ได้"
 
-    data = body.get("Data", {})
-    items = data.get("Result") or data.get("Datas") or data.get("List") or []
-    if isinstance(items, dict):
-        items = [items]
+    items, data = response_items(body)
     all_items = list(items)
     total_count = int(data.get("TotalCnt") or data.get("TOTAL_CNT") or len(all_items))
     page = 1
     while len(all_items) < total_count and items:
         page += 1
-        try:
-            page_body = request_page(session_id, host_url, page).json()
-        except (ValueError, requests.RequestException):
-            break
+        page_body = {}
+        for page_attempt in range(2):
+            try:
+                page_resp = request_page(session_id, host_url, page)
+                page_body = page_resp.json()
+                if page_resp.status_code == 200 and str(page_body.get("Status")) == "200":
+                    break
+            except (ValueError, requests.RequestException):
+                page_body = {}
+            if page_attempt == 0:
+                session_id, host_url = get_ecount_session(company, force_refresh=True)
+                if not session_id or not host_url:
+                    page_body = {}
+                    break
         if str(page_body.get("Status")) != "200":
             break
-        page_data = page_body.get("Data", {})
-        items = page_data.get("Result") or page_data.get("Datas") or page_data.get("List") or []
-        if isinstance(items, dict):
-            items = [items]
+
+        items, _ = response_items(page_body)
         if not items:
             break
         all_items.extend(items)
@@ -442,6 +463,12 @@ def fetch_company_po(company, from_date, to_date):
                 return value
         return ""
 
+    def number_value(value):
+        try:
+            return float(str(value or 0).replace(",", ""))
+        except (TypeError, ValueError):
+            return 0.0
+
     normalized = []
     for item in all_items:
         if not isinstance(item, dict):
@@ -451,6 +478,9 @@ def fetch_company_po(company, from_date, to_date):
         order_no = pick(item, "ORD_NO", "ORDER_NO", "SEQ")
         if not raw_po or str(raw_po) in ("0", "0.0"):
             raw_po = f"PO-{po_date}-{order_no}" if po_date and order_no else str(order_no or "-")
+        
+        pic_val = pick(item, "PIC_NAME", "PIC_ID", "EMP_DES", "EMP_NAME", "EMP_CD", "EMP_ID", "WRITER_NAME", "WRITER_ID", "WRITE_ID", "PIC") or "0000"
+
         normalized.append({
             "company_id": company["id"],
             "po_no": str(raw_po),
@@ -464,10 +494,12 @@ def fetch_company_po(company, from_date, to_date):
             "prod_des": pick(item, "PROD_DES", "ITEM_DES", "PROD_NAME"),
             "prod_cd": pick(item, "PROD_CD", "ITEM_CD"),
             "size_des": pick(item, "SIZE_DES", "SIZE", "SPEC"),
-            "qty": float(str(pick(item, "QTY", "QUANTITY") or 0).replace(",", "")),
-            "price": float(str(pick(item, "PRICE") or 0).replace(",", "")),
-            "supply_amt": float(str(pick(item, "SUPPLY_AMT", "SUPPLY_AMOUNT") or 0).replace(",", "")),
-            "total_amt": float(str(pick(item, "TOTAL_AMT", "TOTAL_AMOUNT", "PO_AMT", "BUY_AMT") or 0).replace(",", "")),
+            "qty": number_value(pick(item, "QTY", "QUANTITY")),
+            "price": number_value(pick(item, "PRICE")),
+            "supply_amt": number_value(pick(item, "SUPPLY_AMT", "SUPPLY_AMOUNT")),
+            "total_amt": number_value(pick(item, "TOTAL_AMT", "TOTAL_AMOUNT", "PO_AMT", "BUY_AMT")),
+            "pic": pic_val,
+            "emp_des": pic_val,
             "seq": pick(item, "UPLOAD_SER_NO", "LINE_NO", "IO_SEQ", "SEQ"),
         })
     return normalized, ""
@@ -478,19 +510,35 @@ def fetch_company_po(company, from_date, to_date):
 async def get_po_list(
     DATE_FROM: Optional[str] = Query(None),
     DATE_TO: Optional[str] = Query(None),
-    company_id: Optional[str] = Query("ALL"),
+    company_id: Optional[str] = Query("ALL"),  
 ):
     today = datetime.now()
     from_date = (DATE_FROM or (today - timedelta(days=29)).strftime("%Y%m%d")).replace("-", "").replace("/", "")
     to_date = (DATE_TO or today.strftime("%Y%m%d")).replace("-", "").replace("/", "")
-    selected = [company for company in COMPANIES if company_id == "ALL" or company["id"] == company_id.upper()]
+    
+    selected = [
+        company for company in COMPANIES 
+        if company_id == "ALL" or company["id"].upper() == company_id.upper()
+    ]
+    
+    if not selected:
+        return {"success": True, "total": 0, "data": [], "warnings": ["ไม่พบบริษัทที่เลือก"]}
+
+    # รันดึงข้อมูลผ่าน Async Threading เพื่อป้องกัน Blocking Request เมื่อสลับเปลี่ยนบริษัท
+    tasks = [
+        asyncio.to_thread(fetch_company_po, company, from_date, to_date)
+        for company in selected
+    ]
+    results = await asyncio.gather(*tasks)
+
     all_items = []
     errors = []
-    for company in selected:
-        items, error = fetch_company_po(company, from_date, to_date)
+    for items, error in results:
         all_items.extend(items)
         if error:
             errors.append(error)
+
     if not all_items and errors:
         return {"success": False, "message": "; ".join(errors), "data": []}
-    return {"success": True, "total": len(all_items), "data": all_items, "warnings": errors}
+        
+    return {"success": True, "total": len(all_items), "data": all_items, "warnings": errors if errors else None}

@@ -99,7 +99,7 @@ def get_ecount_result(response):
     return result_data.get("Result", []) or result_data.get("Datas", []) or []
 
 
-def fetch_warehouse_dict(session_id, host_url):
+def fetch_warehouse_dict(company_id, session_id, host_url):
     """ดึง Dict ของรหัสคลังและชื่อคลังสินค้า {WH_CD: WH_DES}"""
     url = f"{ecount_api_url(host_url, 'InventoryBasic/GetListWarehouse')}?SESSION_ID={session_id}"
     payload = {"WH_CD": "", "DEL_GUBUN": "N"}
@@ -135,6 +135,13 @@ def fetch_inventory_by_location(session_id, host_url, wh_cd=""):
     except Exception as exc:
         print(f"  ⚠️ GetListInventoryBalanceStatusByLocation failed: {exc}")
         return []
+
+
+def fetch_asia_inventory(session_id, host_url):
+    items = fetch_inventory_by_location(session_id, host_url)
+    if any(first_nonempty(item, "PROD_DES") or first_nonempty(item, "WH_DES") for item in items):
+        return items
+    return []
 
 
 COMPANY_FIELD_MAP = {
@@ -245,7 +252,7 @@ def fetch_all_company_data():
             continue
 
         # ดึง Master รายชื่อคลังสินค้าประจำบริษัท
-        wh_dict = fetch_warehouse_dict(session_id, host_url)
+        wh_dict = fetch_warehouse_dict(com_id, session_id, host_url)
 
         # 1. Fetch Master Products
         master_dict = {}
@@ -269,7 +276,10 @@ def fetch_all_company_data():
 
         # 2. Fetch Inventory Balance
         try:
-            items = fetch_inventory_by_location(session_id, host_url)
+            if com_id == "ASIA":
+                items = fetch_asia_inventory(session_id, host_url)
+            else:
+                items = fetch_inventory_by_location(session_id, host_url)
 
             if len(items) >= 10000:
                 print(f"  ⚠️ ข้อมูลแตะ Limit 10,000 รายการ ({com_id}) -> สลับไปวนดึงแยกรายคลังสินค้า...")
