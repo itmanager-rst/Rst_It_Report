@@ -75,7 +75,7 @@
         /* ไม่มีกรอบเลื่อนขึ้น-ลงแยก: ตารางจะสูงตามจำนวนแถวและเลื่อนด้วยทั้งหน้าเว็บ */
         .table-responsive { overflow-x: auto; max-height: none; border: 1px solid #e2e8f0; border-radius: 8px; }
         table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; font-size: 11px; }
-        #main-table { width: 2100px; min-width: 2100px; }
+        #main-table { width: 1950px; min-width: 1950px; }
         th { background: #f8fafc; color: #475569; padding: 6px 4px; font-weight: 600; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 10; overflow-wrap: break-word; word-break: normal; line-height: 1.25; }
         td { padding: 6px 4px; border-bottom: 1px solid #edf2f7; vertical-align: middle; overflow-wrap: break-word; word-break: normal; line-height: 1.35; }
         tr:hover { background-color: #f1f5f9; }
@@ -204,7 +204,7 @@
             .calendar-scroll { overflow-x: auto; }
             .card-title { flex-wrap: wrap; gap: 6px; }
             .search-actions { flex-wrap: wrap; gap: 8px; }
-            #main-table { width: 2100px; min-width: 2100px; }
+            #main-table { width: 1950px; min-width: 1950px; }
             .fab-btn { width: 50px; height: 50px; font-size: 20px; }
             .fab-container { bottom: 80px; right: 15px; }
             .modal-box { width: 100%; padding: 14px; }
@@ -418,19 +418,18 @@
                             <col style="width:105px"><!-- วันที่บันทึก -->
                             <col style="width:105px"><!-- วันที่นัดหมาย -->
                             <col style="width:105px"><!-- ติดตามล่าสุด -->
-                            <col style="width:170px"><!-- ชื่อ - นามสกุล -->
+                            <col style="width:230px"><!-- ชื่อ - นามสกุล + ดูข้อมูล -->
                             <col style="width:120px"><!-- เบอร์โทรศัพท์ -->
                             <col style="width:95px"><!-- ประเภท -->
                             <col style="width:120px"><!-- ประเภทสินค้า -->
                             <col style="width:120px"><!-- รุ่นรถ -->
-                            <col style="width:70px"><!-- บ้านเลขที่ -->
                             <col style="width:55px"><!-- หมู่ที่ -->
                             <col style="width:110px"><!-- หมู่บ้าน -->
                             <col style="width:100px"><!-- ตำบล -->
                             <col style="width:100px"><!-- อำเภอ -->
                             <col style="width:110px"><!-- จังหวัด -->
-                            <col style="width:90px"><!-- LINE ID -->
-                            <col style="width:100px"><!-- Facebook -->
+                            <col style="width:90px"><!-- จำนวนไร่ -->
+                            <col style="width:190px"><!-- รายได้ -->
                             <col style="width:305px"><!-- หมายเหตุ (Remark) -->
                         </colgroup>
                         <thead>
@@ -444,14 +443,13 @@
                                 <th>ประเภท</th>
                                 <th>ประเภทสินค้า</th>
                                 <th>รุ่นรถ</th>
-                                <th>บ้านเลขที่</th>
                                 <th>หมู่ที่</th>
                                 <th>หมู่บ้าน</th>
                                 <th>ตำบล</th>
                                 <th>อำเภอ</th>
                                 <th>จังหวัด</th>
-                                <th>LINE ID</th>
-                                <th>Facebook</th>
+                                <th>จำนวนไร่</th>
+                                <th>รายได้</th>
                                 <th>หมายเหตุ (Remark)</th>
                             </tr>
                         </thead>
@@ -1110,6 +1108,13 @@
             if (!debts.length) return '-';
             return debts.map(d => `${escapeHtml(d.creditor || 'หนี้')} ${moneyText(d.balance)}`).join('<br>');
         }
+        function financialRaiSummary(fin) {
+            const plots = fin.farmPlots || [];
+            const nums = plots.map(p => Number(String(p.rai || '').replace(/,/g,''))).filter(n => Number.isFinite(n));
+            if (!nums.length) return '-';
+            const total = nums.reduce((sum, n) => sum + n, 0);
+            return `${total.toLocaleString()} ไร่`;
+        }
         function openIntakeDetailModal(dateOrRange, filterType, isRange) {
             const overlay = document.getElementById('intake-detail-modal-overlay');
             const tbody = document.getElementById('intake-detail-tbody');
@@ -1344,12 +1349,12 @@
         function detailCard(label, value, full) {
             return `<div class="customer-detail-card${full ? ' full' : ''}"><div class="customer-detail-label">${label}</div><div class="customer-detail-value">${value || '-'}</div></div>`;
         }
-        function openReportCustomerDetail(idx) {
-            const r = intakeDetailRows[idx];
+        function showCustomerDetail(r) {
             if (!r) return;
-            const fin = parseFinancialInfo(r.financialInfo);
-            const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
-            const address = [r.addressNo, r.moo ? `หมู่ ${r.moo}` : '', r.village, r.subdistrict ? `ต.${r.subdistrict}` : '', r.district ? `อ.${r.district}` : '', r.province ? `จ.${r.province}` : '', r.zipcode].filter(Boolean).join(' ');
+            const fin = parseFinancialInfo(r.financialInfo || r.financial);
+            const name = r.name || `${r.firstName || r.firstname || ''} ${r.lastName || r.lastname || ''}`.trim() || '-';
+            const addressNo = r.addressNo || r.addressno || r.address_no || '';
+            const address = [addressNo, r.moo ? `หมู่ ${r.moo}` : '', r.village, r.subdistrict ? `ต.${r.subdistrict}` : '', r.district ? `อ.${r.district}` : '', r.province ? `จ.${r.province}` : '', r.zipcode].filter(Boolean).join(' ');
             const farms = (fin.farmPlots || []).map((p,i) => `${i+1}. ${p.type || 'ไม่ระบุชนิด'} ${p.rai ? p.rai+' ไร่' : ''} | เอกสารสิทธิ์: ${p.docOwner || '-'} | รายได้/ปี: ${p.annualIncome || '-'} บาท`).join('\n');
             const machines = (fin.machinery || []).map((m,i) => `${i+1}. ${m.type || ''} ${m.brandModel || ''} ${m.qty ? m.qty+' คัน' : ''} ${m.note ? '('+m.note+')' : ''}`).join('\n');
             const debts = (fin.debts || []).map((d,i) => `${i+1}. ${d.creditor || 'ไม่ระบุเจ้าหนี้'} — คงเหลือ ${d.balance || '0'} บาท`).join('\n');
@@ -1364,6 +1369,8 @@
                 detailCard('📝 หมายเหตุ', escapeHtml(r.remark || '-'), true);
             document.getElementById('report-customer-detail-overlay').classList.add('show');
         }
+        function openReportCustomerDetail(idx) { showCustomerDetail(intakeDetailRows[idx]); }
+        function openMainCustomerDetail(idx) { showCustomerDetail(currentRenderedData[idx]); }
         function closeReportCustomerDetail() { document.getElementById('report-customer-detail-overlay').classList.remove('show'); }
         function addFarmPlot() {
             customerFinancial.farmPlots.push({ type: '', rai: '', docOwner: '', annualIncome: '' });
@@ -1560,7 +1567,7 @@
             const tbody = document.querySelector('#main-table tbody');
             tbody.innerHTML = '';
             if(!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; padding: 20px; color: #94a3b8;">❌ ไม่พบข้อมูลรายชื่อลูกค้าที่ตรงเงื่อนไข</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="17" style="text-align: center; padding: 20px; color: #94a3b8;">❌ ไม่พบข้อมูลรายชื่อลูกค้าที่ตรงเงื่อนไข</td></tr>';
                 return;
             }
             let html = data.map((row, idx) => {
@@ -1571,6 +1578,7 @@
                 if(row.type === 'ทำสัญญา') badgeClass = 'badge-contract';
                 if(row.type === 'ส่งมอบ') badgeClass = 'badge-deliver';
                 const prodParts = getRowProductParts(row);
+                const fin = parseFinancialInfo(row.financialInfo || row.financial);
                 const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
                 return `<tr>
                     <td style="text-align:center;">
@@ -1583,19 +1591,18 @@
                     <td>${row.date || '-'}</td>
                     <td style="color: var(--accent-color); font-weight: 600;">${row.booking_date || '-'}</td>
                     <td style="color: #6b21a8;">${row.lastFollowupDate || '-'}</td>
-                    <td><b>${row.name}</b></td>
+                    <td><div style="display:flex; align-items:center; gap:6px;"><b>${escapeHtml(row.name || '-')}</b><button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:9.5px; flex:0 0 auto;" onclick="openMainCustomerDetail(${idx})">👤 ดูข้อมูล</button></div></td>
                     <td>${row.phone}</td>
                     <td><span class="badge ${badgeClass}">${row.type}</span></td>
                     <td>${prodParts.category}</td>
                     <td>${prodParts.model}</td>
-                    <td>${row.addressno || '-'}</td>
                     <td>${row.moo || '-'}</td>
                     <td>${row.village || '-'}</td>
                     <td>${row.subdistrict || '-'}</td>
                     <td>${row.district || '-'}</td>
                     <td>${row.province || '-'}</td>
-                    <td>${row.line || '-'}</td>
-                    <td>${row.facebook || '-'}</td>
+                    <td>${financialRaiSummary(fin)}</td>
+                    <td>${financialIncomeSummary(fin)}</td>
                     <td style="white-space:pre-line;">${row.remark || '-'}</td>
                 </tr>`;
             }).join('');
