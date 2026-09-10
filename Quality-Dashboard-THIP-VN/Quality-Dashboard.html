@@ -337,6 +337,8 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 .daily-date-wrap .flabel{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; font-weight:700;}
 .daily-date-wrap input[type=date]{padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#fff; font-family:inherit; font-size:13px;}
 .daily-date-wrap input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);}
+.daily-date-wrap select{padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#fff; font-family:inherit; font-size:13px;}
+.daily-date-wrap select option{color:#111;}
 .kpi-row2{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; margin-bottom:22px;}
 .kpi-card2{border-radius:14px; padding:18px 20px; position:relative; overflow:hidden; color:#fff; box-shadow:0 10px 24px -10px rgba(0,0,0,.3);}
 .kpi-card2::before{content:''; position:absolute; top:0; right:0; width:100px; height:100px; background:rgba(255,255,255,.13); border-radius:50%; transform:translate(30%,-30%);}
@@ -563,6 +565,13 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <div class="chart-box chart-defect">
         <h3 data-i18n="chartDefectByMachine">% Defect แยกตามเครื่องจักร</h3>
         <div class="chart-scroll chart-tall"><canvas id="chart-dfd-machine"></canvas></div>
+      </div>
+      <div class="chart-box chart-defect">
+        <h3 data-i18n="chartDefectByCause">% Defect แยกตามสาเหตุ</h3>
+        <div class="chart-split">
+          <div class="chart-scroll chart-split-canvas"><canvas id="chart-dfd-cause"></canvas></div>
+          <div class="chart-legend-list" id="dfd-cause-legend"></div>
+        </div>
       </div>
       <div class="chart-box chart-defect chart-span-all">
         <h3 data-i18n="chartDefectTrend">แนวโน้ม % Defect รายวัน</h3>
@@ -1117,10 +1126,15 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
           <button type="button" class="pill-btn active" data-period="daily" data-i18n="periodDaily">รายวัน</button>
           <button type="button" class="pill-btn" data-period="weekly" data-i18n="periodWeekly">รายสัปดาห์ (7 วัน)</button>
           <button type="button" class="pill-btn" data-period="monthly" data-i18n="periodMonthly">รายเดือน (30 วัน)</button>
+          <button type="button" class="pill-btn" data-period="month" data-i18n="periodMonth">เลือกเดือน</button>
         </div>
         <div class="daily-date-wrap show" id="dash-daily-date-wrap">
           <span class="flabel" data-i18n="filterDateLabel">วันที่</span>
           <input type="date" id="dash-daily-date">
+        </div>
+        <div class="daily-date-wrap" id="dash-month-wrap">
+          <span class="flabel" data-i18n="filterMonthLabel">เดือน</span>
+          <select id="dash-month-select"></select>
         </div>
       </div>
       <div>
@@ -1407,6 +1421,18 @@ function setGsStatus(state, message){
   }[state];
 }
 
+// Every gsGet/gsPostBody call is capped to this long - Google Apps Script Web Apps can leave a request
+// hanging indefinitely (neither resolving nor erroring) rather than failing fast, especially once
+// several calls hit the same deployment close together, so without a hard cutoff a single slow/stuck
+// sheet would freeze that request's Promise forever and the caller would never see success OR failure.
+const GS_FETCH_TIMEOUT_MS = 20000;
+async function gsFetchWithTimeout(url, options){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), GS_FETCH_TIMEOUT_MS);
+  try{
+    return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+  } finally { clearTimeout(timer); }
+}
 // GET a sheet's full array of records. Returns null (not []) on any failure, so callers can distinguish
 // "the sheet is genuinely empty" from "the request failed", and avoid wiping local/remote data on a
 // network hiccup.
@@ -1414,7 +1440,7 @@ async function gsGet(sheetName){
   const url = getGsUrl();
   if(!url) return null;
   try{
-    const res = await fetch(url + (url.includes('?')?'&':'?') + 'sheet=' + encodeURIComponent(sheetName));
+    const res = await gsFetchWithTimeout(url + (url.includes('?')?'&':'?') + 'sheet=' + encodeURIComponent(sheetName));
     const json = await res.json();
     if(!json.ok) return null;
     return Array.isArray(json.data) ? json.data : [];
@@ -1427,7 +1453,7 @@ async function gsPostBody(bodyObj){
   const url = getGsUrl();
   if(!url) return false;
   try{
-    const res = await fetch(url, {
+    const res = await gsFetchWithTimeout(url, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify(bodyObj)
     });
@@ -1540,6 +1566,15 @@ async function pullSheetIntoLocal(lsKey, sheetName){
   if(lsKey===LS.admins){
     ADMINS = ensureSuperAdmin(restored);
     setArr(lsKey, ADMINS);
+  } else if(lsKey===LS.machines){
+    // Same reasoning as LS.admins above: MACHINES is a `let` variable read directly all over the app
+    // (pickers, filters, Dashboard), not re-fetched from localStorage per call, so a fresh sync pull
+    // must reassign it here too - and every synced row comes back from Apps Script's
+    // readSheetAsObjects_ as a {name:"..."} object, not a plain string, so it must be normalized the
+    // same way ADMINS/Recorder are or every picker/table would render "[object Object]".
+    MACHINES = normalizeNameList(restored);
+    if(MACHINES.length===0) MACHINES = MACHINES_DEFAULT.slice();
+    setArr(lsKey, MACHINES);
   } else {
     setArr(lsKey, restored);
   }
@@ -1557,8 +1592,17 @@ async function pullAllFromGoogleSheets(){
   if(!getGsUrl()){ setGsStatus('notconfigured'); return false; }
   setGsStatus('syncing');
   const entries = Object.entries(GS_SHEET_MAP);
-  const results = await Promise.all(entries.map(([lsKey, sheetName])=> pullSheetIntoLocal(lsKey, sheetName)));
-  const anyFailed = results.includes(false);
+  // Sequential, not Promise.all - Google Apps Script Web Apps serialize/queue simultaneous requests
+  // against the same deployment rather than handling them in true parallel, so firing every sheet
+  // (12 of them, now that Reject Station/Machine Performance: Normal/Machine list were added) at once
+  // left every request stuck "(pending)" forever in practice instead of resolving or failing. One
+  // request at a time is slower wall-clock but actually completes; GS_FETCH_TIMEOUT_MS above still
+  // caps how long any single stuck request can block the rest of the sync.
+  let anyFailed = false;
+  for(const [lsKey, sheetName] of entries){
+    const ok = await pullSheetIntoLocal(lsKey, sheetName);
+    if(!ok) anyFailed = true;
+  }
   setGsStatus(anyFailed ? 'error' : 'connected');
   rerenderEverythingAfterSync();
   return !anyFailed;
@@ -1627,14 +1671,19 @@ function rerenderEverythingAfterSync(){
   if(typeof refreshDashboard==='function') refreshDashboard();
 }
 
-const MACHINES_DEFAULT = ['30P','50P-2','50P-3','60P'];
+const MACHINES_DEFAULT = ['30P-Zone 1','50P-Zone 2','50P-Zone 3','60P-Zone 4'];
 // Admin-editable master list (Settings > เครื่องจักร), same convention as DEFECT_TYPES/CAUSE_TYPES/
 // BD_CAUSES/Recorder - `let` (not `const`) because Settings can add/rename/delete/reorder entries at
 // runtime; every place that reads MACHINES does so fresh at call time (never caches a copy), so a
 // reassignment here is picked up everywhere automatically. Renaming or deleting an entry does NOT touch
 // already-saved records' `machine` string field (same tradeoff as renaming a Recorder) - see
 // settingsMachineNote in Settings.
-let MACHINES = loadMasterList(LS.machines, MACHINES_DEFAULT);
+let MACHINES = normalizeNameList(loadMasterList(LS.machines, MACHINES_DEFAULT));
+if(MACHINES.length===0) MACHINES = MACHINES_DEFAULT.slice();
+// Persist the cleaned-up list immediately - if localStorage already held corrupted {name:"..."} row
+// objects from an earlier sync (before this normalization existed), this writes back plain strings so
+// the corruption doesn't keep resurfacing on every reload.
+setArr(LS.machines, MACHINES);
 // Fixed box-height settings the Reject Station Test module tests against (per request) - not an
 // admin-editable master list like Defect Type/Cause, since the test is defined around exactly these 5.
 const REJECT_HEIGHTS = [54,56,58,60,62];
@@ -1920,6 +1969,19 @@ function getRecorderNames(){
   });
   return out;
 }
+// Same normalize-and-dedupe pass as getRecorderNames()/ensureSuperAdmin, generalized for any flat
+// name-string master list (currently just MACHINES). Unlike Recorder, MACHINES is held as a `let`
+// variable that many places read directly rather than re-fetching from localStorage each time (see the
+// comment above `let MACHINES` for why), so this must be applied at every point MACHINES is assigned -
+// both the initial load and right after a Google Sheets pull - or a raw synced row shape like
+// {name:"30P"} would render as the literal text "[object Object]" in every machine picker/table.
+function normalizeNameList(list){
+  const seen = new Set(); const out = [];
+  (Array.isArray(list) ? list : []).map(recorderNameOf).map(s=>s.trim()).filter(Boolean).forEach(n=>{
+    if(!seen.has(n)){ seen.add(n); out.push(n); }
+  });
+  return out;
+}
 // Fixed to the factory's own offset (Thailand and Vietnam are both UTC+7 year-round, no DST) instead of
 // reading the device's OS/browser timezone. The old getTimezoneOffset()/toTimeString() approach silently
 // produced wrong dates and times on any device whose clock/timezone wasn't set to exactly this zone - a
@@ -2027,7 +2089,7 @@ settingsTranslating:"กำลังแปลภาษา...", settingsMoveUp:"�
 settingsTranslateNote:"เว้นช่อง EN/VN ว่างไว้ได้ - ระบบจะแปลจากภาษาไทยให้อัตโนมัติเมื่อกดบันทึก (ต้องมีอินเทอร์เน็ต)",
 settingsRoleNote:"หมายเหตุ: หน้านี้เป็นระดับการมองเห็นเมนู/ปุ่มในหน้าเว็บเท่านั้น (client-side) ไม่ใช่ระบบความปลอดภัยจริง เนื่องจากไฟล์นี้ไม่มี server - ผู้ใดก็ตามที่เปิดไฟล์สามารถแก้ไขข้อมูลผ่าน source code ได้",
 settingsRecorders:"รายชื่อผู้บันทึก (Recorder)", settingsRecorderNameDuplicate:"มีชื่อนี้ในรายชื่อผู้บันทึกแล้ว",
-settingsMachines:"เครื่องจักร (Machine)", settingsMachineNote:"ชื่อเครื่องจักรที่แก้ไข/ลบที่นี่ จะไม่เปลี่ยนชื่อเครื่องในข้อมูลที่บันทึกไปแล้ว (เหมือนกับรายชื่อผู้บันทึก) - รายการข้อมูลเก่ายังอยู่ครบ เพียงแต่จะไม่มีให้เลือกใหม่อีก", settingsMachineNameDuplicate:"มีชื่อเครื่องจักรนี้อยู่แล้ว",
+settingsMachines:"เครื่องจักร (Machine)", settingsMachineNote:"แก้ไข (เปลี่ยนชื่อ) เครื่องจักรที่นี่ จะอัปเดตชื่อเครื่องในข้อมูลที่บันทึกไปแล้วทุกโมดูล (Defect/Breakdown/Performance ฯลฯ) ให้ตรงกันโดยอัตโนมัติ ส่วนการลบเครื่องจักรออกจากรายการ จะไม่เปลี่ยนแปลงข้อมูลเก่า เพียงแต่จะไม่มีให้เลือกใหม่อีก", settingsMachineNameDuplicate:"มีชื่อเครื่องจักรนี้อยู่แล้ว",
 gsSyncTitle:"เชื่อมต่อฐานข้อมูล Google Sheets", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"บันทึก URL", gsSyncNowBtn:"ซิงค์ข้อมูลตอนนี้",
 gsSyncNote:"วาง Web App URL จาก Google Apps Script ที่นี่ เพื่อให้ข้อมูลทุกโมดูล (Defect, Breakdown, Performance, Performance Test) และการตั้งค่า (ประเภท Defect/สาเหตุ, รายชื่อ Admin/ผู้บันทึก) เก็บและใช้ร่วมกันผ่าน Google Sheets แทนที่จะเก็บแยกในแต่ละเครื่อง - ดูขั้นตอนตั้งค่าในไฟล์ GoogleAppsScript_Code.gs ที่แนบมาด้วย",
 gsSyncPhotoNote:"หมายเหตุ: รูปภาพ Defect ซิงค์ขึ้น Google Sheets เป็น base64 โดยตรง (สูงสุด 4 รูป/รายการ) ระบบจะบีบอัด/ย่อขนาดรูปอัตโนมัติก่อนบันทึกเพื่อให้พอดีกับข้อจำกัดขนาดเซลล์ของ Google Sheets (~50,000 ตัวอักษร/เซลล์) - รูปที่มีรายละเอียดมากอาจถูกบีบอัดมากขึ้นเพื่อให้ซิงค์ได้",
@@ -2039,12 +2101,12 @@ settingsAdminAddRestricted:'เฉพาะ "Nattayika" เท่านั้น
 roleAdmin:"Admin", roleRecorder:"Recorder", currentUserLabel:"ผู้ใช้งาน", loginTitle:"เข้าสู่ระบบ", loginNote:"เลือกชื่อของคุณและกรอกรหัส PIN เพื่อเข้าใช้งาน (Admin ใช้รหัส admin / ผู้บันทึกใช้รหัส THIP-VN)", loginSelectUser:"ชื่อผู้ใช้งาน", loginPin:"รหัส PIN", loginPinPh:"กรอกรหัส PIN", loginBtn:"เข้าสู่ระบบ", loginSelectUserRequired:"กรุณาเลือกชื่อผู้ใช้งาน", loginWrongPin:"รหัส PIN ไม่ถูกต้อง", logoutBtn:"ออกจากระบบ", moveUp:"เลื่อนขึ้น", moveDown:"เลื่อนลง",
 statDefectTotal:"Defect Total (สะสมทั้งหมด)", statDefectToday:"Defect Count Today", statDefectPctToday:"% Defect Today",
 statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdown (min)", statTotalProdToday:"Total Production วันนี้",
-chartDailyDefect:"แนวโน้ม % Defect (% Defect Trend)", chartDefectByType:"% Defect แยกตามประเภท", chartDefectByMachine:"% Defect แยกตามเครื่องจักร",
+chartDailyDefect:"แนวโน้ม % Defect (% Defect Trend)", chartDefectByType:"% Defect แยกตามประเภท", chartDefectByMachine:"% Defect แยกตามเครื่องจักร", chartDefectByCause:"% Defect แยกตามสาเหตุ",
 chartDefectTrend:"แนวโน้ม % Defect รายวัน", defectTypeFilterLabel:"ประเภท Defect",
 chartDefectByShift:"% Defect แยกตามกะ", chartBdByMachine:"Breakdown Minute แยกตามเครื่องจักร", chartBdByCause:"Breakdown แยกตามสาเหตุ",
 chartDefectPareto:"Pareto Defect (จำนวน vs % สะสม)", paretoQtyLabel:"จำนวน Defect (ชิ้น)", paretoCumulativeLabel:"% สะสม",
 paretoInsightTitle:"การวิเคราะห์ข้อมูล (Pareto Analysis)", paretoInsightVitalFew:"ประเภท Defect หลัก {count} จาก {total} ประเภท ได้แก่ <b>{types}</b> ก่อให้เกิด Defect รวมกัน {pct}% ของ Defect ทั้งหมด — ตามหลัก Pareto 80/20 ควรให้ความสำคัญกับการแก้ไขประเภทเหล่านี้เป็นอันดับแรก เพื่อลด Defect โดยรวมได้อย่างมีประสิทธิภาพสูงสุด", paretoInsightTop1:"ประเภท Defect ที่พบมากที่สุดคือ <b>{top1}</b> คิดเป็น {top1pct}% ของ Defect ทั้งหมด", paretoInsightNoData:"ยังไม่มีข้อมูล Defect ในช่วงเวลา/เครื่องจักรที่เลือก",
-filterPeriod:"ช่วงเวลา", filterMachine:"เครื่องจักร", periodDaily:"รายวัน", periodWeekly:"รายสัปดาห์ (7 วัน)", periodMonthly:"รายเดือน (30 วัน)", periodAll:"ทั้งหมด",
+filterPeriod:"ช่วงเวลา", filterMachine:"เครื่องจักร", periodDaily:"รายวัน", periodWeekly:"รายสัปดาห์ (7 วัน)", periodMonthly:"รายเดือน (30 วัน)", periodAll:"ทั้งหมด", periodMonth:"เลือกเดือน", filterMonthLabel:"เดือน",
 allMachines:"ทุกเครื่อง", sectionDefect:"ภาพรวม Defect", sectionBreakdown:"ภาพรวม Breakdown",
 sectionPerformance:"ภาพรวม Performance (กำลังการผลิต)", sectionPerftest:"ภาพรวม Performance Test",
 statTotalProd:"จำนวนผลิตรวม", statTotalDefect:"จำนวน Defect รวม", statTotalGood:"จำนวนของดีรวม", statAvgRate:"Defect Rate เฉลี่ย",
@@ -2115,7 +2177,7 @@ settingsTranslating:"Translating...", settingsMoveUp:"Move up", settingsMoveDown
 settingsTranslateNote:"EN/VN can be left blank - they'll be auto-translated from Thai when you save (requires internet).",
 settingsRoleNote:"Note: this page only controls which menus/buttons are shown in the browser (client-side) - it is not real security, since this file has no server. Anyone who opens the file can still edit the data via source code.",
 settingsRecorders:"Recorder List", settingsRecorderNameDuplicate:"This name is already in the Recorder list",
-settingsMachines:"Machine", settingsMachineNote:"Renaming/deleting a machine here does not change the machine name on records already saved (same as the Recorder list) - old records keep their data, the name just won't be selectable again.", settingsMachineNameDuplicate:"This machine name already exists",
+settingsMachines:"Machine", settingsMachineNote:"Editing (renaming) a machine here automatically updates the machine name on every already-saved record across all modules (Defect/Breakdown/Performance, etc.) to match. Deleting a machine from the list does not change old records - it just won't be selectable again.", settingsMachineNameDuplicate:"This machine name already exists",
 gsSyncTitle:"Google Sheets Database Connection", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"Save URL", gsSyncNowBtn:"Sync Now",
 gsSyncNote:"Paste the Web App URL from Google Apps Script here so every module's data (Defect, Breakdown, Performance, Performance Test) and settings (Defect Types/Causes, Admin/Recorder names) are stored and shared via Google Sheets instead of staying siloed on each device - see the attached GoogleAppsScript_Code.gs file for setup steps.",
 gsSyncPhotoNote:"Note: Defect photos sync to Google Sheets directly as base64 (up to 4 per record). Photos are automatically compressed/resized before saving to fit within Google Sheets' cell limit (~50,000 characters/cell) - very detailed photos may be compressed more to make sure they sync.",
@@ -2127,12 +2189,12 @@ settingsAdminAddRestricted:'Only "Nattayika" can add new Admins', settingsAdminS
 roleAdmin:"Admin", roleRecorder:"Recorder", currentUserLabel:"User", loginTitle:"Sign In", loginNote:"Select your name and enter your PIN to continue (Admins use 'admin', Recorders use 'THIP-VN').", loginSelectUser:"User Name", loginPin:"PIN Code", loginPinPh:"Enter PIN", loginBtn:"Sign In", loginSelectUserRequired:"Please select a user name", loginWrongPin:"Incorrect PIN", logoutBtn:"Logout", moveUp:"Move up", moveDown:"Move down",
 statDefectTotal:"Defect Total (All-time)", statDefectToday:"Defect Count Today", statDefectPctToday:"% Defect Today",
 statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdown (min)", statTotalProdToday:"Total Production Today",
-chartDailyDefect:"% Defect Trend", chartDefectByType:"Defect % by Type", chartDefectByMachine:"Defect % by Machine",
+chartDailyDefect:"% Defect Trend", chartDefectByType:"Defect % by Type", chartDefectByMachine:"Defect % by Machine", chartDefectByCause:"Defect % by Cause",
 chartDefectTrend:"Daily % Defect Trend", defectTypeFilterLabel:"Defect Type",
 chartDefectByShift:"Defect % by Shift", chartBdByMachine:"Breakdown Minutes by Machine", chartBdByCause:"Breakdown by Cause",
 chartDefectPareto:"Defect Pareto (Qty vs Cumulative %)", paretoQtyLabel:"Defect Qty (pcs)", paretoCumulativeLabel:"Cumulative %",
 paretoInsightTitle:"Data Analysis (Pareto Analysis)", paretoInsightVitalFew:"The top {count} of {total} defect types — <b>{types}</b> — together account for {pct}% of all defects. Following the Pareto 80/20 principle, fixing these types first will have the biggest impact on reducing overall defects.", paretoInsightTop1:"The most frequent defect type is <b>{top1}</b>, accounting for {top1pct}% of all defects.", paretoInsightNoData:"No defect data for the selected period/machine yet.",
-filterPeriod:"Period", filterMachine:"Machine", periodDaily:"Daily", periodWeekly:"Weekly (7d)", periodMonthly:"Monthly (30d)", periodAll:"All",
+filterPeriod:"Period", filterMachine:"Machine", periodDaily:"Daily", periodWeekly:"Weekly (7d)", periodMonthly:"Monthly (30d)", periodAll:"All", periodMonth:"Select Month", filterMonthLabel:"Month",
 allMachines:"All Machines", sectionDefect:"Defect Overview", sectionBreakdown:"Breakdown Overview",
 sectionPerformance:"Performance Overview (Production)", sectionPerftest:"Performance Test Overview",
 statTotalProd:"Total Production", statTotalDefect:"Total Defect", statTotalGood:"Total Good Qty", statAvgRate:"Avg Defect Rate",
@@ -2203,7 +2265,7 @@ settingsTranslating:"Đang dịch...", settingsMoveUp:"Di chuyển lên", settin
 settingsTranslateNote:"Có thể để trống EN/VN - hệ thống sẽ tự dịch từ tiếng Thái khi lưu (cần có internet).",
 settingsRoleNote:"Lưu ý: trang này chỉ kiểm soát menu/nút hiển thị trên trình duyệt (client-side) - không phải bảo mật thực sự vì file này không có server. Bất kỳ ai mở file đều có thể sửa dữ liệu qua source code.",
 settingsRecorders:"Danh sách người ghi nhận (Recorder)", settingsRecorderNameDuplicate:"Tên này đã có trong danh sách người ghi nhận",
-settingsMachines:"Máy móc (Machine)", settingsMachineNote:"Đổi tên/xóa máy ở đây sẽ không thay đổi tên máy trong dữ liệu đã lưu trước đó (giống như danh sách người ghi nhận) - dữ liệu cũ vẫn còn nguyên, chỉ là sẽ không chọn lại được nữa.", settingsMachineNameDuplicate:"Tên máy này đã tồn tại",
+settingsMachines:"Máy móc (Machine)", settingsMachineNote:"Chỉnh sửa (đổi tên) máy ở đây sẽ tự động cập nhật tên máy trong dữ liệu đã lưu trước đó ở mọi module (Defect/Breakdown/Performance, v.v.) để khớp nhau. Xóa máy khỏi danh sách sẽ không thay đổi dữ liệu cũ - chỉ là sẽ không chọn lại được nữa.", settingsMachineNameDuplicate:"Tên máy này đã tồn tại",
 gsSyncTitle:"Kết nối cơ sở dữ liệu Google Sheets", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"Lưu URL", gsSyncNowBtn:"Đồng bộ ngay",
 gsSyncNote:"Dán Web App URL từ Google Apps Script vào đây để dữ liệu mọi module (Defect, Breakdown, Performance, Performance Test) và cài đặt (Loại Defect/Nguyên nhân, tên Admin/Recorder) được lưu và dùng chung qua Google Sheets thay vì tách biệt trên từng thiết bị - xem các bước thiết lập trong file GoogleAppsScript_Code.gs đính kèm.",
 gsSyncPhotoNote:"Lưu ý: Ảnh Defect được đồng bộ lên Google Sheets dưới dạng base64 trực tiếp (tối đa 4 ảnh/bản ghi). Ảnh sẽ tự động được nén/thu nhỏ trước khi lưu để vừa với giới hạn ô của Google Sheets (~50.000 ký tự/ô) - ảnh có nhiều chi tiết có thể bị nén nhiều hơn để đảm bảo đồng bộ được.",
@@ -2215,12 +2277,12 @@ settingsAdminAddRestricted:'Chỉ "Nattayika" mới có thể thêm Admin mới'
 roleAdmin:"Admin", roleRecorder:"Recorder", currentUserLabel:"Người dùng", loginTitle:"Đăng nhập", loginNote:"Chọn tên của bạn và nhập mã PIN để tiếp tục (Admin dùng 'admin', Người ghi dùng 'THIP-VN').", loginSelectUser:"Tên người dùng", loginPin:"Mã PIN", loginPinPh:"Nhập mã PIN", loginBtn:"Đăng nhập", loginSelectUserRequired:"Vui lòng chọn tên người dùng", loginWrongPin:"Mã PIN không đúng", logoutBtn:"Đăng xuất", moveUp:"Di chuyển lên", moveDown:"Di chuyển xuống",
 statDefectTotal:"Defect Total (Lũy kế)", statDefectToday:"Số lượng Defect hôm nay", statDefectPctToday:"% Defect Today",
 statBreakdownCountToday:"Breakdown Count", statBreakdownMinToday:"Total Breakdown (min)", statTotalProdToday:"Total Production hôm nay",
-chartDailyDefect:"Xu hướng % Defect", chartDefectByType:"% Defect theo loại", chartDefectByMachine:"% Defect theo máy",
+chartDailyDefect:"Xu hướng % Defect", chartDefectByType:"% Defect theo loại", chartDefectByMachine:"% Defect theo máy", chartDefectByCause:"% Defect theo nguyên nhân",
 chartDefectTrend:"Xu hướng % Defect hàng ngày", defectTypeFilterLabel:"Loại Defect",
 chartDefectByShift:"% Defect theo ca", chartBdByMachine:"Số phút Breakdown theo máy", chartBdByCause:"Breakdown theo nguyên nhân",
 chartDefectPareto:"Pareto Defect (Số lượng vs % lũy kế)", paretoQtyLabel:"Số lượng Defect (cái)", paretoCumulativeLabel:"% lũy kế",
 paretoInsightTitle:"Phân tích dữ liệu (Pareto Analysis)", paretoInsightVitalFew:"{count} trong {total} loại Defect chính — <b>{types}</b> — chiếm tổng cộng {pct}% tổng số Defect. Theo nguyên tắc Pareto 80/20, nên ưu tiên khắc phục các loại này trước để giảm Defect tổng thể hiệu quả nhất.", paretoInsightTop1:"Loại Defect xuất hiện nhiều nhất là <b>{top1}</b>, chiếm {top1pct}% tổng số Defect.", paretoInsightNoData:"Chưa có dữ liệu Defect trong khoảng thời gian/máy đã chọn.",
-filterPeriod:"Khoảng thời gian", filterMachine:"Máy", periodDaily:"Hàng ngày", periodWeekly:"Hàng tuần (7 ngày)", periodMonthly:"Hàng tháng (30 ngày)", periodAll:"Tất cả",
+filterPeriod:"Khoảng thời gian", filterMachine:"Máy", periodDaily:"Hàng ngày", periodWeekly:"Hàng tuần (7 ngày)", periodMonthly:"Hàng tháng (30 ngày)", periodAll:"Tất cả", periodMonth:"Chọn tháng", filterMonthLabel:"Tháng",
 allMachines:"Tất cả máy", sectionDefect:"Tổng quan Defect", sectionBreakdown:"Tổng quan Breakdown",
 sectionPerformance:"Tổng quan Performance (Sản xuất)", sectionPerftest:"Tổng quan Performance Test",
 statTotalProd:"Tổng sản lượng", statTotalDefect:"Tổng số Defect", statTotalGood:"Tổng số đạt", statAvgRate:"Tỷ lệ Defect TB",
@@ -3403,6 +3465,11 @@ let currentMachineFilter = 'all';
 // past day's data, while the explicitly "Today"/all-time labeled realtime cards elsewhere always use the
 // actual current date regardless of this selection (see refreshDashboard's Card 1 / *Today comments).
 let currentDailyDate = localDate();
+// The specific calendar month shown when Period = "เลือกเดือน" (Select Month), as "YYYY-MM" - separate
+// from the rolling "รายเดือน (30 วัน)" period above, which is always the last 30 days ending today. This
+// one lets the GM pick any actual calendar month (e.g. "2026-08") and see that month's data specifically,
+// same as currentDailyDate does for a single day. Defaults to the current month.
+let currentSelectedMonth = localDate().slice(0,7);
 // Fixed go-live date for the plant's real data collection - all "All"-period daily-granularity reports
 // (trend charts + per-day bar charts) start here and grow forward to today, rather than scanning back
 // through however much old/test data happens to exist in localStorage.
@@ -3415,6 +3482,7 @@ function inRange(dateStr, period){
   if(period==='daily') return dateStr===currentDailyDate;
   if(period==='weekly'){ const cut = new Date(today); cut.setDate(cut.getDate()-6); return d>=cut && d<=today; }
   if(period==='monthly'){ const cut = new Date(today); cut.setDate(cut.getDate()-29); return d>=cut && d<=today; }
+  if(period==='month') return dateStr.slice(0,7)===currentSelectedMonth;
   return true;
 }
 function filterByPeriodMachine(arr){
@@ -3431,6 +3499,16 @@ function getPeriodDates(period){
     const arr = [];
     const cur = new Date(REPORT_DAILY_START+'T00:00:00');
     while(cur<=today){ arr.push(localDate(cur)); cur.setDate(cur.getDate()+1); }
+    return arr;
+  }
+  if(period==='month'){
+    // Every calendar day of the selected month (1st through last day), regardless of whether today
+    // falls inside it - picking a past month should show that whole month, same as "All" shows every
+    // day up to today rather than stopping partway through the current one.
+    const [y,mo] = currentSelectedMonth.split('-').map(Number);
+    const lastDay = new Date(y, mo, 0).getDate();
+    const arr = [];
+    for(let day=1; day<=lastDay; day++) arr.push(y+'-'+String(mo).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
     return arr;
   }
   const n = period==='weekly' ? 7 : 30;
@@ -3478,6 +3556,10 @@ function getTrendRanges(period){
     // collapsing into monthly averages - growing automatically as today advances.
     return getPeriodDates('all').map(dt=>({ start:dt, end:dt, label:dt }));
   }
+  if(period==='month'){
+    // One bucket per day within the selected calendar month, same shape as "Daily"/"All".
+    return getPeriodDates('month').map(dt=>({ start:dt, end:dt, label:dt }));
+  }
   // monthly (fixed 6-month rolling window)
   return buildMonthlyRanges(6);
 }
@@ -3500,12 +3582,37 @@ document.getElementById('period-filter').addEventListener('click', e=>{
     document.querySelectorAll('#period-filter .pill-btn').forEach(b=>b.classList.toggle('active', b===e.target));
     // The date picker only makes sense in Daily mode (pick which single day to view) - hidden otherwise.
     document.getElementById('dash-daily-date-wrap').classList.toggle('show', currentPeriod==='daily');
+    document.getElementById('dash-month-wrap').classList.toggle('show', currentPeriod==='month');
     refreshDashboard();
   }
 });
 document.getElementById('dash-daily-date').value = currentDailyDate;
 document.getElementById('dash-daily-date').addEventListener('change', e=>{
   currentDailyDate = e.target.value || localDate();
+  refreshDashboard();
+});
+// Populates the "เลือกเดือน" (Select Month) dropdown with every calendar month from the plant's
+// go-live date (REPORT_DAILY_START) through the current month, most recent first - re-run on every
+// language switch too since nothing here is actually translated (labels are plain "YYYY-MM", matching
+// the existing convention used by getTrendRanges' monthly bucket labels), but keeping it alongside
+// applyI18n's re-render sweep means the dropdown never goes stale across a long-open session.
+function buildMonthSelect(){
+  const sel = document.getElementById('dash-month-select');
+  const today = new Date(localDate()+'T00:00:00');
+  const start = new Date(REPORT_DAILY_START+'T00:00:00');
+  const months = [];
+  const cur = new Date(today.getFullYear(), today.getMonth(), 1);
+  const startMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+  while(cur>=startMonth){
+    months.push(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0'));
+    cur.setMonth(cur.getMonth()-1);
+  }
+  if(!months.includes(currentSelectedMonth)) months.unshift(currentSelectedMonth);
+  sel.innerHTML = months.map(m=>`<option value="${m}"${m===currentSelectedMonth?' selected':''}>${m}</option>`).join('');
+}
+buildMonthSelect();
+document.getElementById('dash-month-select').addEventListener('change', e=>{
+  currentSelectedMonth = e.target.value;
   refreshDashboard();
 });
 document.getElementById('machine-filter').addEventListener('click', e=>{
@@ -4064,6 +4171,25 @@ function renderDefectMiniDashboard(){
   legendEl.innerHTML = typeKeys.length ? typeKeys.map((k,i)=>{
     const pct = (byType[k]/typeTotal*100).toFixed(1);
     return `<div class="chart-legend-row"><span class="chart-legend-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></span><span class="chart-legend-name">${typeLabel(k)}</span><span class="chart-legend-pct">${pct}%</span></div>`;
+  }).join('') : `<div class="chart-legend-row" style="color:var(--muted);">${dict.noData}</div>`;
+
+  // % Defect by cause - same shape/pattern as the "by type" doughnut above, grouped by each record's
+  // own `cause` field (a CAUSE_TYPES id, one per Defect Type chosen at save time - see the Defect form's
+  // per-type cause dropdown) instead of `defectType`. Same filtered scope (defectFilter) as every other
+  // chart on this mini-dashboard.
+  const byCause = {}; defects.forEach(d=>{ const k=d.cause||'-'; byCause[k]=(byCause[k]||0)+d.qty; });
+  const causeKeys = Object.keys(byCause).sort((a,b)=>byCause[b]-byCause[a]);
+  const causeTotal = causeKeys.reduce((s,k)=>s+byCause[k],0) || 1;
+  destroyChart('dfdCause');
+  fitChartCanvas('chart-dfd-cause', 1);
+  charts.dfdCause = new Chart(document.getElementById('chart-dfd-cause'), {
+    type:'doughnut', data:{ labels:causeKeys.map(k=>k==='-'?dict.noData:causeLabel(k)), datasets:[{ data:causeKeys.map(k=>+(byCause[k]/causeTotal*100).toFixed(1)), backgroundColor:CHART_COLORS }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, valueLabels:{show:false}} }
+  });
+  const causeLegendEl = document.getElementById('dfd-cause-legend');
+  causeLegendEl.innerHTML = causeKeys.length ? causeKeys.map((k,i)=>{
+    const pct = (byCause[k]/causeTotal*100).toFixed(1);
+    return `<div class="chart-legend-row"><span class="chart-legend-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></span><span class="chart-legend-name">${k==='-'?dict.noData:causeLabel(k)}</span><span class="chart-legend-pct">${pct}%</span></div>`;
   }).join('') : `<div class="chart-legend-row" style="color:var(--muted);">${dict.noData}</div>`;
 
   // % Defect by machine = Defect qty x100 / Production qty, scoped to the same date/machine filter as
@@ -4640,15 +4766,50 @@ window.deleteMachineItem = function(name){
   if(machineEditState===name) cancelMachineEdit();
   refreshAfterMachineListChange();
 };
+// Renaming a machine (unlike deleting) also cascades the new name onto every already-saved record that
+// used the old one, across every module that carries a `machine` field - Defect, Breakdown, Performance,
+// Performance Test, Reject Station, Machine Performance: Normal - so the Machine No. shown in every
+// Recent Entries table (and every chart/filter grouped by machine) always matches the current Machine
+// setting, per request. This is the opposite of the Recorder-style "old records keep the old name"
+// choice the Machine list otherwise follows (see settingsMachineNote) - deleting a machine still leaves
+// old records untouched, since there's no new name to cascade to, only renaming does.
+function renameMachineInAllRecords(oldName, newName){
+  if(oldName===newName) return;
+  const RECORD_LS_KEYS = [LS.defects, LS.breakdowns, LS.perf, LS.perftest, LS.rejectTest, LS.perfNormal];
+  RECORD_LS_KEYS.forEach(lsKey=>{
+    const arr = getArr(lsKey);
+    let changed = false;
+    const updated = arr.map(r=>{
+      if(r && r.machine===oldName){ changed = true; return Object.assign({}, r, { machine: newName }); }
+      return r;
+    });
+    if(changed){
+      setArr(lsKey, updated);
+      gsPushWhole(lsKey); // only pushes sheets that actually had a matching record - not every sheet every time
+    }
+  });
+  if(typeof renderDefectTable==='function') renderDefectTable();
+  if(typeof renderDefectMiniDashboard==='function') renderDefectMiniDashboard();
+  if(typeof renderBreakdownTable==='function') renderBreakdownTable();
+  if(typeof renderBreakdownMiniDashboard==='function') renderBreakdownMiniDashboard();
+  if(typeof renderPerfTable==='function') renderPerfTable();
+  if(typeof renderPerfMiniDashboard==='function') renderPerfMiniDashboard();
+  if(typeof renderPerftestTable==='function') renderPerftestTable();
+  if(typeof renderPerftestDashboard==='function') renderPerftestDashboard();
+  if(typeof renderRejectTable==='function') renderRejectTable();
+  if(typeof renderPerfNormalTable==='function') renderPerfNormalTable();
+}
 document.getElementById('mst-mc-add').addEventListener('click', ()=>{
   const nameEl = document.getElementById('mst-mc-name');
   const name = nameEl.value.trim();
   if(!name){ alert(I18N[currentLang].settingsNameRequired); return; }
   if(machineEditState){
     if(name!==machineEditState && MACHINES.includes(name)){ alert(I18N[currentLang].settingsMachineNameDuplicate); return; }
+    const oldName = machineEditState;
     MACHINES = MACHINES.map(n=> n===machineEditState ? name : n);
     setArr(LS.machines, MACHINES);
     gsPushWhole(LS.machines);
+    renameMachineInAllRecords(oldName, name);
     cancelMachineEdit();
   } else {
     if(MACHINES.includes(name)){ alert(I18N[currentLang].settingsMachineNameDuplicate); return; }
