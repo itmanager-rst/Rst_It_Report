@@ -854,7 +854,6 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
         <div class="timer-display" id="pn-speed">0</div>
       </div>
     </div>
-    <div id="pn-kpi-badge" class="tag" style="margin-top:6px; font-size:13px;"></div>
 
     <div class="btn-row">
       <button class="btn btn-perfnormal" id="pn-save" data-i18n="save">บันทึก</button>
@@ -881,7 +880,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
         <thead><tr>
           <th data-i18n="colNo">No.</th><th data-i18n="pnDateLabel">วันที่</th><th data-i18n="pnTimeLabel">เวลา</th><th data-i18n="shift">Shift</th>
           <th data-i18n="machine">Machine</th><th data-i18n="pnDurationLabel">วินาที</th><th data-i18n="pnBoxResultLabel">กล่อง</th>
-          <th data-i18n="speedResult">กล่อง/นาที</th><th data-i18n="resultStatus">ผล</th><th data-i18n="recorder">ผู้บันทึก</th><th></th>
+          <th data-i18n="speedResult">กล่อง/นาที</th><th data-i18n="recorder">ผู้บันทึก</th><th></th>
         </tr></thead>
         <tbody></tbody>
         <tfoot><tr id="pn-table-total" class="total-row"></tr></tfoot>
@@ -1299,6 +1298,17 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
     <div class="btn-row"><button class="btn btn-performance" id="mst-mc-add" data-i18n="settingsAddBtn">เพิ่มรายการ</button></div>
   </div>
 
+  <div class="card" id="mst-mc-migrate-card">
+    <h2 data-i18n="settingsMigrateMachineTitle">ย้ายข้อมูลเครื่องจักรเก่า</h2>
+    <div class="mini-dash-note" data-i18n="settingsMigrateMachineNote">ใช้เมื่อเคยเปลี่ยนชื่อเครื่องจักรมาก่อน (เช่นแก้ไขข้อมูลใน Google Sheet โดยตรง) แล้วข้อมูลเก่าที่บันทึกไว้ยังใช้ชื่อเดิมอยู่ ทำให้เลือกกรองด้วยชื่อเครื่องปัจจุบันแล้วไม่เจอข้อมูล - เลือกชื่อเดิมที่พบในข้อมูล แล้วย้ายไปรวมกับชื่อเครื่องปัจจุบัน</div>
+    <div id="mst-mc-migrate-none" class="mini-dash-note" style="display:none;" data-i18n="settingsMigrateNoneFound">ไม่พบชื่อเครื่องจักรเก่าที่ไม่ตรงกับรายการปัจจุบัน - ข้อมูลทั้งหมดสัมพันธ์กับ Machine setting อยู่แล้ว</div>
+    <div class="grid" id="mst-mc-migrate-fields" style="margin-top:14px;">
+      <div class="field"><label data-i18n="settingsMigrateFrom">ชื่อเครื่องเดิมที่พบในข้อมูล</label><select id="mst-mc-migrate-from"></select></div>
+      <div class="field"><label data-i18n="settingsMigrateTo">ย้ายไปยังเครื่องปัจจุบัน</label><select id="mst-mc-migrate-to"></select></div>
+    </div>
+    <div class="btn-row" id="mst-mc-migrate-btnrow"><button class="btn btn-performance" id="mst-mc-migrate-btn" data-i18n="settingsMigrateBtn">ย้ายข้อมูล</button></div>
+  </div>
+
   <div class="card">
     <h2 data-i18n="settingsDefectTypes">ประเภท Defect (Defect Type)</h2>
     <table id="mst-dt-table">
@@ -1666,6 +1676,7 @@ function rerenderEverythingAfterSync(){
   if(typeof refreshRecorderPickers==='function') refreshRecorderPickers();
   if(typeof renderMachinesTable==='function') renderMachinesTable();
   if(typeof refreshMachinePickers==='function') refreshMachinePickers();
+  if(typeof buildMachineMigrateSelects==='function') buildMachineMigrateSelects();
   if(typeof buildCurrentUserSelect==='function') buildCurrentUserSelect();
   if(typeof applyRolePermissions==='function') applyRolePermissions();
   if(typeof refreshDashboard==='function') refreshDashboard();
@@ -1849,7 +1860,6 @@ function applyEditedFields(lsKey, rec, edited){
     rec.durationSec = Math.max(1, parseInt(rec.durationSec)||1);
     rec.boxes = Math.max(0, parseInt(rec.boxes)||0);
     rec.speed = rec.durationSec>0 ? (rec.boxes/(rec.durationSec/60)) : 0;
-    rec.pass = rec.speed>=40;
   }
 }
 function rerenderModuleAfterEdit(lsKey){
@@ -2090,6 +2100,7 @@ settingsTranslateNote:"เว้นช่อง EN/VN ว่างไว้ไ�
 settingsRoleNote:"หมายเหตุ: หน้านี้เป็นระดับการมองเห็นเมนู/ปุ่มในหน้าเว็บเท่านั้น (client-side) ไม่ใช่ระบบความปลอดภัยจริง เนื่องจากไฟล์นี้ไม่มี server - ผู้ใดก็ตามที่เปิดไฟล์สามารถแก้ไขข้อมูลผ่าน source code ได้",
 settingsRecorders:"รายชื่อผู้บันทึก (Recorder)", settingsRecorderNameDuplicate:"มีชื่อนี้ในรายชื่อผู้บันทึกแล้ว",
 settingsMachines:"เครื่องจักร (Machine)", settingsMachineNote:"แก้ไข (เปลี่ยนชื่อ) เครื่องจักรที่นี่ จะอัปเดตชื่อเครื่องในข้อมูลที่บันทึกไปแล้วทุกโมดูล (Defect/Breakdown/Performance ฯลฯ) ให้ตรงกันโดยอัตโนมัติ ส่วนการลบเครื่องจักรออกจากรายการ จะไม่เปลี่ยนแปลงข้อมูลเก่า เพียงแต่จะไม่มีให้เลือกใหม่อีก", settingsMachineNameDuplicate:"มีชื่อเครื่องจักรนี้อยู่แล้ว",
+settingsMigrateMachineTitle:"ย้ายข้อมูลเครื่องจักรเก่า", settingsMigrateMachineNote:"ใช้เมื่อเคยเปลี่ยนชื่อเครื่องจักรมาก่อน (เช่นแก้ไขข้อมูลใน Google Sheet โดยตรง หรือเปลี่ยนชื่อไว้ก่อนที่ระบบจะอัปเดตข้อมูลเก่าให้อัตโนมัติ) แล้วข้อมูลเก่าที่บันทึกไว้ยังใช้ชื่อเดิมอยู่ ทำให้เลือกกรองด้วยชื่อเครื่องปัจจุบันแล้วไม่เจอข้อมูลในตาราง \"รายการล่าสุด\" - เลือกชื่อเดิมที่พบในข้อมูล แล้วย้ายไปรวมกับชื่อเครื่องปัจจุบันด้านล่าง", settingsMigrateNoneFound:"ไม่พบชื่อเครื่องจักรเก่าที่ไม่ตรงกับรายการปัจจุบัน - ข้อมูลทั้งหมดสัมพันธ์กับ Machine setting อยู่แล้ว", settingsMigrateFrom:"ชื่อเครื่องเดิมที่พบในข้อมูล", settingsMigrateTo:"ย้ายไปยังเครื่องปัจจุบัน", settingsMigrateBtn:"ย้ายข้อมูล", settingsMigrateSuccess:"ย้ายข้อมูลสำเร็จ - รายการเก่าที่ใช้ชื่อ \"{from}\" ทั้งหมดเปลี่ยนเป็น \"{to}\" แล้ว",
 gsSyncTitle:"เชื่อมต่อฐานข้อมูล Google Sheets", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"บันทึก URL", gsSyncNowBtn:"ซิงค์ข้อมูลตอนนี้",
 gsSyncNote:"วาง Web App URL จาก Google Apps Script ที่นี่ เพื่อให้ข้อมูลทุกโมดูล (Defect, Breakdown, Performance, Performance Test) และการตั้งค่า (ประเภท Defect/สาเหตุ, รายชื่อ Admin/ผู้บันทึก) เก็บและใช้ร่วมกันผ่าน Google Sheets แทนที่จะเก็บแยกในแต่ละเครื่อง - ดูขั้นตอนตั้งค่าในไฟล์ GoogleAppsScript_Code.gs ที่แนบมาด้วย",
 gsSyncPhotoNote:"หมายเหตุ: รูปภาพ Defect ซิงค์ขึ้น Google Sheets เป็น base64 โดยตรง (สูงสุด 4 รูป/รายการ) ระบบจะบีบอัด/ย่อขนาดรูปอัตโนมัติก่อนบันทึกเพื่อให้พอดีกับข้อจำกัดขนาดเซลล์ของ Google Sheets (~50,000 ตัวอักษร/เซลล์) - รูปที่มีรายละเอียดมากอาจถูกบีบอัดมากขึ้นเพื่อให้ซิงค์ได้",
@@ -2178,6 +2189,7 @@ settingsTranslateNote:"EN/VN can be left blank - they'll be auto-translated from
 settingsRoleNote:"Note: this page only controls which menus/buttons are shown in the browser (client-side) - it is not real security, since this file has no server. Anyone who opens the file can still edit the data via source code.",
 settingsRecorders:"Recorder List", settingsRecorderNameDuplicate:"This name is already in the Recorder list",
 settingsMachines:"Machine", settingsMachineNote:"Editing (renaming) a machine here automatically updates the machine name on every already-saved record across all modules (Defect/Breakdown/Performance, etc.) to match. Deleting a machine from the list does not change old records - it just won't be selectable again.", settingsMachineNameDuplicate:"This machine name already exists",
+settingsMigrateMachineTitle:"Migrate Old Machine Data", settingsMigrateMachineNote:"Use this if a machine was renamed before (e.g. by editing the Google Sheet directly, or before this app auto-updated old records) and old records still use the old name - so filtering by the current machine name shows no data in Recent Entries. Pick the old name found in your data, then migrate it to match the current machine name below.", settingsMigrateNoneFound:"No old machine names found that don't match the current list - all data already matches your Machine setting.", settingsMigrateFrom:"Old name found in data", settingsMigrateTo:"Migrate to current machine", settingsMigrateBtn:"Migrate Data", settingsMigrateSuccess:"Migration complete - every old record using \"{from}\" now shows \"{to}\".",
 gsSyncTitle:"Google Sheets Database Connection", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"Save URL", gsSyncNowBtn:"Sync Now",
 gsSyncNote:"Paste the Web App URL from Google Apps Script here so every module's data (Defect, Breakdown, Performance, Performance Test) and settings (Defect Types/Causes, Admin/Recorder names) are stored and shared via Google Sheets instead of staying siloed on each device - see the attached GoogleAppsScript_Code.gs file for setup steps.",
 gsSyncPhotoNote:"Note: Defect photos sync to Google Sheets directly as base64 (up to 4 per record). Photos are automatically compressed/resized before saving to fit within Google Sheets' cell limit (~50,000 characters/cell) - very detailed photos may be compressed more to make sure they sync.",
@@ -2266,6 +2278,7 @@ settingsTranslateNote:"Có thể để trống EN/VN - hệ thống sẽ tự d�
 settingsRoleNote:"Lưu ý: trang này chỉ kiểm soát menu/nút hiển thị trên trình duyệt (client-side) - không phải bảo mật thực sự vì file này không có server. Bất kỳ ai mở file đều có thể sửa dữ liệu qua source code.",
 settingsRecorders:"Danh sách người ghi nhận (Recorder)", settingsRecorderNameDuplicate:"Tên này đã có trong danh sách người ghi nhận",
 settingsMachines:"Máy móc (Machine)", settingsMachineNote:"Chỉnh sửa (đổi tên) máy ở đây sẽ tự động cập nhật tên máy trong dữ liệu đã lưu trước đó ở mọi module (Defect/Breakdown/Performance, v.v.) để khớp nhau. Xóa máy khỏi danh sách sẽ không thay đổi dữ liệu cũ - chỉ là sẽ không chọn lại được nữa.", settingsMachineNameDuplicate:"Tên máy này đã tồn tại",
+settingsMigrateMachineTitle:"Di chuyển dữ liệu máy cũ", settingsMigrateMachineNote:"Dùng khi máy đã từng được đổi tên trước đây (ví dụ chỉnh sửa trực tiếp trong Google Sheet, hoặc đổi tên trước khi ứng dụng tự cập nhật dữ liệu cũ) và dữ liệu cũ vẫn dùng tên cũ - khiến lọc theo tên máy hiện tại không thấy dữ liệu trong \"Danh sách gần đây\". Chọn tên cũ tìm thấy trong dữ liệu, rồi di chuyển sang tên máy hiện tại bên dưới.", settingsMigrateNoneFound:"Không tìm thấy tên máy cũ nào không khớp với danh sách hiện tại - toàn bộ dữ liệu đã khớp với cài đặt Machine.", settingsMigrateFrom:"Tên cũ tìm thấy trong dữ liệu", settingsMigrateTo:"Di chuyển sang máy hiện tại", settingsMigrateBtn:"Di chuyển dữ liệu", settingsMigrateSuccess:"Di chuyển hoàn tất - toàn bộ dữ liệu cũ dùng \"{from}\" giờ hiển thị \"{to}\".",
 gsSyncTitle:"Kết nối cơ sở dữ liệu Google Sheets", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"Lưu URL", gsSyncNowBtn:"Đồng bộ ngay",
 gsSyncNote:"Dán Web App URL từ Google Apps Script vào đây để dữ liệu mọi module (Defect, Breakdown, Performance, Performance Test) và cài đặt (Loại Defect/Nguyên nhân, tên Admin/Recorder) được lưu và dùng chung qua Google Sheets thay vì tách biệt trên từng thiết bị - xem các bước thiết lập trong file GoogleAppsScript_Code.gs đính kèm.",
 gsSyncPhotoNote:"Lưu ý: Ảnh Defect được đồng bộ lên Google Sheets dưới dạng base64 trực tiếp (tối đa 4 ảnh/bản ghi). Ảnh sẽ tự động được nén/thu nhỏ trước khi lưu để vừa với giới hạn ô của Google Sheets (~50.000 ký tự/ô) - ảnh có nhiều chi tiết có thể bị nén nhiều hơn để đảm bảo đồng bộ được.",
@@ -2340,6 +2353,7 @@ function applyI18n(){
   if(typeof renderAdminsTable==='function') renderAdminsTable();
   if(typeof renderRecordersTable==='function') renderRecordersTable();
   if(typeof renderMachinesTable==='function') renderMachinesTable();
+  if(typeof buildMachineMigrateSelects==='function') buildMachineMigrateSelects();
   if(typeof buildCurrentUserSelect==='function') buildCurrentUserSelect();
   if(typeof applyRolePermissions==='function') applyRolePermissions();
   if(typeof refreshRecorderPickers==='function') refreshRecorderPickers();
@@ -3194,8 +3208,6 @@ function initPerfNormalDefaults(){
   document.getElementById('pn-duration').textContent = '0';
   document.getElementById('pn-boxes').value = 0;
   document.getElementById('pn-speed').textContent = '0';
-  document.getElementById('pn-kpi-badge').textContent = '';
-  document.getElementById('pn-kpi-badge').className = 'tag';
   document.getElementById('pn-start-btn').disabled = false;
   document.getElementById('pn-stop-btn').disabled = true;
   if(pnState.timerInterval) clearInterval(pnState.timerInterval);
@@ -3229,10 +3241,6 @@ function updatePnSpeed(){
   const sec = pnState.elapsedSec || 0;
   const speed = sec>0 ? (boxes/(sec/60)) : 0;
   document.getElementById('pn-speed').textContent = speed.toFixed(1);
-  const badge = document.getElementById('pn-kpi-badge');
-  if(sec===0){ badge.textContent=''; badge.className='tag'; return; }
-  if(speed>=40){ badge.textContent = I18N[currentLang].pass+' (≥40)'; badge.className='tag badge-ok'; }
-  else { badge.textContent = I18N[currentLang].fail+' (<40)'; badge.className='tag badge-bad'; }
 }
 document.getElementById('pn-boxes').addEventListener('input', updatePnSpeed);
 
@@ -3245,7 +3253,7 @@ document.getElementById('pn-save').addEventListener('click', ()=>{
     id: uid(), recorder: document.getElementById('pn-recorder').value || '-',
     date: document.getElementById('pn-date').value, time: document.getElementById('pn-time').value,
     shift: document.getElementById('pn-shift').value, machine: document.getElementById('pn-machine').value,
-    durationSec: sec, boxes, speed, pass: speed>=40
+    durationSec: sec, boxes, speed
   };
   const arr = getArr(LS.perfNormal); arr.push(rec); setArr(LS.perfNormal, arr);
   gsPushNewRecord(LS.perfNormal, rec).then(refreshConnectionAfterSave);
@@ -3261,10 +3269,9 @@ function renderPerfNormalTable(){
   tbody.innerHTML = arr.map((r,i)=>`<tr>
     <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeOnly(r.time)}</td><td><span class="tag tag-${r.shift}">${r.shift}</span></td><td>${r.machine}</td>
     <td>${r.durationSec}</td><td>${r.boxes}</td><td>${r.speed.toFixed(1)}</td>
-    <td><span class="tag ${r.pass?'badge-ok':'badge-bad'}">${r.pass?I18N[currentLang].pass:I18N[currentLang].fail}</span></td>
     <td>${r.recorder||'-'}</td>
     <td><button class="small-btn" onclick="openEditModal('${LS.perfNormal}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.perfNormal}','${r.id}', renderPerfNormalTable)">${I18N[currentLang].delete}</button></td>
-  </tr>`).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
+  </tr>`).join('') || `<tr><td colspan="10" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
 
   const totalRow = document.getElementById('pn-table-total');
   if(full.length===0){ totalRow.innerHTML = ''; }
@@ -3272,9 +3279,8 @@ function renderPerfNormalTable(){
     const totalSec = full.reduce((s,r)=>s+r.durationSec,0);
     const totalBoxes = full.reduce((s,r)=>s+r.boxes,0);
     const combinedSpeed = totalSec>0 ? (totalBoxes/(totalSec/60)) : 0;
-    const passCount = full.filter(r=>r.pass).length;
     const cappedNote = full.length>arr.length ? ` (${arr.length}/${full.length})` : '';
-    totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td>${totalSec}</td><td>${totalBoxes}</td><td>${combinedSpeed.toFixed(1)}</td><td>${passCount}/${full.length} ${I18N[currentLang].pass}</td><td></td><td></td>`;
+    totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td>${totalSec}</td><td>${totalBoxes}</td><td>${combinedSpeed.toFixed(1)}</td><td></td><td></td>`;
   }
 }
 
@@ -4750,6 +4756,7 @@ window.editMachineItem = function(name){
 function refreshAfterMachineListChange(){
   renderMachinesTable();
   refreshMachinePickers();
+  if(typeof buildMachineMigrateSelects==='function') buildMachineMigrateSelects();
   if(typeof defectFilter!=='undefined') buildFilterMachineButtons('d', defectFilter);
   if(typeof breakdownFilter!=='undefined') buildFilterMachineButtons('b', breakdownFilter);
   if(typeof perfFilter!=='undefined') buildFilterMachineButtons('p', perfFilter);
@@ -4799,6 +4806,53 @@ function renameMachineInAllRecords(oldName, newName){
   if(typeof renderRejectTable==='function') renderRejectTable();
   if(typeof renderPerfNormalTable==='function') renderPerfNormalTable();
 }
+
+/* ============================================================
+   MIGRATE OLD MACHINE DATA (Settings > ย้ายข้อมูลเครื่องจักรเก่า) - repairs the specific gap the rename-
+   cascade above can't reach: a machine renamed BEFORE this app auto-cascaded renames onto old records
+   (e.g. an earlier rename done on an older version of this file, or the machine name edited directly in
+   the Google Sheet), which leaves old records permanently stuck on a name no longer in MACHINES at all -
+   so there's nothing left in Settings > Machine to "rename" anymore, and filtering Recent Entries by the
+   current machine name shows nothing. This tool finds those orphaned names directly in the saved data
+   (not the MACHINES list) and lets the Admin merge them into a current machine name on demand, reusing
+   the exact same renameMachineInAllRecords() cascade the Edit-machine flow above uses.
+============================================================ */
+// Every machine name string actually found in saved records (across every module) that is NOT present
+// in the current MACHINES list - i.e. "orphaned" by a rename/edit that happened outside this cascade.
+function findOrphanMachineNames(){
+  const RECORD_LS_KEYS = [LS.defects, LS.breakdowns, LS.perf, LS.perftest, LS.rejectTest, LS.perfNormal];
+  const seen = new Set();
+  RECORD_LS_KEYS.forEach(lsKey=>{
+    getArr(lsKey).forEach(r=>{
+      if(r && r.machine && !MACHINES.includes(r.machine)) seen.add(r.machine);
+    });
+  });
+  return Array.from(seen).sort();
+}
+function buildMachineMigrateSelects(){
+  const orphans = findOrphanMachineNames();
+  const fromSel = document.getElementById('mst-mc-migrate-from');
+  const toSel = document.getElementById('mst-mc-migrate-to');
+  const hasOrphans = orphans.length>0;
+  document.getElementById('mst-mc-migrate-none').style.display = hasOrphans ? 'none' : '';
+  document.getElementById('mst-mc-migrate-fields').style.display = hasOrphans ? '' : 'none';
+  document.getElementById('mst-mc-migrate-btnrow').style.display = hasOrphans ? '' : 'none';
+  if(!hasOrphans) return;
+  const prevFrom = fromSel.value, prevTo = toSel.value;
+  fromSel.innerHTML = orphans.map(n=>`<option value="${n}">${n}</option>`).join('');
+  if(orphans.includes(prevFrom)) fromSel.value = prevFrom;
+  toSel.innerHTML = MACHINES.map(m=>`<option value="${m}">${m}</option>`).join('');
+  if(MACHINES.includes(prevTo)) toSel.value = prevTo;
+}
+document.getElementById('mst-mc-migrate-btn').addEventListener('click', ()=>{
+  const from = document.getElementById('mst-mc-migrate-from').value;
+  const to = document.getElementById('mst-mc-migrate-to').value;
+  if(!from || !to) return;
+  renameMachineInAllRecords(from, to);
+  buildMachineMigrateSelects();
+  alert(I18N[currentLang].settingsMigrateSuccess.replace('{from}', from).replace('{to}', to));
+});
+
 document.getElementById('mst-mc-add').addEventListener('click', ()=>{
   const nameEl = document.getElementById('mst-mc-name');
   const name = nameEl.value.trim();
@@ -4971,8 +5025,8 @@ function exportPerftestExcel(){
 function exportPerfNormalExcel(){
   const t = I18N[currentLang];
   const rows = filterEntries(getArr(LS.perfNormal), perfNormalFilter).slice().reverse();
-  const header = [t.colNo, t.date, t.timeOccurred, t.shift, t.machine, t.pnDurationLabel, t.pnBoxResultLabel, t.speedResult, t.resultStatus, t.recorder];
-  const body = rows.map((r,i)=>[rows.length-i, r.date, r.time, r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.pass?t.pass:t.fail, r.recorder||'-']);
+  const header = [t.colNo, t.date, t.timeOccurred, t.shift, t.machine, t.pnDurationLabel, t.pnBoxResultLabel, t.speedResult, t.recorder];
+  const body = rows.map((r,i)=>[rows.length-i, r.date, r.time, r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.recorder||'-']);
   excelDownload([header, ...body], 'PerfNormal', 'MachinePerformanceNormal_Report');
 }
 function exportRejectExcel(){
@@ -5219,6 +5273,7 @@ renderAllMasterTables();
 renderAdminsTable();
 renderRecordersTable();
 renderMachinesTable();
+buildMachineMigrateSelects();
 buildCurrentUserSelect();
 applyRolePermissions();
 // LOGIN GATE - must run after the two calls above, so the login screen's name dropdown and the app
