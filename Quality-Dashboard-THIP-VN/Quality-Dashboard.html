@@ -1105,6 +1105,21 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       </table>
     </div>
   </div>
+
+  <div class="card">
+    <h2 data-i18n="miniDashTitle">สรุปข้อมูล Dashboard</h2>
+    <div class="mini-dash-note" data-i18n="miniDashFollowsNote">ข้อมูลเปลี่ยนตามตัวกรองใน "รายการล่าสุด" ด้านบน</div>
+    <div class="stat-grid">
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectTestCount">จำนวนครั้งที่ทดสอบ</div><div class="val" id="rd-count">0</div></div>
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectTotalInput">Input รวม (กล่อง)</div><div class="val" id="rd-input">0</div></div>
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectTotalReject">Reject รวม (กล่อง)</div><div class="val" id="rd-reject">0</div></div>
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectOverallRate">% Reject ภาพรวม</div><div class="val" id="rd-rate">0%</div></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-box chart-reject"><h3 data-i18n="chartRejectByMachine">Input vs Reject แยกตามเครื่องจักร</h3><div class="chart-scroll"><canvas id="chart-rjt-machine"></canvas></div></div>
+      <div class="chart-box chart-reject"><h3 data-i18n="chartRejectByShift">Input vs Reject แยกตามกะ (Shift)</h3><div class="chart-scroll"><canvas id="chart-rjt-shift"></canvas></div></div>
+    </div>
+  </div>
 </section>
 
 <!-- ============ DASHBOARD PAGE ============ -->
@@ -1670,6 +1685,7 @@ function rerenderEverythingAfterSync(){
   if(typeof renderPerftestTable==='function') renderPerftestTable();
   if(typeof renderPerftestDashboard==='function') renderPerftestDashboard();
   if(typeof renderRejectTable==='function') renderRejectTable();
+  if(typeof renderRejectMiniDashboard==='function') renderRejectMiniDashboard();
   if(typeof renderPerfNormalTable==='function') renderPerfNormalTable();
   if(typeof renderAllMasterTables==='function') renderAllMasterTables();
   if(typeof renderRecordersTable==='function') renderRecordersTable();
@@ -1867,7 +1883,7 @@ function rerenderModuleAfterEdit(lsKey){
   else if(lsKey===LS.breakdowns){ renderBreakdownTable(); renderBreakdownMiniDashboard(); }
   else if(lsKey===LS.perf){ renderPerfTable(); renderPerfMiniDashboard(); }
   else if(lsKey===LS.perftest){ renderPerftestTable(); renderPerftestDashboard(); }
-  else if(lsKey===LS.rejectTest){ renderRejectTable(); }
+  else if(lsKey===LS.rejectTest){ renderRejectTable(); renderRejectMiniDashboard(); }
   else if(lsKey===LS.perfNormal){ renderPerfNormalTable(); }
   refreshDashboard();
 }
@@ -2064,6 +2080,8 @@ rejectFormTitle:"ทดสอบเครื่อง Reject Station (หาค�
 rejectInputQty:"จำนวน Input ทั้งหมด (กล่อง)", rejectInputQtyShort:"Input", rejectRejectQty:"จำนวนที่ถูก Reject (กล่อง)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"จำนวน Defect ที่หลุดผ่าน (กล่อง)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectPassQtyLabel:"จำนวนที่ผ่าน (Pass Qty)", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"หมายเหตุ (เพิ่มเติม)",
+statRejectTestCount:"จำนวนครั้งที่ทดสอบ", statRejectTotalInput:"Input รวม (กล่อง)", statRejectTotalReject:"Reject รวม (กล่อง)", statRejectOverallRate:"% Reject ภาพรวม",
+chartRejectByMachine:"Input vs Reject แยกตามเครื่องจักร", chartRejectByShift:"Input vs Reject แยกตามกะ (Shift)",
 rejectTimeStart:"เวลาเก็บข้อมูล เริ่ม", rejectTimeEnd:"เวลาเก็บข้อมูล สิ้นสุด",
 rejectAnalysisTitle:"วิเคราะห์หาความสูงมาตรฐาน (เปรียบเทียบตามความสูงที่ตั้ง)", rejectTotalTrials:"จำนวนครั้งที่ทดสอบ",
 rejectBestHeight:"ความสูงที่แนะนำ (Defect Rate ต่ำสุด)", rejectBestDefectRate:"Defect Rate ที่ความสูงแนะนำ", rejectBestRejectRate:"Reject Rate ที่ความสูงแนะนำ",
@@ -2153,6 +2171,8 @@ rejectFormTitle:"Reject Station Test (Find Standard Height)", rejectHeightLabel:
 rejectInputQty:"Total Input Qty (Box)", rejectInputQtyShort:"Input", rejectRejectQty:"Rejected Qty (Box)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Defect Qty (escaped, found downstream)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectPassQtyLabel:"Pass Qty", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Note (optional)",
+statRejectTestCount:"Tests Count", statRejectTotalInput:"Total Input (Box)", statRejectTotalReject:"Total Reject (Box)", statRejectOverallRate:"Overall % Reject",
+chartRejectByMachine:"Input vs Reject by Machine", chartRejectByShift:"Input vs Reject by Shift",
 rejectTimeStart:"Collection Start Time", rejectTimeEnd:"Collection End Time",
 rejectAnalysisTitle:"Standard Height Analysis (Compare by Height Setting)", rejectTotalTrials:"Trials",
 rejectBestHeight:"Recommended Height (lowest Defect Rate)", rejectBestDefectRate:"Defect Rate at Recommended Height", rejectBestRejectRate:"Reject Rate at Recommended Height",
@@ -2242,6 +2262,8 @@ rejectFormTitle:"Kiểm tra máy Reject Station (Tìm độ cao chuẩn)", rejec
 rejectInputQty:"Tổng số lượng Input (hộp)", rejectInputQtyShort:"Input", rejectRejectQty:"Số lượng bị Reject (hộp)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Số lượng Defect lọt qua (hộp)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectPassQtyLabel:"Số lượng Pass", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Ghi chú (không bắt buộc)",
+statRejectTestCount:"Số lần kiểm tra", statRejectTotalInput:"Tổng Input (hộp)", statRejectTotalReject:"Tổng Reject (hộp)", statRejectOverallRate:"% Reject tổng thể",
+chartRejectByMachine:"Input vs Reject theo máy", chartRejectByShift:"Input vs Reject theo ca",
 rejectTimeStart:"Thời gian bắt đầu thu thập", rejectTimeEnd:"Thời gian kết thúc thu thập",
 rejectAnalysisTitle:"Phân tích tìm độ cao chuẩn (So sánh theo độ cao cài đặt)", rejectTotalTrials:"Số lần kiểm tra",
 rejectBestHeight:"Độ cao đề xuất (Defect Rate thấp nhất)", rejectBestDefectRate:"Defect Rate ở độ cao đề xuất", rejectBestRejectRate:"Reject Rate ở độ cao đề xuất",
@@ -2344,6 +2366,7 @@ function applyI18n(){
   buildFilterMachineButtons('r', rejectFilter); buildFilterMachineButtons('pn', perfNormalFilter);
   renderDefectTable(); renderBreakdownTable(); renderPerfTable(); renderPerftestTable(); renderRejectTable(); renderPerfNormalTable();
   renderDefectMiniDashboard(); renderBreakdownMiniDashboard(); renderPerfMiniDashboard(); renderPerftestDashboard();
+  renderRejectMiniDashboard();
   refreshDashboard();
   // Role UI (badge text, dropdown "(Admin)" suffix) also needs to re-localize on a language switch.
   // Guarded with typeof-check since applyI18n() itself is called once during the earliest page setup,
@@ -2577,7 +2600,7 @@ const defectFilter = setupEntryFilter('d', ()=>{ renderDefectTable(); renderDefe
 const breakdownFilter = setupEntryFilter('b', ()=>{ renderBreakdownTable(); renderBreakdownMiniDashboard(); });
 const perfFilter = setupEntryFilter('p', ()=>{ renderPerfTable(); renderPerfMiniDashboard(); });
 const perftestFilter = setupEntryFilter('t', ()=>{ renderPerftestTable(); renderPerftestDashboard(); });
-const rejectFilter = setupEntryFilter('r', ()=>{ renderRejectTable(); });
+const rejectFilter = setupEntryFilter('r', ()=>{ renderRejectTable(); renderRejectMiniDashboard(); });
 const perfNormalFilter = setupEntryFilter('pn', ()=>{ renderPerfNormalTable(); });
 
 /* ============================================================
@@ -3344,6 +3367,7 @@ document.getElementById('r-save').addEventListener('click', ()=>{
   gsPushNewRecord(LS.rejectTest, rec).then(refreshConnectionAfterSave);
   initRejectDefaults();
   renderRejectTable();
+  renderRejectMiniDashboard();
 });
 document.getElementById('r-reset').addEventListener('click', initRejectDefaults);
 
@@ -3379,6 +3403,92 @@ function renderRejectTable(){
     const cappedNote = full.length>arr.length ? ` (${arr.length}/${full.length})` : '';
     totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td></td><td></td><td>${totalInput}</td><td>${totalReject}</td><td>${overallRejectRate.toFixed(2)}%</td><td>${totalDefect}</td><td>${overallDefectRate.toFixed(2)}%</td><td></td><td></td>`;
   }
+}
+
+// Reject Station Test dashboard - same filtered scope (rejectFilter) as the Recent Entries table above,
+// for CEO-level reporting: overview KPIs (test count / total Input / total Reject / overall % Reject),
+// plus two grouped Input-vs-Reject bar charts (by Machine No. and by Shift) so patterns are easy to spot
+// at a glance - mirrors the Production-vs-Defect comparison chart pattern on the Performance page
+// (renderPerfMiniDashboard's chart-pfd-comparison) rather than inventing a new chart style.
+function renderRejectMiniDashboard(){
+  const rows = filterEntries(getArr(LS.rejectTest), rejectFilter);
+  const count = rows.length;
+  const totalInput = rows.reduce((s,r)=>s+r.inputQty,0);
+  const totalReject = rows.reduce((s,r)=>s+r.rejectQty,0);
+  const overallRate = totalInput>0 ? (totalReject/totalInput*100) : 0;
+
+  document.getElementById('rd-count').innerHTML = unitHtml(count, 'unitTimes');
+  document.getElementById('rd-input').innerHTML = qtyBoxHtml(totalInput);
+  document.getElementById('rd-reject').innerHTML = qtyBoxHtml(totalReject);
+  document.getElementById('rd-rate').textContent = overallRate.toFixed(2)+'%';
+
+  // By Machine No. - only the machine(s) matching the current machine filter (all, or just the one
+  // selected), same convention as renderPerfMiniDashboard's chart-pfd-comparison.
+  const machinesToShow = rejectFilter.machine==='all' ? MACHINES : [rejectFilter.machine];
+  const inputByMachine = [], rejectByMachine = [], rejectPctByMachine = [];
+  machinesToShow.forEach(m=>{
+    const mRows = rows.filter(r=>r.machine===m);
+    const mInput = mRows.reduce((s,r)=>s+r.inputQty,0);
+    const mReject = mRows.reduce((s,r)=>s+r.rejectQty,0);
+    inputByMachine.push(mInput);
+    rejectByMachine.push(mReject);
+    rejectPctByMachine.push(mInput>0 ? +(mReject/mInput*100).toFixed(1) : 0);
+  });
+  destroyChart('rjtMachine');
+  fitChartCanvas('chart-rjt-machine', machinesToShow.length, {minPerItem:110});
+  charts.rjtMachine = new Chart(document.getElementById('chart-rjt-machine'), {
+    type:'bar',
+    data:{
+      labels: machinesToShow,
+      datasets:[
+        { label:I18N[currentLang].rejectInputQtyShort || 'Input', data:inputByMachine, backgroundColor:'#94a3b8' },
+        { label:I18N[currentLang].rejectRejectQtyShort || 'Reject', data:rejectByMachine, backgroundColor:'#0d9488' }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom'},
+        valueLabels:{ show:true, decimals:0, datasets:{
+          0:{ show:true, decimals:0 },
+          1:{ show:true, decimals:1, suffix:'%', labels:rejectPctByMachine, color:'#0f766e' }
+        } }
+      },
+      scales:{ y:{ beginAtZero:true } }
+    }
+  });
+
+  // By Shift (A/B/C) - same filtered scope, ignores the machine filter so all three shifts always show,
+  // same as renderBreakdownMiniDashboard's chart-bkd-shift.
+  const shifts = ['A','B','C'];
+  const inputByShift = [], rejectByShift = [], rejectPctByShift = [];
+  shifts.forEach(s=>{
+    const sRows = rows.filter(r=>r.shift===s);
+    const sInput = sRows.reduce((sum,r)=>sum+r.inputQty,0);
+    const sReject = sRows.reduce((sum,r)=>sum+r.rejectQty,0);
+    inputByShift.push(sInput);
+    rejectByShift.push(sReject);
+    rejectPctByShift.push(sInput>0 ? +(sReject/sInput*100).toFixed(1) : 0);
+  });
+  destroyChart('rjtShift');
+  fitChartCanvas('chart-rjt-shift', shifts.length, {minPerItem:110});
+  charts.rjtShift = new Chart(document.getElementById('chart-rjt-shift'), {
+    type:'bar',
+    data:{
+      labels: shifts,
+      datasets:[
+        { label:I18N[currentLang].rejectInputQtyShort || 'Input', data:inputByShift, backgroundColor:'#94a3b8' },
+        { label:I18N[currentLang].rejectRejectQtyShort || 'Reject', data:rejectByShift, backgroundColor:'#0d9488' }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom'},
+        valueLabels:{ show:true, decimals:0, datasets:{
+          0:{ show:true, decimals:0 },
+          1:{ show:true, decimals:1, suffix:'%', labels:rejectPctByShift, color:'#0f766e' }
+        } }
+      },
+      scales:{ y:{ beginAtZero:true } }
+    }
+  });
 }
 
 /* ============================================================
@@ -4804,6 +4914,7 @@ function renameMachineInAllRecords(oldName, newName){
   if(typeof renderPerftestTable==='function') renderPerftestTable();
   if(typeof renderPerftestDashboard==='function') renderPerftestDashboard();
   if(typeof renderRejectTable==='function') renderRejectTable();
+  if(typeof renderRejectMiniDashboard==='function') renderRejectMiniDashboard();
   if(typeof renderPerfNormalTable==='function') renderPerfNormalTable();
 }
 
