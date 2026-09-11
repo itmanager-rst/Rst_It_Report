@@ -1087,11 +1087,31 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       </div>
     </div>
     <div class="mini-filter-row">
+      <span class="flabel" data-i18n="filterViewModeLabel">มุมมอง</span>
+      <div class="chip-row" id="r-view-mode" style="display:inline-flex;">
+        <button type="button" class="chip-all active" data-mode="day" data-i18n="viewModeDay">รายวัน</button>
+        <button type="button" class="chip-all" data-mode="week" data-i18n="viewModeWeek">รายสัปดาห์</button>
+        <button type="button" class="chip-all" data-mode="month" data-i18n="viewModeMonth">รายเดือน</button>
+      </div>
+    </div>
+    <div class="mini-filter-row" id="r-filter-day-wrap">
       <span class="flabel" data-i18n="filterDateLabel">วันที่</span>
       <button type="button" class="chip-all" id="r-filter-all-btn" data-i18n="allLabel">ทั้งหมด</button>
       <input type="date" id="r-filter-date">
+    </div>
+    <div class="mini-filter-row" id="r-filter-week-wrap" style="display:none;">
+      <span class="flabel" data-i18n="filterWeekLabel">สัปดาห์</span>
+      <input type="week" id="r-filter-week">
+    </div>
+    <div class="mini-filter-row" id="r-filter-month-wrap" style="display:none;">
+      <span class="flabel" data-i18n="filterMonthLabel">เดือน</span>
+      <input type="month" id="r-filter-month">
+    </div>
+    <div class="mini-filter-row">
       <span class="flabel" data-i18n="filterMachineLabel">เครื่องจักร</span>
       <div class="chip-row" id="r-filter-machine"></div>
+      <span class="flabel" data-i18n="filterHeightLabel">ความสูง</span>
+      <select id="r-filter-height"></select>
     </div>
     <div class="table-wrap">
       <table id="r-table">
@@ -1120,6 +1140,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
     <div class="chart-grid">
       <div class="chart-box chart-reject"><h3 data-i18n="chartRejectByMachine">Input vs Reject แยกตามเครื่องจักร</h3><div class="chart-scroll"><canvas id="chart-rjt-machine"></canvas></div></div>
       <div class="chart-box chart-reject"><h3 data-i18n="chartRejectByShift">Input vs Reject แยกตามกะ (Shift)</h3><div class="chart-scroll"><canvas id="chart-rjt-shift"></canvas></div></div>
+      <div class="chart-box chart-reject" id="chart-rjt-daily-wrap" style="display:none;"><h3 data-i18n="chartRejectByDay">Input vs Reject รายวัน (ตามช่วงที่เลือก)</h3><div class="chart-scroll"><div class="chart-inner-size"><canvas id="chart-rjt-daily"></canvas></div></div></div>
     </div>
   </div>
 </section>
@@ -1225,7 +1246,6 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
   </div>
   <div class="chart-grid">
     <div class="chart-box chart-breakdown"><h3 data-i18n="chartBdByMachine">Breakdown Minute แยกตามเครื่องจักร</h3><div class="chart-scroll chart-tall"><canvas id="chart-bd-machine"></canvas></div></div>
-    <div class="chart-box chart-breakdown"><h3 data-i18n="chartBdByCause">Breakdown แยกตามสาเหตุ</h3><div class="chart-scroll"><canvas id="chart-bd-cause"></canvas></div></div>
     <div class="chart-box chart-breakdown"><h3 data-i18n="chartBdByShift">Breakdown Minutes by Shift</h3><div class="chart-scroll"><canvas id="chart-bd-shift"></canvas></div></div>
   </div>
 
@@ -1327,6 +1347,19 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
   </div>
 
   <div class="card">
+    <h2 data-i18n="settingsRejectHeights">ความสูงกล่อง (Box Height)</h2>
+    <div class="mini-dash-note" data-i18n="settingsRejectHeightNote">แก้ไข (เปลี่ยนค่า) ความสูงที่นี่ จะอัปเดตค่าความสูงในข้อมูล Reject Station Test ที่บันทึกไปแล้วให้ตรงกันโดยอัตโนมัติ ส่วนการลบออกจากรายการ จะไม่เปลี่ยนแปลงข้อมูลเก่า เพียงแต่จะไม่มีให้เลือกใหม่อีก</div>
+    <table id="mst-rh-table">
+      <thead><tr><th data-i18n="rejectHeightShort">ความสูง</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="grid" style="margin-top:14px;">
+      <div class="field"><label data-i18n="rejectHeightShort">ความสูง</label><input type="number" min="1" step="1" id="mst-rh-value"></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-performance" id="mst-rh-add" data-i18n="settingsAddBtn">เพิ่มรายการ</button></div>
+  </div>
+
+  <div class="card">
     <h2 data-i18n="settingsDefectTypes">ประเภท Defect (Defect Type)</h2>
     <table id="mst-dt-table">
       <thead><tr><th>ID</th><th>TH</th><th>EN</th><th>VN</th><th></th></tr></thead>
@@ -1382,7 +1415,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 const LS = {
   defects: 'fd_defects', breakdowns: 'fd_breakdowns', perf: 'fd_performance',
   perftest: 'fd_perftest', rejectTest: 'fd_rejectTest', perfNormal: 'fd_perfNormal', recorders: 'fd_recorders', machines: 'fd_machines', lang: 'fd_lang',
-  defectTypes: 'fd_defectTypes', causeTypes: 'fd_causeTypes', bdCauses: 'fd_bdCauses',
+  defectTypes: 'fd_defectTypes', causeTypes: 'fd_causeTypes', bdCauses: 'fd_bdCauses', rejectHeights: 'fd_rejectHeights',
   admins: 'fd_admins', currentUser: 'fd_currentUser', loggedIn: 'fd_loggedIn'
 };
 function getArr(key){ try{ return JSON.parse(localStorage.getItem(key)) || []; }catch(e){ return []; } }
@@ -1417,7 +1450,7 @@ const GS_SHEET_MAP = {
   [LS.defects]: 'defects', [LS.breakdowns]: 'breakdowns', [LS.perf]: 'perf', [LS.perftest]: 'perftest',
   [LS.rejectTest]: 'rejectTest', [LS.perfNormal]: 'perfNormal',
   [LS.recorders]: 'recorders', [LS.machines]: 'machines', [LS.defectTypes]: 'defectTypes', [LS.causeTypes]: 'causeTypes',
-  [LS.bdCauses]: 'bdCauses', [LS.admins]: 'admins'
+  [LS.bdCauses]: 'bdCauses', [LS.admins]: 'admins', [LS.rejectHeights]: 'rejectHeights'
 };
 // Baked-in default Web App URL, so anyone who opens this file (e.g. downloaded from GitHub) connects to
 // the shared Google Sheet automatically, with no manual setup step. Still fully overridable per device
@@ -1602,6 +1635,13 @@ async function pullSheetIntoLocal(lsKey, sheetName){
     MACHINES = normalizeNameList(restored);
     if(MACHINES.length===0) MACHINES = MACHINES_DEFAULT.slice();
     setArr(lsKey, MACHINES);
+  } else if(lsKey===LS.rejectHeights){
+    // Same reasoning as LS.machines above: REJECT_HEIGHTS is a `let` variable read directly everywhere
+    // (height picker, edit-modal options, import default) rather than re-fetched from localStorage, and
+    // a synced row can come back as {height:"54"}/{name:"54"} instead of a plain number.
+    REJECT_HEIGHTS = normalizeHeightList(restored);
+    if(REJECT_HEIGHTS.length===0) REJECT_HEIGHTS = REJECT_HEIGHTS_DEFAULT.slice();
+    setArr(lsKey, REJECT_HEIGHTS);
   } else {
     setArr(lsKey, restored);
   }
@@ -1695,6 +1735,8 @@ function rerenderEverythingAfterSync(){
   if(typeof renderMachinesTable==='function') renderMachinesTable();
   if(typeof refreshMachinePickers==='function') refreshMachinePickers();
   if(typeof buildMachineMigrateSelects==='function') buildMachineMigrateSelects();
+  if(typeof renderRejectHeightsTable==='function') renderRejectHeightsTable();
+  if(typeof refreshHeightPickers==='function') refreshHeightPickers();
   if(typeof buildCurrentUserSelect==='function') buildCurrentUserSelect();
   if(typeof applyRolePermissions==='function') applyRolePermissions();
   if(typeof refreshDashboard==='function') refreshDashboard();
@@ -1713,9 +1755,15 @@ if(MACHINES.length===0) MACHINES = MACHINES_DEFAULT.slice();
 // objects from an earlier sync (before this normalization existed), this writes back plain strings so
 // the corruption doesn't keep resurfacing on every reload.
 setArr(LS.machines, MACHINES);
-// Fixed box-height settings the Reject Station Test module tests against (per request) - not an
-// admin-editable master list like Defect Type/Cause, since the test is defined around exactly these 5.
-const REJECT_HEIGHTS = [54,56,58,60,62];
+// Box-height settings the Reject Station Test module tests against. Originally a fixed list of exactly
+// 5 values; per request ("หน้าตั้งค่า เพิ่มแท็บ ความสูงกล่อง และสามารถเพิ่มขนาดเองได้") this is now an
+// admin-editable master list (Settings > ความสูงกล่อง), same `let`-array/normalize/GS-sync convention as
+// MACHINES above - every place that reads REJECT_HEIGHTS does so fresh at call time, so a reassignment
+// here (add/edit/delete/reorder, or a Google Sheets pull) is picked up everywhere automatically.
+const REJECT_HEIGHTS_DEFAULT = [54,56,58,60,62];
+let REJECT_HEIGHTS = normalizeHeightList(loadMasterList(LS.rejectHeights, REJECT_HEIGHTS_DEFAULT));
+if(REJECT_HEIGHTS.length===0) REJECT_HEIGHTS = REJECT_HEIGHTS_DEFAULT.slice();
+setArr(LS.rejectHeights, REJECT_HEIGHTS);
 
 /* ============================================================
    GENERIC ADMIN RECORD EDITOR - one shared modal (#edit-modal) reused by every module's Recent Entries
@@ -2010,6 +2058,25 @@ function normalizeNameList(list){
   });
   return out;
 }
+// Numeric analog of normalizeNameList(), for REJECT_HEIGHTS. A synced row can come back as a plain
+// number, a numeric string, or an object shape ({height:"54"} / {name:"54"} / {Height:"54"}) depending
+// on how Apps Script's readSheetAsObjects_ serialized it - this coerces any of those to a clean, deduped,
+// ascending-sorted list of positive integers, same corruption-guard reasoning as normalizeNameList.
+function normalizeHeightList(list){
+  const seen = new Set(); const out = [];
+  (Array.isArray(list) ? list : []).forEach(v=>{
+    let n;
+    if(typeof v==='number') n = v;
+    else if(typeof v==='string') n = parseInt(v);
+    else if(v && typeof v==='object'){
+      const raw = v.height!==undefined?v.height : v.Height!==undefined?v.Height : v.name!==undefined?v.name : v.Name!==undefined?v.Name : undefined;
+      n = parseInt(raw);
+    }
+    if(Number.isFinite(n) && n>0 && !seen.has(n)){ seen.add(n); out.push(n); }
+  });
+  out.sort((a,b)=>a-b);
+  return out;
+}
 // Fixed to the factory's own offset (Thailand and Vietnam are both UTC+7 year-round, no DST) instead of
 // reading the device's OS/browser timezone. The old getTimezoneOffset()/toTimeString() approach silently
 // produced wrong dates and times on any device whose clock/timezone wasn't set to exactly this zone - a
@@ -2083,7 +2150,8 @@ rejectInputQty:"จำนวน Input ทั้งหมด (กล่อง)", 
 rejectDefectQty:"จำนวน Defect ที่หลุดผ่าน (กล่อง)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectPassQtyLabel:"จำนวนที่ผ่าน (Pass Qty)", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"หมายเหตุ (เพิ่มเติม)",
 statRejectTestCount:"จำนวนครั้งที่ทดสอบ", statRejectTotalInput:"Input รวม (กล่อง)", statRejectTotalReject:"Reject รวม (กล่อง)", statRejectOverallRate:"% Reject ภาพรวม",
-chartRejectByMachine:"Input vs Reject แยกตามเครื่องจักร", chartRejectByShift:"Input vs Reject แยกตามกะ (Shift)",
+chartRejectByMachine:"Input vs Reject แยกตามเครื่องจักร", chartRejectByShift:"Input vs Reject แยกตามกะ (Shift)", chartRejectByDay:"Input vs Reject รายวัน (ตามช่วงที่เลือก)",
+filterViewModeLabel:"มุมมอง", viewModeDay:"รายวัน", viewModeWeek:"รายสัปดาห์", viewModeMonth:"รายเดือน", filterWeekLabel:"สัปดาห์", filterHeightLabel:"ความสูง", allHeights:"ทุกความสูง",
 rejectTimeStart:"เวลาเก็บข้อมูล เริ่ม", rejectTimeEnd:"เวลาเก็บข้อมูล สิ้นสุด",
 rejectAnalysisTitle:"วิเคราะห์หาความสูงมาตรฐาน (เปรียบเทียบตามความสูงที่ตั้ง)", rejectTotalTrials:"จำนวนครั้งที่ทดสอบ",
 rejectBestHeight:"ความสูงที่แนะนำ (Defect Rate ต่ำสุด)", rejectBestDefectRate:"Defect Rate ที่ความสูงแนะนำ", rejectBestRejectRate:"Reject Rate ที่ความสูงแนะนำ",
@@ -2124,6 +2192,7 @@ settingsTranslateNote:"เว้นช่อง EN/VN ว่างไว้ไ�
 settingsRoleNote:"หมายเหตุ: หน้านี้เป็นระดับการมองเห็นเมนู/ปุ่มในหน้าเว็บเท่านั้น (client-side) ไม่ใช่ระบบความปลอดภัยจริง เนื่องจากไฟล์นี้ไม่มี server - ผู้ใดก็ตามที่เปิดไฟล์สามารถแก้ไขข้อมูลผ่าน source code ได้",
 settingsRecorders:"รายชื่อผู้บันทึก (Recorder)", settingsRecorderNameDuplicate:"มีชื่อนี้ในรายชื่อผู้บันทึกแล้ว",
 settingsMachines:"เครื่องจักร (Machine)", settingsMachineNote:"แก้ไข (เปลี่ยนชื่อ) เครื่องจักรที่นี่ จะอัปเดตชื่อเครื่องในข้อมูลที่บันทึกไปแล้วทุกโมดูล (Defect/Breakdown/Performance ฯลฯ) ให้ตรงกันโดยอัตโนมัติ ส่วนการลบเครื่องจักรออกจากรายการ จะไม่เปลี่ยนแปลงข้อมูลเก่า เพียงแต่จะไม่มีให้เลือกใหม่อีก", settingsMachineNameDuplicate:"มีชื่อเครื่องจักรนี้อยู่แล้ว",
+settingsRejectHeights:"ความสูงกล่อง (Box Height)", settingsRejectHeightNote:"แก้ไข (เปลี่ยนค่า) ความสูงที่นี่ จะอัปเดตค่าความสูงในข้อมูล Reject Station Test ที่บันทึกไปแล้วให้ตรงกันโดยอัตโนมัติ ส่วนการลบออกจากรายการ จะไม่เปลี่ยนแปลงข้อมูลเก่า เพียงแต่จะไม่มีให้เลือกใหม่อีก", settingsRejectHeightDuplicate:"มีค่าความสูงนี้อยู่แล้ว", settingsRejectHeightInvalid:"กรุณาระบุค่าความสูงเป็นตัวเลขมากกว่า 0",
 settingsMigrateMachineTitle:"ย้ายข้อมูลเครื่องจักรเก่า", settingsMigrateMachineNote:"ใช้เมื่อเคยเปลี่ยนชื่อเครื่องจักรมาก่อน (เช่นแก้ไขข้อมูลใน Google Sheet โดยตรง หรือเปลี่ยนชื่อไว้ก่อนที่ระบบจะอัปเดตข้อมูลเก่าให้อัตโนมัติ) แล้วข้อมูลเก่าที่บันทึกไว้ยังใช้ชื่อเดิมอยู่ ทำให้เลือกกรองด้วยชื่อเครื่องปัจจุบันแล้วไม่เจอข้อมูลในตาราง \"รายการล่าสุด\" - เลือกชื่อเดิมที่พบในข้อมูล แล้วย้ายไปรวมกับชื่อเครื่องปัจจุบันด้านล่าง", settingsMigrateNoneFound:"ไม่พบชื่อเครื่องจักรเก่าที่ไม่ตรงกับรายการปัจจุบัน - ข้อมูลทั้งหมดสัมพันธ์กับ Machine setting อยู่แล้ว", settingsMigrateFrom:"ชื่อเครื่องเดิมที่พบในข้อมูล", settingsMigrateTo:"ย้ายไปยังเครื่องปัจจุบัน", settingsMigrateBtn:"ย้ายข้อมูล", settingsMigrateSuccess:"ย้ายข้อมูลสำเร็จ - รายการเก่าที่ใช้ชื่อ \"{from}\" ทั้งหมดเปลี่ยนเป็น \"{to}\" แล้ว",
 gsSyncTitle:"เชื่อมต่อฐานข้อมูล Google Sheets", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"บันทึก URL", gsSyncNowBtn:"ซิงค์ข้อมูลตอนนี้",
 gsSyncNote:"วาง Web App URL จาก Google Apps Script ที่นี่ เพื่อให้ข้อมูลทุกโมดูล (Defect, Breakdown, Performance, Performance Test) และการตั้งค่า (ประเภท Defect/สาเหตุ, รายชื่อ Admin/ผู้บันทึก) เก็บและใช้ร่วมกันผ่าน Google Sheets แทนที่จะเก็บแยกในแต่ละเครื่อง - ดูขั้นตอนตั้งค่าในไฟล์ GoogleAppsScript_Code.gs ที่แนบมาด้วย",
@@ -2178,7 +2247,8 @@ rejectInputQty:"Total Input Qty (Box)", rejectInputQtyShort:"Input", rejectRejec
 rejectDefectQty:"Defect Qty (escaped, found downstream)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectPassQtyLabel:"Pass Qty", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Note (optional)",
 statRejectTestCount:"Tests Count", statRejectTotalInput:"Total Input (Box)", statRejectTotalReject:"Total Reject (Box)", statRejectOverallRate:"Overall % Reject",
-chartRejectByMachine:"Input vs Reject by Machine", chartRejectByShift:"Input vs Reject by Shift",
+chartRejectByMachine:"Input vs Reject by Machine", chartRejectByShift:"Input vs Reject by Shift", chartRejectByDay:"Input vs Reject by Day (selected range)",
+filterViewModeLabel:"View", viewModeDay:"Daily", viewModeWeek:"Weekly", viewModeMonth:"Monthly", filterWeekLabel:"Week", filterHeightLabel:"Height", allHeights:"All Heights",
 rejectTimeStart:"Collection Start Time", rejectTimeEnd:"Collection End Time",
 rejectAnalysisTitle:"Standard Height Analysis (Compare by Height Setting)", rejectTotalTrials:"Trials",
 rejectBestHeight:"Recommended Height (lowest Defect Rate)", rejectBestDefectRate:"Defect Rate at Recommended Height", rejectBestRejectRate:"Reject Rate at Recommended Height",
@@ -2219,6 +2289,7 @@ settingsTranslateNote:"EN/VN can be left blank - they'll be auto-translated from
 settingsRoleNote:"Note: this page only controls which menus/buttons are shown in the browser (client-side) - it is not real security, since this file has no server. Anyone who opens the file can still edit the data via source code.",
 settingsRecorders:"Recorder List", settingsRecorderNameDuplicate:"This name is already in the Recorder list",
 settingsMachines:"Machine", settingsMachineNote:"Editing (renaming) a machine here automatically updates the machine name on every already-saved record across all modules (Defect/Breakdown/Performance, etc.) to match. Deleting a machine from the list does not change old records - it just won't be selectable again.", settingsMachineNameDuplicate:"This machine name already exists",
+settingsRejectHeights:"Box Height", settingsRejectHeightNote:"Editing (changing) a height value here automatically updates that value on every already-saved Reject Station Test record to match. Deleting a height from the list does not change old records - it just won't be selectable again.", settingsRejectHeightDuplicate:"This height value already exists", settingsRejectHeightInvalid:"Please enter a height value greater than 0",
 settingsMigrateMachineTitle:"Migrate Old Machine Data", settingsMigrateMachineNote:"Use this if a machine was renamed before (e.g. by editing the Google Sheet directly, or before this app auto-updated old records) and old records still use the old name - so filtering by the current machine name shows no data in Recent Entries. Pick the old name found in your data, then migrate it to match the current machine name below.", settingsMigrateNoneFound:"No old machine names found that don't match the current list - all data already matches your Machine setting.", settingsMigrateFrom:"Old name found in data", settingsMigrateTo:"Migrate to current machine", settingsMigrateBtn:"Migrate Data", settingsMigrateSuccess:"Migration complete - every old record using \"{from}\" now shows \"{to}\".",
 gsSyncTitle:"Google Sheets Database Connection", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"Save URL", gsSyncNowBtn:"Sync Now",
 gsSyncNote:"Paste the Web App URL from Google Apps Script here so every module's data (Defect, Breakdown, Performance, Performance Test) and settings (Defect Types/Causes, Admin/Recorder names) are stored and shared via Google Sheets instead of staying siloed on each device - see the attached GoogleAppsScript_Code.gs file for setup steps.",
@@ -2273,7 +2344,8 @@ rejectInputQty:"Tổng số lượng Input (hộp)", rejectInputQtyShort:"Input"
 rejectDefectQty:"Số lượng Defect lọt qua (hộp)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectPassQtyLabel:"Số lượng Pass", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Ghi chú (không bắt buộc)",
 statRejectTestCount:"Số lần kiểm tra", statRejectTotalInput:"Tổng Input (hộp)", statRejectTotalReject:"Tổng Reject (hộp)", statRejectOverallRate:"% Reject tổng thể",
-chartRejectByMachine:"Input vs Reject theo máy", chartRejectByShift:"Input vs Reject theo ca",
+chartRejectByMachine:"Input vs Reject theo máy", chartRejectByShift:"Input vs Reject theo ca", chartRejectByDay:"Input vs Reject theo ngày (khoảng đã chọn)",
+filterViewModeLabel:"Chế độ xem", viewModeDay:"Theo ngày", viewModeWeek:"Theo tuần", viewModeMonth:"Theo tháng", filterWeekLabel:"Tuần", filterHeightLabel:"Chiều cao", allHeights:"Tất cả chiều cao",
 rejectTimeStart:"Thời gian bắt đầu thu thập", rejectTimeEnd:"Thời gian kết thúc thu thập",
 rejectAnalysisTitle:"Phân tích tìm độ cao chuẩn (So sánh theo độ cao cài đặt)", rejectTotalTrials:"Số lần kiểm tra",
 rejectBestHeight:"Độ cao đề xuất (Defect Rate thấp nhất)", rejectBestDefectRate:"Defect Rate ở độ cao đề xuất", rejectBestRejectRate:"Reject Rate ở độ cao đề xuất",
@@ -2314,6 +2386,7 @@ settingsTranslateNote:"Có thể để trống EN/VN - hệ thống sẽ tự d�
 settingsRoleNote:"Lưu ý: trang này chỉ kiểm soát menu/nút hiển thị trên trình duyệt (client-side) - không phải bảo mật thực sự vì file này không có server. Bất kỳ ai mở file đều có thể sửa dữ liệu qua source code.",
 settingsRecorders:"Danh sách người ghi nhận (Recorder)", settingsRecorderNameDuplicate:"Tên này đã có trong danh sách người ghi nhận",
 settingsMachines:"Máy móc (Machine)", settingsMachineNote:"Chỉnh sửa (đổi tên) máy ở đây sẽ tự động cập nhật tên máy trong dữ liệu đã lưu trước đó ở mọi module (Defect/Breakdown/Performance, v.v.) để khớp nhau. Xóa máy khỏi danh sách sẽ không thay đổi dữ liệu cũ - chỉ là sẽ không chọn lại được nữa.", settingsMachineNameDuplicate:"Tên máy này đã tồn tại",
+settingsRejectHeights:"Chiều cao thùng (Box Height)", settingsRejectHeightNote:"Chỉnh sửa (đổi giá trị) chiều cao ở đây sẽ tự động cập nhật giá trị đó trong dữ liệu Reject Station Test đã lưu trước đó để khớp nhau. Xóa khỏi danh sách sẽ không thay đổi dữ liệu cũ - chỉ là sẽ không chọn lại được nữa.", settingsRejectHeightDuplicate:"Giá trị chiều cao này đã tồn tại", settingsRejectHeightInvalid:"Vui lòng nhập giá trị chiều cao lớn hơn 0",
 settingsMigrateMachineTitle:"Di chuyển dữ liệu máy cũ", settingsMigrateMachineNote:"Dùng khi máy đã từng được đổi tên trước đây (ví dụ chỉnh sửa trực tiếp trong Google Sheet, hoặc đổi tên trước khi ứng dụng tự cập nhật dữ liệu cũ) và dữ liệu cũ vẫn dùng tên cũ - khiến lọc theo tên máy hiện tại không thấy dữ liệu trong \"Danh sách gần đây\". Chọn tên cũ tìm thấy trong dữ liệu, rồi di chuyển sang tên máy hiện tại bên dưới.", settingsMigrateNoneFound:"Không tìm thấy tên máy cũ nào không khớp với danh sách hiện tại - toàn bộ dữ liệu đã khớp với cài đặt Machine.", settingsMigrateFrom:"Tên cũ tìm thấy trong dữ liệu", settingsMigrateTo:"Di chuyển sang máy hiện tại", settingsMigrateBtn:"Di chuyển dữ liệu", settingsMigrateSuccess:"Di chuyển hoàn tất - toàn bộ dữ liệu cũ dùng \"{from}\" giờ hiển thị \"{to}\".",
 gsSyncTitle:"Kết nối cơ sở dữ liệu Google Sheets", gsSyncUrlLabel:"Web App URL", gsSyncSaveBtn:"Lưu URL", gsSyncNowBtn:"Đồng bộ ngay",
 gsSyncNote:"Dán Web App URL từ Google Apps Script vào đây để dữ liệu mọi module (Defect, Breakdown, Performance, Performance Test) và cài đặt (Loại Defect/Nguyên nhân, tên Admin/Recorder) được lưu và dùng chung qua Google Sheets thay vì tách biệt trên từng thiết bị - xem các bước thiết lập trong file GoogleAppsScript_Code.gs đính kèm.",
@@ -2391,10 +2464,13 @@ function applyI18n(){
   if(typeof renderRecordersTable==='function') renderRecordersTable();
   if(typeof renderMachinesTable==='function') renderMachinesTable();
   if(typeof buildMachineMigrateSelects==='function') buildMachineMigrateSelects();
+  if(typeof renderRejectHeightsTable==='function') renderRejectHeightsTable();
   if(typeof buildCurrentUserSelect==='function') buildCurrentUserSelect();
   if(typeof applyRolePermissions==='function') applyRolePermissions();
   if(typeof refreshRecorderPickers==='function') refreshRecorderPickers();
   if(typeof refreshMachinePickers==='function') refreshMachinePickers();
+  if(typeof refreshHeightPickers==='function') refreshHeightPickers();
+  if(typeof buildRejectHeightFilterOptions==='function') buildRejectHeightFilterOptions();
   // The generic data-i18n loop above would reset any master-data "Add item" button back to its default
   // label even mid-edit (that button carries a data-i18n attribute) - restore the "Save changes" label
   // and Cancel link for whichever list(s) are currently being edited, so switching language mid-edit
@@ -2547,11 +2623,17 @@ function refreshRecorderPickers(){ recorderPickerRenders.forEach(fn=>fn()); }
    Machine/Recorder pickers above, but backed by the fixed REJECT_HEIGHTS list (54/56/58/60/62) instead
    of an admin-editable master list, since the test is defined around exactly these 5 settings.
 ============================================================ */
+// heightPickerRenders: same reasoning as machinePickerRenders above - REJECT_HEIGHTS is now an
+// admin-editable list (Settings > ความสูงกล่อง), so render() re-fills the hidden <select>'s <option>s on
+// every call (not just once), and refreshHeightPickers() re-runs every picker whenever the list changes.
+const heightPickerRenders = [];
 function buildHeightPicker(pickerId, selectId){
   const picker = document.getElementById(pickerId);
   const sel = document.getElementById(selectId);
-  if(!sel.options.length) sel.innerHTML = REJECT_HEIGHTS.map(h=>`<option value="${h}">${h}</option>`).join('');
   function render(){
+    const prev = sel.value;
+    sel.innerHTML = REJECT_HEIGHTS.map(h=>`<option value="${h}">${h}</option>`).join('');
+    if(REJECT_HEIGHTS.some(h=>String(h)===prev)) sel.value = prev;
     const current = sel.value;
     picker.innerHTML = REJECT_HEIGHTS.map(h=>`<button type="button" class="machine-pick-btn ${String(h)===current?'active':''}" data-h="${h}">${h}</button>`).join('');
   }
@@ -2562,8 +2644,10 @@ function buildHeightPicker(pickerId, selectId){
     render();
     if(typeof refreshRejectAuto==='function') refreshRejectAuto();
   });
+  heightPickerRenders.push(render);
   render();
 }
+function refreshHeightPickers(){ heightPickerRenders.forEach(fn=>fn()); }
 buildHeightPicker('r-height-picker','r-height');
 
 /* ============================================================
@@ -2615,6 +2699,104 @@ const breakdownFilter = setupEntryFilter('b', ()=>{ renderBreakdownTable(); rend
 const perfFilter = setupEntryFilter('p', ()=>{ renderPerfTable(); renderPerfMiniDashboard(); });
 const perftestFilter = setupEntryFilter('t', ()=>{ renderPerftestTable(); renderPerftestDashboard(); });
 const rejectFilter = setupEntryFilter('r', ()=>{ renderRejectTable(); renderRejectMiniDashboard(); });
+
+/* ============================================================
+   REJECT PAGE - HEIGHT FILTER + WEEK/MONTH VIEW (per request: "ตารางรายการล่าสุด ให้เพิ่ม dropdown
+   เรียกดูรายงานตามความสูงของกล่องได้" / "แสดงการเรียกดูรายงานแบบ รายสัปดาห์ / รายเดือน (แสดงข้อมูลทั้งเดือน
+   ของแต่ละวัน)"). Built as a page-local layer on top of the shared rejectFilter (date+machine) rather
+   than touching setupEntryFilter/filterEntries themselves, since those are shared by 5 other pages that
+   don't need height or week/month views. rejectRowsFiltered() below is the single source of truth every
+   Reject-page render function (table, mini-dashboard, Export Excel) reads from.
+============================================================ */
+function isoWeekToRange(weekStr){
+  const m = /^(\d{4})-W(\d{2})$/.exec(weekStr||'');
+  if(!m) return null;
+  const year = parseInt(m[1]), week = parseInt(m[2]);
+  const jan4 = new Date(Date.UTC(year,0,4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+  const monday = new Date(week1Monday);
+  monday.setUTCDate(week1Monday.getUTCDate() + (week-1)*7);
+  const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate()+6);
+  const fmt = d=> d.toISOString().slice(0,10);
+  return { start: fmt(monday), end: fmt(sunday) };
+}
+function currentIsoWeekStr(){
+  const d = new Date(localDate()+'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((d-yearStart)/86400000)+1)/7);
+  return d.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0');
+}
+const rejectViewState = { mode:'day', height:'all', week: currentIsoWeekStr(), month: localDate().slice(0,7) };
+function buildRejectHeightFilterOptions(){
+  const sel = document.getElementById('r-filter-height');
+  const prev = sel.value || rejectViewState.height;
+  sel.innerHTML = `<option value="all">${I18N[currentLang].allHeights}</option>` +
+    REJECT_HEIGHTS.map(h=>`<option value="${h}">${h}</option>`).join('');
+  sel.value = (prev==='all' || REJECT_HEIGHTS.some(h=>String(h)===String(prev))) ? prev : 'all';
+  rejectViewState.height = sel.value;
+}
+buildRejectHeightFilterOptions();
+document.getElementById('r-filter-height').addEventListener('change', e=>{
+  rejectViewState.height = e.target.value;
+  renderRejectTable(); renderRejectMiniDashboard();
+});
+document.getElementById('r-filter-week').value = rejectViewState.week;
+document.getElementById('r-filter-week').addEventListener('change', e=>{
+  if(e.target.value){ rejectViewState.week = e.target.value; renderRejectTable(); renderRejectMiniDashboard(); }
+});
+document.getElementById('r-filter-month').value = rejectViewState.month;
+document.getElementById('r-filter-month').addEventListener('change', e=>{
+  if(e.target.value){ rejectViewState.month = e.target.value; renderRejectTable(); renderRejectMiniDashboard(); }
+});
+document.getElementById('r-view-mode').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-mode]');
+  if(!btn) return;
+  rejectViewState.mode = btn.dataset.mode;
+  document.querySelectorAll('#r-view-mode .chip-all').forEach(b=>b.classList.toggle('active', b===btn));
+  document.getElementById('r-filter-day-wrap').style.display = rejectViewState.mode==='day' ? '' : 'none';
+  document.getElementById('r-filter-week-wrap').style.display = rejectViewState.mode==='week' ? '' : 'none';
+  document.getElementById('r-filter-month-wrap').style.display = rejectViewState.mode==='month' ? '' : 'none';
+  renderRejectTable(); renderRejectMiniDashboard();
+});
+// Every calendar day in the currently selected week/month view, in order - used to build the per-day
+// breakdown chart's labels (Day mode doesn't use this - that chart is hidden in Day mode instead, since
+// a single day has nothing to break down further).
+function getRejectPeriodDayList(){
+  if(rejectViewState.mode==='week'){
+    const range = isoWeekToRange(rejectViewState.week);
+    if(!range) return [];
+    const days = []; let cur = new Date(range.start+'T00:00:00Z'); const end = new Date(range.end+'T00:00:00Z');
+    while(cur<=end){ days.push(cur.toISOString().slice(0,10)); cur.setUTCDate(cur.getUTCDate()+1); }
+    return days;
+  }
+  if(rejectViewState.mode==='month'){
+    const [y,mo] = rejectViewState.month.split('-').map(Number);
+    const lastDay = new Date(y, mo, 0).getDate();
+    const days = [];
+    for(let day=1; day<=lastDay; day++) days.push(y+'-'+String(mo).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
+    return days;
+  }
+  return [];
+}
+// Single source of truth for which rejectTest rows are "in view" right now on the Reject page - combines
+// the shared rejectFilter's machine chip with this page-local height filter and Day/Week/Month range.
+function rejectRowsFiltered(){
+  let rows = getArr(LS.rejectTest);
+  if(rejectFilter.machine!=='all') rows = rows.filter(r=>r.machine===rejectFilter.machine);
+  if(rejectViewState.height!=='all') rows = rows.filter(r=>parseInt(r.heightSetting)===parseInt(rejectViewState.height));
+  if(rejectViewState.mode==='day'){
+    if(rejectFilter.date) rows = rows.filter(r=>r.date===rejectFilter.date);
+  } else if(rejectViewState.mode==='week'){
+    const range = isoWeekToRange(rejectViewState.week);
+    if(range) rows = rows.filter(r=>r.date>=range.start && r.date<=range.end);
+  } else if(rejectViewState.mode==='month'){
+    rows = rows.filter(r=> r.date && r.date.slice(0,7)===rejectViewState.month);
+  }
+  return rows;
+}
 const perfNormalFilter = setupEntryFilter('pn', ()=>{ renderPerfNormalTable(); });
 
 /* ============================================================
@@ -3386,7 +3568,7 @@ document.getElementById('r-save').addEventListener('click', ()=>{
 document.getElementById('r-reset').addEventListener('click', initRejectDefaults);
 
 function renderRejectTable(){
-  const full = filterEntries(getArr(LS.rejectTest), rejectFilter).slice().reverse();
+  const full = rejectRowsFiltered().slice().reverse();
   const arr = full.slice(0,50);
   // No. reflects each row's position among ALL entries matching the current filter (not just the 50
   // shown) - same convention as every other module's Recent Entries table.
@@ -3425,7 +3607,7 @@ function renderRejectTable(){
 // at a glance - mirrors the Production-vs-Defect comparison chart pattern on the Performance page
 // (renderPerfMiniDashboard's chart-pfd-comparison) rather than inventing a new chart style.
 function renderRejectMiniDashboard(){
-  const rows = filterEntries(getArr(LS.rejectTest), rejectFilter);
+  const rows = rejectRowsFiltered();
   const count = rows.length;
   const totalInput = rows.reduce((s,r)=>s+r.inputQty,0);
   const totalReject = rows.reduce((s,r)=>s+r.rejectQty,0);
@@ -3503,6 +3685,48 @@ function renderRejectMiniDashboard(){
       scales:{ y:{ beginAtZero:true } }
     }
   });
+
+  // Per-day breakdown (Week/Month view only, per request "แสดงข้อมูลทั้งเดือน ของแต่ละวัน") - every
+  // calendar day in the selected week/month, so days with zero records still show as a 0 bar rather than
+  // silently disappearing from the trend. Hidden entirely in Day mode, where a single-day breakdown adds
+  // nothing beyond the KPI cards above.
+  const dailyWrap = document.getElementById('chart-rjt-daily-wrap');
+  if(rejectViewState.mode==='day'){
+    dailyWrap.style.display = 'none';
+    destroyChart('rjtDaily');
+  } else {
+    dailyWrap.style.display = '';
+    const days = getRejectPeriodDayList();
+    const inputByDay = [], rejectByDay = [], rejectPctByDay = [];
+    days.forEach(dt=>{
+      const dRows = rows.filter(r=>r.date===dt);
+      const dInput = dRows.reduce((s,r)=>s+r.inputQty,0);
+      const dReject = dRows.reduce((s,r)=>s+r.rejectQty,0);
+      inputByDay.push(dInput); rejectByDay.push(dReject);
+      rejectPctByDay.push(dInput>0 ? +(dReject/dInput*100).toFixed(1) : 0);
+    });
+    destroyChart('rjtDaily');
+    fitChartCanvas('chart-rjt-daily', days.length, {minPerItem: rejectViewState.mode==='month' ? 46 : 90});
+    charts.rjtDaily = new Chart(document.getElementById('chart-rjt-daily'), {
+      type:'bar',
+      data:{
+        labels: days.map(dt=>dt.slice(5)),
+        datasets:[
+          { label:I18N[currentLang].rejectInputQtyShort || 'Input', data:inputByDay, backgroundColor:'#94a3b8' },
+          { label:I18N[currentLang].rejectRejectQtyShort || 'Reject', data:rejectByDay, backgroundColor:'#0d9488' }
+        ]
+      },
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{position:'bottom'},
+          valueLabels:{ show:true, decimals:0, datasets:{
+            0:{ show:false },
+            1:{ show:true, decimals:1, suffix:'%', labels:rejectPctByDay, color:'#0f766e' }
+          } }
+        },
+        scales:{ y:{ beginAtZero:true } }
+      }
+    });
+  }
 }
 
 /* ============================================================
@@ -4117,17 +4341,6 @@ function renderCharts(defects, breakdowns){
       options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, valueLabels:{show:true, suffix:' '+minUnit(), decimals:1}}, scales:{y:{beginAtZero:true}} }
     });
   }
-
-  // Breakdown by cause (total minutes per cause, derived from the precise seconds source)
-  const bdByCause = {}; breakdowns.forEach(b=>{ const k=b.cause==='other'?'other':b.cause; bdByCause[k]=(bdByCause[k]||0)+bdSecOf(b); });
-  Object.keys(bdByCause).forEach(k=>bdByCause[k]=+(bdByCause[k]/60).toFixed(1));
-  const causeKeys = Object.keys(bdByCause);
-  destroyChart('bdcause');
-  fitChartCanvas('chart-bd-cause', 1);
-  charts.bdcause = new Chart(document.getElementById('chart-bd-cause'), {
-    type:'pie', data:{ labels:causeKeys.map(k=>bdCauseLabel(k)), datasets:[{ data:causeKeys.map(k=>bdByCause[k]), backgroundColor:CHART_COLORS }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:12,font:{size:11}}}, valueLabels:{show:true, suffix:' '+minUnit(), decimals:1}} }
-  });
 
   // Breakdown minutes by shift (A/B/C), scoped to the same Period+Machine filter as the other
   // Breakdown Overview charts above (uses `breakdowns`, already filterByPeriodMachine()'d).
@@ -5000,6 +5213,115 @@ document.getElementById('mst-mc-add').addEventListener('click', ()=>{
   refreshAfterMachineListChange();
 });
 
+/* ============================================================
+   BOX HEIGHT SETTINGS (Settings > ความสูงกล่อง) - same admin-editable master-list CRUD pattern as
+   Machine above (render/move/edit/delete + rename-cascade into saved records), but scoped to just
+   LS.rejectTest's `heightSetting` field (Reject Station Test is the only module that uses box height),
+   and with numeric values instead of free-text names.
+============================================================ */
+function renderRejectHeightsTable(){
+  const tbody = document.querySelector('#mst-rh-table tbody');
+  tbody.innerHTML = REJECT_HEIGHTS.map((h,i)=>`<tr>
+    <td>${h}</td>
+    <td style="white-space:nowrap;">
+      <button class="small-btn move-btn" ${i===0?'disabled':''} onclick="moveRejectHeight(${h},-1)" title="${I18N[currentLang].moveUp}">&uarr;</button>
+      <button class="small-btn move-btn" ${i===REJECT_HEIGHTS.length-1?'disabled':''} onclick="moveRejectHeight(${h},1)" title="${I18N[currentLang].moveDown}">&darr;</button>
+      <button class="small-btn" onclick="editRejectHeightItem(${h})">${I18N[currentLang].settingsEditBtn}</button>
+      <button class="small-btn" onclick="deleteRejectHeightItem(${h})">${I18N[currentLang].delete}</button>
+    </td>
+  </tr>`).join('') || `<tr><td colspan="2" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
+}
+window.moveRejectHeight = function(h, dir){
+  const idx = REJECT_HEIGHTS.indexOf(h);
+  if(idx<0) return;
+  REJECT_HEIGHTS = moveArrayItem(REJECT_HEIGHTS, idx, dir);
+  setArr(LS.rejectHeights, REJECT_HEIGHTS);
+  gsPushWhole(LS.rejectHeights);
+  refreshAfterRejectHeightListChange();
+};
+let rejectHeightEditState = null;
+function showRejectHeightCancelLink(){
+  let link = document.getElementById('mst-rh-cancel');
+  if(!link){
+    link = document.createElement('button');
+    link.type = 'button'; link.id = 'mst-rh-cancel'; link.className = 'small-btn';
+    link.style.marginLeft = '8px';
+    link.addEventListener('click', cancelRejectHeightEdit);
+    document.getElementById('mst-rh-add').insertAdjacentElement('afterend', link);
+  }
+  link.textContent = I18N[currentLang].settingsCancelEdit;
+  link.style.display = '';
+}
+function cancelRejectHeightEdit(){
+  rejectHeightEditState = null;
+  document.getElementById('mst-rh-value').value = '';
+  document.getElementById('mst-rh-add').textContent = I18N[currentLang].settingsAddBtn;
+  const link = document.getElementById('mst-rh-cancel');
+  if(link) link.style.display = 'none';
+}
+window.editRejectHeightItem = function(h){
+  rejectHeightEditState = h;
+  document.getElementById('mst-rh-value').value = h;
+  document.getElementById('mst-rh-add').textContent = I18N[currentLang].settingsSaveBtn;
+  showRejectHeightCancelLink();
+};
+// Sweeps every place a fixed REJECT_HEIGHTS snapshot could otherwise go stale: the entry-form height
+// picker/edit-modal options (both read REJECT_HEIGHTS live already, no extra work needed there), the
+// Reject page's own height-filter dropdown, and the Settings table itself.
+function refreshAfterRejectHeightListChange(){
+  renderRejectHeightsTable();
+  refreshHeightPickers();
+  if(typeof buildRejectHeightFilterOptions==='function') buildRejectHeightFilterOptions();
+  if(typeof renderRejectTable==='function') renderRejectTable();
+  if(typeof renderRejectMiniDashboard==='function') renderRejectMiniDashboard();
+}
+window.deleteRejectHeightItem = function(h){
+  REJECT_HEIGHTS = REJECT_HEIGHTS.filter(x=>x!==h);
+  setArr(LS.rejectHeights, REJECT_HEIGHTS);
+  gsPushWhole(LS.rejectHeights);
+  if(rejectHeightEditState===h) cancelRejectHeightEdit();
+  refreshAfterRejectHeightListChange();
+};
+// Renaming (changing the numeric value of) a height cascades onto every already-saved Reject Station
+// Test record that used the old value, same reasoning/pattern as renameMachineInAllRecords - so Recent
+// Entries, the height filter, and every chart grouped by height stay consistent with the current setting.
+function renameRejectHeightInAllRecords(oldH, newH){
+  if(oldH===newH) return;
+  const arr = getArr(LS.rejectTest);
+  let changed = false;
+  const updated = arr.map(r=>{
+    if(r && parseInt(r.heightSetting)===oldH){ changed = true; return Object.assign({}, r, { heightSetting: newH }); }
+    return r;
+  });
+  if(changed){
+    setArr(LS.rejectTest, updated);
+    gsPushWhole(LS.rejectTest);
+  }
+  if(typeof renderRejectTable==='function') renderRejectTable();
+  if(typeof renderRejectMiniDashboard==='function') renderRejectMiniDashboard();
+}
+document.getElementById('mst-rh-add').addEventListener('click', ()=>{
+  const valEl = document.getElementById('mst-rh-value');
+  const h = parseInt(valEl.value);
+  if(!Number.isFinite(h) || h<=0){ alert(I18N[currentLang].settingsRejectHeightInvalid); return; }
+  if(rejectHeightEditState!==null){
+    if(h!==rejectHeightEditState && REJECT_HEIGHTS.includes(h)){ alert(I18N[currentLang].settingsRejectHeightDuplicate); return; }
+    const oldH = rejectHeightEditState;
+    REJECT_HEIGHTS = REJECT_HEIGHTS.map(x=> x===rejectHeightEditState ? h : x).sort((a,b)=>a-b);
+    setArr(LS.rejectHeights, REJECT_HEIGHTS);
+    gsPushWhole(LS.rejectHeights);
+    renameRejectHeightInAllRecords(oldH, h);
+    cancelRejectHeightEdit();
+  } else {
+    if(REJECT_HEIGHTS.includes(h)){ alert(I18N[currentLang].settingsRejectHeightDuplicate); return; }
+    REJECT_HEIGHTS = REJECT_HEIGHTS.concat([h]).sort((a,b)=>a-b);
+    setArr(LS.rejectHeights, REJECT_HEIGHTS);
+    gsPushWhole(LS.rejectHeights);
+    valEl.value = '';
+  }
+  refreshAfterRejectHeightListChange();
+});
+
 function isAdmin(name){ return ADMINS.includes(name); }
 function currentUserRole(){ return isAdmin(getCurrentUserName()) ? 'admin' : 'recorder'; }
 function getCurrentUserName(){
@@ -5156,7 +5478,7 @@ function exportPerfNormalExcel(){
 }
 function exportRejectExcel(){
   const t = I18N[currentLang];
-  const rows = filterEntries(getArr(LS.rejectTest), rejectFilter).slice().reverse();
+  const rows = rejectRowsFiltered().slice().reverse();
   const header = [t.colNo, t.date, t.shift, t.machine, t.rejectHeightShort, t.rejectTimeStart, t.rejectTimeEnd, t.rejectInputQtyShort, t.rejectRejectQtyShort, t.rejectRateShort, t.rejectDefectQtyShort, t.rejectDefectRateShort, t.recorder, t.rejectNoteLabel];
   const body = rows.map((r,i)=>{
     const d = rejectDerived(r);
@@ -5585,6 +5907,7 @@ renderAdminsTable();
 renderRecordersTable();
 renderMachinesTable();
 buildMachineMigrateSelects();
+renderRejectHeightsTable();
 buildCurrentUserSelect();
 applyRolePermissions();
 // LOGIN GATE - must run after the two calls above, so the login screen's name dropdown and the app
