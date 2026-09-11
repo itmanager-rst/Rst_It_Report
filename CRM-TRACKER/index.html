@@ -71,6 +71,15 @@
         .btn-accent { background: var(--accent-color); color: white; }
         .btn-accent:hover { background: #ea580c; }
         .btn-export { background: #0284c7; color: white; }
+        .login-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.72); z-index: 3000; display: flex; align-items: center; justify-content: center; }
+        .login-modal.hidden { display: none; }
+        .login-card { width: min(420px, calc(100vw - 30px)); background: #fff; border-radius: 14px; padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); }
+        .login-card h2 { font-size: 20px; margin-bottom: 10px; color: #0f172a; }
+        .login-grid { display: flex; flex-direction: column; gap: 10px; }
+        .login-grid input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); }
+        .login-grid button { padding: 10px; background: var(--primary-color); color: #fff; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; }
+        .login-grid button:hover { background: var(--primary-hover); }
+        #login-status { font-size: 12px; color: #ef4444; min-height: 16px; }
         .table-container { flex: 1; min-width: 0; background: var(--card-bg); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); padding: 10px; display: flex; flex-direction: column; overflow: visible; }
         /* ไม่มีกรอบเลื่อนขึ้น-ลงแยก: ตารางจะสูงตามจำนวนแถวและเลื่อนด้วยทั้งหน้าเว็บ */
         .table-responsive { overflow-x: auto; max-height: none; border: 1px solid #e2e8f0; border-radius: 8px; }
@@ -212,6 +221,17 @@
     </style>
 </head>
 <body>
+    <div id="login-modal" class="login-modal">
+        <div class="login-card">
+            <h2>🔐 CRM LOGIN</h2>
+            <div class="login-grid">
+                <input type="text" id="login-username" placeholder="Username">
+                <input type="password" id="login-password" placeholder="Password">
+                <button id="login-btn" onclick="loginUser()">เข้าสู่ระบบ</button>
+                <div id="login-status"></div>
+            </div>
+        </div>
+    </div>
     <div class="header">
         <h1>RST CRM-TRACKER Pro</h1>
         <div class="stats-container">
@@ -792,7 +812,61 @@
         </div>
     </div>
     <script>
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz-HSvIdEhufq73rkE_8VTTMLN26JshZo0p1WD1BGOF3OkKhRa9ZSwZx57LQmWEDM3v/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxwsTH_Aq1xqAqIedYhNihUeEJUeuOR6Mi_6dkBNpgGGGkerMDZokMKDLnPb2kfJQZS/exec';
+        const authTokenKey = 'crm_tracker_token';
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = function(url, options) {  
+            options = options || {};
+            if (typeof options.body === 'string') {
+                try {
+                    const parsed = JSON.parse(options.body);
+                    if (parsed && parsed.action && parsed.action !== 'login') {
+                        parsed.token = parsed.token || localStorage.getItem(authTokenKey) || '';
+                        options.body = JSON.stringify(parsed);
+                    }
+                } catch (e) { }
+            }
+            return nativeFetch(url, options);
+        };
+
+        let currentRole = 'user';
+
+        function loginUser() {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            const status = document.getElementById('login-status');
+            status.innerText = 'กำลังเข้าสู่ระบบ...';
+
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'login', payload: { username, password } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success && resData.token) {
+                    localStorage.setItem(authTokenKey, resData.token);
+                    currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
+                    status.innerText = 'เข้าสู่ระบบสำเร็จ';
+                    document.getElementById('login-modal').classList.add('hidden');
+                    fetchDataFromServer(1);
+                    loadInitialMeta();
+                    return;
+                }
+                const message = resData && resData.message ? resData.message : '';
+                status.innerText = message.indexOf('Invalid Action') !== -1
+                    ? 'ระบบยังใช้ deployment เก่า กรุณา Deploy เวอร์ชันใหม่ของ Code.js แล้วลองอีกครั้ง'
+                    : (message || 'เข้าสู่ระบบไม่สำเร็จ');
+            })
+            .catch(err => {
+                status.innerText = 'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด';
+            });
+        }
+
+        document.getElementById('login-password').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') loginUser();
+        });
+
         let currentPage = 1;
         let totalRecords = 0;
         let currentRenderedData = [];
@@ -1035,7 +1109,8 @@
                 action: 'getDailyLeadReport',
                 startDate: payload.startDate || '',
                 endDate: payload.endDate || '',
-                onlyManyChat: String(payload.onlyManyChat)
+                onlyManyChat: String(payload.onlyManyChat),
+                token: localStorage.getItem(authTokenKey) || ''
             });
             fetch(`${WEB_APP_URL}?${params.toString()}`)
             .then(res => res.json())
@@ -1580,10 +1655,14 @@
                 const prodParts = getRowProductParts(row);
                 const fin = parseFinancialInfo(row.financialInfo || row.financial);
                 const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
+                const adminEditDelete = currentRole === 'admin'
+                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>
+                       <button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>`
+                    : '';
                 return `<tr>
                     <td style="text-align:center;">
                         <div class="row-action-group">
-                            <button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>
+                            ${adminEditDelete}
                             <button class="btn btn-secondary btn-row-icon" onclick="printRowByIndex(${idx})" title="พิมพ์แบบฟอร์มติดตามลูกค้า">🖨️</button>
                             <button class="btn btn-secondary btn-row-icon${followCount ? ' has-log' : ''}" onclick="openHistoryModal(${idx})" title="ดูไทม์ไลน์การติดตามลูกค้ารายนี้">🕓${followCount ? ' ' + followCount : ''}</button>
                         </div>
@@ -2143,6 +2222,10 @@
             });
         }
         function exportFilteredCSV() {
+            if (currentRole !== 'admin') {
+                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export CSV ได้');
+                return;
+            }
             if(!currentRenderedData || currentRenderedData.length === 0) {
                 alert('ไม่มีข้อมูลสำหรับส่งออก');
                 return;
@@ -2160,11 +2243,15 @@
             a.click();
         }
         function exportFullExcel() {
+            if (currentRole !== 'admin') {
+                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export Excel ได้');
+                return;
+            }
             alert('⚡ กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'exportAll' })
+                body: JSON.stringify({ action: 'exportAll', token: localStorage.getItem(authTokenKey) || '' })
             })
             .then(res => res.json())
             .then(resData => {
@@ -2174,8 +2261,37 @@
                     XLSX.utils.book_append_sheet(wb, ws, "Database");
                     XLSX.writeFile(wb, `CRM_Full_Database_${new Date().toISOString().split('T')[0]}.xlsx`);
                 } else {
-                    alert('❌ ไม่สามารถดึงข้อมูลสำหรับ Excel ได้');
+                    alert('❌ ไม่สามารถดึงข้อมูลสำหรับ Excel ได้: ' + (resData ? resData.message : 'Unknown error'));
                 }
+            });
+        }
+        function deleteCustomerByIndex(idx) {
+            if (currentRole !== 'admin') {
+                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้');
+                return;
+            }
+            const row = currentRenderedData[idx];
+            if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
+            const key = row.raw_key || row.phone || row.date || '';
+            if (!key) { alert('ไม่พบรหัสข้อมูลสำหรับลบ'); return; }
+            if (!confirm('ต้องการลบข้อมูลลูกค้า ' + (row.name || row.phone || 'นี้') + ' จริงหรือไม่')) return;
+
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'delete', payload: { key: key }, token: localStorage.getItem(authTokenKey) || '' })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success) {
+                    alert('ลบข้อมูลสำเร็จ');
+                    fetchDataFromServer(currentPage);
+                } else {
+                    alert('❌ ลบข้อมูลไม่สำเร็จ: ' + (resData ? resData.message : 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง');
             });
         }
     </script>
