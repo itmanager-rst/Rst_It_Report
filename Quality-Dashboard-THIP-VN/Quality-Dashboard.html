@@ -1228,22 +1228,14 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 <section id="page-ca" class="page">
   <div class="card" id="ca-entry-card">
     <h2 data-i18n="caFormTitle">Corrective Action (Defect)</h2>
-    <div class="grid mr-row" style="margin-bottom:14px;">
+    <!-- Date/Recorder fields removed entirely from this form per request (not just hidden from
+         display) - a record's date is now auto-stamped internally at save time (localDate()), and no
+         recorder is collected at all, since neither is asked of the operator here anymore. -->
+    <div class="grid" style="margin-bottom:14px;">
       <div class="field">
         <label data-i18n="machine">Machine No.</label>
         <select id="ca-machine" style="display:none;"></select>
         <div class="machine-pick-row" id="ca-machine-picker"></div>
-      </div>
-      <div class="field">
-        <label data-i18n="recorder">ผู้บันทึก</label>
-        <select id="ca-recorder" style="display:none;"></select>
-        <div class="machine-pick-row" id="ca-recorder-picker"></div>
-      </div>
-    </div>
-    <div class="grid">
-      <div class="field">
-        <label data-i18n="date">วันที่</label>
-        <input type="date" id="ca-date">
       </div>
       <div class="field">
         <label data-i18n="defectType">ประเภท Defect</label>
@@ -2947,7 +2939,9 @@ function buildRecorderPicker(pickerId, selectId){
   render();
   recorderPickerRenders.push(render);
 }
-[['d-recorder-picker','d-recorder'], ['b-recorder-picker','b-recorder'], ['p-recorder-picker','p-recorder'], ['t-recorder-picker','t-recorder'], ['r-recorder-picker','r-recorder'], ['pn-recorder-picker','pn-recorder'], ['ca-recorder-picker','ca-recorder']]
+// Note: no 'ca-recorder-picker' entry here - the Corrective Action page collects no recorder at all
+// (removed entirely per request, not just hidden from display).
+[['d-recorder-picker','d-recorder'], ['b-recorder-picker','b-recorder'], ['p-recorder-picker','p-recorder'], ['t-recorder-picker','t-recorder'], ['r-recorder-picker','r-recorder'], ['pn-recorder-picker','pn-recorder']]
   .forEach(([pickerId, selectId])=> buildRecorderPicker(pickerId, selectId));
 function refreshRecorderPickers(){ recorderPickerRenders.forEach(fn=>fn()); }
 
@@ -3557,11 +3551,17 @@ function liveBdSecFor(date,shift,machine){
 // fresh every time from the current Defect/Breakdown data, so it's never a stale/frozen snapshot.
 // bdSec is precise (seconds), matching the same source Breakdown's own Recent Entries now displays.
 function perfDerived(p){
+  // total is ALSO live-derived now (per request: pull Reject Station Test's Input qty for this exact
+  // date+shift+machine, not the record's stored snapshot) - see liveRejectInputTotalFor below. This
+  // keeps the Recent Entries table's Total/Good/Rate columns for a given row all consistent with each
+  // other (good/rate are computed from the same live total shown in that row), and always fresh if the
+  // matching Reject Station Test entry is edited/deleted afterwards.
+  const total = liveRejectInputTotalFor(p.date, p.shift, p.machine);
   const defectQty = liveDefectQtyFor(p.date, p.shift, p.machine);
   const bdSec = liveBdSecFor(p.date, p.shift, p.machine);
-  const good = Math.max(0, p.total - defectQty);
-  const rate = p.total>0 ? (defectQty/p.total*100) : 0;
-  return { defectQty, bdSec, good, rate };
+  const good = Math.max(0, total - defectQty);
+  const rate = total>0 ? (defectQty/total*100) : 0;
+  return { total, defectQty, bdSec, good, rate };
 }
 
 function refreshPerfAuto(){
@@ -3583,21 +3583,26 @@ function refreshPerfAuto(){
   else { badge.textContent = I18N[currentLang].fail+' (>1%)'; badge.className='tag badge-bad'; }
 }
 // "จำนวนที่ผลิตทั้งหมด" is no longer typed here - per request, it's pulled live from Reject Station
-// Test's own Input quantity (summed across every Reject Station Test entry for the same date+machine),
-// so the two pages never drift into showing two different production totals for the same day/machine.
-// Always re-read from localStorage (never cached) so a Reject Station Test entry saved/edited/deleted
-// afterwards is reflected immediately, same convention as liveDefectQtyFor/liveBdSecFor above.
-function liveRejectInputTotalFor(date, machine){
-  return getArr(LS.rejectTest).filter(r=>r.date===date && r.machine===machine).reduce((s,r)=>s+(parseFloat(r.inputQty)||0), 0);
+// Test's own Input quantity, matched per SHIFT + date + machine (not just date+machine - a clarification
+// on the original request: each shift's own Reject Station input should show separately, not one number
+// pooled across every shift of the day), so the two pages never drift into showing two different
+// production totals for the same shift/day/machine. Always re-read from localStorage (never cached) so a
+// Reject Station Test entry saved/edited/deleted afterwards is reflected immediately, same convention as
+// liveDefectQtyFor/liveBdSecFor above.
+function liveRejectInputTotalFor(date, shift, machine){
+  return getArr(LS.rejectTest).filter(r=>r.date===date && r.shift===shift && r.machine===machine).reduce((s,r)=>s+(parseFloat(r.inputQty)||0), 0);
 }
 function refreshPerfTotalFromReject(){
   const date = document.getElementById('p-date').value;
+  const shift = document.getElementById('p-shift').value;
   const machine = document.getElementById('p-machine').value;
-  document.getElementById('p-total').value = liveRejectInputTotalFor(date, machine);
+  document.getElementById('p-total').value = liveRejectInputTotalFor(date, shift, machine);
   refreshPerfAuto();
 }
-document.getElementById('p-shift').addEventListener('input', refreshPerfAuto);
-document.getElementById('p-shift').addEventListener('change', refreshPerfAuto);
+// Shift now affects the auto-computed total too (see liveRejectInputTotalFor above), so a shift change
+// must re-pull the total from Reject Station Test, not just re-run the KPI-badge math on the old value.
+document.getElementById('p-shift').addEventListener('input', refreshPerfTotalFromReject);
+document.getElementById('p-shift').addEventListener('change', refreshPerfTotalFromReject);
 ['p-date','p-machine'].forEach(id=>{
   document.getElementById(id).addEventListener('input', refreshPerfTotalFromReject);
   document.getElementById(id).addEventListener('change', refreshPerfTotalFromReject);
@@ -3637,15 +3642,17 @@ function renderPerfTable(){
   // how many entries match. Recomputes automatically whenever the filter changes.
   const totalCount = full.length;
   const tbody = document.querySelector('#p-table tbody');
-  // defectQty/good/bdSec/rate are recomputed live per row (perfDerived) instead of read from the
-  // record's stored snapshot, so edits/deletes in Defect/Breakdown show up here immediately.
+  // total/defectQty/good/bdSec/rate are ALL recomputed live per row (perfDerived) instead of read from
+  // the record's stored snapshot, so a Reject Station Test entry (for total) or a Defect/Breakdown entry
+  // (for the rest) saved/edited/deleted afterwards shows up here immediately - total is matched per
+  // shift+date+machine, per request.
   tbody.innerHTML = arr.map((r,i)=>{
     const d = perfDerived(r);
     return `<tr>
     <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td>
     <td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td>
     <td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
-    <td>${r.total}</td><td>${d.defectQty}</td><td>${d.good}</td><td>${formatStopwatch(d.bdSec)}</td><td>${d.rate.toFixed(2)}%</td>
+    <td>${d.total}</td><td>${d.defectQty}</td><td>${d.good}</td><td>${formatStopwatch(d.bdSec)}</td><td>${d.rate.toFixed(2)}%</td>
     <td>${r.recorder||'-'}</td>
     <td><button class="small-btn" onclick="openEditModal('${LS.perf}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.perf}','${r.id}', renderPerfTable)">${I18N[currentLang].delete}</button></td>
   </tr>`;
@@ -3657,7 +3664,12 @@ function renderPerfTable(){
     // Totals over ALL rows matching the current filter (`full`), not just the up-to-50 shown in the
     // table (`arr`) - see the matching comment in renderDefectTable for why.
     const derivedFull = full.map(r=>perfDerived(r));
-    const totalProd = full.reduce((s,r)=>s+r.total,0);
+    // Total Produced is summed directly from Reject Station Test's own records under this same filter
+    // (perfFilter's date+machine, across every shift) - NOT by adding up each Performance row's own
+    // perfDerived().total, which would double-count whenever two Performance rows share the same
+    // date+shift+machine (each row's live total is the SAME Reject Station figure, looked up
+    // independently per row). Same reasoning/fix as Total Defect below.
+    const totalProd = filterEntries(getArr(LS.rejectTest), perfFilter).reduce((s,r)=>s+(parseFloat(r.inputQty)||0), 0);
     // Total Defect is summed directly from the Defect page's own records under this same filter
     // (perfFilter's date+machine), NOT by adding up each Performance row's own perfDerived().defectQty
     // - per-row that figure is looked up per (date,shift,machine), so it silently double-counts a
@@ -5874,7 +5886,7 @@ function exportPerfExcel(){
   const header = [t.colNo, t.date, t.collectTimeStart, t.collectTimeEnd, t.shift, t.machine, t.totalProduced, t.perfKpiDefectQty, t.goodQty, t.perfKpiBreakdownTime, t.defectRate, t.recorder];
   const body = rows.map((r,i)=>{
     const d = perfDerived(r);
-    return [rows.length-i, r.date, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.shift, r.machine, r.total, d.defectQty, d.good, formatStopwatch(d.bdSec), +d.rate.toFixed(2), r.recorder||'-'];
+    return [rows.length-i, r.date, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.shift, r.machine, d.total, d.defectQty, d.good, formatStopwatch(d.bdSec), +d.rate.toFixed(2), r.recorder||'-'];
   });
   excelDownload([header, ...body], 'Performance', 'Performance_Report');
 }
@@ -6423,10 +6435,6 @@ document.getElementById('ca-prevent-input').addEventListener('keydown', (e)=>{
   if(e.key==='Enter'){ e.preventDefault(); document.getElementById('ca-prevent-add').click(); }
 });
 
-function initCaDefaults(){
-  document.getElementById('ca-date').value = localDate();
-}
-
 function showCaCancelEditLink(){
   let link = document.getElementById('ca-cancel-edit');
   if(!link){
@@ -6453,7 +6461,6 @@ function resetCaForm(){
   document.getElementById('ca-photo').value = ''; document.getElementById('ca-photo-camera').value = '';
   renderCaPhotoPreview();
   renderCaPreventList();
-  initCaDefaults();
   buildCaDefectTypeSelect();
   document.getElementById('ca-save').textContent = I18N[currentLang].save;
   const link = document.getElementById('ca-cancel-edit');
@@ -6467,10 +6474,9 @@ window.editCaItem = function(id){
   caEditState = id;
   caPhotoData = Array.isArray(rec.photos) ? rec.photos.slice() : [];
   caPreventItems = Array.isArray(rec.preventiveActions) ? rec.preventiveActions.slice() : [];
-  document.getElementById('ca-date').value = rec.date || localDate();
+  // No date/recorder fields to populate here - neither is collected on this form (removed entirely).
   document.getElementById('ca-machine').value = rec.machine || '';
-  document.getElementById('ca-recorder').value = rec.recorder || '';
-  refreshMachinePickers(); refreshRecorderPickers();
+  refreshMachinePickers();
   buildCaDefectTypeSelect();
   document.getElementById('ca-defect-type').value = rec.defectType || '';
   document.getElementById('ca-defect-type-other-wrap').classList.toggle('hidden', rec.defectType!=='other');
@@ -6494,11 +6500,15 @@ document.getElementById('ca-save').addEventListener('click', ()=>{
   if(!rootCause){ alert(I18N[currentLang].caRootCauseRequired); return; }
   if(caPreventItems.length===0){ alert(I18N[currentLang].caPreventRequired); return; }
   const defectType = document.getElementById('ca-defect-type').value;
+  // No date/recorder inputs on this form (removed entirely per request). A new record is stamped with
+  // today's date internally - still needed so the list's own date filter (#ca-filter-date) and the
+  // app-wide date-cleanup sweep keep working like every other module - and editing an existing record
+  // keeps its original date unchanged rather than silently overwriting it to "today".
+  const existingCaRec = caEditState ? getArr(LS.correctiveActions).find(r=>r.id===caEditState) : null;
   const rec = {
     id: caEditState || uid(),
-    date: document.getElementById('ca-date').value,
+    date: existingCaRec ? existingCaRec.date : localDate(),
     machine: document.getElementById('ca-machine').value,
-    recorder: document.getElementById('ca-recorder').value,
     defectType,
     defectTypeOther: defectType==='other' ? document.getElementById('ca-defect-type-other').value : '',
     photos: caPhotoData.slice(),
@@ -6528,9 +6538,10 @@ document.getElementById('ca-save').addEventListener('click', ()=>{
 const caFilter = setupEntryFilter('ca', ()=>{ renderCaList(); });
 
 // Rebuilt as a proper analysis table (per request: "professional-looking, printable"), replacing the
-// earlier card-per-record layout. Date/Recorder are deliberately NOT shown here (per the user's own
-// clarification: hide only from the card/table display) - both fields stay in the entry form, stay
-// stored on every record, and still drive caFilter's date+machine filtering above.
+// earlier card-per-record layout. Date/Recorder are not shown here, and per a later clarification are
+// not collected on the entry form at all anymore - date is still auto-stamped internally on save (see
+// the ca-save handler) purely so caFilter's date+machine filtering above keeps working; no recorder is
+// stored at all.
 function renderCaList(){
   const t = I18N[currentLang];
   const list = filterEntries(getArr(LS.correctiveActions), caFilter).slice().reverse();
@@ -6587,8 +6598,8 @@ function renderCaList(){
   });
 }
 
-// Single-record printable WI sheet. Date/Recorder are left out here too (same "card/table display"
-// hiding the user asked for) - both stay on the record/entry-form/filter as always.
+// Single-record printable WI sheet. Date/Recorder are left out here too - neither is collected on this
+// page at all anymore.
 window.printCaItem = function(id){
   const rec = getArr(LS.correctiveActions).find(r=>r.id===id);
   if(!rec) return;
@@ -6647,12 +6658,15 @@ document.getElementById('ca-print-table-btn').addEventListener('click', printCaT
 function exportCaExcel(){
   const t = I18N[currentLang];
   const rows = filterEntries(getArr(LS.correctiveActions), caFilter).slice().reverse();
-  const header = [t.colNo, t.date, t.machine, t.defectType, t.ca4mMan, t.ca4mMachine, t.ca4mMaterial, t.ca4mMethod, t.caControlPoints, t.caRootCauseTitle, t.caPreventiveTitle, t.recorder, 'Photos'];
+  // No recorder column - no recorder is collected on this page at all anymore. Date is kept (it's still
+  // stamped internally on every record for filtering purposes, even though the entry form doesn't ask
+  // for it).
+  const header = [t.colNo, t.date, t.machine, t.defectType, t.ca4mMan, t.ca4mMachine, t.ca4mMaterial, t.ca4mMethod, t.caControlPoints, t.caRootCauseTitle, t.caPreventiveTitle, 'Photos'];
   const body = rows.map((r,i)=>{
     const typeName = r.defectType==='other' ? (r.defectTypeOther||typeLabel('other')) : typeLabel(r.defectType);
     const preventJoined = (r.preventiveActions||[]).map((p,idx)=>`${idx+1}. ${p}`).join('\n');
     const m4 = r.analysis4M || {};
-    return [rows.length-i, r.date, r.machine, typeName, m4.man||'', m4.machine||'', m4.material||'', m4.method||'', r.controlPoints||'', r.rootCause||'', preventJoined, r.recorder||'-', Array.isArray(r.photos)?r.photos.length:0];
+    return [rows.length-i, r.date, r.machine, typeName, m4.man||'', m4.machine||'', m4.material||'', m4.method||'', r.controlPoints||'', r.rootCause||'', preventJoined, Array.isArray(r.photos)?r.photos.length:0];
   });
   excelDownload([header, ...body], 'CorrectiveAction', 'CorrectiveAction_Report');
 }
