@@ -215,6 +215,7 @@ body.role-recorder-active .admin-only{display:none;}
 .field label{font-size:13px; font-weight:600; color:var(--muted);}
 .field input, .field select, .field textarea{padding:9px 10px; border:1.5px solid var(--border); border-radius:8px; font-size:14.5px; background:#fff; color:var(--text); font-family:inherit;}
 .field input:focus, .field select:focus, .field textarea:focus{outline:none; border-color:var(--accent,#2563eb);}
+.field input[readonly]{background:#f1f5f9; color:var(--muted); font-weight:700; cursor:not-allowed;}
 .btn{padding:10px 18px; border:none; border-radius:8px; font-weight:700; font-size:14.5px; cursor:pointer; color:#fff;}
 .btn:disabled{opacity:.45; cursor:not-allowed;}
 .btn-defect{background:var(--defect);} .btn-defect:hover:not(:disabled){background:var(--defect-d);}
@@ -277,12 +278,15 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 .chart-inner-size{height:100%; position:relative;}
 .chart-span-all{grid-column:1 / -1;}
 .chart-split{display:flex; gap:16px; align-items:stretch;}
-.chart-split-canvas{flex:1 1 60%; min-width:0;}
-.chart-legend-list{flex:0 0 180px; display:flex; flex-direction:column; gap:6px; justify-content:center; overflow-y:auto; max-height:250px;}
-.chart-legend-row{display:flex; align-items:center; gap:8px; font-size:12.5px;}
-.chart-legend-dot{width:10px; height:10px; border-radius:3px; flex-shrink:0;}
-.chart-legend-name{flex:1; color:var(--text); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-.chart-legend-pct{font-weight:800; color:var(--text);}
+.chart-split-canvas{flex:1 1 42%; min-width:0;}
+/* Legend column widened and its label allowed to wrap onto 2+ lines (was a fixed 180px with
+   text-overflow:ellipsis, which clipped the longer TH/EN defect-type names down to "Glue off (กาวไม่ต..."
+   - per request, this "table" of type+% needs room to actually show the full name next to the chart). */
+.chart-legend-list{flex:1 1 220px; min-width:170px; display:flex; flex-direction:column; gap:8px; justify-content:center; overflow-y:auto; max-height:250px; padding:2px 4px 2px 0;}
+.chart-legend-row{display:flex; align-items:flex-start; flex-wrap:wrap; gap:4px 8px; font-size:12.5px; line-height:1.35;}
+.chart-legend-dot{width:10px; height:10px; border-radius:3px; flex-shrink:0; margin-top:3px;}
+.chart-legend-name{flex:1 1 auto; min-width:0; color:var(--text); font-weight:600; white-space:normal; overflow-wrap:break-word;}
+.chart-legend-pct{font-weight:800; color:var(--text); flex-shrink:0; margin-left:auto; padding-left:18px;}
 @media (max-width:640px){ .chart-split{flex-direction:column;} .chart-legend-list{flex:none; max-height:none;} }
 .mini-dash-note{font-size:11.5px; color:var(--muted); margin:-6px 0 14px;}
 .pareto-insight{margin-top:12px; padding:12px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; font-size:13px; line-height:1.6; color:var(--text);}
@@ -325,11 +329,28 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 .ca-card h4{margin:12px 0 4px; font-size:13px; color:var(--ca-d); text-transform:uppercase; letter-spacing:.03em;}
 .ca-card .ca-card-rootcause{white-space:pre-wrap; font-size:14px; line-height:1.5;}
 .ca-card ol.ca-card-prevent-list{margin:4px 0 0; padding-left:20px; font-size:14px; line-height:1.6;}
+/* Corrective Action list table - a professional/printable analysis table (replaces the old card list).
+   Long free-text columns (4M, control points, root cause, preventive actions) need to wrap onto
+   multiple lines instead of the global table rule's white-space:nowrap. */
+#ca-table td.ca-wrap{white-space:normal; max-width:230px; font-size:13px; line-height:1.5; vertical-align:top;}
+#ca-table td{vertical-align:top;}
+#ca-table .ca-4m-line{margin:0 0 3px;}
+#ca-table .ca-4m-line b{color:var(--muted); font-weight:700;}
+#ca-table .ca-4m-line:last-child{margin-bottom:0;}
+#ca-table ol.ca-table-prevent{margin:0; padding-left:16px;}
+#ca-table .ca-table-photos{display:flex; gap:4px; flex-wrap:wrap;}
+#ca-table .ca-table-photos img{width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer;}
+#ca-table .ca-type-pct{color:var(--muted); font-weight:600; font-size:12px;}
+#ca-print-table-area{display:none;}
+#ca-print-table-area table{width:100%; border-collapse:collapse; font-size:12px;}
+#ca-print-table-area th, #ca-print-table-area td{border:1px solid #94a3b8; padding:6px 8px; text-align:left; vertical-align:top;}
+#ca-print-table-area th{background:#f1f5f9;}
 @media print{
   body *{visibility:hidden;}
-  #ca-print-area, #ca-print-area *{visibility:visible;}
+  #ca-print-area, #ca-print-area *, #ca-print-table-area, #ca-print-table-area *{visibility:visible;}
   #ca-print-area{display:block !important; position:absolute; left:0; top:0; width:100%; padding:20px;}
   #ca-print-area .ca-card-actions{display:none;}
+  body.ca-printing-table #ca-print-table-area{display:block !important; position:absolute; left:0; top:0; width:100%; padding:20px;}
 }
 .photo-modal{display:none; position:fixed; inset:0; background:rgba(15,23,42,.85); z-index:999; align-items:center; justify-content:center; padding:20px;}
 .photo-modal.open{display:flex;}
@@ -362,7 +383,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 .pill-btn{padding:8px 16px; border-radius:8px; border:none; background:transparent; color:#cbd5e1; font-weight:700; font-size:13px; cursor:pointer; transition:.15s; font-family:inherit;}
 .pill-btn:hover{color:#fff;}
 .pill-btn.active{background:#fff; color:#0f172a; box-shadow:0 2px 8px rgba(0,0,0,.2);}
-.daily-date-wrap{display:none; align-items:center; gap:8px; margin-top:9px;}
+.daily-date-wrap{display:none; align-items:center; gap:8px; margin-top:9px; flex-wrap:wrap;}
 .daily-date-wrap.show{display:flex;}
 .daily-date-wrap .flabel{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; font-weight:700;}
 .daily-date-wrap input[type=date]{padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#fff; font-family:inherit; font-size:13px;}
@@ -777,7 +798,8 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       </div>
       <div class="field">
         <label data-i18n="totalProduced">จำนวนผลิตทั้งหมด (ชิ้น)</label>
-        <input type="number" id="p-total" min="0" value="0">
+        <input type="number" id="p-total" min="0" value="0" readonly>
+        <div class="mini-dash-note" data-i18n="perfTotalFromRejectNote">ดึงข้อมูลอัตโนมัติจากยอด Input รวมของวันที่/เครื่องจักรนี้ในหน้าทดสอบ Reject Station</div>
       </div>
     </div>
     <div class="grid">
@@ -1248,6 +1270,34 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <textarea id="ca-root-cause" rows="4" data-i18n-ph="caRootCausePh" placeholder="ระบุสาเหตุที่แท้จริงของ defect นี้..."></textarea>
     </div>
 
+    <h3 data-i18n="ca4mTitle">แผนการวิเคราะห์ 4M</h3>
+    <div class="mini-dash-note" data-i18n="ca4mNote">ระบุสาเหตุ/แนวทางแยกตามหมวด 4M (ระบุหรือไม่ก็ได้ในแต่ละช่อง)</div>
+    <div class="grid">
+      <div class="field">
+        <label data-i18n="ca4mMan">Man (คน)</label>
+        <textarea id="ca-4m-man" rows="2" data-i18n-ph="ca4mManPh" placeholder="เช่น ทักษะ/ความเข้าใจงานของผู้ปฏิบัติงาน"></textarea>
+      </div>
+      <div class="field">
+        <label data-i18n="ca4mMachine">Machine (เครื่องจักร)</label>
+        <textarea id="ca-4m-machine" rows="2" data-i18n-ph="ca4mMachinePh" placeholder="เช่น สภาพเครื่องจักร/การตั้งค่า"></textarea>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="field">
+        <label data-i18n="ca4mMaterial">Material (วัตถุดิบ)</label>
+        <textarea id="ca-4m-material" rows="2" data-i18n-ph="ca4mMaterialPh" placeholder="เช่น คุณภาพวัตถุดิบ/ซัพพลายเออร์"></textarea>
+      </div>
+      <div class="field">
+        <label data-i18n="ca4mMethod">Method (วิธีการ)</label>
+        <textarea id="ca-4m-method" rows="2" data-i18n-ph="ca4mMethodPh" placeholder="เช่น ขั้นตอนการทำงาน/มาตรฐานที่ใช้"></textarea>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px;">
+      <label data-i18n="caControlPoints">จุดที่ต้องเฝ้าระวัง/ควบคุม (ระบุหรือไม่ก็ได้)</label>
+      <textarea id="ca-control-points" rows="2" data-i18n-ph="caControlPointsPh" placeholder="ระบุจุดที่ต้องเฝ้าระวังหรือควบคุมเพื่อป้องกันการเกิดซ้ำ (ถ้ามี)"></textarea>
+    </div>
+
     <h3 data-i18n="caPreventiveTitle">แนวทางการป้องกัน (Preventive Action)</h3>
     <div class="mini-dash-note" data-i18n="caPreventiveNote">เพิ่มได้หลายข้อ - แต่ละข้อจะแสดงเป็นข้อ ๆ ใน WI</div>
     <div id="ca-prevent-list"></div>
@@ -1268,6 +1318,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
     <div class="card-h2-row">
       <h2 data-i18n="caListTitle">รายการ Corrective Action / WI</h2>
       <div class="export-import-row">
+        <button type="button" class="btn-outline" id="ca-print-table-btn" data-i18n="caPrintTableBtn">พิมพ์ตาราง</button>
         <button type="button" class="btn-export" id="ca-export-btn" data-i18n="exportExcel">Export Excel</button>
       </div>
     </div>
@@ -1278,10 +1329,20 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <span class="flabel" data-i18n="filterMachineLabel">เครื่องจักร</span>
       <div class="chip-row" id="ca-filter-machine"></div>
     </div>
-    <div id="ca-card-list"></div>
+    <div class="table-wrap">
+      <table id="ca-table">
+        <thead><tr>
+          <th data-i18n="colNo">No.</th><th data-i18n="photo">รูปภาพ</th><th data-i18n="defectType">ประเภท Defect</th>
+          <th data-i18n="ca4mTitle">4M</th><th data-i18n="caControlPoints">จุดเฝ้าระวัง/ควบคุม</th>
+          <th data-i18n="caRootCauseTitle">Root Cause</th><th data-i18n="caPreventiveTitle">Preventive Action</th><th></th>
+        </tr></thead>
+        <tbody id="ca-card-list"></tbody>
+      </table>
+    </div>
   </div>
 </section>
 <div id="ca-print-area" style="display:none;"></div>
+<div id="ca-print-table-area"></div>
 
 <!-- ============ DASHBOARD PAGE ============ -->
 <section id="page-dashboard" class="page">
@@ -1305,7 +1366,13 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
         </div>
         <div class="daily-date-wrap show" id="dash-daily-date-wrap">
           <span class="flabel" data-i18n="filterDateLabel">วันที่</span>
-          <input type="date" id="dash-daily-date">
+          <input type="date" id="dash-daily-date-start">
+          <span style="color:#94a3b8;">-</span>
+          <input type="date" id="dash-daily-date-end">
+        </div>
+        <div class="daily-date-wrap" id="dash-weekly-label-wrap">
+          <span class="flabel" data-i18n="filterWeekLabel">สัปดาห์</span>
+          <span id="dash-weekly-label" style="color:#fff; font-weight:700; font-size:13px;"></span>
         </div>
         <div class="daily-date-wrap" id="dash-month-wrap">
           <span class="flabel" data-i18n="filterMonthLabel">เดือน</span>
@@ -1685,14 +1752,18 @@ function prepareForSync(sheetName, arr){
   if(sheetName==='correctiveActions'){
     // Same photoN flattening as Defect above (Sheets cells can't hold arrays), plus preventiveActions -
     // a variable-length list of short text items - flattened into one JSON-stringified cell rather than
-    // N more columns, since the list length isn't capped the way photos are.
+    // N more columns, since the list length isn't capped the way photos are. analysis4M is a small fixed
+    // shape (man/machine/material/method), so it's flattened into 4 plain columns instead (m4Man etc.) -
+    // simpler to read directly in the Sheet than a JSON blob, and the count never grows.
     return arr.map(r=>{
       const photos = Array.isArray(r.photos) ? r.photos : [];
       const actions = Array.isArray(r.preventiveActions) ? r.preventiveActions : [];
+      const m4 = r.analysis4M || {};
       const out = Object.assign({}, r);
-      delete out.photos; delete out.preventiveActions;
+      delete out.photos; delete out.preventiveActions; delete out.analysis4M;
       for(let i=0;i<GS_MAX_PHOTOS;i++) out['photo'+(i+1)] = photos[i] || '';
       out.preventiveActionsJson = JSON.stringify(actions);
+      out.m4Man = m4.man || ''; out.m4Machine = m4.machine || ''; out.m4Material = m4.material || ''; out.m4Method = m4.method || '';
       return out;
     });
   }
@@ -1766,6 +1837,8 @@ function restoreFromSync(sheetName, arr){
       }
       delete out.preventiveActionsJson;
       out.preventiveActions = actions;
+      out.analysis4M = { man: out.m4Man||'', machine: out.m4Machine||'', material: out.m4Material||'', method: out.m4Method||'' };
+      delete out.m4Man; delete out.m4Machine; delete out.m4Material; delete out.m4Method;
       return out;
     });
   }
@@ -1897,7 +1970,7 @@ function rerenderEverythingAfterSync(){
   if(typeof renderBreakdownMiniDashboard==='function') renderBreakdownMiniDashboard();
   if(typeof renderPerfTable==='function') renderPerfTable();
   if(typeof renderPerfMiniDashboard==='function') renderPerfMiniDashboard();
-  if(typeof refreshPerfAuto==='function') refreshPerfAuto();
+  if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
   if(typeof renderPerftestTable==='function') renderPerftestTable();
   if(typeof renderPerftestDashboard==='function') renderPerftestDashboard();
   if(typeof renderRejectTable==='function') renderRejectTable();
@@ -2114,6 +2187,10 @@ function rerenderModuleAfterEdit(lsKey){
   else if(lsKey===LS.perftest){ renderPerftestTable(); renderPerftestDashboard(); }
   else if(lsKey===LS.rejectTest){ renderRejectTable(); renderRejectMiniDashboard(); }
   else if(lsKey===LS.perfNormal){ renderPerfNormalTable(); }
+  // Reject Station Test edits feed Performance's auto-computed "จำนวนที่ผลิตทั้งหมด" (see
+  // refreshPerfTotalFromReject) - re-pull it too so an edit made from Reject's own edit modal is
+  // reflected immediately if the Performance page is already open to the same date/machine.
+  if(lsKey===LS.rejectTest && typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
   refreshDashboard();
 }
 document.getElementById('edit-modal-save').addEventListener('click', ()=>{
@@ -2287,6 +2364,22 @@ function timeOnly(v){
   if(isNaN(d.getTime())) return s; // best-effort fallback, never throws
   return localTime(d);
 }
+// Displays a recorded "HH:MM" clock-time value in Thai convention - 24-hour clock, period separator, "น."
+// (o'clock) suffix - e.g. "01:00" -> "01.00 น.", "13:45" -> "13.45 น." - per request. Pure display
+// transform only: stored record values, native <input type="time"> widgets (which require plain "HH:MM"
+// and are rendered by the browser itself, so can't show a custom string), Google Sheets sync payloads,
+// and internal date/time normalization all keep the plain "HH:MM" format untouched - only what's shown
+// back to the user as read-only text (Recent Entries tables, Export Excel cells) goes through this.
+// emptyPlaceholder lets callers that previously left a blank Excel cell for an unset optional time
+// (timeStart/timeEnd) keep doing so, instead of writing a literal "-" into the spreadsheet.
+function timeTH(v, emptyPlaceholder){
+  if(emptyPlaceholder===undefined) emptyPlaceholder = '-';
+  if(v===undefined || v===null || v==='') return emptyPlaceholder;
+  const s = String(v);
+  const m = /^(\d{1,2}):(\d{2})/.exec(s);
+  if(!m) return s;
+  return `${m[1].padStart(2,'0')}.${m[2]} น.`;
+}
 function shiftFromTime(hh,mm){
   const mins = hh*60+mm;
   if(mins>=360 && mins<840) return 'A';
@@ -2297,6 +2390,18 @@ function shiftFromTime(hh,mm){
 // device's own OS timezone) so the auto-suggested Shift is correct even on a device whose clock/timezone
 // is misconfigured.
 function shiftFromDate(d){ const t=tzShifted_(d); return shiftFromTime(t.getUTCHours(), t.getUTCMinutes()); }
+// Fixed clock-time windows for each Shift, matching shiftFromTime's own boundaries above (A 06:00-14:00,
+// B 14:00-22:00, C 22:00-06:00 overnight) - used to show the actual time range next to a Shift tag
+// wherever Shift is displayed, per request ("การแสดง Shift ให้แสดงเวลาต่อด้วยทุกหน้าโมดุล").
+const SHIFT_TIME_RANGES = { A:['06:00','14:00'], B:['14:00','22:00'], C:['22:00','06:00'] };
+// Builds the "<tag>A</tag><br><small>06.00 น.-14.00 น.</small>" HTML used everywhere a Shift value is
+// shown in a Recent Entries table - same <br><small> sub-line convention already used for cause/type
+// notes elsewhere in the app. Falls back to a bare tag if the shift value isn't one of A/B/C.
+function shiftCellHTML(shift){
+  const range = SHIFT_TIME_RANGES[shift];
+  const rangeHtml = range ? `<br><small style="color:var(--muted);font-weight:400;">${timeTH(range[0])}-${timeTH(range[1])}</small>` : '';
+  return `<span class="tag tag-${shift}">${shift}</span>${rangeHtml}`;
+}
 
 /* ============================================================
    I18N
@@ -2310,7 +2415,13 @@ caRootCauseTitle:"การวิเคราะห์หาสาเหตุ (
 caPreventiveTitle:"แนวทางการป้องกัน (Preventive Action)", caPreventiveNote:"เพิ่มได้หลายข้อ - แต่ละข้อจะแสดงเป็นข้อ ๆ ใน WI",
 caPreventivePh:"พิมพ์แนวทางการป้องกัน แล้วกด + เพิ่มข้อ", caAddItem:"+ เพิ่มข้อ", caListTitle:"รายการ Corrective Action / WI",
 caPreventRequired:"กรุณาเพิ่มแนวทางการป้องกันอย่างน้อย 1 ข้อ", caRootCauseRequired:"กรุณาระบุการวิเคราะห์หาสาเหตุ",
-caPrintBtn:"พิมพ์", caEditingNote:"กำลังแก้ไขรายการ", caCancelEdit:"ยกเลิกการแก้ไข",
+caPrintBtn:"พิมพ์", caEditingNote:"กำลังแก้ไขรายการ", caCancelEdit:"ยกเลิกการแก้ไข", caPrintTableBtn:"พิมพ์ตาราง",
+ca4mTitle:"แผนการวิเคราะห์ 4M", ca4mNote:"ระบุสาเหตุ/แนวทางแยกตามหมวด 4M (ระบุหรือไม่ก็ได้ในแต่ละช่อง)",
+ca4mMan:"Man (คน)", ca4mManPh:"เช่น ทักษะ/ความเข้าใจงานของผู้ปฏิบัติงาน",
+ca4mMachine:"Machine (เครื่องจักร)", ca4mMachinePh:"เช่น สภาพเครื่องจักร/การตั้งค่า",
+ca4mMaterial:"Material (วัตถุดิบ)", ca4mMaterialPh:"เช่น คุณภาพวัตถุดิบ/ซัพพลายเออร์",
+ca4mMethod:"Method (วิธีการ)", ca4mMethodPh:"เช่น ขั้นตอนการทำงาน/มาตรฐานที่ใช้",
+caControlPoints:"จุดที่ต้องเฝ้าระวัง/ควบคุม", caControlPointsPh:"ระบุจุดที่ต้องเฝ้าระวังหรือควบคุมเพื่อป้องกันการเกิดซ้ำ (ถ้ามี)",
 defectFormTitle:"บันทึก Defect", recorder:"ผู้บันทึก", addNew:"+ เพิ่มชื่อ", date:"วันที่", timeOccurred:"เวลาที่เกิด",
 collectTimeStart:"เวลาเริ่มเก็บข้อมูล", collectTimeEnd:"เวลาสิ้นสุดเก็บข้อมูล",
 shift:"Shift", machine:"Machine No.", defectType:"ประเภท Defect", specifyDetail:"ระบุรายละเอียดเพิ่มเติม",
@@ -2320,7 +2431,7 @@ qtyFound:"จำนวนที่พบ Defect", cause:"สาเหตุท�
 breakdownFormTitle:"บันทึก Breakdown เครื่องจักร", breakdownCause:"สาเหตุ Breakdown", timing:"เวลาการหยุดเครื่อง",
 startTime:"เวลา Start", endTime:"เวลา End", breakdownMin:"เวลา Breakdown (นาที)", btnStart:"Start", btnEnd:"End",
 btnRunSave:"Run / บันทึก", reset:"ล้างฟอร์ม",
-perfFormTitle:"บันทึก Performance กำลังการผลิต", totalProduced:"จำนวนผลิตทั้งหมด (ชิ้น)", perfNormalFormTitle:"Machine Performance : Normal (บันทึก Performance ปกติของเครื่อง)",
+perfFormTitle:"บันทึก Performance กำลังการผลิต", totalProduced:"จำนวนผลิตทั้งหมด (ชิ้น)", perfTotalFromRejectNote:"ดึงข้อมูลอัตโนมัติจากยอด Input รวมของวันที่/เครื่องจักรนี้ในหน้าทดสอบ Reject Station", perfNormalFormTitle:"Machine Performance : Normal (บันทึก Performance ปกติของเครื่อง)",
 pnDateLabel:"วันที่บันทึก", pnTimeLabel:"เวลาบันทึก", pnTiming:"ช่วงเวลาบันทึก (ไม่กำหนดตายตัว)", pnDurationLabel:"ระยะเวลาที่บันทึก (วินาที)", pnBoxResultLabel:"จำนวนกล่องที่ผลิตได้",
 defectQtyAuto:"จำนวน Defect (จากโมดูล Defect)", breakdownMinAuto:"เวลา Breakdown (จากโมดูล Breakdown)",
 perfKpiDefectQty:"Defect Qty", perfKpiBreakdownTime:"Breakdown Time",
@@ -2397,6 +2508,7 @@ chartDefectByShift:"% Defect แยกตามกะ", chartBdByMachine:"Breakd
 chartDefectPareto:"Pareto Defect (จำนวน vs % สะสม)", paretoQtyLabel:"จำนวน Defect (ชิ้น)", paretoCumulativeLabel:"% สะสม",
 paretoInsightTitle:"การวิเคราะห์ข้อมูล (Pareto Analysis)", paretoInsightVitalFew:"ประเภท Defect หลัก {count} จาก {total} ประเภท ได้แก่ <b>{types}</b> ก่อให้เกิด Defect รวมกัน {pct}% ของ Defect ทั้งหมด — ตามหลัก Pareto 80/20 ควรให้ความสำคัญกับการแก้ไขประเภทเหล่านี้เป็นอันดับแรก เพื่อลด Defect โดยรวมได้อย่างมีประสิทธิภาพสูงสุด", paretoInsightTop1:"ประเภท Defect ที่พบมากที่สุดคือ <b>{top1}</b> คิดเป็น {top1pct}% ของ Defect ทั้งหมด", paretoInsightNoData:"ยังไม่มีข้อมูล Defect ในช่วงเวลา/เครื่องจักรที่เลือก",
 filterPeriod:"ช่วงเวลา", filterMachine:"เครื่องจักร", periodDaily:"รายวัน", periodWeekly:"รายสัปดาห์ (7 วัน)", periodMonthly:"รายเดือน (30 วัน)", periodAll:"ทั้งหมด", periodMonth:"เลือกเดือน", filterMonthLabel:"เดือน",
+filterWeekLabel:"สัปดาห์", weekOfLabel:"สัปดาห์ที่",
 allMachines:"ทุกเครื่อง", sectionDefect:"ภาพรวม Defect", sectionBreakdown:"ภาพรวม Breakdown",
 sectionPerformance:"ภาพรวม Performance (กำลังการผลิต)", sectionPerftest:"ภาพรวม Performance Test",
 statTotalProd:"จำนวนผลิตรวม", statTotalDefect:"จำนวน Defect รวม", statTotalGood:"จำนวนของดีรวม", statAvgRate:"Defect Rate เฉลี่ย",
@@ -2414,7 +2526,13 @@ caRootCauseTitle:"Root Cause Analysis", caRootCausePh:"Describe the true root ca
 caPreventiveTitle:"Preventive Action", caPreventiveNote:"Add as many items as needed - each will appear as a numbered step in the WI",
 caPreventivePh:"Type a preventive action, then click + Add", caAddItem:"+ Add", caListTitle:"Corrective Action / WI List",
 caPreventRequired:"Please add at least one preventive action", caRootCauseRequired:"Please enter a root cause analysis",
-caPrintBtn:"Print", caEditingNote:"Editing entry", caCancelEdit:"Cancel edit",
+caPrintBtn:"Print", caEditingNote:"Editing entry", caCancelEdit:"Cancel edit", caPrintTableBtn:"Print Table",
+ca4mTitle:"4M Analysis Plan", ca4mNote:"Fill in cause/approach by 4M category (each field optional)",
+ca4mMan:"Man", ca4mManPh:"e.g. operator skill/understanding of the task",
+ca4mMachine:"Machine", ca4mMachinePh:"e.g. machine condition/settings",
+ca4mMaterial:"Material", ca4mMaterialPh:"e.g. raw material quality/supplier",
+ca4mMethod:"Method", ca4mMethodPh:"e.g. work procedure/standard used",
+caControlPoints:"Points Requiring Monitoring/Control", caControlPointsPh:"Note any points to monitor or control to prevent recurrence (if any)",
 defectFormTitle:"Record Defect", recorder:"Recorder", addNew:"+ Add name", date:"Date", timeOccurred:"Time Occurred",
 collectTimeStart:"Collection Start Time", collectTimeEnd:"Collection End Time",
 shift:"Shift", machine:"Machine No.", defectType:"Defect Type", specifyDetail:"Specify details",
@@ -2424,7 +2542,7 @@ qtyFound:"Qty Found", cause:"Cause", causeNoteLabel:"Specify (optional)", causeN
 breakdownFormTitle:"Record Machine Breakdown", breakdownCause:"Breakdown Cause", timing:"Downtime Timing",
 startTime:"Start Time", endTime:"End Time", breakdownMin:"Breakdown Time (min)", btnStart:"Start", btnEnd:"End",
 btnRunSave:"Run / Save", reset:"Reset Form",
-perfFormTitle:"Record Production Performance", totalProduced:"Total Produced (Box)", perfNormalFormTitle:"Machine Performance : Normal (Record Routine Machine Performance)",
+perfFormTitle:"Record Production Performance", totalProduced:"Total Produced (Box)", perfTotalFromRejectNote:"Auto-filled from the total Input quantity for this date/machine on the Reject Station Test page", perfNormalFormTitle:"Machine Performance : Normal (Record Routine Machine Performance)",
 pnDateLabel:"Record Date", pnTimeLabel:"Record Time", pnTiming:"Recording Period (not fixed)", pnDurationLabel:"Recorded Duration (seconds)", pnBoxResultLabel:"Boxes Produced",
 defectQtyAuto:"Defect Qty (from Defect module)", breakdownMinAuto:"Breakdown Time (from Breakdown module)",
 perfKpiDefectQty:"Defect Qty", perfKpiBreakdownTime:"Breakdown Time",
@@ -2501,6 +2619,7 @@ chartDefectByShift:"Defect % by Shift", chartBdByMachine:"Breakdown Minutes by M
 chartDefectPareto:"Defect Pareto (Qty vs Cumulative %)", paretoQtyLabel:"Defect Qty (pcs)", paretoCumulativeLabel:"Cumulative %",
 paretoInsightTitle:"Data Analysis (Pareto Analysis)", paretoInsightVitalFew:"The top {count} of {total} defect types — <b>{types}</b> — together account for {pct}% of all defects. Following the Pareto 80/20 principle, fixing these types first will have the biggest impact on reducing overall defects.", paretoInsightTop1:"The most frequent defect type is <b>{top1}</b>, accounting for {top1pct}% of all defects.", paretoInsightNoData:"No defect data for the selected period/machine yet.",
 filterPeriod:"Period", filterMachine:"Machine", periodDaily:"Daily", periodWeekly:"Weekly (7d)", periodMonthly:"Monthly (30d)", periodAll:"All", periodMonth:"Select Month", filterMonthLabel:"Month",
+filterWeekLabel:"Week", weekOfLabel:"Week",
 allMachines:"All Machines", sectionDefect:"Defect Overview", sectionBreakdown:"Breakdown Overview",
 sectionPerformance:"Performance Overview (Production)", sectionPerftest:"Performance Test Overview",
 statTotalProd:"Total Production", statTotalDefect:"Total Defect", statTotalGood:"Total Good Qty", statAvgRate:"Avg Defect Rate",
@@ -2518,7 +2637,13 @@ caRootCauseTitle:"Phân tích nguyên nhân gốc rễ (Root Cause Analysis)", c
 caPreventiveTitle:"Biện pháp phòng ngừa (Preventive Action)", caPreventiveNote:"Có thể thêm nhiều mục - mỗi mục sẽ hiển thị dưới dạng một bước trong WI",
 caPreventivePh:"Nhập biện pháp phòng ngừa rồi nhấn + Thêm", caAddItem:"+ Thêm", caListTitle:"Danh sách Corrective Action / WI",
 caPreventRequired:"Vui lòng thêm ít nhất một biện pháp phòng ngừa", caRootCauseRequired:"Vui lòng nhập phân tích nguyên nhân",
-caPrintBtn:"In", caEditingNote:"Đang chỉnh sửa mục", caCancelEdit:"Hủy chỉnh sửa",
+caPrintBtn:"In", caEditingNote:"Đang chỉnh sửa mục", caCancelEdit:"Hủy chỉnh sửa", caPrintTableBtn:"In bảng",
+ca4mTitle:"Kế hoạch phân tích 4M", ca4mNote:"Nhập nguyên nhân/biện pháp theo từng hạng mục 4M (mỗi mục có thể để trống)",
+ca4mMan:"Man (Con người)", ca4mManPh:"VD: kỹ năng/hiểu biết công việc của người vận hành",
+ca4mMachine:"Machine (Máy móc)", ca4mMachinePh:"VD: tình trạng máy móc/cài đặt",
+ca4mMaterial:"Material (Vật liệu)", ca4mMaterialPh:"VD: chất lượng vật liệu/nhà cung cấp",
+ca4mMethod:"Method (Phương pháp)", ca4mMethodPh:"VD: quy trình làm việc/tiêu chuẩn áp dụng",
+caControlPoints:"Điểm cần theo dõi/kiểm soát", caControlPointsPh:"Ghi chú điểm cần theo dõi hoặc kiểm soát để ngăn tái diễn (nếu có)",
 defectFormTitle:"Ghi nhận Defect", recorder:"Người ghi nhận", addNew:"+ Thêm tên", date:"Ngày", timeOccurred:"Thời gian xảy ra",
 collectTimeStart:"Thời gian bắt đầu thu thập", collectTimeEnd:"Thời gian kết thúc thu thập",
 shift:"Ca", machine:"Số máy", defectType:"Loại Defect", specifyDetail:"Ghi rõ chi tiết",
@@ -2528,7 +2653,7 @@ qtyFound:"Số lượng Defect phát hiện", cause:"Nguyên nhân", causeNoteLa
 breakdownFormTitle:"Ghi nhận Breakdown máy", breakdownCause:"Nguyên nhân Breakdown", timing:"Thời gian ngừng máy",
 startTime:"Thời gian Start", endTime:"Thời gian End", breakdownMin:"Thời gian Breakdown (phút)", btnStart:"Start", btnEnd:"End",
 btnRunSave:"Run / Lưu", reset:"Xóa biểu mẫu",
-perfFormTitle:"Ghi nhận Performance sản xuất", totalProduced:"Tổng sản lượng (cái)", perfNormalFormTitle:"Machine Performance : Normal (Ghi nhận Performance thường ngày của máy)",
+perfFormTitle:"Ghi nhận Performance sản xuất", totalProduced:"Tổng sản lượng (cái)", perfTotalFromRejectNote:"Tự động lấy từ tổng số lượng Input của ngày/máy này trên trang Kiểm tra Reject Station", perfNormalFormTitle:"Machine Performance : Normal (Ghi nhận Performance thường ngày của máy)",
 pnDateLabel:"Ngày ghi nhận", pnTimeLabel:"Giờ ghi nhận", pnTiming:"Thời gian ghi nhận (không cố định)", pnDurationLabel:"Thời lượng ghi nhận (giây)", pnBoxResultLabel:"Số hộp sản xuất được",
 defectQtyAuto:"Số lượng Defect (từ module Defect)", breakdownMinAuto:"Thời gian Breakdown (từ module Breakdown)",
 perfKpiDefectQty:"Defect Qty", perfKpiBreakdownTime:"Breakdown Time",
@@ -2605,6 +2730,7 @@ chartDefectByShift:"% Defect theo ca", chartBdByMachine:"Số phút Breakdown th
 chartDefectPareto:"Pareto Defect (Số lượng vs % lũy kế)", paretoQtyLabel:"Số lượng Defect (cái)", paretoCumulativeLabel:"% lũy kế",
 paretoInsightTitle:"Phân tích dữ liệu (Pareto Analysis)", paretoInsightVitalFew:"{count} trong {total} loại Defect chính — <b>{types}</b> — chiếm tổng cộng {pct}% tổng số Defect. Theo nguyên tắc Pareto 80/20, nên ưu tiên khắc phục các loại này trước để giảm Defect tổng thể hiệu quả nhất.", paretoInsightTop1:"Loại Defect xuất hiện nhiều nhất là <b>{top1}</b>, chiếm {top1pct}% tổng số Defect.", paretoInsightNoData:"Chưa có dữ liệu Defect trong khoảng thời gian/máy đã chọn.",
 filterPeriod:"Khoảng thời gian", filterMachine:"Máy", periodDaily:"Hàng ngày", periodWeekly:"Hàng tuần (7 ngày)", periodMonthly:"Hàng tháng (30 ngày)", periodAll:"Tất cả", periodMonth:"Chọn tháng", filterMonthLabel:"Tháng",
+filterWeekLabel:"Tuần", weekOfLabel:"Tuần thứ",
 allMachines:"Tất cả máy", sectionDefect:"Tổng quan Defect", sectionBreakdown:"Tổng quan Breakdown",
 sectionPerformance:"Tổng quan Performance (Sản xuất)", sectionPerftest:"Tổng quan Performance Test",
 statTotalProd:"Tổng sản lượng", statTotalDefect:"Tổng số Defect", statTotalGood:"Tổng số đạt", statAvgRate:"Tỷ lệ Defect TB",
@@ -2701,9 +2827,12 @@ document.querySelectorAll('nav.sidebar button').forEach(btn=>{
     btn.classList.add('active');
     document.getElementById('page-'+btn.dataset.page).classList.add('active');
     if(btn.dataset.page==='dashboard'){ refreshDashboard(); triggerAutoSync(2000); }
-    if(btn.dataset.page==='performance') refreshPerfAuto();
+    if(btn.dataset.page==='performance') refreshPerfTotalFromReject();
     if(btn.dataset.page==='settings') renderAllMasterTables();
-    if(btn.dataset.page==='ca' && typeof renderCaList==='function') renderCaList();
+    if(btn.dataset.page==='ca'){
+      if(typeof buildCaDefectTypeSelect==='function') buildCaDefectTypeSelect();
+      if(typeof renderCaList==='function') renderCaList();
+    }
   });
 });
 
@@ -3257,8 +3386,8 @@ function renderDefectTable(){
       ? `<div class="table-thumb-row">${photos.slice(0,3).map(p=>`<img class="table-thumb" src="${p}" onclick="openPhotoModal('${p.replace(/'/g,"\\'")}')">`).join('')}</div>`
       : '-';
     return `<tr>
-      <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeOnly(r.time)}</td>
-      <td>${r.timeStart||'-'}</td><td>${r.timeEnd||'-'}</td><td><span class="tag tag-${r.shift}">${r.shift}</span></td>
+      <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeTH(timeOnly(r.time))}</td>
+      <td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${shiftCellHTML(r.shift)}</td>
       <td>${r.machine}</td><td>${typeName}</td><td>${r.qty}</td><td>${causeCell}</td><td>${r.recorder}</td>
       <td>${photoCell}</td>
       <td><button class="small-btn" onclick="openEditModal('${LS.defects}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.defects}','${r.id}', renderDefectTable)">${I18N[currentLang].delete}</button></td>
@@ -3281,6 +3410,7 @@ window.deleteRow = function(lsKey, id, cb){
   let arr = getArr(lsKey).filter(r=>r.id!==id);
   setArr(lsKey, arr);
   gsPushDeletedRecord(lsKey, id); // targeted remote delete - doesn't need to resend the rest of the sheet
+  if(lsKey===LS.rejectTest && typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
   cb(); refreshDashboard();
 };
 
@@ -3386,8 +3516,8 @@ function renderBreakdownTable(){
     const sec = bdSecOf(r);
     const over = sec > 300 ? ' style="color:var(--danger);font-weight:800;"' : '';
     return `<tr>
-      <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td><span class="tag tag-${r.shift}">${r.shift}</span></td><td>${r.machine}</td>
-      <td>${localTime(st)}</td><td>${localTime(en)}</td><td${over}>${formatStopwatch(sec)}</td><td>${causeCell}</td>
+      <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
+      <td>${timeTH(localTime(st))}</td><td>${timeTH(localTime(en))}</td><td${over}>${formatStopwatch(sec)}</td><td>${causeCell}</td>
       <td>${r.recorder||'-'}</td>
       <td><button class="small-btn" onclick="openEditModal('${LS.breakdowns}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.breakdowns}','${r.id}', renderBreakdownTable)">${I18N[currentLang].delete}</button></td>
     </tr>`;
@@ -3452,11 +3582,27 @@ function refreshPerfAuto(){
   else if(rate<=1){ badge.textContent = I18N[currentLang].pass+' (≤1%)'; badge.className='tag badge-ok'; }
   else { badge.textContent = I18N[currentLang].fail+' (>1%)'; badge.className='tag badge-bad'; }
 }
-['p-date','p-shift','p-machine','p-total'].forEach(id=>{
-  document.getElementById(id).addEventListener('input', refreshPerfAuto);
-  document.getElementById(id).addEventListener('change', refreshPerfAuto);
+// "จำนวนที่ผลิตทั้งหมด" is no longer typed here - per request, it's pulled live from Reject Station
+// Test's own Input quantity (summed across every Reject Station Test entry for the same date+machine),
+// so the two pages never drift into showing two different production totals for the same day/machine.
+// Always re-read from localStorage (never cached) so a Reject Station Test entry saved/edited/deleted
+// afterwards is reflected immediately, same convention as liveDefectQtyFor/liveBdSecFor above.
+function liveRejectInputTotalFor(date, machine){
+  return getArr(LS.rejectTest).filter(r=>r.date===date && r.machine===machine).reduce((s,r)=>s+(parseFloat(r.inputQty)||0), 0);
+}
+function refreshPerfTotalFromReject(){
+  const date = document.getElementById('p-date').value;
+  const machine = document.getElementById('p-machine').value;
+  document.getElementById('p-total').value = liveRejectInputTotalFor(date, machine);
+  refreshPerfAuto();
+}
+document.getElementById('p-shift').addEventListener('input', refreshPerfAuto);
+document.getElementById('p-shift').addEventListener('change', refreshPerfAuto);
+['p-date','p-machine'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', refreshPerfTotalFromReject);
+  document.getElementById(id).addEventListener('change', refreshPerfTotalFromReject);
 });
-refreshPerfAuto();
+refreshPerfTotalFromReject();
 
 document.getElementById('p-save').addEventListener('click', ()=>{
   const date = document.getElementById('p-date').value;
@@ -3476,10 +3622,11 @@ document.getElementById('p-save').addEventListener('click', ()=>{
   const rec = { id:uid(), recorder, date, shift, machine, total, defectQty, bdSec, good, rate, timeStart, timeEnd };
   const arr = getArr(LS.perf); arr.push(rec); setArr(LS.perf, arr);
   gsPushNewRecord(LS.perf, rec).then(refreshConnectionAfterSave);
-  document.getElementById('p-total').value = 0;
   document.getElementById('p-time-start').value = '';
   document.getElementById('p-time-end').value = '';
-  refreshPerfAuto(); renderPerfTable(); renderPerfMiniDashboard(); refreshDashboard();
+  // p-total is a derived field (see refreshPerfTotalFromReject) - re-pull rather than reset to 0, since
+  // the date/machine on the form haven't changed and Reject Station Test's total for them hasn't either.
+  refreshPerfTotalFromReject(); renderPerfTable(); renderPerfMiniDashboard(); refreshDashboard();
 });
 
 function renderPerfTable(){
@@ -3496,8 +3643,8 @@ function renderPerfTable(){
     const d = perfDerived(r);
     return `<tr>
     <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td>
-    <td>${r.timeStart||'-'}</td><td>${r.timeEnd||'-'}</td>
-    <td><span class="tag tag-${r.shift}">${r.shift}</span></td><td>${r.machine}</td>
+    <td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td>
+    <td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
     <td>${r.total}</td><td>${d.defectQty}</td><td>${d.good}</td><td>${formatStopwatch(d.bdSec)}</td><td>${d.rate.toFixed(2)}%</td>
     <td>${r.recorder||'-'}</td>
     <td><button class="small-btn" onclick="openEditModal('${LS.perf}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.perf}','${r.id}', renderPerfTable)">${I18N[currentLang].delete}</button></td>
@@ -3608,7 +3755,7 @@ function renderPerftestTable(){
   const totalCount = full.length;
   const tbody = document.querySelector('#t-table tbody');
   tbody.innerHTML = arr.map((r,i)=>`<tr>
-    <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeOnly(r.time)}</td><td><span class="tag tag-${r.shift}">${r.shift}</span></td><td>${r.machine}</td>
+    <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeTH(timeOnly(r.time))}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
     <td>${r.durationSec}</td><td>${r.boxes}</td><td>${r.speed.toFixed(1)}</td>
     <td><span class="tag ${r.pass?'badge-ok':'badge-bad'}">${r.pass?I18N[currentLang].pass:I18N[currentLang].fail}</span></td>
     <td>${r.recorder||'-'}</td>
@@ -3704,7 +3851,7 @@ function renderPerfNormalTable(){
   const totalCount = full.length;
   const tbody = document.querySelector('#pn-table tbody');
   tbody.innerHTML = arr.map((r,i)=>`<tr>
-    <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeOnly(r.time)}</td><td><span class="tag tag-${r.shift}">${r.shift}</span></td><td>${r.machine}</td>
+    <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${timeTH(timeOnly(r.time))}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
     <td>${r.durationSec}</td><td>${r.boxes}</td><td>${r.speed.toFixed(1)}</td>
     <td>${r.recorder||'-'}</td>
     <td><button class="small-btn" onclick="openEditModal('${LS.perfNormal}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.perfNormal}','${r.id}', renderPerfNormalTable)">${I18N[currentLang].delete}</button></td>
@@ -3782,6 +3929,9 @@ document.getElementById('r-save').addEventListener('click', ()=>{
   initRejectDefaults();
   renderRejectTable();
   renderRejectMiniDashboard();
+  // Keep Performance's auto-computed total (see refreshPerfTotalFromReject) in sync immediately if that
+  // page happens to already be open to the same date/machine.
+  if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
 });
 document.getElementById('r-reset').addEventListener('click', initRejectDefaults);
 
@@ -3796,8 +3946,8 @@ function renderRejectTable(){
     const d = rejectDerived(r);
     const noteCell = r.note ? `<br><small style="color:var(--muted);font-weight:400;">${r.note}</small>` : '';
     return `<tr>
-      <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td><span class="tag tag-${r.shift}">${r.shift}</span></td><td>${r.machine}</td>
-      <td>${r.heightSetting}${noteCell}</td><td>${r.timeStart||'-'}</td><td>${r.timeEnd||'-'}</td><td>${r.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
+      <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
+      <td>${r.heightSetting}${noteCell}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${r.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
       <td>${r.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
       <td><button class="small-btn" onclick="openEditModal('${LS.rejectTest}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.rejectTest}','${r.id}', renderRejectTable)">${I18N[currentLang].delete}</button></td>
     </tr>`;
@@ -4032,15 +4182,19 @@ function fitChartCanvas(canvasId, numCategories, opts){
 
 let currentPeriod = 'daily';
 let currentMachineFilter = 'all';
-// The specific calendar date shown when Period = Daily (pickable via #dash-daily-date, defaults to
-// today). This is intentionally separate from "today" - the Dashboard's Daily view lets you browse any
-// past day's data, while the explicitly "Today"/all-time labeled realtime cards elsewhere always use the
-// actual current date regardless of this selection (see refreshDashboard's Card 1 / *Today comments).
-let currentDailyDate = localDate();
+// The date RANGE shown when Period = Daily (pickable via #dash-daily-date-start/#dash-daily-date-end,
+// both default to today - i.e. a single-day range). Per the user's own clarification, the existing
+// "รายวัน" (Daily) pill/control was extended in place to support picking an explicit multi-day range
+// rather than adding a separate new button. This is intentionally separate from "today" - the
+// Dashboard's Daily view lets you browse any past range, while the explicitly "Today"/all-time labeled
+// realtime cards elsewhere always use the actual current date regardless of this selection (see
+// refreshDashboard's Card 1 / *Today comments).
+let currentDailyStart = localDate();
+let currentDailyEnd = localDate();
 // The specific calendar month shown when Period = "เลือกเดือน" (Select Month), as "YYYY-MM" - separate
 // from the rolling "รายเดือน (30 วัน)" period above, which is always the last 30 days ending today. This
 // one lets the GM pick any actual calendar month (e.g. "2026-08") and see that month's data specifically,
-// same as currentDailyDate does for a single day. Defaults to the current month.
+// same as currentDailyStart/currentDailyEnd does for a picked range. Defaults to the current month.
 let currentSelectedMonth = localDate().slice(0,7);
 // Fixed go-live date for the plant's real data collection - all "All"-period daily-granularity reports
 // (trend charts + per-day bar charts) start here and grow forward to today, rather than scanning back
@@ -4051,7 +4205,7 @@ function inRange(dateStr, period){
   const d = new Date(dateStr+'T00:00:00');
   const today = new Date(localDate()+'T00:00:00');
   if(period==='all') return true;
-  if(period==='daily') return dateStr===currentDailyDate;
+  if(period==='daily') return dateStr>=currentDailyStart && dateStr<=currentDailyEnd;
   if(period==='weekly'){ const cut = new Date(today); cut.setDate(cut.getDate()-6); return d>=cut && d<=today; }
   if(period==='monthly'){ const cut = new Date(today); cut.setDate(cut.getDate()-29); return d>=cut && d<=today; }
   if(period==='month') return dateStr.slice(0,7)===currentSelectedMonth;
@@ -4066,7 +4220,15 @@ function filterByPeriodMachine(arr){
 // growing automatically as today advances.
 function getPeriodDates(period){
   const today = new Date(localDate()+'T00:00:00');
-  if(period==='daily') return [currentDailyDate];
+  if(period==='daily'){
+    // Every calendar day in the picked range (inclusive), same day-by-day pattern as "All"/"month" below
+    // - currentDailyStart/currentDailyEnd are kept normalized (start<=end) by the date-input handlers.
+    const arr = [];
+    const cur = new Date(currentDailyStart+'T00:00:00');
+    const end = new Date(currentDailyEnd+'T00:00:00');
+    while(cur<=end){ arr.push(localDate(cur)); cur.setDate(cur.getDate()+1); }
+    return arr.length ? arr : [currentDailyStart];
+  }
   if(period==='all'){
     const arr = [];
     const cur = new Date(REPORT_DAILY_START+'T00:00:00');
@@ -4152,17 +4314,44 @@ document.getElementById('period-filter').addEventListener('click', e=>{
   if(e.target.dataset.period){
     currentPeriod = e.target.dataset.period;
     document.querySelectorAll('#period-filter .pill-btn').forEach(b=>b.classList.toggle('active', b===e.target));
-    // The date picker only makes sense in Daily mode (pick which single day to view) - hidden otherwise.
+    // The date-range picker only makes sense in Daily mode (pick which day(s) to view) - hidden
+    // otherwise. The week-number/range label only makes sense in Weekly mode (rolling 7-day window).
     document.getElementById('dash-daily-date-wrap').classList.toggle('show', currentPeriod==='daily');
     document.getElementById('dash-month-wrap').classList.toggle('show', currentPeriod==='month');
+    document.getElementById('dash-weekly-label-wrap').classList.toggle('show', currentPeriod==='weekly');
+    if(currentPeriod==='weekly' && typeof refreshWeeklyLabel==='function') refreshWeeklyLabel();
     refreshDashboard();
   }
 });
-document.getElementById('dash-daily-date').value = currentDailyDate;
-document.getElementById('dash-daily-date').addEventListener('change', e=>{
-  currentDailyDate = e.target.value || localDate();
+document.getElementById('dash-daily-date-start').value = currentDailyStart;
+document.getElementById('dash-daily-date-end').value = currentDailyEnd;
+function applyDashDailyDateChange(){
+  const s = document.getElementById('dash-daily-date-start').value || localDate();
+  const e = document.getElementById('dash-daily-date-end').value || localDate();
+  // Keep the range valid even if the person picks an end date before the start date (or vice versa) -
+  // swap silently rather than reject, so the range always makes sense without an error dialog.
+  currentDailyStart = s <= e ? s : e;
+  currentDailyEnd = s <= e ? e : s;
+  document.getElementById('dash-daily-date-start').value = currentDailyStart;
+  document.getElementById('dash-daily-date-end').value = currentDailyEnd;
   refreshDashboard();
-});
+}
+document.getElementById('dash-daily-date-start').addEventListener('change', applyDashDailyDateChange);
+document.getElementById('dash-daily-date-end').addEventListener('change', applyDashDailyDateChange);
+// The Dashboard's "รายสัปดาห์ (7 วัน)" period is always the rolling 7-day window ending today (see
+// inRange's 'weekly' branch) - this shows which ISO week that window's end (today) falls in, plus the
+// window's explicit start/end dates, per request ("ถ้าเลือกสัปดาห์ ให้แสดงว่าเป็นสัปดาห์ที่เท่าไหร่
+// วันที่เท่าไหร่-วันที่ไหร่ในสัปดาห์ที่แสดง"). Recomputed on every refresh so it never goes stale as
+// today advances or the language changes.
+function refreshWeeklyLabel(){
+  const t = I18N[currentLang];
+  const today = localDate();
+  const startD = new Date(today+'T00:00:00'); startD.setDate(startD.getDate()-6);
+  const start = localDate(startD);
+  const weekStr = currentIsoWeekStr(); // e.g. "2026-W37"
+  const weekNo = parseInt(weekStr.split('-W')[1], 10);
+  document.getElementById('dash-weekly-label').textContent = `${t.weekOfLabel} ${weekNo} (${start} - ${today})`;
+}
 // Populates the "เลือกเดือน" (Select Month) dropdown with every calendar month from the plant's
 // go-live date (REPORT_DAILY_START) through the current month, most recent first - re-run on every
 // language switch too since nothing here is actually translated (labels are plain "YYYY-MM", matching
@@ -4204,6 +4393,7 @@ function setKpiChip(chipEl, ok, naFlag){
 
 function refreshDashboard(){
   const dict = I18N[currentLang];
+  if(currentPeriod==='weekly' && typeof refreshWeeklyLabel==='function') refreshWeeklyLabel();
   const defects = filterByPeriodMachine(getArr(LS.defects));
   const breakdowns = filterByPeriodMachine(getArr(LS.breakdowns));
   const perf = filterByPeriodMachine(getArr(LS.perf));
@@ -4816,7 +5006,10 @@ function renderBreakdownMiniDashboard(){
   const todaysBd = getArr(LS.breakdowns).filter(b=> b.date===todayStr && (breakdownFilter.machine==='all' || b.machine===breakdownFilter.machine));
   const hourMin = new Array(24).fill(0);
   todaysBd.forEach(b=>{
-    const hour = new Date(b.startDT).getHours();
+    // Uses the app's fixed Thailand (UTC+7) offset via tzShifted_, same as everywhere else the app derives
+    // a clock time from a stored instant - plain .getHours() would read whichever timezone the VIEWING
+    // device/browser happens to be set to, bucketing breakdowns into the wrong hour whenever that isn't ICT.
+    const hour = tzShifted_(new Date(b.startDT)).getUTCHours();
     hourMin[hour] += bdSecOf(b)/60;
   });
   const hourLabels = Array.from({length:24}, (_,h)=> String(h).padStart(2,'0')+':00');
@@ -5365,6 +5558,7 @@ function renameMachineInAllRecords(oldName, newName){
   if(typeof renderRejectMiniDashboard==='function') renderRejectMiniDashboard();
   if(typeof renderPerfNormalTable==='function') renderPerfNormalTable();
   if(typeof renderCaList==='function') renderCaList();
+  if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
 }
 
 /* ============================================================
@@ -5659,7 +5853,7 @@ function exportDefectExcel(){
   const header = [t.colNo, t.date, t.timeOccurred, t.collectTimeStart, t.collectTimeEnd, t.shift, t.machine, t.defectType, t.qtyFound, t.cause, t.causeNoteLabel, t.recorder, 'Photos'];
   const body = rows.map((r,i)=>{
     const typeName = r.defectType==='other' ? (r.defectTypeOther||typeLabel('other')) : typeLabel(r.defectType);
-    return [rows.length-i, r.date, r.time, r.timeStart||'', r.timeEnd||'', r.shift, r.machine, typeName, r.qty, r.cause?causeLabel(r.cause):'', r.causeNote||'', r.recorder, Array.isArray(r.photos)?r.photos.length:0];
+    return [rows.length-i, r.date, timeTH(timeOnly(r.time)), timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.shift, r.machine, typeName, r.qty, r.cause?causeLabel(r.cause):'', r.causeNote||'', r.recorder, Array.isArray(r.photos)?r.photos.length:0];
   });
   excelDownload([header, ...body], 'Defect', 'Defect_Report');
 }
@@ -5670,7 +5864,7 @@ function exportBreakdownExcel(){
   const body = rows.map((r,i)=>{
     const st = new Date(r.startDT), en = new Date(r.endDT);
     const causeName = r.cause==='other' ? (r.causeOther||bdCauseLabel('other')) : bdCauseLabel(r.cause);
-    return [rows.length-i, r.date, r.shift, r.machine, localTime(st), localTime(en), formatStopwatch(bdSecOf(r)), causeName, r.causeNote||'', r.recorder||'-'];
+    return [rows.length-i, r.date, r.shift, r.machine, timeTH(localTime(st)), timeTH(localTime(en)), formatStopwatch(bdSecOf(r)), causeName, r.causeNote||'', r.recorder||'-'];
   });
   excelDownload([header, ...body], 'Breakdown', 'Breakdown_Report');
 }
@@ -5680,7 +5874,7 @@ function exportPerfExcel(){
   const header = [t.colNo, t.date, t.collectTimeStart, t.collectTimeEnd, t.shift, t.machine, t.totalProduced, t.perfKpiDefectQty, t.goodQty, t.perfKpiBreakdownTime, t.defectRate, t.recorder];
   const body = rows.map((r,i)=>{
     const d = perfDerived(r);
-    return [rows.length-i, r.date, r.timeStart||'', r.timeEnd||'', r.shift, r.machine, r.total, d.defectQty, d.good, formatStopwatch(d.bdSec), +d.rate.toFixed(2), r.recorder||'-'];
+    return [rows.length-i, r.date, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.shift, r.machine, r.total, d.defectQty, d.good, formatStopwatch(d.bdSec), +d.rate.toFixed(2), r.recorder||'-'];
   });
   excelDownload([header, ...body], 'Performance', 'Performance_Report');
 }
@@ -5688,14 +5882,14 @@ function exportPerftestExcel(){
   const t = I18N[currentLang];
   const rows = filterEntries(getArr(LS.perftest), perftestFilter).slice().reverse();
   const header = [t.colNo, t.date, t.timeOccurred, t.shift, t.machine, t.testDuration, t.boxResult, t.speedResult, t.resultStatus, t.recorder];
-  const body = rows.map((r,i)=>[rows.length-i, r.date, r.time, r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.pass?t.pass:t.fail, r.recorder||'-']);
+  const body = rows.map((r,i)=>[rows.length-i, r.date, timeTH(timeOnly(r.time)), r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.pass?t.pass:t.fail, r.recorder||'-']);
   excelDownload([header, ...body], 'PerfTest', 'PerfTest_Report');
 }
 function exportPerfNormalExcel(){
   const t = I18N[currentLang];
   const rows = filterEntries(getArr(LS.perfNormal), perfNormalFilter).slice().reverse();
   const header = [t.colNo, t.date, t.timeOccurred, t.shift, t.machine, t.pnDurationLabel, t.pnBoxResultLabel, t.speedResult, t.recorder];
-  const body = rows.map((r,i)=>[rows.length-i, r.date, r.time, r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.recorder||'-']);
+  const body = rows.map((r,i)=>[rows.length-i, r.date, timeTH(timeOnly(r.time)), r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.recorder||'-']);
   excelDownload([header, ...body], 'PerfNormal', 'MachinePerformanceNormal_Report');
 }
 function exportRejectExcel(){
@@ -5704,7 +5898,7 @@ function exportRejectExcel(){
   const header = [t.colNo, t.date, t.shift, t.machine, t.rejectHeightShort, t.rejectTimeStart, t.rejectTimeEnd, t.rejectInputQtyShort, t.rejectRejectQtyShort, t.rejectRateShort, t.rejectDefectQtyShort, t.rejectDefectRateShort, t.recorder, t.rejectNoteLabel];
   const body = rows.map((r,i)=>{
     const d = rejectDerived(r);
-    return [rows.length-i, r.date, r.shift, r.machine, r.heightSetting, r.timeStart||'', r.timeEnd||'', r.inputQty, r.rejectQty, +d.rejectRate.toFixed(2), r.defectQty, +d.defectRate.toFixed(2), r.recorder||'-', r.note||''];
+    return [rows.length-i, r.date, r.shift, r.machine, r.heightSetting, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.inputQty, r.rejectQty, +d.rejectRate.toFixed(2), r.defectQty, +d.defectRate.toFixed(2), r.recorder||'-', r.note||''];
   });
   excelDownload([header, ...body], 'RejectTest', 'RejectStationTest_Report');
 }
@@ -6093,6 +6287,7 @@ function showRejectImportPreview(parsed){
     gsPushWhole(LS.rejectTest);
     overlay.classList.remove('open');
     renderRejectTable(); renderRejectMiniDashboard(); refreshDashboard();
+    if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
     alert(t.importDone+': '+(okCount+updateCount)+' '+t.recordsSuffix);
   };
 }
@@ -6132,11 +6327,42 @@ let caPhotoData = [];
 let caPreventItems = [];
 let caEditState = null; // id of the record currently being edited, or null when adding a new one
 
+// Occurrence stats for defect types, pulled live from the Defect module (getArr(LS.defects)) - same
+// byType frequency-counting approach already used by the Dashboard's "% Defect by Type" chart (see
+// refreshDashboard/refreshCharts) reused here so the CA defect-type dropdown and the printable table can
+// show/sort by the same live percentages. Grouped by type id (not split by the free-text "other" note),
+// matching the granularity of the dropdown's fixed option list.
+function caDefectTypeStats(){
+  const defects = getArr(LS.defects);
+  const byType = {};
+  let total = 0;
+  defects.forEach(d=>{
+    const k = d.defectType || 'other';
+    const q = parseFloat(d.qty) || 0;
+    byType[k] = (byType[k]||0) + q;
+    total += q;
+  });
+  return { byType, total };
+}
+// 4M analysis fields as (i18n key, value) pairs, skipping any left blank - shared by the on-screen table,
+// the printable card, and the printable table so all three list the same fields in the same order.
+function ca4mEntries(r){
+  const m4 = (r && r.analysis4M) || {};
+  return [['ca4mMan', m4.man], ['ca4mMachine', m4.machine], ['ca4mMaterial', m4.material], ['ca4mMethod', m4.method]]
+    .filter(([,v])=> v);
+}
 function buildCaDefectTypeSelect(){
   const sel = document.getElementById('ca-defect-type');
   const cur = sel.value;
-  sel.innerHTML = DEFECT_TYPES.map(t=>`<option value="${t.id}">${t[currentLang.toLowerCase()]}</option>`).join('');
-  sel.value = (cur && DEFECT_TYPES.some(t=>t.id===cur)) ? cur : (DEFECT_TYPES[0] ? DEFECT_TYPES[0].id : '');
+  const { byType, total } = caDefectTypeStats();
+  // Sorted most-frequent-first per request; types with no occurrences yet keep the master-list order
+  // among themselves (a stable sort, since their score is equally 0).
+  const sorted = DEFECT_TYPES.slice().sort((a,b)=> (byType[b.id]||0) - (byType[a.id]||0));
+  sel.innerHTML = sorted.map(t=>{
+    const pct = (total>0 && byType[t.id]) ? ` (${(byType[t.id]/total*100).toFixed(1)}%)` : '';
+    return `<option value="${t.id}">${t[currentLang.toLowerCase()]}${pct}</option>`;
+  }).join('');
+  sel.value = (cur && DEFECT_TYPES.some(t=>t.id===cur)) ? cur : (sorted[0] ? sorted[0].id : '');
   document.getElementById('ca-defect-type-other-wrap').classList.toggle('hidden', sel.value!=='other');
 }
 document.getElementById('ca-defect-type').addEventListener('change', (e)=>{
@@ -6219,6 +6445,11 @@ function resetCaForm(){
   caPreventItems = [];
   document.getElementById('ca-defect-type-other').value = '';
   document.getElementById('ca-root-cause').value = '';
+  document.getElementById('ca-4m-man').value = '';
+  document.getElementById('ca-4m-machine').value = '';
+  document.getElementById('ca-4m-material').value = '';
+  document.getElementById('ca-4m-method').value = '';
+  document.getElementById('ca-control-points').value = '';
   document.getElementById('ca-photo').value = ''; document.getElementById('ca-photo-camera').value = '';
   renderCaPhotoPreview();
   renderCaPreventList();
@@ -6245,6 +6476,12 @@ window.editCaItem = function(id){
   document.getElementById('ca-defect-type-other-wrap').classList.toggle('hidden', rec.defectType!=='other');
   document.getElementById('ca-defect-type-other').value = rec.defectTypeOther || '';
   document.getElementById('ca-root-cause').value = rec.rootCause || '';
+  const m4 = rec.analysis4M || {};
+  document.getElementById('ca-4m-man').value = m4.man || '';
+  document.getElementById('ca-4m-machine').value = m4.machine || '';
+  document.getElementById('ca-4m-material').value = m4.material || '';
+  document.getElementById('ca-4m-method').value = m4.method || '';
+  document.getElementById('ca-control-points').value = rec.controlPoints || '';
   renderCaPhotoPreview();
   renderCaPreventList();
   document.getElementById('ca-save').textContent = I18N[currentLang].settingsSaveBtn;
@@ -6266,6 +6503,13 @@ document.getElementById('ca-save').addEventListener('click', ()=>{
     defectTypeOther: defectType==='other' ? document.getElementById('ca-defect-type-other').value : '',
     photos: caPhotoData.slice(),
     rootCause,
+    analysis4M: {
+      man: document.getElementById('ca-4m-man').value.trim(),
+      machine: document.getElementById('ca-4m-machine').value.trim(),
+      material: document.getElementById('ca-4m-material').value.trim(),
+      method: document.getElementById('ca-4m-method').value.trim()
+    },
+    controlPoints: document.getElementById('ca-control-points').value.trim(),
     preventiveActions: caPreventItems.slice()
   };
   if(caEditState){
@@ -6283,51 +6527,68 @@ document.getElementById('ca-save').addEventListener('click', ()=>{
 
 const caFilter = setupEntryFilter('ca', ()=>{ renderCaList(); });
 
+// Rebuilt as a proper analysis table (per request: "professional-looking, printable"), replacing the
+// earlier card-per-record layout. Date/Recorder are deliberately NOT shown here (per the user's own
+// clarification: hide only from the card/table display) - both fields stay in the entry form, stay
+// stored on every record, and still drive caFilter's date+machine filtering above.
 function renderCaList(){
   const t = I18N[currentLang];
   const list = filterEntries(getArr(LS.correctiveActions), caFilter).slice().reverse();
-  const container = document.getElementById('ca-card-list');
+  const tbody = document.getElementById('ca-card-list');
   if(list.length===0){
-    container.innerHTML = `<div style="text-align:center;color:var(--muted);padding:20px 0;">${t.noData}</div>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px 0;">${t.noData}</td></tr>`;
     return;
   }
-  container.innerHTML = list.map(r=>{
+  const { byType, total } = caDefectTypeStats();
+  tbody.innerHTML = list.map((r,i)=>{
     const typeName = r.defectType==='other' ? (r.defectTypeOther||typeLabel('other')) : typeLabel(r.defectType);
+    const pctVal = (total>0 && byType[r.defectType]) ? (byType[r.defectType]/total*100).toFixed(1) : null;
+    const pctHtml = pctVal!==null ? `<div class="ca-type-pct">${pctVal}%</div>` : '';
     const photos = Array.isArray(r.photos) ? r.photos : [];
     const photosHtml = photos.length
-      ? `<div class="ca-card-photos">${photos.map(p=>`<img src="${p}" onclick="openPhotoModal('${p.replace(/'/g,"\\'")}')">`).join('')}</div>`
-      : '';
+      ? `<div class="ca-table-photos">${photos.map(p=>`<img src="${p}" onclick="openPhotoModal('${p.replace(/'/g,"\\'")}')">`).join('')}</div>`
+      : '-';
+    const m4Entries = ca4mEntries(r);
+    const m4Html = m4Entries.length
+      ? m4Entries.map(([k])=>`<div class="ca-4m-line"><b>${t[k]}:</b> <span></span></div>`).join('')
+      : '-';
     const preventLis = (r.preventiveActions||[]).map(()=>'<li></li>').join('');
-    return `<div class="ca-card" data-id="${r.id}">
-      <div class="ca-card-head">
-        <div>
-          <div class="ca-card-title">${dateOnly(r.date)} — ${r.machine||'-'} — ${typeName}</div>
-          <div class="ca-card-meta">${t.recorder}: ${r.recorder||'-'}</div>
-        </div>
+    return `<tr data-id="${r.id}">
+      <td>${list.length-i}</td>
+      <td>${photosHtml}</td>
+      <td>${typeName}${pctHtml}</td>
+      <td class="ca-wrap">${m4Html}</td>
+      <td class="ca-wrap"></td>
+      <td class="ca-wrap"></td>
+      <td class="ca-wrap"><ol class="ca-table-prevent">${preventLis}</ol></td>
+      <td>
         <div class="ca-card-actions">
           <button class="small-btn" onclick="editCaItem('${r.id}')">${t.settingsEditBtn}</button>
           <button class="small-btn" onclick="printCaItem('${r.id}')">${t.caPrintBtn}</button>
           <button class="small-btn" onclick="deleteRow('${LS.correctiveActions}','${r.id}', renderCaList)">${t.delete}</button>
         </div>
-      </div>
-      ${photosHtml}
-      <h4>${t.caRootCauseTitle}</h4>
-      <div class="ca-card-rootcause"></div>
-      <h4>${t.caPreventiveTitle}</h4>
-      <ol class="ca-card-prevent-list">${preventLis}</ol>
-    </div>`;
+      </td>
+    </tr>`;
   }).join('');
-  // Fill root-cause + preventive-action text via textContent so anything the user typed that looks
-  // like HTML renders literally rather than as markup.
+  // Fill 4M values, control points, root cause and preventive-action text via textContent (not
+  // innerHTML), so anything typed that looks like HTML/markup renders literally - same convention as
+  // the previous card layout.
   list.forEach(r=>{
-    const card = container.querySelector(`.ca-card[data-id="${r.id}"]`);
-    if(!card) return;
-    card.querySelector('.ca-card-rootcause').textContent = r.rootCause || '';
-    const lis = card.querySelectorAll('.ca-card-prevent-list li');
-    (r.preventiveActions||[]).forEach((p,i)=>{ if(lis[i]) lis[i].textContent = p; });
+    const row = tbody.querySelector(`tr[data-id="${r.id}"]`);
+    if(!row) return;
+    const cells = row.querySelectorAll(':scope > td');
+    const m4Entries = ca4mEntries(r);
+    const m4Spans = row.querySelectorAll('.ca-4m-line span');
+    m4Spans.forEach((sp,i)=>{ sp.textContent = m4Entries[i] ? m4Entries[i][1] : ''; });
+    cells[4].textContent = r.controlPoints || '-';
+    cells[5].textContent = r.rootCause || '';
+    const lis = cells[6].querySelectorAll('li');
+    (r.preventiveActions||[]).forEach((p,idx)=>{ if(lis[idx]) lis[idx].textContent = p; });
   });
 }
 
+// Single-record printable WI sheet. Date/Recorder are left out here too (same "card/table display"
+// hiding the user asked for) - both stay on the record/entry-form/filter as always.
 window.printCaItem = function(id){
   const rec = getArr(LS.correctiveActions).find(r=>r.id===id);
   if(!rec) return;
@@ -6335,15 +6596,18 @@ window.printCaItem = function(id){
   const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const typeName = rec.defectType==='other' ? (rec.defectTypeOther||typeLabel('other')) : typeLabel(rec.defectType);
   const photos = Array.isArray(rec.photos) ? rec.photos : [];
+  const m4Html = ca4mEntries(rec).map(([k,v])=>`<div class="ca-4m-line"><b>${esc(t[k])}:</b> ${esc(v)}</div>`).join('');
+  document.getElementById('ca-print-table-area').innerHTML = '';
   const area = document.getElementById('ca-print-area');
   area.innerHTML = `<div class="ca-card">
     <div class="ca-card-head">
       <div>
-        <div class="ca-card-title">${esc(dateOnly(rec.date))} — ${esc(rec.machine||'-')} — ${esc(typeName)}</div>
-        <div class="ca-card-meta">${esc(t.recorder)}: ${esc(rec.recorder||'-')}</div>
+        <div class="ca-card-title">${esc(rec.machine||'-')} — ${esc(typeName)}</div>
       </div>
     </div>
     ${photos.length ? `<div class="ca-card-photos">${photos.map(p=>`<img src="${p}">`).join('')}</div>` : ''}
+    ${m4Html ? `<h4>${esc(t.ca4mTitle)}</h4><div>${m4Html}</div>` : ''}
+    ${rec.controlPoints ? `<h4>${esc(t.caControlPoints)}</h4><div class="ca-card-rootcause">${esc(rec.controlPoints)}</div>` : ''}
     <h4>${esc(t.caRootCauseTitle)}</h4>
     <div class="ca-card-rootcause">${esc(rec.rootCause||'')}</div>
     <h4>${esc(t.caPreventiveTitle)}</h4>
@@ -6352,14 +6616,43 @@ window.printCaItem = function(id){
   window.print();
 };
 
+// Whole-list printable table (per request: the analysis table itself should be printable). Reuses the
+// same #ca-print-area print-CSS trick via a second dedicated area, toggled by a body class so it doesn't
+// show up when printing a single WI card (printCaItem above) and vice versa.
+window.printCaTable = function(){
+  const t = I18N[currentLang];
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const list = filterEntries(getArr(LS.correctiveActions), caFilter).slice().reverse();
+  const { byType, total } = caDefectTypeStats();
+  const rows = list.map((r,i)=>{
+    const typeName = r.defectType==='other' ? (r.defectTypeOther||typeLabel('other')) : typeLabel(r.defectType);
+    const pctVal = (total>0 && byType[r.defectType]) ? ` (${(byType[r.defectType]/total*100).toFixed(1)}%)` : '';
+    const m4Html = ca4mEntries(r).map(([k,v])=>`<div class="ca-4m-line"><b>${esc(t[k])}:</b> ${esc(v)}</div>`).join('') || '-';
+    const preventHtml = (r.preventiveActions||[]).length
+      ? `<ol class="ca-table-prevent">${r.preventiveActions.map(p=>`<li>${esc(p)}</li>`).join('')}</ol>` : '-';
+    return `<tr><td>${list.length-i}</td><td>${esc(typeName)}${esc(pctVal)}</td><td>${m4Html}</td><td>${esc(r.controlPoints||'-')}</td><td>${esc(r.rootCause||'')}</td><td>${preventHtml}</td></tr>`;
+  }).join('');
+  const area = document.getElementById('ca-print-table-area');
+  area.innerHTML = `<h2>${esc(t.caListTitle)}</h2><table><thead><tr>
+    <th>${esc(t.colNo)}</th><th>${esc(t.defectType)}</th><th>${esc(t.ca4mTitle)}</th><th>${esc(t.caControlPoints)}</th>
+    <th>${esc(t.caRootCauseTitle)}</th><th>${esc(t.caPreventiveTitle)}</th>
+  </tr></thead><tbody>${rows || `<tr><td colspan="6" style="text-align:center;">${esc(t.noData)}</td></tr>`}</tbody></table>`;
+  document.getElementById('ca-print-area').innerHTML = '';
+  document.body.classList.add('ca-printing-table');
+  window.print();
+};
+window.addEventListener('afterprint', ()=> document.body.classList.remove('ca-printing-table'));
+document.getElementById('ca-print-table-btn').addEventListener('click', printCaTable);
+
 function exportCaExcel(){
   const t = I18N[currentLang];
   const rows = filterEntries(getArr(LS.correctiveActions), caFilter).slice().reverse();
-  const header = [t.colNo, t.date, t.machine, t.defectType, t.caRootCauseTitle, t.caPreventiveTitle, t.recorder, 'Photos'];
+  const header = [t.colNo, t.date, t.machine, t.defectType, t.ca4mMan, t.ca4mMachine, t.ca4mMaterial, t.ca4mMethod, t.caControlPoints, t.caRootCauseTitle, t.caPreventiveTitle, t.recorder, 'Photos'];
   const body = rows.map((r,i)=>{
     const typeName = r.defectType==='other' ? (r.defectTypeOther||typeLabel('other')) : typeLabel(r.defectType);
     const preventJoined = (r.preventiveActions||[]).map((p,idx)=>`${idx+1}. ${p}`).join('\n');
-    return [rows.length-i, r.date, r.machine, typeName, r.rootCause||'', preventJoined, r.recorder||'-', Array.isArray(r.photos)?r.photos.length:0];
+    const m4 = r.analysis4M || {};
+    return [rows.length-i, r.date, r.machine, typeName, m4.man||'', m4.machine||'', m4.material||'', m4.method||'', r.controlPoints||'', r.rootCause||'', preventJoined, r.recorder||'-', Array.isArray(r.photos)?r.photos.length:0];
   });
   excelDownload([header, ...body], 'CorrectiveAction', 'CorrectiveAction_Report');
 }
