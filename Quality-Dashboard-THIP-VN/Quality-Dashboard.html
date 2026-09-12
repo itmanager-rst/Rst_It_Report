@@ -2458,7 +2458,7 @@ importSummaryOk:"แถวที่พร้อมนำเข้า", importSum
 importConfirmBtn:"ยืนยันนำเข้า", importCancelBtn:"ยกเลิก", importNoValidRows:"ไม่มีแถวที่ถูกต้องให้นำเข้า",
 importDone:"นำเข้าสำเร็จ", recordsSuffix:"รายการ",
 importErrRequired:"ข้อมูลไม่ครบ (วันที่/เครื่องจักร/ประเภท/จำนวน)", importErrUnknownType:"ไม่พบประเภท Defect นี้",
-importErrUnknownCause:"ไม่พบสาเหตุนี้", importErrBadMachine:"ไม่พบเครื่องจักรนี้", importErrBadQty:"จำนวนไม่ถูกต้อง",
+importErrUnknownCause:"ไม่พบสาเหตุนี้", importErrBadMachine:"ไม่พบเครื่องจักรนี้", importErrAmbiguousMachine:"ชื่อนี้ตรงกับเครื่องจักรมากกว่า 1 เครื่อง กรุณาระบุให้ชัดเจน", importErrBadQty:"จำนวนไม่ถูกต้อง",
 importErrBadDate:"วันที่ไม่ถูกต้อง", importParsing:"กำลังอ่านไฟล์...", importFileTypeErr:"รองรับเฉพาะไฟล์ .xlsx, .xls หรือ .pdf",
 importPdfNote:"หมายเหตุ: รองรับเฉพาะ PDF ที่เป็นข้อความ/ตาราง (เช่นไฟล์ที่พิมพ์หรือ Export มา) ไม่รองรับ PDF ที่เป็นรูปภาพสแกน/ลายมือเขียน กรุณาใช้ไฟล์ Excel แทนสำหรับกรณีนั้น",
 importPdfNoRows:"ไม่พบข้อมูลตารางในไฟล์ PDF นี้ (อาจเป็นไฟล์สแกน/รูปภาพ) กรุณาใช้ไฟล์ Excel แทน",
@@ -2569,7 +2569,7 @@ importSummaryOk:"Rows ready to import", importSummaryError:"Rows with issues (wo
 importConfirmBtn:"Confirm Import", importCancelBtn:"Cancel", importNoValidRows:"No valid rows to import",
 importDone:"Imported", recordsSuffix:"records",
 importErrRequired:"Missing data (date/machine/type/qty)", importErrUnknownType:"Unknown Defect Type",
-importErrUnknownCause:"Unknown Cause", importErrBadMachine:"Unknown machine", importErrBadQty:"Invalid quantity",
+importErrUnknownCause:"Unknown Cause", importErrBadMachine:"Unknown machine", importErrAmbiguousMachine:"This name matches more than one machine - please specify", importErrBadQty:"Invalid quantity",
 importErrBadDate:"Invalid date", importParsing:"Reading file...", importFileTypeErr:"Only .xlsx, .xls, or .pdf files are supported",
 importPdfNote:"Note: only text/table-based PDFs (e.g. printed or exported files) are supported. Scanned or handwritten PDFs are not supported - please use an Excel file for those instead.",
 importPdfNoRows:"No table data found in this PDF (it may be a scanned image). Please use an Excel file instead.",
@@ -2680,7 +2680,7 @@ importSummaryOk:"Số dòng sẵn sàng nhập", importSummaryError:"Số dòng 
 importConfirmBtn:"Xác nhận nhập", importCancelBtn:"Hủy", importNoValidRows:"Không có dòng hợp lệ để nhập",
 importDone:"Đã nhập", recordsSuffix:"mục",
 importErrRequired:"Thiếu dữ liệu (ngày/máy/loại/số lượng)", importErrUnknownType:"Không tìm thấy loại Defect này",
-importErrUnknownCause:"Không tìm thấy nguyên nhân này", importErrBadMachine:"Không tìm thấy máy này", importErrBadQty:"Số lượng không hợp lệ",
+importErrUnknownCause:"Không tìm thấy nguyên nhân này", importErrBadMachine:"Không tìm thấy máy này", importErrAmbiguousMachine:"Tên này khớp với nhiều hơn 1 máy - vui lòng chỉ rõ", importErrBadQty:"Số lượng không hợp lệ",
 importErrBadDate:"Ngày không hợp lệ", importParsing:"Đang đọc file...", importFileTypeErr:"Chỉ hỗ trợ file .xlsx, .xls hoặc .pdf",
 importPdfNote:"Lưu ý: chỉ hỗ trợ PDF dạng văn bản/bảng (ví dụ file in hoặc xuất ra). Không hỗ trợ PDF quét/viết tay - vui lòng dùng file Excel cho trường hợp đó.",
 importPdfNoRows:"Không tìm thấy dữ liệu bảng trong file PDF này (có thể là ảnh quét). Vui lòng dùng file Excel thay thế.",
@@ -6010,6 +6010,230 @@ function parseExcelFile(file){
     reader.readAsArrayBuffer(file);
   });
 }
+// Reads EVERY sheet of the workbook (unlike parseExcelFile above, which only ever reads the first sheet -
+// the flat one-row-per-defect import format only ever lived on sheet 1). Needed for the hourly "Problem x
+// Time" pivot report import below, whose data is split across several date-range sheets. Same SheetJS
+// read options as parseExcelFile for the sheets it does read, so behavior for a plain flat file is
+// unchanged either way.
+function parseExcelWorkbookAllSheets(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      try{
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        const sheetsData = {};
+        wb.SheetNames.forEach(name=>{
+          sheetsData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:''});
+        });
+        resolve(sheetsData);
+      }catch(err){ reject(err); }
+    };
+    reader.onerror = ()=>reject(new Error('FileReader error'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+/* ------------------------------------------------------------------------------------------------------
+   DEFECT IMPORT - HOURLY "PROBLEM x TIME" PIVOT REPORT (per request: an external automation report, one
+   row per Defect Type with a count per hour-of-day column, machines and dates stacked as merged-cell
+   section markers rather than their own columns) - a completely different shape from the flat
+   one-row-per-defect format above, auto-detected and routed separately so both formats work from the
+   same Import button with no extra UI.
+
+   Layout observed in the source report (and assumed stable for this report generator going forward):
+   - One or more sheets, each covering a date range, with a header row containing 24 columns literally
+     named "00:00-01:00" .. "23:00-24:00" (the hour buckets) plus a trailing "Total" column. Sheets that
+     don't have this header shape (e.g. the report's own per-machine "* Summary" sheets, which are a
+     daily - not hourly - rollup of the SAME data) are skipped entirely, so their totals are never
+     double-counted against the hourly sheets.
+   - Within a sheet, data is grouped in stacked blocks: a machine-name marker cell ("30P"/"50P"/"60P" etc,
+     via a vertically-merged cell so it only has a value on the block's first row), then a date marker
+     cell a couple of rows later (same merged-cell pattern), then one row per Defect Type with that type's
+     count in each hour column, ending in an aggregate "Total NG" row (skipped - it's a sum, not a type).
+     Both markers are carried forward across the blank/merged rows in between, so every data row is
+     attributed to whichever machine/date marker most recently appeared above it.
+   - Machine markers are short line prefixes ("30P") rather than the app's full machine names
+     ("30P-Zone 1") - matched via matchMachinePivot below, which falls back to a prefix match when there's
+     no exact/Zone-N match. If a prefix matches more than one current machine (e.g. "50P" could mean
+     either "50P-Zone 2" or "50P-Zone 3"), the row is flagged as an error rather than silently guessing -
+     an Admin can resolve it manually rather than have defects mis-attributed to the wrong zone.
+   - Date markers are the report's own known quirk: whatever wrote this file encoded dates as "D/M" (day/
+     month, no year) but a day of 12 or lower then got auto-parsed by the spreadsheet software as "M/D",
+     producing an actual Date object with month and day swapped (e.g. intended "1/9" = Sept 1 comes out
+     as the Date value for Jan 9). A day above 12 can't be misread as a month, so those stay plain "D/M"
+     text and need no such correction. pivotResolveDateParts below undoes exactly this swap for Date
+     values, and parses text "D/M" values directly (day first, per the same Thai/EU convention) - the
+     year isn't present in either case, so it's taken from the first real Date value found anywhere in
+     the workbook (falling back to the current year if the file has none at all, e.g. every date in it
+     happens to be day 13+ and none could be auto-converted).
+   - Each imported row here is ONE (date, machine, Defect Type, hour) reading with a non-zero count - the
+     hour becomes that record's time (e.g. "07:00"), and its Shift is derived the same way the rest of the
+     app derives Shift from a clock time (shiftFromTime). A Defect Type text that doesn't match one of the
+     app's configured types is kept verbatim as an "other" entry (defectTypeOther), same fallback the flat
+     importer above already uses - no data is ever dropped for an unrecognized label.
+------------------------------------------------------------------------------------------------------ */
+// A prefix-tolerant machine matcher for this report's short "30P"/"50P"/"60P" style labels, which don't
+// carry the "Zone N" suffix matchMachineForImportLine (defined further below, for the Reject Station Test
+// import) already knows how to match. Tries that exact/Zone-N match first, then falls back to a
+// normalized-prefix match against the current MACHINES list. Returns { match, ambiguous } rather than a
+// bare machine name/null, so a label that prefix-matches MORE THAN ONE current machine (e.g. "50P" against
+// both "50P-Zone 2" and "50P-Zone 3") can be reported as a genuine ambiguity instead of silently guessing.
+function matchMachinePivot(raw){
+  const cleaned = String(raw||'').trim();
+  if(!cleaned) return { match:null, ambiguous:false };
+  const exact = (typeof matchMachineForImportLine==='function') ? matchMachineForImportLine(cleaned) : null;
+  if(exact) return { match:exact, ambiguous:false };
+  const norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const nc = norm(cleaned);
+  if(!nc) return { match:null, ambiguous:false };
+  const candidates = MACHINES.filter(m=> norm(m).startsWith(nc));
+  if(candidates.length===1) return { match:candidates[0], ambiguous:false };
+  if(candidates.length>1) return { match:null, ambiguous:true };
+  return { match:null, ambiguous:false };
+}
+// Recovers {year,month,day} from one of this report's date-marker cells - see the block comment above for
+// why a Date value needs its month/day swapped back, and why a "D/M" text value doesn't.
+function pivotResolveDateParts(raw, fallbackYear){
+  if(raw instanceof Date && !isNaN(raw)){
+    const day = raw.getMonth()+1, month = raw.getDate(), year = raw.getFullYear();
+    if(month>=1 && month<=12 && day>=1 && day<=31) return { year, month, day };
+    return null;
+  }
+  if(typeof raw === 'string'){
+    const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if(m){
+      const day = +m[1], month = +m[2];
+      let year = fallbackYear;
+      if(m[3]) year = m[3].length===2 ? (2000+ +m[3]) : +m[3];
+      if(month>=1 && month<=12 && day>=1 && day<=31) return { year, month, day };
+    }
+  }
+  return null;
+}
+// Detects the hourly pivot header shape (24 "HH:00-HH:00" columns) - used both to pick which sheets to
+// parse as pivot data and to decide, in the file-picker handler below, whether the whole file should be
+// treated as this format at all rather than the original flat one-row-per-defect format.
+function isDefectPivotHeaderRow(header){
+  if(!Array.isArray(header)) return false;
+  const hourCols = header.filter(h=>/^\s*\d{1,2}:00-\d{1,2}:00\s*$/.test(String(h==null?'':h))).length;
+  return hourCols >= 10;
+}
+function parseDefectPivotSheet(rows, fallbackYear){
+  const header = rows[0]||[];
+  if(!isDefectPivotHeaderRow(header)) return null; // not a pivot-shaped sheet (e.g. a "* Summary" sheet) - skip
+  const t = I18N[currentLang];
+  const hourCols = [];
+  header.forEach((h,idx)=>{
+    const m = String(h==null?'':h).trim().match(/^(\d{1,2}):00-(\d{1,2}):00$/);
+    if(m) hourCols.push({ idx, hour: parseInt(m[1],10) });
+  });
+  const typeColIdx = Math.min(...hourCols.map(h=>h.idx)) - 1; // "Problem" label column sits right before the first hour column
+  const markerColIdxs = [0,1]; // machine/date marker cells appear (via merged cells) in column A or B
+
+  const results = [];
+  let currentMachine = null; // { match, ambiguous } from matchMachinePivot, or null if not yet seen - a
+  // machine marker always precedes or coincides with the start of its block, so this can be applied
+  // immediately as each row is scanned (unlike the date marker below).
+  let currentMachineRaw = '';
+
+  // The date marker is NOT reliably at the start of its own block - it sits a few rows in (how many
+  // varies), so a row read BEFORE the date marker appears would wrongly get the PREVIOUS block's date (or
+  // none at all) if applied immediately. Instead, buffer each block's rows and flush them together once
+  // the block's end is reached - marked by its aggregate "Total ..." row (present in every block) - by
+  // which point the block's one date marker has always already been seen.
+  let pendingDateParts = null; // date marker seen so far within the block currently being buffered
+  let pendingDateRaw = '';
+  let buffered = []; // [{ typeRaw, row, machine, machineRaw }]
+
+  const flush = ()=>{
+    buffered.forEach(({ typeRaw, row, machine: machineAtRow, machineRaw: machineRawAtRow })=>{
+      hourCols.forEach(({idx,hour})=>{
+        const rawQty = row[idx];
+        const qty = (typeof rawQty === 'number') ? rawQty : parseFloat(rawQty);
+        if(!qty || isNaN(qty) || qty<=0) return; // only occurrences that actually happened get a record
+
+        const errors = [];
+        if(!pendingDateParts) errors.push(t.importErrBadDate);
+        let machine = null;
+        if(!machineAtRow || (!machineAtRow.match && !machineAtRow.ambiguous)) errors.push(t.importErrBadMachine);
+        else if(machineAtRow.ambiguous) errors.push(t.importErrAmbiguousMachine);
+        else machine = machineAtRow.match;
+
+        const dateVal = pendingDateParts ? (pendingDateParts.year+'-'+String(pendingDateParts.month).padStart(2,'0')+'-'+String(pendingDateParts.day).padStart(2,'0')) : '';
+        const timeVal = String(hour).padStart(2,'0')+':00';
+        const shift = shiftFromTime(hour, 0);
+
+        let defectType=null, defectTypeOther='';
+        const typeMatch = matchMasterItem(DEFECT_TYPES, typeRaw);
+        if(typeMatch) defectType = typeMatch.id;
+        else if(DEFECT_TYPES.some(x=>x.id==='other')){ defectType='other'; defectTypeOther=typeRaw; }
+        else errors.push(t.importErrUnknownType);
+
+        const recorder = t.rejectImportAutoRecorder;
+        const display = { date: dateVal||pendingDateRaw, time: timeVal, shift, machine: machine||machineRawAtRow,
+          defectType: defectType==='other'?defectTypeOther:(defectType?typeLabel(defectType):typeRaw),
+          qty, cause: '', recorder };
+
+        if(errors.length>0){ results.push({ status:'error', errors, record:null, display }); return; }
+        results.push({ status:'ok', errors:[], display, record:{
+          id: uid(), recorder, date: dateVal, time: timeVal, shift, machine, defectType, defectTypeOther,
+          qty, cause:'', causeNote:'', photos: []
+        }});
+      });
+    });
+    buffered = [];
+    pendingDateParts = null;
+    pendingDateRaw = '';
+  };
+
+  for(let r=1; r<rows.length; r++){
+    const row = rows[r];
+    if(!Array.isArray(row)) continue;
+    markerColIdxs.forEach(ci=>{
+      const cell = row[ci];
+      if(cell===undefined || cell===null || String(cell).trim()==='') return;
+      const dp = pivotResolveDateParts(cell, fallbackYear);
+      if(dp){ pendingDateParts = dp; pendingDateRaw = String(cell); return; }
+      const mm = matchMachinePivot(cell);
+      if(mm.match || mm.ambiguous){ currentMachine = mm; currentMachineRaw = String(cell); }
+    });
+
+    const typeRaw = String(row[typeColIdx]==null?'':row[typeColIdx]).trim();
+    if(!typeRaw) continue; // blank separator row
+    if(/^total/i.test(typeRaw)){ flush(); continue; } // aggregate row - marks the end of this block
+    if(!currentMachine && !pendingDateParts) continue; // stray content above the first real block
+
+    buffered.push({ typeRaw, row, machine: currentMachine, machineRaw: currentMachineRaw });
+  }
+  flush(); // last block may not end with a recognized "Total" row - flush whatever's left
+  return results;
+}
+function workbookHasPivotSheet(sheetsData){
+  return Object.values(sheetsData).some(rows=> rows && isDefectPivotHeaderRow(rows[0]));
+}
+// The year isn't present anywhere in a pivot date marker (see the block comment above) - pulled instead
+// from the first genuine Date value found anywhere in the workbook, or the current year as a last resort.
+function detectPivotReportYear(sheetsData){
+  for(const rows of Object.values(sheetsData)){
+    if(!Array.isArray(rows)) continue;
+    for(const row of rows){
+      if(!Array.isArray(row)) continue;
+      for(const cell of row){
+        if(cell instanceof Date && !isNaN(cell)) return cell.getFullYear();
+      }
+    }
+  }
+  return new Date().getFullYear();
+}
+function parseDefectPivotWorkbook(sheetsData){
+  const fallbackYear = detectPivotReportYear(sheetsData);
+  let allResults = [];
+  Object.keys(sheetsData).forEach(name=>{
+    const sheetResults = parseDefectPivotSheet(sheetsData[name], fallbackYear);
+    if(sheetResults) allResults = allResults.concat(sheetResults);
+  });
+  return allResults;
+}
 function parsePdfFile(file){
   return new Promise((resolve,reject)=>{
     const reader = new FileReader();
@@ -6083,7 +6307,18 @@ document.getElementById('d-import-file').addEventListener('change', (e)=>{
     showImportPreview(results);
   };
   if(ext==='xlsx' || ext==='xls'){
-    parseExcelFile(file).then(handleRows).catch(err=>{
+    // Read every sheet up front (cheap - it's already in memory) so the hourly "Problem x Time" pivot
+    // report (data split across several date-range sheets) can be detected before deciding how to parse
+    // it - a plain flat one-row-per-defect file only ever has data on sheet 1, so that path is unchanged.
+    parseExcelWorkbookAllSheets(file).then(sheetsData=>{
+      if(workbookHasPivotSheet(sheetsData)){
+        const results = parseDefectPivotWorkbook(sheetsData);
+        if(results.length===0){ alert(t.importPdfNoRows); return; }
+        showImportPreview(results);
+        return;
+      }
+      handleRows(sheetsData[Object.keys(sheetsData)[0]]);
+    }).catch(err=>{
       console.error(err);
       alert((currentLang==='TH'?'อ่านไฟล์ไม่สำเร็จ: ':'Failed to read file: ')+err.message);
     });
