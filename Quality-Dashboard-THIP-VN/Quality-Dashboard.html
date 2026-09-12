@@ -798,8 +798,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       </div>
       <div class="field">
         <label data-i18n="totalProduced">จำนวนผลิตทั้งหมด (ชิ้น)</label>
-        <input type="number" id="p-total" min="0" value="0" readonly>
-        <div class="mini-dash-note" data-i18n="perfTotalFromRejectNote">ดึงข้อมูลอัตโนมัติจากยอด Input รวมของวันที่/เครื่องจักรนี้ในหน้าทดสอบ Reject Station</div>
+        <input type="number" id="p-total" min="0" value="0">
       </div>
     </div>
     <div class="grid">
@@ -831,6 +830,8 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <h2 data-i18n="recentEntries">รายการล่าสุด</h2>
       <div class="export-import-row">
         <button type="button" class="btn-export" id="p-export-btn" data-i18n="exportExcel">Export Excel</button>
+        <button type="button" class="btn-import import-only" id="p-import-btn" data-i18n="importPerfData">Import (CSV/Excel)</button>
+        <input type="file" id="p-import-file" accept=".csv,.xlsx,.xls" style="display:none;">
       </div>
     </div>
     <div class="mini-filter-row">
@@ -1962,7 +1963,6 @@ function rerenderEverythingAfterSync(){
   if(typeof renderBreakdownMiniDashboard==='function') renderBreakdownMiniDashboard();
   if(typeof renderPerfTable==='function') renderPerfTable();
   if(typeof renderPerfMiniDashboard==='function') renderPerfMiniDashboard();
-  if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
   if(typeof renderPerftestTable==='function') renderPerftestTable();
   if(typeof renderPerftestDashboard==='function') renderPerftestDashboard();
   if(typeof renderRejectTable==='function') renderRejectTable();
@@ -2179,10 +2179,6 @@ function rerenderModuleAfterEdit(lsKey){
   else if(lsKey===LS.perftest){ renderPerftestTable(); renderPerftestDashboard(); }
   else if(lsKey===LS.rejectTest){ renderRejectTable(); renderRejectMiniDashboard(); }
   else if(lsKey===LS.perfNormal){ renderPerfNormalTable(); }
-  // Reject Station Test edits feed Performance's auto-computed "จำนวนที่ผลิตทั้งหมด" (see
-  // refreshPerfTotalFromReject) - re-pull it too so an edit made from Reject's own edit modal is
-  // reflected immediately if the Performance page is already open to the same date/machine.
-  if(lsKey===LS.rejectTest && typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
   refreshDashboard();
 }
 document.getElementById('edit-modal-save').addEventListener('click', ()=>{
@@ -2423,7 +2419,7 @@ qtyFound:"จำนวนที่พบ Defect", cause:"สาเหตุท�
 breakdownFormTitle:"บันทึก Breakdown เครื่องจักร", breakdownCause:"สาเหตุ Breakdown", timing:"เวลาการหยุดเครื่อง",
 startTime:"เวลา Start", endTime:"เวลา End", breakdownMin:"เวลา Breakdown (นาที)", btnStart:"Start", btnEnd:"End",
 btnRunSave:"Run / บันทึก", reset:"ล้างฟอร์ม",
-perfFormTitle:"บันทึก Performance กำลังการผลิต", totalProduced:"จำนวนผลิตทั้งหมด (ชิ้น)", perfTotalFromRejectNote:"ดึงข้อมูลอัตโนมัติจากยอด Input รวมของวันที่/เครื่องจักรนี้ในหน้าทดสอบ Reject Station", perfNormalFormTitle:"Machine Performance : Normal (บันทึก Performance ปกติของเครื่อง)",
+perfFormTitle:"บันทึก Performance กำลังการผลิต", totalProduced:"จำนวนผลิตทั้งหมด (ชิ้น)", perfNormalFormTitle:"Machine Performance : Normal (บันทึก Performance ปกติของเครื่อง)",
 pnDateLabel:"วันที่บันทึก", pnTimeLabel:"เวลาบันทึก", pnTiming:"ช่วงเวลาบันทึก (ไม่กำหนดตายตัว)", pnDurationLabel:"ระยะเวลาที่บันทึก (วินาที)", pnBoxResultLabel:"จำนวนกล่องที่ผลิตได้",
 defectQtyAuto:"จำนวน Defect (จากโมดูล Defect)", breakdownMinAuto:"เวลา Breakdown (จากโมดูล Breakdown)",
 perfKpiDefectQty:"Defect Qty", perfKpiBreakdownTime:"Breakdown Time",
@@ -2466,7 +2462,7 @@ importErrUnknownCause:"ไม่พบสาเหตุนี้", importErrBad
 importErrBadDate:"วันที่ไม่ถูกต้อง", importParsing:"กำลังอ่านไฟล์...", importFileTypeErr:"รองรับเฉพาะไฟล์ .xlsx, .xls หรือ .pdf",
 importPdfNote:"หมายเหตุ: รองรับเฉพาะ PDF ที่เป็นข้อความ/ตาราง (เช่นไฟล์ที่พิมพ์หรือ Export มา) ไม่รองรับ PDF ที่เป็นรูปภาพสแกน/ลายมือเขียน กรุณาใช้ไฟล์ Excel แทนสำหรับกรณีนั้น",
 importPdfNoRows:"ไม่พบข้อมูลตารางในไฟล์ PDF นี้ (อาจเป็นไฟล์สแกน/รูปภาพ) กรุณาใช้ไฟล์ Excel แทน",
-importRejectData:"นำเข้าข้อมูล (CSV/Excel)", importRejectFileTypeErr:"รองรับเฉพาะไฟล์ .csv, .xlsx หรือ .xls",
+importRejectData:"นำเข้าข้อมูล (CSV/Excel)", importRejectFileTypeErr:"รองรับเฉพาะไฟล์ .csv, .xlsx หรือ .xls", importPerfData:"นำเข้าข้อมูล (CSV/Excel)", importPerfFileTypeErr:"รองรับเฉพาะไฟล์ .csv, .xlsx หรือ .xls",
 importSummaryUpdated:"แถวที่จะอัปเดตรายการเดิม (นำเข้าซ้ำ)", importStatusNew:"ใหม่", importStatusUpdated:"อัปเดต",
 importStatusSkippedOpen:"ข้ามกะที่ยังไม่ปิด (is_final=false)", importStatusSkippedSignal:"ข้ามสัญญาณที่ไม่รู้จัก",
 rejectImportAutoRecorder:"นำเข้าอัตโนมัติ", importErrBadZone:"ไม่พบเครื่องจักรที่ตรงกับ Zone นี้",
@@ -2534,7 +2530,7 @@ qtyFound:"Qty Found", cause:"Cause", causeNoteLabel:"Specify (optional)", causeN
 breakdownFormTitle:"Record Machine Breakdown", breakdownCause:"Breakdown Cause", timing:"Downtime Timing",
 startTime:"Start Time", endTime:"End Time", breakdownMin:"Breakdown Time (min)", btnStart:"Start", btnEnd:"End",
 btnRunSave:"Run / Save", reset:"Reset Form",
-perfFormTitle:"Record Production Performance", totalProduced:"Total Produced (Box)", perfTotalFromRejectNote:"Auto-filled from the total Input quantity for this date/machine on the Reject Station Test page", perfNormalFormTitle:"Machine Performance : Normal (Record Routine Machine Performance)",
+perfFormTitle:"Record Production Performance", totalProduced:"Total Produced (Box)", perfNormalFormTitle:"Machine Performance : Normal (Record Routine Machine Performance)",
 pnDateLabel:"Record Date", pnTimeLabel:"Record Time", pnTiming:"Recording Period (not fixed)", pnDurationLabel:"Recorded Duration (seconds)", pnBoxResultLabel:"Boxes Produced",
 defectQtyAuto:"Defect Qty (from Defect module)", breakdownMinAuto:"Breakdown Time (from Breakdown module)",
 perfKpiDefectQty:"Defect Qty", perfKpiBreakdownTime:"Breakdown Time",
@@ -2577,7 +2573,7 @@ importErrUnknownCause:"Unknown Cause", importErrBadMachine:"Unknown machine", im
 importErrBadDate:"Invalid date", importParsing:"Reading file...", importFileTypeErr:"Only .xlsx, .xls, or .pdf files are supported",
 importPdfNote:"Note: only text/table-based PDFs (e.g. printed or exported files) are supported. Scanned or handwritten PDFs are not supported - please use an Excel file for those instead.",
 importPdfNoRows:"No table data found in this PDF (it may be a scanned image). Please use an Excel file instead.",
-importRejectData:"Import (CSV/Excel)", importRejectFileTypeErr:"Only .csv, .xlsx, or .xls files are supported",
+importRejectData:"Import (CSV/Excel)", importRejectFileTypeErr:"Only .csv, .xlsx, or .xls files are supported", importPerfData:"Import (CSV/Excel)", importPerfFileTypeErr:"Only .csv, .xlsx, or .xls files are supported",
 importSummaryUpdated:"Rows that will update an existing entry (re-import)", importStatusNew:"New", importStatusUpdated:"Updated",
 importStatusSkippedOpen:"Skipped open/unfinished shift (is_final=false)", importStatusSkippedSignal:"Skipped unrecognized signal",
 rejectImportAutoRecorder:"Auto Import", importErrBadZone:"No machine matches this Zone",
@@ -2645,7 +2641,7 @@ qtyFound:"Số lượng Defect phát hiện", cause:"Nguyên nhân", causeNoteLa
 breakdownFormTitle:"Ghi nhận Breakdown máy", breakdownCause:"Nguyên nhân Breakdown", timing:"Thời gian ngừng máy",
 startTime:"Thời gian Start", endTime:"Thời gian End", breakdownMin:"Thời gian Breakdown (phút)", btnStart:"Start", btnEnd:"End",
 btnRunSave:"Run / Lưu", reset:"Xóa biểu mẫu",
-perfFormTitle:"Ghi nhận Performance sản xuất", totalProduced:"Tổng sản lượng (cái)", perfTotalFromRejectNote:"Tự động lấy từ tổng số lượng Input của ngày/máy này trên trang Kiểm tra Reject Station", perfNormalFormTitle:"Machine Performance : Normal (Ghi nhận Performance thường ngày của máy)",
+perfFormTitle:"Ghi nhận Performance sản xuất", totalProduced:"Tổng sản lượng (cái)", perfNormalFormTitle:"Machine Performance : Normal (Ghi nhận Performance thường ngày của máy)",
 pnDateLabel:"Ngày ghi nhận", pnTimeLabel:"Giờ ghi nhận", pnTiming:"Thời gian ghi nhận (không cố định)", pnDurationLabel:"Thời lượng ghi nhận (giây)", pnBoxResultLabel:"Số hộp sản xuất được",
 defectQtyAuto:"Số lượng Defect (từ module Defect)", breakdownMinAuto:"Thời gian Breakdown (từ module Breakdown)",
 perfKpiDefectQty:"Defect Qty", perfKpiBreakdownTime:"Breakdown Time",
@@ -2688,7 +2684,7 @@ importErrUnknownCause:"Không tìm thấy nguyên nhân này", importErrBadMachi
 importErrBadDate:"Ngày không hợp lệ", importParsing:"Đang đọc file...", importFileTypeErr:"Chỉ hỗ trợ file .xlsx, .xls hoặc .pdf",
 importPdfNote:"Lưu ý: chỉ hỗ trợ PDF dạng văn bản/bảng (ví dụ file in hoặc xuất ra). Không hỗ trợ PDF quét/viết tay - vui lòng dùng file Excel cho trường hợp đó.",
 importPdfNoRows:"Không tìm thấy dữ liệu bảng trong file PDF này (có thể là ảnh quét). Vui lòng dùng file Excel thay thế.",
-importRejectData:"Nhập dữ liệu (CSV/Excel)", importRejectFileTypeErr:"Chỉ hỗ trợ file .csv, .xlsx hoặc .xls",
+importRejectData:"Nhập dữ liệu (CSV/Excel)", importRejectFileTypeErr:"Chỉ hỗ trợ file .csv, .xlsx hoặc .xls", importPerfData:"Nhập dữ liệu (CSV/Excel)", importPerfFileTypeErr:"Chỉ hỗ trợ file .csv, .xlsx hoặc .xls",
 importSummaryUpdated:"Số dòng sẽ cập nhật mục đã có (nhập lại)", importStatusNew:"Mới", importStatusUpdated:"Cập nhật",
 importStatusSkippedOpen:"Bỏ qua ca chưa đóng (is_final=false)", importStatusSkippedSignal:"Bỏ qua tín hiệu không xác định",
 rejectImportAutoRecorder:"Nhập tự động", importErrBadZone:"Không tìm thấy máy khớp với Zone này",
@@ -2819,7 +2815,7 @@ document.querySelectorAll('nav.sidebar button').forEach(btn=>{
     btn.classList.add('active');
     document.getElementById('page-'+btn.dataset.page).classList.add('active');
     if(btn.dataset.page==='dashboard'){ refreshDashboard(); triggerAutoSync(2000); }
-    if(btn.dataset.page==='performance') refreshPerfTotalFromReject();
+    if(btn.dataset.page==='performance') refreshPerfAuto();
     if(btn.dataset.page==='settings') renderAllMasterTables();
     if(btn.dataset.page==='ca'){
       if(typeof buildCaDefectTypeSelect==='function') buildCaDefectTypeSelect();
@@ -3404,7 +3400,6 @@ window.deleteRow = function(lsKey, id, cb){
   let arr = getArr(lsKey).filter(r=>r.id!==id);
   setArr(lsKey, arr);
   gsPushDeletedRecord(lsKey, id); // targeted remote delete - doesn't need to resend the rest of the sheet
-  if(lsKey===LS.rejectTest && typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
   cb(); refreshDashboard();
 };
 
@@ -3551,17 +3546,11 @@ function liveBdSecFor(date,shift,machine){
 // fresh every time from the current Defect/Breakdown data, so it's never a stale/frozen snapshot.
 // bdSec is precise (seconds), matching the same source Breakdown's own Recent Entries now displays.
 function perfDerived(p){
-  // total is ALSO live-derived now (per request: pull Reject Station Test's Input qty for this exact
-  // date+shift+machine, not the record's stored snapshot) - see liveRejectInputTotalFor below. This
-  // keeps the Recent Entries table's Total/Good/Rate columns for a given row all consistent with each
-  // other (good/rate are computed from the same live total shown in that row), and always fresh if the
-  // matching Reject Station Test entry is edited/deleted afterwards.
-  const total = liveRejectInputTotalFor(p.date, p.shift, p.machine);
   const defectQty = liveDefectQtyFor(p.date, p.shift, p.machine);
   const bdSec = liveBdSecFor(p.date, p.shift, p.machine);
-  const good = Math.max(0, total - defectQty);
-  const rate = total>0 ? (defectQty/total*100) : 0;
-  return { total, defectQty, bdSec, good, rate };
+  const good = Math.max(0, p.total - defectQty);
+  const rate = p.total>0 ? (defectQty/p.total*100) : 0;
+  return { defectQty, bdSec, good, rate };
 }
 
 function refreshPerfAuto(){
@@ -3582,32 +3571,11 @@ function refreshPerfAuto(){
   else if(rate<=1){ badge.textContent = I18N[currentLang].pass+' (≤1%)'; badge.className='tag badge-ok'; }
   else { badge.textContent = I18N[currentLang].fail+' (>1%)'; badge.className='tag badge-bad'; }
 }
-// "จำนวนที่ผลิตทั้งหมด" is no longer typed here - per request, it's pulled live from Reject Station
-// Test's own Input quantity, matched per SHIFT + date + machine (not just date+machine - a clarification
-// on the original request: each shift's own Reject Station input should show separately, not one number
-// pooled across every shift of the day), so the two pages never drift into showing two different
-// production totals for the same shift/day/machine. Always re-read from localStorage (never cached) so a
-// Reject Station Test entry saved/edited/deleted afterwards is reflected immediately, same convention as
-// liveDefectQtyFor/liveBdSecFor above.
-function liveRejectInputTotalFor(date, shift, machine){
-  return getArr(LS.rejectTest).filter(r=>r.date===date && r.shift===shift && r.machine===machine).reduce((s,r)=>s+(parseFloat(r.inputQty)||0), 0);
-}
-function refreshPerfTotalFromReject(){
-  const date = document.getElementById('p-date').value;
-  const shift = document.getElementById('p-shift').value;
-  const machine = document.getElementById('p-machine').value;
-  document.getElementById('p-total').value = liveRejectInputTotalFor(date, shift, machine);
-  refreshPerfAuto();
-}
-// Shift now affects the auto-computed total too (see liveRejectInputTotalFor above), so a shift change
-// must re-pull the total from Reject Station Test, not just re-run the KPI-badge math on the old value.
-document.getElementById('p-shift').addEventListener('input', refreshPerfTotalFromReject);
-document.getElementById('p-shift').addEventListener('change', refreshPerfTotalFromReject);
-['p-date','p-machine'].forEach(id=>{
-  document.getElementById(id).addEventListener('input', refreshPerfTotalFromReject);
-  document.getElementById(id).addEventListener('change', refreshPerfTotalFromReject);
+['p-date','p-shift','p-machine','p-total'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', refreshPerfAuto);
+  document.getElementById(id).addEventListener('change', refreshPerfAuto);
 });
-refreshPerfTotalFromReject();
+refreshPerfAuto();
 
 document.getElementById('p-save').addEventListener('click', ()=>{
   const date = document.getElementById('p-date').value;
@@ -3629,9 +3597,8 @@ document.getElementById('p-save').addEventListener('click', ()=>{
   gsPushNewRecord(LS.perf, rec).then(refreshConnectionAfterSave);
   document.getElementById('p-time-start').value = '';
   document.getElementById('p-time-end').value = '';
-  // p-total is a derived field (see refreshPerfTotalFromReject) - re-pull rather than reset to 0, since
-  // the date/machine on the form haven't changed and Reject Station Test's total for them hasn't either.
-  refreshPerfTotalFromReject(); renderPerfTable(); renderPerfMiniDashboard(); refreshDashboard();
+  document.getElementById('p-total').value = 0;
+  refreshPerfAuto(); renderPerfTable(); renderPerfMiniDashboard(); refreshDashboard();
 });
 
 function renderPerfTable(){
@@ -3642,17 +3609,17 @@ function renderPerfTable(){
   // how many entries match. Recomputes automatically whenever the filter changes.
   const totalCount = full.length;
   const tbody = document.querySelector('#p-table tbody');
-  // total/defectQty/good/bdSec/rate are ALL recomputed live per row (perfDerived) instead of read from
-  // the record's stored snapshot, so a Reject Station Test entry (for total) or a Defect/Breakdown entry
-  // (for the rest) saved/edited/deleted afterwards shows up here immediately - total is matched per
-  // shift+date+machine, per request.
+  // defectQty/good/bdSec/rate are ALL recomputed live per row (perfDerived) from the current
+  // Defect/Breakdown data instead of read from the record's stored snapshot, so an edit/delete made
+  // there afterwards shows up here immediately - matched per shift+date+machine, per request. total is
+  // the record's own manually-entered value.
   tbody.innerHTML = arr.map((r,i)=>{
     const d = perfDerived(r);
     return `<tr>
     <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td>
     <td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td>
     <td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
-    <td>${d.total}</td><td>${d.defectQty}</td><td>${d.good}</td><td>${formatStopwatch(d.bdSec)}</td><td>${d.rate.toFixed(2)}%</td>
+    <td>${r.total}</td><td>${d.defectQty}</td><td>${d.good}</td><td>${formatStopwatch(d.bdSec)}</td><td>${d.rate.toFixed(2)}%</td>
     <td>${r.recorder||'-'}</td>
     <td><button class="small-btn" onclick="openEditModal('${LS.perf}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.perf}','${r.id}', renderPerfTable)">${I18N[currentLang].delete}</button></td>
   </tr>`;
@@ -3664,12 +3631,7 @@ function renderPerfTable(){
     // Totals over ALL rows matching the current filter (`full`), not just the up-to-50 shown in the
     // table (`arr`) - see the matching comment in renderDefectTable for why.
     const derivedFull = full.map(r=>perfDerived(r));
-    // Total Produced is summed directly from Reject Station Test's own records under this same filter
-    // (perfFilter's date+machine, across every shift) - NOT by adding up each Performance row's own
-    // perfDerived().total, which would double-count whenever two Performance rows share the same
-    // date+shift+machine (each row's live total is the SAME Reject Station figure, looked up
-    // independently per row). Same reasoning/fix as Total Defect below.
-    const totalProd = filterEntries(getArr(LS.rejectTest), perfFilter).reduce((s,r)=>s+(parseFloat(r.inputQty)||0), 0);
+    const totalProd = full.reduce((s,r)=>s+r.total,0);
     // Total Defect is summed directly from the Defect page's own records under this same filter
     // (perfFilter's date+machine), NOT by adding up each Performance row's own perfDerived().defectQty
     // - per-row that figure is looked up per (date,shift,machine), so it silently double-counts a
@@ -3941,9 +3903,6 @@ document.getElementById('r-save').addEventListener('click', ()=>{
   initRejectDefaults();
   renderRejectTable();
   renderRejectMiniDashboard();
-  // Keep Performance's auto-computed total (see refreshPerfTotalFromReject) in sync immediately if that
-  // page happens to already be open to the same date/machine.
-  if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
 });
 document.getElementById('r-reset').addEventListener('click', initRejectDefaults);
 
@@ -5570,7 +5529,6 @@ function renameMachineInAllRecords(oldName, newName){
   if(typeof renderRejectMiniDashboard==='function') renderRejectMiniDashboard();
   if(typeof renderPerfNormalTable==='function') renderPerfNormalTable();
   if(typeof renderCaList==='function') renderCaList();
-  if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
 }
 
 /* ============================================================
@@ -5886,7 +5844,7 @@ function exportPerfExcel(){
   const header = [t.colNo, t.date, t.collectTimeStart, t.collectTimeEnd, t.shift, t.machine, t.totalProduced, t.perfKpiDefectQty, t.goodQty, t.perfKpiBreakdownTime, t.defectRate, t.recorder];
   const body = rows.map((r,i)=>{
     const d = perfDerived(r);
-    return [rows.length-i, r.date, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.shift, r.machine, d.total, d.defectQty, d.good, formatStopwatch(d.bdSec), +d.rate.toFixed(2), r.recorder||'-'];
+    return [rows.length-i, r.date, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.shift, r.machine, r.total, d.defectQty, d.good, formatStopwatch(d.bdSec), +d.rate.toFixed(2), r.recorder||'-'];
   });
   excelDownload([header, ...body], 'Performance', 'Performance_Report');
 }
@@ -6299,7 +6257,6 @@ function showRejectImportPreview(parsed){
     gsPushWhole(LS.rejectTest);
     overlay.classList.remove('open');
     renderRejectTable(); renderRejectMiniDashboard(); refreshDashboard();
-    if(typeof refreshPerfTotalFromReject==='function') refreshPerfTotalFromReject();
     alert(t.importDone+': '+(okCount+updateCount)+' '+t.recordsSuffix);
   };
 }
@@ -6323,6 +6280,161 @@ document.getElementById('r-import-file').addEventListener('change', (e)=>{
     });
   } else {
     alert(t.importRejectFileTypeErr);
+  }
+});
+
+/* ============================================================
+   PERFORMANCE PAGE IMPORT (CSV/Excel) - lets an Admin import auto-packing-machine counter data (e.g. an
+   export from an external counting system) directly into Performance records, instead of typing each
+   shift's Total Produced by hand. Column shape is identical to the Reject Station Test import above
+   (line/zone, shift, started_at, ended_at, signal, total, is_final), so the same REJECT_IMPORT_COL_ALIASES
+   and matchMachineForImportLine() are reused as-is.
+============================================================ */
+const PERF_SIGNAL_PRODUCT_COUNT = 'product_count';
+function parsePerfImportRows(rawRows){
+  const t = I18N[currentLang];
+  const colMap = buildColumnIndexMap(rawRows[0], REJECT_IMPORT_COL_ALIASES);
+  const dataRows = rawRows.slice(1);
+  const get = (row,key)=> colMap[key]!==undefined ? (row[colMap[key]]!==undefined ? row[colMap[key]] : '') : '';
+
+  let skippedOpen = 0, skippedSignal = 0;
+  const groups = {};
+  dataRows.forEach(row=>{
+    if(!Array.isArray(row) || !row.some(c=>String(c==null?'':c).trim()!=='')) return;
+    const isFinalRaw = String(get(row,'isFinal')||'').trim().toLowerCase();
+    const isFinal = colMap.isFinal===undefined ? true : (isFinalRaw==='true' || isFinalRaw==='1');
+    if(!isFinal){ skippedOpen++; return; } // shift still running (no ended_at yet) - skip until final
+    const signal = String(get(row,'signal')||'').trim().toLowerCase();
+    if(signal!==PERF_SIGNAL_PRODUCT_COUNT){ skippedSignal++; return; }
+    const lineRaw = String(get(row,'line')||'').trim();
+    const shiftRaw = String(get(row,'shift')||'').trim().toUpperCase();
+    const startedAtRaw = String(get(row,'startedAt')||'').trim();
+    const endedAtRaw = String(get(row,'endedAt')||'').trim();
+    const totalNum = parseInt(get(row,'total'));
+    // Grouped by line+shift+startedAt (same key shape as Reject's importer) so a repeated/duplicate row
+    // for the same shift reading doesn't create two records - the last matching row wins.
+    const key = lineRaw+'|'+shiftRaw+'|'+startedAtRaw;
+    groups[key] = { lineRaw, shiftRaw, startedAtRaw, endedAtRaw, total: isNaN(totalNum)?0:totalNum };
+  });
+
+  const existingRecords = getArr(LS.perf);
+  const results = Object.values(groups).map(g=>{
+    const errors = [];
+    const machine = matchMachineForImportLine(g.lineRaw);
+    if(!machine) errors.push(t.importErrBadZone);
+    const shift = ['A','B','C'].includes(g.shiftRaw) ? g.shiftRaw : null;
+    const startDate = g.startedAtRaw ? new Date(g.startedAtRaw) : null;
+    const endDate = g.endedAtRaw ? new Date(g.endedAtRaw) : null;
+    if(!shift || !startDate || isNaN(startDate)) errors.push(t.importErrBadDate);
+
+    // Attributed to the calendar day the shift STARTED (local time) - same overnight-shift-safe
+    // convention as the Reject Station Test importer.
+    const dateVal = (startDate && !isNaN(startDate)) ? localDate(startDate) : '';
+    const timeStart = (startDate && !isNaN(startDate)) ? localTime(startDate) : '';
+    const timeEnd = (endDate && !isNaN(endDate)) ? localTime(endDate) : '';
+
+    const importKey = g.lineRaw+'|'+g.shiftRaw+'|'+g.startedAtRaw;
+    const existing = existingRecords.find(r=>r.importKey===importKey);
+    const display = {
+      date: dateVal||g.startedAtRaw, shift: g.shiftRaw, machine: machine||g.lineRaw, total: g.total,
+      status: errors.length>0 ? '' : (existing ? t.importStatusUpdated : t.importStatusNew)
+    };
+
+    if(errors.length>0) return { status:'error', errors, display, record:null, existingId:null };
+
+    // defectQty/bdSec/good/rate are stored as a point-in-time snapshot for reference, same convention as
+    // the manual p-save handler - every actual display recomputes these live via perfDerived().
+    const defectQty = liveDefectQtyFor(dateVal, g.shiftRaw, machine);
+    const bdSec = liveBdSecFor(dateVal, g.shiftRaw, machine);
+    const good = Math.max(0, g.total-defectQty);
+    const rate = g.total>0 ? (defectQty/g.total*100) : 0;
+
+    if(existing){
+      const updated = Object.assign({}, existing, {
+        total: g.total, defectQty, bdSec, good, rate,
+        timeStart: timeStart || existing.timeStart, timeEnd: timeEnd || existing.timeEnd
+      });
+      return { status:'update', errors:[], display, record:updated, existingId:existing.id };
+    }
+    return { status:'ok', errors:[], display, existingId:null, record:{
+      id: uid(), importKey, recorder: t.rejectImportAutoRecorder, date: dateVal, shift: g.shiftRaw, machine,
+      total: g.total, defectQty, bdSec, good, rate, timeStart, timeEnd
+    }};
+  });
+  return { results, skippedOpen, skippedSignal };
+}
+function showPerfImportPreview(parsed){
+  const t = I18N[currentLang];
+  const results = parsed.results;
+  const okCount = results.filter(r=>r.status==='ok').length;
+  const updateCount = results.filter(r=>r.status==='update').length;
+  const errCount = results.filter(r=>r.status==='error').length;
+  let overlay = document.getElementById('import-preview-overlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id = 'import-preview-overlay';
+    overlay.className = 'import-preview-overlay';
+    document.body.appendChild(overlay);
+  }
+  const escapeHtml = (s)=> String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const rowsHtml = results.map(r=>{
+    const d = r.display;
+    const statusCell = r.status==='error' ? ('✗ '+r.errors.join(', ')) : ('✓ '+d.status);
+    return `<tr class="row-${r.status==='error'?'error':'ok'}"><td>${escapeHtml(statusCell)}</td><td>${escapeHtml(d.date)}</td><td>${escapeHtml(d.shift)}</td><td>${escapeHtml(d.machine)}</td><td>${escapeHtml(d.total)}</td></tr>`;
+  }).join('');
+  const skipParts = [];
+  if(parsed.skippedOpen>0) skipParts.push(`${t.importStatusSkippedOpen}: ${parsed.skippedOpen}`);
+  if(parsed.skippedSignal>0) skipParts.push(`${t.importStatusSkippedSignal}: ${parsed.skippedSignal}`);
+  const skipNote = skipParts.length>0 ? `<div class="import-summary">${skipParts.join(' &nbsp;·&nbsp; ')}</div>` : '';
+  overlay.innerHTML = `
+    <div class="import-preview-box">
+      <h3>${t.importPreviewTitle}</h3>
+      <div class="import-summary">${t.importSummaryOk}: ${okCount} &nbsp;·&nbsp; ${t.importSummaryUpdated}: ${updateCount} &nbsp;·&nbsp; ${t.importSummaryError}: ${errCount}</div>
+      ${skipNote}
+      <div class="table-wrap"><table class="import-preview-table">
+        <thead><tr><th>${t.importColStatus}</th><th>${t.date}</th><th>${t.shift}</th><th>${t.machine}</th><th>${t.totalProduced}</th></tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="5" style="text-align:center;">${t.importNoValidRows}</td></tr>`}</tbody>
+      </table></div>
+      <div class="import-preview-actions">
+        <button type="button" class="small-btn" id="import-preview-cancel">${t.importCancelBtn}</button>
+        <button type="button" class="btn btn-performance" id="import-preview-confirm" ${(okCount+updateCount)===0?'disabled':''}>${t.importConfirmBtn} (${okCount+updateCount})</button>
+      </div>
+    </div>`;
+  overlay.classList.add('open');
+  document.getElementById('import-preview-cancel').onclick = ()=>{ overlay.classList.remove('open'); };
+  document.getElementById('import-preview-confirm').onclick = ()=>{
+    let arr = getArr(LS.perf);
+    results.filter(r=>r.status==='ok').forEach(r=> arr.push(r.record));
+    results.filter(r=>r.status==='update').forEach(r=>{
+      arr = arr.map(rec=> rec.id===r.existingId ? r.record : rec);
+    });
+    setArr(LS.perf, arr);
+    gsPushWhole(LS.perf);
+    overlay.classList.remove('open');
+    renderPerfTable(); renderPerfMiniDashboard(); refreshDashboard();
+    alert(t.importDone+': '+(okCount+updateCount)+' '+t.recordsSuffix);
+  };
+}
+document.getElementById('p-import-btn').addEventListener('click', ()=> document.getElementById('p-import-file').click());
+document.getElementById('p-import-file').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const t = I18N[currentLang];
+  const ext = (file.name.split('.').pop()||'').toLowerCase();
+  const handleRows = (rows)=>{
+    rows = (rows||[]).filter(r=>Array.isArray(r) && r.some(c=>String(c==null?'':c).trim()!==''));
+    if(rows.length<2){ alert(t.importNoValidRows); return; }
+    const parsed = parsePerfImportRows(rows);
+    showPerfImportPreview(parsed);
+  };
+  if(ext==='xlsx' || ext==='xls' || ext==='csv'){
+    parseExcelFile(file).then(handleRows).catch(err=>{
+      console.error(err);
+      alert((currentLang==='TH'?'อ่านไฟล์ไม่สำเร็จ: ':'Failed to read file: ')+err.message);
+    });
+  } else {
+    alert(t.importPerfFileTypeErr);
   }
 });
 
