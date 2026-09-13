@@ -83,6 +83,8 @@ body{font-family:'IBM Plex Sans Thai',sans-serif;background:var(--bg);color:var(
 .chips{display:flex;gap:6px;flex-wrap:wrap;}
 .chip{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-family:'IBM Plex Sans Thai',sans-serif;transition:.15s;}
 .chip.on{background:var(--blue);border-color:var(--blue);color:#fff;}
+.chip-n{display:inline-block;margin-left:5px;padding:0 6px;border-radius:10px;background:rgba(255,255,255,.08);color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:10px;}
+.chip.on .chip-n{background:rgba(255,255,255,.25);color:#fff;}
 
 table{width:100%;border-collapse:collapse;}
 thead th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);font-weight:500;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
@@ -398,14 +400,17 @@ tbody tr:hover td{background:rgba(255,255,255,.02);cursor:pointer;}
       <div class="card">
         <div class="ch">
           <div class="ctitle" id="assetTblTitle">ทรัพย์สินทั้งหมด</div>
-          <div class="chips">
-            <button class="chip on" onclick="setAF('',this)">ทั้งหมด</button>
-            <button class="chip" onclick="setAF('คอมพิวเตอร์',this)">คอมพิวเตอร์</button>
-             <button class="chip" onclick="setAF('โทรศัพท์มือถือ',this)">มือถือ</button>
-            <button class="chip" onclick="setAF('Notebook',this)">Notebook</button>
-            <button class="chip" onclick="setAF('Printer',this)">Printer</button>
-            <button class="chip" onclick="setAF('Network',this)">Network</button>
-            <button class="chip" onclick="setAF('อื่นๆ',this)">อื่นๆ</button>
+          <div class="chips" id="assetChips">
+            <button class="chip on" onclick="setAF('',this)">ทั้งหมด <span class="chip-n" data-cnt="">0</span></button>
+            <button class="chip" onclick="setAF('คอมพิวเตอร์',this)">🖥️ คอมพิวเตอร์ <span class="chip-n" data-cnt="คอมพิวเตอร์">0</span></button>
+            <button class="chip" onclick="setAF('Notebook',this)">💻 Notebook <span class="chip-n" data-cnt="Notebook">0</span></button>
+            <button class="chip" onclick="setAF('มือถือ',this)">📱 มือถือ <span class="chip-n" data-cnt="มือถือ">0</span></button>
+            <button class="chip" onclick="setAF('Printer',this)">🖨️ Printer <span class="chip-n" data-cnt="Printer">0</span></button>
+            <button class="chip" onclick="setAF('Scanner',this)">🖨️ Scanner <span class="chip-n" data-cnt="Scanner">0</span></button>
+            <button class="chip" onclick="setAF('Network',this)">🌐 Network <span class="chip-n" data-cnt="Network">0</span></button>
+            <button class="chip" onclick="setAF('Monitor',this)">🖥️ Monitor <span class="chip-n" data-cnt="Monitor">0</span></button>
+            <button class="chip" onclick="setAF('UPS',this)">🔋 UPS <span class="chip-n" data-cnt="UPS">0</span></button>
+            <button class="chip" onclick="setAF('อื่นๆ',this)">📦 อื่นๆ <span class="chip-n" data-cnt="อื่นๆ">0</span></button>
           </div>
         </div>
         <div style="overflow-x:auto;">
@@ -603,7 +608,7 @@ if (action === 'sendLine') {
       <div class="fg">
         <div class="fi"><label class="fl">รหัสอุปกรณ์ *</label><input class="fn" id="a-id" placeholder="PC-001, NB-002"></div>
         <div class="fi"><label class="fl">ประเภท</label>
-          <select class="fs" id="a-type"><option value="">เลือก</option><option>คอมพิวเตอร์</option><option>Notebook</option><option>Printer</option><option>Network</option><option>Monitor</option><option>UPS</option><option>Scanner</option><option>มือถือ</option><option>อื่นๆ</option></select></div>
+          <select class="fs" id="a-type"><option value="">เลือก</option><option>คอมพิวเตอร์</option><option>Notebook</option><option>มือถือ</option><option>Printer</option><option>Scanner</option><option>Network</option><option>Monitor</option><option>UPS</option><option>อื่นๆ</option></select></div>
         <div class="fi"><label class="fl">ยี่ห้อ</label><input class="fn" id="a-brand" placeholder="ASUS, HP..."></div>
         <div class="fi"><label class="fl">รุ่น</label><input class="fn" id="a-model" placeholder="Vivobook 15..."></div>
         <div class="fi"><label class="fl">ผู้ใช้งาน</label><input class="fn" id="a-user" placeholder="ชื่อพนักงาน"></div>
@@ -835,6 +840,45 @@ if(!localStorage.getItem(TRU) && DEFAULT_TRANSFER_URL) localStorage.setItem(TRU,
 let editAssetKey = null, editTicketKey = null;
 let aFilter = '', tkFilter = '', trFilter = '';
 const CLR = ['#4f8ef7','#22c55e','#f59e0b','#a78bfa','#22d3ee','#f43f5e','#84cc16','#fb923c','#f472b6'];
+
+// ── ASSET TYPE / CATEGORY NORMALIZATION ──────────────────────────
+// ป้องกันปัญหา "filter หมวดหมู่ไม่ตรงกับข้อมูลจริง" เช่น ปุ่มกรอง "มือถือ" เคยส่งค่า
+// 'โทรศัพท์มือถือ' ไปเทียบ ทั้งที่ตอนเพิ่มทรัพย์สินบันทึกค่าเป็น 'มือถือ' ทำให้กรองไม่เจอ
+// ทุกจุดที่ต้อง "จัดกลุ่มประเภททรัพย์สิน" (ปุ่มกรอง, กราฟ KPI) ให้เรียกผ่าน normalizeAssetType()
+// เพื่อให้ใช้รายชื่อมาตรฐานชุดเดียวกันเสมอ ต่อให้ข้อมูลเดิม/นำเข้าจาก Sheet จะสะกดต่างกันก็ตาม
+const ASSET_TYPES = ['คอมพิวเตอร์','Notebook','มือถือ','Printer','Scanner','Network','Monitor','UPS','อื่นๆ'];
+const ASSET_TYPE_ICON = {'คอมพิวเตอร์':'🖥️','Notebook':'💻','มือถือ':'📱','Printer':'🖨️','Scanner':'🖨️','Network':'🌐','Monitor':'🖥️','UPS':'🔋','อื่นๆ':'📦'};
+const ASSET_TYPE_ALIASES = {
+  'คอมพิวเตอร์': ['คอมพิวเตอร์','คอม','คอมพิวเตอร์ตั้งโต๊ะ','pc','desktop','computer'],
+  'Notebook':    ['notebook','laptop','โน้ตบุ๊ก','โน้ตบุ๊','โน๊ตบุ๊ค','โน้ตบุค'],
+  'มือถือ':       ['มือถือ','โทรศัพท์มือถือ','โทรศัพท์','โทรศัพท์เคลื่อนที่','mobile','smartphone','phone','tablet','แท็บเล็ต'],
+  'Printer':     ['printer','ปริ้นเตอร์','ปริ๊นเตอร์','เครื่องพิมพ์'],
+  'Scanner':     ['scanner','สแกนเนอร์','เครื่องสแกน'],
+  'Network':     ['network','เน็ตเวิร์ค','เน็ตเวิร์ก','router','switch','access point','เราเตอร์'],
+  'Monitor':     ['monitor','จอ','จอภาพ','จอมอนิเตอร์'],
+  'UPS':         ['ups','เครื่องสำรองไฟ']
+};
+function normalizeAssetType(raw){
+  const v = (raw || '').toString().trim();
+  if(!v) return 'อื่นๆ';
+  const low = v.toLowerCase();
+  for(const canon of ASSET_TYPES){ if(canon.toLowerCase() === low) return canon; }
+  for(const canon in ASSET_TYPE_ALIASES){
+    if(ASSET_TYPE_ALIASES[canon].some(a => a.toLowerCase() === low)) return canon;
+  }
+  return 'อื่นๆ';
+}
+function updateAssetChipCounts(){
+  const chipsEl = document.getElementById('assetChips');
+  if(!chipsEl) return;
+  const counts = {};
+  ASSET_TYPES.forEach(t => counts[t] = 0);
+  assets.forEach(a => { const c = normalizeAssetType(a.type); counts[c] = (counts[c]||0) + 1; });
+  chipsEl.querySelectorAll('.chip-n').forEach(sp => {
+    const key = sp.getAttribute('data-cnt');
+    sp.textContent = key === '' ? assets.length : (counts[key] || 0);
+  });
+}
 
 const SEEDED_KEY = 'ita_seeded_v4';
 if(!localStorage.getItem(SEEDED_KEY)){
@@ -1245,10 +1289,10 @@ function renderKPI(){
       <div style="font-size:12px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.category} · ${t.dept}</div>
     </div>`).join('') || '<div style="font-size:12px;color:var(--text3)">ยังไม่มีข้อมูล</div>';
 
-  const tc = {}; assets.forEach(a => { tc[a.type] = (tc[a.type]||0)+1; });
+  const tc = {}; assets.forEach(a => { const c = normalizeAssetType(a.type); tc[c] = (tc[c]||0)+1; });
   const mx3 = Math.max(...Object.values(tc), 1);
   document.getElementById('assetByType').innerHTML = Object.entries(tc).sort((a,b) => b[1]-a[1])
-    .map(([t,n],i) => `<div class="br"><div class="blbl">${t}</div><div class="bwrap"><div class="bfill" style="width:${n/mx3*100}%;background:${CLR[i%9]}"></div></div><div class="bcnt">${n}</div></div>`)
+    .map(([t,n],i) => `<div class="br"><div class="blbl">${ASSET_TYPE_ICON[t]||''} ${t}</div><div class="bwrap"><div class="bfill" style="width:${n/mx3*100}%;background:${CLR[i%9]}"></div></div><div class="bcnt">${n}</div></div>`)
     .join('');
 
   const mx4 = Math.max(openTk, progTk, closedTk, 1);
@@ -1264,10 +1308,11 @@ function renderKPI(){
 function setAF(t,el){ aFilter=t; document.querySelectorAll('#view-assets .chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); renderAssets(); }
 
 function renderAssets(){
+  updateAssetChipCounts();
   const q = document.getElementById('qSearch').value.toLowerCase();
   const rows = assets.filter(a => {
     const m = !q || [a.id,a.brand,a.model,a.user,a.type,a.branch].some(v => (v||'').toLowerCase().includes(q));
-    return m && (!aFilter || a.type === aFilter);
+    return m && (!aFilter || normalizeAssetType(a.type) === aFilter);
   });
   document.getElementById('assetTblTitle').textContent = `ทรัพย์สินทั้งหมด (${rows.length})`;
   const empty = document.getElementById('assetEmpty');
