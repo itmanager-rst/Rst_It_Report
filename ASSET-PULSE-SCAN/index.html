@@ -348,7 +348,7 @@
                 
                 <div class="action-grid">
                     <button class="vb-btn vb-btn-p5" id="btn-submit-all" onclick="submitAllBasketToSheet()" disabled>
-                        <span class="step-tag">STEP 5</span>
+                        <span class="step-tag">STEP 7</span>
                         <div class="vb-btn-icon">🚀</div>
                         <div class="vb-btn-text" id="text-submit-btn">ส่งข้อมูลลง Database</div>
                     </button>
@@ -364,7 +364,7 @@
                    </a>
 
                     <button class="vb-btn vb-btn-p7" id="btn-export-excel" onclick="exportBasketToExcel()" disabled>
-                        <span class="step-tag">STEP 7</span>
+                        <span class="step-tag">STEP 5</span>
                         <div class="vb-btn-icon">📥</div>
                         <div class="vb-btn-text">Export Excel (.xlsx)</div>
                     </button>
@@ -403,6 +403,7 @@
     let basketItems = [];
     let html5QrScanner = null;
     let currentAutoAction = "";
+    let hasExportedExcel = false; // ต้อง Export Excel ก่อน ถึงจะกดส่งข้อมูลลง Database ได้
 
     async function loadConfigData() {
         try {
@@ -582,6 +583,7 @@
             remarks,
             autoAction: currentAutoAction
         });
+        hasExportedExcel = false; // มีการเปลี่ยนแปลงข้อมูล ต้อง Export Excel ใหม่ก่อนส่ง Database
         renderBasketTable();
 
         document.getElementById('partId').value = "";
@@ -615,7 +617,14 @@
             return;
         }
 
-        [submitBtn, excelBtn].forEach(b => { if(b) b.disabled = false; });
+        // ลำดับการทำงาน: ต้องกด "Export Excel" ก่อน ปุ่ม "ส่งข้อมูลลง Database" ถึงจะกดได้
+        if (excelBtn) excelBtn.disabled = false;
+        if (submitBtn) submitBtn.disabled = !hasExportedExcel;
+        if (submitText) {
+            submitText.innerText = hasExportedExcel
+                ? "ส่งข้อมูลลง Database"
+                : "กรุณา Export Excel ก่อน";
+        }
 
         basketItems.forEach((item, index) => {
             let tr = document.createElement('tr');
@@ -644,6 +653,7 @@
 
     function removeItemFromBasket(index) {
         basketItems.splice(index, 1);
+        hasExportedExcel = false; // มีการเปลี่ยนแปลงข้อมูล ต้อง Export Excel ใหม่ก่อนส่ง Database
         renderBasketTable();
     }
 
@@ -788,6 +798,13 @@
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `ใบขอซื้อ_${docCode.replace('/', '-')}_${firstItem.branch}.xlsx`);
+
+        // ✅ Export สำเร็จแล้ว ปลดล็อกปุ่ม "ส่งข้อมูลลง Database"
+        hasExportedExcel = true;
+        const submitBtn = document.getElementById('btn-submit-all');
+        const submitText = document.getElementById('text-submit-btn');
+        if (submitBtn) submitBtn.disabled = false;
+        if (submitText) submitText.innerText = "ส่งข้อมูลลง Database";
     }
 
     function submitAllBasketToSheet() {
@@ -836,6 +853,7 @@
 
     function clearWholeForm() {
         basketItems = [];
+        hasExportedExcel = false;
         renderBasketTable();
         document.getElementById('partId').value = "";
         document.getElementById('partName').value = "";
