@@ -239,6 +239,8 @@
             <div class="stat-item">ฐานข้อมูลทั้งหมด: <span id="stat-total">0</span> รายชื่อ</div>
             <div class="stat-item">ผลลัพธ์การกรอง: <span id="stat-display">0</span> รายชื่อ</div>
             <div class="stat-item">📱 จาก Facebook/ManyChat: <span id="stat-manychat">0</span> รายชื่อ</div>
+            <div class="stat-item" id="current-user-badge" style="display:none;">👤 <span id="current-user-name">-</span></div>
+            <button id="logout-btn" onclick="logoutUser()" style="display:none; background:#ef4444; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer;">🚪 ออกจากระบบ</button>
         </div>
     </div>
     <div class="page-nav">
@@ -895,6 +897,12 @@
 
         let currentRole = 'user';
 
+        // แปลง role (ภาษาอังกฤษที่เก็บในระบบ) เป็นข้อความไทยสำหรับโชว์ที่ป้ายชื่อผู้ใช้งาน
+        function roleLabelTH(role) {
+            const map = { admin: 'admin', staff: 'พนักงาน', sale: 'Sale', user: 'user' };
+            return map[role] || role || '-';
+        }
+
         function loginUser() {
             const username = document.getElementById('login-username').value.trim();
             const password = document.getElementById('login-password').value.trim();
@@ -913,6 +921,11 @@
                     currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
                     status.innerText = 'เข้าสู่ระบบสำเร็จ';
                     document.getElementById('login-modal').classList.add('hidden');
+                    // แสดงชื่อผู้ใช้งานปัจจุบัน + ปุ่มออกจากระบบ ที่แถบด้านบน
+                    const displayName = (resData.user && (resData.user.name || resData.user.username)) || username;
+                    document.getElementById('current-user-name').innerText = `${displayName} (${roleLabelTH(currentRole)})`;
+                    document.getElementById('current-user-badge').style.display = '';
+                    document.getElementById('logout-btn').style.display = '';
                     // เมนู "เพิ่มสมาชิก" โชว์เฉพาะ role admin และ staff (พนักงาน) เท่านั้น
                     const canManageMembers = currentRole === 'admin' || currentRole === 'staff';
                     document.getElementById('nav-btn-members').style.display = canManageMembers ? '' : 'none';
@@ -930,6 +943,33 @@
             })
             .catch(err => {
                 status.innerText = 'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด';
+            });
+        }
+
+        // ปุ่ม "🚪 ออกจากระบบ" ที่แถบด้านบน — ลบ session ฝั่งเซิร์ฟเวอร์ทันที (ให้หายจาก
+        // ลิสต์ "ออนไลน์อยู่ตอนนี้" ทันที ไม่ต้องรอ 5 นาที) แล้วเคลียร์สถานะฝั่งหน้าเว็บ
+        // กลับไปที่หน้า login
+        function logoutUser() {
+            if (!confirm('ต้องการออกจากระบบใช่หรือไม่?')) return;
+
+            const token = localStorage.getItem(authTokenKey) || '';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'logout', token })
+            })
+            .catch(() => {})
+            .finally(() => {
+                localStorage.removeItem(authTokenKey);
+                currentRole = 'user';
+                document.getElementById('current-user-badge').style.display = 'none';
+                document.getElementById('logout-btn').style.display = 'none';
+                document.getElementById('nav-btn-members').style.display = 'none';
+                document.getElementById('nav-btn-activitylog').style.display = 'none';
+                document.getElementById('login-username').value = '';
+                document.getElementById('login-password').value = '';
+                document.getElementById('login-status').innerText = '';
+                document.getElementById('login-modal').classList.remove('hidden');
             });
         }
 

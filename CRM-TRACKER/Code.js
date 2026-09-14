@@ -22,13 +22,7 @@
 // แก้เพิ่ม (2026-08-08 รอบถัดมา): ผู้ใช้ยืนยันว่าอยากให้ "นับตัวเลขให้ได้ก่อน" เป็นอันดับแรก
 // สุด (ตัดเรื่องดึงชื่อสินค้าจาก remark ออกไปก่อน) — เลยทำ FB_LEAD_MARKER ให้ผิดพลาดยากที่สุด
 // เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
-// หมายเหตุ (2026-09-14): ไฟล์นี้ต่อยอดมาจาก r12-2026-09-11-login-users (มีระบบ
-// login/role/session ครบ) แล้วเพิ่ม action ใหม่ getStaleLeadsReport (รายงานลูกค้า
-// ค้างนานไม่ได้ติดตาม) เข้าไป — "ไม่ได้" รวมฟีเจอร์ "เพิ่มเมนูสมาชิก" ของเวอร์ชัน
-// r13-2026-09-14-add-member-menu ที่เคย deploy อยู่จริงก่อนหน้านี้ไว้ด้วย เพราะไม่มี
-// ไฟล์ต้นฉบับของ r13 ให้ดู (ยังหาไม่เจอใน Version History ตอนที่แก้ไฟล์นี้) ถ้าเจอไฟล์
-// r13 ทีหลัง ต้องเอาโค้ดฟีเจอร์เมนูสมาชิกจากไฟล์นั้นมาต่อเพิ่มเข้าไปในไฟล์นี้อีกที
-var CODE_VERSION = 'r14-2026-09-14-stale-leads-report';
+var CODE_VERSION = 'r18-2026-09-14-logout-userbadge';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -109,6 +103,119 @@ function buildExcludedPhoneParams_() {
 // ด้านล่างของไฟล์นี้ (เลือกจาก dropdown ▶ Run แล้วกดรันครั้งเดียว)
 var LOG_TABLE_ID = 'lead_intake_log';
 var LOG_TABLE_FULL_PATH = '`' + GCP_PROJECT_ID + '.' + DATASET_ID + '.' + LOG_TABLE_ID + '`';
+
+// =================================================================
+// 📋 ตาราง Log ประวัติการใช้งานของพนักงาน (user_activity_log)
+// =================================================================
+// บันทึกว่า "ใคร (username/role) ทำอะไร (action/detail) เมื่อไหร่ (logged_at) สำเร็จ
+// หรือไม่ (is_success)" — ใช้สำหรับหน้า "📋 ประวัติการใช้งาน" (เฉพาะ admin ดูได้)
+// ครอบคลุม: login เข้าระบบ, ค้นหาข้อมูล, เพิ่ม/แก้ไข/ลบลูกค้า, บันทึกการติดตาม,
+// export ข้อมูล และเพิ่มสมาชิกใหม่ (ดู ACTIVITY_LOG_WHITELIST ด้านล่างว่า log action ไหนบ้าง
+// — ตั้งใจไม่ log action ที่แค่ "ดึงข้อมูลมาแสดงหน้าจอ" เช่น getInitialData/
+// getDashboardSummary เพราะจะรันถี่มากจนตาราง log รกโดยไม่มีประโยชน์)
+//
+// ⚠️ ต้องรันคำสั่งนี้ใน BigQuery Console ก่อนใช้งาน (ครั้งเดียว) มิฉะนั้นการบันทึก log
+// จะ error เงียบๆ ใน Logger เฉยๆ (ไม่กระทบการทำงานหลักของระบบ) — ใช้ฟังก์ชัน
+// runOneTimeSetup_CreateUserActivityLogTable() ด้านล่างของไฟล์นี้
+var ACTIVITY_LOG_TABLE_ID = 'user_activity_log';
+var ACTIVITY_LOG_TABLE_FULL_PATH = '`' + GCP_PROJECT_ID + '.' + DATASET_ID + '.' + ACTIVITY_LOG_TABLE_ID + '`';
+
+// รวม action ชื่อเก่า/ชื่อใหม่ที่ความหมายเดียวกันให้เหลือชื่อเดียว เพื่อให้กรอง/รายงาน
+// ประวัติการใช้งานได้ง่าย (ไม่ต้องมานั่งเช็คทั้ง 'add' และ 'addCustomer' แยกกัน)
+function normalizeActivityAction_(action) {
+  var map = {
+    'searchCustomers': 'search',
+    'addCustomer': 'add',
+    'editCustomer': 'update',
+    'deleteCustomer': 'delete',
+    'addMember': 'addUser'
+  };
+  return map[action] || action;
+}
+
+// เฉพาะ action ในลิสต์นี้เท่านั้นที่จะถูกบันทึกลง user_activity_log
+var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser'];
+
+// สร้างข้อความ "detail" ที่อ่านง่าย บอกรายละเอียดของแต่ละ action ไว้ในหน้า log
+function buildActivityLogDetail_(normalizedAction, payload, result) {
+  payload = payload || {};
+  try {
+    switch (normalizedAction) {
+      case 'login':
+        return 'username: ' + cleanStr(payload.username);
+      case 'search':
+        var kw = cleanStr(payload.keyword);
+        return kw ? ('คำค้น: "' + kw + '"') : 'ค้นหา/กรองข้อมูลลูกค้า';
+      case 'add':
+        var c = payload.cust || payload.data || payload;
+        return 'ลูกค้าใหม่: ' + cleanStr(c.firstname || c.first_name) + ' ' + cleanStr(c.lastname || c.last_name) +
+               (c.phone1 || c.phone ? ' (' + cleanStr(c.phone1 || c.phone) + ')' : '');
+      case 'update':
+        return 'แก้ไขลูกค้า key: ' + cleanStr(payload.rowIndex || payload.phoneKey);
+      case 'delete':
+        return 'ลบลูกค้า key: ' + cleanStr(payload.phoneKey || payload.rowIndex);
+      case 'addFollowUp':
+        return 'บันทึกการติดตาม key: ' + cleanStr(payload.key || payload.rowIndex || payload.phoneKey);
+      case 'addUser':
+        return 'เพิ่มสมาชิก username: ' + cleanStr(payload.username) + ' (role: ' + cleanStr(payload.role) + ')';
+      case 'exportAll':
+        return 'Export ข้อมูลลูกค้าทั้งหมดเป็นไฟล์';
+      default:
+        return '';
+    }
+  } catch (e) {
+    return '';
+  }
+}
+
+// บันทึก 1 แถวลง user_activity_log — ห่อด้วย try/catch เสมอ เพื่อไม่ให้การบันทึก log
+// ล้มเหลวไปทำให้ action หลัก (เช่นบันทึกลูกค้า) ที่สำเร็จไปแล้วดูเหมือนพังไปด้วย
+function logUserActivity_(user, action, detail, isSuccess) {
+  try {
+    var sql = "INSERT INTO " + ACTIVITY_LOG_TABLE_FULL_PATH +
+      " (logged_at, log_date, username, role, action, detail, is_success) VALUES " +
+      "(CURRENT_TIMESTAMP(), CURRENT_DATE('Asia/Bangkok'), @username, @role, @action, @detail, CAST(@success AS BOOL))";
+    runParamQuery(sql, [
+      { name: 'username', value: user ? cleanStr(user.username) : '' },
+      { name: 'role', value: user ? cleanStr(user.role) : '' },
+      { name: 'action', value: cleanStr(action) },
+      { name: 'detail', value: cleanStr(detail) },
+      { name: 'success', value: isSuccess ? 'true' : 'false' }
+    ]);
+  } catch (e) {
+    Logger.log('logUserActivity_ error (ไม่กระทบการทำงานหลัก): ' + e.toString());
+  }
+}
+
+// ดึงประวัติการใช้งานมาแสดงในหน้า "📋 ประวัติการใช้งาน" — เฉพาะ admin เรียกได้
+// (เช็คสิทธิ์ที่ doPost ก่อนเรียกฟังก์ชันนี้แล้ว)
+function getUserActivityLogHTML(filters) {
+  filters = filters || {};
+  try {
+    var startDate = cleanStr(filters.startDate) || formatDateStr(new Date());
+    var endDate = cleanStr(filters.endDate) || formatDateStr(new Date());
+    var usernameFilter = cleanStr(filters.username);
+
+    var whereParts = ["log_date BETWEEN @startDate AND @endDate"];
+    var params = [
+      { name: 'startDate', value: startDate },
+      { name: 'endDate', value: endDate }
+    ];
+    if (usernameFilter) {
+      whereParts.push("LOWER(username) = LOWER(@username)");
+      params.push({ name: 'username', value: usernameFilter });
+    }
+
+    var sql = "SELECT CAST(logged_at AS STRING) as logged_at, username, role, action, detail, is_success " +
+      "FROM " + ACTIVITY_LOG_TABLE_FULL_PATH +
+      " WHERE " + whereParts.join(' AND ') +
+      " ORDER BY logged_at DESC LIMIT 500";
+    var rows = runParamQueryFetch(sql, params);
+    return { success: true, data: rows || [] };
+  } catch (err) {
+    return { success: false, message: err.toString(), data: [] };
+  }
+}
 
 // =================================================================
 // คอลัมน์ last_followup_date — "วันที่ติดตามล่าสุด" แยกจาก created_date
@@ -231,6 +338,63 @@ function getSessionsStore() {
   try { return stored ? JSON.parse(stored) : {}; } catch (e) { return {}; }
 }
 
+// =================================================================
+// 🟢 ผู้ใช้งาน "ออนไลน์อยู่ตอนนี้" — โชว์ที่หน้า login
+// =================================================================
+// ONLINE_WINDOW_MS: ถือว่า session ยัง "ออนไลน์" อยู่ ถ้ามีการเรียก server (ทำอะไรก็ได้
+// ในระบบ หรือ heartbeat 'ping' จากหน้าเว็บทุก ๆ 20 วิ) ภายในช่วงเวลานี้ — ถ้าเกินกว่านี้
+// แปลว่าปิดแท็บ/ไม่ได้ใช้งานแล้ว จะไม่ถูกนับว่าออนไลน์ (แต่ไม่ได้แปลว่า logout จริง
+// เพราะระบบนี้ไม่มี token หมดอายุ ยังใช้ token เดิม login ต่อได้ถ้าเปิดหน้าเว็บใหม่)
+var SESSION_ONLINE_WINDOW_MS = 5 * 60 * 1000; // 5 นาที
+// SESSION_MAX_AGE_MS: session ที่ไม่มีการใช้งานเลยเกินเวลานี้ จะถูกลบทิ้งจาก Properties
+// (ทำตอน login ครั้งใหม่ - ดู pruneStaleSessions_) เพื่อไม่ให้ crm_tracker_login_sessions
+// พอกพูนไม่มีที่สิ้นสุด (Script Properties มีเพดานขนาดต่อ 1 key)
+var SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
+
+// ลบ session เก่าที่ไม่มีการใช้งานมานานเกิน SESSION_MAX_AGE_MS ออกจาก store
+// (เรียกตอน login ใหม่แต่ละครั้ง เป็นจังหวะทำความสะอาดที่เนียนที่สุด ไม่ต้องตั้ง trigger แยก)
+function pruneStaleSessions_(sessions) {
+  var now = Date.now();
+  var pruned = {};
+  for (var token in sessions) {
+    var s = sessions[token];
+    var lastSeen = s.lastActive || 0;
+    if (!lastSeen && s.createdAt) {
+      var parsed = Date.parse(s.createdAt);
+      lastSeen = isNaN(parsed) ? 0 : parsed;
+    }
+    if ((now - lastSeen) < SESSION_MAX_AGE_MS) {
+      pruned[token] = s;
+    }
+  }
+  return pruned;
+}
+
+// ดึงรายชื่อผู้ใช้งานที่ "ออนไลน์อยู่ตอนนี้" (ไม่ซ้ำ username แม้ login ไว้หลาย session/token)
+// ไม่ต้อง login ก่อนก็เรียกได้ (ตั้งใจให้เรียกได้จากหน้า login ก่อนเข้าสู่ระบบ)
+function getOnlineUsersHTML() {
+  try {
+    var sessions = getSessionsStore();
+    var now = Date.now();
+    var latestByUser = {};
+    for (var token in sessions) {
+      var s = sessions[token];
+      var lastSeen = s.lastActive || 0;
+      if ((now - lastSeen) > SESSION_ONLINE_WINDOW_MS) continue; // เงียบไปนานแล้ว ไม่นับว่าออนไลน์
+      var existing = latestByUser[s.username];
+      if (!existing || lastSeen > existing.lastActive) {
+        latestByUser[s.username] = { username: s.username, role: s.role, name: s.name, lastActive: lastSeen };
+      }
+    }
+    var list = [];
+    for (var u in latestByUser) list.push(latestByUser[u]);
+    list.sort(function(a, b) { return b.lastActive - a.lastActive; });
+    return { success: true, data: list, count: list.length };
+  } catch (err) {
+    return { success: false, message: err.toString(), data: [], count: 0 };
+  }
+}
+
 function sha256Hex_(value) {
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
   return bytes.map(function(byte) {
@@ -268,6 +432,22 @@ function saveSessionsStore(data) {
   PropertiesService.getScriptProperties().setProperty(CRM_LOGIN_SESSIONS_KEY, JSON.stringify(data));
 }
 
+// ลบ session ทิ้งทันที (ใช้ตอนกดปุ่ม "ออกจากระบบ") — ต่างจากการปล่อยให้ session เงียบ
+// หายไปเองหลัง 5 นาที (SESSION_ONLINE_WINDOW_MS) เพราะ logout คือ user ตั้งใจออกเอง จึง
+// ควรหายจากลิสต์ "ออนไลน์อยู่ตอนนี้" ทันที ไม่ต้องรอ
+function removeSession_(token) {
+  if (!token) return;
+  try {
+    var sessions = getSessionsStore();
+    if (sessions[token]) {
+      delete sessions[token];
+      saveSessionsStore(sessions);
+    }
+  } catch (e) {
+    Logger.log('removeSession_ error: ' + e.toString());
+  }
+}
+
 function loginHTML(payload) {
   payload = payload || {};
   var username = String(payload.username || '').trim();
@@ -291,7 +471,8 @@ function loginHTML(payload) {
 
   var token = Utilities.base64EncodeWebSafe(Utilities.getUuid() + ':' + Date.now());
   var sessions = getSessionsStore();
-  sessions[token] = { username: matched.username, role: matched.role, name: matched.name, createdAt: new Date().toISOString() };
+  sessions = pruneStaleSessions_(sessions); // เก็บกวาด session เก่าทิ้งทุกครั้งที่มี login ใหม่
+  sessions[token] = { username: matched.username, role: matched.role, name: matched.name, createdAt: new Date().toISOString(), lastActive: Date.now() };
   saveSessionsStore(sessions);
 
   return {
@@ -305,7 +486,20 @@ function loginHTML(payload) {
 function validateToken(token) {
   if (!token) return null;
   var sessions = getSessionsStore();
-  return sessions[token] || null;
+  var session = sessions[token];
+  if (!session) return null;
+
+  // อัปเดต "เวลาใช้งานล่าสุด" ทุกครั้งที่ token นี้ถูกใช้เรียก server (รวมถึง heartbeat
+  // 'ping' จากหน้าเว็บ) แต่เขียนกลับ Script Properties เฉพาะเมื่อห่างจากครั้งก่อนเกิน 20
+  // วินาที เพื่อไม่ให้เขียน Properties ถี่เกินไปทุก request จนช้าโดยไม่จำเป็น
+  var now = Date.now();
+  var shouldPersist = !session.lastActive || (now - session.lastActive) > 20000;
+  session.lastActive = now;
+  if (shouldPersist) {
+    sessions[token] = session;
+    saveSessionsStore(sessions);
+  }
+  return session;
 }
 
 function getCurrentUserFromRequest(contents) {
@@ -335,6 +529,192 @@ function requireAdminForAction(action) {
   return adminOnlyActions[action] || '';
 }
 
+// =================================================================
+// 👥 เมนู "เพิ่มสมาชิก" — เพิ่ม user ใหม่เข้าตาราง users (BigQuery)
+// =================================================================
+// กติกาสิทธิ์:
+//  - ต้อง login อยู่ก่อนเสมอ (เช็คที่ doPost แล้วก่อนจะมาถึงฟังก์ชันนี้)
+//  - เรียกเมนูนี้ได้เฉพาะ role 'admin' และ 'staff' (พนักงาน) เท่านั้น
+//    (ดู ADD_MEMBER_ALLOWED_ROLES ด้านล่าง) — role อื่น (เช่น sale) ห้ามเข้าเมนูนี้
+//  - ถ้าคนที่กดเพิ่มเป็น role 'staff' (ไม่ใช่ admin): ตั้ง role ให้สมาชิกใหม่ได้แค่
+//    'staff' (พนักงาน) หรือ 'sale' เท่านั้น ห้ามตั้งเป็น 'admin' เด็ดขาด (กันพนักงาน
+//    เผลอ/จงใจตั้งตัวเองหรือคนอื่นเป็นแอดมิน) — ถ้าคนกดเพิ่มเป็น 'admin' จะตั้ง role
+//    อะไรก็ได้ในบรรดา role ที่ระบบรู้จัก (ดู KNOWN_ROLES)
+var ADD_MEMBER_ALLOWED_ROLES = ['admin', 'staff']; // ใครมีสิทธิ์เข้าเมนู "เพิ่มสมาชิก" ได้บ้าง
+var STAFF_ALLOWED_NEW_ROLES = ['staff', 'sale'];    // role ที่ "พนักงาน" (staff) ตั้งให้สมาชิกใหม่ได้
+var KNOWN_ROLES = ['admin', 'staff', 'sale'];       // role ทั้งหมดที่ระบบรู้จัก (กัน role พิมพ์ผิด/ไม่รู้จัก)
+
+// =================================================================
+// 🧩 ช่วยเติมค่าให้คอลัมน์ "required" (NOT NULL) ของตาราง users ที่เราไม่รู้จักล่วงหน้า
+// =================================================================
+// สาเหตุที่ต้องมีส่วนนี้: ตาราง users จริงในโปรเจกต์นี้มีคอลัมน์ที่ REQUIRED (เช่น
+// user_id) นอกเหนือจาก username/password_hash/role/status ที่โค้ดรู้จักอยู่แล้ว
+// ถ้า INSERT แล้วไม่ใส่ค่าคอลัมน์เหล่านี้ BigQuery จะ error "Required field X cannot
+// be null" ทันที
+//
+// แก้ไข (รอบนี้): เดิมใช้ query INFORMATION_SCHEMA.COLUMNS หา schema แต่พบว่ายัง error
+// "user_id cannot be null" ซ้ำเดิมอยู่ (แปลว่า query นั้นน่าจะ error/คืนค่าว่างเงียบๆ
+// แล้ว fallback ไม่เติมคอลัมน์ให้จริง) — เปลี่ยนมาใช้วิธี "ยิง SELECT * ... LIMIT 0" กับ
+// ตาราง users โดยตรงแทน แล้วอ่าน schema (พร้อม mode REQUIRED/NULLABLE) จาก response ของ
+// BigQuery.Jobs.query เอง — เป็น API เส้นเดียวกับที่ใช้ query ข้อมูลจริงอยู่แล้วทั้งไฟล์
+// (เช่นตอน login) จึงมั่นใจได้ว่า permission เข้าถึงได้แน่นอน ต่างจาก
+// INFORMATION_SCHEMA.COLUMNS ที่อาจต้องมีสิทธิ์เพิ่มเติมแยกต่างหาก
+function getUsersTableSchema_() {
+  try {
+    var request = {
+      query: "SELECT * FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` LIMIT 0",
+      useLegacySql: false
+    };
+    var queryResults = BigQuery.Jobs.query(request, GCP_PROJECT_ID);
+    var jobId = queryResults.jobReference.jobId;
+    while (!queryResults.jobComplete) {
+      Utilities.sleep(250);
+      queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobId);
+    }
+    return (queryResults.schema && queryResults.schema.fields) ? queryResults.schema.fields : [];
+  } catch (e) {
+    Logger.log('getUsersTableSchema_ error: ' + e.toString());
+    return [];
+  }
+}
+
+// หาเลข user_id ถัดไป (ใช้เมื่อคอลัมน์ user_id เป็นชนิดตัวเลข) โดยดูจากค่ามากสุดที่มีอยู่ +1
+function getNextNumericUserId_() {
+  try {
+    var sql = "SELECT MAX(SAFE_CAST(user_id AS INT64)) as max_id FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users`";
+    var rows = runParamQueryFetch(sql, []);
+    var maxId = (rows && rows.length && rows[0].max_id) ? parseInt(rows[0].max_id, 10) : 0;
+    if (isNaN(maxId)) maxId = 0;
+    return maxId + 1;
+  } catch (e) {
+    return Date.now(); // fallback กันพลาด — ยังไงก็ไม่ซ้ำ (เวลาปัจจุบันเป็น ms)
+  }
+}
+
+// เตรียมรายชื่อคอลัมน์/expression/parameter เพิ่มเติม สำหรับคอลัมน์ required ที่ยังไม่ถูก
+// จัดการโดยตรงในโค้ด (handledColumnNames = คอลัมน์ที่ addUserHTML ใส่ค่าเองอยู่แล้ว)
+// field.mode ที่ได้จาก BigQuery schema เป็น 'REQUIRED' | 'NULLABLE' | 'REPEATED'
+// field.type เป็น 'STRING' | 'INTEGER' | 'FLOAT' | 'NUMERIC' | 'BOOLEAN' | 'TIMESTAMP' | 'DATE' | ...
+function buildExtraRequiredColumnsForInsert_(handledColumnNames) {
+  var schemaFields = getUsersTableSchema_();
+  var names = [];
+  var exprs = [];
+  var params = [];
+  schemaFields.forEach(function(field, idx) {
+    var colName = String(field.name || '');
+    if (!colName || handledColumnNames.indexOf(colName) !== -1) return; // ถูกจัดการแล้วในโค้ดหลัก ข้ามไป
+    if (String(field.mode || '').toUpperCase() !== 'REQUIRED') return; // ไม่ได้บังคับ ไม่ต้องใส่ค่าก็ได้
+    var dataType = String(field.type || '').toUpperCase();
+    var paramName = 'extraCol' + idx;
+    names.push(colName);
+    if (dataType === 'INTEGER' || dataType === 'INT64' || dataType === 'NUMERIC' || dataType === 'BIGNUMERIC' || dataType === 'FLOAT' || dataType === 'FLOAT64') {
+      if (colName === 'user_id') {
+        exprs.push('CAST(@' + paramName + ' AS INT64)');
+        params.push({ name: paramName, value: String(getNextNumericUserId_()) });
+      } else {
+        exprs.push('CAST(@' + paramName + ' AS INT64)');
+        params.push({ name: paramName, value: '0' });
+      }
+    } else if (dataType === 'BOOLEAN' || dataType === 'BOOL') {
+      exprs.push('CAST(@' + paramName + ' AS BOOL)');
+      params.push({ name: paramName, value: 'true' });
+    } else if (dataType === 'TIMESTAMP') {
+      exprs.push('CURRENT_TIMESTAMP()');
+    } else if (dataType === 'DATE') {
+      exprs.push("CURRENT_DATE('Asia/Bangkok')");
+    } else if (colName === 'user_id') {
+      // user_id เป็นชนิด STRING (หรือชนิดอื่นที่ไม่ใช่ตัวเลข) — ใช้ค่า unique แบบ UUID
+      exprs.push('@' + paramName);
+      params.push({ name: paramName, value: Utilities.getUuid() });
+    } else {
+      exprs.push('@' + paramName);
+      params.push({ name: paramName, value: '' });
+    }
+  });
+  return { names: names, exprs: exprs, params: params };
+}
+
+
+function addUserHTML(payload, currentUser) {
+  try {
+    if (!currentUser || ADD_MEMBER_ALLOWED_ROLES.indexOf(currentUser.role) === -1) {
+      return { success: false, message: 'คุณไม่มีสิทธิ์เพิ่มสมาชิกใหม่ (เมนูนี้ใช้ได้เฉพาะ admin และพนักงานเท่านั้น)' };
+    }
+
+    var username = cleanStr(payload && payload.username).toLowerCase();
+    var password = cleanStr(payload && payload.password);
+    var requestedRole = cleanStr(payload && payload.role).toLowerCase();
+
+    if (!username || !password || !requestedRole) {
+      return { success: false, message: 'กรุณากรอก username, password และเลือกสิทธิ์ให้ครบ' };
+    }
+    if (password.length < 6) {
+      return { success: false, message: 'password ต้องมีความยาวอย่างน้อย 6 ตัวอักษร' };
+    }
+    if (KNOWN_ROLES.indexOf(requestedRole) === -1) {
+      return { success: false, message: 'ไม่รู้จักสิทธิ์ "' + requestedRole + '"' };
+    }
+    // พนักงาน (staff) ตั้ง role ให้สมาชิกใหม่ได้แค่ พนักงาน/sale เท่านั้น ห้ามตั้ง admin
+    if (currentUser.role !== 'admin' && STAFF_ALLOWED_NEW_ROLES.indexOf(requestedRole) === -1) {
+      return { success: false, message: 'สิทธิ์พนักงาน สามารถเพิ่มสมาชิกได้เฉพาะ role "พนักงาน" หรือ "sale" เท่านั้น' };
+    }
+
+    // เช็คว่ามี username นี้อยู่แล้วในระบบหรือยัง (กันซ้ำ)
+    var checkSql = "SELECT username FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` WHERE username = @username LIMIT 1";
+    var existing = runParamQueryFetch(checkSql, [{ name: 'username', value: username }]);
+    if (existing && existing.length > 0) {
+      return { success: false, message: 'มี username "' + username + '" อยู่แล้วในระบบ กรุณาใช้ชื่ออื่น' };
+    }
+
+    // เก็บรหัสผ่านเป็น sha256 hash เสมอ (ไม่เก็บ plain text) — สอดคล้องกับที่
+    // getBigQueryLoginUser_ ใช้ตอน login (รองรับทั้ง plain และ sha256 เผื่อแถวเก่า)
+    var passwordHash = sha256Hex_(password);
+
+    // เช็ค schema จริงของตาราง users ว่ามีคอลัมน์ required (NOT NULL) อื่นนอกเหนือจาก
+    // username/password_hash/role/status หรือไม่ (เช่น user_id) แล้วเติมค่าให้ครบ
+    // กันปัญหา "Required field X cannot be null" ที่เจอตอนทดสอบ
+    var handledColumns = ['username', 'password_hash', 'role', 'status'];
+    var extra = buildExtraRequiredColumnsForInsert_(handledColumns);
+
+    var allColumnNames = ['username', 'password_hash', 'role', 'status'].concat(extra.names);
+    var allColumnExprs = ['@username', '@passwordHash', '@role', "'active'"].concat(extra.exprs);
+    var insertSql = "INSERT INTO `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` " +
+      "(" + allColumnNames.join(', ') + ") VALUES (" + allColumnExprs.join(', ') + ")";
+    var insertParams = [
+      { name: 'username', value: username },
+      { name: 'passwordHash', value: passwordHash },
+      { name: 'role', value: requestedRole }
+    ].concat(extra.params);
+
+    try {
+      runParamQuery(insertSql, insertParams);
+    } catch (insertErr) {
+      var errMsg = insertErr.toString();
+      // กันเหนียวรอบสุดท้าย: ถ้าตรวจ schema ไม่เจอ user_id ด้วยเหตุผลบางอย่าง (เช่น
+      // สิทธิ์เข้าถึง schema ไม่ครบ) แต่ BigQuery ยังฟ้อง "Required field user_id cannot
+      // be null" อยู่ดี ให้ลองใหม่อีกครั้งโดยยัด user_id เป็น UUID string ตรงๆ ไปเลย
+      // (เผื่อทางสุดท้ายกันพังซ้ำแบบเดิม)
+      if (errMsg.indexOf('user_id') !== -1 && errMsg.indexOf('cannot be null') !== -1 && allColumnNames.indexOf('user_id') === -1) {
+        var retryColumnNames = allColumnNames.concat(['user_id']);
+        var retryColumnExprs = allColumnExprs.concat(['@fallbackUserId']);
+        var retrySql = "INSERT INTO `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` " +
+          "(" + retryColumnNames.join(', ') + ") VALUES (" + retryColumnExprs.join(', ') + ")";
+        var retryParams = insertParams.concat([{ name: 'fallbackUserId', value: Utilities.getUuid() }]);
+        runParamQuery(retrySql, retryParams);
+      } else {
+        throw insertErr;
+      }
+    }
+
+    return {
+      success: true,
+      message: 'เพิ่มสมาชิก "' + username + '" (สิทธิ์: ' + requestedRole + ') สำเร็จ'
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
 function doGet(e) {
   var action = e && e.parameter ? e.parameter.action : '';
   if (action === 'getInitialData') {
@@ -351,9 +731,9 @@ function doGet(e) {
     return createJsonResponse(getLeadIntakeLogDetailHTML(e.parameter));
   } else if (action === 'getFollowupCalendar') {
     return createJsonResponse(getFollowupCalendarHTML(e.parameter));
-  } else if (action === 'getStaleLeadsReport') {
-    // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
-    return createJsonResponse(getStaleLeadsReportHTML(e.parameter));
+  } else if (action === 'getOnlineUsers') {
+    // โชว์ที่หน้า login ก่อนเข้าสู่ระบบ จึงตั้งใจไม่เช็ค token/login ตรงนี้ (เหมือน checkStatus)
+    return createJsonResponse(getOnlineUsersHTML());
   }
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -369,7 +749,31 @@ function doPost(e) {
     var user = validateToken(token);
 
     if (action === 'login') {
-      return createJsonResponse(loginHTML(contents.payload || contents));
+      var loginResult = loginHTML(contents.payload || contents);
+      var loginPayloadForLog = contents.payload || contents;
+      logUserActivity_(
+        loginResult.success ? loginResult.user : { username: loginPayloadForLog.username, role: '' },
+        'login',
+        buildActivityLogDetail_('login', loginPayloadForLog, loginResult) +
+          (loginResult.success ? '' : ' - ล้มเหลว: ' + cleanStr(loginResult.message)),
+        !!loginResult.success
+      );
+      return createJsonResponse(loginResult);
+    }
+
+    if (action === 'getOnlineUsers') {
+      // โชว์ที่หน้า login ก่อนเข้าสู่ระบบ จึงตั้งใจไม่เช็ค login ตรงนี้ (เหมือน checkStatus)
+      return createJsonResponse(getOnlineUsersHTML());
+    }
+
+    if (action === 'logout') {
+      // ลบ session ทิ้งทันที ให้หายจากลิสต์ "ออนไลน์อยู่ตอนนี้" ทันที ไม่ต้องรอ 5 นาที
+      var userBeforeLogout = user; // เก็บไว้ก่อนลบ session เพื่อบันทึก log ว่าใคร logout
+      removeSession_(token);
+      if (userBeforeLogout) {
+        logUserActivity_(userBeforeLogout, 'logout', 'ออกจากระบบ', true);
+      }
+      return createJsonResponse({ success: true, message: 'ออกจากระบบเรียบร้อย' });
     }
 
     if (!user) {
@@ -401,6 +805,10 @@ function doPost(e) {
     } else if (action === 'getByPhone' || action === 'getCustomerByRow') {
       var getData = contents.payload || contents;
       result = getCustomerByPhone(getData.phoneKey || getData.rowIndex);
+    } else if (action === 'addUser' || action === 'addMember') {
+      // เมนู "เพิ่มสมาชิก" — สิทธิ์เช็คแยกอยู่ในฟังก์ชันนี้เอง (ไม่ใช่ admin-only ตรงๆ
+      // เพราะ role 'staff' ก็เข้าเมนูนี้ได้ แต่ตั้ง role ให้คนใหม่ได้จำกัดกว่า admin)
+      result = addUserHTML(contents.payload || contents.data || {}, user);
     } else if (action === 'getInitialData') {
       result = getInitialDataHTML();
     } else if (action === 'getDashboardSummary') {
@@ -419,12 +827,33 @@ function doPost(e) {
       result = getLeadIntakeLogDetailHTML(contents.payload || contents);
     } else if (action === 'getFollowupCalendar') {
       result = getFollowupCalendarHTML(contents.payload || contents);
-    } else if (action === 'getStaleLeadsReport') {
-      // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
-      // ไม่ได้อยู่ในลิสต์ admin-only ด้านบน เพราะเป็นรายงานอ่านอย่างเดียวเหมือน
-      // getDashboardSummary/getDailyLeadReport ที่ role 'user' ก็ดูได้
-      result = getStaleLeadsReportHTML(contents.payload || contents);
+    } else if (action === 'ping') {
+      // heartbeat จากหน้าเว็บ (ทุก ~20 วิ ตอน login อยู่) แค่เรียกมาให้ validateToken()
+      // ด้านบนอัปเดต lastActive ของ session นี้ ไม่ต้องทำอะไรต่อ — ใช้เพื่อให้คนอื่นเห็นว่า
+      // user นี้ยัง "ออนไลน์" อยู่ในหน้า login ของคนที่ยังไม่ได้เข้าสู่ระบบ
+      result = { success: true };
+    } else if (action === 'getUserActivityLog') {
+      // ประวัติการใช้งานของพนักงาน — เฉพาะ admin เท่านั้นที่ดูได้
+      if (user.role !== 'admin') {
+        result = { success: false, message: 'เฉพาะ admin เท่านั้นที่ดูประวัติการใช้งานได้' };
+      } else {
+        result = getUserActivityLogHTML(contents.payload || contents);
+      }
     }
+
+    // บันทึกประวัติการใช้งาน (เฉพาะ action ที่อยู่ใน ACTIVITY_LOG_WHITELIST เท่านั้น —
+    // ดูคอมเมนต์ที่ประกาศตัวแปรนี้ด้านบนของไฟล์ว่าทำไมถึงไม่ log ทุก action)
+    var normalizedActionForLog = normalizeActivityAction_(action);
+    if (ACTIVITY_LOG_WHITELIST.indexOf(normalizedActionForLog) !== -1) {
+      var logPayload = contents.payload || contents.data || contents;
+      logUserActivity_(
+        user,
+        normalizedActionForLog,
+        buildActivityLogDetail_(normalizedActionForLog, logPayload, result),
+        !!(result && result.success)
+      );
+    }
+
     return createJsonResponse(result);
   } catch (err) {
     return createJsonResponse({ success: false, message: err.toString() });
@@ -1248,103 +1677,6 @@ function getAllCustomersExport() {
 }
 
 // =================================================================
-// รายงานลูกค้าที่ "ค้างนาน" ยังไม่ได้ติดตาม (Stale Leads) — ใช้ในหน้า "รายงาน"
-// =================================================================
-// เกณฑ์: เทียบ "วันที่ติดตามล่าสุด" (last_followup_date) กับวันนี้ ถ้าลูกค้ารายไหน
-// ไม่เคยมีการติดตามเลยสักครั้ง (last_followup_date ว่าง) จะใช้ "วันที่บันทึกครั้งแรก"
-// (created_date) แทนในการเทียบ (ถือว่ายิ่งค้างหนักกว่าปกติเพราะไม่เคยติดต่อเลย)
-// ไม่รวมลูกค้าที่ปิดจบแล้ว (type = 'ส่งมอบ') เพราะไม่ต้องติดตามต่อ
-// payload รองรับ: { days: จำนวนวันขั้นต่ำที่ถือว่า "ค้าง" (ค่าเริ่มต้น 14) }
-function getStaleLeadsReportHTML(reqPayload) {
-  try {
-    var payload = reqPayload || {};
-    var days = parseInt(payload.days);
-    if (!days || days < 1) days = 14;
-    var lastFollowupExpr = buildRobustDateOrderExpr_('last_followup_date');
-    var createdExpr = buildRobustDateOrderExpr_('created_date');
-    // ใช้ last_followup_date จริงถ้ามีค่า (ไม่ใช่ผ่าน buildRobustDateOrderExpr_ ที่แปลงค่าว่าง
-    // เป็น 1900-01-01 อยู่แล้ว) ก่อนจะ fallback ไปที่ created_date เมื่อยังไม่เคยติดตามเลย
-    var effectiveDateExpr = "IF(last_followup_date IS NULL, " + createdExpr + ", " + lastFollowupExpr + ")";
-    var daysSinceExpr = "DATE_DIFF(CURRENT_DATE('Asia/Bangkok'), " + effectiveDateExpr + ", DAY)";
-    var sql = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
-              "CAST(created_date AS STRING) AS created_date, " +
-              "CAST(booking_date AS STRING) AS booking_date, " +
-              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-              FINGERPRINT_EXPR + " as row_key, " +
-              daysSinceExpr + " AS days_since_contact " +
-              "FROM " + TABLE_FULL_PATH +
-              " WHERE (type IS NULL OR TRIM(type) = '' OR type != 'ส่งมอบ') " +
-              " AND " + daysSinceExpr + " >= " + days +
-              " ORDER BY " + effectiveDateExpr + " ASC" +
-              " LIMIT 300";
-    var rows = runParamQueryFetch(sql, []);
-    var formattedData = rows.map(function(r) {
-      var row = formatCustomerRowForList_(r);
-      row.daysSinceContact = parseInt(r.days_since_contact) || 0;
-      row.hasEverFollowedUp = !!(r.last_followup_date && cleanStr(r.last_followup_date));
-      return row;
-    });
-    return { success: true, data: formattedData, days: days };
-  } catch (err) {
-    return { success: false, message: err.toString() };
-  }
-}
-// แปลงแถวดิบจาก BigQuery ให้เป็นรูปแบบเดียวกับที่หน้าเว็บใช้แสดงผล/เปิด modal ประวัติติดตามได้
-// (คัดลอกมาจาก mapping เดิมใน searchCustomersHTML โดยตั้งใจแยกเป็นฟังก์ชันของตัวเอง
-// แทนที่จะไปแก้ searchCustomersHTML ให้เรียกใช้ร่วมกัน เพื่อไม่ให้กระทบพฤติกรรมเดิมที่
-// ใช้งานอยู่แล้วในหน้าประวัติ/ค้นหา)
-function formatCustomerRowForList_(r) {
-  var recDate = formatDateStr(r.created_date || r.date || '');
-  var bookDate = formatDateStr(r.booking_date || '');
-  var lastFollowupDate = formatDateStr(r.last_followup_date || '');
-  var fn = (r.first_name || r.firstname || '').toString().trim();
-  var ln = (r.last_name || r.lastname || '').toString().trim();
-  var lineId = (r.line || '').toString().trim();
-  var fbId = (r.facebook || '').toString().trim();
-  var noteVal = (r.remark || r.note || '').toString().trim();
-  var fullName = (fn && ln && fn !== ln) ? (fn + ' ' + ln) : (fn || ln);
-  if (!fullName) {
-    if (lineId) fullName = '[Line] ' + lineId;
-    else if (fbId) fullName = '[FB] ' + fbId;
-    else fullName = '(ไม่ระบุชื่อ)';
-  }
-  var ph = formatPhoneNumber(r.phone);
-  var uniqueKey = (r.row_key !== undefined && r.row_key !== null && r.row_key !== '')
-                  ? r.row_key.toString()
-                  : (ph || (fn + '_' + ln));
-  var followUpArr = parseFollowUpLog(r.follow_up_log);
-  return {
-    sheetRowIndex: uniqueKey,
-    raw_key: uniqueKey,
-    date: recDate,
-    firstname: fn,
-    lastname: ln,
-    name: fullName,
-    phone: ph,
-    phone1: ph,
-    appdate: bookDate,
-    booking_date: bookDate,
-    lastFollowupDate: lastFollowupDate,
-    type: r.type || 'ลงทะเบียน',
-    product: r.product || '',
-    addressno: r.address_no || '',
-    moo: r.moo || '',
-    village: r.village || '',
-    subdistrict: r.subdistrict || '',
-    district: r.district || '',
-    province: r.province || 'อุบลราชธานี',
-    zipcode: r.zipcode || '',
-    remark: noteVal,
-    note: noteVal,
-    line: lineId,
-    facebook: fbId,
-    financialInfo: r.financial_info || '{}',
-    followUpLog: followUpArr,
-    followUpCount: followUpArr.length
-  };
-}
-
-// =================================================================
 // รายงานจำนวนลีดที่ส่งเข้ามาต่อวัน (นับจาก lead_intake_log — รวมที่ส่งซ้ำด้วย)
 // =================================================================
 // payload รองรับ: { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD', onlyManyChat: true/false }
@@ -1738,6 +2070,48 @@ function runOneTimeSetup_AddFinancialInfoColumn() {
   } catch (err) {
     Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
   }
+}
+
+// =================================================================
+// ⚙️ Setup ครั้งเดียว (ใหม่): สร้างตาราง user_activity_log สำหรับเก็บประวัติการใช้งาน
+// =================================================================
+// วิธีรัน: เหมือนขั้นตอนด้านบน — เลือกฟังก์ชัน
+// "runOneTimeSetup_CreateUserActivityLogTable" จาก dropdown ข้างปุ่ม ▶ Run แล้วกดรัน
+// เช็คแท็บ "Executions" ว่าขึ้น "สำเร็จ" ก่อนใช้งานจริง (ก่อนรันขั้นนี้ ระบบจะยังทำงาน
+// ปกติทุกอย่าง แค่การบันทึก log จะ error เงียบๆ ใน Logger เฉยๆ ไม่กระทบผู้ใช้งานเลย —
+// แต่หน้า "📋 ประวัติการใช้งาน" จะยังไม่มีข้อมูลจนกว่าจะรันขั้นนี้)
+// รันครั้งเดียวพอ ไม่ต้องรันซ้ำอีกถ้าสำเร็จแล้ว (ใช้ CREATE TABLE IF NOT EXISTS
+// ป้องกัน error ถ้าเผลอรันซ้ำ)
+function runOneTimeSetup_CreateUserActivityLogTable() {
+  try {
+    var sql = "CREATE TABLE IF NOT EXISTS " + ACTIVITY_LOG_TABLE_FULL_PATH + " (" +
+      "logged_at TIMESTAMP, " +
+      "log_date DATE, " +
+      "username STRING, " +
+      "role STRING, " +
+      "action STRING, " +
+      "detail STRING, " +
+      "is_success BOOL" +
+      ") PARTITION BY log_date";
+    runParamQuery(sql, []);
+    Logger.log('สำเร็จ: สร้างตาราง ' + ACTIVITY_LOG_TABLE_ID + ' แล้ว (หรือมีอยู่แล้วก่อนหน้านี้)');
+  } catch (err) {
+    Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
+  }
+}
+
+// ฟังก์ชันช่วย debug: พิมพ์ schema จริงของตาราง users ออกทาง Logger เพื่อดูว่ามีคอลัมน์
+// อะไรบ้าง คอลัมน์ไหนเป็น REQUIRED — ใช้ตอนสงสัยว่าทำไม addUserHTML ยัง error เรื่อง
+// คอลัมน์ required อยู่ (เลือกฟังก์ชันนี้จาก dropdown ▶ Run แล้วเปิดแท็บ Executions ดูผล)
+function debugPrintUsersTableSchema() {
+  var fields = getUsersTableSchema_();
+  if (!fields.length) {
+    Logger.log('ไม่พบ schema เลย (หรือ query ล้มเหลว) — เช็ค Logger ด้านบนถ้ามี error ของ getUsersTableSchema_');
+    return;
+  }
+  fields.forEach(function(f) {
+    Logger.log('คอลัมน์: ' + f.name + ' | ชนิด: ' + f.type + ' | mode: ' + f.mode);
+  });
 }
 
 function testDailyLeadReportDirect() {
