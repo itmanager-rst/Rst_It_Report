@@ -422,7 +422,7 @@
                 </div>
                 <div class="search-actions">
                     <div style="display:flex; gap:8px;">
-                        <button class="btn btn-export" onclick="exportFilteredCSV()">📥 Export CSV</button>
+                        <button id="btn-export-csv" class="btn btn-export" onclick="exportFilteredCSV()">📥 Export CSV</button>
                         <button class="btn btn-secondary" onclick="clearFilters()">🔄 ล้างเงื่อนไข</button>
                     </div>
                     <button class="btn btn-primary" onclick="fetchDataFromServer(1)">🚀 ค้นหาข้อมูล</button>
@@ -1116,7 +1116,9 @@
             document.getElementById('nav-btn-report').classList.toggle('active', name === 'report');
             document.getElementById('nav-btn-members').classList.toggle('active', name === 'members');
             document.getElementById('nav-btn-activitylog').classList.toggle('active', name === 'activitylog');
-            document.getElementById('fab-container').style.display = (name === 'history') ? 'block' : 'none';
+            document.getElementById('fab-container').style.display = (name === 'history' && currentRole === 'admin') ? 'block' : 'none';
+            const csvExportBtn = document.getElementById('btn-export-csv');
+            if (csvExportBtn) csvExportBtn.style.display = (currentRole === 'admin') ? '' : 'none';
             if (name === 'members') populateMemberRoleOptions();
             if (name === 'activitylog' && !activityLogLoadedOnce) {
                 activityLogLoadedOnce = true;
@@ -1977,7 +1979,7 @@
                 const prodParts = getRowProductParts(row);
                 const fin = parseFinancialInfo(row.financialInfo || row.financial);
                 const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
-                const adminEditDelete = currentRole === 'admin'
+                const adminEditDelete = (currentRole === 'admin' || currentRole === 'staff')
                     ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>
                        <button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>`
                     : '';
@@ -2545,7 +2547,7 @@
         }
         function exportFilteredCSV() {
             if (currentRole !== 'admin') {
-                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export CSV ได้');
+                alert('เฉพาะ admin เท่านั้นที่ export CSV ได้');
                 return;
             }
             if(!currentRenderedData || currentRenderedData.length === 0) {
@@ -2566,7 +2568,7 @@
         }
         function exportFullExcel() {
             if (currentRole !== 'admin') {
-                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export Excel ได้');
+                alert('เฉพาะ admin เท่านั้นที่ export Excel ได้');
                 return;
             }
             alert('⚡ กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
@@ -2588,8 +2590,8 @@
             });
         }
         function deleteCustomerByIndex(idx) {
-            if (currentRole !== 'admin') {
-                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้');
+            if (currentRole !== 'admin' && currentRole !== 'staff') {
+                alert('สิทธิ์ของคุณดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้');
                 return;
             }
             const row = currentRenderedData[idx];

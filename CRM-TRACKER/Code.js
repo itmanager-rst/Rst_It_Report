@@ -22,7 +22,7 @@
 // แก้เพิ่ม (2026-08-08 รอบถัดมา): ผู้ใช้ยืนยันว่าอยากให้ "นับตัวเลขให้ได้ก่อน" เป็นอันดับแรก
 // สุด (ตัดเรื่องดึงชื่อสินค้าจาก remark ออกไปก่อน) — เลยทำ FB_LEAD_MARKER ให้ผิดพลาดยากที่สุด
 // เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
-var CODE_VERSION = 'r18-2026-09-14-logout-userbadge';
+var CODE_VERSION = 'r20-2026-09-14-permission-matrix';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -781,10 +781,23 @@ function doPost(e) {
     }
 
     // role check for sensitive update actions
+    // นโยบายสิทธิ์ (ตามที่ตกลงกันล่าสุด):
+    //  - admin        : ทำได้ทุกอย่าง (เพิ่ม/แก้ไข/ลบ/export/ดู log/เพิ่มสมาชิกได้ทุก role)
+    //  - staff (พนักงาน): เพิ่ม/แก้ไข/ลบข้อมูลลูกค้าได้ และปริ้นได้ (ปริ้นไม่ผ่าน action นี้)
+    //                     แต่ export และดู log ไม่ได้ (เช็คแยกจุดอื่น)
+    //  - sale/user     : ดูข้อมูลได้อย่างเดียว (ปริ้นได้ แต่ปริ้นเป็นแค่การแสดงผลฝั่งหน้าเว็บ
+    //                     ไม่ได้เรียก action นี้ จึงไม่ต้องเช็คตรงนี้)
+    var CUSTOMER_WRITE_ALLOWED_ROLES = ['admin', 'staff'];
+    var CUSTOMER_EXPORT_ALLOWED_ROLES = ['admin']; // เฉพาะ admin เท่านั้นที่ export ได้
     if (action === 'add' || action === 'addCustomer' || action === 'update' || action === 'editCustomer'
-        || action === 'delete' || action === 'deleteCustomer' || action === 'exportAll' || action === 'addFollowUp') {
-      if (user.role !== 'admin') {
-        return createJsonResponse({ success: false, message: 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถเพิ่ม แก้ไข ลบ หรือ export ได้' });
+        || action === 'delete' || action === 'deleteCustomer' || action === 'addFollowUp') {
+      if (CUSTOMER_WRITE_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่ม แก้ไข หรือ ลบได้ (เฉพาะ admin และพนักงานเท่านั้นที่ทำได้)' });
+      }
+    }
+    if (action === 'exportAll') {
+      if (CUSTOMER_EXPORT_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        return createJsonResponse({ success: false, message: 'เฉพาะ admin เท่านั้นที่ export ข้อมูลได้' });
       }
     }
 
