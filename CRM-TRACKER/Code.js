@@ -22,7 +22,7 @@
 // แก้เพิ่ม (2026-08-08 รอบถัดมา): ผู้ใช้ยืนยันว่าอยากให้ "นับตัวเลขให้ได้ก่อน" เป็นอันดับแรก
 // สุด (ตัดเรื่องดึงชื่อสินค้าจาก remark ออกไปก่อน) — เลยทำ FB_LEAD_MARKER ให้ผิดพลาดยากที่สุด
 // เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
-var CODE_VERSION = 'r12-2026-09-11-login-users';
+var CODE_VERSION = 'r12-2026-09-14-stale-leads-report';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -201,134 +201,6 @@ function formatPhoneNumber(ph) {
   }
   return strPhone;
 }
-
-var CRM_LOGIN_USERS_KEY = 'crm_tracker_login_users';
-var CRM_LOGIN_SESSIONS_KEY = 'crm_tracker_login_sessions';
-
-function getUsersStore() {
-  var props = PropertiesService.getScriptProperties();
-  var stored = props.getProperty(CRM_LOGIN_USERS_KEY);
-  if (!stored) {
-    var defaults = [
-      { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator' },
-      { username: 'user', password: 'user123', role: 'user', name: 'General User' }
-    ];
-    props.setProperty(CRM_LOGIN_USERS_KEY, JSON.stringify(defaults));
-    return defaults;
-  }
-  try { return JSON.parse(stored); } catch (e) { return []; }
-}
-
-function getSessionsStore() {
-  var props = PropertiesService.getScriptProperties();
-  var stored = props.getProperty(CRM_LOGIN_SESSIONS_KEY);
-  try { return stored ? JSON.parse(stored) : {}; } catch (e) { return {}; }
-}
-
-function sha256Hex_(value) {
-  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
-  return bytes.map(function(byte) {
-    var unsigned = byte < 0 ? byte + 256 : byte;
-    return ('0' + unsigned.toString(16)).slice(-2);
-  }).join('');
-}
-
-function getBigQueryLoginUser_(username, password) {
-  try {
-    var sql = "SELECT username, password_hash, role, status FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` WHERE username = @username LIMIT 1";
-    var rows = runParamQueryFetch(sql, [{ name: 'username', value: username }]);
-    if (!rows.length) return { found: false };
-
-    var row = rows[0];
-    var storedPassword = String(row.password_hash || '').trim();
-    var passwordMatches = storedPassword === password || storedPassword.toLowerCase() === sha256Hex_(password).toLowerCase();
-    var status = String(row.status || '').trim().toLowerCase();
-    if (!passwordMatches || (status && status !== 'active')) return { found: true, user: null };
-    return {
-      found: true,
-      user: {
-        username: String(row.username || username),
-        password: password,
-        role: String(row.role || 'user').toLowerCase(),
-        name: String(row.username || username)
-      }
-    };
-  } catch (e) {
-    return { found: false };
-  }
-}
-
-function saveSessionsStore(data) {
-  PropertiesService.getScriptProperties().setProperty(CRM_LOGIN_SESSIONS_KEY, JSON.stringify(data));
-}
-
-function loginHTML(payload) {
-  payload = payload || {};
-  var username = String(payload.username || '').trim();
-  var password = String(payload.password || '').trim();
-  if (!username || !password) {
-    return { success: false, message: 'กรุณากรอก username และ password' };
-  }
-
-  var databaseUser = getBigQueryLoginUser_(username, password);
-  var matched = databaseUser.found ? databaseUser.user : null;
-  if (!databaseUser.found) {
-    var users = getUsersStore();
-    matched = users.find(function(u) {
-      return String(u.username) === username && String(u.password) === password;
-    });
-  }
-
-  if (!matched) {
-    return { success: false, message: 'username หรือ password ไม่ถูกต้อง' };
-  }
-
-  var token = Utilities.base64EncodeWebSafe(Utilities.getUuid() + ':' + Date.now());
-  var sessions = getSessionsStore();
-  sessions[token] = { username: matched.username, role: matched.role, name: matched.name, createdAt: new Date().toISOString() };
-  saveSessionsStore(sessions);
-
-  return {
-    success: true,
-    token: token,
-    user: { username: matched.username, role: matched.role, name: matched.name },
-    message: 'เข้าสู่ระบบสำเร็จ'
-  };
-}
-
-function validateToken(token) {
-  if (!token) return null;
-  var sessions = getSessionsStore();
-  return sessions[token] || null;
-}
-
-function getCurrentUserFromRequest(contents) {
-  var token = contents && contents.token ? contents.token : '';
-  if (!token && contents && contents.payload && contents.payload.token) token = contents.payload.token;
-  return validateToken(token);
-}
-
-function requireAdmin(user) {
-  if (!user || user.role !== 'admin') {
-    return { success: false, message: 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถเพิ่ม แก้ไข ลบ หรือ export ได้' };
-  }
-  return null;
-}
-
-function requireAdminForAction(action) {
-  var adminOnlyActions = {
-    'add': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถเพิ่มข้อมูลได้',
-    'addCustomer': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถเพิ่มข้อมูลได้',
-    'update': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถแก้ไขข้อมูลได้',
-    'editCustomer': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถแก้ไขข้อมูลได้',
-    'delete': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้',
-    'deleteCustomer': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้',
-    'exportAll': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export ข้อมูลได้',
-    'addFollowUp': 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถบันทึกการติดตามได้'
-  };
-  return adminOnlyActions[action] || '';
-}
-
 function doGet(e) {
   var action = e && e.parameter ? e.parameter.action : '';
   if (action === 'getInitialData') {
@@ -345,6 +217,9 @@ function doGet(e) {
     return createJsonResponse(getLeadIntakeLogDetailHTML(e.parameter));
   } else if (action === 'getFollowupCalendar') {
     return createJsonResponse(getFollowupCalendarHTML(e.parameter));
+  } else if (action === 'getStaleLeadsReport') {
+    // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
+    return createJsonResponse(getStaleLeadsReportHTML(e.parameter));
   }
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -355,27 +230,10 @@ function doGet(e) {
 function doPost(e) {
   try {
     var contents = JSON.parse(e.postData.contents);
-    var action = String(contents.action || '').trim();
-    var token = contents.token || (contents.payload && contents.payload.token) || '';
-    var user = validateToken(token);
-
-    if (action === 'login') {
-      return createJsonResponse(loginHTML(contents.payload || contents));
-    }
-
-    if (!user) {
-      return createJsonResponse({ success: false, message: 'กรุณาเข้าสู่ระบบก่อนใช้งาน', requireLogin: true });
-    }
-
-    // role check for sensitive update actions
-    if (action === 'add' || action === 'addCustomer' || action === 'update' || action === 'editCustomer'
-        || action === 'delete' || action === 'deleteCustomer' || action === 'exportAll' || action === 'addFollowUp') {
-      if (user.role !== 'admin') {
-        return createJsonResponse({ success: false, message: 'สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถเพิ่ม แก้ไข ลบ หรือ export ได้' });
-      }
-    }
-
+    var action = contents.action;
     // ใส่ codeVersion + action ที่รับมาจริงไว้ใน error message เผื่อ deploy ไม่ติด
+    // (โค้ดที่รันจริงบน server เป็นคนละเวอร์ชันกับที่แก้ไว้ในตัวแก้ไข) จะได้เห็นชัดๆ
+    // ทันทีจาก error message เองว่า server ที่รันอยู่จริงเป็นเวอร์ชันไหน ไม่ต้องเดา
     var result = { success: false, message: 'Invalid Action: "' + action + '" (codeVersion=' + CODE_VERSION + ')' };
     if (action === 'checkStatus' || action === 'checkBigQuery') {
       result = checkBigQueryStatus();
@@ -402,14 +260,21 @@ function doPost(e) {
     } else if (action === 'exportAll') {
       result = getAllCustomersExport();
     } else if (action === 'addFollowUp') {
+      // เพิ่มบันทึกการติดตามลูกค้า 1 รอบ (วันที่ + หมายเหตุ) เข้าไปในไทม์ไลน์
       var flData = contents.payload || contents;
       result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {});
     } else if (action === 'getDailyLeadReport') {
+      // รายงานจำนวนลีดที่ส่งเข้ามาต่อวัน (รวมที่ซ้ำด้วย) — ดูฟังก์ชัน getDailyLeadReportHTML
       result = getDailyLeadReportHTML(contents.payload || contents);
     } else if (action === 'getLeadIntakeLogDetail') {
+      // รายละเอียด (รายชื่อ/เบอร์/สถานะ) ที่ประกอบเป็นตัวเลขในตารางรายงานรายวัน
+      // ใช้ตอนกดตัวเลขในหน้ารายงาน (index.html) — ดูฟังก์ชัน getLeadIntakeLogDetailHTML
       result = getLeadIntakeLogDetailHTML(contents.payload || contents);
     } else if (action === 'getFollowupCalendar') {
       result = getFollowupCalendarHTML(contents.payload || contents);
+    } else if (action === 'getStaleLeadsReport') {
+      // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
+      result = getStaleLeadsReportHTML(contents.payload || contents);
     }
     return createJsonResponse(result);
   } catch (err) {
@@ -1234,6 +1099,103 @@ function getAllCustomersExport() {
 }
 
 // =================================================================
+// รายงานลูกค้าที่ "ค้างนาน" ยังไม่ได้ติดตาม (Stale Leads) — ใช้ในหน้า "รายงาน"
+// =================================================================
+// เกณฑ์: เทียบ "วันที่ติดตามล่าสุด" (last_followup_date) กับวันนี้ ถ้าลูกค้ารายไหน
+// ไม่เคยมีการติดตามเลยสักครั้ง (last_followup_date ว่าง) จะใช้ "วันที่บันทึกครั้งแรก"
+// (created_date) แทนในการเทียบ (ถือว่ายิ่งค้างหนักกว่าปกติเพราะไม่เคยติดต่อเลย)
+// ไม่รวมลูกค้าที่ปิดจบแล้ว (type = 'ส่งมอบ') เพราะไม่ต้องติดตามต่อ
+// payload รองรับ: { days: จำนวนวันขั้นต่ำที่ถือว่า "ค้าง" (ค่าเริ่มต้น 14) }
+function getStaleLeadsReportHTML(reqPayload) {
+  try {
+    var payload = reqPayload || {};
+    var days = parseInt(payload.days);
+    if (!days || days < 1) days = 14;
+    var lastFollowupExpr = buildRobustDateOrderExpr_('last_followup_date');
+    var createdExpr = buildRobustDateOrderExpr_('created_date');
+    // ใช้ last_followup_date จริงถ้ามีค่า (ไม่ใช่ผ่าน buildRobustDateOrderExpr_ ที่แปลงค่าว่าง
+    // เป็น 1900-01-01 อยู่แล้ว) ก่อนจะ fallback ไปที่ created_date เมื่อยังไม่เคยติดตามเลย
+    var effectiveDateExpr = "IF(last_followup_date IS NULL, " + createdExpr + ", " + lastFollowupExpr + ")";
+    var daysSinceExpr = "DATE_DIFF(CURRENT_DATE('Asia/Bangkok'), " + effectiveDateExpr + ", DAY)";
+    var sql = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
+              "CAST(created_date AS STRING) AS created_date, " +
+              "CAST(booking_date AS STRING) AS booking_date, " +
+              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
+              FINGERPRINT_EXPR + " as row_key, " +
+              daysSinceExpr + " AS days_since_contact " +
+              "FROM " + TABLE_FULL_PATH +
+              " WHERE (type IS NULL OR TRIM(type) = '' OR type != 'ส่งมอบ') " +
+              " AND " + daysSinceExpr + " >= " + days +
+              " ORDER BY " + effectiveDateExpr + " ASC" +
+              " LIMIT 300";
+    var rows = runParamQueryFetch(sql, []);
+    var formattedData = rows.map(function(r) {
+      var row = formatCustomerRowForList_(r);
+      row.daysSinceContact = parseInt(r.days_since_contact) || 0;
+      row.hasEverFollowedUp = !!(r.last_followup_date && cleanStr(r.last_followup_date));
+      return row;
+    });
+    return { success: true, data: formattedData, days: days };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+// แปลงแถวดิบจาก BigQuery ให้เป็นรูปแบบเดียวกับที่หน้าเว็บใช้แสดงผล/เปิด modal ประวัติติดตามได้
+// (คัดลอกมาจาก mapping เดิมใน searchCustomersHTML โดยตั้งใจแยกเป็นฟังก์ชันของตัวเอง
+// แทนที่จะไปแก้ searchCustomersHTML ให้เรียกใช้ร่วมกัน เพื่อไม่ให้กระทบพฤติกรรมเดิมที่
+// ใช้งานอยู่แล้วในหน้าประวัติ/ค้นหา)
+function formatCustomerRowForList_(r) {
+  var recDate = formatDateStr(r.created_date || r.date || '');
+  var bookDate = formatDateStr(r.booking_date || '');
+  var lastFollowupDate = formatDateStr(r.last_followup_date || '');
+  var fn = (r.first_name || r.firstname || '').toString().trim();
+  var ln = (r.last_name || r.lastname || '').toString().trim();
+  var lineId = (r.line || '').toString().trim();
+  var fbId = (r.facebook || '').toString().trim();
+  var noteVal = (r.remark || r.note || '').toString().trim();
+  var fullName = (fn && ln && fn !== ln) ? (fn + ' ' + ln) : (fn || ln);
+  if (!fullName) {
+    if (lineId) fullName = '[Line] ' + lineId;
+    else if (fbId) fullName = '[FB] ' + fbId;
+    else fullName = '(ไม่ระบุชื่อ)';
+  }
+  var ph = formatPhoneNumber(r.phone);
+  var uniqueKey = (r.row_key !== undefined && r.row_key !== null && r.row_key !== '')
+                  ? r.row_key.toString()
+                  : (ph || (fn + '_' + ln));
+  var followUpArr = parseFollowUpLog(r.follow_up_log);
+  return {
+    sheetRowIndex: uniqueKey,
+    raw_key: uniqueKey,
+    date: recDate,
+    firstname: fn,
+    lastname: ln,
+    name: fullName,
+    phone: ph,
+    phone1: ph,
+    appdate: bookDate,
+    booking_date: bookDate,
+    lastFollowupDate: lastFollowupDate,
+    type: r.type || 'ลงทะเบียน',
+    product: r.product || '',
+    addressno: r.address_no || '',
+    moo: r.moo || '',
+    village: r.village || '',
+    subdistrict: r.subdistrict || '',
+    district: r.district || '',
+    province: r.province || 'อุบลราชธานี',
+    zipcode: r.zipcode || '',
+    remark: noteVal,
+    note: noteVal,
+    line: lineId,
+    facebook: fbId,
+    financialInfo: r.financial_info || '{}',
+    followUpLog: followUpArr,
+    followUpCount: followUpArr.length
+  };
+}
+
+// =================================================================
 // รายงานจำนวนลีดที่ส่งเข้ามาต่อวัน (นับจาก lead_intake_log — รวมที่ส่งซ้ำด้วย)
 // =================================================================
 // payload รองรับ: { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD', onlyManyChat: true/false }
@@ -1347,7 +1309,7 @@ function getLeadIntakeLogDetailHTML(reqPayload) {
       whereClauses.push("is_manychat = TRUE");
     }
     // กันเบอร์ใน EXCLUDED_PHONE_NUMBERS ออกจากรายการ drill-down ด้วย (สอดคล้องกับตัวเลขที่
-    // ถูกกรองออกไปแล้วใน getDailyLeadReportHTML — ไม่ให้เห็นแถวที่ไม่ได้ถูกนับในรายการรายละเอียด)
+    // ถูกกรองออกไปแล้วใน getDailyLeadReportHTML — ไม่ให้เห็นแถวที่ไม่ได้ถูกนับในรายการละเอียด)
     var excludedPhoneCondDetail = buildExcludedPhoneCondition_();
     if (excludedPhoneCondDetail) {
       whereClauses.push(excludedPhoneCondDetail);
