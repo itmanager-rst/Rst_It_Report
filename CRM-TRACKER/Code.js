@@ -22,7 +22,9 @@
 // แก้เพิ่ม (2026-08-08 รอบถัดมา): ผู้ใช้ยืนยันว่าอยากให้ "นับตัวเลขให้ได้ก่อน" เป็นอันดับแรก
 // สุด (ตัดเรื่องดึงชื่อสินค้าจาก remark ออกไปก่อน) — เลยทำ FB_LEAD_MARKER ให้ผิดพลาดยากที่สุด
 // เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
-var CODE_VERSION = 'r20-2026-09-14-permission-matrix';
+// หมายเหตุ (2026-09-14 รอบถัดมา): ต่อยอดจาก r20-2026-09-14-permission-matrix
+// เพิ่ม action ใหม่ getStaleLeadsReport (รายงานลูกค้าค้างนานไม่ได้ติดตาม หน้า "รายงาน")
+var CODE_VERSION = 'r21-2026-09-14-stale-leads-report';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -734,6 +736,9 @@ function doGet(e) {
   } else if (action === 'getOnlineUsers') {
     // โชว์ที่หน้า login ก่อนเข้าสู่ระบบ จึงตั้งใจไม่เช็ค token/login ตรงนี้ (เหมือน checkStatus)
     return createJsonResponse(getOnlineUsersHTML());
+  } else if (action === 'getStaleLeadsReport') {
+    // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
+    return createJsonResponse(getStaleLeadsReportHTML(e.parameter));
   }
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -852,6 +857,11 @@ function doPost(e) {
       } else {
         result = getUserActivityLogHTML(contents.payload || contents);
       }
+    } else if (action === 'getStaleLeadsReport') {
+      // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
+      // เป็นรายงานอ่านอย่างเดียว ไม่ได้อยู่ใน CUSTOMER_WRITE_ALLOWED_ROLES/EXPORT ด้านบน
+      // เหมือน getDashboardSummary/getDailyLeadReport — ทุก role ที่ login แล้วดูได้
+      result = getStaleLeadsReportHTML(contents.payload || contents);
     }
 
     // บันทึกประวัติการใช้งาน (เฉพาะ action ที่อยู่ใน ACTIVITY_LOG_WHITELIST เท่านั้น —
@@ -1687,6 +1697,108 @@ function getAllCustomersExport() {
   } catch (err) {
     return { success: false, message: err.toString() };
   }
+}
+
+// =================================================================
+// รายงานลูกค้าที่ "ค้างนาน" ยังไม่ได้ติดตาม (Stale Leads) — ใช้ในหน้า "รายงาน"
+// =================================================================
+// เกณฑ์: เทียบ "วันที่ติดตามล่าสุด" (last_followup_date) กับวันนี้ ถ้าลูกค้ารายไหน
+// ไม่เคยมีการติดตามเลยสักครั้ง (last_followup_date ว่าง) จะใช้ "วันที่บันทึกครั้งแรก"
+// (created_date) แทนในการเทียบ (ถือว่ายิ่งค้างหนักกว่าปกติเพราะไม่เคยติดต่อเลย)
+// ไม่รวมลูกค้าที่ปิดจบแล้ว (type = 'ส่งมอบ') เพราะไม่ต้องติดตามต่อ
+// payload รองรับ: { days: จำนวนวันขั้นต่ำที่ถือว่า "ค้าง" (ค่าเริ่มต้น 14) }
+// เป็นรายงานอ่านอย่างเดียว (ไม่ต้องมีสิทธิ์ admin/staff เป็นพิเศษ) เหมือน
+// getDashboardSummary/getDailyLeadReport — role 'sale'/'user' ก็ดูได้ตามปกติ
+// และไม่ได้อยู่ใน ACTIVITY_LOG_WHITELIST เพราะเป็นแค่ดึงข้อมูลมาแสดงหน้าจอ (เหมือน
+// getDashboardSummary/getInitialData ที่ตั้งใจไม่ log เช่นกัน — ดูคอมเมนต์ตรง
+// ACTIVITY_LOG_WHITELIST ด้านบนของไฟล์)
+function getStaleLeadsReportHTML(reqPayload) {
+  try {
+    var payload = reqPayload || {};
+    var days = parseInt(payload.days);
+    if (!days || days < 1) days = 14;
+    var lastFollowupExpr = buildRobustDateOrderExpr_('last_followup_date');
+    var createdExpr = buildRobustDateOrderExpr_('created_date');
+    // ใช้ last_followup_date จริงถ้ามีค่า (ไม่ใช่ผ่าน buildRobustDateOrderExpr_ ที่แปลงค่าว่าง
+    // เป็น 1900-01-01 อยู่แล้ว) ก่อนจะ fallback ไปที่ created_date เมื่อยังไม่เคยติดตามเลย
+    var effectiveDateExpr = "IF(last_followup_date IS NULL, " + createdExpr + ", " + lastFollowupExpr + ")";
+    var daysSinceExpr = "DATE_DIFF(CURRENT_DATE('Asia/Bangkok'), " + effectiveDateExpr + ", DAY)";
+    var sql = "SELECT * EXCEPT(created_date, booking_date, last_followup_date), " +
+              "CAST(created_date AS STRING) AS created_date, " +
+              "CAST(booking_date AS STRING) AS booking_date, " +
+              "CAST(last_followup_date AS STRING) AS last_followup_date, " +
+              FINGERPRINT_EXPR + " as row_key, " +
+              daysSinceExpr + " AS days_since_contact " +
+              "FROM " + TABLE_FULL_PATH +
+              " WHERE (type IS NULL OR TRIM(type) = '' OR type != 'ส่งมอบ') " +
+              " AND " + daysSinceExpr + " >= " + days +
+              " ORDER BY " + effectiveDateExpr + " ASC" +
+              " LIMIT 300";
+    var rows = runParamQueryFetch(sql, []);
+    var formattedData = rows.map(function(r) {
+      var row = formatCustomerRowForList_(r);
+      row.daysSinceContact = parseInt(r.days_since_contact) || 0;
+      row.hasEverFollowedUp = !!(r.last_followup_date && cleanStr(r.last_followup_date));
+      return row;
+    });
+    return { success: true, data: formattedData, days: days };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+// แปลงแถวดิบจาก BigQuery ให้เป็นรูปแบบเดียวกับที่หน้าเว็บใช้แสดงผล/เปิด modal ประวัติติดตามได้
+// (คัดลอกมาจาก mapping เดิมใน searchCustomersHTML โดยตั้งใจแยกเป็นฟังก์ชันของตัวเอง
+// แทนที่จะไปแก้ searchCustomersHTML ให้เรียกใช้ร่วมกัน เพื่อไม่ให้กระทบพฤติกรรมเดิมที่
+// ใช้งานอยู่แล้วในหน้าประวัติ/ค้นหา)
+function formatCustomerRowForList_(r) {
+  var recDate = formatDateStr(r.created_date || r.date || '');
+  var bookDate = formatDateStr(r.booking_date || '');
+  var lastFollowupDate = formatDateStr(r.last_followup_date || '');
+  var fn = (r.first_name || r.firstname || '').toString().trim();
+  var ln = (r.last_name || r.lastname || '').toString().trim();
+  var lineId = (r.line || '').toString().trim();
+  var fbId = (r.facebook || '').toString().trim();
+  var noteVal = (r.remark || r.note || '').toString().trim();
+  var fullName = (fn && ln && fn !== ln) ? (fn + ' ' + ln) : (fn || ln);
+  if (!fullName) {
+    if (lineId) fullName = '[Line] ' + lineId;
+    else if (fbId) fullName = '[FB] ' + fbId;
+    else fullName = '(ไม่ระบุชื่อ)';
+  }
+  var ph = formatPhoneNumber(r.phone);
+  var uniqueKey = (r.row_key !== undefined && r.row_key !== null && r.row_key !== '')
+                  ? r.row_key.toString()
+                  : (ph || (fn + '_' + ln));
+  var followUpArr = parseFollowUpLog(r.follow_up_log);
+  return {
+    sheetRowIndex: uniqueKey,
+    raw_key: uniqueKey,
+    date: recDate,
+    firstname: fn,
+    lastname: ln,
+    name: fullName,
+    phone: ph,
+    phone1: ph,
+    appdate: bookDate,
+    booking_date: bookDate,
+    lastFollowupDate: lastFollowupDate,
+    type: r.type || 'ลงทะเบียน',
+    product: r.product || '',
+    addressno: r.address_no || '',
+    moo: r.moo || '',
+    village: r.village || '',
+    subdistrict: r.subdistrict || '',
+    district: r.district || '',
+    province: r.province || 'อุบลราชธานี',
+    zipcode: r.zipcode || '',
+    remark: noteVal,
+    note: noteVal,
+    line: lineId,
+    facebook: fbId,
+    financialInfo: r.financial_info || '{}',
+    followUpLog: followUpArr,
+    followUpCount: followUpArr.length
+  };
 }
 
 // =================================================================
