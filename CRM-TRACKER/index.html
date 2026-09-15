@@ -265,10 +265,30 @@
         /* เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป (ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ เช่น
            แชร์หน้าจอ/บันทึกหน้าจอเบื้องหลัง) — กลับมาโฟกัสหน้าต่างแล้วเนื้อหาจะชัดเจนตามปกติทันที */
         body.leak-blur-when-hidden > *:not(#leak-watermark-overlay) { filter: blur(14px); transition: filter .15s ease; }
+        /* ===== กันคัดลอกข้อมูลลูกค้าออกไปวางที่อื่น (2026-09-15) =====
+           ปิดการ "เลือกข้อความ" ในตารางผลลัพธ์ / การ์ดรายละเอียดลูกค้า เพื่อให้คัดลอกเบอร์โทร/
+           ชื่อ/ที่อยู่ ไปวาง LINE, Excel ส่วนตัว ฯลฯ ยากขึ้น — กันได้แค่การคัดลอกแบบลากเมาส์
+           ธรรมดาเท่านั้น ไม่ได้กันคนที่ตั้งใจเปิด DevTools/View Source เพื่อดึงข้อมูลจริงจัง
+           (ดูคำอธิบายเรื่องข้อจำกัดของมาตรการทั้งหมดในแชทที่ขอให้เพิ่มมาตรการนี้) */
+        .table-container, .customer-detail-grid, .customer-detail-card,
+        .calendar-customer, .timeline-list, #print-form-area {
+            -webkit-user-select: none; -moz-user-select: none; user-select: none;
+        }
+        /* ป้ายเตือน + แจ้งเตือนเมื่อระบบตรวจพบการกด Print Screen หรือพยายามคัดลอกข้อมูล
+           (activateLeakDeterrentMeasures_ ในสคริปต์ด้านล่างเป็นคนเรียกใช้) */
+        #leak-security-toast {
+            position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+            z-index: 99999; background: #7f1d1d; color: #fff; padding: 12px 20px; border-radius: 10px;
+            font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+            opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+            max-width: min(90vw, 420px); text-align: center; line-height: 1.5;
+        }
+        #leak-security-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     </style>
 </head>
 <body>
 <div id="leak-watermark-overlay"></div>
+<div id="leak-security-toast"></div>
     <div id="login-modal" class="login-modal">
         <div class="login-card">
             <h2>🔐 CRM LOGIN</h2>
@@ -3123,7 +3143,16 @@
         /* ===== มาตรการยับยั้งข้อมูลรั่ว (ไม่ใช่การ "ป้องกัน" การแคปหน้าจอ — ทำไม่ได้จริงบนเว็บ ดูคำอธิบายในแชท) =====
            1) ลายน้ำชื่อผู้ใช้งาน+เวลา ทับทั่วจอ — ถ้ามีภาพหลุดออกไป ตามตัวได้ว่าใครล็อกอินอยู่ตอนนั้น
            2) เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป — ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ (เช่น แชร์จอ/บันทึกจอเบื้องหลัง)
-           3) ปิดคลิกขวา — กันการ "บันทึกรูปภาพ"/"ตรวจสอบ" แบบง่ายๆ (ไม่ใช่มาตรการความปลอดภัยขั้นสูง แค่กันคนทั่วไปเผลอกด) */
+              ⚠️ ข้อจำกัด: Snipping Tool แบบใหม่ของ Windows (กด Win+Shift+S) บางครั้งไม่ทำให้
+              หน้าต่างเบราว์เซอร์ "เสียโฟกัส" จริง (เป็นแค่โอเวอร์เลย์ลอยทับ) จึงอาจไม่ trigger
+              การเบลอนี้เสมอไป — ทดสอบพฤติกรรมจริงบนเครื่องที่ใช้งานก่อนพึ่งพา 100%
+           3) ปิดคลิกขวา — กันการ "บันทึกรูปภาพ"/"ตรวจสอบ" แบบง่ายๆ (ไม่ใช่มาตรการความปลอดภัยขั้นสูง แค่กันคนทั่วไปเผลอกด)
+           4) (เพิ่ม 2026-09-15) ปิดการคัดลอกข้อความในตาราง/การ์ดรายละเอียดลูกค้า (ดู CSS
+              user-select:none ด้านบนของไฟล์) + ดักการกด Ctrl+C/คลิกขวา>คัดลอก ในบริเวณนั้น
+           5) (เพิ่ม 2026-09-15) ดักปุ่ม Print Screen เท่าที่ทำได้ — สกัดไม่ได้จริง (OS จับภาพไป
+              ก่อนที่ JavaScript จะรู้ตัวด้วยซ้ำ) แต่ "หลังจากนั้นทันที" จะเบลอหน้าจอ + เตือน +
+              บันทึกชื่อผู้ใช้/เวลาไว้ใน "ประวัติการใช้งาน" (user_activity_log) ให้ตามรอยได้
+              ว่าใครกดเมื่อไหร่ — เป็นมาตรการ "ตามรอยหลังเกิดเหตุ" ไม่ใช่ตัวป้องกัน */
         function buildWatermarkText_() {
             const el = document.getElementById('current-user-name');
             const who = el ? el.innerText : 'ไม่ทราบผู้ใช้';
@@ -3143,10 +3172,41 @@
             overlay.innerHTML = rowsHtml;
             overlay.style.display = 'block';
         }
+        let _leakSecurityToastTimer = null;
+        function showLeakSecurityToast_(message) {
+            const toast = document.getElementById('leak-security-toast');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.add('show');
+            clearTimeout(_leakSecurityToastTimer);
+            _leakSecurityToastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 4000);
+        }
+        // ส่งบันทึกไปเก็บที่ฝั่งเซิร์ฟเวอร์ (user_activity_log) — ใช้ token ผู้ใช้ที่ล็อกอินอยู่
+        // ยิงแบบ fire-and-forget ไม่ต้องรอผล ไม่ให้กระทบการใช้งานหน้าเว็บถ้าเน็ตช้า/หลุด
+        function logScreenshotEvent_(method) {
+            try {
+                fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'screenshotAttempt', payload: { method: method }, token: localStorage.getItem(authTokenKey) || '' })
+                }).catch(function(){});
+            } catch (e) { /* เงียบไว้ ไม่ให้กระทบการทำงานหลัก */ }
+        }
+        // เรียกทันทีที่ตรวจพบสัญญาณว่าอาจมีการแคปหน้าจอ — เบลอเนื้อหาชั่วคราว + เตือน + บันทึกร่องรอย
+        function triggerScreenshotDeterrent_(method, toastMessage) {
+            document.body.classList.add('leak-blur-when-hidden');
+            setTimeout(function(){ document.body.classList.remove('leak-blur-when-hidden'); }, 2500);
+            showLeakSecurityToast_(toastMessage);
+            logScreenshotEvent_(method);
+        }
+        let _leakDeterrentBound = false;
         // เรียกหลัง login สำเร็จเท่านั้น (ดูจุดเรียกใน loginUser() และตอนโหลดหน้าแล้วพบ token เดิมที่ยังไม่หมดอายุ)
         function activateLeakDeterrentMeasures_() {
             renderLeakWatermark_();
             setInterval(renderLeakWatermark_, 60000); // อัปเดตเวลาบนลายน้ำทุก 1 นาที
+
+            if (_leakDeterrentBound) return; // กันผูก event ซ้ำถ้ามีการ logout แล้ว login ใหม่ในหน้าเดิม
+            _leakDeterrentBound = true;
 
             document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 
@@ -3155,6 +3215,25 @@
             });
             window.addEventListener('blur', function(){ document.body.classList.add('leak-blur-when-hidden'); });
             window.addEventListener('focus', function(){ document.body.classList.remove('leak-blur-when-hidden'); });
+
+            // ดักปุ่ม Print Screen (บางเบราว์เซอร์/OS อาจไม่ส่ง keydown ให้เว็บเลยเพราะ OS ดักไปก่อน
+            // — ทำได้เท่าที่เบราว์เซอร์ยอมส่ง event มาให้เท่านั้น ไม่ใช่ทุกกรณี)
+            document.addEventListener('keyup', function(e){
+                if (e.key === 'PrintScreen') {
+                    triggerScreenshotDeterrent_('printscreen', '⚠️ ตรวจพบการกดปุ่ม Print Screen — ระบบบันทึกชื่อผู้ใช้และเวลาไว้แล้ว');
+                }
+            });
+
+            // ดักการคัดลอกข้อความในตาราง/การ์ดรายละเอียดลูกค้า (ทำงานคู่กับ CSS user-select:none
+            // ด้านบน — กันได้เฉพาะคัดลอกแบบลากเมาส์/Ctrl+C ธรรมดา)
+            ['.table-container', '.customer-detail-grid', '.calendar-customer-list'].forEach(function(sel){
+                document.querySelectorAll(sel).forEach(function(el){
+                    el.addEventListener('copy', function(e){
+                        e.preventDefault();
+                        triggerScreenshotDeterrent_('copy', '⚠️ ไม่อนุญาตให้คัดลอกข้อมูลลูกค้าออกจากระบบ');
+                    });
+                });
+            });
         }
     </script>
 </body>
