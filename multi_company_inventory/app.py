@@ -73,15 +73,20 @@ def get_ecount_session(company, force_refresh: bool = False):
         sess = ECOUNT_SESSIONS[company_id]
         return sess[0], sess[1]
 
-    api_key = company.get("api_key")
-    if not api_key:
+    missing = [
+        name for name, val in
+        [("COM_CODE", company.get("code")), ("API_KEY", company.get("api_key")), ("USER_ID", company.get("user_id"))]
+        if not val
+    ]
+    if missing:
+        print(f"[ECOUNT LOGIN SKIPPED - {company_id}]: ไม่ได้ตั้งค่า {', '.join(missing)} ใน Environment Variables (ค่าว่าง)")
         return None, None
 
     s = requests.Session()
     s.headers.update(ECOUNT_API_HEADERS)
     login_url = f"https://oapi{company['zone'].lower()}.ecount.com/OAPI/V2/OAPILogin"
     login_payload = {
-        "API_CERT_KEY": api_key,
+        "API_CERT_KEY": company["api_key"],
         "COM_CODE": company["code"],
         "LAN_TYPE": "th-TH",
         "USER_ID": company["user_id"],
@@ -89,8 +94,12 @@ def get_ecount_session(company, force_refresh: bool = False):
     }
     try:
         response = s.post(login_url, json=login_payload, timeout=30)
+        if response.status_code != 200:
+            print(f"[ECOUNT LOGIN HTTP ERROR - {company_id}]: HTTP {response.status_code}: {response.text[:300]}")
+            return None, None
+
         res = response.json()
-        
+
         if str(res.get("Status")) == "200":
             datas = res.get("Data", {}).get("Datas", {})
             session_id = datas.get("SESSION_ID")
@@ -98,6 +107,16 @@ def get_ecount_session(company, force_refresh: bool = False):
             if session_id and host_url:
                 ECOUNT_SESSIONS[company_id] = (session_id, host_url, s)
                 return session_id, host_url
+            print(f"[ECOUNT LOGIN NO SESSION - {company_id}]: Status 200 แต่ไม่มี SESSION_ID/HOST_URL: {res}")
+        else:
+            err_detail = res.get("Error") or res.get("Message") or res
+            print(f"[ECOUNT LOGIN REJECTED - {company_id}]: Status={res.get('Status')}: {err_detail}")
+        return None, None
+    except requests.exceptions.Timeout:
+        print(f"[ECOUNT LOGIN TIMEOUT - {company_id}]: เซิร์ฟเวอร์ ECOUNT ไม่ตอบสนองภายในเวลาที่กำหนด")
+        return None, None
+    except requests.exceptions.ConnectionError as e:
+        print(f"[ECOUNT LOGIN CONNECTION ERROR - {company_id}]: อาจถูก ECOUNT บล็อก IP หรือเน็ตเวิร์กมีปัญหา: {e}")
         return None, None
     except Exception as e:
         print(f"[ECOUNT LOGIN EXCEPTION - {company_id}]: {e}")

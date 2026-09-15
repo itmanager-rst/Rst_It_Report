@@ -72,7 +72,13 @@ def get_ecount_session(com, force_refresh: bool = False):
     if com_id in ECOUNT_SESSIONS and not force_refresh:
         return ECOUNT_SESSIONS[com_id]
 
-    if not com["api_key"] or not com["code"]:
+    missing = [
+        name for name, val in
+        [("COM_CODE", com["code"]), ("API_KEY", com["api_key"]), ("USER_ID", com["user_id"])]
+        if not val
+    ]
+    if missing:
+        print(f"  ⚠️ ข้าม Login บริษัท {com_id}: ไม่ได้ตั้งค่า {', '.join(missing)} ใน Environment Variables (ค่าว่าง)")
         return None, None
 
     login_url = f"https://oapi{com['zone'].lower()}.ecount.com/OAPI/V2/OAPILogin"
@@ -93,6 +99,16 @@ def get_ecount_session(com, force_refresh: bool = False):
                 if session[0] and session[1]:
                     ECOUNT_SESSIONS[com_id] = session
                     return session
+                print(f"  ❌ Login บริษัท {com_id} สำเร็จ (HTTP 200/Status 200) แต่ไม่มี SESSION_ID/HOST_URL: {res_json}")
+            else:
+                err_detail = res_json.get("Error") or res_json.get("Message") or res_json
+                print(f"  ❌ ECOUNT ปฏิเสธ Login บริษัท {com_id} (Status={res_json.get('Status')}): {err_detail}")
+        else:
+            print(f"  ❌ Login บริษัท {com_id} ได้ HTTP {res.status_code}: {res.text[:300]}")
+    except requests.exceptions.Timeout:
+        print(f"  ❌ Login บริษัท {com_id} หมดเวลา (timeout) — เซิร์ฟเวอร์ ECOUNT ไม่ตอบสนองภายในเวลาที่กำหนด")
+    except requests.exceptions.ConnectionError as e:
+        print(f"  ❌ Login บริษัท {com_id} เชื่อมต่อเครือข่ายไม่สำเร็จ (อาจถูก ECOUNT บล็อก IP หรือเน็ตเวิร์กปัญหา): {e}")
     except Exception as e:
         print(f"  ❌ Login Exception ({com['id']}): {e}")
     return None, None
