@@ -260,8 +260,11 @@
             position: fixed; inset: 0; z-index: 99998; pointer-events: none;
             display: none; overflow: hidden;
         }
-        #leak-watermark-overlay .wm-row { display: flex; white-space: nowrap; opacity: 0.09; transform: rotate(-25deg); }
-        #leak-watermark-overlay .wm-item { font-size: 13px; font-weight: 700; color: #0f172a; padding: 40px 60px; }
+        /* ทำให้จางลงมาก/เล็กลง/ห่างขึ้นเยอะ (2026-09-15 — ตามคำขอผู้ใช้ว่าเดิม "ลายตา" เกินไป)
+           เดิม opacity 0.09/ตัวหนังสือ 13px/แน่น 14 แถว x 6 คอลัมน์ — ยังต้องอ่านออกได้เวลาซูมภาพที่แคปมา
+           (ถึงจะจางแค่ไหนก็ตาม) เพื่อให้ยังใช้ตามตัวได้จริงถ้าจำเป็น แต่ระหว่างใช้งานปกติแทบไม่สังเกตเห็น */
+        #leak-watermark-overlay .wm-row { display: flex; white-space: nowrap; opacity: 0.035; transform: rotate(-25deg); }
+        #leak-watermark-overlay .wm-item { font-size: 10px; font-weight: 700; color: #0f172a; padding: 90px 130px; }
         /* เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป (ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ เช่น
            แชร์หน้าจอ/บันทึกหน้าจอเบื้องหลัง) — กลับมาโฟกัสหน้าต่างแล้วเนื้อหาจะชัดเจนตามปกติทันที */
         body.leak-blur-when-hidden > *:not(#leak-watermark-overlay) { filter: blur(14px); transition: filter .15s ease; }
@@ -919,6 +922,17 @@
                 <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">✔️ ติ๊กเพื่อแสดง/ซ่อนคอลัมน์ &nbsp;·&nbsp; ลากไอคอน ⠿ เพื่อย้ายลำดับ &nbsp;·&nbsp; พิมพ์ตัวเลขปรับความกว้าง (หรือลากขอบคอลัมน์บนตารางจริงก็ได้)</div>
                 <div id="column-settings-list"></div>
                 <button type="button" class="btn-add-item" onclick="resetColumnSettings()">↩️ คืนค่าคอลัมน์ทั้งหมดเป็นค่าเริ่มต้น</button>
+                <div class="modal-section-title">📁 Template ตาราง (บันทึกไว้สลับใช้หลายแบบ)</div>
+                <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">บันทึกชุดคอลัมน์ปัจจุบัน (ลำดับ/โชว์-ซ่อน/ความกว้าง) เป็น Template ตั้งชื่อเอง เพื่อสลับกลับมาใช้ภายหลัง หรือสร้างมุมมองตารางแบบอื่นเพิ่มได้เรื่อยๆ — เก็บไว้ในเครื่องนี้เหมือนค่าปัจจุบัน</div>
+                <div style="display:flex; gap:6px; margin-bottom:8px;">
+                    <select id="column-template-select" class="form-control" style="flex:1;"></select>
+                    <button type="button" class="btn btn-secondary" style="flex:0 0 auto;" onclick="applySelectedColumnTemplate()">📂 โหลด</button>
+                    <button type="button" class="btn btn-secondary" style="flex:0 0 auto; color:#ef4444;" onclick="deleteSelectedColumnTemplate()">🗑️ ลบ</button>
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="column-template-name-input" class="form-control" placeholder="ตั้งชื่อ Template เช่น มุมมองสำหรับพิมพ์" style="flex:1;">
+                    <button type="button" class="btn btn-accent" style="flex:0 0 auto;" onclick="saveCurrentAsColumnTemplate()">💾 บันทึกเป็น Template</button>
+                </div>
             </div>
             <button type="button" class="btn-done" onclick="closeTableSettingsModal()">✓ เสร็จแล้ว</button>
         </div>
@@ -1534,7 +1548,7 @@
                 const product = getRowProductParts(row);
                 return `<button type="button" class="calendar-customer" onclick="openCalendarCustomer(${originalIndex})">
                     <div class="calendar-customer-name">${escapeHtml(row.name)}</div>
-                    <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}</div>
+                    <div class="calendar-customer-meta">📞 ${renderMaskedPhoneCell_(row.phone)} · ${escapeHtml(row.type || '-')}</div>
                     <div class="calendar-customer-meta">🚜 ${escapeHtml([product.category, product.model].filter(v => v && v !== '-').join(' ') || '-')}</div>
                     <div class="calendar-customer-meta">แตะเพื่อดูประวัติและบันทึกการติดตาม ›</div>
                 </button>`;
@@ -1705,7 +1719,7 @@
             { key: 'booking_date', label: 'วันที่นัดหมาย', width: 105, render: row => `<span style="color:var(--accent-color); font-weight:600;">${row.booking_date || '-'}</span>` },
             { key: 'lastFollowupDate', label: 'ติดตามล่าสุด', width: 105, render: row => `<span style="color:#6b21a8;">${row.lastFollowupDate || '-'}</span>` },
             { key: 'name', label: 'ชื่อ - นามสกุล', width: 230, render: (row, ctx) => `<div style="display:flex; align-items:center; gap:6px;"><b>${escapeHtml(row.name || '-')}</b><button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:9.5px; flex:0 0 auto;" onclick="openMainCustomerDetail(${ctx.idx})">👤 ดูข้อมูล</button></div>` },
-            { key: 'phone', label: 'เบอร์โทรศัพท์', width: 120, render: row => row.phone || '-' },
+            { key: 'phone', label: 'เบอร์โทรศัพท์', width: 120, render: row => renderMaskedPhoneCell_(row.phone) },
             { key: 'type', label: 'ประเภท', width: 95, render: (row, ctx) => `<span class="badge ${ctx.badgeClass}">${escapeHtml(row.type || '-')}</span>` },
             { key: 'productCategory', label: 'ประเภทสินค้า', width: 120, render: (row, ctx) => ctx.prodParts.category },
             { key: 'productModel', label: 'รุ่นรถ', width: 120, render: (row, ctx) => ctx.prodParts.model },
@@ -1793,6 +1807,7 @@
         function openTableSettingsModal() {
             document.getElementById('settings-pagesize').value = document.getElementById('filter-pagesize').value || '20';
             renderColumnSettingsList();
+            renderColumnTemplateOptions();
             document.getElementById('table-settings-modal-overlay').classList.add('show');
         }
         function closeTableSettingsModal() {
@@ -1862,6 +1877,81 @@
             renderColumnSettingsList();
             renderTableHeader();
             renderTableRows(currentRenderedData);
+        }
+
+        /* ===== Template ตาราง (2026-09-15) =====
+           columnConfig ด้านบนเป็น "ค่าที่ใช้งานอยู่ตอนนี้" ตัวเดียว — ส่วนนี้เพิ่มคลัง preset หลายชุด
+           ที่ตั้งชื่อเองได้ แยก key ใน localStorage ต่างหาก ไม่ปนกับค่าที่ใช้งานอยู่ ผู้ใช้จะบันทึกไว้
+           กี่ชุดก็ได้ (เช่น "มุมมองสำหรับพิมพ์", "มุมมองดูข้อมูลการเงิน") แล้วสลับโหลดกลับมาใช้ทีหลัง */
+        const COLUMN_TEMPLATES_STORAGE_KEY = 'crm_tracker_column_templates_v1';
+        function loadColumnTemplates() {
+            try {
+                const raw = localStorage.getItem(COLUMN_TEMPLATES_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (e) { return {}; }
+        }
+        function saveColumnTemplatesStore(templates) {
+            try { localStorage.setItem(COLUMN_TEMPLATES_STORAGE_KEY, JSON.stringify(templates)); } catch (e) { /* localStorage ใช้ไม่ได้ (โหมดส่วนตัว ฯลฯ) — ข้ามไปเงียบๆ */ }
+        }
+        function renderColumnTemplateOptions() {
+            const sel = document.getElementById('column-template-select');
+            if (!sel) return;
+            const templates = loadColumnTemplates();
+            const names = Object.keys(templates).sort((a, b) => a.localeCompare(b, 'th'));
+            sel.innerHTML = names.length
+                ? names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')
+                : '<option value="">— ยังไม่มี Template ที่บันทึกไว้ —</option>';
+            sel.disabled = !names.length;
+        }
+        function saveCurrentAsColumnTemplate() {
+            const input = document.getElementById('column-template-name-input');
+            const name = (input.value || '').trim();
+            if (!name) { alert('กรุณาตั้งชื่อ Template ก่อนบันทึก'); return; }
+            const templates = loadColumnTemplates();
+            const isOverwrite = Object.prototype.hasOwnProperty.call(templates, name);
+            if (isOverwrite && !confirm('มี Template ชื่อ "' + name + '" อยู่แล้ว ต้องการบันทึกทับหรือไม่?')) return;
+            // เก็บสำเนา (ผ่าน JSON) ของ columnConfig ปัจจุบัน ไม่ใช่ reference — กันไม่ให้การแก้คอลัมน์ต่อจากนี้กระทบ template ที่เพิ่งบันทึกไป
+            templates[name] = JSON.parse(JSON.stringify(columnConfig));
+            saveColumnTemplatesStore(templates);
+            input.value = '';
+            renderColumnTemplateOptions();
+            const sel = document.getElementById('column-template-select');
+            if (sel) sel.value = name;
+            alert('บันทึก Template "' + name + '" เรียบร้อย — เปิดเมนูตั้งค่าตารางครั้งหน้าแล้วกด "โหลด" เพื่อสลับกลับมาใช้ได้เลย');
+        }
+        function applySelectedColumnTemplate() {
+            const sel = document.getElementById('column-template-select');
+            const name = sel ? sel.value : '';
+            if (!name) { alert('ยังไม่มี Template ที่เลือกไว้'); return; }
+            const templates = loadColumnTemplates();
+            const tpl = templates[name];
+            if (!Array.isArray(tpl)) { alert('ไม่พบ Template นี้'); return; }
+            // ใช้ตรรกะเดียวกับ loadColumnConfig(): กรองคีย์คอลัมน์ที่ไม่รู้จักออก + เติมคอลัมน์ใหม่ที่ยังไม่มีใน template
+            // เก่าต่อท้าย (ซ่อนไว้ก่อน) — เผื่อ template นี้บันทึกไว้ตั้งแต่ก่อนมีการเพิ่มคอลัมน์ใหม่ในระบบ
+            const seen = new Set();
+            const merged = tpl.filter(c => c && ALL_COLUMN_KEYS.has(c.key)).map(c => {
+                seen.add(c.key);
+                const def = ALL_COLUMNS.find(x => x.key === c.key);
+                const w = Number(c.width);
+                return { key: c.key, visible: !!c.visible, width: (Number.isFinite(w) && w >= 40) ? w : (def ? def.width : 100) };
+            });
+            ALL_COLUMNS.forEach(c => { if (!seen.has(c.key)) merged.push({ key: c.key, visible: false, width: c.width }); });
+            columnConfig = merged;
+            saveColumnConfig();
+            renderColumnSettingsList();
+            renderTableHeader();
+            renderTableRows(currentRenderedData);
+        }
+        function deleteSelectedColumnTemplate() {
+            const sel = document.getElementById('column-template-select');
+            const name = sel ? sel.value : '';
+            if (!name) { alert('ยังไม่มี Template ที่เลือกไว้'); return; }
+            if (!confirm('ลบ Template "' + name + '" ใช่หรือไม่? (กู้คืนไม่ได้)')) return;
+            const templates = loadColumnTemplates();
+            delete templates[name];
+            saveColumnTemplatesStore(templates);
+            renderColumnTemplateOptions();
         }
         // ลากขอบขวาของหัวตารางเพื่อปรับความกว้างคอลัมน์นั้นสดๆ (เห็นผลทันทีบนตารางจริง ไม่ต้องเปิดเมนูตั้งค่า)
         let resizingColEntry = null, resizeStartX = 0, resizeStartWidth = 0;
@@ -1935,7 +2025,7 @@
                     return `<tr>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.receivedAt || '-')}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;"><span class="report-customer-link" onclick="openReportCustomerDetail(${idx})">${escapeHtml(name)}</span></td>
-                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.phone || '-')}</td>
+                        <td style="padding:6px; border-bottom:1px solid #edf2f7;">${renderMaskedPhoneCell_(r.phone)}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${escapeHtml(r.facebook || '-')}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7;">${statusBadge}</td>
                         <td style="padding:6px; border-bottom:1px solid #edf2f7; text-align:center;">${mcBadge}</td>
@@ -2390,7 +2480,7 @@
                 return `
                     <tr>
                         <td>${escapeHtml(row.name)}</td>
-                        <td>${escapeHtml(row.phone || '-')}</td>
+                        <td>${renderMaskedPhoneCell_(row.phone)}</td>
                         <td><span class="badge ${badgeClass}">${escapeHtml(row.type || '')}</span></td>
                         <td>${lastFollowupLabel}</td>
                         <td style="text-align:center;">${daysBadge}</td>
@@ -2961,6 +3051,37 @@
             return (v === undefined || v === null ? '' : String(v))
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
+
+        /* ===== ปิดบังเบอร์โทรในตารางผลลัพธ์เป็นค่าเริ่มต้น (2026-09-15) =====
+           แนวคิด: ต่างจากลายน้ำ/บล็อกคัดลอก (ที่แค่ "ตามรอย"/"ยับยั้ง" หลังเกิดเหตุ) มาตรการนี้
+           ลด "ความเสียหาย" ตั้งแต่ต้น — ถ้าใครแคปหน้าจอตารางทั้งหน้าไปจริงๆ (ซึ่งกันไม่ได้อยู่ดี)
+           สิ่งที่หลุดไปคือเบอร์โทรที่ถูกซ่อนไว้ ไม่ใช่เบอร์เต็ม — คลิกที่ตัวเลขเพื่อดู/ซ่อนเบอร์เต็มได้
+           ทีละแถว (ไม่กระทบแถวอื่น ไม่ต้อง re-render ทั้งตาราง) ใช้กับทุกจุดที่โชว์เบอร์โทร "หลายรายการ
+           พร้อมกันในหน้าจอเดียว" ซึ่งเสี่ยงสุดถ้าแคปหลุด — ตารางผลลัพธ์หลัก, ตาราง "ลูกค้าค้างนาน"
+           ในหน้ารายงาน, ลิสต์ปฏิทินติดตาม, และตารางรายละเอียดลีดรายวัน (getDailyLeadReportDetail) —
+           ส่วนหน้ารายละเอียดลูกค้ารายตัว (คลิก "👤 ดูข้อมูล"), ฟอร์มแก้ไขข้อมูล, Export CSV/Excel,
+           และแบบฟอร์มพิมพ์ ยังคงโชว์เบอร์เต็มตามเดิม (เป็น action ที่ตั้งใจเปิดดู/ใช้งานจริงอยู่แล้ว
+           ทีละคน ถ้าไปปิดบังจุดเหล่านั้นด้วยจะทำให้พนักงานโทรหาลูกค้าไม่ได้ ซึ่งขัดกับจุดประสงค์ของ CRM เอง) */
+        function maskPhoneNumber_(phone) {
+            const digits = String(phone || '').trim();
+            if (!digits) return '-';
+            if (digits.length <= 4) return digits; // สั้นเกินกว่าจะปิดบังแล้วยังมีประโยชน์
+            return '•'.repeat(digits.length - 4) + digits.slice(-4);
+        }
+        function renderMaskedPhoneCell_(phone) {
+            const raw = String(phone || '').trim();
+            if (!raw) return '-';
+            const masked = maskPhoneNumber_(raw);
+            return `<span class="masked-phone-cell" data-full="${escapeHtml(raw)}" data-masked="${escapeHtml(masked)}" data-revealed="0"
+                onclick="togglePhoneMask(event, this)" title="คลิกเพื่อดู/ซ่อนเบอร์เต็ม"
+                style="cursor:pointer; white-space:nowrap;">${escapeHtml(masked)} <span style="opacity:.45; font-size:9.5px;">👁️</span></span>`;
+        }
+        function togglePhoneMask(e, el) {
+            e.stopPropagation(); // กันไม่ให้ไปโดน onclick อื่นของแถว/เซลล์ (ถ้ามี) ทำงานซ้อน
+            const revealed = el.dataset.revealed === '1';
+            el.dataset.revealed = revealed ? '0' : '1';
+            el.innerHTML = (revealed ? el.dataset.masked : el.dataset.full) + ' <span style="opacity:.45; font-size:9.5px;">👁️</span>';
+        }
         function openHistoryModal(idx) {
             const row = currentRenderedData[idx];
             openHistoryModalForRow(row, idx, 'main');
@@ -3163,10 +3284,13 @@
             const overlay = document.getElementById('leak-watermark-overlay');
             if (!overlay) return;
             const text = buildWatermarkText_();
+            // ลดความถี่ลงจาก 14 แถว x 6 คอลัมน์ (พร้อมกับ padding ที่ห่างขึ้นมากใน CSS) ให้ตรงกับ
+            // จุดประสงค์ใหม่ — "จางลงมาก/เล็กลง" (2026-09-15) — ยังกระจายเต็มจอเพื่อให้ตามตัวได้แม้แคป
+            // แค่บางส่วนของจอ แต่ไม่แน่น/เด่นจนรบกวนสายตาเหมือนก่อน
             let rowsHtml = '';
-            for (let r = 0; r < 14; r++) {
+            for (let r = 0; r < 8; r++) {
                 let itemsHtml = '';
-                for (let c = 0; c < 6; c++) itemsHtml += `<span class="wm-item">${text}</span>`;
+                for (let c = 0; c < 3; c++) itemsHtml += `<span class="wm-item">${text}</span>`;
                 rowsHtml += `<div class="wm-row">${itemsHtml}</div>`;
             }
             overlay.innerHTML = rowsHtml;
