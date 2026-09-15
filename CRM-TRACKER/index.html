@@ -252,9 +252,23 @@
             .fab-container { bottom: 80px; right: 15px; }
             .modal-box { width: 100%; padding: 14px; }
         }
+        /* ===== ลายน้ำกันข้อมูลรั่ว (watermark) — โชว์หลัง login แล้วเท่านั้น =====
+           แปะชื่อผู้ใช้งาน+เวลาไว้ทับหน้าจอบางๆ ทั่วทั้งจอ เพื่อให้ภาพที่แคปหน้าจอออกไป
+           (ถ้ามี) ตามตัวกลับมาได้ว่าใครเป็นคนแคป — ไม่ได้ "ป้องกัน" การแคปหน้าจอ (ทำไม่ได้จริงบนเว็บ
+           ดูคำอธิบายในแชท) แต่ช่วยยับยั้งด้วยการทำให้ตรวจสอบย้อนหลังได้ */
+        #leak-watermark-overlay {
+            position: fixed; inset: 0; z-index: 99998; pointer-events: none;
+            display: none; overflow: hidden;
+        }
+        #leak-watermark-overlay .wm-row { display: flex; white-space: nowrap; opacity: 0.09; transform: rotate(-25deg); }
+        #leak-watermark-overlay .wm-item { font-size: 13px; font-weight: 700; color: #0f172a; padding: 40px 60px; }
+        /* เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป (ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ เช่น
+           แชร์หน้าจอ/บันทึกหน้าจอเบื้องหลัง) — กลับมาโฟกัสหน้าต่างแล้วเนื้อหาจะชัดเจนตามปกติทันที */
+        body.leak-blur-when-hidden > *:not(#leak-watermark-overlay) { filter: blur(14px); transition: filter .15s ease; }
     </style>
 </head>
 <body>
+<div id="leak-watermark-overlay"></div>
     <div id="login-modal" class="login-modal">
         <div class="login-card">
             <h2>🔐 CRM LOGIN</h2>
@@ -1008,6 +1022,7 @@
                     currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
                     status.innerText = 'เข้าสู่ระบบสำเร็จ';
                     document.getElementById('login-modal').classList.add('hidden');
+                    activateLeakDeterrentMeasures_();
                     // แสดงชื่อผู้ใช้งานปัจจุบัน + ปุ่มออกจากระบบ ที่แถบด้านบน
                     const displayName = (resData.user && (resData.user.name || resData.user.username)) || username;
                     document.getElementById('current-user-name').innerText = `${displayName} (${roleLabelTH(currentRole)})`;
@@ -1060,6 +1075,9 @@
                 document.getElementById('login-password').value = '';
                 document.getElementById('login-status').innerText = '';
                 document.getElementById('login-modal').classList.remove('hidden');
+                const wmEl = document.getElementById('leak-watermark-overlay');
+                if (wmEl) { wmEl.style.display = 'none'; wmEl.innerHTML = ''; }
+                document.body.classList.remove('leak-blur-when-hidden');
             });
         }
 
@@ -2455,8 +2473,8 @@
                 const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
                 const ctx = { idx, badgeClass, prodParts, fin, followCount };
                 const adminEditDelete = (currentRole === 'admin' || currentRole === 'staff')
-                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>
-                       <button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>`
+                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>`
+                        + (currentRole === 'admin' ? `<button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>` : '')
                     : '';
                 const cells = visibleColumns.map(col => {
                     const styleAttr = col.cellStyle ? ` style="${col.cellStyle}"` : '';
@@ -3073,8 +3091,8 @@
             });
         }
         function deleteCustomerByIndex(idx) {
-            if (currentRole !== 'admin' && currentRole !== 'staff') {
-                alert('สิทธิ์ของคุณดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้');
+            if (currentRole !== 'admin') {
+                alert('เฉพาะ admin เท่านั้นที่ลบข้อมูลลูกค้าได้');
                 return;
             }
             const row = currentRenderedData[idx];
@@ -3100,6 +3118,43 @@
             .catch(err => {
                 alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง');
             });
+        }
+
+        /* ===== มาตรการยับยั้งข้อมูลรั่ว (ไม่ใช่การ "ป้องกัน" การแคปหน้าจอ — ทำไม่ได้จริงบนเว็บ ดูคำอธิบายในแชท) =====
+           1) ลายน้ำชื่อผู้ใช้งาน+เวลา ทับทั่วจอ — ถ้ามีภาพหลุดออกไป ตามตัวได้ว่าใครล็อกอินอยู่ตอนนั้น
+           2) เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป — ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ (เช่น แชร์จอ/บันทึกจอเบื้องหลัง)
+           3) ปิดคลิกขวา — กันการ "บันทึกรูปภาพ"/"ตรวจสอบ" แบบง่ายๆ (ไม่ใช่มาตรการความปลอดภัยขั้นสูง แค่กันคนทั่วไปเผลอกด) */
+        function buildWatermarkText_() {
+            const el = document.getElementById('current-user-name');
+            const who = el ? el.innerText : 'ไม่ทราบผู้ใช้';
+            const now = new Date().toLocaleString('th-TH', { hour12: false });
+            return who + ' · ' + now;
+        }
+        function renderLeakWatermark_() {
+            const overlay = document.getElementById('leak-watermark-overlay');
+            if (!overlay) return;
+            const text = buildWatermarkText_();
+            let rowsHtml = '';
+            for (let r = 0; r < 14; r++) {
+                let itemsHtml = '';
+                for (let c = 0; c < 6; c++) itemsHtml += `<span class="wm-item">${text}</span>`;
+                rowsHtml += `<div class="wm-row">${itemsHtml}</div>`;
+            }
+            overlay.innerHTML = rowsHtml;
+            overlay.style.display = 'block';
+        }
+        // เรียกหลัง login สำเร็จเท่านั้น (ดูจุดเรียกใน loginUser() และตอนโหลดหน้าแล้วพบ token เดิมที่ยังไม่หมดอายุ)
+        function activateLeakDeterrentMeasures_() {
+            renderLeakWatermark_();
+            setInterval(renderLeakWatermark_, 60000); // อัปเดตเวลาบนลายน้ำทุก 1 นาที
+
+            document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+            document.addEventListener('visibilitychange', function(){
+                document.body.classList.toggle('leak-blur-when-hidden', document.hidden);
+            });
+            window.addEventListener('blur', function(){ document.body.classList.add('leak-blur-when-hidden'); });
+            window.addEventListener('focus', function(){ document.body.classList.remove('leak-blur-when-hidden'); });
         }
     </script>
 </body>
