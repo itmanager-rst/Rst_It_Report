@@ -1,15 +1,17 @@
 import os
+import io
 import asyncio
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from contextlib import asynccontextmanager
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
 from dotenv import load_dotenv
 import requests
+import openpyxl
 
 # นำเข้าฟังก์ชันดึงข้อมูลจาก sync_worker เพื่อทำ Auto-sync สต็อกและใบสั่งซื้อ
 try:
@@ -179,6 +181,41 @@ def health_check():
         "ecount_ready": any(company_status.values()),
         "ecount_companies": company_status,
         "dataset": DATASET_ID,
+    }
+
+
+# --- Manual reconnect buttons (BigQuery / Ecount) ---
+
+@app.post("/api/reconnect-bigquery")
+def reconnect_bigquery():
+    """ลองสร้าง BigQuery client ใหม่อีกครั้ง (ใช้เมื่อแก้ credentials/Secret File บน Render แล้วอยากเชื่อมต่อทันทีโดยไม่ต้อง redeploy)"""
+    global client
+    client = get_bigquery_client()
+    connected = client is not None
+    return {
+        "success": connected,
+        "connected": connected,
+        "project_id": PROJECT_ID,
+        "message": (
+            "เชื่อมต่อ BigQuery สำเร็จ"
+            if connected
+            else f"เชื่อมต่อ BigQuery ไม่สำเร็จ ตรวจสอบ GOOGLE_APPLICATION_CREDENTIALS และ GCP_PROJECT_ID='{PROJECT_ID}'"
+        ),
+    }
+
+
+@app.post("/api/reconnect-ecount")
+def reconnect_ecount():
+    """บังคับ login ใหม่กับ Ecount ทุกบริษัท (force refresh session) แล้วรายงานสถานะรายบริษัท"""
+    company_status = {}
+    for company in COMPANIES:
+        session_id, host_url = get_ecount_session(company, force_refresh=True)
+        company_status[company["id"]] = bool(session_id and host_url)
+
+    return {
+        "success": any(company_status.values()),
+        "ecount_ready": any(company_status.values()),
+        "companies": company_status,
     }
 
 
@@ -692,10 +729,10 @@ async def get_po_list(
 
             where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
             query = f"""
-                SELECT 
+                SELECT
                     company_id, po_no, CAST(ord_date AS STRING) AS ord_date, wh_cd, wh_des,
                     pjt_cd, pjt_des, cust_cd, cust_des, prod_des, size_des,
-                    qty, price, supply_amt, vat_amt, total_amt, pic, p_flag,
+                    qty, price, supply_amt, vat_amt, total_amt, pic, p_flag, status_name,
                     seq, updated_at
                 FROM `{PROJECT_ID}.{DATASET_ID}.purchase_orders`
                 {where_clause}
@@ -724,6 +761,7 @@ async def get_po_list(
                     "total_amt": float(row.total_amt or 0),
                     "pic": row.pic,
                     "p_flag": row.p_flag,
+                    "status_name": getattr(row, 'status_name', None),
                     "ref_des": getattr(row, 'ref_des', ''),
                     "seq": row.seq,
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -927,6 +965,15 @@ def fetch_company_it_po(company, from_date, to_date):
 
             pic_val = pick(item, "CUST_NAME", "PIC_NAME", "EMP_DES", "EMP_NAME", "WRITER_ID") or "-"
 
+            # แมปสถานะให้ตรงกับ sync_worker.py (รองรับรหัส ECOUNT ทั้งแบบตัวอักษรและตัวเลข 9)
+            p_flag_val = str(pick(item, "P_FLAG") or "").strip().upper()
+            if p_flag_val in ("Y", "9", "COMPLETED", "CLOSED"):
+                status_name_val = "ดำเนินการเสร็จแล้ว"
+            elif p_flag_val in ("N", "0", "1", "PROGRESS", "PENDING"):
+                status_name_val = "กำลังดำเนินการ"
+            else:
+                status_name_val = pick(item, "STATUS_DES", "CONFIRM_YN") or (f"สถานะ {p_flag_val}" if p_flag_val else "ไม่ระบุ")
+
             normalized.append({
                 "company_id": company["id"],
                 "po_no": str(raw_po),
@@ -942,7 +989,8 @@ def fetch_company_it_po(company, from_date, to_date):
                 "vat_amt": number_value(pick(item, "VAT_AMT")),
                 "total_amt": number_value(pick(item, "TOTAL_AMT")) or (number_value(pick(item, "BUY_AMT")) + number_value(pick(item, "VAT_AMT"))),
                 "pic_name": pic_val,
-                "p_flag": pick(item, "P_FLAG"),
+                "p_flag": p_flag_val,
+                "status_name": status_name_val,
             })
 
         return normalized, ""
@@ -973,10 +1021,10 @@ async def get_it_expenses(
             where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
             
             query = f"""
-                SELECT 
+                SELECT
                     company_id, po_no, CAST(ord_date AS STRING) AS ord_date,
                     pjt_cd, pjt_des, cust_cd, cust_des, prod_des,
-                    qty, buy_amt, vat_amt, total_amt, pic_name, p_flag, updated_at
+                    qty, buy_amt, vat_amt, total_amt, pic_name, p_flag, status_name, updated_at
                 FROM `{PROJECT_ID}.{DATASET_ID}.it_expenses`
                 {where_clause}
                 ORDER BY ord_date DESC
@@ -988,7 +1036,7 @@ async def get_it_expenses(
                 b_amt = float(row.buy_amt or 0)
                 v_amt = float(row.vat_amt or 0)
                 tot = float(row.total_amt or 0) if (row.total_amt and float(row.total_amt) > 0) else (b_amt + v_amt)
-                
+
                 total_amount += tot
                 items.append({
                     "company_id": row.company_id,
@@ -1008,6 +1056,7 @@ async def get_it_expenses(
                     "pic_name": row.pic_name,
                     "pic": row.pic_name,
                     "p_flag": row.p_flag,
+                    "status_name": getattr(row, 'status_name', None),
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 })
             return {
@@ -1068,6 +1117,372 @@ async def get_it_expenses(
     }
 
 
+# --- MODULE 6: DEPARTMENT EXPENSES API (ค่าใช้จ่ายแยกตามแผนกใดก็ได้ ไม่ผูกตายตัวเหมือน IT) ---
+#
+# ต่างจาก IT Expenses (Module 5) ตรงที่ไม่ผูกรหัสแผนกตายตัวต่อบริษัท (IT_PROJECT_CODES) เพราะแต่ละ
+# บริษัทมีรหัสแผนก (PJT_CD) ไม่ตรงกัน แต่ "ชื่อแผนก" (PJT_DES) ที่ผู้ใช้เห็นในเมนูใบสั่งซื้อของ ECOUNT
+# มักสะกดตรงกันข้ามบริษัท จึงใช้จับคู่ด้วยชื่อแผนก (case-insensitive, trim) แทนรหัส ทำให้เลือกได้ทุกแผนก
+# และรวมข้ามบริษัทได้เมื่อเลือก "ALL" โดยไม่ต้อง hardcode รหัสใหม่ทุกครั้งที่มีแผนกเพิ่ม
+
+def _normalize_dept_name(name):
+    return re.sub(r"\s+", " ", str(name or "").strip()).upper()
+
+
+def _dept_key(pjt_cd, pjt_des):
+    """คำนวณ 'คีย์แผนก' ตัวเดียวกับที่ /api/departments และ /api/department-expenses ใช้กลุ่ม/จับคู่:
+    ถ้ามีชื่อแผนก (PJT_DES) ใช้ชื่อ, ถ้าไม่มีแต่มีรหัส (PJT_CD) ใช้ 'รหัสแผนก <รหัส>' แทน
+    เพื่อไม่ให้ PO ที่ ECOUNT ไม่ได้ส่งชื่อแผนกมาด้วยหายไปจากรายการทั้งหมด"""
+    des = str(pjt_des or "").strip()
+    if des:
+        return des
+    cd = str(pjt_cd or "").strip()
+    if cd:
+        return f"รหัสแผนก {cd}"
+    return ""
+
+
+@app.get("/api/departments")
+def get_departments(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RUAMSINTHAI หรือ ALL")):
+    """คืนรายชื่อแผนก (PJT_DES) ที่พบจริงในข้อมูลใบสั่งซื้อ ใช้ประกอบ dropdown เลือกแผนกในหน้าค่าใช้จ่ายแผนก"""
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"BigQuery client unavailable. Check GOOGLE_APPLICATION_CREDENTIALS and GCP_PROJECT_ID='{PROJECT_ID}'.",
+        )
+
+    valid_ids = {c["id"] for c in COMPANIES}
+    company_filter = (company_id or "ALL").upper().strip()
+    if company_filter != "ALL" and company_filter not in valid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown company_id '{company_id}'. Expected one of: {', '.join(sorted(valid_ids))} or ALL.",
+        )
+
+    where_clause = ""
+    query_params = []
+    if company_filter != "ALL":
+        where_clause = "WHERE UPPER(TRIM(company_id)) = @company_id"
+        query_params.append(bigquery.ScalarQueryParameter("company_id", "STRING", company_filter))
+
+    # หลาย PO ในระบบจริงไม่มี PJT_DES (ชื่อแผนก) จาก ECOUNT ติดมาด้วย มีแค่ PJT_CD (รหัส)
+    # ถ้าไม่ fallback ไปใช้รหัสแทน แผนกเหล่านี้จะหายไปจาก dropdown ทั้งหมด (ดูเหมือน "ไม่มีแผนกให้เลือก")
+    query = f"""
+        WITH base AS (
+            SELECT
+                company_id,
+                TRIM(CAST(pjt_cd AS STRING)) AS pjt_cd,
+                TRIM(CAST(pjt_des AS STRING)) AS pjt_des,
+                CASE
+                    WHEN TRIM(CAST(pjt_des AS STRING)) != '' THEN TRIM(CAST(pjt_des AS STRING))
+                    WHEN TRIM(CAST(pjt_cd AS STRING)) != '' THEN CONCAT('รหัสแผนก ', TRIM(CAST(pjt_cd AS STRING)))
+                    ELSE NULL
+                END AS dept_key
+            FROM `{PROJECT_ID}.{DATASET_ID}.purchase_orders`
+            {where_clause}
+        )
+        SELECT
+            dept_key AS department,
+            ARRAY_AGG(DISTINCT company_id IGNORE NULLS) AS companies,
+            ARRAY_AGG(DISTINCT pjt_cd IGNORE NULLS) AS codes,
+            COUNT(*) AS po_count
+        FROM base
+        WHERE dept_key IS NOT NULL
+        GROUP BY dept_key
+        ORDER BY dept_key
+    """
+    try:
+        job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+        results = client.query(query, job_config=job_config).result()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"BigQuery query failed: {exc}") from exc
+
+    departments = [
+        {
+            "department": row.department,
+            "companies": list(row.companies or []),
+            "codes": list(row.codes or []),
+            "po_count": row.po_count,
+        }
+        for row in results
+    ]
+    return {"success": True, "total": len(departments), "departments": departments}
+
+
+def fetch_company_department_po(company, from_date, to_date, department):
+    """เหมือน fetch_company_it_po แต่ match ด้วยชื่อแผนก (PJT_DES) แบบใดก็ได้ ไม่ผูกรหัสตายตัว"""
+    target = _normalize_dept_name(department)
+
+    def request_page(session_id, host_url, page, range_from, range_to):
+        url = f"{ecount_api_url(host_url, 'Purchases/GetPurchasesOrderList')}?SESSION_ID={session_id}"
+        payload = {
+            "PROD_CD": "",
+            "CUST_CD": "",
+            "ListParam": {
+                "PAGE_CURRENT": page,
+                "PAGE_SIZE": 100,
+                "BASE_DATE_FROM": range_from,
+                "BASE_DATE_TO": range_to,
+            },
+        }
+        return requests.post(url, json=payload, headers=ECOUNT_API_HEADERS, timeout=30)
+
+    if not company.get("api_key"):
+        return [], f"ไม่สามารถโหลดข้อมูล {company['id']}: ไม่ได้ตั้งค่า API KEY"
+
+    session_id, host_url = get_ecount_session(company)
+    if not session_id or not host_url:
+        session_id, host_url = get_ecount_session(company, force_refresh=True)
+    if not session_id or not host_url:
+        return [], f"ไม่สามารถเข้าสู่ระบบบริษัท {company['id']} ได้"
+
+    try:
+        start_date = datetime.strptime(from_date, "%Y%m%d").date()
+        end_date = datetime.strptime(to_date, "%Y%m%d").date()
+        items = []
+        current_date = start_date
+
+        while current_date <= end_date:
+            range_end = min(current_date + timedelta(days=30), end_date)
+            range_from = current_date.strftime("%Y%m%d")
+            range_to = range_end.strftime("%Y%m%d")
+            body = {}
+            for attempt in range(3):
+                try:
+                    response = request_page(session_id, host_url, 1, range_from, range_to)
+                    body = response.json()
+                    if response.status_code == 200 and str(body.get("Status")) == "200":
+                        break
+                except (ValueError, requests.RequestException):
+                    body = {}
+                if attempt < 2:
+                    session_id, host_url = get_ecount_session(company, force_refresh=True)
+                    if not session_id or not host_url:
+                        break
+            if str(body.get("Status")) != "200":
+                break
+
+            data = body.get("Data", {}) or {}
+            page_items = data.get("Result") or data.get("Datas") or data.get("List") or []
+            if isinstance(page_items, dict):
+                page_items = [page_items]
+            items.extend(page_items)
+
+            total_count = int(data.get("TotalCnt") or data.get("TOTAL_CNT") or len(page_items))
+            page = 1
+            while len(page_items) < total_count:
+                page += 1
+                try:
+                    page_response = request_page(session_id, host_url, page, range_from, range_to)
+                    page_body = page_response.json()
+                except (ValueError, requests.RequestException):
+                    break
+                if str(page_body.get("Status")) != "200":
+                    break
+                page_data = page_body.get("Data", {}) or {}
+                page_items = page_data.get("Result") or page_data.get("Datas") or page_data.get("List") or []
+                if isinstance(page_items, dict):
+                    page_items = [page_items]
+                if not page_items:
+                    break
+                items.extend(page_items)
+
+            current_date = range_end + timedelta(days=1)
+
+        def pick(item, *keys):
+            for key in keys:
+                val = item.get(key)
+                if val not in (None, "", "-"):
+                    return val
+            return ""
+
+        def number_value(val):
+            try:
+                return float(str(val or 0).replace(",", ""))
+            except (TypeError, ValueError):
+                return 0.0
+
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            pjt_cd = pick(item, "PJT_CD", "PROJECT_CD", "PROJECT_CODE", "PROJECT_NO")
+            pjt_des = pick(item, "PJT_DES", "PROJECT_DES", "PROJECT_NAME", "PROJECT_NM")
+
+            if _normalize_dept_name(_dept_key(pjt_cd, pjt_des)) != target:
+                continue
+
+            po_date = pick(item, "IO_DATE", "ORD_DATE", "DATE", "BASE_DATE", "WRITE_DT")
+            raw_po = pick(item, "IO_NO", "SLIP_NO", "DOC_NO", "PO_NO")
+            order_no = pick(item, "ORD_NO", "ORDER_NO", "SEQ")
+            if not raw_po or str(raw_po) in ("0", "0.0"):
+                raw_po = f"PO-{po_date}-{order_no}" if po_date and order_no else str(order_no or "-")
+
+            pic_val = pick(item, "CUST_NAME", "PIC_NAME", "EMP_DES", "EMP_NAME", "WRITER_ID") or "-"
+
+            p_flag_val = str(pick(item, "P_FLAG") or "").strip().upper()
+            if p_flag_val in ("Y", "9", "COMPLETED", "CLOSED"):
+                status_name_val = "ดำเนินการเสร็จแล้ว"
+            elif p_flag_val in ("N", "0", "1", "PROGRESS", "PENDING"):
+                status_name_val = "กำลังดำเนินการ"
+            else:
+                status_name_val = pick(item, "STATUS_DES", "CONFIRM_YN") or (f"สถานะ {p_flag_val}" if p_flag_val else "ไม่ระบุ")
+
+            normalized.append({
+                "company_id": company["id"],
+                "po_no": str(raw_po),
+                "ord_date": po_date,
+                "pjt_cd": pjt_cd,
+                "pjt_des": pjt_des or (department if not str(department).startswith("รหัสแผนก") else ""),
+                "cust_cd": pick(item, "CUST"),
+                "cust_des": pick(item, "CUST_DES"),
+                "prod_des": pick(item, "PROD_DES", "TTL_CTT"),
+                "qty": number_value(pick(item, "QTY")),
+                "buy_amt": number_value(pick(item, "BUY_AMT")),
+                "vat_amt": number_value(pick(item, "VAT_AMT")),
+                "total_amt": number_value(pick(item, "TOTAL_AMT")) or (number_value(pick(item, "BUY_AMT")) + number_value(pick(item, "VAT_AMT"))),
+                "pic_name": pic_val,
+                "p_flag": p_flag_val,
+                "status_name": status_name_val,
+            })
+
+        return normalized, ""
+    except Exception as e:
+        return [], f"Exception [{company['id']}]: {str(e)}"
+
+
+@app.get("/api/department-expenses")
+@app.post("/api/department-expenses")
+async def get_department_expenses(
+    department: str = Query(..., description="ชื่อแผนกตรงตาม PJT_DES เช่น 'แผนกบัญชี'"),
+    DATE_FROM: Optional[str] = Query(None),
+    DATE_TO: Optional[str] = Query(None),
+    company_id: Optional[str] = Query("ALL"),
+):
+    """เหมือน /api/it-expenses แต่เลือกแผนกได้เอง (จับคู่ด้วยชื่อแผนก ไม่ใช่รหัสตายตัว)"""
+    if not department or not department.strip():
+        raise HTTPException(status_code=400, detail="ต้องระบุพารามิเตอร์ department")
+
+    if client is not None:
+        try:
+            # ต้องใช้คีย์แผนกแบบเดียวกับ /api/departments (ชื่อแผนก ถ้ามี, ไม่งั้น fallback เป็น 'รหัสแผนก <รหัส>')
+            # ไม่งั้น PO ที่ ECOUNT ไม่ได้ส่งชื่อแผนก (PJT_DES ว่าง) มาด้วยจะไม่ถูกจับคู่เลย แม้จะเลือกแผนกนั้นจาก dropdown แล้วก็ตาม
+            where_conditions = ["UPPER(dept_key) = @department"]
+            query_params = [bigquery.ScalarQueryParameter("department", "STRING", _normalize_dept_name(department))]
+            if company_id and company_id != "ALL":
+                where_conditions.append("UPPER(TRIM(company_id)) = @company_id")
+                query_params.append(bigquery.ScalarQueryParameter("company_id", "STRING", company_id.upper().strip()))
+            if DATE_FROM:
+                clean_from = str(DATE_FROM).replace("-", "").replace("/", "")
+                where_conditions.append("CAST(ord_date AS STRING) >= @date_from")
+                query_params.append(bigquery.ScalarQueryParameter("date_from", "STRING", clean_from))
+            if DATE_TO:
+                clean_to = str(DATE_TO).replace("-", "").replace("/", "")
+                where_conditions.append("CAST(ord_date AS STRING) <= @date_to")
+                query_params.append(bigquery.ScalarQueryParameter("date_to", "STRING", clean_to))
+
+            where_clause = f"WHERE {' AND '.join(where_conditions)}"
+            query = f"""
+                WITH base AS (
+                    SELECT
+                        company_id, po_no, ord_date,
+                        pjt_cd, pjt_des, cust_cd, cust_des, prod_des,
+                        qty, supply_amt, vat_amt, total_amt, pic, p_flag, status_name, updated_at,
+                        UPPER(CASE
+                            WHEN TRIM(CAST(pjt_des AS STRING)) != '' THEN TRIM(CAST(pjt_des AS STRING))
+                            WHEN TRIM(CAST(pjt_cd AS STRING)) != '' THEN CONCAT('รหัสแผนก ', TRIM(CAST(pjt_cd AS STRING)))
+                            ELSE ''
+                        END) AS dept_key
+                    FROM `{PROJECT_ID}.{DATASET_ID}.purchase_orders`
+                )
+                SELECT
+                    company_id, po_no, CAST(ord_date AS STRING) AS ord_date,
+                    pjt_cd, pjt_des, cust_cd, cust_des, prod_des,
+                    qty, supply_amt, vat_amt, total_amt, pic, p_flag, status_name, updated_at
+                FROM base
+                {where_clause}
+                ORDER BY ord_date DESC
+            """
+            job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+            results = client.query(query, job_config=job_config).result()
+            items = []
+            total_amount = 0.0
+            for row in results:
+                b_amt = float(row.supply_amt or 0)
+                v_amt = float(row.vat_amt or 0)
+                tot = float(row.total_amt or 0) if (row.total_amt and float(row.total_amt) > 0) else (b_amt + v_amt)
+                total_amount += tot
+                items.append({
+                    "company_id": row.company_id,
+                    "po_no": row.po_no,
+                    "ord_date": str(row.ord_date),
+                    "pjt_cd": row.pjt_cd,
+                    "pjt_des": row.pjt_des,
+                    "cust_cd": row.cust_cd,
+                    "cust_des": row.cust_des,
+                    "prod_des": row.prod_des,
+                    "qty": float(row.qty or 0),
+                    "buy_amt": b_amt,
+                    "supply_amt": b_amt,
+                    "vat_amt": v_amt,
+                    "total_amt": tot,
+                    "pic_name": row.pic,
+                    "pic": row.pic,
+                    "p_flag": row.p_flag,
+                    "status_name": getattr(row, 'status_name', None),
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                })
+            return {
+                "success": True,
+                "total_items": len(items),
+                "total_expense_amt": total_amount,
+                "data": items,
+                "source": "bigquery",
+            }
+        except Exception as bq_err:
+            print(f"⚠️ BigQuery Department Expenses query failed, falling back: {bq_err}")
+
+    # Fallback: ดึงสดจาก ECOUNT (กรณี BigQuery ใช้งานไม่ได้)
+    today = datetime.now()
+    from_date = (DATE_FROM or (today - timedelta(days=365)).strftime("%Y%m%d")).replace("-", "").replace("/", "")
+    to_date = (DATE_TO or today.strftime("%Y%m%d")).replace("-", "").replace("/", "")
+
+    selected = [comp for comp in COMPANIES if company_id == "ALL" or comp["id"].upper() == company_id.upper()]
+
+    tasks = [
+        asyncio.to_thread(fetch_company_department_po, comp, from_date, to_date, department)
+        for comp in selected
+    ]
+    results = await asyncio.gather(*tasks)
+
+    all_items = []
+    errors = []
+    for items, error in results:
+        all_items.extend(items)
+        if error:
+            errors.append(error)
+
+    if not all_items and errors:
+        return {
+            "success": False,
+            "message": "; ".join(errors),
+            "total_items": 0,
+            "total_expense_amt": 0.0,
+            "data": [],
+            "warnings": errors,
+        }
+
+    total_amount = sum(item.get("total_amt", 0.0) for item in all_items)
+    return {
+        "success": True,
+        "total_items": len(all_items),
+        "total_expense_amt": total_amount,
+        "data": all_items,
+        "warnings": errors if errors else None,
+        "source": "ecount",
+    }
+
+
 @app.post("/api/sync-po")
 @app.get("/api/sync-po")
 async def sync_po_to_bigquery(days_back: int = Query(365)):
@@ -1083,3 +1498,448 @@ async def sync_po_to_bigquery(days_back: int = Query(365)):
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"ซิงค์ข้อมูลไม่สำเร็จ: {exc}")
+
+
+# ============================================================================
+# MODULE: MTD & YTD SALE (นำเข้าไฟล์ Excel รายงานยอดขายจาก ECOUNT แล้ว "วางทับ"
+# ข้อมูลเดิมของบริษัทนั้นใน BigQuery โดยอัตโนมัติ)
+# ============================================================================
+
+SALES_TABLE = "sales_transactions"
+
+THAI_MONTHS = {
+    "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
+    "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12,
+}
+
+SALES_TABLE_SCHEMA = [
+    bigquery.SchemaField("company_id", "STRING"),
+    bigquery.SchemaField("transaction_date", "DATE"),
+    bigquery.SchemaField("invoice_no", "STRING"),
+    bigquery.SchemaField("product_group", "STRING"),
+    bigquery.SchemaField("prod_cd", "STRING"),
+    bigquery.SchemaField("prod_des", "STRING"),
+    bigquery.SchemaField("serial_lot", "STRING"),
+    bigquery.SchemaField("customer_cd", "STRING"),
+    bigquery.SchemaField("customer_name", "STRING"),
+    bigquery.SchemaField("address", "STRING"),
+    bigquery.SchemaField("qty", "FLOAT"),
+    bigquery.SchemaField("unit", "STRING"),
+    bigquery.SchemaField("unit_price", "FLOAT"),
+    bigquery.SchemaField("amount", "FLOAT"),
+    bigquery.SchemaField("technician", "STRING"),
+    bigquery.SchemaField("project_name", "STRING"),
+    bigquery.SchemaField("credit", "STRING"),
+    bigquery.SchemaField("delivery_date", "DATE"),
+    bigquery.SchemaField("warehouse_name", "STRING"),
+    bigquery.SchemaField("location_name", "STRING"),
+    bigquery.SchemaField("source_file", "STRING"),
+    bigquery.SchemaField("uploaded_at", "TIMESTAMP"),
+]
+
+
+def parse_thai_date(value):
+    """แปลงวันที่ให้เป็น date แบบ ค.ศ. ให้ทนทานต่อรูปแบบที่ ECOUNT export ออกมาไม่เหมือนกันในแต่ละครั้ง
+       รองรับทุกรูปแบบที่เคยเจอ (และรูปแบบใกล้เคียงที่อาจเจอในอนาคต):
+       1) Excel date object / datetime ตรงๆ (กรณีคอลัมน์ถูก format เป็นวันที่ในไฟล์)
+       2) เลข serial date ของ Excel (กรณีคอลัมน์เป็น General แต่เก็บเป็นตัวเลขวันที่)
+       3) ตัวเลขล้วน 8 หลัก แบบ ค.ศ. เช่น '20260102' (YYYYMMDD)
+       4) รูปแบบ YYYY-MM-DD หรือ YYYY/MM/DD (ค.ศ.)
+       5) รูปแบบ DD/MM/YYYY หรือ DD-MM-YYYY (ตรวจสอบเองว่าปีเป็น พ.ศ. หรือ ค.ศ. จากขนาดของปี)
+       6) ข้อความไทยแบบเดือนย่อ เช่น '01 ม.ค. 2569' (พ.ศ. เต็ม 4 หลัก) หรือ '01 ม.ค. 69' (พ.ศ. 2 หลัก)
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    # กรณีคอลัมน์เก็บเป็นตัวเลข serial date ของ Excel (epoch 1899-12-30)
+    if isinstance(value, (int, float)):
+        try:
+            return (datetime(1899, 12, 30) + timedelta(days=float(value))).date()
+        except (OverflowError, ValueError, OSError):
+            return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    def _resolve_year(y):
+        # ปี พ.ศ. เต็ม 4 หลัก (>2400) แปลงเป็น ค.ศ. / ปี พ.ศ. แบบ 2 หลัก (เช่น 69 = พ.ศ. 2569) แปลงเป็น ค.ศ. / อื่นๆ ถือว่าเป็น ค.ศ. อยู่แล้ว
+        if y > 2400:
+            return y - 543
+        if y < 100:
+            return 1957 + y  # สมมติฐาน: ปี พ.ศ. 2 หลักอยู่ในช่วง พ.ศ. 2500-2599 (ค.ศ. 1957-2056)
+        return y
+
+    # รูปแบบ 3: ตัวเลขล้วน 8 หลัก (ค.ศ.) เช่น 20260102
+    if re.fullmatch(r"\d{8}", text):
+        try:
+            return datetime.strptime(text, "%Y%m%d").date()
+        except ValueError:
+            return None
+
+    # รูปแบบ 4: YYYY-MM-DD หรือ YYYY/MM/DD
+    m = re.fullmatch(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", text)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(y, mo, d)
+        except ValueError:
+            return None
+
+    # รูปแบบ 5: DD-MM-YYYY หรือ DD/MM/YYYY (พ.ศ. หรือ ค.ศ. ก็ได้)
+    m = re.fullmatch(r"(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})", text)
+    if m:
+        d, mo, y_raw = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(_resolve_year(y_raw), mo, d)
+        except ValueError:
+            return None
+
+    # รูปแบบ 6: ข้อความไทยแบบเดือนย่อ เช่น '01 ม.ค. 2569' หรือ '01 ม.ค. 69'
+    parts = text.split()
+    if len(parts) >= 3:
+        try:
+            day = int(parts[0])
+            year_raw = int(parts[2])
+        except ValueError:
+            return None
+        month = THAI_MONTHS.get(parts[1].strip())
+        if not month:
+            return None
+        try:
+            return date(_resolve_year(year_raw), month, day)
+        except ValueError:
+            return None
+
+    return None
+
+
+def _cell_str(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
+def _cell_float(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_sales_excel(file_bytes: bytes, company_id: str, source_filename: str):
+    """
+    อ่านไฟล์ 'รายงานสถานะการขาย' ที่ Export จาก ECOUNT (.xlsx)
+    โครงสร้างคอลัมน์ (นับจาก 1): วันที่-ลำดับ, วันที่, ชื่อกลุ่มสินค้า, เลขที่ใบขาย,
+    รหัสสินค้า, ชื่อสินค้า, Serial/Lot, รหัสลูกค้า, ชื่อลูกค้า, ที่อยู่, จำนวน, หน่วย,
+    ราคาต่อหน่วย, จำนวนเงิน, ผู้รับผิดชอบ(ช่าง), ชื่อโครงการ, สินเชื่อ, วันที่ส่งมอบ,
+    ชื่อคลังเบิกขาย, ชื่อสถานที่
+
+    แถวหัวตาราง (แถว 1-2), แถวสรุปยอดรายเดือน ("... รวม") และแถวสรุปทั้งหมด/timestamp
+    ท้ายไฟล์ จะไม่มีทั้ง "เลขที่ใบขาย" และ "รหัสสินค้า" พร้อมกัน จึงใช้เป็นตัวกรองแถวข้อมูลจริง
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb[wb.sheetnames[0]]
+
+    detected_company_name = None
+    header_text = ws.cell(row=1, column=1).value
+    if header_text:
+        detected_company_name = str(header_text).split("/")[0].replace("ชื่อบริษัท", "").strip(" :")
+
+    now_iso = datetime.utcnow().isoformat()
+    rows = []
+    skipped_structure = 0   # แถวหัวตาราง / แถวสรุปยอด(รวม) / แถว timestamp ท้ายไฟล์ — ปกติ ไม่ใช่ปัญหา
+    skipped_date_error = 0  # แถวข้อมูลขายจริง (มีเลขที่ใบขาย+รหัสสินค้า) แต่แปลงวันที่ไม่ได้ — ผิดปกติ ต้องแจ้งเตือน
+    unparsed_date_samples = []
+
+    for r in range(3, ws.max_row + 1):
+        invoice_no = ws.cell(row=r, column=4).value
+        prod_cd = ws.cell(row=r, column=5).value
+        if not invoice_no or not prod_cd:
+            skipped_structure += 1
+            continue  # แถวหัวตาราง / แถวสรุปยอด(รวม) / แถว timestamp ท้ายไฟล์
+
+        raw_date_value = ws.cell(row=r, column=2).value
+        tdate = parse_thai_date(raw_date_value)
+        if not tdate:
+            skipped_date_error += 1
+            if len(unparsed_date_samples) < 5:
+                unparsed_date_samples.append(f"แถว {r}: '{raw_date_value}'")
+            continue
+
+        rows.append({
+            "company_id": company_id,
+            "transaction_date": tdate.isoformat(),
+            "invoice_no": _cell_str(invoice_no),
+            "product_group": _cell_str(ws.cell(row=r, column=3).value),
+            "prod_cd": _cell_str(prod_cd),
+            "prod_des": _cell_str(ws.cell(row=r, column=6).value),
+            "serial_lot": _cell_str(ws.cell(row=r, column=7).value),
+            "customer_cd": _cell_str(ws.cell(row=r, column=8).value),
+            "customer_name": _cell_str(ws.cell(row=r, column=9).value),
+            "address": _cell_str(ws.cell(row=r, column=10).value),
+            "qty": _cell_float(ws.cell(row=r, column=11).value),
+            "unit": _cell_str(ws.cell(row=r, column=12).value),
+            "unit_price": _cell_float(ws.cell(row=r, column=13).value),
+            "amount": _cell_float(ws.cell(row=r, column=14).value),
+            "technician": _cell_str(ws.cell(row=r, column=15).value),
+            "project_name": _cell_str(ws.cell(row=r, column=16).value),
+            "credit": _cell_str(ws.cell(row=r, column=17).value),
+            "delivery_date": (parse_thai_date(ws.cell(row=r, column=18).value) or None),
+            "warehouse_name": _cell_str(ws.cell(row=r, column=19).value),
+            "location_name": _cell_str(ws.cell(row=r, column=20).value),
+            "source_file": source_filename,
+            "uploaded_at": now_iso,
+        })
+
+    for row in rows:
+        if row["delivery_date"] is not None:
+            row["delivery_date"] = row["delivery_date"].isoformat()
+
+    return rows, detected_company_name, skipped_structure, skipped_date_error, unparsed_date_samples
+
+
+@app.post("/api/sales/upload")
+async def upload_sales_excel(
+    company_id: str = Form(..., description="ASIA, ROBOTICS หรือ RUAMSINTHAI"),
+    file: UploadFile = File(...),
+):
+    """
+    รับไฟล์ Excel รายงานยอดขาย (Export จาก ECOUNT) แล้ว "วางทับ" ข้อมูลเดิมของบริษัทนี้
+    ใน BigQuery ทั้งหมดด้วยข้อมูลชุดใหม่ (ลบของเดิมเฉพาะบริษัทนี้ทิ้ง แล้วโหลดชุดใหม่เข้าไปแทน)
+    """
+    valid_ids = [c["id"] for c in COMPANIES]
+    if company_id not in valid_ids:
+        raise HTTPException(status_code=400, detail=f"company_id ต้องเป็นหนึ่งใน {valid_ids}")
+
+    if client is None:
+        raise HTTPException(status_code=500, detail="BigQuery client ไม่พร้อมใช้งาน กรุณากดปุ่มเชื่อมต่อ BigQuery ใหม่")
+
+    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .xlsx ที่ Export จาก ECOUNT เท่านั้น")
+
+    content = await file.read()
+
+    try:
+        rows, detected_company_name, skipped_structure, skipped_date_error, unparsed_samples = await asyncio.to_thread(
+            parse_sales_excel, content, company_id, file.filename
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"ไม่สามารถอ่านไฟล์ Excel ได้: {exc}")
+
+    if not rows:
+        detail = "ไม่พบแถวข้อมูลรายการขายที่อ่านได้ในไฟล์นี้ กรุณาตรวจสอบรูปแบบไฟล์"
+        if skipped_date_error > 0:
+            detail += f" (พบ {skipped_date_error} แถวที่มีข้อมูลขายแต่แปลงวันที่ไม่ได้ เช่น {'; '.join(unparsed_samples)})"
+        raise HTTPException(status_code=400, detail=detail)
+
+    table_ref = f"{PROJECT_ID}.{DATASET_ID}.{SALES_TABLE}"
+
+    # 1) ลบข้อมูลเก่าของบริษัทนี้ทิ้งก่อน (ถ้าตารางมีอยู่แล้ว) เพื่อ "วางทับ" ด้วยข้อมูลชุดใหม่
+    try:
+        client.get_table(table_ref)
+        client.query(
+            f"DELETE FROM `{table_ref}` WHERE company_id = @company_id",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("company_id", "STRING", company_id)]
+            ),
+        ).result()
+    except Exception:
+        pass  # ตารางยังไม่เคยถูกสร้าง จะถูกสร้างใหม่จากการโหลดข้อมูลรอบนี้เลย
+
+    # 2) โหลดข้อมูลชุดใหม่เข้าไปแทน
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND", schema=SALES_TABLE_SCHEMA)
+    try:
+        client.load_table_from_json(rows, table_ref, job_config=job_config).result()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"บันทึกข้อมูลลง BigQuery ไม่สำเร็จ: {exc}")
+
+    total_amount = sum(r["amount"] or 0 for r in rows)
+    dates = [r["transaction_date"] for r in rows if r["transaction_date"]]
+
+    warning = None
+    if skipped_date_error > 0:
+        warning = (
+            f"⚠️ พบ {skipped_date_error} แถวที่มีเลขที่ใบขาย/รหัสสินค้า แต่ไม่สามารถแปลงวันที่ได้ "
+            f"จึงถูกข้ามไป (ระบบไม่รู้จักรูปแบบวันที่นี้) ตัวอย่าง: {'; '.join(unparsed_samples)} "
+            f"— กรุณาแจ้งทีมพัฒนาให้เพิ่มรูปแบบวันที่นี้ในโค้ด"
+        )
+
+    return {
+        "success": True,
+        "message": (
+            f"นำเข้าข้อมูลสำเร็จ {len(rows):,} รายการ (บริษัท {company_id}) "
+            f"— วางทับข้อมูลยอดขายเดิมของบริษัทนี้เรียบร้อยแล้ว"
+        ),
+        "rows_imported": len(rows),
+        "rows_skipped_structure": skipped_structure,
+        "rows_skipped_date_error": skipped_date_error,
+        "warning": warning,
+        "total_amount": total_amount,
+        "date_range": {"min": min(dates), "max": max(dates)} if dates else None,
+        "company_id": company_id,
+        "detected_company_name": detected_company_name,
+        "source_file": file.filename,
+    }
+
+
+@app.get("/api/sales/summary")
+def get_sales_summary(company_id: str = Query("ALL", description="ASIA, ROBOTICS, RUAMSINTHAI หรือ ALL")):
+    """สรุปยอดขาย MTD (เดือนล่าสุดที่มีข้อมูล), YTD (ปีของเดือนล่าสุดที่มีข้อมูล) และแนวโน้มรายเดือนสำหรับกราฟ
+
+    หมายเหตุ: คำนวณอิงจาก "วันที่ล่าสุดที่มีอยู่จริงในข้อมูล" ไม่ใช่วันที่ปัจจุบันของเครื่องเซิร์ฟเวอร์
+    เพราะไฟล์ที่นำเข้าอาจเป็นข้อมูลย้อนหลัง การอิงวันที่จริงบนเครื่องจะทำให้ MTD/YTD ว่างเปล่าผิดพลาด
+    """
+    if client is None:
+        raise HTTPException(status_code=500, detail="BigQuery client ไม่พร้อมใช้งาน")
+
+    table_ref = f"{PROJECT_ID}.{DATASET_ID}.{SALES_TABLE}"
+    try:
+        client.get_table(table_ref)
+    except Exception:
+        return {
+            "success": True,
+            "has_data": False,
+            "message": "ยังไม่มีข้อมูลยอดขายในระบบ กรุณาอัปโหลดไฟล์ Excel จาก ECOUNT ก่อน",
+        }
+
+    company_clause = "" if company_id == "ALL" else "AND company_id = @company_id"
+    company_param = (
+        [] if company_id == "ALL"
+        else [bigquery.ScalarQueryParameter("company_id", "STRING", company_id)]
+    )
+
+    # 1) หาวันที่ล่าสุดที่มีข้อมูลจริง (ตามขอบเขตบริษัทที่เลือก) ใช้เป็นจุดอ้างอิงแทน "วันนี้"
+    ref_sql = f"""
+        SELECT MAX(transaction_date) AS max_date, MIN(transaction_date) AS min_date
+        FROM `{table_ref}`
+        WHERE 1=1 {company_clause}
+    """
+    ref_row = list(client.query(
+        ref_sql, job_config=bigquery.QueryJobConfig(query_parameters=company_param)
+    ).result())[0]
+
+    if ref_row.max_date is None:
+        return {
+            "success": True,
+            "has_data": False,
+            "message": "ยังไม่มีข้อมูลยอดขายของบริษัทที่เลือก กรุณาอัปโหลดไฟล์ Excel ก่อน",
+        }
+
+    reference_date = ref_row.max_date
+    month_start = reference_date.replace(day=1)
+    year_start = reference_date.replace(month=1, day=1)
+    trend_start = month_start.replace(year=month_start.year - 1)
+
+    base_params = [
+        bigquery.ScalarQueryParameter("month_start", "DATE", month_start),
+        bigquery.ScalarQueryParameter("year_start", "DATE", year_start),
+    ] + company_param
+
+    totals_sql = f"""
+        SELECT
+          IFNULL(SUM(IF(transaction_date >= @month_start, amount, 0)), 0) AS mtd_amount,
+          IFNULL(SUM(IF(transaction_date >= @month_start, qty, 0)), 0) AS mtd_qty,
+          IFNULL(SUM(IF(transaction_date >= @year_start, amount, 0)), 0) AS ytd_amount,
+          IFNULL(SUM(IF(transaction_date >= @year_start, qty, 0)), 0) AS ytd_qty,
+          COUNT(DISTINCT invoice_no) AS total_invoices
+        FROM `{table_ref}`
+        WHERE 1=1 {company_clause}
+    """
+    totals_row = list(client.query(totals_sql, job_config=bigquery.QueryJobConfig(query_parameters=base_params)).result())[0]
+
+    by_company_sql = f"""
+        SELECT company_id,
+          IFNULL(SUM(IF(transaction_date >= @month_start, amount, 0)), 0) AS mtd_amount,
+          IFNULL(SUM(IF(transaction_date >= @year_start, amount, 0)), 0) AS ytd_amount
+        FROM `{table_ref}`
+        GROUP BY company_id
+        ORDER BY company_id
+    """
+    by_company_rows = client.query(
+        by_company_sql,
+        job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("month_start", "DATE", month_start),
+            bigquery.ScalarQueryParameter("year_start", "DATE", year_start),
+        ]),
+    ).result()
+
+    monthly_sql = f"""
+        SELECT FORMAT_DATE('%Y-%m', transaction_date) AS ym, SUM(amount) AS amount
+        FROM `{table_ref}`
+        WHERE transaction_date >= @trend_start {company_clause}
+        GROUP BY ym
+        ORDER BY ym
+    """
+    monthly_rows = client.query(
+        monthly_sql,
+        job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("trend_start", "DATE", trend_start)
+        ] + company_param),
+    ).result()
+
+    top_products_sql = f"""
+        SELECT prod_cd, ANY_VALUE(prod_des) AS prod_des,
+               SUM(qty) AS qty, SUM(amount) AS amount
+        FROM `{table_ref}`
+        WHERE transaction_date >= @month_start {company_clause}
+        GROUP BY prod_cd
+        ORDER BY amount DESC
+        LIMIT 15
+    """
+    top_products_rows = client.query(
+        top_products_sql,
+        job_config=bigquery.QueryJobConfig(query_parameters=base_params),
+    ).result()
+
+    # สัดส่วนยอดขายตามกลุ่มสินค้า (เดือนนี้) สำหรับกราฟวงกลม (Pie Chart)
+    by_group_sql = f"""
+        SELECT IFNULL(NULLIF(product_group, ''), 'ไม่ระบุกลุ่ม') AS product_group,
+               SUM(amount) AS amount
+        FROM `{table_ref}`
+        WHERE transaction_date >= @month_start {company_clause}
+        GROUP BY product_group
+        ORDER BY amount DESC
+    """
+    by_group_rows = list(client.query(
+        by_group_sql, job_config=bigquery.QueryJobConfig(query_parameters=base_params)
+    ).result())
+
+    TOP_GROUPS_LIMIT = 7
+    by_product_group = [
+        {"group": r.product_group, "amount": r.amount} for r in by_group_rows[:TOP_GROUPS_LIMIT]
+    ]
+    if len(by_group_rows) > TOP_GROUPS_LIMIT:
+        others_amount = sum(r.amount for r in by_group_rows[TOP_GROUPS_LIMIT:])
+        by_product_group.append({"group": "อื่นๆ", "amount": others_amount})
+
+    return {
+        "success": True,
+        "has_data": True,
+        "company_id": company_id,
+        "as_of": reference_date.isoformat(),
+        "mtd": {"amount": totals_row.mtd_amount, "qty": totals_row.mtd_qty},
+        "ytd": {"amount": totals_row.ytd_amount, "qty": totals_row.ytd_qty},
+        "total_invoices": totals_row.total_invoices,
+        "date_range": {
+            "first": ref_row.min_date.isoformat() if ref_row.min_date else None,
+            "last": ref_row.max_date.isoformat() if ref_row.max_date else None,
+        },
+        "by_company": [
+            {"company_id": r.company_id, "mtd_amount": r.mtd_amount, "ytd_amount": r.ytd_amount}
+            for r in by_company_rows
+        ],
+        "monthly_trend": [{"ym": r.ym, "amount": r.amount} for r in monthly_rows],
+        "by_product_group": by_product_group,
+        "top_products": [
+            {"prod_cd": r.prod_cd, "prod_des": r.prod_des, "qty": r.qty, "amount": r.amount}
+            for r in top_products_rows
+        ],
+    }

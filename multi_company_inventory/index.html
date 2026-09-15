@@ -35,9 +35,13 @@
                         <i class="fa-solid fa-file-invoice-dollar w-4 text-center"></i>
                         <span>ใบสั่งซื้อ (PO)</span>
                     </button>
-                    <button id="navITExpenses" onclick="switchTab('it-expenses')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white">
-                        <i class="fa-solid fa-chart-pie w-4 text-center"></i>
-                        <span>ค่าใช้จ่าย IT</span>
+                    <button id="navDeptExpenses" onclick="switchTab('dept-expenses')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white">
+                        <i class="fa-solid fa-sitemap w-4 text-center"></i>
+                        <span>ค่าใช้จ่ายแผนก/โครงการ</span>
+                    </button>
+                    <button id="navSales" onclick="switchTab('sales')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white">
+                        <i class="fa-solid fa-chart-line w-4 text-center"></i>
+                        <span>MTD&YTD&SALE</span>
                     </button>
                 </div>
             </div>
@@ -126,6 +130,9 @@
                         <span id="bqStatusDot" class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                     </span>
                     <span class="text-xs font-medium text-slate-300">BigQuery: <strong id="bqStatusText" class="text-emerald-400">Checking...</strong></span>
+                    <button id="btnReconnectBQ" onclick="reconnectBigQuery(this)" title="เชื่อมต่อ BigQuery ใหม่" class="ml-1 w-6 h-6 flex items-center justify-center rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition text-xs">
+                        <i class="fa-solid fa-plug"></i>
+                    </button>
                 </div>
                 <div class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
                     <span class="relative flex h-3 w-3">
@@ -133,6 +140,9 @@
                         <span id="ecountStatusDot" class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                     </span>
                     <span class="text-xs font-medium text-slate-300">Ecount API: <strong id="ecountStatusText" class="text-emerald-400">Checking...</strong></span>
+                    <button id="btnReconnectEcount" onclick="reconnectEcount(this)" title="เชื่อมต่อ Ecount ใหม่" class="ml-1 w-6 h-6 flex items-center justify-center rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition text-xs">
+                        <i class="fa-solid fa-plug"></i>
+                    </button>
                 </div>
             </div>
 
@@ -292,20 +302,20 @@
             </div>
         </div>
 
-        <!-- Section 3: หน้าค่าใช้จ่าย IT (IT Expenses View + Charts) -->
-        <div id="viewITExpenses" class="space-y-6 hidden">
+        <!-- Section 4: หน้าค่าใช้จ่ายแผนก (Department Expenses View — เลือกแผนกได้เอง ไม่ผูกตายตัวเหมือน IT) -->
+        <div id="viewDeptExpenses" class="space-y-6 hidden">
             <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
                     <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 text-red-600"><i class="fa-solid fa-chart-pie"></i></span>
-                        รายงานค่าใช้จ่าย / ใบสั่งซื้อ แผนก IT
+                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 text-red-600"><i class="fa-solid fa-sitemap"></i></span>
+                        รายงานค่าใช้จ่าย / ใบสั่งซื้อ แยกตามแผนก
                     </h1>
-                    <p class="text-slate-500 text-sm mt-1">ติดตามค่าใช้จ่ายแผนก IT: ASIA 00024, RUAMSINTHAI 00021, ROBOTICS 00020</p>
+                    <p class="text-slate-500 text-sm mt-1">เลือกบริษัทและแผนกที่ต้องการดูค่าใช้จ่าย (จับคู่ด้วยชื่อแผนกตาม ECOUNT ไม่ผูกรหัสตายตัว)</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <span id="itTotalBadge" class="bg-red-50 text-red-700 font-semibold text-sm px-4 py-2 rounded-full ring-1 ring-red-200">รวมทั้งหมด: 0 รายการ</span>
+                    <span id="deptTotalBadge" class="bg-red-50 text-red-700 font-semibold text-sm px-4 py-2 rounded-full ring-1 ring-red-200">รวมทั้งหมด: 0 รายการ</span>
                     <button onclick="syncPOFromECOUNT(this)" class="bg-slate-800 hover:bg-slate-900 text-white font-medium px-4 py-2 rounded-xl transition shadow-md flex items-center gap-2 text-xs md:text-sm"><i class="fa-solid fa-cloud-arrow-down"></i> ซิงค์ ECOUNT</button>
-                    <button onclick="loadITExpensesData()" class="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl transition shadow-md shadow-red-600/20 flex items-center gap-2 text-xs md:text-sm"><i class="fa-solid fa-rotate"></i> รีเฟรช</button>
+                    <button onclick="loadDeptExpensesData()" class="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl transition shadow-md shadow-red-600/20 flex items-center gap-2 text-xs md:text-sm"><i class="fa-solid fa-rotate"></i> รีเฟรช</button>
                 </div>
             </div>
 
@@ -313,22 +323,22 @@
                 <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center gap-4">
                     <div class="w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-receipt"></i></div>
                     <div>
-                        <div class="text-xs uppercase text-slate-500 font-bold mb-0.5">จำนวนรายการสั่งซื้อ IT</div>
-                        <div id="itStatCount" class="text-2xl font-bold text-slate-800">0 รายการ</div>
+                        <div class="text-xs uppercase text-slate-500 font-bold mb-0.5">จำนวนรายการสั่งซื้อ</div>
+                        <div id="deptStatCount" class="text-2xl font-bold text-slate-800">0 รายการ</div>
                     </div>
                 </div>
                 <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center gap-4">
                     <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-file-invoice-dollar"></i></div>
                     <div>
                         <div class="text-xs uppercase text-slate-500 font-bold mb-0.5">มูลค่ารวมก่อนภาษี (Supply)</div>
-                        <div id="itStatBuyAmt" class="text-2xl font-bold text-emerald-600">฿0.00</div>
+                        <div id="deptStatBuyAmt" class="text-2xl font-bold text-emerald-600">฿0.00</div>
                     </div>
                 </div>
                 <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center gap-4">
                     <div class="w-12 h-12 rounded-xl bg-red-50 text-red-700 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-sack-dollar"></i></div>
                     <div>
                         <div class="text-xs uppercase text-slate-500 font-bold mb-0.5">ยอดรวมสุทธิ (Total Amount)</div>
-                        <div id="itStatTotalAmt" class="text-2xl font-bold text-red-700">฿0.00</div>
+                        <div id="deptStatTotalAmt" class="text-2xl font-bold text-red-700">฿0.00</div>
                     </div>
                 </div>
             </div>
@@ -336,18 +346,18 @@
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
                     <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-chart-column text-red-600"></i> สรุปยอดค่าใช้จ่าย IT แยกตามบริษัท (บาท)
+                        <i class="fa-solid fa-chart-column text-red-600"></i> สรุปยอดค่าใช้จ่ายแยกตามบริษัท (บาท)
                     </h3>
                     <div class="h-64 relative">
-                        <canvas id="companyExpenseChart"></canvas>
+                        <canvas id="deptCompanyExpenseChart"></canvas>
                     </div>
                 </div>
                 <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
                     <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-chart-pie text-red-600"></i> Top 5 ผู้ขาย/คู่ค้าบริการ IT
+                        <i class="fa-solid fa-chart-pie text-red-600"></i> Top 5 ผู้ขาย/คู่ค้า
                     </h3>
                     <div class="h-64 relative flex items-center justify-center">
-                        <canvas id="vendorExpenseChart"></canvas>
+                        <canvas id="deptVendorExpenseChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -356,7 +366,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-end">
                     <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-2">เลือกร้าน/บริษัท:</label>
-                        <select id="itCompanyFilter" onchange="loadITExpensesData()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
+                        <select id="deptCompanyFilter" onchange="onDeptCompanyChange()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
                             <option value="ALL">🌐 ดูทุกบริษัท (Overview)</option>
                             <option value="ASIA">🏢 ASIA</option>
                             <option value="ROBOTICS">🤖 ROBOTICS</option>
@@ -364,22 +374,28 @@
                         </select>
                     </div>
                     <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">เลือกแผนก:</label>
+                        <select id="deptSelect" onchange="loadDeptExpensesData()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
+                            <option value="">— กำลังโหลดรายชื่อแผนก... —</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-2">วันที่เริ่มต้น:</label>
-                        <input type="date" id="itDateFrom" onchange="loadITExpensesData()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                        <input type="date" id="deptDateFrom" onchange="loadDeptExpensesData()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-2">วันที่สิ้นสุด:</label>
-                        <input type="date" id="itDateTo" onchange="loadITExpensesData()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
+                        <input type="date" id="deptDateTo" onchange="loadDeptExpensesData()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
                     </div>
-                    <div class="xl:col-span-2">
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ค้นหาค่าใช้จ่าย IT:</label>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ค้นหา:</label>
                         <div class="relative">
-                            <input type="text" id="itSearchInput" onkeyup="applyITFilters()" placeholder="พิมพ์เลขที่ PO, ชื่อผู้ขาย, รายการสินค้า หรือชื่อผู้รับผิดชอบ..." class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 pl-10 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                            <input type="text" id="deptSearchInput" onkeyup="applyDeptFilters()" placeholder="พิมพ์เลขที่ PO, ผู้ขาย, สินค้า..." class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 pl-10 focus:ring-2 focus:ring-red-500 focus:outline-none">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-3.5 text-slate-400"></i>
                         </div>
                     </div>
                 </div>
-                <div id="itLoadStatus" class="mt-3 text-xs text-slate-500"></div>
+                <div id="deptLoadStatus" class="mt-3 text-xs text-slate-500"></div>
             </div>
 
             <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
@@ -401,10 +417,141 @@
                                 <th class="p-3 text-center">สถานะ</th>
                             </tr>
                         </thead>
-                        <tbody id="itExpensesTable" class="divide-y divide-slate-200 text-slate-700 whitespace-nowrap">
-                            <tr><td colspan="12" class="p-8 text-center text-slate-400">กดปุ่ม "รีเฟรชข้อมูล" เพื่อโหลดรายการ...</td></tr>
+                        <tbody id="deptExpensesTable" class="divide-y divide-slate-200 text-slate-700 whitespace-nowrap">
+                            <tr><td colspan="12" class="p-8 text-center text-slate-400">เลือกแผนกด้านบนเพื่อโหลดรายการ...</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 5: หน้า MTD & YTD & SALE (นำเข้า Excel จาก ECOUNT แล้ววิเคราะห์ยอดขาย) -->
+        <div id="viewSales" class="space-y-6 hidden">
+            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-3">
+                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 text-red-600"><i class="fa-solid fa-chart-line"></i></span>
+                        MTD & YTD & SALE
+                    </h1>
+                    <p class="text-slate-500 text-sm mt-1">นำเข้าไฟล์ Excel รายงานยอดขายจาก ECOUNT — ระบบจะ "วางทับ" ข้อมูลเดิมของบริษัทนั้นให้อัตโนมัติ</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="salesLastUpdated" class="text-xs text-slate-400"></span>
+                    <button onclick="loadSalesSummary()" class="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl transition shadow-md shadow-red-600/20 flex items-center gap-2 text-xs md:text-sm"><i class="fa-solid fa-rotate"></i> รีเฟรช</button>
+                </div>
+            </div>
+
+            <!-- กล่องนำเข้าไฟล์ Excel -->
+            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                <h2 class="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2"><i class="fa-solid fa-file-import text-red-600"></i> นำเข้าไฟล์ยอดขาย (Export จาก ECOUNT)</h2>
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">บริษัท:</label>
+                        <select id="salesUploadCompany" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
+                            <option value="ASIA">🏢 ASIA</option>
+                            <option value="ROBOTICS">🤖 ROBOTICS</option>
+                            <option value="RUAMSINTHAI">🇹🇭 RUAMSINTHAI</option>
+                        </select>
+                    </div>
+                    <div class="lg:col-span-2">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ไฟล์ Excel (.xlsx):</label>
+                        <input type="file" id="salesUploadFile" accept=".xlsx,.xlsm" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2 focus:ring-2 focus:ring-red-500 focus:outline-none text-xs">
+                    </div>
+                    <div>
+                        <button id="btnUploadSales" onclick="uploadSalesFile(this)" class="w-full bg-slate-900 hover:bg-black text-white font-medium px-4 py-2.5 rounded-xl transition shadow-md flex items-center justify-center gap-2 text-sm">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> อัปโหลด & วางทับข้อมูลเดิม
+                        </button>
+                    </div>
+                </div>
+                <p class="text-[11px] text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation"></i> การอัปโหลดจะลบข้อมูลยอดขาย "เดิมของบริษัทที่เลือก" ทั้งหมด แล้วแทนที่ด้วยข้อมูลในไฟล์ใหม่ (บริษัทอื่นไม่ถูกกระทบ)</p>
+                <div id="salesUploadStatus" class="mt-3 text-xs"></div>
+            </div>
+
+            <!-- ตัวกรองบริษัทสำหรับดูสรุป -->
+            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-4">
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ดูสรุปยอดขายของ:</label>
+                <select id="salesCompanyFilter" onchange="loadSalesSummary()" class="w-full md:w-72 bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
+                    <option value="ALL">🌐 ดูทุกบริษัท (Overview)</option>
+                    <option value="ASIA">🏢 ASIA</option>
+                    <option value="ROBOTICS">🤖 ROBOTICS</option>
+                    <option value="RUAMSINTHAI">🇹🇭 RUAMSINTHAI</option>
+                </select>
+            </div>
+
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div class="rounded-2xl border border-red-100 bg-red-50 p-4">
+                    <div class="text-xs uppercase text-red-700 mb-1">ยอดขาย MTD (เดือนนี้)</div>
+                    <div id="salesStatMTD" class="text-2xl font-bold text-red-800">฿0</div>
+                </div>
+                <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                    <div class="text-xs uppercase text-emerald-700 mb-1">ยอดขาย YTD (ปีนี้)</div>
+                    <div id="salesStatYTD" class="text-2xl font-bold text-emerald-700">฿0</div>
+                </div>
+                <div class="rounded-2xl border border-sky-100 bg-sky-50 p-4">
+                    <div class="text-xs uppercase text-sky-700 mb-1">จำนวนใบขาย (ทั้งหมด)</div>
+                    <div id="salesStatInvoices" class="text-2xl font-bold text-sky-700">0</div>
+                </div>
+                <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4">
+                    <div class="text-xs uppercase text-slate-700 mb-1">ช่วงข้อมูลที่มี</div>
+                    <div id="salesStatRange" class="text-sm font-bold text-slate-800">-</div>
+                </div>
+            </div>
+
+            <!-- กราฟแนวโน้มยอดขายรายเดือน (เส้น) + สัดส่วนตามกลุ่มสินค้า (วงกลม) -->
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div class="xl:col-span-2 bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                    <h2 class="text-sm font-bold text-slate-700 uppercase mb-3">แนวโน้มยอดขายรายเดือน (12 เดือนล่าสุด)</h2>
+                    <div class="h-72">
+                        <canvas id="salesTrendChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
+                    <h2 class="text-sm font-bold text-slate-700 uppercase mb-3">สัดส่วนยอดขายตามกลุ่มสินค้า (เดือนนี้)</h2>
+                    <div class="h-72">
+                        <canvas id="salesGroupPieChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <!-- ยอดขายแยกตามบริษัท -->
+                <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
+                    <div class="p-4 border-b border-slate-100 font-bold text-sm text-slate-700">สรุปยอดขายแยกตามบริษัท</div>
+                    <div class="overflow-auto max-h-96">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="bg-slate-900 text-white uppercase tracking-wider text-[11px]">
+                                    <th class="p-3">บริษัท</th>
+                                    <th class="p-3 text-right">MTD</th>
+                                    <th class="p-3 text-right">YTD</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salesByCompanyTable" class="divide-y divide-slate-200 text-slate-700">
+                                <tr><td colspan="3" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- สินค้าขายดี MTD -->
+                <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
+                    <div class="p-4 border-b border-slate-100 font-bold text-sm text-slate-700">สินค้าขายดี (เดือนนี้)</div>
+                    <div class="overflow-auto max-h-96">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="bg-slate-900 text-white uppercase tracking-wider text-[11px]">
+                                    <th class="p-3">รหัสสินค้า</th>
+                                    <th class="p-3">รายละเอียดสินค้า</th>
+                                    <th class="p-3 text-right">จำนวน</th>
+                                    <th class="p-3 text-right">ยอดขาย</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salesTopProductsTable" class="divide-y divide-slate-200 text-slate-700">
+                                <tr><td colspan="4" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -414,10 +561,12 @@
     <script>
         let rawItems = [];
         let rawPOItems = [];
-        let rawITItems = [];
+        let rawDeptItems = [];
+        let deptListLoaded = false;
+        let currentDeptCompanyForList = null;
 
-        let companyChartInstance = null;
-        let vendorChartInstance = null;
+        let deptCompanyChartInstance = null;
+        let deptVendorChartInstance = null;
 
         const getApiBaseUrl = () => {
             const host = window.location.hostname;
@@ -455,38 +604,95 @@
             }
         }
 
+        async function reconnectBigQuery(btn) {
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/reconnect-bigquery`, { method: 'POST' });
+                const data = await res.json();
+                if (data.connected) {
+                    alert('✅ เชื่อมต่อ BigQuery สำเร็จ');
+                } else {
+                    alert('❌ เชื่อมต่อ BigQuery ไม่สำเร็จ: ' + (data.message || 'ไม่ทราบสาเหตุ'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL})`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                checkHealth();
+            }
+        }
+
+        async function reconnectEcount(btn) {
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/reconnect-ecount`, { method: 'POST' });
+                const data = await res.json();
+                const companies = data.companies || {};
+                const summary = Object.entries(companies).map(([id, ok]) => `${id}: ${ok ? '✅' : '❌'}`).join('  ');
+                if (data.ecount_ready) {
+                    alert('✅ เชื่อมต่อ Ecount สำเร็จอย่างน้อย 1 บริษัท\n' + summary);
+                } else {
+                    alert('❌ เชื่อมต่อ Ecount ไม่สำเร็จเลยสักบริษัท\n' + summary);
+                }
+            } catch (err) {
+                console.error(err);
+                alert(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL})`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                checkHealth();
+            }
+        }
+
         function switchTab(tab) {
             const btnInventory = document.getElementById('navInventory');
             const btnPO = document.getElementById('navPO');
-            const btnIT = document.getElementById('navITExpenses');
+            const btnDept = document.getElementById('navDeptExpenses');
+            const btnSales = document.getElementById('navSales');
 
             const viewInventory = document.getElementById('viewInventory');
             const viewPO = document.getElementById('viewPO');
-            const viewIT = document.getElementById('viewITExpenses');
+            const viewDept = document.getElementById('viewDeptExpenses');
+            const viewSales = document.getElementById('viewSales');
 
-            btnInventory.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white";
-            btnPO.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white";
-            btnIT.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white";
+            const inactiveClass = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition hover:bg-slate-800 text-slate-400 hover:text-white";
+            const activeClass = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition bg-red-600 text-white shadow-md shadow-red-900/30";
+
+            btnInventory.className = inactiveClass;
+            btnPO.className = inactiveClass;
+            btnDept.className = inactiveClass;
+            btnSales.className = inactiveClass;
 
             viewInventory.classList.add('hidden');
             viewPO.classList.add('hidden');
-            viewIT.classList.add('hidden');
+            viewDept.classList.add('hidden');
+            viewSales.classList.add('hidden');
 
             if (tab === 'inventory') {
-                btnInventory.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition bg-red-600 text-white shadow-md shadow-red-900/30";
+                btnInventory.className = activeClass;
                 viewInventory.classList.remove('hidden');
             } else if (tab === 'po') {
-                btnPO.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition bg-red-600 text-white shadow-md shadow-red-900/30";
+                btnPO.className = activeClass;
                 viewPO.classList.remove('hidden');
                 if (rawPOItems.length === 0) {
                     loadPOData();
                 }
-            } else if (tab === 'it-expenses') {
-                btnIT.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition bg-red-600 text-white shadow-md shadow-red-900/30";
-                viewIT.classList.remove('hidden');
-                if (rawITItems.length === 0) {
-                    loadITExpensesData();
+            } else if (tab === 'dept-expenses') {
+                btnDept.className = activeClass;
+                viewDept.classList.remove('hidden');
+                if (!deptListLoaded) {
+                    loadDeptList();
                 }
+            } else if (tab === 'sales') {
+                btnSales.className = activeClass;
+                viewSales.classList.remove('hidden');
+                loadSalesSummary();
             }
         }
 
@@ -766,26 +972,71 @@
             return date.toISOString().slice(0, 10);
         }
 
-        function setDefaultITDates() {
-            const dateFrom = document.getElementById('itDateFrom');
-            const dateTo = document.getElementById('itDateTo');
+
+        function setDefaultDeptDates() {
+            const dateFrom = document.getElementById('deptDateFrom');
+            const dateTo = document.getElementById('deptDateTo');
             const today = new Date();
             const defaultFrom = new Date(today);
-            
-            // ขยายขอบเขตเริ่มต้นเป็นย้อนหลัง 365 วัน (1 ปีเต็ม) เพื่อดึงรายการทั้งหมดครบ 35 รายการ
             defaultFrom.setDate(today.getDate() - 365);
 
             if (!dateFrom.value) dateFrom.value = formatDateInput(defaultFrom);
             if (!dateTo.value) dateTo.value = formatDateInput(today);
         }
 
-        async function loadITExpensesData() {
-            setDefaultITDates();
-            const comp = document.getElementById('itCompanyFilter').value;
-            const dateFrom = document.getElementById('itDateFrom').value;
-            const dateTo = document.getElementById('itDateTo').value;
-            const tableBody = document.getElementById('itExpensesTable');
-            const loadStatus = document.getElementById('itLoadStatus');
+        async function loadDeptList() {
+            const companyFilter = document.getElementById('deptCompanyFilter').value || 'ALL';
+            const deptSelect = document.getElementById('deptSelect');
+            currentDeptCompanyForList = companyFilter;
+            deptSelect.innerHTML = '<option value="">— กำลังโหลดรายชื่อแผนก... —</option>';
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/departments?company_id=${encodeURIComponent(companyFilter)}`);
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    deptSelect.innerHTML = '<option value="">— ไม่สามารถโหลดรายชื่อแผนกได้ —</option>';
+                    return;
+                }
+
+                const departments = Array.isArray(data.departments) ? data.departments : [];
+                if (departments.length === 0) {
+                    deptSelect.innerHTML = '<option value="">— ไม่พบแผนกในบริษัทนี้ —</option>';
+                    deptListLoaded = true;
+                    return;
+                }
+
+                deptSelect.innerHTML = departments.map(d => {
+                    const codes = Array.isArray(d.codes) && d.codes.length ? ` (${d.codes.join(', ')})` : '';
+                    return `<option value="${d.department}">${d.department}${codes} — ${Number(d.po_count).toLocaleString()} รายการ</option>`;
+                }).join('');
+
+                deptListLoaded = true;
+                loadDeptExpensesData();
+            } catch (err) {
+                console.error(err);
+                deptSelect.innerHTML = '<option value="">— ไม่สามารถเชื่อมต่อ API ได้ —</option>';
+            }
+        }
+
+        function onDeptCompanyChange() {
+            deptListLoaded = false;
+            loadDeptList();
+        }
+
+        async function loadDeptExpensesData() {
+            setDefaultDeptDates();
+            const department = document.getElementById('deptSelect').value;
+            const comp = document.getElementById('deptCompanyFilter').value;
+            const dateFrom = document.getElementById('deptDateFrom').value;
+            const dateTo = document.getElementById('deptDateTo').value;
+            const tableBody = document.getElementById('deptExpensesTable');
+            const loadStatus = document.getElementById('deptLoadStatus');
+
+            if (!department) {
+                tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400">เลือกแผนกด้านบนเพื่อโหลดรายการ...</td></tr>`;
+                return;
+            }
 
             if (dateFrom && dateTo && dateFrom > dateTo) {
                 loadStatus.innerText = 'วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด';
@@ -794,65 +1045,66 @@
                 return;
             }
 
-            tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-red-600 block"></i>กำลังโหลดข้อมูลค่าใช้จ่าย IT จาก BigQuery...</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-red-600 block"></i>กำลังโหลดข้อมูลค่าใช้จ่ายแผนกจาก BigQuery...</td></tr>`;
             loadStatus.innerText = 'กำลังโหลดข้อมูลจาก BigQuery...';
             loadStatus.className = 'mt-3 text-xs text-slate-500';
 
             try {
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 60000);
-                
+
                 const params = new URLSearchParams();
+                params.append('department', department);
                 if (comp) params.append('company_id', comp);
                 if (dateFrom) params.append('DATE_FROM', dateFrom);
                 if (dateTo) params.append('DATE_TO', dateTo);
 
-                const res = await fetch(`${API_BASE_URL}/api/it-expenses?${params.toString()}`, { signal: controller.signal });
+                const res = await fetch(`${API_BASE_URL}/api/department-expenses?${params.toString()}`, { signal: controller.signal });
                 clearTimeout(timeout);
                 const data = await res.json();
 
                 if (!res.ok || !data.success) {
-                    const msg = data.message || 'ไม่สามารถดึงข้อมูลค่าใช้จ่าย IT ได้';
+                    const msg = data.message || 'ไม่สามารถดึงข้อมูลค่าใช้จ่ายแผนกได้';
                     loadStatus.innerText = msg;
                     loadStatus.className = 'mt-3 text-xs text-red-500 font-medium';
                     tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-red-500 font-medium">❌ ${msg}</td></tr>`;
                     return;
                 }
 
-                rawITItems = normalizeItems(data);
-                document.getElementById('itTotalBadge').innerText = `รวมทั้งหมด: ${rawITItems.length.toLocaleString()} รายการ`;
+                rawDeptItems = normalizeItems(data);
+                document.getElementById('deptTotalBadge').innerText = `รวมทั้งหมด: ${rawDeptItems.length.toLocaleString()} รายการ`;
                 const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
-                
+
                 const rangeLabel = (dateFrom && dateTo) ? `(${dateFrom} ถึง ${dateTo})` : '(ทั้งหมด)';
                 loadStatus.innerText = warnings.length
-                    ? `โหลดแล้ว ${rawITItems.length.toLocaleString()} รายการ แต่บางบริษัทมีปัญหา: ${warnings.join(' | ')}`
-                    : `โหลดแล้ว ${rawITItems.length.toLocaleString()} รายการ ${rangeLabel}`;
+                    ? `โหลดแล้ว ${rawDeptItems.length.toLocaleString()} รายการ แต่บางบริษัทมีปัญหา: ${warnings.join(' | ')}`
+                    : `โหลดแล้ว ${rawDeptItems.length.toLocaleString()} รายการ ${rangeLabel}`;
                 loadStatus.className = warnings.length ? 'mt-3 text-xs text-amber-600 font-medium' : 'mt-3 text-xs text-emerald-600';
-                
-                applyITFilters();
+
+                applyDeptFilters();
             } catch (err) {
                 console.error(err);
-                const message = err.name === 'AbortError' ? 'การโหลดใช้เวลานานเกินไป กรุณาลดช่วงวันที่แล้วลองใหม่' : `ไม่สามารถเชื่อมต่อ API ค่าใช้จ่าย IT ได้ (${API_BASE_URL})`;
+                const message = err.name === 'AbortError' ? 'การโหลดใช้เวลานานเกินไป กรุณาลดช่วงวันที่แล้วลองใหม่' : `ไม่สามารถเชื่อมต่อ API ค่าใช้จ่ายแผนกได้ (${API_BASE_URL})`;
                 loadStatus.innerText = message;
                 loadStatus.className = 'mt-3 text-xs text-red-500 font-medium';
                 tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-red-500 font-medium">❌ ${message}</td></tr>`;
             }
         }
 
-        function updateITStats(items) {
+        function updateDeptStats(items) {
             const totalCount = items.length;
             const totalBuyAmt = items.reduce((sum, item) => sum + (Number(item.buy_amt) || Number(item.supply_amt) || 0), 0);
             const totalAmt = items.reduce((sum, item) => sum + (Number(item.total_amt) || 0), 0);
 
-            document.getElementById('itStatCount').innerText = `${totalCount.toLocaleString()} รายการ`;
-            document.getElementById('itStatBuyAmt').innerText = `฿${totalBuyAmt.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-            document.getElementById('itStatTotalAmt').innerText = `฿${totalAmt.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('deptStatCount').innerText = `${totalCount.toLocaleString()} รายการ`;
+            document.getElementById('deptStatBuyAmt').innerText = `฿${totalBuyAmt.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('deptStatTotalAmt').innerText = `฿${totalAmt.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         }
 
-        function applyITFilters() {
-            const query = (document.getElementById('itSearchInput').value || '').toLowerCase();
+        function applyDeptFilters() {
+            const query = (document.getElementById('deptSearchInput').value || '').toLowerCase();
 
-            let filtered = rawITItems.filter(item => {
+            let filtered = rawDeptItems.filter(item => {
                 const poNo = (item.po_no || item.IO_NO || '').toLowerCase();
                 const cust = (item.cust_des || item.cust_cd || '').toLowerCase();
                 const prod = (item.prod_des || '').toLowerCase();
@@ -862,12 +1114,12 @@
                 return !query || poNo.includes(query) || cust.includes(query) || prod.includes(query) || pic.includes(query) || pjt.includes(query);
             });
 
-            updateITStats(filtered);
-            renderITCharts(filtered);
-            renderITTable(filtered);
+            updateDeptStats(filtered);
+            renderDeptCharts(filtered);
+            renderDeptTable(filtered);
         }
 
-        function renderITCharts(items) {
+        function renderDeptCharts(items) {
             const compSums = { ASIA: 0, ROBOTICS: 0, RUAMSINTHAI: 0 };
             items.forEach(item => {
                 const c = item.company_id || 'ASIA';
@@ -875,10 +1127,10 @@
                 if (compSums[c] !== undefined) compSums[c] += amt;
             });
 
-            const ctxBar = document.getElementById('companyExpenseChart').getContext('2d');
-            if (companyChartInstance) companyChartInstance.destroy();
+            const ctxBar = document.getElementById('deptCompanyExpenseChart').getContext('2d');
+            if (deptCompanyChartInstance) deptCompanyChartInstance.destroy();
 
-            companyChartInstance = new Chart(ctxBar, {
+            deptCompanyChartInstance = new Chart(ctxBar, {
                 type: 'bar',
                 data: {
                     labels: ['ASIA', 'ROBOTICS', 'RUAMSINTHAI'],
@@ -922,10 +1174,10 @@
             const vendorLabels = sortedVendors.map(v => v[0]);
             const vendorData = sortedVendors.map(v => v[1]);
 
-            const ctxDoughnut = document.getElementById('vendorExpenseChart').getContext('2d');
-            if (vendorChartInstance) vendorChartInstance.destroy();
+            const ctxDoughnut = document.getElementById('deptVendorExpenseChart').getContext('2d');
+            if (deptVendorChartInstance) deptVendorChartInstance.destroy();
 
-            vendorChartInstance = new Chart(ctxDoughnut, {
+            deptVendorChartInstance = new Chart(ctxDoughnut, {
                 type: 'doughnut',
                 data: {
                     labels: vendorLabels.length ? vendorLabels : ['ไม่มีข้อมูล'],
@@ -946,12 +1198,12 @@
             });
         }
 
-        function renderITTable(items) {
-            const tableBody = document.getElementById('itExpensesTable');
+        function renderDeptTable(items) {
+            const tableBody = document.getElementById('deptExpensesTable');
             if (!tableBody) return;
 
             if (!Array.isArray(items) || items.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="12" class="text-center p-8 text-slate-400">⚠️ ไม่พบรายการค่าใช้จ่าย IT ในระบบ</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="12" class="text-center p-8 text-slate-400">⚠️ ไม่พบรายการค่าใช้จ่ายของแผนกนี้</td></tr>`;
                 return;
             }
 
@@ -964,10 +1216,10 @@
                 const compId = item.company_id || '-';
                 const ordDate = formatThaiDate(item.ord_date || item.io_date);
                 const poNo = item.po_no || item.IO_NO || '-';
-                const pjtDisplay = `${item.pjt_des || 'แผนก IT'} (${item.pjt_cd || '00021'})`;
+                const pjtDisplay = `${item.pjt_des || '-'}${item.pjt_cd ? ' (' + item.pjt_cd + ')' : ''}`;
                 const custDisplay = item.cust_des || item.cust_cd || '-';
                 const prodDisplay = item.prod_des || item.prod_cd || '-';
-                
+
                 const qty = Number(item.qty) || 0;
                 const buyAmt = Number(item.buy_amt) || Number(item.supply_amt) || 0;
                 const vatAmt = Number(item.vat_amt) || 0;
@@ -1010,8 +1262,10 @@
                 const data = await res.json();
                 if (data.success) {
                     alert('✅ ' + (data.message || 'ซิงค์ข้อมูลจาก ECOUNT สำเร็จ!'));
-                    loadITExpensesData();
                     loadPOData();
+                    if (document.getElementById('deptSelect').value) {
+                        loadDeptExpensesData();
+                    }
                 } else {
                     alert('❌ ไม่สามารถซิงค์ได้: ' + (data.detail || data.message || 'เกิดข้อผิดพลาด'));
                 }
@@ -1024,6 +1278,199 @@
                     btn.innerHTML = originalHtml;
                 }
             }
+        }
+
+        // ===================== MTD & YTD & SALE =====================
+        let salesTrendChartInstance = null;
+        let salesGroupPieChartInstance = null;
+
+        const SALES_PIE_COLORS = [
+            '#dc2626', '#f97316', '#f59e0b', '#10b981',
+            '#0ea5e9', '#6366f1', '#a855f7', '#94a3b8'
+        ];
+
+        function formatBaht(n) {
+            n = Number(n) || 0;
+            return `฿${n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        async function uploadSalesFile(btn) {
+            const companyId = document.getElementById('salesUploadCompany').value;
+            const fileInput = document.getElementById('salesUploadFile');
+            const statusBox = document.getElementById('salesUploadStatus');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                statusBox.innerHTML = '<span class="text-red-600">⚠️ กรุณาเลือกไฟล์ Excel ก่อน</span>';
+                return;
+            }
+
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังอัปโหลด...';
+            statusBox.innerHTML = '<span class="text-slate-500">⏳ กำลังนำเข้าและวางทับข้อมูลเดิม กรุณารอสักครู่...</span>';
+
+            const formData = new FormData();
+            formData.append('company_id', companyId);
+            formData.append('file', file);
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/sales/upload`, { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    let html = `<span class="text-emerald-600 font-medium">✅ ${data.message} (${data.rows_imported.toLocaleString()} แถว)</span>`;
+                    if (data.warning) {
+                        html += `<div class="mt-1 text-amber-600 font-medium">${data.warning}</div>`;
+                    }
+                    statusBox.innerHTML = html;
+                    fileInput.value = '';
+                    document.getElementById('salesCompanyFilter').value = companyId;
+                    loadSalesSummary();
+                } else {
+                    statusBox.innerHTML = `<span class="text-red-600">❌ ${data.detail || 'นำเข้าไม่สำเร็จ'}</span>`;
+                }
+            } catch (err) {
+                console.error(err);
+                statusBox.innerHTML = `<span class="text-red-600">❌ ไม่สามารถเชื่อมต่อ API ได้ (${API_BASE_URL})</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        async function loadSalesSummary() {
+            const companyId = document.getElementById('salesCompanyFilter').value;
+            const lastUpdated = document.getElementById('salesLastUpdated');
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/sales/summary?company_id=${encodeURIComponent(companyId)}`);
+                const data = await res.json();
+
+                if (!data.success) {
+                    lastUpdated.innerText = '';
+                    return;
+                }
+
+                if (!data.has_data) {
+                    document.getElementById('salesStatMTD').innerText = '฿0';
+                    document.getElementById('salesStatYTD').innerText = '฿0';
+                    document.getElementById('salesStatInvoices').innerText = '0';
+                    document.getElementById('salesStatRange').innerText = '-';
+                    document.getElementById('salesByCompanyTable').innerHTML =
+                        '<tr><td colspan="3" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล กรุณาอัปโหลดไฟล์ Excel ก่อน</td></tr>';
+                    document.getElementById('salesTopProductsTable').innerHTML =
+                        '<tr><td colspan="4" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
+                    renderSalesTrendChart([]);
+                    renderSalesGroupPieChart([]);
+                    return;
+                }
+
+                document.getElementById('salesStatMTD').innerText = formatBaht(data.mtd.amount);
+                document.getElementById('salesStatYTD').innerText = formatBaht(data.ytd.amount);
+                document.getElementById('salesStatInvoices').innerText = Number(data.total_invoices).toLocaleString();
+                document.getElementById('salesStatRange').innerText = data.date_range.first && data.date_range.last
+                    ? `${data.date_range.first} ถึง ${data.date_range.last}`
+                    : '-';
+                lastUpdated.innerText = `ข้อมูลล่าสุดในระบบ ณ วันที่ ${data.as_of}`;
+
+                document.getElementById('salesByCompanyTable').innerHTML = (data.by_company || []).map(c => `
+                    <tr>
+                        <td class="p-3 font-bold">${c.company_id}</td>
+                        <td class="p-3 text-right">${formatBaht(c.mtd_amount)}</td>
+                        <td class="p-3 text-right">${formatBaht(c.ytd_amount)}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="3" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
+
+                document.getElementById('salesTopProductsTable').innerHTML = (data.top_products || []).map(p => `
+                    <tr>
+                        <td class="p-3 font-mono">${p.prod_cd || '-'}</td>
+                        <td class="p-3">${p.prod_des || '-'}</td>
+                        <td class="p-3 text-right">${Number(p.qty || 0).toLocaleString()}</td>
+                        <td class="p-3 text-right font-medium text-emerald-600">${formatBaht(p.amount)}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="4" class="p-8 text-center text-slate-400">ไม่มียอดขายในเดือนนี้</td></tr>';
+
+                renderSalesTrendChart(data.monthly_trend || []);
+                renderSalesGroupPieChart(data.by_product_group || []);
+            } catch (err) {
+                console.error(err);
+                lastUpdated.innerText = '';
+            }
+        }
+
+        function renderSalesTrendChart(monthlyTrend) {
+            const ctx = document.getElementById('salesTrendChart').getContext('2d');
+            const labels = monthlyTrend.map(m => m.ym);
+            const values = monthlyTrend.map(m => Number(m.amount) || 0);
+
+            if (salesTrendChartInstance) {
+                salesTrendChartInstance.destroy();
+            }
+
+            salesTrendChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'ยอดขาย (บาท)',
+                        data: values,
+                        borderColor: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.12)',
+                        pointBackgroundColor: '#dc2626',
+                        pointRadius: 4,
+                        borderWidth: 2,
+                        tension: 0.35,
+                        fill: true,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { callback: (v) => v.toLocaleString() } }
+                    }
+                }
+            });
+        }
+
+        function renderSalesGroupPieChart(byProductGroup) {
+            const ctx = document.getElementById('salesGroupPieChart').getContext('2d');
+            const labels = byProductGroup.map(g => g.group || 'ไม่ระบุกลุ่ม');
+            const values = byProductGroup.map(g => Number(g.amount) || 0);
+
+            if (salesGroupPieChartInstance) {
+                salesGroupPieChartInstance.destroy();
+            }
+
+            salesGroupPieChartInstance = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: SALES_PIE_COLORS,
+                        borderColor: '#ffffff',
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: (item) => {
+                                    const total = values.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? ((item.parsed / total) * 100).toFixed(1) : 0;
+                                    return `${item.label}: ${formatBaht(item.parsed)} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         checkHealth();
