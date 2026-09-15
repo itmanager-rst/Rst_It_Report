@@ -786,16 +786,22 @@ function doPost(e) {
     }
 
     // role check for sensitive update actions
-    // นโยบายสิทธิ์ (ตามที่ตกลงกันล่าสุด):
+    // นโยบายสิทธิ์ (อัปเดตล่าสุด — จำกัดสิทธิ์ลบข้อมูลลูกค้าให้เหลือแค่ admin):
     //  - admin        : ทำได้ทุกอย่าง (เพิ่ม/แก้ไข/ลบ/export/ดู log/เพิ่มสมาชิกได้ทุก role)
-    //  - staff (พนักงาน): เพิ่ม/แก้ไข/ลบข้อมูลลูกค้าได้ และปริ้นได้ (ปริ้นไม่ผ่าน action นี้)
+    //  - staff (พนักงาน): เพิ่ม/แก้ไขข้อมูลลูกค้าได้ และปริ้นได้ (ปริ้นไม่ผ่าน action นี้)
+    //                     "ลบ" ทำไม่ได้แล้ว (เดิมทำได้ ตัดสิทธิ์นี้ออก เหลือแค่ admin เท่านั้น)
     //                     แต่ export และดู log ไม่ได้ (เช็คแยกจุดอื่น)
     //  - sale/user     : ดูข้อมูลได้อย่างเดียว (ปริ้นได้ แต่ปริ้นเป็นแค่การแสดงผลฝั่งหน้าเว็บ
     //                     ไม่ได้เรียก action นี้ จึงไม่ต้องเช็คตรงนี้)
     var CUSTOMER_WRITE_ALLOWED_ROLES = ['admin', 'staff'];
+    var CUSTOMER_DELETE_ALLOWED_ROLES = ['admin']; // ลบข้อมูลลูกค้า จำกัดเฉพาะ admin เท่านั้น (staff แก้ไข/เพิ่มได้ปกติ แต่ลบไม่ได้)
     var CUSTOMER_EXPORT_ALLOWED_ROLES = ['admin']; // เฉพาะ admin เท่านั้นที่ export ได้
-    if (action === 'add' || action === 'addCustomer' || action === 'update' || action === 'editCustomer'
-        || action === 'delete' || action === 'deleteCustomer' || action === 'addFollowUp') {
+    if (action === 'delete' || action === 'deleteCustomer') {
+      if (CUSTOMER_DELETE_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        return createJsonResponse({ success: false, message: 'เฉพาะ admin เท่านั้นที่ลบข้อมูลลูกค้าได้' });
+      }
+    } else if (action === 'add' || action === 'addCustomer' || action === 'update' || action === 'editCustomer'
+        || action === 'addFollowUp') {
       if (CUSTOMER_WRITE_ALLOWED_ROLES.indexOf(user.role) === -1) {
         return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่ม แก้ไข หรือ ลบได้ (เฉพาะ admin และพนักงานเท่านั้นที่ทำได้)' });
       }
