@@ -72,13 +72,7 @@ def get_ecount_session(com, force_refresh: bool = False):
     if com_id in ECOUNT_SESSIONS and not force_refresh:
         return ECOUNT_SESSIONS[com_id]
 
-    missing = [
-        name for name, val in
-        [("COM_CODE", com["code"]), ("API_KEY", com["api_key"]), ("USER_ID", com["user_id"])]
-        if not val
-    ]
-    if missing:
-        print(f"  ⚠️ ข้าม Login บริษัท {com_id}: ไม่ได้ตั้งค่า {', '.join(missing)} ใน Environment Variables (ค่าว่าง)")
+    if not com["api_key"] or not com["code"]:
         return None, None
 
     login_url = f"https://oapi{com['zone'].lower()}.ecount.com/OAPI/V2/OAPILogin"
@@ -99,16 +93,6 @@ def get_ecount_session(com, force_refresh: bool = False):
                 if session[0] and session[1]:
                     ECOUNT_SESSIONS[com_id] = session
                     return session
-                print(f"  ❌ Login บริษัท {com_id} สำเร็จ (HTTP 200/Status 200) แต่ไม่มี SESSION_ID/HOST_URL: {res_json}")
-            else:
-                err_detail = res_json.get("Error") or res_json.get("Message") or res_json
-                print(f"  ❌ ECOUNT ปฏิเสธ Login บริษัท {com_id} (Status={res_json.get('Status')}): {err_detail}")
-        else:
-            print(f"  ❌ Login บริษัท {com_id} ได้ HTTP {res.status_code}: {res.text[:300]}")
-    except requests.exceptions.Timeout:
-        print(f"  ❌ Login บริษัท {com_id} หมดเวลา (timeout) — เซิร์ฟเวอร์ ECOUNT ไม่ตอบสนองภายในเวลาที่กำหนด")
-    except requests.exceptions.ConnectionError as e:
-        print(f"  ❌ Login บริษัท {com_id} เชื่อมต่อเครือข่ายไม่สำเร็จ (อาจถูก ECOUNT บล็อก IP หรือเน็ตเวิร์กปัญหา): {e}")
     except Exception as e:
         print(f"  ❌ Login Exception ({com['id']}): {e}")
     return None, None
@@ -122,90 +106,48 @@ def ecount_api_url(host_url, endpoint):
     return f"https://{host_url.rstrip('/')}/ECERP/OAPI/V2/{endpoint.lstrip('/')}"
 
 
-def get_ecount_result(response, label=""):
+def get_ecount_result(response):
     try:
         data = response.json()
     except ValueError:
-        if label:
-            print(f"  ⚠️ {label}: ตอบกลับไม่ใช่ JSON (HTTP {response.status_code}) — {response.text[:300]}")
         return []
 
     if str(data.get("Status")) != "200":
-        if label:
-            errors = data.get("Errors") or data.get("Error") or data.get("Message") or data
-            print(f"  ⚠️ {label}: ECOUNT ตอบ Status={data.get('Status')} รายละเอียด: {errors}")
         return []
 
     result_data = data.get("Data", {}) or {}
     return result_data.get("Result", []) or result_data.get("Datas", []) or []
 
 
-# ชื่อ endpoint ของ ECOUNT OAPI สำหรับดึงรายชื่อคลังสินค้า ลองหลายชื่อตามลำดับ
-# เพราะ endpoint เดิม (InventoryBasic/GetListWarehouse) ตอบ HTTP 404
-# "No HTTP resource was found that matches the request URI" จาก ECOUNT ทุกบริษัทเหมือนกันหมด
-# ทั้งที่ endpoint พี่น้องกัน (InventoryBasic/GetListProduct) เรียกสำเร็จปกติด้วย URL/Session เดียวกัน
-# แปลว่าปัญหาไม่ใช่ credentials/whitelist แต่เป็นชื่อ path ที่ไม่ตรงกับที่ ECOUNT รู้จัก
-# GetBasicWarehouseDescList คือชื่อ endpoint ที่ ECOUNT ใช้จริงสำหรับดึง master คลังสินค้า (ตามรูปแบบ
-# "GetBasicXxxDescList" ที่ ECOUNT ใช้กับ endpoint master data หลายตัว) แต่ควรตรวจสอบกับเอกสาร OAPI
-# ของบริษัทอีกครั้ง (ที่ได้รับตอนขอ API Cert Key) เพื่อความชัวร์ 100% — ถ้าลองแล้วยังไม่ผ่าน ให้แก้ชื่อ
-# ในลิสต์นี้ตามที่เอกสารระบุ
-WAREHOUSE_ENDPOINT_CANDIDATES = [
-    "InventoryBasic/GetBasicWarehouseDescList",
-    "InventoryBasic/GetListWarehouse",  # ชื่อเดิม เก็บไว้เป็น fallback เผื่อชื่อด้านบนไม่ถูกต้อง
-]
-
-
 def fetch_warehouse_dict(com, session_id, host_url):
-    """ดึง Dict ของรหัสคลังและชื่อคลังสินค้า {WH_CD: WH_DES} พร้อม Retry เมื่อเจอ 412
-
-    ลอง endpoint ที่เป็นไปได้ตามลำดับใน WAREHOUSE_ENDPOINT_CANDIDATES จนกว่าจะได้ข้อมูล
-    ถ้าทุก endpoint ล้มเหลว จะคืน dict ว่างเหมือนเดิม (โค้ดส่วน fetch_all_company_data
-    ยังมี fallback เติมชื่อคลังจากฟิลด์ WH_DES ของแต่ละแถวสต็อกเองอยู่แล้ว จึงไม่กระทบ
-    ข้อมูลคลังที่มีสต็อกอยู่ แต่คลังที่ยังไม่มีสต็อกเลยจะไม่มีชื่อจนกว่า endpoint นี้จะทำงานได้)
-    """
+    """ดึง Dict ของรหัสคลังและชื่อคลังสินค้า {WH_CD: WH_DES} พร้อม Retry เมื่อเจอ 412"""
     wh_dict = {}
     current_session = session_id
     current_host = host_url
 
-    for endpoint in WAREHOUSE_ENDPOINT_CANDIDATES:
-        endpoint_label = f"Fetch Warehouse [{com['id']}] ({endpoint})"
-        for attempt in range(3):
-            url = f"{ecount_api_url(current_host, endpoint)}?SESSION_ID={current_session}"
-            payload = {"WH_CD": "", "DEL_GUBUN": "N"}
-            try:
-                res = ecount_post(url, payload, timeout=20)
-                if res.status_code == 412:
-                    print(f"  ⚠️ {endpoint_label}: HTTP 412 — ลองขอ Session ใหม่ (รอบที่ {attempt + 1})")
-                    time.sleep(3)
-                    current_session, current_host = get_ecount_session(com, force_refresh=True)
-                    if not current_session:
-                        print(f"  ⚠️ Fetch Warehouse [{com['id']}]: ไม่ได้รายชื่อคลังสินค้ากลับมาเลย (wh_dict ว่าง)")
-                        return wh_dict
-                    continue
-
-                if res.status_code == 200:
-                    for item in get_ecount_result(res, label=endpoint_label):
-                        wh_cd = first_nonempty(item, "WH_CD", "WH", "WAREHOUSE_CD", "WAREHOUSE", "LOCATION_CD", "LOCATION")
-                        wh_des = first_nonempty(item, "WH_DES", "WH_NAME", "WAREHOUSE_DES", "LOCATION_DES", "LOCATION_NAME")
-                        if wh_cd:
-                            wh_dict[wh_cd] = wh_des
-                    if wh_dict:
-                        return wh_dict
-                    # 200 แต่ไม่มีข้อมูล (เช่น Status ไม่ใช่ 200 ข้างใน) ไม่ต้อง retry endpoint เดิมซ้ำ
+    for attempt in range(3):
+        url = f"{ecount_api_url(current_host, 'InventoryBasic/GetListWarehouse')}?SESSION_ID={current_session}"
+        payload = {"WH_CD": "", "DEL_GUBUN": "N"}
+        try:
+            res = ecount_post(url, payload, timeout=20)
+            if res.status_code == 412:
+                print(f"  ⚠️ Fetch Warehouse [{com['id']}]: HTTP 412 — ลองขอ Session ใหม่ (รอบที่ {attempt + 1})")
+                time.sleep(3)
+                current_session, current_host = get_ecount_session(com, force_refresh=True)
+                if not current_session:
                     break
+                continue
 
-                if res.status_code == 404:
-                    print(f"  ⚠️ {endpoint_label}: HTTP 404 — endpoint นี้ไม่ถูกต้อง กำลังลอง endpoint ถัดไป (ถ้ามี)...")
-                    break
-
-                print(f"  ⚠️ {endpoint_label}: HTTP {res.status_code} — {res.text[:300]}")
+            if res.status_code == 200:
+                for item in get_ecount_result(res):
+                    wh_cd = first_nonempty(item, "WH_CD", "WH", "WAREHOUSE_CD", "WAREHOUSE", "LOCATION_CD", "LOCATION")
+                    wh_des = first_nonempty(item, "WH_DES", "WH_NAME", "WAREHOUSE_DES", "LOCATION_DES", "LOCATION_NAME")
+                    if wh_cd:
+                        wh_dict[wh_cd] = wh_des
                 break
-            except Exception as exc:
-                print(f"  ⚠️ Fetch Warehouse Master Failed ({com['id']}, {endpoint}): {exc}")
-                break
-
-    if not wh_dict:
-        print(f"  ⚠️ Fetch Warehouse [{com['id']}]: ไม่ได้รายชื่อคลังสินค้ากลับมาเลยจากทุก endpoint ที่ลอง (wh_dict ว่าง) — ระบบจะใช้ชื่อคลังจากข้อมูลสต็อกแทน")
+        except Exception as exc:
+            print(f"  ⚠️ Fetch Warehouse Master Failed ({com['id']}): {exc}")
+            break
     return wh_dict
 
 
@@ -235,9 +177,8 @@ def fetch_inventory_by_location(com, session_id, host_url, wh_cd=""):
                 continue
 
             if res.status_code != 200:
-                print(f"  ⚠️ Inventory Balance By Location [{com['id']}]: HTTP {res.status_code} — {res.text[:300]}")
                 return []
-            return get_ecount_result(res, label=f"Inventory Balance By Location [{com['id']}]")
+            return get_ecount_result(res)
         except Exception as exc:
             print(f"  ⚠️ GetListInventoryBalanceStatusByLocation failed ({com['id']}): {exc}")
             break
@@ -383,19 +324,14 @@ def fetch_all_company_data():
                     res_master = ecount_post(url_master, payload_master, timeout=20)
 
             if res_master and res_master.status_code == 200:
-                master_items = get_ecount_result(res_master, label=f"Fetch Master Products [{com_id}]")
-                for item in master_items:
+                for item in get_ecount_result(res_master):
                     p_cd = first_nonempty(item, *COMPANY_FIELD_MAP[com_id]["prod_cd"])
                     if p_cd:
                         p_des = first_nonempty(item, *COMPANY_FIELD_MAP[com_id]["prod_des"]) or p_cd
                         s_des = first_nonempty(item, *COMPANY_FIELD_MAP[com_id]["size_des"])
                         master_dict[p_cd] = {"prod_des": p_des, "size_des": s_des}
-                if not master_items:
-                    print(f"  ⚠️ Fetch Master Products [{com_id}]: ไม่ได้รายชื่อสินค้าจาก ECOUNT กลับมาเลย (ชื่อสินค้าจะ fallback ไปใช้รหัสสินค้าแทน)")
-            elif res_master:
-                print(f"  ⚠️ Fetch Master Products [{com_id}]: HTTP {res_master.status_code} — {res_master.text[:300]}")
-        except Exception as exc:
-            print(f"  ⚠️ Fetch Master Products Failed ({com_id}): {exc}")
+        except Exception:
+            pass
 
         # 2. Fetch Inventory Balance
         try:
@@ -436,7 +372,7 @@ def fetch_all_company_data():
                         continue
 
                     if res_bal.status_code == 200:
-                        result_items = get_ecount_result(res_bal, label=f"Inventory Balance [{com_id}]")
+                        result_items = get_ecount_result(res_bal)
                         if result_items:
                             items = result_items
                             break
@@ -457,7 +393,7 @@ def fetch_all_company_data():
                 wh_cd = normalize_wh(normalized["wh_cd"])
                 if normalized["wh_des"] and wh_cd != "-":
                     wh_dict.setdefault(wh_cd, normalized["wh_des"])
-
+                
                 # ประกบชื่อคลังสินค้า: ถ้ามีชื่อใน Master ให้แสดง "รหัสคลัง - ชื่อคลัง"
                 wh_name_from_master = wh_dict.get(wh_cd, normalized["wh_des"])
                 if wh_name_from_master and wh_name_from_master != wh_cd:
@@ -669,7 +605,7 @@ def fetch_all_company_po(days_back=365):
             total_amt = parse_float(item.get("TOTAL_AMT")) or (buy_amt + vat_amt)
             pic_name = str(item.get("CUST_NAME") or item.get("EMP_CD") or item.get("WRITER_ID") or "-").strip()
             p_flag = str(item.get("P_FLAG") or "").strip().upper()
-
+            
             # Map สถานะ ECOUNT P_FLAG (รวมถึงรหัสตัวเลข 9 จาก API)
             if p_flag in ("Y", "9", "COMPLETED", "CLOSED"):
                 status_name = "ดำเนินการเสร็จแล้ว"

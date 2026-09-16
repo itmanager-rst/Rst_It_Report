@@ -1538,6 +1538,7 @@ SALES_TABLE_SCHEMA = [
     bigquery.SchemaField("product_group", "STRING"),
     bigquery.SchemaField("prod_cd", "STRING"),
     bigquery.SchemaField("prod_des", "STRING"),
+    bigquery.SchemaField("vehicle_models", "STRING", mode="REPEATED"),
     bigquery.SchemaField("serial_lot", "STRING"),
     bigquery.SchemaField("customer_cd", "STRING"),
     bigquery.SchemaField("customer_name", "STRING"),
@@ -1555,6 +1556,30 @@ SALES_TABLE_SCHEMA = [
     bigquery.SchemaField("source_file", "STRING"),
     bigquery.SchemaField("uploaded_at", "TIMESTAMP"),
 ]
+
+# ตัวอย่างชื่อสินค้าที่มีรุ่นรถฝังอยู่ในวงเล็บ: "ใบมีดตัดดิน 1.60 ม. (มีสอง) รุ่น EF [EF393T ,EF352T]"
+# ดึงรหัสรุ่นทุกตัวที่อยู่ในวงเล็บ [...] ออกมาเป็นลิสต์ (สินค้าหนึ่งตัวอาจใช้ได้กับหลายรุ่น)
+VEHICLE_MODEL_PATTERN = re.compile(r"\[([^\]]+)\]")
+
+
+def extract_vehicle_models(prod_des):
+    """ดึงรหัสรุ่นรถที่ฝังอยู่ในวงเล็บ [] ของชื่อสินค้า เช่น '...รุ่น EF [EF393T ,EF352T]' -> ['EF393T', 'EF352T']"""
+    if not prod_des:
+        return []
+    models = []
+    for bracket_group in VEHICLE_MODEL_PATTERN.findall(prod_des):
+        for code in re.split(r"[,/]", bracket_group):
+            code = code.strip()
+            if code:
+                models.append(code)
+    # เอาตัวซ้ำออกแต่คงลำดับเดิมไว้
+    seen = set()
+    unique_models = []
+    for m in models:
+        if m not in seen:
+            seen.add(m)
+            unique_models.append(m)
+    return unique_models
 
 
 def parse_thai_date(value):
@@ -1653,16 +1678,112 @@ def _cell_float(value):
         return None
 
 
+def _normalize_header(text):
+    """ทำความสะอาดข้อความหัวตาราง (ตัด zero-width space / เว้นวรรคหัวท้ายออก) เพื่อเทียบชื่อคอลัมน์ได้แม่นยำ"""
+    if text is None:
+        return ""
+    return str(text).replace("\u200b", "").strip()
+
+
+def _find_header_column(header_map, must_contain=None, must_not_contain=None, exact=None):
+    """หา column index จาก header_map ({col_index: normalized_header_text}) ด้วยชื่อคอลัมน์ที่ยืดหยุ่น
+    (contains แทน exact match) เพื่อให้ทนทานต่อไฟล์ ECOUNT ที่แต่ละบริษัท/แต่ละครั้ง export
+    โครงสร้างคอลัมน์ไม่เหมือนกันทุกตัวอักษร"""
+    if exact:
+        for idx, h in header_map.items():
+            if h == exact:
+                return idx
+    if must_contain:
+        for idx, h in header_map.items():
+            if all(token in h for token in must_contain):
+                if must_not_contain and any(token in h for token in must_not_contain):
+                    continue
+                return idx
+    return None
+
+
+def build_sales_column_map(ws, header_row=2):
+    """สแกนหัวตาราง (แถวที่ 2) แล้วจับคู่ชื่อคอลัมน์ที่พบจริงเข้ากับฟิลด์มาตรฐานของเรา
+    ไม่ผูกกับตำแหน่งคอลัมน์ตายตัว เพราะแต่ละบริษัท/รูปแบบไฟล์ ECOUNT อาจมีคอลัมน์ไม่เหมือนกัน
+    (เช่น ASIA ไม่มี 'เลขที่ใบขาย', 'รหัสสินค้า', 'ชื่อกลุ่มสินค้า' แยก แต่ RUAMSINTHAI มีครบ)
+    คอลัมน์ที่หาไม่เจอจะเป็น None และฟิลด์นั้นจะถูกเก็บเป็นค่าว่างสำหรับบริษัทนั้นๆ"""
+    header_map = {}
+    for c in range(1, ws.max_column + 1):
+        text = _normalize_header(ws.cell(row=header_row, column=c).value)
+        if text:
+            header_map[c] = text
+
+    return {
+        "date_seq": _find_header_column(header_map, must_contain=["วันที่-ลำดับ"]),
+        "date": (
+            _find_header_column(header_map, exact="วันที่")
+            or _find_header_column(header_map, must_contain=["วันที่"], must_not_contain=["ลำดับ", "ส่งมอบ"])
+        ),
+        "invoice_no": _find_header_column(header_map, must_contain=["เลขที่ใบขาย"]),
+        "product_group": _find_header_column(header_map, must_contain=["กลุ่มสินค้า"]),
+        "prod_cd": _find_header_column(header_map, must_contain=["รหัส", "สินค้า"], must_not_contain=["ลูกค้า", "ผู้ขาย"]),
+        "prod_des": _find_header_column(header_map, must_contain=["ชื่อสินค้า"]),
+        "serial_lot": (
+            _find_header_column(header_map, must_contain=["Serial"])
+            or _find_header_column(header_map, must_contain=["Lot"])
+        ),
+        "customer_cd": _find_header_column(header_map, must_contain=["รหัส", "ลูกค้า"]),
+        "customer_name": (
+            _find_header_column(header_map, must_contain=["ชื่อลูกค้า"])
+            or _find_header_column(header_map, must_contain=["ลูกค้า", "ผู้ขาย"], must_not_contain=["รหัส"])
+        ),
+        "address": _find_header_column(header_map, must_contain=["ที่อยู่"]),
+        "qty": (
+            _find_header_column(header_map, exact="จำนวน")
+            or _find_header_column(header_map, must_contain=["จำนวน"], must_not_contain=["เงิน"])
+        ),
+        "unit": _find_header_column(header_map, exact="หน่วย"),
+        "unit_price": _find_header_column(header_map, must_contain=["ราคา", "หน่วย"]),
+        "amount": _find_header_column(header_map, must_contain=["จำนวนเงิน"]),
+        "technician": _find_header_column(header_map, must_contain=["ผู้รับผิดชอบ"]),
+        "project_name": _find_header_column(header_map, must_contain=["ชื่อโครงการ"]),
+        "credit": _find_header_column(header_map, must_contain=["สินเชื่อ"]),
+        "delivery_date": _find_header_column(header_map, must_contain=["วันที่ส่งมอบ"]),
+        "warehouse_name": (
+            _find_header_column(header_map, must_contain=["คลังเบิกขาย"])
+            or _find_header_column(header_map, must_contain=["คลัง"])
+        ),
+        "location_name": _find_header_column(header_map, must_contain=["ชื่อสถานที่"]),
+    }
+
+
+def _col_val(ws, row, col_map, key):
+    """อ่านค่าเซลล์ตามคอลัมน์ที่ map ไว้ คืน None ถ้าไม่มีคอลัมน์นี้ในไฟล์ (บริษัทนั้นไม่มีข้อมูลฟิลด์นี้)"""
+    col = col_map.get(key)
+    if not col:
+        return None
+    return ws.cell(row=row, column=col).value
+
+
+def parse_date_seq(value):
+    """แปลงค่าคอลัมน์ 'วันที่-ลำดับ' (เช่น '20260105-1' หรือ '01 ม.ค. 2569 -1') เป็นวันที่
+    โดยตัดเลขลำดับท้ายสุด (-N) ออกก่อน แล้วส่งส่วนวันที่ไปให้ parse_thai_date ตามปกติ"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    m = re.match(r"^(.*?)-(\d+)$", text)
+    date_part = m.group(1).strip() if m else text
+    return parse_thai_date(date_part)
+
+
 def parse_sales_excel(file_bytes: bytes, company_id: str, source_filename: str):
     """
     อ่านไฟล์ 'รายงานสถานะการขาย' ที่ Export จาก ECOUNT (.xlsx)
-    โครงสร้างคอลัมน์ (นับจาก 1): วันที่-ลำดับ, วันที่, ชื่อกลุ่มสินค้า, เลขที่ใบขาย,
-    รหัสสินค้า, ชื่อสินค้า, Serial/Lot, รหัสลูกค้า, ชื่อลูกค้า, ที่อยู่, จำนวน, หน่วย,
-    ราคาต่อหน่วย, จำนวนเงิน, ผู้รับผิดชอบ(ช่าง), ชื่อโครงการ, สินเชื่อ, วันที่ส่งมอบ,
-    ชื่อคลังเบิกขาย, ชื่อสถานที่
 
-    แถวหัวตาราง (แถว 1-2), แถวสรุปยอดรายเดือน ("... รวม") และแถวสรุปทั้งหมด/timestamp
-    ท้ายไฟล์ จะไม่มีทั้ง "เลขที่ใบขาย" และ "รหัสสินค้า" พร้อมกัน จึงใช้เป็นตัวกรองแถวข้อมูลจริง
+    รองรับหลายรูปแบบคอลัมน์โดยอัตโนมัติ เพราะแต่ละบริษัทที่ใช้ ECOUNT อาจ export ออกมาไม่เหมือนกัน
+    (เช่น RUAMSINTHAI มีครบ 20 คอลัมน์ รวมเลขที่ใบขาย/รหัสสินค้า/กลุ่มสินค้า ส่วน ASIA มีแค่ 8 คอลัมน์
+    ไม่มีเลขที่ใบขายหรือรหัสสินค้าแยก มีแค่ 'วันที่-ลำดับ' รวมมาในฟิลด์เดียว)
+    จึงอ่านชื่อหัวตาราง (แถว 2) มาจับคู่คอลัมน์แบบไดนามิกแทนการ hardcode ตำแหน่งคอลัมน์
+
+    แถวหัวตาราง (แถว 1-2), แถวสรุปยอดรายเดือน ("... รวม") และแถวสรุปทั้งหมด/timestamp ท้ายไฟล์
+    จะไม่มี "ชื่อสินค้า" จึงใช้เป็นตัวกรองแถวข้อมูลจริง (ใช้ได้กับทุกรูปแบบไฟล์ที่เจอมา)
     """
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -1672,55 +1793,75 @@ def parse_sales_excel(file_bytes: bytes, company_id: str, source_filename: str):
     if header_text:
         detected_company_name = str(header_text).split("/")[0].replace("ชื่อบริษัท", "").strip(" :")
 
+    col_map = build_sales_column_map(ws, header_row=2)
+
+    if not col_map["prod_des"] or not col_map["amount"]:
+        raise ValueError(
+            "ไม่พบคอลัมน์ 'ชื่อสินค้า' หรือ 'จำนวนเงิน' ในไฟล์นี้ — รูปแบบไฟล์อาจแตกต่างจากที่ระบบรู้จัก "
+            "กรุณาตรวจสอบว่าแถวที่ 2 ของไฟล์เป็นหัวตารางจริงหรือไม่"
+        )
+
     now_iso = datetime.utcnow().isoformat()
     rows = []
     skipped_structure = 0   # แถวหัวตาราง / แถวสรุปยอด(รวม) / แถว timestamp ท้ายไฟล์ — ปกติ ไม่ใช่ปัญหา
-    skipped_date_error = 0  # แถวข้อมูลขายจริง (มีเลขที่ใบขาย+รหัสสินค้า) แต่แปลงวันที่ไม่ได้ — ผิดปกติ ต้องแจ้งเตือน
+    skipped_date_error = 0  # แถวข้อมูลขายจริง (มีชื่อสินค้า+จำนวนเงิน) แต่แปลงวันที่ไม่ได้ — ผิดปกติ ต้องแจ้งเตือน
     unparsed_date_samples = []
 
     for r in range(3, ws.max_row + 1):
-        invoice_no = ws.cell(row=r, column=4).value
-        prod_cd = ws.cell(row=r, column=5).value
-        if not invoice_no or not prod_cd:
+        prod_des_raw = _col_val(ws, r, col_map, "prod_des")
+        amount_raw = _col_val(ws, r, col_map, "amount")
+        if not prod_des_raw or amount_raw in (None, ""):
             skipped_structure += 1
             continue  # แถวหัวตาราง / แถวสรุปยอด(รวม) / แถว timestamp ท้ายไฟล์
 
-        raw_date_value = ws.cell(row=r, column=2).value
-        tdate = parse_thai_date(raw_date_value)
+        # หาวันที่: ใช้คอลัมน์ "วันที่" โดยตรงถ้ามี ไม่งั้น derive จาก "วันที่-ลำดับ"
+        date_val = _col_val(ws, r, col_map, "date")
+        if date_val is not None:
+            tdate = parse_thai_date(date_val)
+            raw_date_display = date_val
+        else:
+            date_seq_val = _col_val(ws, r, col_map, "date_seq")
+            tdate = parse_date_seq(date_seq_val)
+            raw_date_display = date_seq_val
+
         if not tdate:
             skipped_date_error += 1
             if len(unparsed_date_samples) < 5:
-                unparsed_date_samples.append(f"แถว {r}: '{raw_date_value}'")
+                unparsed_date_samples.append(f"แถว {r}: '{raw_date_display}'")
             continue
+
+        # เลขที่ใบขาย: ใช้คอลัมน์ตรงถ้ามี ไม่งั้นใช้ "วันที่-ลำดับ" ทั้งสตริงเป็นรหัสอ้างอิงใบขายแทน
+        invoice_no_val = _col_val(ws, r, col_map, "invoice_no")
+        if not invoice_no_val:
+            invoice_no_val = _col_val(ws, r, col_map, "date_seq")
+
+        delivery_date_val = parse_thai_date(_col_val(ws, r, col_map, "delivery_date"))
 
         rows.append({
             "company_id": company_id,
             "transaction_date": tdate.isoformat(),
-            "invoice_no": _cell_str(invoice_no),
-            "product_group": _cell_str(ws.cell(row=r, column=3).value),
-            "prod_cd": _cell_str(prod_cd),
-            "prod_des": _cell_str(ws.cell(row=r, column=6).value),
-            "serial_lot": _cell_str(ws.cell(row=r, column=7).value),
-            "customer_cd": _cell_str(ws.cell(row=r, column=8).value),
-            "customer_name": _cell_str(ws.cell(row=r, column=9).value),
-            "address": _cell_str(ws.cell(row=r, column=10).value),
-            "qty": _cell_float(ws.cell(row=r, column=11).value),
-            "unit": _cell_str(ws.cell(row=r, column=12).value),
-            "unit_price": _cell_float(ws.cell(row=r, column=13).value),
-            "amount": _cell_float(ws.cell(row=r, column=14).value),
-            "technician": _cell_str(ws.cell(row=r, column=15).value),
-            "project_name": _cell_str(ws.cell(row=r, column=16).value),
-            "credit": _cell_str(ws.cell(row=r, column=17).value),
-            "delivery_date": (parse_thai_date(ws.cell(row=r, column=18).value) or None),
-            "warehouse_name": _cell_str(ws.cell(row=r, column=19).value),
-            "location_name": _cell_str(ws.cell(row=r, column=20).value),
+            "invoice_no": _cell_str(invoice_no_val),
+            "product_group": _cell_str(_col_val(ws, r, col_map, "product_group")),
+            "prod_cd": _cell_str(_col_val(ws, r, col_map, "prod_cd")),
+            "prod_des": _cell_str(prod_des_raw),
+            "vehicle_models": extract_vehicle_models(_cell_str(prod_des_raw)),
+            "serial_lot": _cell_str(_col_val(ws, r, col_map, "serial_lot")),
+            "customer_cd": _cell_str(_col_val(ws, r, col_map, "customer_cd")),
+            "customer_name": _cell_str(_col_val(ws, r, col_map, "customer_name")),
+            "address": _cell_str(_col_val(ws, r, col_map, "address")),
+            "qty": _cell_float(_col_val(ws, r, col_map, "qty")),
+            "unit": _cell_str(_col_val(ws, r, col_map, "unit")),
+            "unit_price": _cell_float(_col_val(ws, r, col_map, "unit_price")),
+            "amount": _cell_float(amount_raw),
+            "technician": _cell_str(_col_val(ws, r, col_map, "technician")),
+            "project_name": _cell_str(_col_val(ws, r, col_map, "project_name")),
+            "credit": _cell_str(_col_val(ws, r, col_map, "credit")),
+            "delivery_date": (delivery_date_val.isoformat() if delivery_date_val else None),
+            "warehouse_name": _cell_str(_col_val(ws, r, col_map, "warehouse_name")),
+            "location_name": _cell_str(_col_val(ws, r, col_map, "location_name")),
             "source_file": source_filename,
             "uploaded_at": now_iso,
         })
-
-    for row in rows:
-        if row["delivery_date"] is not None:
-            row["delivery_date"] = row["delivery_date"].isoformat()
 
     return rows, detected_company_name, skipped_structure, skipped_date_error, unparsed_date_samples
 
@@ -1774,7 +1915,13 @@ async def upload_sales_excel(
         pass  # ตารางยังไม่เคยถูกสร้าง จะถูกสร้างใหม่จากการโหลดข้อมูลรอบนี้เลย
 
     # 2) โหลดข้อมูลชุดใหม่เข้าไปแทน
-    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND", schema=SALES_TABLE_SCHEMA)
+    # ใส่ schema_update_options=ALLOW_FIELD_ADDITION เพื่อให้ BigQuery เพิ่มคอลัมน์ใหม่ให้ตารางเดิมได้อัตโนมัติ
+    # (เช่น vehicle_models ที่เพิ่มเข้ามาทีหลัง) ไม่งั้น WRITE_APPEND จะ error ถ้า schema ไม่ตรงกับตารางเดิมเป๊ะ
+    job_config = bigquery.LoadJobConfig(
+        write_disposition="WRITE_APPEND",
+        schema=SALES_TABLE_SCHEMA,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
+    )
     try:
         client.load_table_from_json(rows, table_ref, job_config=job_config).result()
     except Exception as exc:
@@ -1821,13 +1968,17 @@ def get_sales_summary(company_id: str = Query("ALL", description="ASIA, ROBOTICS
 
     table_ref = f"{PROJECT_ID}.{DATASET_ID}.{SALES_TABLE}"
     try:
-        client.get_table(table_ref)
+        table_obj = client.get_table(table_ref)
     except Exception:
         return {
             "success": True,
             "has_data": False,
             "message": "ยังไม่มีข้อมูลยอดขายในระบบ กรุณาอัปโหลดไฟล์ Excel จาก ECOUNT ก่อน",
         }
+
+    # เช็คว่าตารางจริงใน BigQuery มีคอลัมน์ vehicle_models หรือยัง (ตารางเก่าที่สร้างไว้ก่อนเพิ่มฟีเจอร์นี้จะยังไม่มี
+    # การแก้ schema ในโค้ดไม่ได้เปลี่ยนตารางที่มีอยู่แล้วโดยอัตโนมัติ ต้องรออัปโหลดไฟล์ใหม่ทับก่อนคอลัมน์นี้ถึงจะมีจริง)
+    has_vehicle_models_column = any(f.name == "vehicle_models" for f in table_obj.schema)
 
     company_clause = "" if company_id == "ALL" else "AND company_id = @company_id"
     company_param = (
@@ -1877,7 +2028,8 @@ def get_sales_summary(company_id: str = Query("ALL", description="ASIA, ROBOTICS
     by_company_sql = f"""
         SELECT company_id,
           IFNULL(SUM(IF(transaction_date >= @month_start, amount, 0)), 0) AS mtd_amount,
-          IFNULL(SUM(IF(transaction_date >= @year_start, amount, 0)), 0) AS ytd_amount
+          IFNULL(SUM(IF(transaction_date >= @year_start, amount, 0)), 0) AS ytd_amount,
+          MAX(transaction_date) AS last_date
         FROM `{table_ref}`
         GROUP BY company_id
         ORDER BY company_id
@@ -1939,6 +2091,30 @@ def get_sales_summary(company_id: str = Query("ALL", description="ASIA, ROBOTICS
         others_amount = sum(r.amount for r in by_group_rows[TOP_GROUPS_LIMIT:])
         by_product_group.append({"group": "อื่นๆ", "amount": others_amount})
 
+    # สัดส่วนยอดขายตามรุ่นรถ (เดือนนี้) — ดึงจากรหัสรุ่นที่ฝังในวงเล็บของชื่อสินค้า (vehicle_models)
+    # สินค้าหนึ่งตัวอาจใช้ได้กับหลายรุ่น จึงต้อง UNNEST ก่อน group
+    # ข้าม query นี้ถ้าตารางจริงยังไม่มีคอลัมน์ vehicle_models (ตารางเก่าก่อนเพิ่มฟีเจอร์ ยังไม่เคยอัปโหลดไฟล์ใหม่)
+    by_vehicle_model = []
+    if has_vehicle_models_column:
+        by_model_sql = f"""
+            SELECT model, SUM(amount) AS amount
+            FROM `{table_ref}`, UNNEST(vehicle_models) AS model
+            WHERE transaction_date >= @month_start {company_clause}
+            GROUP BY model
+            ORDER BY amount DESC
+        """
+        by_model_rows = list(client.query(
+            by_model_sql, job_config=bigquery.QueryJobConfig(query_parameters=base_params)
+        ).result())
+
+        TOP_MODELS_LIMIT = 7
+        by_vehicle_model = [
+            {"model": r.model, "amount": r.amount} for r in by_model_rows[:TOP_MODELS_LIMIT]
+        ]
+        if len(by_model_rows) > TOP_MODELS_LIMIT:
+            others_amount = sum(r.amount for r in by_model_rows[TOP_MODELS_LIMIT:])
+            by_vehicle_model.append({"model": "อื่นๆ", "amount": others_amount})
+
     return {
         "success": True,
         "has_data": True,
@@ -1952,13 +2128,252 @@ def get_sales_summary(company_id: str = Query("ALL", description="ASIA, ROBOTICS
             "last": ref_row.max_date.isoformat() if ref_row.max_date else None,
         },
         "by_company": [
-            {"company_id": r.company_id, "mtd_amount": r.mtd_amount, "ytd_amount": r.ytd_amount}
+            {
+                "company_id": r.company_id,
+                "mtd_amount": r.mtd_amount,
+                "ytd_amount": r.ytd_amount,
+                "last_date": r.last_date.isoformat() if r.last_date else None,
+            }
             for r in by_company_rows
         ],
         "monthly_trend": [{"ym": r.ym, "amount": r.amount} for r in monthly_rows],
         "by_product_group": by_product_group,
+        "by_vehicle_model": by_vehicle_model,
         "top_products": [
             {"prod_cd": r.prod_cd, "prod_des": r.prod_des, "qty": r.qty, "amount": r.amount}
             for r in top_products_rows
+        ],
+    }
+
+
+@app.get("/api/sales/product-lookup")
+def get_sales_product_lookup(
+    q: str = Query(..., min_length=1, description="คำค้นหา: รหัสสินค้า หรือ ชื่อ/รุ่นสินค้า (ค้นหาบางส่วนได้)"),
+    company_id: str = Query("ALL", description="ASIA, ROBOTICS, RUAMSINTHAI หรือ ALL"),
+):
+    """ค้นหายอดขาย MTD/YTD ของสินค้า/รุ่นที่ต้องการโดยเฉพาะ (ค้นจากรหัสสินค้าหรือชื่อสินค้าบางส่วน)"""
+    if client is None:
+        raise HTTPException(status_code=500, detail="BigQuery client ไม่พร้อมใช้งาน")
+
+    table_ref = f"{PROJECT_ID}.{DATASET_ID}.{SALES_TABLE}"
+    try:
+        client.get_table(table_ref)
+    except Exception:
+        return {
+            "success": True,
+            "has_data": False,
+            "message": "ยังไม่มีข้อมูลยอดขายในระบบ กรุณาอัปโหลดไฟล์ Excel จาก ECOUNT ก่อน",
+        }
+
+    company_clause = "" if company_id == "ALL" else "AND company_id = @company_id"
+    company_param = (
+        [] if company_id == "ALL"
+        else [bigquery.ScalarQueryParameter("company_id", "STRING", company_id)]
+    )
+
+    # ใช้วันที่ล่าสุดที่มีข้อมูลจริงเป็นจุดอ้างอิง MTD/YTD เหมือน endpoint สรุปหลัก เพื่อให้ตัวเลขตรงกัน
+    ref_sql = f"""
+        SELECT MAX(transaction_date) AS max_date
+        FROM `{table_ref}`
+        WHERE 1=1 {company_clause}
+    """
+    ref_row = list(client.query(
+        ref_sql, job_config=bigquery.QueryJobConfig(query_parameters=company_param)
+    ).result())[0]
+
+    if ref_row.max_date is None:
+        return {
+            "success": True,
+            "has_data": False,
+            "message": "ยังไม่มีข้อมูลยอดขายของบริษัทที่เลือก กรุณาอัปโหลดไฟล์ Excel ก่อน",
+        }
+
+    reference_date = ref_row.max_date
+    month_start = reference_date.replace(day=1)
+    year_start = reference_date.replace(month=1, day=1)
+
+    like_pattern = f"%{q.strip().lower()}%"
+    search_params = [
+        bigquery.ScalarQueryParameter("month_start", "DATE", month_start),
+        bigquery.ScalarQueryParameter("year_start", "DATE", year_start),
+        bigquery.ScalarQueryParameter("like_pattern", "STRING", like_pattern),
+    ] + company_param
+
+    lookup_sql = f"""
+        SELECT
+          prod_cd,
+          ANY_VALUE(prod_des) AS prod_des,
+          IFNULL(SUM(IF(transaction_date >= @month_start, qty, 0)), 0) AS mtd_qty,
+          IFNULL(SUM(IF(transaction_date >= @month_start, amount, 0)), 0) AS mtd_amount,
+          IFNULL(SUM(IF(transaction_date >= @year_start, qty, 0)), 0) AS ytd_qty,
+          IFNULL(SUM(IF(transaction_date >= @year_start, amount, 0)), 0) AS ytd_amount
+        FROM `{table_ref}`
+        WHERE (LOWER(prod_cd) LIKE @like_pattern OR LOWER(prod_des) LIKE @like_pattern)
+              {company_clause}
+        GROUP BY prod_cd
+        ORDER BY ytd_amount DESC
+        LIMIT 50
+    """
+    rows = list(client.query(
+        lookup_sql, job_config=bigquery.QueryJobConfig(query_parameters=search_params)
+    ).result())
+
+    products = [
+        {
+            "prod_cd": r.prod_cd,
+            "prod_des": r.prod_des,
+            "mtd_qty": r.mtd_qty,
+            "mtd_amount": r.mtd_amount,
+            "ytd_qty": r.ytd_qty,
+            "ytd_amount": r.ytd_amount,
+        }
+        for r in rows
+    ]
+
+    return {
+        "success": True,
+        "has_data": True,
+        "query": q,
+        "company_id": company_id,
+        "as_of": reference_date.isoformat(),
+        "match_count": len(products),
+        "products": products,
+        "total": {
+            "mtd_qty": sum(p["mtd_qty"] for p in products),
+            "mtd_amount": sum(p["mtd_amount"] for p in products),
+            "ytd_qty": sum(p["ytd_qty"] for p in products),
+            "ytd_amount": sum(p["ytd_amount"] for p in products),
+        },
+    }
+
+
+@app.get("/api/sales/transactions")
+def get_sales_transactions(
+    company_id: str = Query("ALL", description="ASIA, ROBOTICS, RUAMSINTHAI หรือ ALL"),
+    prod_cd: Optional[str] = Query(None, description="กรองเฉพาะรหัสสินค้านี้ (เว้นว่างเพื่อดูทุกสินค้า)"),
+    product_group: Optional[str] = Query(None, description="กรองเฉพาะกลุ่มสินค้านี้ (ใช้ค่าเดียวกับที่ได้จาก by_product_group)"),
+    exclude_groups: Optional[str] = Query(None, description="รายชื่อกลุ่มสินค้าที่ไม่เอา คั่นด้วย , (ใช้ตอนคลิกกลุ่ม 'อื่นๆ')"),
+    vehicle_model: Optional[str] = Query(None, description="กรองเฉพาะรุ่นรถนี้ (ใช้ค่าเดียวกับที่ได้จาก by_vehicle_model)"),
+    exclude_vehicle_models: Optional[str] = Query(None, description="รายชื่อรุ่นรถที่ไม่เอา คั่นด้วย , (ใช้ตอนคลิกรุ่น 'อื่นๆ')"),
+    period: str = Query("mtd", description="mtd (เดือนนี้) หรือ ytd (ปีนี้)"),
+    limit: int = Query(300, ge=1, le=1000, description="จำนวนแถวสูงสุดที่จะแสดง"),
+):
+    """ดึงรายการขายรายตัว (invoice-level) เพื่อ 'คลิกดูรายละเอียด' ว่ายอดรวมประกอบด้วยรายการอะไรบ้าง"""
+    if client is None:
+        raise HTTPException(status_code=500, detail="BigQuery client ไม่พร้อมใช้งาน")
+
+    table_ref = f"{PROJECT_ID}.{DATASET_ID}.{SALES_TABLE}"
+    try:
+        table_obj = client.get_table(table_ref)
+    except Exception:
+        return {"success": True, "has_data": False, "message": "ยังไม่มีข้อมูลยอดขายในระบบ", "rows": [], "total_matched": 0}
+
+    has_vehicle_models_column = any(f.name == "vehicle_models" for f in table_obj.schema)
+    if (vehicle_model or exclude_vehicle_models) and not has_vehicle_models_column:
+        # ตารางเก่ายังไม่มีคอลัมน์นี้ (ยังไม่เคยอัปโหลดไฟล์ใหม่หลังเพิ่มฟีเจอร์รุ่นรถ)
+        return {
+            "success": True,
+            "has_data": False,
+            "message": "ยังไม่มีข้อมูลรุ่นรถในระบบ กรุณาอัปโหลดไฟล์ Excel ใหม่อีกครั้งเพื่อให้ระบบประมวลผลรุ่นรถ",
+            "rows": [],
+            "total_matched": 0,
+        }
+
+    company_clause = "" if company_id == "ALL" else "AND company_id = @company_id"
+    company_param = (
+        [] if company_id == "ALL"
+        else [bigquery.ScalarQueryParameter("company_id", "STRING", company_id)]
+    )
+
+    ref_sql = f"SELECT MAX(transaction_date) AS max_date FROM `{table_ref}` WHERE 1=1 {company_clause}"
+    ref_row = list(client.query(
+        ref_sql, job_config=bigquery.QueryJobConfig(query_parameters=company_param)
+    ).result())[0]
+
+    if ref_row.max_date is None:
+        return {"success": True, "has_data": False, "message": "ยังไม่มีข้อมูลยอดขายของบริษัทที่เลือก", "rows": [], "total_matched": 0}
+
+    reference_date = ref_row.max_date
+    if period == "ytd":
+        start_date = reference_date.replace(month=1, day=1)
+    else:
+        start_date = reference_date.replace(day=1)
+
+    prod_clause = "AND prod_cd = @prod_cd" if prod_cd else ""
+    params = [
+        bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
+    ] + company_param
+    if prod_cd:
+        params.append(bigquery.ScalarQueryParameter("prod_cd", "STRING", prod_cd))
+
+    # กรองตามกลุ่มสินค้า (คลิกจากกราฟวงกลม/รายการกลุ่มสินค้า)
+    group_clause = ""
+    if product_group:
+        group_clause = "AND IFNULL(NULLIF(product_group, ''), 'ไม่ระบุกลุ่ม') = @product_group"
+        params.append(bigquery.ScalarQueryParameter("product_group", "STRING", product_group))
+    elif exclude_groups:
+        names = [g.strip() for g in exclude_groups.split(",") if g.strip()]
+        if names:
+            group_clause = "AND IFNULL(NULLIF(product_group, ''), 'ไม่ระบุกลุ่ม') NOT IN UNNEST(@exclude_groups)"
+            params.append(bigquery.ArrayQueryParameter("exclude_groups", "STRING", names))
+
+    # กรองตามรุ่นรถ (คลิกจากกราฟวงกลม/รายการรุ่นรถ) — vehicle_models เป็นฟิลด์ REPEATED จึงต้องเช็คแบบ IN UNNEST
+    model_clause = ""
+    if vehicle_model:
+        model_clause = "AND @vehicle_model IN UNNEST(vehicle_models)"
+        params.append(bigquery.ScalarQueryParameter("vehicle_model", "STRING", vehicle_model))
+    elif exclude_vehicle_models:
+        names = [m.strip() for m in exclude_vehicle_models.split(",") if m.strip()]
+        if names:
+            model_clause = "AND NOT EXISTS (SELECT 1 FROM UNNEST(vehicle_models) AS vm WHERE vm IN UNNEST(@exclude_vehicle_models))"
+            params.append(bigquery.ArrayQueryParameter("exclude_vehicle_models", "STRING", names))
+
+    count_sql = f"""
+        SELECT COUNT(*) AS total
+        FROM `{table_ref}`
+        WHERE transaction_date >= @start_date {company_clause} {prod_clause} {group_clause} {model_clause}
+    """
+    total_matched = list(client.query(
+        count_sql, job_config=bigquery.QueryJobConfig(query_parameters=params)
+    ).result())[0].total
+
+    rows_sql = f"""
+        SELECT transaction_date, invoice_no, company_id, prod_cd, prod_des,
+               customer_name, qty, unit, unit_price, amount, warehouse_name, technician
+        FROM `{table_ref}`
+        WHERE transaction_date >= @start_date {company_clause} {prod_clause} {group_clause} {model_clause}
+        ORDER BY transaction_date DESC, invoice_no DESC
+        LIMIT @limit_val
+    """
+    params_with_limit = params + [bigquery.ScalarQueryParameter("limit_val", "INT64", limit)]
+    rows = client.query(
+        rows_sql, job_config=bigquery.QueryJobConfig(query_parameters=params_with_limit)
+    ).result()
+
+    return {
+        "success": True,
+        "has_data": True,
+        "as_of": reference_date.isoformat(),
+        "period": period,
+        "start_date": start_date.isoformat(),
+        "company_id": company_id,
+        "prod_cd": prod_cd,
+        "total_matched": total_matched,
+        "rows": [
+            {
+                "transaction_date": r.transaction_date.isoformat() if r.transaction_date else None,
+                "invoice_no": r.invoice_no,
+                "company_id": r.company_id,
+                "prod_cd": r.prod_cd,
+                "prod_des": r.prod_des,
+                "customer_name": r.customer_name,
+                "qty": r.qty,
+                "unit": r.unit,
+                "unit_price": r.unit_price,
+                "amount": r.amount,
+                "warehouse_name": r.warehouse_name,
+                "technician": r.technician,
+            }
+            for r in rows
         ],
     }

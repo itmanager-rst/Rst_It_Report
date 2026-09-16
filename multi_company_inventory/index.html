@@ -5,8 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multi-Company Enterprise Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // โทนสี/ฟอนต์เฉพาะสำหรับหน้า MTD&YTD&SALE (แนวคิด "แผงหน้าปัดเครื่องจักร" อ้างอิงธุรกิจ
+        // ตัวแทนขายรถแทรกเตอร์ยันม่าร์ + หุ่นยนต์อัตโนมัติ + อสังหาฯ) — เป็นการ "เพิ่ม" ชื่อสีใหม่เข้าไปเท่านั้น
+        // ไม่กระทบคลาส Tailwind เดิมที่หน้าอื่นในแอปใช้อยู่
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        yanmar: { DEFAULT: '#C8102E', dark: '#8F0B20', light: '#E23350' },
+                        graphite: { DEFAULT: '#1C1F26', light: '#2A2E38', lighter: '#3A3F4B' },
+                        steel: { DEFAULT: '#3B5166', light: '#5B7690' },
+                        brass: { DEFAULT: '#C08A28', light: '#D9A94E' },
+                        cream: '#F7F5F1',
+                    },
+                    fontFamily: {
+                        gauge: ['"Oswald"', 'sans-serif'],
+                    },
+                }
+            }
+        };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* สกอลบาร์บางแบบกำหนดเอง ใช้กับพื้นที่เลื่อนดูรายการยาวๆ (แทน scrollbar เริ่มต้นของเบราว์เซอร์) */
+        .thin-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .thin-scroll::-webkit-scrollbar-track { background: transparent; }
+        .thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .thin-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+
+        /* มุมหักแบบแผ่นป้ายสเปกเครื่องจักร/แบบวิศวกรรม ใช้เป็นลายเซ็นที่ซ้ำๆ ของหน้า MTD&YTD&SALE เท่านั้น */
+        .spec-corners { position: relative; }
+        .spec-corners::before, .spec-corners::after {
+            content: ''; position: absolute; width: 10px; height: 10px; pointer-events: none;
+        }
+        .spec-corners::before { top: -1px; left: -1px; border-top: 2px solid var(--corner-color, #C8102E); border-left: 2px solid var(--corner-color, #C8102E); }
+        .spec-corners::after { bottom: -1px; right: -1px; border-bottom: 2px solid var(--corner-color, #C8102E); border-right: 2px solid var(--corner-color, #C8102E); }
+
+        .font-gauge { font-family: 'Oswald', sans-serif; }
+        .font-odometer { font-family: 'Roboto Mono', monospace; font-variant-numeric: tabular-nums; }
+    </style>
 </head>
 <body class="bg-slate-100 min-h-screen flex font-sans">
 
@@ -426,105 +468,158 @@
         </div>
 
         <!-- Section 5: หน้า MTD & YTD & SALE (นำเข้า Excel จาก ECOUNT แล้ววิเคราะห์ยอดขาย) -->
-        <div id="viewSales" class="space-y-6 hidden">
-            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                    <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 text-red-600"><i class="fa-solid fa-chart-line"></i></span>
-                        MTD & YTD & SALE
-                    </h1>
-                    <p class="text-slate-500 text-sm mt-1">นำเข้าไฟล์ Excel รายงานยอดขายจาก ECOUNT — ระบบจะ "วางทับ" ข้อมูลเดิมของบริษัทนั้นให้อัตโนมัติ</p>
-                </div>
-                <div class="flex items-center gap-3">
-                    <span id="salesLastUpdated" class="text-xs text-slate-400"></span>
-                    <button onclick="loadSalesSummary()" class="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl transition shadow-md shadow-red-600/20 flex items-center gap-2 text-xs md:text-sm"><i class="fa-solid fa-rotate"></i> รีเฟรช</button>
+        <div id="viewSales" class="space-y-5 hidden">
+            <!-- แผ่นป้ายหัวเรื่อง -->
+            <div class="bg-graphite rounded-sm spec-corners overflow-hidden" style="--corner-color:#C08A28">
+                <div class="h-1 bg-yanmar"></div>
+                <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <div class="text-brass text-[11px] font-gauge tracking-[0.2em] uppercase mb-1">Sales Instrumentation · RST Group</div>
+                        <h1 class="text-3xl font-gauge font-semibold text-white tracking-wide uppercase">MTD &amp; YTD &amp; Sale</h1>
+                        <p class="text-slate-400 text-xs mt-2">นำเข้าไฟล์ Excel รายงานยอดขายจาก ECOUNT — ระบบจะ "วางทับ" ข้อมูลเดิมของบริษัทนั้นให้อัตโนมัติ</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="salesLastUpdated" class="text-[11px] text-slate-400 font-odometer"></span>
+                        <button onclick="loadSalesSummary()" class="bg-yanmar hover:bg-yanmar-dark text-white font-gauge tracking-wide uppercase text-xs px-4 py-2.5 rounded-sm transition flex items-center gap-2"><i class="fa-solid fa-rotate"></i> รีเฟรช</button>
+                    </div>
                 </div>
             </div>
 
             <!-- กล่องนำเข้าไฟล์ Excel -->
-            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
-                <h2 class="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2"><i class="fa-solid fa-file-import text-red-600"></i> นำเข้าไฟล์ยอดขาย (Export จาก ECOUNT)</h2>
-                <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">บริษัท:</label>
-                        <select id="salesUploadCompany" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
+            <div class="bg-white rounded-sm border border-slate-200 overflow-hidden">
+                <div class="bg-graphite-light px-5 py-2.5 flex items-center gap-2">
+                    <i class="fa-solid fa-file-import text-brass text-xs"></i>
+                    <h2 class="text-[11px] font-gauge tracking-[0.15em] text-slate-200 uppercase">นำเข้าไฟล์ยอดขาย (Export จาก ECOUNT)</h2>
+                </div>
+                <div class="p-5">
+                    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-2">บริษัท:</label>
+                            <select id="salesUploadCompany" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-sm p-2.5 focus:ring-2 focus:ring-yanmar focus:outline-none font-medium">
+                                <option value="ASIA">🏢 ASIA</option>
+                                <option value="ROBOTICS">🤖 ROBOTICS</option>
+                                <option value="RUAMSINTHAI">🇹🇭 RUAMSINTHAI</option>
+                            </select>
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-2">ไฟล์ Excel (.xlsx):</label>
+                            <input type="file" id="salesUploadFile" accept=".xlsx,.xlsm" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-sm p-2 focus:ring-2 focus:ring-yanmar focus:outline-none text-xs">
+                        </div>
+                        <div>
+                            <button id="btnUploadSales" onclick="uploadSalesFile(this)" class="w-full bg-graphite hover:bg-graphite-light text-white font-gauge tracking-wide uppercase text-xs px-4 py-3 rounded-sm transition flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-cloud-arrow-up"></i> อัปโหลด &amp; วางทับข้อมูลเดิม
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-brass mt-2"><i class="fa-solid fa-triangle-exclamation"></i> การอัปโหลดจะลบข้อมูลยอดขาย "เดิมของบริษัทที่เลือก" ทั้งหมด แล้วแทนที่ด้วยข้อมูลในไฟล์ใหม่ (บริษัทอื่นไม่ถูกกระทบ)</p>
+                    <div id="salesUploadStatus" class="mt-3 text-xs"></div>
+                </div>
+            </div>
+
+            <!-- ตัวกรองบริษัท + ค้นหาสินค้า/รุ่น -->
+            <div class="bg-white rounded-sm border border-slate-200 p-5">
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <div class="lg:col-span-2">
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-2">ดูสรุปยอดขายของ</label>
+                        <select id="salesCompanyFilter" onchange="loadSalesSummary()" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-sm p-2.5 focus:ring-2 focus:ring-yanmar focus:outline-none font-medium">
+                            <option value="ALL">🌐 ดูทุกบริษัท (Overview)</option>
                             <option value="ASIA">🏢 ASIA</option>
                             <option value="ROBOTICS">🤖 ROBOTICS</option>
                             <option value="RUAMSINTHAI">🇹🇭 RUAMSINTHAI</option>
                         </select>
                     </div>
-                    <div class="lg:col-span-2">
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ไฟล์ Excel (.xlsx):</label>
-                        <input type="file" id="salesUploadFile" accept=".xlsx,.xlsm" class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2 focus:ring-2 focus:ring-red-500 focus:outline-none text-xs">
-                    </div>
-                    <div>
-                        <button id="btnUploadSales" onclick="uploadSalesFile(this)" class="w-full bg-slate-900 hover:bg-black text-white font-medium px-4 py-2.5 rounded-xl transition shadow-md flex items-center justify-center gap-2 text-sm">
-                            <i class="fa-solid fa-cloud-arrow-up"></i> อัปโหลด & วางทับข้อมูลเดิม
-                        </button>
-                    </div>
-                </div>
-                <p class="text-[11px] text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation"></i> การอัปโหลดจะลบข้อมูลยอดขาย "เดิมของบริษัทที่เลือก" ทั้งหมด แล้วแทนที่ด้วยข้อมูลในไฟล์ใหม่ (บริษัทอื่นไม่ถูกกระทบ)</p>
-                <div id="salesUploadStatus" class="mt-3 text-xs"></div>
-            </div>
-
-            <!-- ตัวกรองบริษัทสำหรับดูสรุป -->
-            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-4">
-                <label class="block text-xs font-bold text-slate-500 uppercase mb-2">ดูสรุปยอดขายของ:</label>
-                <select id="salesCompanyFilter" onchange="loadSalesSummary()" class="w-full md:w-72 bg-slate-50 border border-slate-300 text-slate-700 rounded-xl p-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none font-medium">
-                    <option value="ALL">🌐 ดูทุกบริษัท (Overview)</option>
-                    <option value="ASIA">🏢 ASIA</option>
-                    <option value="ROBOTICS">🤖 ROBOTICS</option>
-                    <option value="RUAMSINTHAI">🇹🇭 RUAMSINTHAI</option>
-                </select>
-            </div>
-
-            <!-- KPI Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div class="rounded-2xl border border-red-100 bg-red-50 p-4">
-                    <div class="text-xs uppercase text-red-700 mb-1">ยอดขาย MTD (เดือนนี้)</div>
-                    <div id="salesStatMTD" class="text-2xl font-bold text-red-800">฿0</div>
-                </div>
-                <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                    <div class="text-xs uppercase text-emerald-700 mb-1">ยอดขาย YTD (ปีนี้)</div>
-                    <div id="salesStatYTD" class="text-2xl font-bold text-emerald-700">฿0</div>
-                </div>
-                <div class="rounded-2xl border border-sky-100 bg-sky-50 p-4">
-                    <div class="text-xs uppercase text-sky-700 mb-1">จำนวนใบขาย (ทั้งหมด)</div>
-                    <div id="salesStatInvoices" class="text-2xl font-bold text-sky-700">0</div>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-slate-100 p-4">
-                    <div class="text-xs uppercase text-slate-700 mb-1">ช่วงข้อมูลที่มี</div>
-                    <div id="salesStatRange" class="text-sm font-bold text-slate-800">-</div>
-                </div>
-            </div>
-
-            <!-- กราฟแนวโน้มยอดขายรายเดือน (เส้น) + สัดส่วนตามกลุ่มสินค้า (วงกลม) -->
-            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div class="xl:col-span-2 bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
-                    <h2 class="text-sm font-bold text-slate-700 uppercase mb-3">แนวโน้มยอดขายรายเดือน (12 เดือนล่าสุด)</h2>
-                    <div class="h-72">
-                        <canvas id="salesTrendChart"></canvas>
+                    <div class="lg:col-span-3">
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-2">ค้นหายอดขาย MTD/YTD ของสินค้า/รุ่นที่ต้องการ</label>
+                        <div class="flex gap-3">
+                            <div class="relative flex-1">
+                                <input type="text" id="salesProductSearchInput" onkeydown="if(event.key==='Enter'){searchSalesProduct();}" placeholder="รหัสสินค้า หรือ ชื่อ/รุ่นสินค้า เช่น TF160R, น้ำมันไฮดรอลิก..." class="w-full bg-slate-50 border border-slate-300 text-slate-700 rounded-sm p-2.5 pl-10 focus:ring-2 focus:ring-yanmar focus:outline-none">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3.5 text-slate-400 text-sm"></i>
+                            </div>
+                            <button onclick="searchSalesProduct()" class="bg-yanmar hover:bg-yanmar-dark text-white font-gauge tracking-wide uppercase text-xs px-5 py-2.5 rounded-sm transition whitespace-nowrap">
+                                ค้นหา
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
-                    <h2 class="text-sm font-bold text-slate-700 uppercase mb-3">สัดส่วนยอดขายตามกลุ่มสินค้า (เดือนนี้)</h2>
-                    <div class="h-72">
+                <div id="salesProductSearchResults" class="mt-4"></div>
+            </div>
+
+            <!-- แผงมาตรวัด KPI -->
+            <div class="bg-graphite rounded-sm overflow-hidden spec-corners" style="--corner-color:#3B5166">
+                <div class="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-graphite-lighter">
+                    <div class="p-5">
+                        <div class="flex items-center gap-1.5 mb-2">
+                            <span class="w-2 h-2 rounded-full bg-yanmar"></span>
+                            <span class="text-[10px] font-gauge tracking-[0.15em] text-slate-400 uppercase">ยอดขาย MTD (เดือนนี้)</span>
+                        </div>
+                        <div id="salesStatMTD" class="text-2xl font-odometer font-bold text-white truncate">฿0</div>
+                    </div>
+                    <div class="p-5">
+                        <div class="flex items-center gap-1.5 mb-2">
+                            <span class="w-2 h-2 rounded-full bg-brass"></span>
+                            <span class="text-[10px] font-gauge tracking-[0.15em] text-slate-400 uppercase">ยอดขาย YTD (ปีนี้)</span>
+                        </div>
+                        <div id="salesStatYTD" class="text-2xl font-odometer font-bold text-white truncate">฿0</div>
+                    </div>
+                    <div class="p-5">
+                        <div class="flex items-center gap-1.5 mb-2">
+                            <span class="w-2 h-2 rounded-full bg-steel-light"></span>
+                            <span class="text-[10px] font-gauge tracking-[0.15em] text-slate-400 uppercase">จำนวนใบขาย (ทั้งหมด)</span>
+                        </div>
+                        <div id="salesStatInvoices" class="text-2xl font-odometer font-bold text-white truncate">0</div>
+                    </div>
+                    <div class="p-5">
+                        <div class="flex items-center gap-1.5 mb-2">
+                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                            <span class="text-[10px] font-gauge tracking-[0.15em] text-slate-400 uppercase">ช่วงข้อมูลที่มี</span>
+                        </div>
+                        <div id="salesStatRange" class="text-sm font-odometer font-semibold text-slate-200 truncate">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- กราฟแนวโน้มยอดขายรายเดือน (เส้น) -->
+            <div class="bg-white rounded-sm border border-slate-200 overflow-hidden">
+                <div class="bg-graphite-light px-5 py-2.5 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-area text-yanmar-light text-xs"></i>
+                    <h2 class="text-[11px] font-gauge tracking-[0.15em] text-slate-200 uppercase">แนวโน้มยอดขายรายเดือน (12 เดือนล่าสุด)</h2>
+                </div>
+                <div class="h-72 p-5">
+                    <canvas id="salesTrendChart"></canvas>
+                </div>
+            </div>
+
+            <!-- สัดส่วนตามกลุ่มสินค้า (วงกลม) -->
+            <div class="bg-white rounded-sm border border-slate-200 overflow-hidden">
+                <div class="bg-graphite-light px-5 py-2.5 flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-yanmar-light text-xs"></i>
+                        <h2 class="text-[11px] font-gauge tracking-[0.15em] text-slate-200 uppercase">สัดส่วนยอดขายตามกลุ่มสินค้า (เดือนนี้)</h2>
+                    </div>
+                    <span class="text-[10px] text-slate-400">คลิกเพื่อดูรายการขาย</span>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 p-5">
+                    <div class="lg:col-span-2 h-64">
                         <canvas id="salesGroupPieChart"></canvas>
                     </div>
+                    <div id="salesGroupLegendList" class="lg:col-span-3 space-y-2 max-h-64 overflow-auto thin-scroll pr-1"></div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
                 <!-- ยอดขายแยกตามบริษัท -->
-                <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
-                    <div class="p-4 border-b border-slate-100 font-bold text-sm text-slate-700">สรุปยอดขายแยกตามบริษัท</div>
-                    <div class="overflow-auto max-h-96">
+                <div class="bg-white rounded-sm overflow-hidden border border-slate-200">
+                    <div class="bg-graphite-light px-5 py-2.5 flex items-center gap-2">
+                        <i class="fa-solid fa-building text-yanmar-light text-xs"></i>
+                        <h2 class="text-[11px] font-gauge tracking-[0.15em] text-slate-200 uppercase">สรุปยอดขายแยกตามบริษัท</h2>
+                    </div>
+                    <div class="overflow-auto max-h-96 thin-scroll">
                         <table class="w-full text-left border-collapse text-xs">
                             <thead class="sticky top-0 z-10">
-                                <tr class="bg-slate-900 text-white uppercase tracking-wider text-[11px]">
-                                    <th class="p-3">บริษัท</th>
-                                    <th class="p-3 text-right">MTD</th>
-                                    <th class="p-3 text-right">YTD</th>
+                                <tr class="bg-graphite text-slate-300 uppercase tracking-wider text-[11px]">
+                                    <th class="p-3 font-gauge font-normal">บริษัท</th>
+                                    <th class="p-3 text-right font-gauge font-normal">MTD</th>
+                                    <th class="p-3 text-right font-gauge font-normal">YTD</th>
                                 </tr>
                             </thead>
                             <tbody id="salesByCompanyTable" class="divide-y divide-slate-200 text-slate-700">
@@ -535,24 +630,63 @@
                 </div>
 
                 <!-- สินค้าขายดี MTD -->
-                <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
-                    <div class="p-4 border-b border-slate-100 font-bold text-sm text-slate-700">สินค้าขายดี (เดือนนี้)</div>
-                    <div class="overflow-auto max-h-96">
+                <div class="bg-white rounded-sm overflow-hidden border border-slate-200">
+                    <div class="bg-graphite-light px-5 py-2.5 flex items-center gap-2">
+                        <i class="fa-solid fa-ranking-star text-yanmar-light text-xs"></i>
+                        <h2 class="text-[11px] font-gauge tracking-[0.15em] text-slate-200 uppercase">สินค้าขายดี (เดือนนี้)</h2>
+                    </div>
+                    <div class="overflow-auto max-h-96 thin-scroll">
                         <table class="w-full text-left border-collapse text-xs">
                             <thead class="sticky top-0 z-10">
-                                <tr class="bg-slate-900 text-white uppercase tracking-wider text-[11px]">
-                                    <th class="p-3">รหัสสินค้า</th>
-                                    <th class="p-3">รายละเอียดสินค้า</th>
-                                    <th class="p-3 text-right">จำนวน</th>
-                                    <th class="p-3 text-right">ยอดขาย</th>
+                                <tr class="bg-graphite text-slate-300 uppercase tracking-wider text-[11px]">
+                                    <th class="p-3 w-10 font-gauge font-normal">#</th>
+                                    <th class="p-3 font-gauge font-normal">รหัสสินค้า</th>
+                                    <th class="p-3 font-gauge font-normal">รายละเอียดสินค้า</th>
+                                    <th class="p-3 text-right font-gauge font-normal">จำนวน</th>
+                                    <th class="p-3 text-right font-gauge font-normal">ยอดขาย</th>
                                 </tr>
                             </thead>
                             <tbody id="salesTopProductsTable" class="divide-y divide-slate-200 text-slate-700">
-                                <tr><td colspan="4" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล...</td></tr>
+                                <tr><td colspan="5" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Modal: คลิกดูรายละเอียดรายการขายย่อย (Drill-down) -->
+        <div id="salesDrilldownModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div class="bg-white rounded-sm shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+                <div class="flex items-center justify-between p-5 bg-graphite">
+                    <div>
+                        <h3 id="salesDrilldownTitle" class="text-lg font-gauge tracking-wide text-white">รายการขาย</h3>
+                        <p id="salesDrilldownSubtitle" class="text-xs text-slate-400 mt-0.5"></p>
+                    </div>
+                    <button onclick="closeSalesDrilldownModal()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-graphite-light text-slate-300 text-lg">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="overflow-auto flex-1 p-0 thin-scroll">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-graphite-light text-slate-300 uppercase tracking-wider text-[11px]">
+                                <th class="p-3 font-gauge font-normal">วันที่</th>
+                                <th class="p-3 font-gauge font-normal">เลขที่ใบขาย</th>
+                                <th class="p-3 font-gauge font-normal">บริษัท</th>
+                                <th class="p-3 font-gauge font-normal">ลูกค้า</th>
+                                <th class="p-3 text-right font-gauge font-normal">จำนวน</th>
+                                <th class="p-3 text-right font-gauge font-normal">ราคา/หน่วย</th>
+                                <th class="p-3 text-right font-gauge font-normal">ยอดขาย</th>
+                                <th class="p-3 font-gauge font-normal">คลัง</th>
+                            </tr>
+                        </thead>
+                        <tbody id="salesDrilldownTableBody" class="divide-y divide-slate-200 text-slate-700">
+                            <tr><td colspan="8" class="p-8 text-center text-slate-400">กำลังโหลด...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="salesDrilldownFooter" class="p-3 border-t border-slate-100 text-xs text-slate-500 text-center"></div>
             </div>
         </div>
 
@@ -570,10 +704,16 @@
 
         const getApiBaseUrl = () => {
             const host = window.location.hostname;
+            // กรณีพัฒนา/ทดสอบด้วย VSCode Live Server (หรือเปิดไฟล์ file://) ซึ่ง frontend มักรันคนละพอร์ต
+            // กับ backend (เช่น Live Server ที่ 127.0.0.1:5500 แต่ backend รันที่ 127.0.0.1:8000)
+            // ให้ชี้ไปที่ backend dev server ที่ port 8000 เสมอ ไม่ว่า frontend จะรันที่พอร์ตไหนก็ตาม
             if (host === 'localhost' || host === '127.0.0.1' || window.location.protocol === 'file:') {
                 return 'http://127.0.0.1:8000';
             }
-            return 'https://multi-company-inventory-api.onrender.com';
+            // กรณีอื่นๆ ทั้งหมด (Render, คอมออฟฟิศผ่าน LAN IP เช่น 192.168.10.253 ฯลฯ)
+            // frontend ถูก serve ออกมาจาก backendตัวเดียวกันอยู่แล้วเสมอ (คนละไฟล์แต่ host เดียวกัน)
+            // ใช้ origin เดียวกับหน้าเว็บที่เปิดอยู่ จะได้ไม่ต้องแก้โค้ดทุกครั้งที่ย้ายเซิร์ฟเวอร์
+            return window.location.origin;
         };
 
         const API_BASE_URL = getApiBaseUrl();
@@ -1283,16 +1423,107 @@
         // ===================== MTD & YTD & SALE =====================
         let salesTrendChartInstance = null;
         let salesGroupPieChartInstance = null;
+        let lastSalesSearchProducts = [];
+        let lastSalesSearchCompanyId = 'ALL';
 
         const SALES_PIE_COLORS = [
-            '#dc2626', '#f97316', '#f59e0b', '#10b981',
-            '#0ea5e9', '#6366f1', '#a855f7', '#94a3b8'
+            '#C8102E', '#3B5166', '#C08A28', '#5B7690',
+            '#8F0B20', '#1C1F26', '#D9A94E', '#94a3b8'
         ];
 
         function formatBaht(n) {
             n = Number(n) || 0;
             return `฿${n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         }
+
+        function escAttr(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // เปิด modal ดูรายการขายย่อย (คลิกจากตาราง "สรุปยอดขายแยกตามบริษัท" หรือ "สินค้าขายดี")
+        async function openSalesDrilldownModal({ companyId, prodCd, period, title, subtitle, productGroup, excludeGroups, vehicleModel, excludeVehicleModels }) {
+            const modal = document.getElementById('salesDrilldownModal');
+            const tbody = document.getElementById('salesDrilldownTableBody');
+            const footer = document.getElementById('salesDrilldownFooter');
+            document.getElementById('salesDrilldownTitle').innerText = title || 'รายการขาย';
+            document.getElementById('salesDrilldownSubtitle').innerText = subtitle || '';
+            tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังโหลด...</td></tr>';
+            footer.innerText = '';
+            modal.classList.remove('hidden');
+
+            try {
+                const params = new URLSearchParams({
+                    company_id: companyId || 'ALL',
+                    period: period || 'mtd',
+                    limit: '300',
+                });
+                if (prodCd) params.set('prod_cd', prodCd);
+                if (productGroup) params.set('product_group', productGroup);
+                if (excludeGroups && excludeGroups.length) params.set('exclude_groups', excludeGroups.join(','));
+                if (vehicleModel) params.set('vehicle_model', vehicleModel);
+                if (excludeVehicleModels && excludeVehicleModels.length) params.set('exclude_vehicle_models', excludeVehicleModels.join(','));
+
+                const res = await fetch(`${API_BASE_URL}/api/sales/transactions?${params.toString()}`);
+                const data = await res.json();
+
+                if (!data.success || !data.has_data || !data.rows || data.rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400">ไม่พบรายการขาย</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.rows.map(r => `
+                    <tr>
+                        <td class="p-3 whitespace-nowrap">${r.transaction_date || '-'}</td>
+                        <td class="p-3 font-mono">${r.invoice_no || '-'}</td>
+                        <td class="p-3">${r.company_id || '-'}</td>
+                        <td class="p-3">${r.customer_name || '-'}</td>
+                        <td class="p-3 text-right">${Number(r.qty || 0).toLocaleString()} ${r.unit || ''}</td>
+                        <td class="p-3 text-right">${formatBaht(r.unit_price)}</td>
+                        <td class="p-3 text-right font-medium text-emerald-600">${formatBaht(r.amount)}</td>
+                        <td class="p-3">${r.warehouse_name || '-'}</td>
+                    </tr>
+                `).join('');
+
+                footer.innerText = data.total_matched > data.rows.length
+                    ? `แสดง ${data.rows.length.toLocaleString()} จากทั้งหมด ${data.total_matched.toLocaleString()} รายการ (เรียงตามวันที่ล่าสุด)`
+                    : `ทั้งหมด ${data.rows.length.toLocaleString()} รายการ`;
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-red-500">❌ ไม่สามารถโหลดข้อมูลได้</td></tr>';
+            }
+        }
+
+        function closeSalesDrilldownModal() {
+            document.getElementById('salesDrilldownModal').classList.add('hidden');
+        }
+
+        // เปิด drill-down จากตารางผลค้นหาสินค้า (อ้างอิง index ในอาร์เรย์ผลค้นหาล่าสุด)
+        function openSalesDrilldownFromSearch(idx, period) {
+            const p = lastSalesSearchProducts[idx];
+            if (!p) return;
+            openSalesDrilldownModal({
+                companyId: lastSalesSearchCompanyId,
+                prodCd: p.prod_cd,
+                period: period,
+                title: `รายการขาย: ${p.prod_des || p.prod_cd || '-'}`,
+                subtitle: `รหัสสินค้า ${p.prod_cd || '-'} — ${period === 'ytd' ? 'ปีนี้ (YTD)' : 'เดือนนี้ (MTD)'}`,
+            });
+        }
+
+        // Event delegation: คลิกแถวที่มี class sales-drill-row (ตาราง "แยกตามบริษัท" และ "สินค้าขายดี")
+        document.addEventListener('click', (e) => {
+            const row = e.target.closest('.sales-drill-row');
+            if (!row) return;
+            openSalesDrilldownModal({
+                companyId: row.dataset.companyId || 'ALL',
+                prodCd: row.dataset.prodCd || null,
+                period: row.dataset.period || 'mtd',
+                title: row.dataset.title || 'รายการขาย',
+                subtitle: row.dataset.subtitle || '',
+            });
+        });
 
         async function uploadSalesFile(btn) {
             const companyId = document.getElementById('salesUploadCompany').value;
@@ -1338,6 +1569,79 @@
             }
         }
 
+        async function searchSalesProduct() {
+            const q = document.getElementById('salesProductSearchInput').value.trim();
+            const companyId = document.getElementById('salesCompanyFilter').value;
+            const resultsBox = document.getElementById('salesProductSearchResults');
+
+            if (!q) {
+                resultsBox.innerHTML = '<div class="text-xs text-amber-600">⚠️ กรุณาพิมพ์คำค้นหาก่อน</div>';
+                return;
+            }
+
+            resultsBox.innerHTML = '<div class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังค้นหา...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/sales/product-lookup?q=${encodeURIComponent(q)}&company_id=${encodeURIComponent(companyId)}`);
+                const data = await res.json();
+
+                if (!data.success || !data.has_data) {
+                    resultsBox.innerHTML = `<div class="text-xs text-slate-400">${data.message || 'ไม่พบข้อมูล'}</div>`;
+                    return;
+                }
+
+                if (!data.products || data.products.length === 0) {
+                    resultsBox.innerHTML = `<div class="text-xs text-slate-400">ไม่พบสินค้าที่ตรงกับ "${q}"</div>`;
+                    return;
+                }
+
+                lastSalesSearchProducts = data.products;
+                lastSalesSearchCompanyId = companyId;
+
+                const rowsHtml = data.products.map((p, idx) => `
+                    <tr>
+                        <td class="p-3 font-mono">${p.prod_cd || '-'}</td>
+                        <td class="p-3">${p.prod_des || '-'}</td>
+                        <td class="p-3 text-right">${Number(p.mtd_qty || 0).toLocaleString()}</td>
+                        <td class="p-3 text-right font-medium text-red-600 cursor-pointer hover:underline" onclick="openSalesDrilldownFromSearch(${idx}, 'mtd')">${formatBaht(p.mtd_amount)} <i class="fa-solid fa-magnifying-glass text-[10px] text-slate-300"></i></td>
+                        <td class="p-3 text-right">${Number(p.ytd_qty || 0).toLocaleString()}</td>
+                        <td class="p-3 text-right font-medium text-emerald-600 cursor-pointer hover:underline" onclick="openSalesDrilldownFromSearch(${idx}, 'ytd')">${formatBaht(p.ytd_amount)} <i class="fa-solid fa-magnifying-glass text-[10px] text-slate-300"></i></td>
+                    </tr>
+                `).join('');
+
+                resultsBox.innerHTML = `
+                    <div class="text-xs text-slate-500 mb-2">พบ ${data.match_count} รายการที่ตรงกับ "${q}"</div>
+                    <div class="overflow-auto max-h-80 border border-slate-200 rounded-xl thin-scroll">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="bg-slate-900 text-white uppercase tracking-wider text-[11px]">
+                                    <th class="p-3">รหัสสินค้า</th>
+                                    <th class="p-3">รายละเอียดสินค้า</th>
+                                    <th class="p-3 text-right">จำนวน (MTD)</th>
+                                    <th class="p-3 text-right">ยอดขาย (MTD)</th>
+                                    <th class="p-3 text-right">จำนวน (YTD)</th>
+                                    <th class="p-3 text-right">ยอดขาย (YTD)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 text-slate-700">
+                                ${rowsHtml}
+                                <tr class="bg-slate-50 font-bold">
+                                    <td class="p-3" colspan="2">รวมทั้งหมด</td>
+                                    <td class="p-3 text-right">${Number(data.total.mtd_qty).toLocaleString()}</td>
+                                    <td class="p-3 text-right text-red-600">${formatBaht(data.total.mtd_amount)}</td>
+                                    <td class="p-3 text-right">${Number(data.total.ytd_qty).toLocaleString()}</td>
+                                    <td class="p-3 text-right text-emerald-600">${formatBaht(data.total.ytd_amount)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (err) {
+                console.error(err);
+                resultsBox.innerHTML = `<div class="text-xs text-red-600">❌ ไม่สามารถเชื่อมต่อ API ได้ (${API_BASE_URL})</div>`;
+            }
+        }
+
         async function loadSalesSummary() {
             const companyId = document.getElementById('salesCompanyFilter').value;
             const lastUpdated = document.getElementById('salesLastUpdated');
@@ -1359,7 +1663,7 @@
                     document.getElementById('salesByCompanyTable').innerHTML =
                         '<tr><td colspan="3" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล กรุณาอัปโหลดไฟล์ Excel ก่อน</td></tr>';
                     document.getElementById('salesTopProductsTable').innerHTML =
-                        '<tr><td colspan="4" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
+                        '<tr><td colspan="5" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
                     renderSalesTrendChart([]);
                     renderSalesGroupPieChart([]);
                     return;
@@ -1373,22 +1677,35 @@
                     : '-';
                 lastUpdated.innerText = `ข้อมูลล่าสุดในระบบ ณ วันที่ ${data.as_of}`;
 
-                document.getElementById('salesByCompanyTable').innerHTML = (data.by_company || []).map(c => `
-                    <tr>
-                        <td class="p-3 font-bold">${c.company_id}</td>
+                document.getElementById('salesByCompanyTable').innerHTML = (data.by_company || []).map(c => {
+                    const asOfMonth = (data.as_of || '').slice(0, 7);
+                    const lastMonth = (c.last_date || '').slice(0, 7);
+                    const isStale = c.last_date && lastMonth !== asOfMonth;
+                    return `
+                    <tr class="cursor-pointer hover:bg-red-50 sales-drill-row" data-company-id="${escAttr(c.company_id)}" data-prod-cd="" data-period="mtd" data-title="${escAttr('รายการขาย: ' + c.company_id)}" data-subtitle="${escAttr('เดือนนี้ (MTD)')}">
+                        <td class="p-3">
+                            <div class="font-bold text-slate-800">${c.company_id} <i class="fa-solid fa-magnifying-glass text-[10px] text-slate-300 ml-1"></i></div>
+                            <div class="text-[10px] mt-0.5 ${isStale ? 'text-amber-600' : 'text-slate-400'}">
+                                ${c.last_date ? `ข้อมูลล่าสุด: ${c.last_date}${isStale ? ' (ยังไม่มีข้อมูลเดือนนี้)' : ''}` : 'ไม่มีข้อมูล'}
+                            </div>
+                        </td>
                         <td class="p-3 text-right">${formatBaht(c.mtd_amount)}</td>
                         <td class="p-3 text-right">${formatBaht(c.ytd_amount)}</td>
                     </tr>
-                `).join('') || '<tr><td colspan="3" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
+                `;
+                }).join('') || '<tr><td colspan="3" class="p-8 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
 
-                document.getElementById('salesTopProductsTable').innerHTML = (data.top_products || []).map(p => `
-                    <tr>
-                        <td class="p-3 font-mono">${p.prod_cd || '-'}</td>
+                document.getElementById('salesTopProductsTable').innerHTML = (data.top_products || []).map((p, idx) => `
+                    <tr class="cursor-pointer hover:bg-red-50 sales-drill-row" data-company-id="${escAttr(companyId)}" data-prod-cd="${escAttr(p.prod_cd || '')}" data-period="mtd" data-title="${escAttr('รายการขาย: ' + (p.prod_des || p.prod_cd || '-'))}" data-subtitle="${escAttr('รหัสสินค้า ' + (p.prod_cd || '-') + ' — เดือนนี้ (MTD)')}">
+                        <td class="p-3 text-slate-400">${idx < 3
+                            ? `<span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[10px] font-bold" style="background:${['#C8102E','#C08A28','#3B5166'][idx]}">${idx + 1}</span>`
+                            : `<span class="text-[11px]">${idx + 1}</span>`}</td>
+                        <td class="p-3 font-mono">${p.prod_cd || '-'} <i class="fa-solid fa-magnifying-glass text-[10px] text-slate-300 ml-1"></i></td>
                         <td class="p-3">${p.prod_des || '-'}</td>
                         <td class="p-3 text-right">${Number(p.qty || 0).toLocaleString()}</td>
                         <td class="p-3 text-right font-medium text-emerald-600">${formatBaht(p.amount)}</td>
                     </tr>
-                `).join('') || '<tr><td colspan="4" class="p-8 text-center text-slate-400">ไม่มียอดขายในเดือนนี้</td></tr>';
+                `).join('') || '<tr><td colspan="5" class="p-8 text-center text-slate-400">ไม่มียอดขายในเดือนนี้</td></tr>';
 
                 renderSalesTrendChart(data.monthly_trend || []);
                 renderSalesGroupPieChart(data.by_product_group || []);
@@ -1438,6 +1755,12 @@
             const ctx = document.getElementById('salesGroupPieChart').getContext('2d');
             const labels = byProductGroup.map(g => g.group || 'ไม่ระบุกลุ่ม');
             const values = byProductGroup.map(g => Number(g.amount) || 0);
+            const total = values.reduce((a, b) => a + b, 0);
+
+            // เก็บชื่อกลุ่ม "หลัก" (ไม่รวม "อื่นๆ") ไว้ใช้ตอนคลิก "อื่นๆ" เพื่อ exclude ออกจากการค้นหา
+            const knownGroupNames = byProductGroup
+                .filter(g => (g.group || '') !== 'อื่นๆ')
+                .map(g => g.group || 'ไม่ระบุกลุ่ม');
 
             if (salesGroupPieChartInstance) {
                 salesGroupPieChartInstance.destroy();
@@ -1457,12 +1780,18 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (evt, elements) => {
+                        if (!elements || elements.length === 0) return;
+                        openSalesGroupDrilldown(elements[0].index, byProductGroup, knownGroupNames);
+                    },
+                    onHover: (evt, elements) => {
+                        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
                     plugins: {
                         legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
                         tooltip: {
                             callbacks: {
                                 label: (item) => {
-                                    const total = values.reduce((a, b) => a + b, 0);
                                     const pct = total > 0 ? ((item.parsed / total) * 100).toFixed(1) : 0;
                                     return `${item.label}: ${formatBaht(item.parsed)} (${pct}%)`;
                                 }
@@ -1470,6 +1799,51 @@
                         }
                     }
                 }
+            });
+
+            // รายการกลุ่มสินค้าแบบคลิกได้ข้างกราฟ พร้อมแถบเปอร์เซ็นต์ให้เทียบสัดส่วนได้ง่ายด้วยตา
+            document.getElementById('salesGroupLegendList').innerHTML = byProductGroup.map((g, idx) => {
+                const amount = Number(g.amount) || 0;
+                const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : 0;
+                const color = SALES_PIE_COLORS[idx % SALES_PIE_COLORS.length];
+                return `
+                    <div class="px-3 py-2 rounded-xl hover:bg-red-50 cursor-pointer transition" onclick="openSalesGroupDrilldown(${idx}, salesGroupLegendData, salesGroupLegendKnownNames)">
+                        <div class="flex items-center justify-between text-xs mb-1.5">
+                            <span class="flex items-center gap-2 truncate font-medium text-slate-700">
+                                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${color}"></span>
+                                <span class="truncate">${g.group || 'ไม่ระบุกลุ่ม'}</span>
+                            </span>
+                            <span class="flex items-baseline gap-2 shrink-0 ml-2">
+                                <span class="text-slate-800 font-semibold tabular-nums">${formatBaht(amount)}</span>
+                                <span class="text-slate-400 w-10 text-right tabular-nums">${pct}%</span>
+                            </span>
+                        </div>
+                        <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div class="h-full rounded-full" style="width:${pct}%; background:${color}"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('') || '<div class="text-xs text-slate-400 px-2">ไม่มีข้อมูล</div>';
+
+            // เก็บไว้ให้ onclick ของ legend list เรียกใช้ได้ (เลี่ยงปัญหา escape ชื่อกลุ่มที่มีอักขระพิเศษ)
+            window.salesGroupLegendData = byProductGroup;
+            window.salesGroupLegendKnownNames = knownGroupNames;
+        }
+
+        // เปิด modal ดูรายการขายภายในกลุ่มสินค้าที่คลิก (รองรับกลุ่ม "อื่นๆ" ด้วย)
+        function openSalesGroupDrilldown(idx, groupData, knownGroupNames) {
+            const g = groupData[idx];
+            if (!g) return;
+            const companyId = document.getElementById('salesCompanyFilter').value;
+            const isOthers = (g.group || '') === 'อื่นๆ';
+
+            openSalesDrilldownModal({
+                companyId: companyId,
+                period: 'mtd',
+                title: `รายการขาย: กลุ่ม ${g.group || 'ไม่ระบุกลุ่ม'}`,
+                subtitle: 'เดือนนี้ (MTD)',
+                productGroup: isOthers ? null : g.group,
+                excludeGroups: isOthers ? knownGroupNames : null,
             });
         }
 
