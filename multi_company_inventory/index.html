@@ -151,6 +151,10 @@
                         <i class="fa-solid fa-clock w-4 text-center text-orange-400"></i>
                         <span class="truncate">บันทึกเวลา & สแกนหน้า (กุฉิ)</span>
                     </a>
+                    <a href="https://rst-code.github.io/Salepromofinder/" target="_blank" class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-tags w-4 text-center text-red-400"></i>
+                        <span class="truncate">Sale Promo Finder</span>
+                    </a>
                 </div>
             </div>
         </nav>
@@ -162,6 +166,17 @@
 
     <!-- 2. Main Content ด้านขวา -->
     <main class="flex-1 p-6 space-y-6 overflow-y-auto">
+
+        <!-- Global error banner: ใช้แสดง error ที่ชัดเจนจาก backend (เช่น Ecount ถูกบล็อก IP, code 205) แทนการค้างหน้าจอเงียบๆ -->
+        <div id="globalErrorBanner" class="hidden bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 flex items-start justify-between gap-3">
+            <div class="flex items-start gap-2">
+                <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                <span id="globalErrorBannerText" class="text-sm font-medium"></span>
+            </div>
+            <button onclick="hideGlobalError()" class="text-red-500 hover:text-red-700 shrink-0" title="ปิด">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
 
         <!-- Header สถานะระบบ -->
         <div class="bg-slate-900 text-white rounded-2xl shadow-lg p-4 flex flex-wrap items-center justify-between gap-4 border border-slate-800">
@@ -176,7 +191,7 @@
                         <i class="fa-solid fa-plug"></i>
                     </button>
                 </div>
-                <div class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+                <div id="ecountStatusWrap" class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700" title="">
                     <span class="relative flex h-3 w-3">
                         <span id="ecountStatusPing" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span id="ecountStatusDot" class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
@@ -387,16 +402,18 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
-                    <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-chart-column text-red-600"></i> สรุปยอดค่าใช้จ่ายแยกตามบริษัท (บาท)
+                    <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center justify-between gap-2">
+                        <span class="flex items-center gap-2"><i class="fa-solid fa-chart-column text-red-600"></i> สรุปยอดค่าใช้จ่ายแยกตามบริษัท (บาท)</span>
+                        <span class="text-[10px] font-normal text-slate-400">คลิกที่แท่งกราฟเพื่อดูรายการ</span>
                     </h3>
                     <div class="h-64 relative">
                         <canvas id="deptCompanyExpenseChart"></canvas>
                     </div>
                 </div>
                 <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-5">
-                    <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-chart-pie text-red-600"></i> Top 5 ผู้ขาย/คู่ค้า
+                    <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center justify-between gap-2">
+                        <span class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-red-600"></i> Top 5 ผู้ขาย/คู่ค้า</span>
+                        <span class="text-[10px] font-normal text-slate-400">คลิกเพื่อดูรายการ</span>
                     </h3>
                     <div class="h-64 relative flex items-center justify-center">
                         <canvas id="deptVendorExpenseChart"></canvas>
@@ -445,6 +462,7 @@
                     <table class="w-full text-left border-collapse text-xs">
                         <thead class="sticky top-0 z-10">
                             <tr class="bg-slate-900 text-white uppercase tracking-wider text-[11px] whitespace-nowrap">
+                                <th class="p-3 text-center w-10">#</th>
                                 <th class="p-3">บริษัท</th>
                                 <th class="p-3">วันที่สั่งซื้อ</th>
                                 <th class="p-3">เลขที่ PO</th>
@@ -460,7 +478,7 @@
                             </tr>
                         </thead>
                         <tbody id="deptExpensesTable" class="divide-y divide-slate-200 text-slate-700 whitespace-nowrap">
-                            <tr><td colspan="12" class="p-8 text-center text-slate-400">เลือกแผนกด้านบนเพื่อโหลดรายการ...</td></tr>
+                            <tr><td colspan="13" class="p-8 text-center text-slate-400">เลือกแผนกด้านบนเพื่อโหลดรายการ...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -690,6 +708,77 @@
             </div>
         </div>
 
+        <!-- Modal: คลิกดูรายละเอียดค่าใช้จ่ายแผนกย่อย (Drill-down จากกราฟ) -->
+        <div id="deptDrilldownModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+                <div class="bg-slate-900 px-5 py-4 flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 id="deptDrilldownTitle" class="text-lg font-bold text-white">รายการค่าใช้จ่าย</h3>
+                        <p id="deptDrilldownSubtitle" class="text-xs text-slate-400 mt-0.5"></p>
+                    </div>
+                    <button onclick="closeDeptDrilldownModal()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-800 text-slate-300 text-lg">&times;</button>
+                </div>
+                <div class="overflow-auto flex-1">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="bg-slate-100 text-slate-600 uppercase tracking-wider text-[11px] whitespace-nowrap">
+                                <th class="p-3 text-center w-10">#</th>
+                                <th class="p-3">บริษัท</th>
+                                <th class="p-3">วันที่</th>
+                                <th class="p-3">เลขที่ PO</th>
+                                <th class="p-3">ผู้ขาย / ผู้ให้บริการ</th>
+                                <th class="p-3">รายละเอียดสินค้า / รายการ</th>
+                                <th class="p-3 text-right">ยอดรวมสุทธิ</th>
+                                <th class="p-3 text-center">สถานะ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deptDrilldownTableBody" class="divide-y divide-slate-200 text-slate-700"></tbody>
+                    </table>
+                </div>
+                <div id="deptDrilldownFooter" class="p-3 border-t border-slate-100 text-xs text-slate-500 text-center shrink-0"></div>
+            </div>
+        </div>
+
+        <!-- Modal: รายละเอียดรายการค่าใช้จ่าย 1 รายการ (คลิกจากตารางด้านล่างของแท็บค่าใช้จ่ายแผนก) -->
+        <div id="deptItemDetailModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+                <div class="bg-slate-900 px-5 py-4 flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2"><i class="fa-solid fa-file-invoice text-red-500"></i> รายละเอียดรายการสั่งซื้อ</h3>
+                        <p id="deptItemDetailSubtitle" class="text-xs text-slate-400 mt-0.5"></p>
+                    </div>
+                    <button onclick="closeDeptItemDetailModal()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-800 text-slate-300 text-lg">&times;</button>
+                </div>
+                <div class="overflow-auto flex-1 p-6 space-y-6">
+                    <div id="deptItemDetailBody" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4"></div>
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-list-ul text-red-600"></i> รายการสินค้าทั้งหมดใน PO นี้
+                        </h4>
+                        <div class="border border-slate-200 rounded-xl overflow-hidden">
+                            <table class="w-full text-left text-xs">
+                                <thead>
+                                    <tr class="bg-slate-100 text-slate-600 uppercase text-[10px] tracking-wide">
+                                        <th class="p-2 text-center w-8">#</th>
+                                        <th class="p-2">รายละเอียดสินค้า</th>
+                                        <th class="p-2 text-right">จำนวน</th>
+                                        <th class="p-2 text-right">ก่อน VAT</th>
+                                        <th class="p-2 text-right">VAT</th>
+                                        <th class="p-2 text-right">รวม</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="deptItemDetailPOItems" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                        <div id="deptItemDetailPOItemsFooter" class="text-[11px] text-slate-400 mt-1"></div>
+                    </div>
+                </div>
+                <div class="p-3 border-t border-slate-100 text-right shrink-0">
+                    <button onclick="closeDeptItemDetailModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium">ปิด</button>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <script>
@@ -701,6 +790,9 @@
 
         let deptCompanyChartInstance = null;
         let deptVendorChartInstance = null;
+        let lastDeptFilteredItems = [];
+        let lastDeptTableItems = [];
+        let lastDeptDrilldownItems = [];
 
         const getApiBaseUrl = () => {
             const host = window.location.hostname;
@@ -718,6 +810,36 @@
 
         const API_BASE_URL = getApiBaseUrl();
 
+        // --- Global error banner + Ecount error formatting ---
+        // ใช้แสดง error ที่ backend ส่งกลับมาอย่างชัดเจน (เช่น success:false, Ecount code 205 = IP ไม่ถูก whitelist)
+        // แทนที่จะปล่อยให้หน้าจอค้างเงียบๆ โดยไม่บอกสาเหตุ
+        function showGlobalError(message) {
+            const banner = document.getElementById('globalErrorBanner');
+            const text = document.getElementById('globalErrorBannerText');
+            text.innerText = message;
+            banner.classList.remove('hidden');
+        }
+
+        function hideGlobalError() {
+            document.getElementById('globalErrorBanner').classList.add('hidden');
+        }
+
+        // แปล error code/message ของ Ecount ให้อ่านง่าย โดยเฉพาะ code 205 (IP ไม่อยู่ใน whitelist ของ Ecount)
+        function formatEcountError(companyId, errInfo) {
+            if (!errInfo) return `${companyId}: ไม่ทราบสาเหตุ`;
+            const code = String(errInfo.code || '');
+            if (code === '205') {
+                return `${companyId}: ❌ ถูก ECOUNT ปฏิเสธเพราะ IP นี้ยังไม่ได้ถูก whitelist (Code 205) — ต้องนำ Outbound IP ของเครื่อง/เซิร์ฟเวอร์นี้ไปเพิ่มใน Ecount OAPI Cert Key ก่อน`;
+            }
+            if (code === 'MISSING_CONFIG') {
+                return `${companyId}: ⚠️ ยังไม่ได้ตั้งค่า Ecount API Key/COM_CODE/USER_ID ใน .env`;
+            }
+            if (code === 'TIMEOUT' || code === 'CONNECTION_ERROR') {
+                return `${companyId}: ❌ ติดต่อเซิร์ฟเวอร์ ECOUNT ไม่ได้ (เน็ตเวิร์ก/ไฟร์วอลล์ หรือ ECOUNT บล็อก IP)`;
+            }
+            return `${companyId}: ❌ ${errInfo.message || 'เชื่อมต่อ Ecount ไม่สำเร็จ'}`;
+        }
+
         async function checkHealth() {
             try {
                 const res = await fetch(`${API_BASE_URL}/api/health-check`);
@@ -725,6 +847,7 @@
                 
                 const bqConnected = Boolean(data.bigquery_ready || data.bigquery);
                 const ecountConnected = Boolean(data.ecount_ready || data.ecount);
+                const ecountErrors = data.ecount_errors || {};
 
                 document.getElementById('bqStatusText').innerText = bqConnected ? "Connected" : "Disconnected";
                 document.getElementById('bqStatusText').className = bqConnected ? "text-emerald-400" : "text-red-400";
@@ -733,6 +856,18 @@
                 document.getElementById('ecountStatusText').innerText = ecountConnected ? "Live" : "Offline";
                 document.getElementById('ecountStatusText').className = ecountConnected ? "text-emerald-400" : "text-red-400";
                 document.getElementById('ecountStatusDot').className = `relative inline-flex rounded-full h-3 w-3 ${ecountConnected ? 'bg-emerald-500' : 'bg-red-500'}`;
+
+                const errorEntries = Object.entries(ecountErrors);
+                const tooltip = errorEntries.length
+                    ? errorEntries.map(([id, info]) => formatEcountError(id, info)).join('\n')
+                    : (ecountConnected ? 'เชื่อมต่อ ECOUNT สำเร็จทุกบริษัทที่ตั้งค่าไว้' : '');
+                document.getElementById('ecountStatusWrap').title = tooltip;
+
+                // ถ้ามีบริษัทไหนถูกบล็อกด้วย code 205 (IP whitelist) ให้เด้งแบนเนอร์เตือนทันที เพราะเป็นปัญหาที่ต้องแก้ที่ฝั่ง Ecount โดยเฉพาะ
+                const blocked205 = errorEntries.filter(([, info]) => String(info.code) === '205');
+                if (blocked205.length > 0) {
+                    showGlobalError(blocked205.map(([id, info]) => formatEcountError(id, info)).join(' | '));
+                }
             } catch (err) {
                 document.getElementById('bqStatusText').innerText = "Offline";
                 document.getElementById('bqStatusText').className = "text-red-400";
@@ -741,6 +876,7 @@
                 document.getElementById('ecountStatusText').innerText = "Offline";
                 document.getElementById('ecountStatusText').className = "text-red-400";
                 document.getElementById('ecountStatusDot').className = "relative inline-flex rounded-full h-3 w-3 bg-red-500";
+                showGlobalError(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL}) — ตรวจสอบว่า backend รันอยู่หรือไม่`);
             }
         }
 
@@ -752,13 +888,14 @@
                 const res = await fetch(`${API_BASE_URL}/api/reconnect-bigquery`, { method: 'POST' });
                 const data = await res.json();
                 if (data.connected) {
+                    hideGlobalError();
                     alert('✅ เชื่อมต่อ BigQuery สำเร็จ');
                 } else {
-                    alert('❌ เชื่อมต่อ BigQuery ไม่สำเร็จ: ' + (data.message || 'ไม่ทราบสาเหตุ'));
+                    showGlobalError('❌ เชื่อมต่อ BigQuery ไม่สำเร็จ: ' + (data.message || 'ไม่ทราบสาเหตุ'));
                 }
             } catch (err) {
                 console.error(err);
-                alert(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL})`);
+                showGlobalError(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL})`);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
@@ -774,15 +911,19 @@
                 const res = await fetch(`${API_BASE_URL}/api/reconnect-ecount`, { method: 'POST' });
                 const data = await res.json();
                 const companies = data.companies || {};
-                const summary = Object.entries(companies).map(([id, ok]) => `${id}: ${ok ? '✅' : '❌'}`).join('  ');
+                const errors = data.errors || {};
+                const summaryLines = Object.entries(companies).map(([id, ok]) =>
+                    ok ? `${id}: ✅` : formatEcountError(id, errors[id])
+                );
                 if (data.ecount_ready) {
-                    alert('✅ เชื่อมต่อ Ecount สำเร็จอย่างน้อย 1 บริษัท\n' + summary);
+                    hideGlobalError();
+                    alert('✅ เชื่อมต่อ Ecount สำเร็จอย่างน้อย 1 บริษัท\n' + summaryLines.join('\n'));
                 } else {
-                    alert('❌ เชื่อมต่อ Ecount ไม่สำเร็จเลยสักบริษัท\n' + summary);
+                    showGlobalError('❌ เชื่อมต่อ Ecount ไม่สำเร็จเลยสักบริษัท: ' + summaryLines.join(' | '));
                 }
             } catch (err) {
                 console.error(err);
-                alert(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL})`);
+                showGlobalError(`❌ ไม่สามารถติดต่อ API ได้ (${API_BASE_URL})`);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
@@ -1174,18 +1315,18 @@
             const loadStatus = document.getElementById('deptLoadStatus');
 
             if (!department) {
-                tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400">เลือกแผนกด้านบนเพื่อโหลดรายการ...</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="13" class="p-8 text-center text-slate-400">เลือกแผนกด้านบนเพื่อโหลดรายการ...</td></tr>`;
                 return;
             }
 
             if (dateFrom && dateTo && dateFrom > dateTo) {
                 loadStatus.innerText = 'วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด';
                 loadStatus.className = 'mt-3 text-xs text-red-500 font-medium';
-                tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-red-500 font-medium">❌ กรุณาตรวจสอบช่วงวันที่</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="13" class="p-8 text-center text-red-500 font-medium">❌ กรุณาตรวจสอบช่วงวันที่</td></tr>`;
                 return;
             }
 
-            tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-red-600 block"></i>กำลังโหลดข้อมูลค่าใช้จ่ายแผนกจาก BigQuery...</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="13" class="p-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-red-600 block"></i>กำลังโหลดข้อมูลค่าใช้จ่ายแผนกจาก BigQuery...</td></tr>`;
             loadStatus.innerText = 'กำลังโหลดข้อมูลจาก BigQuery...';
             loadStatus.className = 'mt-3 text-xs text-slate-500';
 
@@ -1207,7 +1348,7 @@
                     const msg = data.message || 'ไม่สามารถดึงข้อมูลค่าใช้จ่ายแผนกได้';
                     loadStatus.innerText = msg;
                     loadStatus.className = 'mt-3 text-xs text-red-500 font-medium';
-                    tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-red-500 font-medium">❌ ${msg}</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="13" class="p-8 text-center text-red-500 font-medium">❌ ${msg}</td></tr>`;
                     return;
                 }
 
@@ -1227,7 +1368,7 @@
                 const message = err.name === 'AbortError' ? 'การโหลดใช้เวลานานเกินไป กรุณาลดช่วงวันที่แล้วลองใหม่' : `ไม่สามารถเชื่อมต่อ API ค่าใช้จ่ายแผนกได้ (${API_BASE_URL})`;
                 loadStatus.innerText = message;
                 loadStatus.className = 'mt-3 text-xs text-red-500 font-medium';
-                tableBody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-red-500 font-medium">❌ ${message}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="13" class="p-8 text-center text-red-500 font-medium">❌ ${message}</td></tr>`;
             }
         }
 
@@ -1254,9 +1395,236 @@
                 return !query || poNo.includes(query) || cust.includes(query) || prod.includes(query) || pic.includes(query) || pjt.includes(query);
             });
 
+            lastDeptFilteredItems = filtered;
             updateDeptStats(filtered);
             renderDeptCharts(filtered);
             renderDeptTable(filtered);
+        }
+
+        // แสดง modal รายการค่าใช้จ่ายย่อย เมื่อคลิกที่กราฟ (แยกตามบริษัท / Top 5 ผู้ขาย) — ใช้ข้อมูลที่โหลด/กรองไว้แล้วในหน้า ไม่ต้องยิง API ซ้ำ
+        function openDeptDrilldownModal({ items, title, subtitle }) {
+            const modal = document.getElementById('deptDrilldownModal');
+            const tbody = document.getElementById('deptDrilldownTableBody');
+            const footer = document.getElementById('deptDrilldownFooter');
+            document.getElementById('deptDrilldownTitle').innerText = title || 'รายการค่าใช้จ่าย';
+            document.getElementById('deptDrilldownSubtitle').innerText = subtitle || '';
+
+            lastDeptDrilldownItems = Array.isArray(items) ? items : [];
+
+            if (!items || items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400">ไม่พบรายการ</td></tr>';
+                footer.innerText = '';
+            } else {
+                tbody.innerHTML = items.map((item, idx) => {
+                    const compId = item.company_id || '-';
+                    const ordDate = formatThaiDate(item.ord_date || item.io_date);
+                    const poNo = item.po_no || item.IO_NO || '-';
+                    const custDisplay = item.cust_des || item.cust_cd || '-';
+                    const prodDisplay = item.prod_des || item.prod_cd || '-';
+                    const totalAmt = Number(item.total_amt) || ((Number(item.buy_amt) || Number(item.supply_amt) || 0) + (Number(item.vat_amt) || 0));
+                    const statusName = item.status_name || (item.p_flag === '9' ? 'ดำเนินการเสร็จแล้ว' : 'กำลังดำเนินการ');
+                    const isCompleted = statusName === 'ดำเนินการเสร็จแล้ว' || item.p_flag === '9';
+                    const statusBadge = isCompleted
+                        ? '<span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-semibold">เสร็จสิ้น</span>'
+                        : '<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[10px] font-semibold">กำลังดำเนินการ</span>';
+
+                    return `
+                        <tr class="hover:bg-red-50 transition cursor-pointer" onclick="openDeptItemDetail('drill', ${idx})" title="คลิกเพื่อดูรายละเอียด">
+                            <td class="p-3 text-center text-slate-400 font-medium">${idx + 1}</td>
+                            <td class="p-3 font-medium whitespace-nowrap">${compId}</td>
+                            <td class="p-3 text-center whitespace-nowrap">${ordDate}</td>
+                            <td class="p-3 font-bold text-red-600 whitespace-nowrap">${poNo}</td>
+                            <td class="p-3">${custDisplay}</td>
+                            <td class="p-3">${prodDisplay}</td>
+                            <td class="p-3 text-right font-mono font-bold text-red-700 whitespace-nowrap">฿${totalAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="p-3 text-center whitespace-nowrap">${statusBadge}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const sumAmt = items.reduce((sum, it) => sum + (Number(it.total_amt) || 0), 0);
+                footer.innerText = `${items.length.toLocaleString()} รายการ — รวม ${formatBaht(sumAmt)} (คลิกแถวเพื่อดูรายละเอียด)`;
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeDeptDrilldownModal() {
+            document.getElementById('deptDrilldownModal').classList.add('hidden');
+        }
+
+        // แคชรายการสินค้าแยกบรรทัดของแต่ละ PO (ดึงสดจาก ECOUNT ผ่าน /api/po-items เพราะ BigQuery เก็บแบบรวบยอดต่อ PO)
+        let poItemsCache = {};
+
+        async function fetchPOItems(companyId, poNo, ordDateRaw) {
+            if (!companyId || !poNo) return { items: [], error: null };
+            const cacheKey = `${companyId}::${poNo}`;
+            if (poItemsCache[cacheKey]) return poItemsCache[cacheKey];
+
+            try {
+                const params = new URLSearchParams({ company_id: companyId, po_no: poNo });
+                if (ordDateRaw) params.append('ord_date', ordDateRaw);
+                const res = await fetch(`${API_BASE_URL}/api/po-items?${params.toString()}`);
+                const data = await res.json();
+                if (res.ok && data && data.success) {
+                    const result = { items: Array.isArray(data.data) ? data.data : [], error: null };
+                    poItemsCache[cacheKey] = result;
+                    return result;
+                }
+                return { items: [], error: (data && data.message) || 'ไม่สามารถโหลดรายการสินค้าของ PO นี้ได้' };
+            } catch (err) {
+                console.error('fetchPOItems', err);
+                return { items: [], error: 'ไม่สามารถเชื่อมต่อ API รายการสินค้าของ PO ได้' };
+            }
+        }
+
+        // เปิด modal รายละเอียดรายการเดียว จากแถวในตารางหลัก ('main') หรือแถวใน modal drill-down ('drill')
+        async function openDeptItemDetail(source, idx) {
+            const item = source === 'drill' ? lastDeptDrilldownItems[idx] : lastDeptTableItems[idx];
+            if (!item) return;
+
+            let badgeClass = "bg-slate-100 text-slate-800";
+            if (item.company_id === 'ASIA') badgeClass = "bg-red-100 text-red-800 border border-red-200";
+            if (item.company_id === 'ROBOTICS') badgeClass = "bg-slate-800 text-slate-100 border border-slate-700";
+            if (item.company_id === 'RUAMSINTHAI') badgeClass = "bg-rose-100 text-rose-800 border border-rose-200";
+
+            const compId = item.company_id || '-';
+            const ordDateRaw = item.ord_date || item.io_date || '';
+            const ordDate = formatThaiDate(ordDateRaw);
+            const poNo = item.po_no || item.IO_NO || '-';
+            const pjtDisplay = `${item.pjt_des || '-'}${item.pjt_cd ? ' (' + item.pjt_cd + ')' : ''}`;
+            const custDisplay = item.cust_des || item.cust_cd || '-';
+            const prodDisplay = item.prod_des || item.prod_cd || '-';
+            const qty = Number(item.qty) || 0;
+            const buyAmt = Number(item.buy_amt) || Number(item.supply_amt) || 0;
+            const vatAmt = Number(item.vat_amt) || 0;
+            const totalAmt = Number(item.total_amt) || (buyAmt + vatAmt);
+            const unitPrice = qty > 0 ? (buyAmt / qty) : (Number(item.price) || 0);
+            const picName = item.pic_name || item.emp_des || '-';
+            const remarkText = item.ref_no || item.pr_no || item.remark || '-';
+
+            const statusName = item.status_name || (item.p_flag === '9' ? 'ดำเนินการเสร็จแล้ว' : 'กำลังดำเนินการ');
+            const isCompleted = statusName === 'ดำเนินการเสร็จแล้ว' || item.p_flag === '9';
+            const statusBadge = isCompleted
+                ? '<span class="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg text-xs font-semibold">เสร็จสิ้น</span>'
+                : '<span class="bg-amber-100 text-amber-800 px-2.5 py-1 rounded-lg text-xs font-semibold">กำลังดำเนินการ</span>';
+
+            const field = (label, value, extraClass) => `
+                <div>
+                    <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold mb-1">${label}</div>
+                    <div class="text-sm text-slate-800 ${extraClass || ''}">${value}</div>
+                </div>
+            `;
+
+            document.getElementById('deptItemDetailSubtitle').innerText = `${poNo} — ${custDisplay}`;
+            document.getElementById('deptItemDetailBody').innerHTML = [
+                field('บริษัท', `<span class="px-2 py-0.5 rounded text-[10px] font-semibold ${badgeClass}">${compId}</span>`),
+                field('สถานะ', statusBadge),
+                field('เลขที่ PO', poNo, 'font-bold text-red-600'),
+                field('วันที่สั่งซื้อ', ordDate),
+                field('รหัส/ชื่อโครงการ', pjtDisplay, 'sm:col-span-2'),
+                field('ผู้ขาย / ผู้ให้บริการ', custDisplay, 'font-medium sm:col-span-2'),
+                field('รายละเอียดสินค้า / รายการ (สรุป)', prodDisplay, 'sm:col-span-2'),
+                field('จำนวน (รวมทุกรายการใน PO)', qty.toLocaleString(), 'font-mono'),
+                field('ราคา/หน่วย (โดยประมาณ)', `฿${unitPrice.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'font-mono'),
+                field('ยอดก่อน VAT (Supply)', `฿${buyAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'font-mono'),
+                field('VAT', `฿${vatAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'font-mono'),
+                field('ยอดรวมสุทธิ', `฿${totalAmt.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'font-mono font-bold text-red-700 text-base'),
+                field('ผู้สั่งซื้อ / PIC', picName),
+                field('เลขที่อ้างอิง / หมายเหตุ', remarkText),
+            ].join('');
+
+            document.getElementById('deptItemDetailModal').classList.remove('hidden');
+
+            // โหลด/แสดงรายการสินค้าทั้งหมดที่อยู่ภายใต้เลขที่ PO เดียวกันนี้ (ดึงสดจาก ECOUNT เพราะ BigQuery เก็บแบบรวบยอด)
+            await loadDeptItemPOBreakdown(compId, poNo, ordDateRaw, prodDisplay, qty, buyAmt, vatAmt, totalAmt);
+        }
+
+        async function loadDeptItemPOBreakdown(companyId, poNo, ordDateRaw, fallbackProdDisplay, fallbackQty, fallbackBuyAmt, fallbackVatAmt, fallbackTotalAmt) {
+            const tbody = document.getElementById('deptItemDetailPOItems');
+            const footer = document.getElementById('deptItemDetailPOItemsFooter');
+
+            if (!poNo || poNo === '-') {
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">ไม่มีเลขที่ PO สำหรับค้นหารายการย่อย</td></tr>';
+                footer.innerText = '';
+                return;
+            }
+
+            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังดึงรายการสินค้าทั้งหมดใน PO นี้สดจาก ECOUNT...</td></tr>';
+            footer.innerText = '';
+
+            const { items: lines, error } = await fetchPOItems(companyId, poNo, ordDateRaw);
+
+            // ถ้าดึงจาก ECOUNT ไม่ได้ หรือหาไม่เจอ (เช่น session ไม่ผ่าน/PO เก่ากว่าช่วงที่ค้นหา) ให้ fallback แสดงแค่รายการสรุปที่มีอยู่แล้ว
+            if (!lines || lines.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td class="p-2 text-center">1</td>
+                        <td class="p-2">${fallbackProdDisplay}</td>
+                        <td class="p-2 text-right font-mono">${(Number(fallbackQty) || 0).toLocaleString()}</td>
+                        <td class="p-2 text-right font-mono">฿${(Number(fallbackBuyAmt) || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-2 text-right font-mono">฿${(Number(fallbackVatAmt) || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-2 text-right font-mono font-bold text-red-700">฿${(Number(fallbackTotalAmt) || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    </tr>
+                `;
+                footer.innerText = error
+                    ? `⚠️ ${error} — แสดงเฉพาะยอดสรุปที่มีอยู่`
+                    : 'ไม่พบข้อมูลแยกรายบรรทัดของ PO นี้จาก ECOUNT (อาจอยู่นอกช่วงวันที่ค้นหา หรือ PO เก่าเกินไป) — แสดงเฉพาะยอดสรุปที่มีอยู่';
+                return;
+            }
+
+            tbody.innerHTML = lines.map((it, i) => {
+                const prodName = it.prod_des || it.prod_cd || '-';
+                const sizeSpec = it.size_des ? ` [${it.size_des}]` : '';
+                const lineQty = Number(it.qty) || 0;
+                const lineBuy = Number(it.supply_amt) || Number(it.buy_amt) || 0;
+                const lineTotal = Number(it.total_amt) || lineBuy;
+                const lineVat = Math.max(lineTotal - lineBuy, 0);
+
+                return `
+                    <tr>
+                        <td class="p-2 text-center text-slate-400">${i + 1}</td>
+                        <td class="p-2">${prodName}${sizeSpec}</td>
+                        <td class="p-2 text-right font-mono">${lineQty.toLocaleString()}</td>
+                        <td class="p-2 text-right font-mono">฿${lineBuy.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-2 text-right font-mono">฿${lineVat.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-2 text-right font-mono font-bold text-red-700">฿${lineTotal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            const sumTotal = lines.reduce((sum, it) => sum + (Number(it.total_amt) || Number(it.supply_amt) || 0), 0);
+            footer.innerText = `${lines.length.toLocaleString()} รายการสินค้าใน PO นี้ — รวม ${formatBaht(sumTotal)}`;
+        }
+
+        function closeDeptItemDetailModal() {
+            document.getElementById('deptItemDetailModal').classList.add('hidden');
+        }
+
+
+        function deptSelectedLabel() {
+            const sel = document.getElementById('deptSelect');
+            return sel && sel.selectedOptions.length ? sel.selectedOptions[0].textContent : '';
+        }
+
+        // เปิด modal เมื่อคลิกแท่งกราฟ "แยกตามบริษัท"
+        function openDeptCompanyDrilldown(company) {
+            const items = lastDeptFilteredItems.filter(item => (item.company_id || 'ASIA') === company);
+            openDeptDrilldownModal({
+                items,
+                title: `รายการค่าใช้จ่าย: ${company}`,
+                subtitle: deptSelectedLabel(),
+            });
+        }
+
+        // เปิด modal เมื่อคลิกวงกลม/legend "Top 5 ผู้ขาย"
+        function openDeptVendorDrilldown(vendorLabel) {
+            const items = lastDeptFilteredItems.filter(item => (item.cust_des || item.cust_cd || 'ไม่ระบุผู้ขาย') === vendorLabel);
+            openDeptDrilldownModal({
+                items,
+                title: `รายการค่าใช้จ่าย: ${vendorLabel}`,
+                subtitle: deptSelectedLabel(),
+            });
         }
 
         function renderDeptCharts(items) {
@@ -1270,10 +1638,11 @@
             const ctxBar = document.getElementById('deptCompanyExpenseChart').getContext('2d');
             if (deptCompanyChartInstance) deptCompanyChartInstance.destroy();
 
+            const deptCompanyChartLabels = ['ASIA', 'ROBOTICS', 'RUAMSINTHAI'];
             deptCompanyChartInstance = new Chart(ctxBar, {
                 type: 'bar',
                 data: {
-                    labels: ['ASIA', 'ROBOTICS', 'RUAMSINTHAI'],
+                    labels: deptCompanyChartLabels,
                     datasets: [{
                         label: 'ยอดรวมสุทธิ (บาท)',
                         data: [compSums.ASIA, compSums.ROBOTICS, compSums.RUAMSINTHAI],
@@ -1286,6 +1655,13 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (evt, elements) => {
+                        if (!elements || elements.length === 0) return;
+                        openDeptCompanyDrilldown(deptCompanyChartLabels[elements[0].index]);
+                    },
+                    onHover: (evt, elements) => {
+                        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
                     plugins: {
                         legend: { display: false }
                     },
@@ -1331,8 +1707,22 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (evt, elements) => {
+                        if (!elements || elements.length === 0 || !vendorLabels.length) return;
+                        openDeptVendorDrilldown(vendorLabels[elements[0].index]);
+                    },
+                    onHover: (evt, elements) => {
+                        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
                     plugins: {
-                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }
+                        legend: {
+                            position: 'bottom',
+                            labels: { boxWidth: 12, font: { size: 10 } },
+                            onClick: (evt, legendItem) => {
+                                if (!vendorLabels.length) return;
+                                openDeptVendorDrilldown(vendorLabels[legendItem.index]);
+                            }
+                        }
                     }
                 }
             });
@@ -1342,12 +1732,14 @@
             const tableBody = document.getElementById('deptExpensesTable');
             if (!tableBody) return;
 
+            lastDeptTableItems = Array.isArray(items) ? items : [];
+
             if (!Array.isArray(items) || items.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="12" class="text-center p-8 text-slate-400">⚠️ ไม่พบรายการค่าใช้จ่ายของแผนกนี้</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="13" class="text-center p-8 text-slate-400">⚠️ ไม่พบรายการค่าใช้จ่ายของแผนกนี้</td></tr>`;
                 return;
             }
 
-            tableBody.innerHTML = items.map(item => {
+            tableBody.innerHTML = items.map((item, idx) => {
                 let badgeClass = "bg-slate-100 text-slate-800";
                 if (item.company_id === 'ASIA') badgeClass = "bg-red-100 text-red-800 border border-red-200";
                 if (item.company_id === 'ROBOTICS') badgeClass = "bg-slate-800 text-slate-100 border border-slate-700";
@@ -1373,7 +1765,8 @@
                     : '<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[10px] font-semibold">กำลังดำเนินการ</span>';
 
                 return `
-                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                    <tr class="hover:bg-red-50 transition border-b border-slate-100 cursor-pointer" onclick="openDeptItemDetail('main', ${idx})" title="คลิกเพื่อดูรายละเอียด">
+                        <td class="p-3 text-center text-slate-400 font-medium">${idx + 1}</td>
                         <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold ${badgeClass}">${compId}</span></td>
                         <td class="p-3 text-center">${ordDate}</td>
                         <td class="p-3 font-bold text-red-600">${poNo}</td>
