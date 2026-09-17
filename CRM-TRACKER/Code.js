@@ -24,7 +24,22 @@
 // เท่าที่จะทำได้ ดูรายละเอียดที่คอมเมนต์ตรง FB_LEAD_MARKER ด้านล่าง
 // หมายเหตุ (2026-09-14 รอบถัดมา): ต่อยอดจาก r20-2026-09-14-permission-matrix
 // เพิ่ม action ใหม่ getStaleLeadsReport (รายงานลูกค้าค้างนานไม่ได้ติดตาม หน้า "รายงาน")
-var CODE_VERSION = 'r21-2026-09-14-stale-leads-report';
+//
+// หมายเหตุ (2026-09-15 รอบถัดมา): เพิ่ม action ใหม่ 'screenshotAttempt' — รองรับมาตรการ
+// "ยับยั้ง/ตามรอย" การแคปหน้าจอ-คัดลอกข้อมูลลูกค้าฝั่ง frontend (ดู activateLeakDeterrentMeasures_
+// ใน index.html) ไม่ใช่การ "ป้องกัน" การแคปหน้าจอจริง (เว็บทำไม่ได้ 100% — ดูคอมเมนต์ที่
+// action==='screenshotAttempt' ด้านล่าง) แค่บันทึกว่าใครกด Print Screen/พยายามคัดลอกเมื่อไหร่
+// ลงตาราง user_activity_log เพื่อให้ตรวจสอบย้อนหลังได้ — เพิ่มเข้า ACTIVITY_LOG_WHITELIST แล้ว
+//
+// หมายเหตุ (2026-09-17 รอบถัดมา): โปรเจกต์ BigQuery ไม่ได้ผูก Billing Account จึงรัน
+// DML (INSERT/UPDATE/DELETE) ไม่ได้เลย (Free Tier บล็อกเสมอ ไม่เกี่ยวกับปริมาณข้อมูล) —
+// ย้ายจุด "เขียน" ข้อมูลลูกค้าทั้งหมด (เพิ่ม/แก้ไข/ลบ/บันทึกการติดตาม) จากเดิมที่ยิง SQL
+// เข้า BigQuery ตรงๆ มาเป็นเขียนลง Google Sheet แทน (ดูคอมเมนต์ที่ CUSTOMER_SHEET_ID
+// ด้านล่าง) ส่วนการอ่าน/ค้นหา/รายงาน/แดชบอร์ดทั้งหมดยังคงผ่าน BigQuery เหมือนเดิมทุกจุด
+// (ต้องผูก Sheet นี้เป็น BigQuery External Table ชื่อ customers ไว้ด้วย — ดูคู่มือ setup)
+// ⚠️ ต้องตั้งค่า CUSTOMER_SHEET_ID ให้เป็น Sheet ID จริงก่อนใช้งาน ไม่งั้นการเพิ่ม/แก้ไข/
+// ลบข้อมูลลูกค้าจะ error ทันที (ดูข้อความ error ที่ getCustomerSheet_ ด้านล่าง)
+var CODE_VERSION = 'r23-2026-09-17-write-via-sheets-no-billing';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -107,6 +122,481 @@ var LOG_TABLE_ID = 'lead_intake_log';
 var LOG_TABLE_FULL_PATH = '`' + GCP_PROJECT_ID + '.' + DATASET_ID + '.' + LOG_TABLE_ID + '`';
 
 // =================================================================
+// 📝 แก้ไข (2026-09-17): ย้ายจุด "เขียน" ข้อมูลลูกค้า (เพิ่ม/แก้ไข/ลบ) จากเดิมที่ยิง
+// SQL INSERT/UPDATE/DELETE เข้า BigQuery ตรงๆ (ซึ่งใช้ไม่ได้ถ้าโปรเจกต์ไม่ผูก Billing
+// Account — BigQuery บล็อกคำสั่ง DML ในโหมด Free Tier เสมอ ไม่ว่าข้อมูลจะน้อยแค่ไหน)
+// มาเป็นการเขียนตรงลง Google Sheet นี้แทน โดยยังคง "อ่าน" ข้อมูล (ค้นหา/รายงาน/สรุปยอด)
+// ผ่าน BigQuery เหมือนเดิมทุกจุด — เพราะ SELECT ไม่ติดข้อจำกัด DML เลย
+//
+// ⚠️ ต้องตั้งค่า 2 บรรทัดด้านล่างนี้ก่อนใช้งาน:
+//   1) CUSTOMER_SHEET_ID: เปิด Google Sheet ที่จะใช้เก็บข้อมูลลูกค้า แล้วคัดลอก ID จาก URL
+//      (ส่วนที่อยู่ระหว่าง /d/ กับ /edit เช่น https://docs.google.com/spreadsheets/d/
+//      **ID_ตรงนี้**/edit)
+//   2) CUSTOMER_SHEET_NAME: ชื่อแท็บ (sheet tab) ที่เก็บข้อมูล ต้องมีแถวหัวตาราง (row 1)
+//      เป็นชื่อคอลัมน์ตรงตาม CUSTOMER_SHEET_COLUMNS ด้านล่างนี้ทุกตัวอักษร (ลำดับคอลัมน์
+//      ในชีตจะเรียงยังไงก็ได้ ไม่ต้องตรงลำดับ — โค้ดจะหาตำแหน่งคอลัมน์จากชื่อหัวตารางเอง)
+//   3) ต้องผูก Sheet นี้เข้ากับ BigQuery เป็น External Table (ชนิด Google Drive/Sheets
+//      source) ชื่อตารางเดียวกับ TABLE_ID ด้านบน (customers) เพื่อให้ทุกจุดที่ยัง query
+//      อ่านข้อมูล (ค้นหา/แดชบอร์ด/รายงาน) เห็นข้อมูลที่เพิ่ง เพิ่ม/แก้ไข/ลบ ผ่านหน้าเว็บทันที
+var CUSTOMER_SHEET_ID = '1qsuBtj-7j3p4-jwgeU-rDpjbJ1gPVXM45EtK-ywLk9U'; // Sheet ข้อมูลลูกค้าจริงที่ export จาก BigQuery มา (2026-09-17)
+var CUSTOMER_SHEET_NAME = 'Sheet1'; // ถ้าหาแท็บนี้ไม่เจอ จะใช้แท็บแรกสุดในไฟล์แทนอัตโนมัติ (ดู getCustomerSheet_)
+
+// รายชื่อคอลัมน์ทั้งหมดที่ต้องมีอยู่ในแถวหัวตาราง (row 1) ของแท็บ CUSTOMER_SHEET_NAME
+// เรียงตามที่ปรากฏใน INSERT SQL เดิม + คอลัมน์ที่เพิ่มทีหลังผ่าน one-time setup ต่างๆ
+var CUSTOMER_SHEET_COLUMNS = [
+  'created_date', 'first_name', 'last_name', 'phone', 'booking_date', 'type', 'product',
+  'address_no', 'moo', 'village', 'subdistrict', 'district', 'province', 'zipcode',
+  'remark', 'line', 'facebook', 'follow_up_log', 'financial_info', 'created_at_ts',
+  'last_followup_date'
+];
+
+// เปิด Sheet object ของแท็บข้อมูลลูกค้า — โยน error ชัดเจนถ้ายังไม่ได้ตั้งค่า/หาไม่เจอ
+function getCustomerSheet_() {
+  if (!CUSTOMER_SHEET_ID || CUSTOMER_SHEET_ID === 'PUT_YOUR_GOOGLE_SHEET_ID_HERE') {
+    throw new Error('ยังไม่ได้ตั้งค่า CUSTOMER_SHEET_ID — เปิด Code.gs แล้วใส่ Sheet ID ของ Google Sheet ที่จะใช้เก็บข้อมูลลูกค้าก่อน');
+  }
+  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+  var sheet = ss.getSheetByName(CUSTOMER_SHEET_NAME);
+  if (!sheet) {
+    // หาแท็บชื่อ CUSTOMER_SHEET_NAME ไม่เจอ (เช่น ตั้งชื่อไว้ไม่ตรง) — ใช้แท็บแรกสุดในไฟล์แทน
+    // เพื่อไม่ให้ระบบพังเพราะเรื่องชื่อแท็บเพียงอย่างเดียว (ไฟล์นี้มักมีแท็บข้อมูลหลักแท็บเดียวอยู่แล้ว)
+    var allSheets = ss.getSheets();
+    if (allSheets.length === 0) {
+      throw new Error('Google Sheet ที่ระบุ (CUSTOMER_SHEET_ID) ไม่มีแท็บใดๆ เลย');
+    }
+    sheet = allSheets[0];
+    Logger.log('ไม่พบแท็บชื่อ "' + CUSTOMER_SHEET_NAME + '" — ใช้แท็บแรกสุด ("' + sheet.getName() + '") แทนโดยอัตโนมัติ');
+  }
+  return sheet;
+}
+
+// อ่านแถวหัวตาราง (row 1) แล้วคืนค่าเป็น { ชื่อคอลัมน์: เลขคอลัมน์ (1-based) }
+// ใช้แทนการอ้างอิงตำแหน่งคอลัมน์แบบตายตัว เผื่อมีคนสลับลำดับคอลัมน์ในชีตภายหลัง
+function getCustomerHeaderMap_(sheet) {
+  var lastCol = Math.max(sheet.getLastColumn(), CUSTOMER_SHEET_COLUMNS.length);
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  for (var i = 0; i < headerRow.length; i++) {
+    var h = (headerRow[i] || '').toString().trim();
+    if (h) map[h] = i + 1;
+  }
+  var missing = CUSTOMER_SHEET_COLUMNS.filter(function(c) { return !map[c]; });
+  if (missing.length > 0) {
+    throw new Error('แถวหัวตารางในชีต "' + CUSTOMER_SHEET_NAME + '" ขาดคอลัมน์: ' + missing.join(', ') +
+                     ' — ต้องเพิ่มหัวคอลัมน์เหล่านี้ในแถวที่ 1 ให้ครบก่อนใช้งาน');
+  }
+  return map;
+}
+
+// คำนวณ fingerprint ให้ตรงกับ FINGERPRINT_EXPR ฝั่ง BigQuery ทุกประการ
+// (TO_HEX(MD5(CONCAT(created_date, first_name, last_name, phone))) แบบ IFNULL เป็น '')
+// เพื่อให้ "key" ที่หน้าเว็บส่งมา (คำนวณจาก BigQuery ตอน search) หาแถวใน Sheet เจอ
+function computeCustomerFingerprint_(createdDateStr, firstName, lastName, phoneStr) {
+  var s = (createdDateStr || '') + (firstName || '') + (lastName || '') + (phoneStr || '');
+  var digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s, Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < digestBytes.length; i++) {
+    var v = (digestBytes[i] < 0 ? digestBytes[i] + 256 : digestBytes[i]).toString(16);
+    hex += (v.length === 1 ? '0' + v : v);
+  }
+  return hex;
+}
+
+// =================================================================
+// ⚡ เพิ่ม (2026-09-17 รอบที่ 4): แก้ปัญหาความเร็ว — พบว่าชีตข้อมูลลูกค้าจริงมีมากกว่า
+// 116,000 แถว การวนลูป (for) อ่านทุกแถวแล้วคำนวณ MD5 ทีละแถวแบบเดิม จะช้ามากจนดูเหมือน
+// ระบบค้าง จึงเปลี่ยนมาใช้ Range.createTextFinder(...) ซึ่งเป็นการค้นหาแบบ native ของ
+// Google Sheets (เร็วกว่าวนลูปด้วย JavaScript มาก ไม่ว่าชีตจะมีกี่แสนแถว) เป็นเส้นทางหลัก
+// ส่วนการวนลูปคำนวณ fingerprint แบบเดิมยังเก็บไว้เป็น "ทางสำรองรอง" เผื่อกรณีที่หา
+// ด้วยเบอร์โทรไม่เจอจริงๆ (เช่น key เป็น fingerprint แต่เบอร์ในชีตถูกแก้ไปแล้วไม่ตรงกับ
+// ตอนที่หน้าเว็บโหลดข้อมูลมา) ซึ่งควรเกิดขึ้นน้อยมากในทางปฏิบัติ
+
+// ค้นหาแถวด้วยเบอร์โทรแบบเร็ว (TextFinder) — ลองทั้งรูปแบบเบอร์ตรงๆ และแบบตัด/เติมเลข 0
+// นำหน้า เพื่อรองรับกรณีบันทึกเบอร์ไว้ไม่ตรงรูปแบบเป๊ะ
+function findCustomerRowNumberByPhoneFast_(sheet, headerMap, phone) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var col = headerMap['phone'];
+  var range = sheet.getRange(2, col, lastRow - 1, 1);
+  var cleanPhone = formatPhoneNumber(phone);
+  if (!cleanPhone) return -1;
+
+  var candidates = [cleanPhone];
+  var digits = cleanPhone.replace(/\D/g, '');
+  if (digits) {
+    if (cleanPhone.charAt(0) === '0') candidates.push(digits.substring(1)); // ตัด 0 นำหน้า
+    else candidates.push('0' + digits); // เติม 0 นำหน้า
+  }
+
+  for (var i = 0; i < candidates.length; i++) {
+    var finder = range.createTextFinder(candidates[i]).matchEntireCell(true);
+    var found = finder.findNext();
+    if (found) return found.getRow();
+  }
+  return -1;
+}
+
+// หาเลขแถว (1-based, นับรวมหัวตาราง) ในชีตที่ตรงกับ key ที่ส่งมา
+// phoneHint (ถ้ามี — ส่งมาจากหน้าเว็บ เป็นเบอร์โทรของแถวนั้น ณ ตอนเปิดดู/แก้ไข) คือทางลัด
+// สำคัญที่ทำให้ค้นหาเร็ว ไม่ต้องวนลูปทั้งชีต — ถ้าไม่มี phoneHint หรือหาไม่เจอด้วย phoneHint
+// ค่อย fallback ไปวิธีเดิม (วนลูปคำนวณ fingerprint ทุกแถว ซึ่งช้าถ้าข้อมูลมีเป็นแสนแถว)
+function findCustomerRowNumberByKey_(sheet, headerMap, key, phoneHint) {
+  // ทางลัดที่ 1: มี phoneHint ส่งมา — ค้นด้วย TextFinder ทันที (เร็วมาก ไม่ว่าจะกี่แสนแถว)
+  if (phoneHint) {
+    var rowByHint = findCustomerRowNumberByPhoneFast_(sheet, headerMap, phoneHint);
+    if (rowByHint !== -1) return rowByHint;
+  }
+  // ทางลัดที่ 2: key เองมีลักษณะเป็นเบอร์โทร (ตัวเลขล้วน 8-10 หลัก) ไม่ใช่ fingerprint (hex 32 ตัว)
+  // — ลองค้นด้วย TextFinder เลยเช่นกัน
+  var keyDigits = (key || '').toString().replace(/\D/g, '');
+  if (keyDigits && /^\d{8,10}$/.test(keyDigits) && !/^[0-9a-f]{32}$/i.test(String(key))) {
+    var rowByKeyAsPhone = findCustomerRowNumberByPhoneFast_(sheet, headerMap, key);
+    if (rowByKeyAsPhone !== -1) return rowByKeyAsPhone;
+  }
+
+  // ทางสำรอง (ช้า — วนลูปทุกแถวคำนวณ fingerprint): ใช้เฉพาะกรณีข้างบนหาไม่เจอจริงๆ เท่านั้น
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var lastCol = sheet.getLastColumn();
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var cdCol = headerMap['created_date'] - 1;
+  var fnCol = headerMap['first_name'] - 1;
+  var lnCol = headerMap['last_name'] - 1;
+  var phCol = headerMap['phone'] - 1;
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var createdDateStr = formatDateStr(row[cdCol]);
+    var phoneStr = formatPhoneNumber(row[phCol]);
+    var fp = computeCustomerFingerprint_(createdDateStr, row[fnCol], row[lnCol], phoneStr);
+    if (fp === key) return i + 2;
+    if (phoneStr && phoneStr === key) return i + 2;
+    if (keyDigits && phoneStr) {
+      var phoneDigits = phoneStr.replace(/\D/g, '');
+      if (phoneDigits !== '' && phoneDigits !== '0' && phoneDigits === keyDigits) return i + 2;
+    }
+  }
+  return -1;
+}
+
+// หาเลขแถวด้วยชื่อ Facebook แบบเร็ว (TextFinder) — ไม่สนตัวพิมพ์เล็ก/ใหญ่ — ใช้ตอนเช็คซ้ำ
+function findCustomerRowNumberByFacebook_(sheet, headerMap, fbName) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var col = headerMap['facebook'];
+  var range = sheet.getRange(2, col, lastRow - 1, 1);
+  var finder = range.createTextFinder(fbName.toString().trim()).matchEntireCell(true).matchCase(false);
+  var found = finder.findNext();
+  return found ? found.getRow() : -1;
+}
+
+// หาเลขแถวด้วยเบอร์โทรแบบเร็ว (TextFinder, รองรับมี/ไม่มีเลข 0 นำหน้า) — ใช้ตอนเช็คซ้ำ
+function findCustomerRowNumberByPhone_(sheet, headerMap, phone) {
+  return findCustomerRowNumberByPhoneFast_(sheet, headerMap, phone);
+}
+
+// แปลง object { ชื่อคอลัมน์: ค่า } ให้เป็น array 1 แถว เรียงตามตำแหน่งจริงในชีต
+// (ใช้กับ appendRow ตอนเพิ่มลูกค้าใหม่) — คอลัมน์ที่ไม่ได้ระบุค่ามาจะเว้นว่างไว้
+// =================================================================
+// 📝 เพิ่ม (2026-09-17 รอบถัดมา): ซิงก์ข้อมูลจาก Google Sheet เข้า BigQuery
+// native table `customers` แบบเต็มตาราง (WRITE_TRUNCATE) ทุกครั้งหลังเขียน Sheet สำเร็จ
+// โดยใช้ "Load Job" (BigQuery.Jobs.insert แบบ configuration.load) ไม่ใช่ DML —
+// Load Job เป็นคนละกลไกกับ INSERT/UPDATE/DELETE จึง**ไม่ติดข้อจำกัด Free Tier**
+// (หลักฐาน: คุณเพิ่งอัปโหลดข้อมูลเข้าตาราง native ตัวนี้ได้เองโดยไม่ผูก billing มาแล้ว
+// นั่นคือ Load Job เหมือนกัน) วิธีนี้ทำให้ได้ทั้ง 2 อย่าง:
+//   - เขียน/แก้ไข/ลบ ผ่าน Google Sheet (เร็ว ไม่ติด billing)
+//   - อ่าน/ค้นหา/รายงาน ผ่าน BigQuery native table (เร็วกว่า external table มาก
+//     และไม่มีปัญหาเรื่องสิทธิ์ Google Drive ที่เจอตอนทำ External Table)
+// ข้อเสียเดียวคือข้อมูลใน BigQuery จะ "ตามหลัง" Sheet ไม่กี่วินาที (เวลาที่ Load Job ใช้รัน)
+// ไม่ใช่แบบ real-time เป๊ะเหมือน external table แต่เร็วพอสำหรับงาน CRM ทั่วไป
+
+// แปลงชื่อคอลัมน์ให้เป็นชนิดข้อมูล BigQuery ที่ตรงกับตาราง customers (native) ที่คุณสร้างไว้
+function bigQueryTypeForColumn_(colName) {
+  if (colName === 'created_date' || colName === 'booking_date' || colName === 'last_followup_date') return 'DATE';
+  if (colName === 'created_at_ts') return 'TIMESTAMP';
+  return 'STRING';
+}
+
+// escape ค่าให้เป็น CSV field ที่ถูกต้อง (ครอบ "..." และ double-quote ตัว " ข้างในถ้าจำเป็น)
+// follow_up_log / financial_info เป็น JSON string ที่มักมี , และ " อยู่ข้างใน ต้อง escape ให้ดี
+function csvEscape_(val) {
+  var s = (val === null || val === undefined) ? '' : String(val);
+  if (s.indexOf('"') !== -1 || s.indexOf(',') !== -1 || s.indexOf('\n') !== -1 || s.indexOf('\r') !== -1) {
+    s = '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+// แปลงค่าจากเซลล์ (อาจเป็น Date object จาก Sheets) ให้เป็นข้อความรูปแบบที่ BigQuery
+// รับได้ตรงกับชนิดคอลัมน์ (DATE ต้องเป็น 'yyyy-MM-dd', TIMESTAMP ต้องมี timezone)
+function formatCellForCsv_(colName, val) {
+  if (val === '' || val === null || val === undefined) return '';
+  if (colName === 'created_date' || colName === 'booking_date' || colName === 'last_followup_date') {
+    return formatDateStr(val) || '';
+  }
+  if (colName === 'created_at_ts') {
+    if (Object.prototype.toString.call(val) === '[object Date]') {
+      return Utilities.formatDate(val, 'GMT+7', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    }
+    return val;
+  }
+  return val;
+}
+
+// =================================================================
+// 📝 เพิ่ม (2026-09-17 รอบที่ 3): ย้ายจุดเขียนที่เหลืออีก 2 จุด — "เพิ่มสมาชิก" และ
+// log การใช้งาน/รับลีด (lead_intake_log, user_activity_log) — มาเขียนลง Google Sheet
+// (แท็บใหม่ในสเปรดชีตเดียวกับ customers) แล้วซิงก์เข้า BigQuery ด้วย Load Job เหมือนกัน
+//
+// ต่างจาก customers ตรงที่แท็บพวกนี้จะ "สร้างอัตโนมัติ" ให้เองถ้ายังไม่มี (ไม่ต้องสร้างมือ
+// ก่อน) เพราะเป็นข้อมูลที่โค้ดคุมโครงสร้างเองทั้งหมดอยู่แล้ว ไม่ได้ import มาจากที่อื่น
+//
+// log 2 ตัว (lead_intake_log, user_activity_log) เป็นข้อมูลที่ "เพิ่มอย่างเดียว ไม่มีแก้/ลบ"
+// (append-only) จึงซิงก์แบบ "เพิ่มแค่แถวใหม่" (WRITE_APPEND) แทนที่จะโหลดทั้งตารางใหม่ทุกครั้ง
+// (ต่างจาก customers/users ที่ใช้ WRITE_TRUNCATE เพราะมีการแก้ไข/ลบแถวเดิมได้) วิธีนี้ทำให้
+// ไม่ว่า log จะสะสมมากแค่ไหนในระยะยาว การซิงก์แต่ละครั้งก็ยังเร็วเท่าเดิม (ส่งแค่ 1 แถวใหม่)
+
+var USERS_SHEET_NAME = 'users';
+var USERS_SHEET_COLUMNS = ['user_id', 'username', 'password_hash', 'role', 'status'];
+var USERS_TYPE_MAP = { user_id: 'STRING', username: 'STRING', password_hash: 'STRING', role: 'STRING', status: 'STRING' };
+
+var LEAD_LOG_SHEET_NAME = 'lead_intake_log';
+var LEAD_LOG_SHEET_COLUMNS = ['received_at', 'received_date', 'phone', 'facebook', 'first_name', 'last_name', 'is_duplicate', 'match_type', 'is_manychat'];
+var LEAD_LOG_TYPE_MAP = {
+  received_at: 'TIMESTAMP', received_date: 'DATE', phone: 'STRING', facebook: 'STRING',
+  first_name: 'STRING', last_name: 'STRING', is_duplicate: 'BOOLEAN', match_type: 'STRING', is_manychat: 'BOOLEAN'
+};
+
+var ACTIVITY_LOG_SHEET_NAME = 'user_activity_log';
+var ACTIVITY_LOG_SHEET_COLUMNS = ['logged_at', 'log_date', 'username', 'role', 'action', 'detail', 'is_success'];
+var ACTIVITY_LOG_TYPE_MAP = {
+  logged_at: 'TIMESTAMP', log_date: 'DATE', username: 'STRING', role: 'STRING',
+  action: 'STRING', detail: 'STRING', is_success: 'BOOLEAN'
+};
+
+// เปิดแท็บตามชื่อในสเปรดชีตเดียวกับ customers — ถ้ายังไม่มีแท็บนี้ (หรือแท็บว่างเปล่า
+// ไม่มีแม้แต่แถวหัวตาราง) จะสร้างให้เองพร้อมใส่หัวคอลัมน์ตาม columns ที่ส่งมา
+function getOrCreateSheetTab_(tabName, columns) {
+  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.getRange(1, 1, 1, columns.length).setValues([columns]);
+  } else if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, columns.length).setValues([columns]);
+  }
+  return sheet;
+}
+
+// เหมือน getCustomerHeaderMap_ แต่ใช้ได้กับแท็บ/คอลัมน์ชุดไหนก็ได้ (ใช้ซ้ำกับ users/logs)
+function buildHeaderMapForColumns_(sheet, columns) {
+  var lastCol = Math.max(sheet.getLastColumn(), columns.length);
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  for (var i = 0; i < headerRow.length; i++) {
+    var h = (headerRow[i] || '').toString().trim();
+    if (h) map[h] = i + 1;
+  }
+  var missing = columns.filter(function(c) { return !map[c]; });
+  if (missing.length > 0) {
+    throw new Error('แท็บ "' + sheet.getName() + '" ขาดคอลัมน์: ' + missing.join(', '));
+  }
+  return map;
+}
+
+// แปลงค่า 1 ช่อง ให้เป็นข้อความ CSV ตามชนิดข้อมูล BigQuery ที่กำหนด (ใช้ร่วมกับ
+// USERS_TYPE_MAP / LEAD_LOG_TYPE_MAP / ACTIVITY_LOG_TYPE_MAP)
+function formatValueForCsvByType_(bqType, val) {
+  if (val === '' || val === null || val === undefined) return '';
+  if (bqType === 'DATE') {
+    return formatDateStr(val) || '';
+  }
+  if (bqType === 'TIMESTAMP') {
+    if (Object.prototype.toString.call(val) === '[object Date]') {
+      return Utilities.formatDate(val, 'GMT+7', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    }
+    return val;
+  }
+  if (bqType === 'BOOLEAN') {
+    if (typeof val === 'boolean') return val ? 'true' : 'false';
+    var s = String(val).toLowerCase();
+    return (s === 'true' || s === '1') ? 'true' : 'false';
+  }
+  return val;
+}
+
+// ซิงก์ทั้งแท็บเข้า BigQuery table แบบ "แทนที่ทั้งหมด" (WRITE_TRUNCATE) — ใช้กับ users
+// (ตารางเล็ก แก้ไข/ลบแถวได้ในอนาคต จึงต้องโหลดใหม่ทั้งหมดเพื่อความถูกต้องเสมอ)
+// รอผลจริงของ BigQuery Load Job จนเสร็จ (BigQuery.Jobs.insert แค่ "ส่งงานเข้าคิว" เท่านั้น
+// ไม่ได้แปลว่างานสำเร็จ — ถ้าไม่รอเช็คสถานะ โค้ดจะไม่รู้เลยว่า Load Job พังทีหลัง เช่น
+// ข้อมูลแปลงชนิดไม่ได้ / คอลัมน์ไม่ตรง schema ฯลฯ) ถ้า Load Job ล้มเหลว จะ throw
+// error พร้อมข้อความจริงจาก BigQuery ออกมาให้เห็นสาเหตุตรงๆ แทนที่จะดูเหมือน "สำเร็จ" เฉยๆ
+function waitForBigQueryLoadJob_(insertResult) {
+  var jobRef = insertResult && insertResult.jobReference;
+  if (!jobRef) throw new Error('BigQuery.Jobs.insert ไม่คืนค่า jobReference กลับมา (รูปแบบผลลัพธ์ผิดปกติ)');
+  var job = insertResult;
+  var maxWaitMs = 25000; // รอสูงสุด ~25 วิ กันไม่ให้ค้างนานเกินไปถ้า BigQuery ช้าผิดปกติ
+  var waited = 0;
+  while (job.status && job.status.state !== 'DONE' && waited < maxWaitMs) {
+    Utilities.sleep(1000);
+    waited += 1000;
+    job = BigQuery.Jobs.get(GCP_PROJECT_ID, jobRef.jobId, { location: jobRef.location });
+  }
+  if (job.status && job.status.errorResult) {
+    throw new Error('BigQuery Load Job ล้มเหลว: ' + job.status.errorResult.message +
+      (job.status.errors && job.status.errors.length ? (' | รายละเอียด: ' + job.status.errors.map(function(e){return e.message;}).join(' / ')) : ''));
+  }
+  if (!job.status || job.status.state !== 'DONE') {
+    throw new Error('BigQuery Load Job ยังไม่เสร็จภายในเวลาที่รอ (' + (maxWaitMs/1000) + ' วินาที) — สถานะล่าสุด: ' + (job.status ? job.status.state : 'ไม่ทราบ'));
+  }
+  return job;
+}
+
+function syncSheetTabToBigQueryTable_(tabName, columns, typeMap, tableId) {
+  var sheet = getOrCreateSheetTab_(tabName, columns);
+  var headerMap = buildHeaderMapForColumns_(sheet, columns);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  var allValues = (lastRow > 1) ? sheet.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+
+  var csvLines = allValues.map(function(row) {
+    return columns.map(function(colName) {
+      var idx = headerMap[colName] - 1;
+      return csvEscape_(formatValueForCsvByType_(typeMap[colName], row[idx]));
+    }).join(',');
+  });
+  var csvText = csvLines.join('\r\n');
+  var schemaFields = columns.map(function(c) { return { name: c, type: typeMap[c], mode: 'NULLABLE' }; });
+
+  var job = {
+    configuration: {
+      load: {
+        destinationTable: { projectId: GCP_PROJECT_ID, datasetId: DATASET_ID, tableId: tableId },
+        sourceFormat: 'CSV',
+        writeDisposition: 'WRITE_TRUNCATE',
+        schema: { fields: schemaFields },
+        allowQuotedNewlines: true,
+        allowJaggedRows: false,
+        maxBadRecords: 100
+      }
+    }
+  };
+  var blob = Utilities.newBlob(csvText, 'text/csv', tableId + '_sync.csv');
+  var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+  return waitForBigQueryLoadJob_(insertResult);
+}
+
+// เพิ่ม "แค่ 1 แถวใหม่" เข้า BigQuery table แบบต่อท้าย (WRITE_APPEND) — ใช้กับ log ที่เป็น
+// append-only (lead_intake_log, user_activity_log) เพื่อไม่ต้องโหลดประวัติ log ทั้งหมดซ้ำ
+// ทุกครั้งที่มี log ใหม่ 1 รายการ (จะช้าลงเรื่อยๆ ถ้า log สะสมเยอะขึ้นถ้าใช้ WRITE_TRUNCATE)
+function appendRowToBigQueryTable_(rowValuesInColumnOrder, columns, typeMap, tableId) {
+  var csvLine = columns.map(function(colName, i) {
+    return csvEscape_(formatValueForCsvByType_(typeMap[colName], rowValuesInColumnOrder[i]));
+  }).join(',');
+  var schemaFields = columns.map(function(c) { return { name: c, type: typeMap[c], mode: 'NULLABLE' }; });
+
+  var job = {
+    configuration: {
+      load: {
+        destinationTable: { projectId: GCP_PROJECT_ID, datasetId: DATASET_ID, tableId: tableId },
+        sourceFormat: 'CSV',
+        writeDisposition: 'WRITE_APPEND',
+        schema: { fields: schemaFields },
+        allowQuotedNewlines: true,
+        allowJaggedRows: false,
+        maxBadRecords: 100
+      }
+    }
+  };
+  var blob = Utilities.newBlob(csvLine, 'text/csv', tableId + '_append.csv');
+  var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+  return waitForBigQueryLoadJob_(insertResult);
+}
+// เข้าตาราง customers (native) — เรียกใช้หลังเขียน Sheet สำเร็จทุกครั้ง (เพิ่ม/แก้ไข/ลบ/
+// บันทึกการติดตาม) ห่อด้วย try/catch เสมอที่จุดเรียก เพื่อไม่ให้การซิงก์ล้มเหลวไปบล็อก
+// การบันทึกหลัก (ซึ่งสำเร็จไปแล้วที่ Sheet ก่อนหน้านี้)
+// =================================================================
+// ⏰ เพิ่ม (2026-09-17 รอบที่ 4): ฟังก์ชันสำหรับตั้ง time-driven trigger ให้ Apps Script
+// เรียกเป็นระยะ (แนะนำทุก 3-5 นาที) เพื่อซิงก์ข้อมูลจาก Sheet เข้า BigQuery native table
+// `customers` แทนการซิงก์แบบ synchronous ทุกครั้งที่มีคนกดบันทึก (ซึ่งช้าเกินไปเมื่อมี
+// ข้อมูลหลักแสนแถว) — Sheet ยังคงเป็นข้อมูลล่าสุดเสมอทันทีที่บันทึก ส่วนฝั่ง BigQuery
+// (ที่หน้าค้นหา/แดชบอร์ด/รายงานใช้อ่าน) จะตามหลังไม่เกินความถี่ของ trigger ที่ตั้งไว้
+//
+// วิธีติดตั้ง (ทำครั้งเดียว): เปิด Apps Script Editor → เมนูซ้าย รูปนาฬิกา "Triggers"
+// → Add Trigger → Choose function: scheduledSyncCustomersToBigQuery_ → Select event
+// source: Time-driven → Minutes timer → Every 5 minutes → Save (ตอน Save ครั้งแรกจะขอ
+// authorize สิทธิ์เพิ่ม ให้กด Allow)
+// ⏰ ทางเลือกสำหรับตั้ง trigger ผ่านโค้ดโดยตรง (เผื่อหน้า Triggers ใน Apps Script Editor
+// มีปัญหาแคช/ไม่ขึ้นรายชื่อฟังก์ชันใหม่ในหน้าเว็บ) — รันฟังก์ชันนี้ "1 ครั้งเดียว" จาก
+// dropdown "เรียกใช้" ด้านบน (เลือกชื่อ installScheduledCustomerSync_ แล้วกด ▶︎) จะสร้าง
+// time-driven trigger ให้อัตโนมัติ ไม่ต้องเข้าหน้า Triggers เองเลย — รันซ้ำได้ปลอดภัย
+// (จะลบ trigger เดิมของฟังก์ชันนี้ทิ้งก่อนเสมอ กันสร้างซ้ำซ้อนหลายอัน)
+function installScheduledCustomerSync_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'scheduledSyncCustomersToBigQuery_') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('scheduledSyncCustomersToBigQuery_')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  Logger.log('ตั้ง trigger สำเร็จ: จะรัน scheduledSyncCustomersToBigQuery_ ทุก 5 นาที');
+}
+
+function scheduledSyncCustomersToBigQuery_() {
+  try {
+    syncCustomerSheetToBigQuery_();
+  } catch (err) {
+    Logger.log('scheduledSyncCustomersToBigQuery_ error: ' + err);
+  }
+}
+
+function syncCustomerSheetToBigQuery_() {
+  var sheet = getCustomerSheet_();
+  var headerMap = getCustomerHeaderMap_(sheet);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  var allValues = (lastRow > 1) ? sheet.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+
+  var csvLines = [];
+  for (var i = 0; i < allValues.length; i++) {
+    var row = allValues[i];
+    var fields = [];
+    for (var c = 0; c < CUSTOMER_SHEET_COLUMNS.length; c++) {
+      var colName = CUSTOMER_SHEET_COLUMNS[c];
+      var idx = headerMap[colName] - 1;
+      fields.push(csvEscape_(formatCellForCsv_(colName, row[idx])));
+    }
+    csvLines.push(fields.join(','));
+  }
+  var csvText = csvLines.join('\r\n');
+
+  var schemaFields = CUSTOMER_SHEET_COLUMNS.map(function(colName) {
+    return { name: colName, type: bigQueryTypeForColumn_(colName), mode: 'NULLABLE' };
+  });
+
+  var job = {
+    configuration: {
+      load: {
+        destinationTable: { projectId: GCP_PROJECT_ID, datasetId: DATASET_ID, tableId: TABLE_ID },
+        sourceFormat: 'CSV',
+        writeDisposition: 'WRITE_TRUNCATE', // แทนที่ข้อมูลทั้งตารางทุกครั้งด้วยข้อมูลล่าสุดจาก Sheet
+        schema: { fields: schemaFields },
+        allowQuotedNewlines: true,
+        allowJaggedRows: false,
+        maxBadRecords: 100
+      }
+    }
+  };
+
+  // ถ้าไม่มีข้อมูลเลย (ชีตว่าง) csvText จะเป็น '' — ยังส่งได้ปกติ ได้ตารางเปล่า ไม่ error
+  var blob = Utilities.newBlob(csvText, 'text/csv', 'customers_sync.csv');
+  var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+  return waitForBigQueryLoadJob_(insertResult);
+}
+
+// =================================================================
 // 📋 ตาราง Log ประวัติการใช้งานของพนักงาน (user_activity_log)
 // =================================================================
 // บันทึกว่า "ใคร (username/role) ทำอะไร (action/detail) เมื่อไหร่ (logged_at) สำเร็จ
@@ -136,7 +626,9 @@ function normalizeActivityAction_(action) {
 }
 
 // เฉพาะ action ในลิสต์นี้เท่านั้นที่จะถูกบันทึกลง user_activity_log
-var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser'];
+// (screenshotAttempt เพิ่มเข้ามา 2026-09-15 — ดูคอมเมนต์ที่ action==='screenshotAttempt'
+// ใน doPost ด้านล่าง: เป็นมาตรการ "ตามรอย" ไม่ใช่ "ป้องกัน" การแคปหน้าจอ — เว็บทำไม่ได้จริง)
+var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser', 'screenshotAttempt'];
 
 // สร้างข้อความ "detail" ที่อ่านง่าย บอกรายละเอียดของแต่ละ action ไว้ในหน้า log
 function buildActivityLogDetail_(normalizedAction, payload, result) {
@@ -162,6 +654,11 @@ function buildActivityLogDetail_(normalizedAction, payload, result) {
         return 'เพิ่มสมาชิก username: ' + cleanStr(payload.username) + ' (role: ' + cleanStr(payload.role) + ')';
       case 'exportAll':
         return 'Export ข้อมูลลูกค้าทั้งหมดเป็นไฟล์';
+      case 'screenshotAttempt':
+        // payload.method มาจากฝั่งหน้าเว็บ: 'printscreen' (กดปุ่ม Print Screen) หรือ
+        // 'copy' (พยายามคัดลอกข้อมูลลูกค้าในตาราง/การ์ดรายละเอียด)
+        var methodLabel = { printscreen: 'กดปุ่ม Print Screen', copy: 'พยายามคัดลอกข้อมูลลูกค้า' };
+        return '⚠️ ' + (methodLabel[cleanStr(payload.method)] || ('เหตุการณ์: ' + cleanStr(payload.method)));
       default:
         return '';
     }
@@ -172,18 +669,27 @@ function buildActivityLogDetail_(normalizedAction, payload, result) {
 
 // บันทึก 1 แถวลง user_activity_log — ห่อด้วย try/catch เสมอ เพื่อไม่ให้การบันทึก log
 // ล้มเหลวไปทำให้ action หลัก (เช่นบันทึกลูกค้า) ที่สำเร็จไปแล้วดูเหมือนพังไปด้วย
+// แก้ไข (2026-09-17 รอบที่ 3): เขียนลงแท็บ user_activity_log ใน Sheet ก่อน แล้วค่อย
+// append 1 แถวเข้า BigQuery table เดียวกัน (ดูคอมเมนต์ที่ ACTIVITY_LOG_SHEET_NAME ด้านบนไฟล์)
 function logUserActivity_(user, action, detail, isSuccess) {
   try {
-    var sql = "INSERT INTO " + ACTIVITY_LOG_TABLE_FULL_PATH +
-      " (logged_at, log_date, username, role, action, detail, is_success) VALUES " +
-      "(CURRENT_TIMESTAMP(), CURRENT_DATE('Asia/Bangkok'), @username, @role, @action, @detail, CAST(@success AS BOOL))";
-    runParamQuery(sql, [
-      { name: 'username', value: user ? cleanStr(user.username) : '' },
-      { name: 'role', value: user ? cleanStr(user.role) : '' },
-      { name: 'action', value: cleanStr(action) },
-      { name: 'detail', value: cleanStr(detail) },
-      { name: 'success', value: isSuccess ? 'true' : 'false' }
-    ]);
+    var now = new Date();
+    var rowValues = [
+      now,                                               // logged_at
+      Utilities.formatDate(now, 'GMT+7', 'yyyy-MM-dd'),  // log_date
+      user ? cleanStr(user.username) : '',
+      user ? cleanStr(user.role) : '',
+      cleanStr(action),
+      cleanStr(detail),
+      isSuccess ? true : false
+    ];
+    var sheet = getOrCreateSheetTab_(ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS);
+    sheet.appendRow(rowValues);
+    try {
+      appendRowToBigQueryTable_(rowValues, ACTIVITY_LOG_SHEET_COLUMNS, ACTIVITY_LOG_TYPE_MAP, ACTIVITY_LOG_TABLE_ID);
+    } catch (syncErr) {
+      Logger.log('sync user_activity_log error: ' + syncErr);
+    }
   } catch (e) {
     Logger.log('logUserActivity_ error (ไม่กระทบการทำงานหลัก): ' + e.toString());
   }
@@ -254,11 +760,39 @@ function checkBigQueryStatus() {
 function formatDateStr(val) {
   if (val === null || val === undefined || val === '') return '';
 
-  // 1. ถ้าได้ประเภท Date Object มาจาก BigQuery
+  // 1. ถ้าได้ประเภท Date Object มาจาก BigQuery/Sheets
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return '';
+    var yFromDate = val.getFullYear();
+    // แก้ไข (2026-09-17 รอบที่ 5): เดิมเช็คปี พ.ศ. หลุด (>2400) เฉพาะตอน val เป็น string
+    // เท่านั้น ถ้า Sheets/BigQuery ส่งมาเป็น Date object ตรงๆ ที่มีปีเพี้ยนอยู่แล้ว (เช่น
+    // ปี 2569 ถูกตีความเป็นปี ค.ศ. ตรงๆ ตอนคีย์ข้อมูลเก่า) โค้ดเดิมจะไม่แก้ให้เลย ทำให้
+    // ส่งค่าผิดเข้า BigQuery — เพิ่มเช็คแบบเดียวกันให้ Date object ด้วย
+    if (yFromDate > 2400) {
+      var fixedDate = new Date(val.getTime());
+      fixedDate.setFullYear(yFromDate - 543);
+      return Utilities.formatDate(fixedDate, 'Asia/Bangkok', 'yyyy-MM-dd');
+    }
     return Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd');
   }
+
+  // 1.5 แก้ไข (2026-09-17 รอบที่ 5): ค่าจาก Google Sheets บางเซลล์เป็น "เลข serial
+  // วันที่" ดิบๆ (เช่น 244449) แทนที่จะเป็น Date object จริง — เกิดจากข้อมูลเก่าที่พิมพ์
+  // ปี พ.ศ. ผิดเป็น ค.ศ. ตรงๆ (เช่น 2569) ทำให้ Sheets คำนวณเป็นวันที่ในอนาคตหลายร้อยปี
+  // จนบางครั้งเซลล์เก็บเป็นตัวเลขล้วนแทนวันที่ ต้องแปลงกลับเป็นวันที่ก่อน แล้วค่อยเช็ค/แก้
+  // ปี พ.ศ. เหมือนกรณี Date object ด้านบน ไม่งั้นจะส่งเลขดิบๆ เข้า BigQuery แล้ว Load Job
+  // parse วันที่ไม่ได้ (error "Unable to parse... column_type: DATE")
+  if (typeof val === 'number' && !isNaN(val)) {
+    // Google Sheets serial date: วันที่ 0 = 30 ธ.ค. 1899 (นับแบบ UTC ไม่สนโซนเวลา)
+    var serialDate = new Date(Date.UTC(1899, 11, 30) + Math.round(val) * 86400000);
+    if (isNaN(serialDate.getTime())) return '';
+    var yFromSerial = serialDate.getUTCFullYear();
+    var mFromSerial = ('0' + (serialDate.getUTCMonth() + 1)).slice(-2);
+    var dFromSerial = ('0' + serialDate.getUTCDate()).slice(-2);
+    if (yFromSerial > 2400) yFromSerial = yFromSerial - 543;
+    return yFromSerial + '-' + mFromSerial + '-' + dFromSerial;
+  }
+
   var str = val.toString().trim();
   if (str === '-' || str === 'null' || str === 'undefined') return '';
   // ตัดส่วนเวลาออกถ้ามีติดมา (เช่น 2026-08-06T00:00:00Z)
@@ -637,6 +1171,9 @@ function buildExtraRequiredColumnsForInsert_(handledColumnNames) {
 }
 
 
+// แก้ไข (2026-09-17 รอบที่ 3): เปลี่ยนจาก INSERT SQL เข้า BigQuery มาเขียนลงแท็บ
+// "users" ใน Google Sheet เดียวกับ customers แทน (ดูคอมเมนต์ที่ USERS_SHEET_NAME
+// ด้านบนไฟล์) — เช็คซ้ำ username ตรงจาก Sheet เพื่อความสดใหม่ทันที ไม่ต้องรอ sync
 function addUserHTML(payload, currentUser) {
   try {
     if (!currentUser || ADD_MEMBER_ALLOWED_ROLES.indexOf(currentUser.role) === -1) {
@@ -661,52 +1198,36 @@ function addUserHTML(payload, currentUser) {
       return { success: false, message: 'สิทธิ์พนักงาน สามารถเพิ่มสมาชิกได้เฉพาะ role "พนักงาน" หรือ "sale" เท่านั้น' };
     }
 
-    // เช็คว่ามี username นี้อยู่แล้วในระบบหรือยัง (กันซ้ำ)
-    var checkSql = "SELECT username FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` WHERE username = @username LIMIT 1";
-    var existing = runParamQueryFetch(checkSql, [{ name: 'username', value: username }]);
-    if (existing && existing.length > 0) {
-      return { success: false, message: 'มี username "' + username + '" อยู่แล้วในระบบ กรุณาใช้ชื่ออื่น' };
+    var usersSheet = getOrCreateSheetTab_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS);
+    var usersHeaderMap = buildHeaderMapForColumns_(usersSheet, USERS_SHEET_COLUMNS);
+
+    // เช็คว่ามี username นี้อยู่แล้วในระบบหรือยัง (กันซ้ำ) — อ่านตรงจาก Sheet
+    var lastRow = usersSheet.getLastRow();
+    if (lastRow > 1) {
+      var usernameCol = usersHeaderMap['username'];
+      var existingUsernames = usersSheet.getRange(2, usernameCol, lastRow - 1, 1).getValues();
+      for (var i = 0; i < existingUsernames.length; i++) {
+        var existingU = (existingUsernames[i][0] || '').toString().trim().toLowerCase();
+        if (existingU === username) {
+          return { success: false, message: 'มี username "' + username + '" อยู่แล้วในระบบ กรุณาใช้ชื่ออื่น' };
+        }
+      }
     }
 
     // เก็บรหัสผ่านเป็น sha256 hash เสมอ (ไม่เก็บ plain text) — สอดคล้องกับที่
     // getBigQueryLoginUser_ ใช้ตอน login (รองรับทั้ง plain และ sha256 เผื่อแถวเก่า)
     var passwordHash = sha256Hex_(password);
+    var newUserFields = {
+      user_id: Utilities.getUuid(),
+      username: username,
+      password_hash: passwordHash,
+      role: requestedRole,
+      status: 'active'
+    };
+    usersSheet.appendRow(USERS_SHEET_COLUMNS.map(function(c) { return newUserFields[c]; }));
 
-    // เช็ค schema จริงของตาราง users ว่ามีคอลัมน์ required (NOT NULL) อื่นนอกเหนือจาก
-    // username/password_hash/role/status หรือไม่ (เช่น user_id) แล้วเติมค่าให้ครบ
-    // กันปัญหา "Required field X cannot be null" ที่เจอตอนทดสอบ
-    var handledColumns = ['username', 'password_hash', 'role', 'status'];
-    var extra = buildExtraRequiredColumnsForInsert_(handledColumns);
-
-    var allColumnNames = ['username', 'password_hash', 'role', 'status'].concat(extra.names);
-    var allColumnExprs = ['@username', '@passwordHash', '@role', "'active'"].concat(extra.exprs);
-    var insertSql = "INSERT INTO `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` " +
-      "(" + allColumnNames.join(', ') + ") VALUES (" + allColumnExprs.join(', ') + ")";
-    var insertParams = [
-      { name: 'username', value: username },
-      { name: 'passwordHash', value: passwordHash },
-      { name: 'role', value: requestedRole }
-    ].concat(extra.params);
-
-    try {
-      runParamQuery(insertSql, insertParams);
-    } catch (insertErr) {
-      var errMsg = insertErr.toString();
-      // กันเหนียวรอบสุดท้าย: ถ้าตรวจ schema ไม่เจอ user_id ด้วยเหตุผลบางอย่าง (เช่น
-      // สิทธิ์เข้าถึง schema ไม่ครบ) แต่ BigQuery ยังฟ้อง "Required field user_id cannot
-      // be null" อยู่ดี ให้ลองใหม่อีกครั้งโดยยัด user_id เป็น UUID string ตรงๆ ไปเลย
-      // (เผื่อทางสุดท้ายกันพังซ้ำแบบเดิม)
-      if (errMsg.indexOf('user_id') !== -1 && errMsg.indexOf('cannot be null') !== -1 && allColumnNames.indexOf('user_id') === -1) {
-        var retryColumnNames = allColumnNames.concat(['user_id']);
-        var retryColumnExprs = allColumnExprs.concat(['@fallbackUserId']);
-        var retrySql = "INSERT INTO `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` " +
-          "(" + retryColumnNames.join(', ') + ") VALUES (" + retryColumnExprs.join(', ') + ")";
-        var retryParams = insertParams.concat([{ name: 'fallbackUserId', value: Utilities.getUuid() }]);
-        runParamQuery(retrySql, retryParams);
-      } else {
-        throw insertErr;
-      }
-    }
+    try { syncSheetTabToBigQueryTable_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS, USERS_TYPE_MAP, 'users'); }
+    catch (syncErr) { Logger.log('sync users error: ' + syncErr); }
 
     return {
       success: true,
@@ -822,10 +1343,12 @@ function doPost(e) {
       result = addCustomerHTML(contents.payload || contents.data || {});
     } else if (action === 'update' || action === 'editCustomer') {
       var editData = contents.payload || contents;
-      result = updateCustomerHTML(editData.rowIndex || editData.phoneKey, editData.cust || editData.data || {});
+      result = updateCustomerHTML(editData.rowIndex || editData.phoneKey || editData.key, editData.cust || editData.data || {}, editData.phoneHint);
     } else if (action === 'delete' || action === 'deleteCustomer') {
       var delData = contents.payload || contents;
-      result = deleteCustomerHTML(delData.phoneKey || delData.rowIndex);
+      // แก้บั๊ก (2026-09-17 รอบที่ 4): เดิมไม่ได้เช็ค delData.key เลย ทั้งที่หน้าเว็บส่งมาในชื่อ
+      // 'key' เสมอ (ดู deleteCustomerByIndex ใน index.html) ทำให้ลบไม่เคยทำงานได้จริงมาก่อน
+      result = deleteCustomerHTML(delData.phoneKey || delData.rowIndex || delData.key, delData.phoneHint);
     } else if (action === 'getByPhone' || action === 'getCustomerByRow') {
       var getData = contents.payload || contents;
       result = getCustomerByPhone(getData.phoneKey || getData.rowIndex);
@@ -844,7 +1367,7 @@ function doPost(e) {
       result = getAllCustomersExport();
     } else if (action === 'addFollowUp') {
       var flData = contents.payload || contents;
-      result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {});
+      result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {}, flData.phoneHint);
     } else if (action === 'getDailyLeadReport') {
       result = getDailyLeadReportHTML(contents.payload || contents);
     } else if (action === 'getLeadIntakeLogDetail') {
@@ -855,6 +1378,14 @@ function doPost(e) {
       // heartbeat จากหน้าเว็บ (ทุก ~20 วิ ตอน login อยู่) แค่เรียกมาให้ validateToken()
       // ด้านบนอัปเดต lastActive ของ session นี้ ไม่ต้องทำอะไรต่อ — ใช้เพื่อให้คนอื่นเห็นว่า
       // user นี้ยัง "ออนไลน์" อยู่ในหน้า login ของคนที่ยังไม่ได้เข้าสู่ระบบ
+      result = { success: true };
+    } else if (action === 'screenshotAttempt') {
+      // ⚠️ ไม่ใช่การ "ป้องกัน" การแคปหน้าจอ/Snipping Tool จริง — ฝั่งเว็บสกัดไม่ได้ 100%
+      // (Print Screen/Snipping Tool ทำงานในระดับ OS อยู่นอกเหนือการควบคุมของ JavaScript
+      // ทุกเว็บไซต์ในโลกก็ทำแบบนี้ไม่ได้ 100% เหมือนกัน) ฟังก์ชันนี้แค่ "บันทึกร่องรอย" ว่า
+      // ใคร (user จาก token) พยายามแคป/คัดลอกข้อมูล เมื่อไหร่ — ดู activateLeakDeterrentMeasures_
+      // ในไฟล์ index.html ฝั่ง frontend ที่เรียก action นี้เข้ามา ทุก action ในนี้จะถูก log ลง
+      // user_activity_log อัตโนมัติผ่านโค้ดด้านล่าง (อยู่ใน ACTIVITY_LOG_WHITELIST แล้ว)
       result = { success: true };
     } else if (action === 'getUserActivityLog') {
       // ประวัติการใช้งานของพนักงาน — เฉพาะ admin เท่านั้นที่ดูได้
@@ -1422,47 +1953,69 @@ function getCustomerByPhone(phoneKey) {
 }
 // เช็คว่าชื่อ Facebook นี้มีอยู่ในระบบแล้วหรือไม่ (เทียบแบบไม่สนตัวพิมพ์เล็ก/ใหญ่ และเว้นวรรคหน้า-หลัง)
 // ใช้ป้องกันไม่ให้สร้างรายชื่อลูกค้าซ้ำ เวลาคนเดิมส่งเบอร์มาอีกรอบผ่าน Facebook/ManyChat
+// แก้ไข (2026-09-17): เปลี่ยนจาก SELECT ผ่าน BigQuery มาอ่านตรงจาก Google Sheet แทน
+// เพราะฟังก์ชันนี้ถูกเรียกใช้ทันทีก่อนจะ เพิ่ม/แก้ไข แถวในสเปรดชีตเดียวกัน (ใน addCustomerHTML)
+// การอ่านตรงจากชีตจึงเห็นข้อมูลล่าสุดแน่นอน ไม่ต้องรอ BigQuery external table รีเฟรช
 function findCustomerByFacebookName(fbName) {
   var cleanFb = cleanStr(fbName);
   if (!cleanFb) return null;
-  var sql = "SELECT follow_up_log FROM " + TABLE_FULL_PATH +
-            " WHERE LOWER(TRIM(IFNULL(facebook, ''))) = LOWER(TRIM(@fb)) LIMIT 1";
-  var rows = runParamQueryFetch(sql, [{ name: 'fb', value: cleanFb }]);
-  return (rows && rows.length > 0) ? rows[0] : null;
+  var sheet = getCustomerSheet_();
+  var headerMap = getCustomerHeaderMap_(sheet);
+  var rowNum = findCustomerRowNumberByFacebook_(sheet, headerMap, cleanFb);
+  if (rowNum === -1) return null;
+  return {
+    follow_up_log: sheet.getRange(rowNum, headerMap['follow_up_log']).getValue(),
+    _rowNum: rowNum
+  };
 }
 
 // เช็คว่าเบอร์นี้มีอยู่ในระบบแล้วหรือไม่ (รองรับทั้งแบบมี/ไม่มีเลข 0 นำหน้า เหมือน ROW_MATCH_WHERE)
 // ใช้คู่กับ findCustomerByFacebookName เพื่อจับซ้ำได้ทั้งกรณี "ชื่อ Facebook เดิมแต่เบอร์เปลี่ยน"
 // และกรณี "เบอร์เดิมแต่ชื่อ Facebook ไม่ตรงกัน (เช่น ใช้คนละบัญชี หรือรอบก่อนพิมพ์ชื่อผิด)"
+// (2026-09-17): อ่านตรงจาก Sheet เช่นเดียวกับด้านบน ด้วยเหตุผลเดียวกัน
 function findCustomerByPhoneNumber(phone) {
   var cleanPhone = formatPhoneNumber(phone);
   if (!cleanPhone) return null;
-  var sql = "SELECT follow_up_log, phone, facebook FROM " + TABLE_FULL_PATH +
-            " WHERE CAST(phone AS STRING) = @phone " +
-            " OR (SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@phone, r'\\D', '') AS INT64) " +
-            "     AND SAFE_CAST(phone AS INT64) IS NOT NULL AND SAFE_CAST(phone AS INT64) != 0) LIMIT 1";
-  var rows = runParamQueryFetch(sql, [{ name: 'phone', value: cleanPhone }]);
-  return (rows && rows.length > 0) ? rows[0] : null;
+  var sheet = getCustomerSheet_();
+  var headerMap = getCustomerHeaderMap_(sheet);
+  var rowNum = findCustomerRowNumberByPhone_(sheet, headerMap, cleanPhone);
+  if (rowNum === -1) return null;
+  var rowVals = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
+  return {
+    follow_up_log: rowVals[headerMap['follow_up_log'] - 1],
+    phone: rowVals[headerMap['phone'] - 1],
+    facebook: rowVals[headerMap['facebook'] - 1],
+    _rowNum: rowNum
+  };
 }
 
 // บันทึกทุกครั้งที่มีการยิง action:add เข้ามา (ไม่ว่าจะสร้างลูกค้าใหม่ หรือไปชนกับของเดิม)
 // ลง lead_intake_log เพื่อให้นับ "วันนี้ได้กี่เบอร์" ได้ครบ รวมที่ส่งซ้ำมาด้วย —
 // ถ้า insert ตารางนี้ล้มเหลว (เช่น ยังไม่ได้รัน one-time setup สร้างตาราง) จะไม่ทำให้
 // การเพิ่ม/อัปเดตลูกค้าหลักพัง แค่เขียน Logger ไว้เฉยๆ
+// แก้ไข (2026-09-17 รอบที่ 3): เขียนลงแท็บ lead_intake_log ใน Sheet ก่อน แล้วค่อย
+// append 1 แถวเข้า BigQuery table เดียวกัน (ดูคอมเมนต์ที่ LEAD_LOG_SHEET_NAME ด้านบนไฟล์)
 function logLeadIntake_(info) {
   try {
-    var sql = "INSERT INTO " + LOG_TABLE_FULL_PATH +
-              " (received_at, received_date, phone, facebook, first_name, last_name, is_duplicate, match_type, is_manychat) " +
-              "VALUES (CURRENT_TIMESTAMP(), CURRENT_DATE('Asia/Bangkok'), @phone, @fb, @fn, @ln, CAST(@dup AS BOOL), @mt, CAST(@mc AS BOOL))";
-    runParamQuery(sql, [
-      { name: 'phone', value: cleanStr(info.phone) },
-      { name: 'fb', value: cleanStr(info.facebook) },
-      { name: 'fn', value: cleanStr(info.firstName) },
-      { name: 'ln', value: cleanStr(info.lastName) },
-      { name: 'dup', value: info.isDuplicate ? 'true' : 'false' },
-      { name: 'mt', value: cleanStr(info.matchType) },
-      { name: 'mc', value: info.isManyChat ? 'true' : 'false' }
-    ]);
+    var now = new Date();
+    var rowValues = [
+      now,                                                 // received_at
+      Utilities.formatDate(now, 'GMT+7', 'yyyy-MM-dd'),    // received_date
+      cleanStr(info.phone),
+      cleanStr(info.facebook),
+      cleanStr(info.firstName),
+      cleanStr(info.lastName),
+      info.isDuplicate ? true : false,
+      cleanStr(info.matchType),
+      info.isManyChat ? true : false
+    ];
+    var sheet = getOrCreateSheetTab_(LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS);
+    sheet.appendRow(rowValues);
+    try {
+      appendRowToBigQueryTable_(rowValues, LEAD_LOG_SHEET_COLUMNS, LEAD_LOG_TYPE_MAP, LOG_TABLE_ID);
+    } catch (syncErr) {
+      Logger.log('sync lead_intake_log error: ' + syncErr);
+    }
   } catch (e) {
     Logger.log('logLeadIntake_ error (ข้อมูลลูกค้าหลักถูกบันทึกไปแล้วตามปกติ ไม่กระทบ): ' + e.toString());
   }
@@ -1516,37 +2069,29 @@ function addCustomerHTML(cust) {
         loggedAt: new Date().toISOString()
       });
 
-      var updParamsForDup = [
-        { name: 'log', value: JSON.stringify(logArrForDup) },
-        { name: 'bd', value: nextDayStrForDup },
-        { name: 'lfd', value: todayStrForDup }
-      ];
-      var setClausesForDup = ["follow_up_log = @log", "booking_date = @bd", "last_followup_date = @lfd"];
+      // แก้ไข (2026-09-17): เขียนกลับตรงลง Google Sheet แทนการยิง UPDATE เข้า BigQuery
+      // (existing._rowNum มาจาก findCustomerByFacebookName/findCustomerByPhoneNumber
+      // ด้านบน ซึ่งตอนนี้อ่านจากชีตโดยตรงแล้ว จึงรู้เลขแถวที่แน่นอนอยู่แล้ว ไม่ต้องหาใหม่)
+      var sheetForDup = getCustomerSheet_();
+      var headerMapForDup = getCustomerHeaderMap_(sheetForDup);
+      var rowNumForDup = existing._rowNum;
+      sheetForDup.getRange(rowNumForDup, headerMapForDup['follow_up_log']).setValue(JSON.stringify(logArrForDup));
+      sheetForDup.getRange(rowNumForDup, headerMapForDup['booking_date']).setValue(nextDayStrForDup);
+      sheetForDup.getRange(rowNumForDup, headerMapForDup['last_followup_date']).setValue(todayStrForDup);
       if (newPhoneForDup) {
-        setClausesForDup.push("phone = @ph");
-        updParamsForDup.push({ name: 'ph', value: newPhoneForDup });
+        sheetForDup.getRange(rowNumForDup, headerMapForDup['phone']).setValue(newPhoneForDup);
       }
       if (fbNameForDup) {
-        setClausesForDup.push("facebook = @fb2");
-        updParamsForDup.push({ name: 'fb2', value: fbNameForDup });
+        sheetForDup.getRange(rowNumForDup, headerMapForDup['facebook']).setValue(fbNameForDup);
       }
-
-      // WHERE ต้องชี้ไปที่แถวเดิมที่เจอจริง ๆ: ถ้าเจอจาก Facebook ให้ match ด้วย Facebook
-      // (เผื่อกรณีเบอร์เปลี่ยนไปแล้ว การ match ด้วยเบอร์เก่าจะหาไม่เจอ), ถ้าเจอจากเบอร์อย่างเดียว
-      // (ไม่มีชื่อ Facebook ตรงกัน) ให้ match ด้วยเบอร์
-      var whereSqlForDup;
-      if (existingByFb) {
-        whereSqlForDup = "LOWER(TRIM(IFNULL(facebook, ''))) = LOWER(TRIM(@matchFb))";
-        updParamsForDup.push({ name: 'matchFb', value: fbNameForDup });
-      } else {
-        whereSqlForDup = "(CAST(phone AS STRING) = @matchPhone " +
-                         "OR (SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@matchPhone, r'\\D', '') AS INT64) " +
-                         "     AND SAFE_CAST(phone AS INT64) IS NOT NULL AND SAFE_CAST(phone AS INT64) != 0))";
-        updParamsForDup.push({ name: 'matchPhone', value: newPhoneForDup });
-      }
-
-      var updSqlForDup = "UPDATE " + TABLE_FULL_PATH + " SET " + setClausesForDup.join(", ") + " WHERE " + whereSqlForDup;
-      runParamQuery(updSqlForDup, updParamsForDup);
+      // ซิงก์เข้า BigQuery native table หลังเขียน Sheet สำเร็จ (ดูคอมเมนต์ที่
+      // syncCustomerSheetToBigQuery_ ด้านบนไฟล์) — ถ้า sync ล้มเหลวไม่ทำให้การบันทึกหลักพัง
+      // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
+      // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
+      // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
+      // เปลี่ยนไปใช้ time-driven trigger เรียก scheduledSyncCustomersToBigQuery_()
+      // เป็นระยะแทน (ดูคำอธิบายที่ฟังก์ชันนั้น) — ข้อมูลใน Sheet จะเห็นล่าสุดทันที
+      // เสมอ ส่วนฝั่ง BigQuery (ที่ใช้ค้นหา/รายงาน) จะตามหลังไม่กี่นาทีตาม trigger
 
       logLeadIntake_({
         phone: newPhoneForDup,
@@ -1565,14 +2110,11 @@ function addCustomerHTML(cust) {
       };
     }
 
-    // created_at_ts: เวลาบันทึกจริงระดับวินาที (CURRENT_TIMESTAMP() ฝั่ง BigQuery ไม่ใช่
-    // ค่าที่ส่งมาจากพารามิเตอร์) ใช้เป็นตัวเรียงรองใน searchCustomersHTML ตอนหลายแถว
-    // อยู่วันเดียวกัน (ดูคอมเมนต์ที่ ORDER BY ของ searchCustomersHTML) — ต้องรัน
-    // runOneTimeSetup_AddCreatedAtTimestampColumn() ก่อนครั้งเดียวถ้ายังไม่เคยรัน
-    var sql = "INSERT INTO " + TABLE_FULL_PATH + " (" +
-              "created_date, first_name, last_name, phone, booking_date, type, product, " +
-              "address_no, moo, village, subdistrict, district, province, zipcode, remark, line, facebook, follow_up_log, financial_info, created_at_ts) " +
-              "VALUES (@d0, @d1, @d2, @d3, @d4, @d5, @d6, @d7, @d8, @d9, @d10, @d11, @d12, @d13, @d14, @d15, @d16, @d17, @d18, CURRENT_TIMESTAMP())";
+    // created_at_ts: เวลาบันทึกจริงระดับวินาที ใช้เป็นตัวเรียงรองใน searchCustomersHTML
+    // ตอนหลายแถวอยู่วันเดียวกัน (ดูคอมเมนต์ที่ ORDER BY ของ searchCustomersHTML)
+    //
+    // แก้ไข (2026-09-17): เปลี่ยนจาก INSERT SQL เข้า BigQuery มาเป็น appendRow ลง
+    // Google Sheet โดยตรงแทน (ดูคอมเมนต์อธิบายที่ CUSTOMER_SHEET_ID ด้านบนไฟล์)
     var inputDate = formatDateStr(cust.date || cust.created_date) || Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
     var inputBookingDate = formatDateStr(cust.appdate || cust.booking_date);
 
@@ -1584,28 +2126,37 @@ function addCustomerHTML(cust) {
       inputBookingDate = Utilities.formatDate(followUpBase, 'GMT+7', 'yyyy-MM-dd');
     }
 
-    var params = [
-      { name: 'd0', value: inputDate },
-      { name: 'd1', value: cleanStr(cust.firstname || cust.firstName) },
-      { name: 'd2', value: cleanStr(cust.lastname || cust.lastName) },
-      { name: 'd3', value: cleanStr(cust.phone1 || cust.phone) },
-      { name: 'd4', value: inputBookingDate },
-      { name: 'd5', value: cleanStr(cust.type || 'ลงทะเบียน') },
-      { name: 'd6', value: customerProduct_(cust) },
-      { name: 'd7', value: customerAddressNo_(cust) },
-      { name: 'd8', value: cleanStr(cust.moo) },
-      { name: 'd9', value: cleanStr(cust.village) },
-      { name: 'd10', value: cleanStr(cust.subdistrict) },
-      { name: 'd11', value: cleanStr(cust.district) },
-      { name: 'd12', value: cleanStr(cust.province || 'อุบลราชธานี') },
-      { name: 'd13', value: cleanStr(cust.zipcode) },
-      { name: 'd14', value: cleanStr(cust.remark || cust.note) },
-      { name: 'd15', value: cleanStr(cust.line) },
-      { name: 'd16', value: cleanStr(cust.facebook) },
-      { name: 'd17', value: '[]' },
-      { name: 'd18', value: cleanStr(cust.financialInfo || cust.financial_info) || '{}' }
-    ];
-    runParamQuery(sql, params);
+    var newCustSheet = getCustomerSheet_();
+    var newCustHeaderMap = getCustomerHeaderMap_(newCustSheet);
+    var newCustFields = {
+      created_date: inputDate,
+      first_name: cleanStr(cust.firstname || cust.firstName),
+      last_name: cleanStr(cust.lastname || cust.lastName),
+      phone: cleanStr(cust.phone1 || cust.phone),
+      booking_date: inputBookingDate,
+      type: cleanStr(cust.type || 'ลงทะเบียน'),
+      product: customerProduct_(cust),
+      address_no: customerAddressNo_(cust),
+      moo: cleanStr(cust.moo),
+      village: cleanStr(cust.village),
+      subdistrict: cleanStr(cust.subdistrict),
+      district: cleanStr(cust.district),
+      province: cleanStr(cust.province || 'อุบลราชธานี'),
+      zipcode: cleanStr(cust.zipcode),
+      remark: cleanStr(cust.remark || cust.note),
+      line: cleanStr(cust.line),
+      facebook: cleanStr(cust.facebook),
+      follow_up_log: '[]',
+      financial_info: cleanStr(cust.financialInfo || cust.financial_info) || '{}',
+      created_at_ts: new Date()
+    };
+    newCustSheet.appendRow(buildCustomerRowArray_(newCustHeaderMap, newCustFields));
+    // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
+      // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
+      // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
+      // เปลี่ยนไปใช้ time-driven trigger เรียก scheduledSyncCustomersToBigQuery_()
+      // เป็นระยะแทน (ดูคำอธิบายที่ฟังก์ชันนั้น) — ข้อมูลใน Sheet จะเห็นล่าสุดทันที
+      // เสมอ ส่วนฝั่ง BigQuery (ที่ใช้ค้นหา/รายงาน) จะตามหลังไม่กี่นาทีตาม trigger
 
     logLeadIntake_({
       phone: newPhoneForDup,
@@ -1622,54 +2173,77 @@ function addCustomerHTML(cust) {
     return { success: false, message: err.toString() };
   }
 }
-function updateCustomerHTML(rowIndex, cust) {
+// แก้ไข (2026-09-17): เปลี่ยนจาก UPDATE SQL เข้า BigQuery มาเป็นการหาแถวในชีตด้วย
+// findCustomerRowNumberByKey_ (จำลองตรรกะเดียวกับ ROW_MATCH_WHARE เดิมทุกประการ)
+// แล้วเขียนทับค่าลงในเซลล์ของแถวนั้นแทน
+function updateCustomerHTML(rowIndex, cust, phoneHint) {
   try {
     var rawKey = cleanStr(rowIndex || '');
     if (!rawKey) return { success: false, message: 'ไม่พบอ้างอิงรายการที่จะแก้ไข' };
     var inputDate = formatDateStr(cust.date || cust.created_date);
     var inputBookingDate = formatDateStr(cust.appdate || cust.booking_date);
-    var sql = "UPDATE " + TABLE_FULL_PATH + " SET " +
-              "created_date = @d0, first_name = @d1, last_name = @d2, " +
-              "phone = @d3, booking_date = @d4, type = @d5, " +
-              "product = @d6, address_no = @d7, moo = @d8, " +
-              "village = @d9, subdistrict = @d10, district = @d11, " +
-              "province = @d12, zipcode = @d13, remark = @d14, " +
-              "line = @d15, facebook = @d16, financial_info = @d17 " +
-              "WHERE " + ROW_MATCH_WHERE;
-    var params = [
-      { name: 'd0', value: inputDate },
-      { name: 'd1', value: cleanStr(cust.firstname || cust.firstName) },
-      { name: 'd2', value: cleanStr(cust.lastname || cust.lastName) },
-      { name: 'd3', value: cleanStr(cust.phone1 || cust.phone) },
-      { name: 'd4', value: inputBookingDate },
-      { name: 'd5', value: cleanStr(cust.type || 'ลงทะเบียน') },
-      { name: 'd6', value: customerProduct_(cust) },
-      { name: 'd7', value: customerAddressNo_(cust) },
-      { name: 'd8', value: cleanStr(cust.moo) },
-      { name: 'd9', value: cleanStr(cust.village) },
-      { name: 'd10', value: cleanStr(cust.subdistrict) },
-      { name: 'd11', value: cleanStr(cust.district) },
-      { name: 'd12', value: cleanStr(cust.province || 'อุบลราชธานี') },
-      { name: 'd13', value: cleanStr(cust.zipcode) },
-      { name: 'd14', value: cleanStr(cust.remark || cust.note) },
-      { name: 'd15', value: cleanStr(cust.line) },
-      { name: 'd16', value: cleanStr(cust.facebook) },
-      { name: 'd17', value: cleanStr(cust.financialInfo || cust.financial_info) || '{}' },
-      { name: 'key', value: rawKey }
-    ];
-    runParamQuery(sql, params);
+
+    var sheet = getCustomerSheet_();
+    var headerMap = getCustomerHeaderMap_(sheet);
+    var rowNum = findCustomerRowNumberByKey_(sheet, headerMap, rawKey, cleanStr(phoneHint));
+    if (rowNum === -1) {
+      return { success: false, message: 'ไม่พบข้อมูลลูกค้ารายนี้ในชีต (อาจถูกลบไปแล้ว หรือ key ไม่ตรงกับข้อมูลปัจจุบัน)' };
+    }
+
+    var fields = {
+      created_date: inputDate,
+      first_name: cleanStr(cust.firstname || cust.firstName),
+      last_name: cleanStr(cust.lastname || cust.lastName),
+      phone: cleanStr(cust.phone1 || cust.phone),
+      booking_date: inputBookingDate,
+      type: cleanStr(cust.type || 'ลงทะเบียน'),
+      product: customerProduct_(cust),
+      address_no: customerAddressNo_(cust),
+      moo: cleanStr(cust.moo),
+      village: cleanStr(cust.village),
+      subdistrict: cleanStr(cust.subdistrict),
+      district: cleanStr(cust.district),
+      province: cleanStr(cust.province || 'อุบลราชธานี'),
+      zipcode: cleanStr(cust.zipcode),
+      remark: cleanStr(cust.remark || cust.note),
+      line: cleanStr(cust.line),
+      facebook: cleanStr(cust.facebook),
+      financial_info: cleanStr(cust.financialInfo || cust.financial_info) || '{}'
+    };
+    for (var field in fields) {
+      var colNum = headerMap[field];
+      if (colNum) sheet.getRange(rowNum, colNum).setValue(fields[field]);
+    }
+    // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
+      // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
+      // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
+      // เปลี่ยนไปใช้ time-driven trigger เรียก scheduledSyncCustomersToBigQuery_()
+      // เป็นระยะแทน (ดูคำอธิบายที่ฟังก์ชันนั้น) — ข้อมูลใน Sheet จะเห็นล่าสุดทันที
+      // เสมอ ส่วนฝั่ง BigQuery (ที่ใช้ค้นหา/รายงาน) จะตามหลังไม่กี่นาทีตาม trigger
     return { success: true, message: 'อัปเดตข้อมูลสำเร็จ' };
   } catch (err) {
     return { success: false, message: err.toString() };
   }
 }
-function deleteCustomerHTML(phoneKey) {
+// แก้ไข (2026-09-17): เปลี่ยนจาก DELETE SQL เข้า BigQuery มาเป็นการหาแถวในชีตแล้ว
+// ลบแถวนั้นออกจริง (deleteRow) แทน
+function deleteCustomerHTML(phoneKey, phoneHint) {
   try {
     var rawKey = cleanStr(phoneKey);
     if (!rawKey) return { success: false, message: 'ไม่พบรายการที่จะลบ' };
-    var sql = "DELETE FROM " + TABLE_FULL_PATH +
-              " WHERE " + ROW_MATCH_WHERE;
-    runParamQuery(sql, [{ name: 'key', value: rawKey }]);
+    var sheet = getCustomerSheet_();
+    var headerMap = getCustomerHeaderMap_(sheet);
+    var rowNum = findCustomerRowNumberByKey_(sheet, headerMap, rawKey, cleanStr(phoneHint));
+    if (rowNum === -1) {
+      return { success: false, message: 'ไม่พบข้อมูลลูกค้ารายนี้ในชีต (อาจถูกลบไปแล้วก่อนหน้านี้)' };
+    }
+    sheet.deleteRow(rowNum);
+    // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
+      // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
+      // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
+      // เปลี่ยนไปใช้ time-driven trigger เรียก scheduledSyncCustomersToBigQuery_()
+      // เป็นระยะแทน (ดูคำอธิบายที่ฟังก์ชันนั้น) — ข้อมูลใน Sheet จะเห็นล่าสุดทันที
+      // เสมอ ส่วนฝั่ง BigQuery (ที่ใช้ค้นหา/รายงาน) จะตามหลังไม่กี่นาทีตาม trigger
     return { success: true, message: 'ลบข้อมูลสำเร็จ' };
   } catch (err) {
     return { success: false, message: err.toString() };
@@ -2030,7 +2604,7 @@ function parseFollowUpLog(raw) {
   }
 }
 
-function addFollowUpLogHTML(rawKeyInput, entry) {
+function addFollowUpLogHTML(rawKeyInput, entry, phoneHint) {
   try {
     var rawKey = cleanStr(rawKeyInput || '');
     if (!rawKey) return { success: false, message: 'ไม่พบรหัสอ้างอิงลูกค้า' };
@@ -2052,15 +2626,17 @@ function addFollowUpLogHTML(rawKeyInput, entry) {
       nextFollowUpDate = Utilities.formatDate(defaultNextBase, 'GMT+7', 'yyyy-MM-dd');
     }
 
-    // 1) ดึง follow_up_log ปัจจุบันของลูกค้ารายนี้มาก่อน
-    var selSql = "SELECT follow_up_log FROM " + TABLE_FULL_PATH +
-                 " WHERE " + ROW_MATCH_WHERE + " LIMIT 1";
-    var selRows = runParamQueryFetch(selSql, [{ name: 'key', value: rawKey }]);
-    if (!selRows || selRows.length === 0) {
-      return { success: false, message: 'ไม่พบข้อมูลลูกค้าในระบบ (ถ้าเพิ่งบันทึกลูกค้าใหม่ ข้อมูลอาจยังอยู่ใน streaming buffer ลองรออีกสักครู่)' };
+    // แก้ไข (2026-09-17): 1) หาแถวลูกค้าในชีตด้วย key เดียวกับที่เคยใช้กับ ROW_MATCH_WHERE
+    var sheet = getCustomerSheet_();
+    var headerMap = getCustomerHeaderMap_(sheet);
+    var rowNum = findCustomerRowNumberByKey_(sheet, headerMap, rawKey, cleanStr(phoneHint));
+    if (rowNum === -1) {
+      return { success: false, message: 'ไม่พบข้อมูลลูกค้าในระบบ (ถ้าเพิ่งบันทึกลูกค้าใหม่ ข้อมูลอาจยังไม่ขึ้นในชีต ลองรออีกสักครู่)' };
     }
 
-    var logArr = parseFollowUpLog(selRows[0].follow_up_log);
+    var followLogCol = headerMap['follow_up_log'];
+    var currentRaw = sheet.getRange(rowNum, followLogCol).getValue();
+    var logArr = parseFollowUpLog(currentRaw);
     logArr.push({
       date: dateVal,
       followupType: followupTypeVal,
@@ -2071,15 +2647,15 @@ function addFollowUpLogHTML(rawKeyInput, entry) {
     // 2) เขียนกลับทั้ง array ที่อัปเดตแล้ว พร้อมอัปเดต last_followup_date (วันที่ของ
     // การติดตามรอบนี้) และ booking_date (วันนัดครั้งต่อไป) — created_date (วันที่บันทึก
     // ลูกค้าครั้งแรก) ไม่ถูกแก้ไขตรงนี้เลย ตั้งใจให้คงเดิมเสมอ
-    var updSql = "UPDATE " + TABLE_FULL_PATH + " SET follow_up_log = @log, " +
-                 "last_followup_date = @lfd, booking_date = @bd " +
-                 "WHERE " + ROW_MATCH_WHERE;
-    runParamQuery(updSql, [
-      { name: 'log', value: JSON.stringify(logArr) },
-      { name: 'lfd', value: dateVal },
-      { name: 'bd', value: nextFollowUpDate },
-      { name: 'key', value: rawKey }
-    ]);
+    sheet.getRange(rowNum, followLogCol).setValue(JSON.stringify(logArr));
+    sheet.getRange(rowNum, headerMap['last_followup_date']).setValue(dateVal);
+    sheet.getRange(rowNum, headerMap['booking_date']).setValue(nextFollowUpDate);
+    // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
+      // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
+      // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
+      // เปลี่ยนไปใช้ time-driven trigger เรียก scheduledSyncCustomersToBigQuery_()
+      // เป็นระยะแทน (ดูคำอธิบายที่ฟังก์ชันนั้น) — ข้อมูลใน Sheet จะเห็นล่าสุดทันที
+      // เสมอ ส่วนฝั่ง BigQuery (ที่ใช้ค้นหา/รายงาน) จะตามหลังไม่กี่นาทีตาม trigger
 
     return {
       success: true,

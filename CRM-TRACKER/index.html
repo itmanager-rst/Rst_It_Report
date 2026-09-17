@@ -259,6 +259,7 @@
                     <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #0f172a;" id="form-title">➕ เพิ่มข้อมูลลูกค้าใหม่</div>
                     <form id="customer-form">
                         <input type="hidden" id="form-row-index" value="">
+                        <input type="hidden" id="form-phone-hint" value="">
                         <div class="search-grid form-grid-compact">
                             <div class="form-group">
                                 <label>วันที่บันทึก</label>
@@ -925,6 +926,11 @@
                     const displayName = (resData.user && (resData.user.name || resData.user.username)) || username;
                     document.getElementById('current-user-name').innerText = `${displayName} (${roleLabelTH(currentRole)})`;
                     document.getElementById('current-user-badge').style.display = '';
+                    // เก็บตัวตนผู้ใช้ที่ login จริงไว้ใน window ให้ Live Chat เอาไปใช้ระบุตัวตนผู้ส่ง
+                    window.currentUsername = username;
+                    window.currentDisplayName = displayName;
+                    window.currentRole = currentRole;
+                    if (typeof onChatUserReady === 'function') onChatUserReady();
                     document.getElementById('logout-btn').style.display = '';
                     // เมนู "เพิ่มสมาชิก" โชว์เฉพาะ role admin และ staff (พนักงาน) เท่านั้น
                     const canManageMembers = currentRole === 'admin' || currentRole === 'staff';
@@ -962,6 +968,10 @@
             .finally(() => {
                 localStorage.removeItem(authTokenKey);
                 currentRole = 'user';
+                window.currentUsername = '';
+                window.currentDisplayName = '';
+                window.currentRole = 'user';
+                if (typeof onChatUserLoggedOut === 'function') onChatUserLoggedOut();
                 document.getElementById('current-user-badge').style.display = 'none';
                 document.getElementById('logout-btn').style.display = 'none';
                 document.getElementById('nav-btn-members').style.display = 'none';
@@ -1102,6 +1112,54 @@
             }
             const parts = String(row.product || '').split(' | ');
             return { category: parts[0] || '-', model: parts.slice(1).join(' | ') || '-' };
+        }
+        // ✅ เพิ่ม (Optimistic UI update): สร้าง object แถวข้อมูลลูกค้า ในรูปแบบเดียวกับที่
+        // currentRenderedData/renderTableRows ใช้อยู่ จากข้อมูลที่เพิ่งกรอกในฟอร์ม (packData)
+        // ใช้ตอนเพิ่ม/แก้ไขลูกค้าสำเร็จ เพื่อโชว์ผลทันทีบนตาราง โดยไม่ต้องรอ BigQuery sync
+        // (ซึ่งตอนนี้รันผ่าน time-driven trigger เป็นระยะ ไม่ใช่ real-time ทันทีอีกต่อไป)
+        function buildOptimisticRow_(packData, existingRow) {
+            const base = existingRow ? Object.assign({}, existingRow) : {};
+            const fullName = packData.name || `${packData.firstname || ''} ${packData.lastname || ''}`.trim();
+            return Object.assign(base, {
+                date: packData.date || base.date || '',
+                booking_date: packData.booking_date || packData.appdate || base.booking_date || '',
+                appdate: packData.appdate || packData.booking_date || base.appdate || '',
+                firstname: packData.firstname || '',
+                lastname: packData.lastname || '',
+                name: fullName,
+                phone: packData.phone || base.phone || '',
+                phone1: packData.phone || base.phone || '',
+                type: packData.type || 'ลงทะเบียน',
+                product: packData.product || '',
+                productCategory: packData.productCategory || '',
+                productModel: packData.productModel || '',
+                addressno: packData.addressno || '',
+                address_no: packData.addressno || '',
+                moo: packData.moo || '',
+                village: packData.village || '',
+                subdistrict: packData.subdistrict || '',
+                district: packData.district || '',
+                province: packData.province || '',
+                zipcode: packData.zipcode || '',
+                remark: packData.remark || '',
+                note: packData.remark || '',
+                line: packData.line || '',
+                facebook: packData.facebook || '',
+                financialInfo: packData.financialInfo || '{}',
+                // แถวใหม่ (ยังไม่มี base.raw_key มาก่อน) ใช้เบอร์โทรเป็น key ชั่วคราวไปก่อน
+                // (backend รองรับใช้เบอร์โทรเป็น key ค้นหาแถวได้อยู่แล้ว ผ่าน TextFinder)
+                // จนกว่า BigQuery sync รอบถัดไปจะคำนวณ fingerprint จริงมาแทนที่
+                raw_key: base.raw_key || packData.phone || '',
+                sheetRowIndex: base.sheetRowIndex || packData.phone || '',
+                followUpLog: base.followUpLog || [],
+                followUpCount: base.followUpCount || 0,
+                lastFollowupDate: base.lastFollowupDate || ''
+            });
+        }
+        // หาตำแหน่งแถวใน currentRenderedData ที่ตรงกับ key (raw_key/sheetRowIndex/phone)
+        function findRenderedIndexByKey_(key) {
+            if (!key) return -1;
+            return currentRenderedData.findIndex(r => (r.raw_key && r.raw_key === key) || (r.sheetRowIndex && r.sheetRowIndex === key) || (r.phone && r.phone === key));
         }
         function switchPage(name) {
             document.getElementById('page-add').style.display = (name === 'add') ? 'flex' : 'none';
@@ -2181,6 +2239,7 @@
         function resetFormState() {
             document.getElementById('customer-form').reset();
             document.getElementById('form-row-index').value = '';
+            document.getElementById('form-phone-hint').value = '';
             document.getElementById('phone-check-msg').innerHTML = '';
             duplicatePhoneMatch = null;
             document.getElementById('form-title').innerText = '➕ เพิ่มข้อมูลลูกค้าใหม่';
@@ -2215,6 +2274,7 @@
 
             resetFormState();
             document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
+            document.getElementById('form-phone-hint').value = row.phone || row.phone1 || '';
             document.getElementById('cust-date').value = row.date || '';
             document.getElementById('cust-appdate').value = row.booking_date || row.appdate || '';
             document.getElementById('cust-fname').value = row.firstname || '';
@@ -2324,7 +2384,8 @@
                 financialInfo: JSON.stringify(customerFinancial)
             };
             const actionType = rid ? 'update' : 'add';
-            const payloadReq = rid ? { rowIndex: rid, cust: packData } : packData;
+            const phoneHint = document.getElementById('form-phone-hint').value.trim();
+            const payloadReq = rid ? { rowIndex: rid, cust: packData, phoneHint: phoneHint } : packData;
             const originalBtnHtml = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
@@ -2341,8 +2402,24 @@
                     const printBtn = document.getElementById('btn-print-last');
                     printBtn.disabled = false;
                     printBtn.title = 'พิมพ์แบบฟอร์มติดตามลูกค้าของ ' + fullName;
+
+                    // ✅ Optimistic UI update: แก้/เพิ่มแถวในตารางบนจอทันที ไม่ต้องรอ BigQuery
+                    // sync (ตอนนี้รันผ่าน time-driven trigger เป็นระยะ ไม่ใช่ real-time ทันที
+                    // อีกต่อไป — ถ้ายังเรียก fetchDataFromServer ทันทีเหมือนเดิม จะดึงข้อมูลเก่า
+                    // จาก BigQuery กลับมาทับแถวที่เพิ่งบันทึกไปเปล่าๆ)
+                    if (rid) {
+                        const existingIdx = findRenderedIndexByKey_(rid);
+                        if (existingIdx !== -1) {
+                            currentRenderedData[existingIdx] = buildOptimisticRow_(packData, currentRenderedData[existingIdx]);
+                        }
+                    } else {
+                        currentRenderedData.unshift(buildOptimisticRow_(packData, null));
+                        totalRecords += 1;
+                    }
+                    renderTableRows(currentRenderedData);
+                    updatePaginationControls();
+
                     resetFormState();
-                    fetchDataFromServer(currentPage);
                 } else {
                     alert('❌ เกิดข้อผิดพลาดในการบันทึก: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
                 }
@@ -2443,6 +2520,7 @@
         /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
         let historyModalRowIdx = null;
         let historyModalKey = null;
+        let historyModalPhoneHint = null;
         let historyModalEntries = [];
         function selectFollowupType(button) {
             document.getElementById('history-followup-type').value = button.dataset.value || '';
@@ -2461,6 +2539,7 @@
             if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
             historyModalRowIdx = idx;
             historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
+            historyModalPhoneHint = row.phone || row.phone1 || '';
             historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
             document.getElementById('history-customer-info').innerHTML =
                 `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
@@ -2508,7 +2587,7 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry } })
+                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry, phoneHint: historyModalPhoneHint } })
             })
             .then(res => res.json())
             .then(resData => {
@@ -2603,13 +2682,17 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'delete', payload: { key: key }, token: localStorage.getItem(authTokenKey) || '' })
+                body: JSON.stringify({ action: 'delete', payload: { key: key, phoneHint: row.phone || row.phone1 || '' }, token: localStorage.getItem(authTokenKey) || '' })
             })
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success) {
                     alert('ลบข้อมูลสำเร็จ');
-                    fetchDataFromServer(currentPage);
+                    // ✅ Optimistic UI update: ลบแถวออกจากตารางบนจอทันที ไม่ต้องรอ BigQuery sync
+                    currentRenderedData.splice(idx, 1);
+                    totalRecords = Math.max(0, totalRecords - 1);
+                    renderTableRows(currentRenderedData);
+                    updatePaginationControls();
                 } else {
                     alert('❌ ลบข้อมูลไม่สำเร็จ: ' + (resData ? resData.message : 'Unknown error'));
                 }
@@ -2624,7 +2707,7 @@
 <!-- Firebase SDK v10 -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+  import { getDatabase, ref, push, remove, onChildAdded, onChildRemoved, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
   // ค่า Firebase Config จากโปรเจกต์ crm-tracker-503906 ของคุณ
   const firebaseConfig = {
@@ -2644,53 +2727,176 @@
   const chatRoomId = "global_chat";
   const chatRef = ref(db, 'chats/' + chatRoomId);
 
+  // เก็บ element ของแต่ละข้อความไว้ตาม key เพื่อให้ลบออกจากหน้าจอได้ทันทีเมื่อมีคนลบ
+  const msgElements = {};
+
+  const EMOJI_LIST = ['😀','😁','😂','😊','😉','😍','🤔','😎','🙏','👍','👎','👏',
+    '💪','🤝','🎉','🔥','💯','❤️','😢','😡','😱','✅','❌','⚠️','📌','☕','🍕','🚀'];
+
   window.toggleChat = function() {
     const box = document.getElementById('chat-box');
-    box.style.display = (box.style.display === 'none' || box.style.display === '') ? 'flex' : 'none';
+    const opening = (box.style.display === 'none' || box.style.display === '');
+    box.style.display = opening ? 'flex' : 'none';
+    if (opening) renderEmojiPicker();
+  };
+
+  window.toggleChatEmoji = function() {
+    const panel = document.getElementById('chat-emoji-panel');
+    panel.style.display = (panel.style.display === 'none' || panel.style.display === '') ? 'flex' : 'none';
+    renderEmojiPicker();
+  };
+
+  let emojiRendered = false;
+  function renderEmojiPicker() {
+    if (emojiRendered) return;
+    emojiRendered = true;
+    const panel = document.getElementById('chat-emoji-panel');
+    panel.innerHTML = EMOJI_LIST.map(e =>
+      `<button type="button" onclick="insertChatEmoji('${e}')" style="border:none;background:none;font-size:18px;cursor:pointer;padding:3px;line-height:1;">${e}</button>`
+    ).join('');
+  }
+
+  window.insertChatEmoji = function(emoji) {
+    const input = document.getElementById('chat-input');
+    input.value += emoji;
+    input.focus();
+  };
+
+  // ต้อง login ก่อนถึงจะแชทได้ (ใช้ชื่อ/สิทธิ์จริงจากระบบ ไม่ใช่เลือกเอาเองแบบเดิม)
+  function getChatIdentity() {
+    if (!window.currentUsername) return null;
+    return {
+      id: window.currentUsername,
+      name: window.currentDisplayName || window.currentUsername,
+      role: window.currentRole || 'user'
+    };
+  }
+
+  window.onChatUserReady = function() {
+    const hint = document.getElementById('chat-login-hint');
+    const inputRow = document.getElementById('chat-input-row');
+    const whoami = document.getElementById('chat-whoami');
+    if (hint) hint.style.display = 'none';
+    if (inputRow) inputRow.style.display = 'flex';
+    const identity = getChatIdentity();
+    if (whoami && identity) {
+      whoami.innerText = identity.role === 'admin' ? `${identity.name} (admin)` : identity.name;
+    }
+    // เรนเดอร์ข้อความที่มีอยู่แล้วใหม่ เพื่ออัปเดตปุ่มลบให้ตรงกับสิทธิ์ผู้ใช้ปัจจุบัน
+    Object.keys(msgElements).forEach(key => {
+      const el = msgElements[key];
+      if (el && el.__msgData) applyDeleteButton(el, key, el.__msgData);
+    });
+  };
+
+  window.onChatUserLoggedOut = function() {
+    const hint = document.getElementById('chat-login-hint');
+    const inputRow = document.getElementById('chat-input-row');
+    if (hint) hint.style.display = 'block';
+    if (inputRow) inputRow.style.display = 'none';
+    Object.keys(msgElements).forEach(key => {
+      const el = msgElements[key];
+      if (el) {
+        const del = el.querySelector('.chat-del-btn');
+        if (del) del.remove();
+      }
+    });
   };
 
   onChildAdded(chatRef, (snapshot) => {
-    const data = snapshot.val();
-    displayMessage(data);
+    displayMessage(snapshot.key, snapshot.val());
+  });
+
+  onChildRemoved(chatRef, (snapshot) => {
+    const el = msgElements[snapshot.key];
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    delete msgElements[snapshot.key];
   });
 
   window.sendChatMessage = function() {
+    const identity = getChatIdentity();
+    if (!identity) {
+      alert('กรุณาเข้าสู่ระบบก่อนใช้งาน Live Chat');
+      return;
+    }
     const input = document.getElementById('chat-input');
-    const senderSelect = document.getElementById('chat-sender');
     const text = input.value.trim();
-    if(!text) return;
+    if (!text) return;
 
     const messageData = {
-      sender: senderSelect.value,
+      senderId: identity.id,
+      senderName: identity.name,
+      role: identity.role,
       text: text,
-      timestamp: new Date().toISOString()
+      timestamp: serverTimestamp()
     };
 
     push(chatRef, messageData);
     input.value = '';
   };
 
-  function displayMessage(msg) {
-    const messagesContainer = document.getElementById('chat-messages');
-    const msgDiv = document.createElement('div');
-    const isMe = msg.sender === 'Admin';
+  // ลบข้อความ: เจ้าของข้อความลบของตัวเองได้ / admin ลบได้ทุกข้อความ
+  window.deleteChatMessage = function(key, senderId) {
+    const identity = getChatIdentity();
+    if (!identity) return;
+    if (identity.role !== 'admin' && identity.id !== senderId) return;
+    if (!confirm('ต้องการลบข้อความนี้ใช่หรือไม่?')) return;
+    remove(ref(db, 'chats/' + chatRoomId + '/' + key));
+  };
 
+  function applyDeleteButton(msgDiv, key, msg) {
+    const existing = msgDiv.querySelector('.chat-del-btn');
+    if (existing) existing.remove();
+    const identity = getChatIdentity();
+    const canDelete = identity && (identity.role === 'admin' || identity.id === msg.senderId);
+    if (!canDelete) return;
+    const btn = document.createElement('button');
+    btn.className = 'chat-del-btn';
+    btn.type = 'button';
+    btn.title = 'ลบข้อความ';
+    btn.innerHTML = '✕';
+    btn.style.cssText = 'position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#1e293b;color:#fff;font-size:10px;line-height:18px;cursor:pointer;opacity:0;transition:opacity .15s;';
+    btn.onclick = () => window.deleteChatMessage(key, msg.senderId);
+    msgDiv.appendChild(btn);
+    msgDiv.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
+    msgDiv.addEventListener('mouseleave', () => { btn.style.opacity = '0'; });
+  }
+
+  function displayMessage(key, msg) {
+    if (!msg) return;
+    const messagesContainer = document.getElementById('chat-messages');
+    const identity = getChatIdentity();
+    const isMe = !!(identity && identity.id === msg.senderId);
+
+    const msgDiv = document.createElement('div');
+    msgDiv.__msgData = msg;
     msgDiv.style.cssText = `
-      max-width: 80%;
+      max-width: 82%;
       margin: 5px 0;
       padding: 8px 12px;
       border-radius: 12px;
       font-size: 13px;
       word-break: break-word;
       align-self: ${isMe ? 'flex-end' : 'flex-start'};
-      background-color: ${isMe ? '#0284c7' : '#e2e8f0'};
+      background-color: ${isMe ? '#0284c7' : (msg.role === 'admin' ? '#fef3c7' : '#e2e8f0')};
       color: ${isMe ? '#ffffff' : '#1e293b'};
+      position: relative;
     `;
 
-    const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    msgDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text} <span style="font-size: 10px; opacity: 0.7; display: block; text-align: right;">${timeStr}</span>`;
-    
+    const senderLabel = msg.senderName || msg.sender || 'ไม่ระบุชื่อ';
+    const roleBadge = msg.role === 'admin' ? ' <span style="font-size:9px;background:#dc2626;color:#fff;padding:1px 5px;border-radius:8px;">ADMIN</span>' : '';
+    let timeStr = '';
+    if (typeof msg.timestamp === 'number') {
+      timeStr = new Date(msg.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    msgDiv.innerHTML = `<strong>${escapeHtml(senderLabel)}</strong>${roleBadge}: ${escapeHtml(msg.text || '')}` +
+      `<span style="font-size: 10px; opacity: 0.7; display: block; text-align: right;">${timeStr}</span>`;
+
+    applyDeleteButton(msgDiv, key, msg);
+
     messagesContainer.appendChild(msgDiv);
+    msgElements[key] = msgDiv;
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 </script>
@@ -2701,18 +2907,22 @@
     💬
   </button>
 
-  <div id="chat-box" style="display: none; width: 320px; height: 420px; background: #ffffff; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.15); border: 1px solid #e2e8f0; position: absolute; bottom: 60px; right: 0; flex-direction: column; overflow: hidden;">
+  <div id="chat-box" style="display: none; width: 320px; height: 440px; background: #ffffff; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.15); border: 1px solid #e2e8f0; position: absolute; bottom: 60px; right: 0; flex-direction: column; overflow: hidden;">
     <div style="background: #0f172a; color: white; padding: 12px 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; font-size: 14px;">
       <span>💬 CRM Live Chat</span>
-      <select id="chat-sender" style="font-size: 11px; padding: 2px 5px; border-radius: 4px; background: #334155; color: white; border: none;">
-        <option value="Admin">แอดมิน</option>
-        <option value="Customer">ลูกค้า</option>
-      </select>
+      <span id="chat-whoami" style="font-size: 11px; font-weight: 400; opacity: .85;"></span>
     </div>
 
     <div id="chat-messages" style="flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; background: #f8fafc;"></div>
 
-    <div style="padding: 8px 10px; border-top: 1px solid #e2e8f0; display: flex; gap: 6px; background: white;">
+    <div id="chat-login-hint" style="padding: 10px; font-size: 12px; color: #94a3b8; text-align: center; display: block;">
+      กรุณาเข้าสู่ระบบก่อนเพื่อใช้งาน Live Chat
+    </div>
+
+    <div id="chat-emoji-panel" style="display:none; flex-wrap: wrap; gap: 2px; padding: 6px 8px; border-top: 1px solid #e2e8f0; background: #fff; max-height: 90px; overflow-y: auto;"></div>
+
+    <div id="chat-input-row" style="display: none; padding: 8px 10px; border-top: 1px solid #e2e8f0; gap: 6px; background: white;">
+      <button onclick="toggleChatEmoji()" title="อิโมจิ" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 15px; padding: 0 8px;">🙂</button>
       <input type="text" id="chat-input" placeholder="พิมพ์ข้อความ..." style="flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; outline: none;" onkeypress="if(event.key==='Enter') sendChatMessage()">
       <button onclick="sendChatMessage()" style="background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;">ส่ง</button>
     </div>
