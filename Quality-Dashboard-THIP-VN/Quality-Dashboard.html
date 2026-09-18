@@ -535,6 +535,14 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 .edit-modal-header h3{margin:0; font-size:17px; font-weight:800; color:var(--text);}
 .edit-modal-body{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;}
 .edit-modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:18px;}
+/* Read-only "current computed data" box at the top of the shared Edit modal - see EDIT_DERIVED_INFO -
+   shown only for modules that have cross-module-derived fields not included in EDIT_SCHEMAS (Performance,
+   Reject Station Test), so the person editing can see what those currently look like before changing
+   anything editable. */
+.edit-modal-current-info{background:#f8fafc; border:1px solid #e2e8f0; border-radius:9px; padding:10px 12px; margin-bottom:14px; display:flex; flex-wrap:wrap; gap:6px 16px;}
+.edit-modal-current-info-title{flex-basis:100%; font-size:11.5px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;}
+.edit-modal-current-info-item{font-size:12.5px; color:#334155;}
+.edit-modal-current-info-item b{color:#0f172a; font-weight:700;}
 .timer-display{font-size:28px; font-weight:800; font-variant-numeric:tabular-nums;}
 .note{font-size:12.5px; color:var(--muted); margin-top:4px;}
 .recorder-row{display:flex; gap:8px;}
@@ -652,6 +660,7 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <h3 data-i18n="settingsEditBtn">แก้ไข</h3>
       <button type="button" id="edit-modal-close" style="background:none;border:none;font-size:24px;font-weight:700;cursor:pointer;color:var(--muted);line-height:1;">&times;</button>
     </div>
+    <div class="edit-modal-current-info" id="edit-modal-current-info" style="display:none;"></div>
     <div class="edit-modal-body" id="edit-modal-fields"></div>
     <div class="edit-modal-actions">
       <button type="button" class="btn btn-outline" id="edit-modal-cancel" data-i18n="importCancelBtn">ยกเลิก</button>
@@ -1305,20 +1314,15 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 
     <div class="grid" style="margin-top:14px;">
       <div class="field">
-        <label data-i18n="rejectInputQty">จำนวน Input ทั้งหมด (กล่อง)</label>
-        <input type="number" id="r-input" min="0" value="0">
-      </div>
-      <div class="field">
         <label data-i18n="rejectRejectQty">จำนวนที่ถูก Reject (กล่อง)</label>
         <input type="number" id="r-reject" min="0" value="0">
       </div>
-      <div class="field">
-        <label data-i18n="rejectDefectQty">จำนวน Defect ที่หลุดผ่าน (กล่อง)</label>
-        <input type="number" id="r-defect" min="0" value="0">
-      </div>
     </div>
+    <div class="mini-dash-note" data-i18n="rejectLiveNote">Input และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน)</div>
 
     <div class="stat-grid" style="margin-top:10px;">
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectInputQtyLive">Input (จากหน้า Performance)</div><div class="val" id="r-live-input">0</div></div>
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectDefectQtyLive">Defect (จากหน้า Defect)</div><div class="val" id="r-live-defect">0</div></div>
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectRateLabel">Reject Rate</div><div class="val" id="r-live-rejectrate">0%</div></div>
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectPassQtyLabel">จำนวนที่ผ่าน (Pass Qty)</div><div class="val" id="r-live-pass">0</div></div>
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectDefectRateLabel">Defect Rate</div><div class="val" id="r-live-defectrate">0%</div></div>
@@ -1625,8 +1629,20 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
     <div class="chart-box chart-defect"><h3 data-i18n="chartDefectByShift">% Defect แยกตามกะ</h3><div class="chart-scroll"><canvas id="chart-shift"></canvas></div></div>
   </div>
 
+  <div class="section-header section-reject"><span class="sdot"></span><h3 data-i18n="sectionRejectOverview">ภาพรวม Reject Box</h3></div>
+  <div class="stat-grid">
+    <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectTotalInput">Input รวม (กล่อง)</div><div class="val" id="dash-rd-input">0</div></div>
+    <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectTotalReject">Reject รวม (กล่อง)</div><div class="val" id="dash-rd-reject">0</div></div>
+    <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectOverallRate">% Reject ภาพรวม</div><div class="val" id="dash-rd-rate">0%</div></div>
+    <div class="stat-box stat-reject"><div class="lbl" data-i18n="statRejectOverallDefectRate">% Defect ภาพรวม</div><div class="val" id="dash-rd-defect-rate">0%</div></div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-box chart-reject"><h3 data-i18n="chartRejectByMachine">Input vs Reject แยกตามเครื่องจักร</h3><div class="chart-scroll"><canvas id="dash-chart-rjt-machine"></canvas></div></div>
+    <div class="chart-box chart-reject"><h3 data-i18n="chartRejectByShift">Input vs Reject แยกตามกะ (Shift)</h3><div class="chart-scroll"><canvas id="dash-chart-rjt-shift"></canvas></div></div>
+  </div>
+
   <div class="card" style="margin-bottom:20px;">
-    <h2 data-i18n="sectionRejectRecent">รายการล่าสุด - Reject Station Test</h2>
+    <h2 data-i18n="sectionRejectRecent">สรุปข้อมูล - Reject Box</h2>
     <div class="table-wrap">
       <table id="dash-r-table">
         <thead><tr>
@@ -2297,9 +2313,10 @@ const EDIT_SCHEMAS = {
     {key:'shift', label:'shift', type:'select', optionsFn:edShiftOpts},
     {key:'machine', label:'machine', type:'select', optionsFn:edMachineOpts},
     {key:'heightSetting', label:'rejectHeightShort', type:'select', optionsFn:()=>REJECT_HEIGHTS.map(h=>({value:String(h),label:String(h)}))},
-    {key:'inputQty', label:'rejectInputQtyShort', type:'number', min:0},
+    // inputQty/defectQty are no longer editable here - they're always live-derived (see
+    // rejectDerivedLive/liveProdQtyFor/liveDefectQtyFor) and shown as read-only context via
+    // EDIT_DERIVED_INFO instead. Only Reject Qty is genuine manual data for this module.
     {key:'rejectQty', label:'rejectRejectQtyShort', type:'number', min:0},
-    {key:'defectQty', label:'rejectDefectQtyShort', type:'number', min:0},
     {key:'timeStart', label:'rejectTimeStart', type:'time'},
     {key:'timeEnd', label:'rejectTimeEnd', type:'time'},
     {key:'note', label:'rejectNoteLabel', type:'text'},
@@ -2343,12 +2360,50 @@ function addEditModalPhotos(fileList){
     });
   });
 }
+// Read-only "current computed data" shown at the top of the shared Edit modal (per request: "เวลากดแก้ไข
+// ทุกโมดุล ให้แสดงข้อมูลเดิมไว้ด้วย"), for modules that have cross-module-derived fields NOT included in
+// EDIT_SCHEMAS above (because they're never directly editable) - so the person editing a record can see
+// what those currently look like before changing anything. Modules with no such derived fields (Defect,
+// Breakdown, Performance Test) have no entry here and simply show no info block, same as before.
+const EDIT_DERIVED_INFO = {
+  [LS.perf]: (rec)=>{
+    const d = perfDerived(rec);
+    const dict = I18N[currentLang];
+    return [
+      { label: dict.perfKpiDefectQty, value: d.defectQty },
+      { label: dict.perfKpiBreakdownTime, value: formatStopwatch(d.bdSec) },
+      { label: dict.goodQty, value: d.good },
+      { label: dict.defectRate, value: d.rate.toFixed(2)+'%' }
+    ];
+  },
+  [LS.rejectTest]: (rec)=>{
+    const d = rejectDerivedLive(rec);
+    const dict = I18N[currentLang];
+    return [
+      { label: dict.rejectInputQtyShort, value: d.inputQty },
+      { label: dict.rejectDefectQtyShort, value: d.defectQty },
+      { label: dict.rejectRateLabel, value: d.rejectRate.toFixed(2)+'%' },
+      { label: dict.rejectDefectRateLabel, value: d.defectRate.toFixed(2)+'%' }
+    ];
+  }
+};
 window.openEditModal = function(lsKey, id){
   const rec = getArr(lsKey).find(r=>r.id===id);
   const schema = EDIT_SCHEMAS[lsKey];
   if(!rec || !schema) return;
   editContext = { lsKey, id };
   const dict = I18N[currentLang];
+  const infoBox = document.getElementById('edit-modal-current-info');
+  const infoFn = EDIT_DERIVED_INFO[lsKey];
+  if(infoFn){
+    const rows = infoFn(rec);
+    infoBox.innerHTML = `<div class="edit-modal-current-info-title">${dict.editCurrentDataTitle}</div>` +
+      rows.map(r=>`<span class="edit-modal-current-info-item"><b>${r.label}:</b> ${r.value}</span>`).join('');
+    infoBox.style.display = '';
+  } else {
+    infoBox.innerHTML = '';
+    infoBox.style.display = 'none';
+  }
   const body = document.getElementById('edit-modal-fields');
   body.innerHTML = schema.map(f=>{
     let val;
@@ -2434,9 +2489,12 @@ function applyEditedFields(lsKey, rec, edited){
     rec.pass = rec.speed>=40;
   } else if(lsKey===LS.rejectTest){
     rec.heightSetting = parseInt(rec.heightSetting)||REJECT_HEIGHTS[0];
-    rec.inputQty = Math.max(0, parseInt(rec.inputQty)||0);
     rec.rejectQty = Math.max(0, parseInt(rec.rejectQty)||0);
-    rec.defectQty = Math.max(0, parseInt(rec.defectQty)||0);
+    // inputQty/defectQty are no longer editable (live-derived) - refresh the stored point-in-time
+    // snapshot to match the record's (possibly just-edited) date/shift/machine, same as when it was
+    // first saved, so the Google Sheets/historical snapshot never goes stale after an edit.
+    rec.inputQty = liveProdQtyFor(rec.date, rec.shift, rec.machine);
+    rec.defectQty = liveDefectQtyFor(rec.date, rec.shift, rec.machine);
   } else if(lsKey===LS.perfNormal){
     rec.durationSec = Math.max(1, parseInt(rec.durationSec)||1);
     rec.boxes = Math.max(0, parseInt(rec.boxes)||0);
@@ -2712,6 +2770,8 @@ testsFail:"จำนวนครั้งที่ไม่ผ่าน", chartS
 rejectFormTitle:"ทดสอบเครื่อง Reject Station (หาความสูงมาตรฐาน)", rejectHeightLabel:"ความสูงที่ตั้ง Reject Station (ทดสอบ)", rejectHeightShort:"ความสูง",
 rejectInputQty:"จำนวน Input ทั้งหมด (กล่อง)", rejectInputQtyShort:"Input", rejectRejectQty:"จำนวนที่ถูก Reject (กล่อง)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"จำนวน Defect ที่หลุดผ่าน (กล่อง)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
+rejectInputQtyLive:"Input (จากหน้า Performance)", rejectDefectQtyLive:"Defect (จากหน้า Defect)", rejectLiveNote:"Input และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน)",
+editCurrentDataTitle:"ข้อมูลปัจจุบัน (คำนวณอัตโนมัติ)",
 rejectPassQtyLabel:"จำนวนที่ผ่าน (Pass Qty)", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"หมายเหตุ (เพิ่มเติม)",
 statRejectTestCount:"จำนวนครั้งที่ทดสอบ", statRejectTotalInput:"Input รวม (กล่อง)", statRejectTotalReject:"Reject รวม (กล่อง)", statRejectOverallRate:"% Reject ภาพรวม", statRejectOverallDefectRate:"% Defect ภาพรวม",
 chartRejectByMachine:"Input vs Reject แยกตามเครื่องจักร", chartRejectByShift:"Input vs Reject แยกตามกะ (Shift)", chartRejectByDay:"Input vs Reject รายวัน (ตามช่วงที่เลือก)",
@@ -2776,7 +2836,7 @@ chartDefectPareto:"Pareto Defect (จำนวน vs % สะสม)", paretoQty
 paretoInsightTitle:"การวิเคราะห์ข้อมูล (Pareto Analysis)", paretoInsightVitalFew:"ประเภท Defect หลัก {count} จาก {total} ประเภท ได้แก่ <b>{types}</b> ก่อให้เกิด Defect รวมกัน {pct}% ของ Defect ทั้งหมด — ตามหลัก Pareto 80/20 ควรให้ความสำคัญกับการแก้ไขประเภทเหล่านี้เป็นอันดับแรก เพื่อลด Defect โดยรวมได้อย่างมีประสิทธิภาพสูงสุด", paretoInsightTop1:"ประเภท Defect ที่พบมากที่สุดคือ <b>{top1}</b> คิดเป็น {top1pct}% ของ Defect ทั้งหมด", paretoInsightNoData:"ยังไม่มีข้อมูล Defect ในช่วงเวลา/เครื่องจักรที่เลือก",
 filterPeriod:"ช่วงเวลา", filterMachine:"เครื่องจักร", periodDaily:"รายวัน", periodWeekly:"รายสัปดาห์ (7 วัน)", periodMonthly:"รายเดือน (30 วัน)", periodAll:"ทั้งหมด", periodMonth:"เลือกเดือน", filterMonthLabel:"เดือน",
 filterWeekLabel:"สัปดาห์", weekOfLabel:"สัปดาห์ที่",
-allMachines:"ทุกเครื่อง", sectionDefect:"ภาพรวม Defect", sectionBreakdown:"ภาพรวม Breakdown", sectionRejectRecent:"รายการล่าสุด - Reject Station Test",
+allMachines:"ทุกเครื่อง", sectionDefect:"ภาพรวม Defect", sectionBreakdown:"ภาพรวม Breakdown", sectionRejectRecent:"สรุปข้อมูล - Reject Box", sectionRejectOverview:"ภาพรวม Reject Box",
 sectionPerformance:"ภาพรวม Performance (กำลังการผลิต)", sectionPerftest:"ภาพรวม Performance Test",
 statTotalProd:"จำนวนผลิตรวม", statTotalDefect:"จำนวน Defect รวม", statTotalGood:"จำนวนของดีรวม", statAvgRate:"Defect Rate เฉลี่ย",
 chartProduction:"ภาพรวมการผลิต (ทั้งหมด/ของดี/Defect)", chartProductionByShift:"ภาพรวมการผลิต (ตามกะ/ของดี/Defect)", chartProductionByMachine:"Production vs Defect แยกตามเครื่องจักร", unitPieces:"กล่อง", unitTimes:"ครั้ง", unitBox:"Box", unitMachines:"เครื่อง", unitMin:"นาที", lastUpdated:"อัปเดตล่าสุด", tooltipDefectQty:"จำนวน Defect",
@@ -2820,6 +2880,8 @@ testsFail:"Failed Tests", chartSpeedVsTarget:"Test Result vs Target",
 rejectFormTitle:"Reject Station Test (Find Standard Height)", rejectHeightLabel:"Reject Station Height Setting (Test)", rejectHeightShort:"Height",
 rejectInputQty:"Total Input Qty (Box)", rejectInputQtyShort:"Input", rejectRejectQty:"Rejected Qty (Box)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Defect Qty (escaped, found downstream)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
+rejectInputQtyLive:"Input (from Performance page)", rejectDefectQtyLive:"Defect (from Defect page)", rejectLiveNote:"Input and Defect below are pulled automatically from the Performance and Defect pages, matched by the Date/Shift/Machine selected above (record the produced quantity on the Performance page first).",
+editCurrentDataTitle:"Current Data (Auto-calculated)",
 rejectPassQtyLabel:"Pass Qty", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Note (optional)",
 statRejectTestCount:"Tests Count", statRejectTotalInput:"Total Input (Box)", statRejectTotalReject:"Total Reject (Box)", statRejectOverallRate:"Overall % Reject", statRejectOverallDefectRate:"Overall % Defect",
 chartRejectByMachine:"Input vs Reject by Machine", chartRejectByShift:"Input vs Reject by Shift", chartRejectByDay:"Input vs Reject by Day (selected range)",
@@ -2884,7 +2946,7 @@ chartDefectPareto:"Defect Pareto (Qty vs Cumulative %)", paretoQtyLabel:"Defect 
 paretoInsightTitle:"Data Analysis (Pareto Analysis)", paretoInsightVitalFew:"The top {count} of {total} defect types — <b>{types}</b> — together account for {pct}% of all defects. Following the Pareto 80/20 principle, fixing these types first will have the biggest impact on reducing overall defects.", paretoInsightTop1:"The most frequent defect type is <b>{top1}</b>, accounting for {top1pct}% of all defects.", paretoInsightNoData:"No defect data for the selected period/machine yet.",
 filterPeriod:"Period", filterMachine:"Machine", periodDaily:"Daily", periodWeekly:"Weekly (7d)", periodMonthly:"Monthly (30d)", periodAll:"All", periodMonth:"Select Month", filterMonthLabel:"Month",
 filterWeekLabel:"Week", weekOfLabel:"Week",
-allMachines:"All Machines", sectionDefect:"Defect Overview", sectionBreakdown:"Breakdown Overview", sectionRejectRecent:"Recent Entries - Reject Station Test",
+allMachines:"All Machines", sectionDefect:"Defect Overview", sectionBreakdown:"Breakdown Overview", sectionRejectRecent:"Reject Box Summary", sectionRejectOverview:"Reject Box Overview",
 sectionPerformance:"Performance Overview (Production)", sectionPerftest:"Performance Test Overview",
 statTotalProd:"Total Production", statTotalDefect:"Total Defect", statTotalGood:"Total Good Qty", statAvgRate:"Avg Defect Rate",
 chartProduction:"Production Overview (Total/Good/Defect)", chartProductionByShift:"Production Overview (by Shift/Good/Defect)", chartProductionByMachine:"% Defect by Machine", unitPieces:"Box", unitTimes:"times", unitBox:"Box", unitMachines:"machines", unitMin:"min", lastUpdated:"Last updated", tooltipDefectQty:"Defect Qty",
@@ -2928,6 +2990,8 @@ testsFail:"Số lần không đạt", chartSpeedVsTarget:"Kết quả kiểm tra
 rejectFormTitle:"Kiểm tra máy Reject Station (Tìm độ cao chuẩn)", rejectHeightLabel:"Độ cao cài đặt Reject Station (kiểm tra)", rejectHeightShort:"Độ cao",
 rejectInputQty:"Tổng số lượng Input (hộp)", rejectInputQtyShort:"Input", rejectRejectQty:"Số lượng bị Reject (hộp)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Số lượng Defect lọt qua (hộp)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
+rejectInputQtyLive:"Input (từ trang Performance)", rejectDefectQtyLive:"Defect (từ trang Defect)", rejectLiveNote:"Input và Defect bên dưới được lấy tự động từ trang Performance và trang Defect, khớp theo Ngày/Shift/Máy đã chọn ở trên (cần ghi số lượng sản xuất ở trang Performance trước).",
+editCurrentDataTitle:"Dữ liệu hiện tại (tự động tính)",
 rejectPassQtyLabel:"Số lượng Pass", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Ghi chú (không bắt buộc)",
 statRejectTestCount:"Số lần kiểm tra", statRejectTotalInput:"Tổng Input (hộp)", statRejectTotalReject:"Tổng Reject (hộp)", statRejectOverallRate:"% Reject tổng thể", statRejectOverallDefectRate:"% Defect tổng thể",
 chartRejectByMachine:"Input vs Reject theo máy", chartRejectByShift:"Input vs Reject theo ca", chartRejectByDay:"Input vs Reject theo ngày (khoảng đã chọn)",
@@ -2992,7 +3056,7 @@ chartDefectPareto:"Pareto Defect (Số lượng vs % lũy kế)", paretoQtyLabel
 paretoInsightTitle:"Phân tích dữ liệu (Pareto Analysis)", paretoInsightVitalFew:"{count} trong {total} loại Defect chính — <b>{types}</b> — chiếm tổng cộng {pct}% tổng số Defect. Theo nguyên tắc Pareto 80/20, nên ưu tiên khắc phục các loại này trước để giảm Defect tổng thể hiệu quả nhất.", paretoInsightTop1:"Loại Defect xuất hiện nhiều nhất là <b>{top1}</b>, chiếm {top1pct}% tổng số Defect.", paretoInsightNoData:"Chưa có dữ liệu Defect trong khoảng thời gian/máy đã chọn.",
 filterPeriod:"Khoảng thời gian", filterMachine:"Máy", periodDaily:"Hàng ngày", periodWeekly:"Hàng tuần (7 ngày)", periodMonthly:"Hàng tháng (30 ngày)", periodAll:"Tất cả", periodMonth:"Chọn tháng", filterMonthLabel:"Tháng",
 filterWeekLabel:"Tuần", weekOfLabel:"Tuần thứ",
-allMachines:"Tất cả máy", sectionDefect:"Tổng quan Defect", sectionBreakdown:"Tổng quan Breakdown", sectionRejectRecent:"Danh sách gần đây - Reject Station Test",
+allMachines:"Tất cả máy", sectionDefect:"Tổng quan Defect", sectionBreakdown:"Tổng quan Breakdown", sectionRejectRecent:"Tổng hợp dữ liệu - Reject Box", sectionRejectOverview:"Tổng quan Reject Box",
 sectionPerformance:"Tổng quan Performance (Sản xuất)", sectionPerftest:"Tổng quan Performance Test",
 statTotalProd:"Tổng sản lượng", statTotalDefect:"Tổng số Defect", statTotalGood:"Tổng số đạt", statAvgRate:"Tỷ lệ Defect TB",
 chartProduction:"Tổng quan sản xuất (Tổng/Đạt/Defect)", chartProductionByShift:"Tổng quan sản xuất (theo ca/Đạt/Defect)", chartProductionByMachine:"% Defect theo máy", unitPieces:"hộp", unitTimes:"lần", unitBox:"Box", unitMachines:"máy", unitMin:"phút", lastUpdated:"Cập nhật lần cuối", tooltipDefectQty:"Số lượng Defect",
@@ -3089,6 +3153,7 @@ document.querySelectorAll('nav.sidebar button').forEach(btn=>{
     document.getElementById('page-'+btn.dataset.page).classList.add('active');
     if(btn.dataset.page==='dashboard'){ refreshDashboard(); triggerAutoSync(2000); }
     if(btn.dataset.page==='performance') refreshPerfAuto();
+    if(btn.dataset.page==='reject'){ refreshRejectAuto(); renderRejectTable(); renderRejectMiniDashboard(); }
     if(btn.dataset.page==='settings') renderAllMasterTables();
     if(btn.dataset.page==='ca'){
       if(typeof buildCaDefectTypeSelect==='function') buildCaDefectTypeSelect();
@@ -3845,6 +3910,15 @@ function liveDefectQtyFor(date,shift,machine){
 function liveBdSecFor(date,shift,machine){
   return getArr(LS.breakdowns).filter(b=>b.date===date && b.shift===shift && b.machine===machine).reduce((s,b)=>s+bdSecOf(b),0);
 }
+// Live-derived Total Produced for a date+shift+machine, summed from the Performance page's own records -
+// used as the Reject Station Test module's "Input Qty" (see rejectDerivedLive below): per explicit
+// request, production quantity and Reject Station Test's Input quantity are literally the same data, so
+// Input is never entered a second time by hand here - it's always the same live total already shown on
+// the Performance page for that date+shift+machine, exactly like liveDefectQtyFor/liveBdSecFor already do
+// for Performance's own Defect Qty/Breakdown time.
+function liveProdQtyFor(date,shift,machine){
+  return getArr(LS.perf).filter(p=>p.date===date && p.shift===shift && p.machine===machine).reduce((s,p)=>s+(p.total||0),0);
+}
 // Live-derived Defect Qty / Breakdown time (sec) / Good Qty / Rate for a saved Performance record. Only
 // `total` (and date/shift/machine) is the record's own stored input - everything else is recomputed
 // fresh every time from the current Defect/Breakdown data, so it's never a stale/frozen snapshot.
@@ -4169,43 +4243,94 @@ function rejectDerived(r){
   const defectRate = r.inputQty>0 ? (r.defectQty/r.inputQty*100) : 0;
   return { rejectRate, passQty, defectRate };
 }
+// Live-derived Input Qty / Defect Qty for a saved Reject Station Test record - mirrors perfDerived()'s
+// pattern above: only heightSetting/rejectQty (plus date/shift/machine) are genuine manual input here.
+// Input Qty is never trusted from the record's own stored snapshot - it's always the SAME production
+// count already recorded on the Performance page for that date+shift+machine (liveProdQtyFor), and Defect
+// Qty is always pulled fresh from the Defect module the same way the Performance page already does it
+// (liveDefectQtyFor). The record still stores a point-in-time snapshot of both purely for Google
+// Sheets/historical export reference (see the r-save handler) - display always goes through this function.
+function rejectDerivedLive(r){
+  const inputQty = liveProdQtyFor(r.date, r.shift, r.machine);
+  const defectQty = liveDefectQtyFor(r.date, r.shift, r.machine);
+  const base = rejectDerived({ inputQty, rejectQty: r.rejectQty, defectQty });
+  return Object.assign({ inputQty, defectQty }, base);
+}
+// Totals over a set of Reject Station Test rows, safe against double-counting Input/Defect when several
+// rows share the same date+shift+machine - a normal, expected case here since testing multiple height
+// settings within one shift creates several rows that all point at the same underlying Performance/Defect
+// data (unlike Reject Qty, which is genuinely per-row manual data and is always summed directly). Input
+// and Defect are each counted only once per UNIQUE date|shift|machine key - the same double-counting trap
+// already documented/avoided for Performance's own Defect totals elsewhere in this file.
+function rejectTotalsLive(rows){
+  const totalReject = rows.reduce((s,r)=>s+(r.rejectQty||0),0);
+  const seen = new Set();
+  let totalInput = 0, totalDefect = 0;
+  rows.forEach(r=>{
+    const key = r.date+'|'+r.shift+'|'+r.machine;
+    if(seen.has(key)) return;
+    seen.add(key);
+    totalInput += liveProdQtyFor(r.date, r.shift, r.machine);
+    totalDefect += liveDefectQtyFor(r.date, r.shift, r.machine);
+  });
+  const rejectRate = totalInput>0 ? (totalReject/totalInput*100) : 0;
+  const defectRate = totalInput>0 ? (totalDefect/totalInput*100) : 0;
+  return { totalInput, totalReject, totalDefect, rejectRate, defectRate };
+}
 function initRejectDefaults(){
   const now = new Date();
   document.getElementById('r-date').value = localDate(now);
   document.getElementById('r-shift').value = shiftFromDate(now);
   document.getElementById('r-time-start').value = '';
   document.getElementById('r-time-end').value = '';
-  document.getElementById('r-input').value = 0;
   document.getElementById('r-reject').value = 0;
-  document.getElementById('r-defect').value = 0;
   document.getElementById('r-note').value = '';
   refreshRejectAuto();
 }
+// Input Qty / Defect Qty are no longer manual entry - they're always the live production/defect counts
+// for the currently selected date+shift+machine (see liveProdQtyFor/liveDefectQtyFor and the architecture
+// comment on rejectDerivedLive above), recomputed on every relevant field change exactly like
+// refreshPerfAuto() already does for Performance's own live Defect Qty/Good Qty/Rate.
 function refreshRejectAuto(){
-  const inputQty = parseInt(document.getElementById('r-input').value)||0;
+  const date = document.getElementById('r-date').value;
+  const shift = document.getElementById('r-shift').value;
+  const machine = document.getElementById('r-machine').value;
+  const inputQty = liveProdQtyFor(date, shift, machine);
+  const defectQty = liveDefectQtyFor(date, shift, machine);
   const rejectQty = parseInt(document.getElementById('r-reject').value)||0;
-  const defectQty = parseInt(document.getElementById('r-defect').value)||0;
   const d = rejectDerived({ inputQty, rejectQty, defectQty });
+  document.getElementById('r-live-input').innerHTML = qtyBoxHtml(inputQty);
+  document.getElementById('r-live-defect').innerHTML = qtyBoxHtml(defectQty);
   document.getElementById('r-live-rejectrate').textContent = d.rejectRate.toFixed(2)+'%';
   document.getElementById('r-live-pass').textContent = d.passQty;
   document.getElementById('r-live-defectrate').textContent = d.defectRate.toFixed(2)+'%';
 }
-['r-input','r-reject','r-defect'].forEach(id=>document.getElementById(id).addEventListener('input', refreshRejectAuto));
+['r-date','r-shift','r-machine','r-reject'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', refreshRejectAuto);
+  document.getElementById(id).addEventListener('change', refreshRejectAuto);
+});
 initRejectDefaults();
 
 document.getElementById('r-save').addEventListener('click', ()=>{
+  const date = document.getElementById('r-date').value;
+  const shift = document.getElementById('r-shift').value;
+  const machine = document.getElementById('r-machine').value;
+  const inputQty = liveProdQtyFor(date, shift, machine);
+  const defectQty = liveDefectQtyFor(date, shift, machine);
+  // inputQty/defectQty are only stored as a point-in-time snapshot for reference (Google Sheets/history) -
+  // every actual display (table, mini-dashboard, Dashboard) recomputes them live via rejectDerivedLive()/
+  // rejectTotalsLive(), never trusting this stored snapshot - same pattern as Performance's own
+  // defectQty/bdSec/good/rate (see perfDerived's comment).
   const rec = {
     id: uid(),
     recorder: document.getElementById('r-recorder').value || '-',
-    date: document.getElementById('r-date').value,
-    shift: document.getElementById('r-shift').value,
-    machine: document.getElementById('r-machine').value,
+    date, shift, machine,
     heightSetting: parseInt(document.getElementById('r-height').value) || REJECT_HEIGHTS[0],
     timeStart: document.getElementById('r-time-start').value || '',
     timeEnd: document.getElementById('r-time-end').value || '',
-    inputQty: parseInt(document.getElementById('r-input').value)||0,
+    inputQty,
     rejectQty: parseInt(document.getElementById('r-reject').value)||0,
-    defectQty: parseInt(document.getElementById('r-defect').value)||0,
+    defectQty,
     note: document.getElementById('r-note').value.trim()
   };
   const arr = getArr(LS.rejectTest); arr.push(rec); setArr(LS.rejectTest, arr);
@@ -4213,6 +4338,7 @@ document.getElementById('r-save').addEventListener('click', ()=>{
   initRejectDefaults();
   renderRejectTable();
   renderRejectMiniDashboard();
+  refreshDashboard();
 });
 document.getElementById('r-reset').addEventListener('click', initRejectDefaults);
 
@@ -4224,12 +4350,12 @@ function renderRejectTable(){
   const totalCount = full.length;
   const tbody = document.querySelector('#r-table tbody');
   tbody.innerHTML = arr.map((r,i)=>{
-    const d = rejectDerived(r);
+    const d = rejectDerivedLive(r);
     const noteCell = r.note ? `<br><small style="color:var(--muted);font-weight:400;">${r.note}</small>` : '';
     return `<tr>
       <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
-      <td>${r.heightSetting}${noteCell}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${r.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
-      <td>${r.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
+      <td>${r.heightSetting}${noteCell}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${d.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
+      <td>${d.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
       <td><button class="small-btn" onclick="openEditModal('${LS.rejectTest}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.rejectTest}','${r.id}', renderRejectTable)">${I18N[currentLang].delete}</button></td>
     </tr>`;
   }).join('') || `<tr><td colspan="14" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
@@ -4239,14 +4365,13 @@ function renderRejectTable(){
   else{
     // Totals over ALL rows matching the current filter (`full`), not just the up-to-50 shown in the
     // table (`arr`) - same convention as every other module's Total row (see renderPerfTable's long
-    // comment for why summing only the capped/visible rows would silently under-count).
-    const totalInput = full.reduce((s,r)=>s+r.inputQty,0);
-    const totalReject = full.reduce((s,r)=>s+r.rejectQty,0);
-    const totalDefect = full.reduce((s,r)=>s+r.defectQty,0);
-    const overallRejectRate = totalInput>0 ? (totalReject/totalInput*100) : 0;
-    const overallDefectRate = totalInput>0 ? (totalDefect/totalInput*100) : 0;
+    // comment for why summing only the capped/visible rows would silently under-count). Uses
+    // rejectTotalsLive() rather than summing each row's own live Input/Defect directly, since several
+    // rows commonly share one date+shift+machine (multiple height settings tested in one shift) and a
+    // naive per-row sum would double-count that shared Input/Defect data.
+    const t = rejectTotalsLive(full);
     const cappedNote = full.length>arr.length ? ` (${arr.length}/${full.length})` : '';
-    totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td></td><td></td><td>${totalInput}</td><td>${totalReject}</td><td>${overallRejectRate.toFixed(2)}%</td><td>${totalDefect}</td><td>${overallDefectRate.toFixed(2)}%</td><td></td><td></td>`;
+    totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td></td><td></td><td>${t.totalInput}</td><td>${t.totalReject}</td><td>${t.rejectRate.toFixed(2)}%</td><td>${t.totalDefect}</td><td>${t.defectRate.toFixed(2)}%</td><td></td><td></td>`;
   }
 }
 
@@ -4257,28 +4382,25 @@ function renderRejectTable(){
 // (renderPerfMiniDashboard's chart-pfd-comparison) rather than inventing a new chart style.
 function renderRejectMiniDashboard(){
   const rows = rejectRowsFiltered();
-  const totalInput = rows.reduce((s,r)=>s+r.inputQty,0);
-  const totalReject = rows.reduce((s,r)=>s+r.rejectQty,0);
-  const totalDefect = rows.reduce((s,r)=>s+r.defectQty,0);
-  const overallRate = totalInput>0 ? (totalReject/totalInput*100) : 0;
-  const overallDefectRate = totalInput>0 ? (totalDefect/totalInput*100) : 0;
+  // rejectTotalsLive() rather than a naive per-row sum - see its own comment for why (several rows can
+  // share one date+shift+machine when multiple height settings are tested in the same shift).
+  const t = rejectTotalsLive(rows);
 
-  document.getElementById('rd-input').innerHTML = qtyBoxHtml(totalInput);
-  document.getElementById('rd-reject').innerHTML = qtyBoxHtml(totalReject);
-  document.getElementById('rd-rate').textContent = overallRate.toFixed(2)+'%';
-  document.getElementById('rd-defect-rate').textContent = overallDefectRate.toFixed(2)+'%';
+  document.getElementById('rd-input').innerHTML = qtyBoxHtml(t.totalInput);
+  document.getElementById('rd-reject').innerHTML = qtyBoxHtml(t.totalReject);
+  document.getElementById('rd-rate').textContent = t.rejectRate.toFixed(2)+'%';
+  document.getElementById('rd-defect-rate').textContent = t.defectRate.toFixed(2)+'%';
 
   // By Machine No. - only the machine(s) matching the current machine filter (all, or just the one
-  // selected), same convention as renderPerfMiniDashboard's chart-pfd-comparison.
+  // selected), same convention as renderPerfMiniDashboard's chart-pfd-comparison. Each machine's own
+  // rejectTotalsLive() call de-dupes within that machine's own rows only.
   const machinesToShow = rejectFilter.machine==='all' ? MACHINES : [rejectFilter.machine];
   const inputByMachine = [], rejectByMachine = [], rejectPctByMachine = [];
   machinesToShow.forEach(m=>{
-    const mRows = rows.filter(r=>r.machine===m);
-    const mInput = mRows.reduce((s,r)=>s+r.inputQty,0);
-    const mReject = mRows.reduce((s,r)=>s+r.rejectQty,0);
-    inputByMachine.push(mInput);
-    rejectByMachine.push(mReject);
-    rejectPctByMachine.push(mInput>0 ? +(mReject/mInput*100).toFixed(1) : 0);
+    const mt = rejectTotalsLive(rows.filter(r=>r.machine===m));
+    inputByMachine.push(mt.totalInput);
+    rejectByMachine.push(mt.totalReject);
+    rejectPctByMachine.push(mt.totalInput>0 ? +(mt.totalReject/mt.totalInput*100).toFixed(1) : 0);
   });
   destroyChart('rjtMachine');
   fitChartCanvas('chart-rjt-machine', machinesToShow.length, {minPerItem:110});
@@ -4307,12 +4429,10 @@ function renderRejectMiniDashboard(){
   const shifts = ['A','B','C'];
   const inputByShift = [], rejectByShift = [], rejectPctByShift = [];
   shifts.forEach(s=>{
-    const sRows = rows.filter(r=>r.shift===s);
-    const sInput = sRows.reduce((sum,r)=>sum+r.inputQty,0);
-    const sReject = sRows.reduce((sum,r)=>sum+r.rejectQty,0);
-    inputByShift.push(sInput);
-    rejectByShift.push(sReject);
-    rejectPctByShift.push(sInput>0 ? +(sReject/sInput*100).toFixed(1) : 0);
+    const st = rejectTotalsLive(rows.filter(r=>r.shift===s));
+    inputByShift.push(st.totalInput);
+    rejectByShift.push(st.totalReject);
+    rejectPctByShift.push(st.totalInput>0 ? +(st.totalReject/st.totalInput*100).toFixed(1) : 0);
   });
   destroyChart('rjtShift');
   fitChartCanvas('chart-rjt-shift', shifts.length, {minPerItem:110});
@@ -4349,11 +4469,9 @@ function renderRejectMiniDashboard(){
     const days = getRejectPeriodDayList();
     const inputByDay = [], rejectByDay = [], rejectPctByDay = [];
     days.forEach(dt=>{
-      const dRows = rows.filter(r=>r.date===dt);
-      const dInput = dRows.reduce((s,r)=>s+r.inputQty,0);
-      const dReject = dRows.reduce((s,r)=>s+r.rejectQty,0);
-      inputByDay.push(dInput); rejectByDay.push(dReject);
-      rejectPctByDay.push(dInput>0 ? +(dReject/dInput*100).toFixed(1) : 0);
+      const dt2 = rejectTotalsLive(rows.filter(r=>r.date===dt));
+      inputByDay.push(dt2.totalInput); rejectByDay.push(dt2.totalReject);
+      rejectPctByDay.push(dt2.totalInput>0 ? +(dt2.totalReject/dt2.totalInput*100).toFixed(1) : 0);
     });
     destroyChart('rjtDaily');
     fitChartCanvas('chart-rjt-daily', days.length, {minPerItem: rejectViewState.mode==='month' ? 46 : 90});
@@ -4765,12 +4883,13 @@ function refreshDashboard(){
   // KPI Reject Box: total rejected qty from the Reject Station Test module (same Period+Machine-filtered
   // source as the Dashboard's own "รายการล่าสุด - Reject Station Test" table/totals row just below), with
   // the % Reject (reject/input) shown as small text at the bottom of the card, per request.
+  // rejectTotalsLive() rather than a naive per-row sum of stored r.inputQty - Input is now live-derived
+  // (see liveProdQtyFor/rejectDerivedLive) and several rows can share one date+shift+machine, so a naive
+  // sum would double-count it; rejectTotalsLive() counts Input/Defect once per unique key.
   const rejectScoped = filterByPeriodMachine(getArr(LS.rejectTest));
-  const rejectQtyTotal = rejectScoped.reduce((s,r)=>s+r.rejectQty,0);
-  const rejectInputTotal = rejectScoped.reduce((s,r)=>s+r.inputQty,0);
-  const rejectPct = rejectInputTotal>0 ? (rejectQtyTotal/rejectInputTotal*100) : null;
-  document.getElementById('kpi-reject-val').innerHTML = qtyBoxHtml(rejectQtyTotal);
-  document.getElementById('kpi-reject-sub').textContent = dict.kpiRejectPctLabel + ': ' + (rejectPct===null ? dict.na : rejectPct.toFixed(2)+'%');
+  const rejectTotals = rejectTotalsLive(rejectScoped);
+  document.getElementById('kpi-reject-val').innerHTML = qtyBoxHtml(rejectTotals.totalReject);
+  document.getElementById('kpi-reject-sub').textContent = dict.kpiRejectPctLabel + ': ' + (rejectTotals.totalInput>0 ? rejectTotals.rejectRate.toFixed(2)+'%' : dict.na);
 
   // KPI Performance Test: avg speed vs 40
   const kpiPtVal = document.getElementById('kpi-perftest-val');
@@ -4791,6 +4910,7 @@ function refreshDashboard(){
   renderProductionChart();
   renderPerftestDashChart(perftest);
   renderPerftestDashboard();
+  renderDashRejectOverview();
   renderDashRejectTable();
 }
 
@@ -4807,31 +4927,105 @@ function renderDashRejectTable(){
   const arr = full.slice(0, cap);
   const totalCount = full.length;
   tbody.innerHTML = arr.map((r,i)=>{
-    const d = rejectDerived(r);
+    const d = rejectDerivedLive(r);
     return `<tr>
       <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
-      <td>${r.heightSetting}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${r.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
-      <td>${r.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
+      <td>${r.heightSetting}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${d.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
+      <td>${d.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="13" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
 
   // Totals row - same shape/computation as the Reject Station Test page's own #r-table-total (it's the
   // same underlying rejectTest data, just scoped to the Dashboard's own Period+Machine filter instead of
   // the Reject page's separate day/week/month filter), summed over ALL rows matching the filter (`full`),
-  // not just the up-to-15 shown here.
+  // not just the up-to-15 shown here, via rejectTotalsLive() (de-duplication-safe - see its own comment).
   const totalRow = document.getElementById('dash-r-table-total');
   if(totalRow){
     if(full.length===0){ totalRow.innerHTML = ''; }
     else{
-      const totalInput = full.reduce((s,r)=>s+r.inputQty,0);
-      const totalReject = full.reduce((s,r)=>s+r.rejectQty,0);
-      const totalDefect = full.reduce((s,r)=>s+r.defectQty,0);
-      const overallRejectRate = totalInput>0 ? (totalReject/totalInput*100) : 0;
-      const overallDefectRate = totalInput>0 ? (totalDefect/totalInput*100) : 0;
+      const t = rejectTotalsLive(full);
       const cappedNote = full.length>arr.length ? ` (${arr.length}/${full.length})` : '';
-      totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td></td><td></td><td>${totalInput}</td><td>${totalReject}</td><td>${overallRejectRate.toFixed(2)}%</td><td>${totalDefect}</td><td>${overallDefectRate.toFixed(2)}%</td><td></td>`;
+      totalRow.innerHTML = `<td colspan="5" style="text-align:right;">${I18N[currentLang].totalLabel}${cappedNote}</td><td></td><td></td><td>${t.totalInput}</td><td>${t.totalReject}</td><td>${t.rejectRate.toFixed(2)}%</td><td>${t.totalDefect}</td><td>${t.defectRate.toFixed(2)}%</td><td></td>`;
     }
   }
+}
+// Dashboard's own "ภาพรวม Reject Box" section (new, added alongside the recolored/renamed table above) -
+// per request, the SAME stat/chart shapes already built for the Reject Station Test page's own mini-
+// dashboard (renderRejectMiniDashboard's rd-input/rd-reject/rd-rate/rd-defect-rate stats and its By
+// Machine/By Shift charts), just re-scoped to the Dashboard's own Period+Machine filter
+// (filterByPeriodMachine/currentMachineFilter) instead of the Reject page's separate day/week/month
+// filter - so a GM reading the Dashboard sees this at a glance without visiting the Reject Station Test
+// page. The Reject page's own third chart (per-day trend, week/month view only) is intentionally left out
+// here to keep the Dashboard's own already-long page focused - see delivery notes.
+function renderDashRejectOverview(){
+  const elInput = document.getElementById('dash-rd-input');
+  if(!elInput) return;
+  const rows = filterByPeriodMachine(getArr(LS.rejectTest));
+  const t = rejectTotalsLive(rows);
+  elInput.innerHTML = qtyBoxHtml(t.totalInput);
+  document.getElementById('dash-rd-reject').innerHTML = qtyBoxHtml(t.totalReject);
+  document.getElementById('dash-rd-rate').textContent = t.rejectRate.toFixed(2)+'%';
+  document.getElementById('dash-rd-defect-rate').textContent = t.defectRate.toFixed(2)+'%';
+
+  const machinesToShow = currentMachineFilter==='all' ? MACHINES : [currentMachineFilter];
+  const inputByMachine = [], rejectByMachine = [], rejectPctByMachine = [];
+  machinesToShow.forEach(m=>{
+    const mt = rejectTotalsLive(rows.filter(r=>r.machine===m));
+    inputByMachine.push(mt.totalInput);
+    rejectByMachine.push(mt.totalReject);
+    rejectPctByMachine.push(mt.totalInput>0 ? +(mt.totalReject/mt.totalInput*100).toFixed(1) : 0);
+  });
+  destroyChart('dashRjtMachine');
+  fitChartCanvas('dash-chart-rjt-machine', machinesToShow.length, {minPerItem:110});
+  charts.dashRjtMachine = new Chart(document.getElementById('dash-chart-rjt-machine'), {
+    type:'bar',
+    data:{
+      labels: machinesToShow,
+      datasets:[
+        { label:I18N[currentLang].rejectInputQtyShort || 'Input', data:inputByMachine, backgroundColor:'#94a3b8' },
+        { label:I18N[currentLang].rejectRejectQtyShort || 'Reject', data:rejectByMachine, backgroundColor:'#0d9488' }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom'},
+        valueLabels:{ show:true, decimals:0, datasets:{
+          0:{ show:true, decimals:0 },
+          1:{ show:true, decimals:1, suffix:'%', labels:rejectPctByMachine, color:'#0f766e' }
+        } }
+      },
+      scales:{ y:{ beginAtZero:true } }
+    }
+  });
+
+  const shifts = ['A','B','C'];
+  const inputByShift = [], rejectByShift = [], rejectPctByShift = [];
+  shifts.forEach(s=>{
+    const st = rejectTotalsLive(rows.filter(r=>r.shift===s));
+    inputByShift.push(st.totalInput);
+    rejectByShift.push(st.totalReject);
+    rejectPctByShift.push(st.totalInput>0 ? +(st.totalReject/st.totalInput*100).toFixed(1) : 0);
+  });
+  destroyChart('dashRjtShift');
+  fitChartCanvas('dash-chart-rjt-shift', shifts.length, {minPerItem:110});
+  charts.dashRjtShift = new Chart(document.getElementById('dash-chart-rjt-shift'), {
+    type:'bar',
+    data:{
+      labels: shifts,
+      datasets:[
+        { label:I18N[currentLang].rejectInputQtyShort || 'Input', data:inputByShift, backgroundColor:'#94a3b8' },
+        { label:I18N[currentLang].rejectRejectQtyShort || 'Reject', data:rejectByShift, backgroundColor:'#0d9488' }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom'},
+        valueLabels:{ show:true, decimals:0, datasets:{
+          0:{ show:true, decimals:0 },
+          1:{ show:true, decimals:1, suffix:'%', labels:rejectPctByShift, color:'#0f766e' }
+        } }
+      },
+      scales:{ y:{ beginAtZero:true } }
+    }
+  });
 }
 
 // Shared by "Export PDF" and "Export Excel" - the same Period/Machine filter summary text, since both
@@ -5071,8 +5265,29 @@ window.exportDashboardExcel = async function(){
         c.data.labels.map((lab,ri)=>{ const v=c.data.datasets[0].data[ri]; return [lab, v==null?'':(+v).toFixed(2)+'%']; }));
     }
 
-    // ===== รายการล่าสุด - Reject Station Test (full table + totals row, straight from the live DOM so it
-    // always matches exactly what the page itself shows) =====
+    // ===== ภาพรวม Reject Box (new section - see renderDashRejectOverview) =====
+    sec = sectionBlock('section-reject');
+    accent = sec.accent;
+    bandRow(sec.title, { bg: accent });
+    statGridRows(sec.statGrid, '#f0fdfa');
+    blankRow();
+    if(charts.dashRjtMachine){
+      const c = charts.dashRjtMachine;
+      dataTable(
+        [{text:dict.chartRejectByMachine||'Input vs Reject by Machine', bg:accent}].concat(c.data.datasets.map(d=>({ text:d.label, bg: xlFirstColor(d.backgroundColor,0) }))),
+        c.data.labels.map((lab,ri)=> [lab, ...c.data.datasets.map(d=>d.data[ri]==null?'':d.data[ri])] )
+      );
+    }
+    if(charts.dashRjtShift){
+      const c = charts.dashRjtShift;
+      dataTable(
+        [{text:dict.chartRejectByShift||'Input vs Reject by Shift', bg:accent}].concat(c.data.datasets.map(d=>({ text:d.label, bg: xlFirstColor(d.backgroundColor,0) }))),
+        c.data.labels.map((lab,ri)=> [lab, ...c.data.datasets.map(d=>d.data[ri]==null?'':d.data[ri])] )
+      );
+    }
+
+    // ===== สรุปข้อมูล - Reject Box (full table + totals row, straight from the live DOM so it always
+    // matches exactly what the page itself shows) =====
     const rTable = document.getElementById('dash-r-table');
     if(rTable){
       bandRow(document.querySelector('#page-dashboard .card h2[data-i18n="sectionRejectRecent"]').textContent, { bg:'#0f766e' });
@@ -5402,6 +5617,15 @@ window.exportDashboardPptx = async function(){
           { label: dict.rejectDefectRateShort||'Defect %', value: t[7]||'-', bg:'0D9488' },
         ], { x:0.6, y:3.9, w: (12.13/3)*2, h:1.8 });
       }
+    }
+
+    // ===== Slide 6b: Reject Box Overview (chart row - new section, see renderDashRejectOverview) =====
+    if(charts.dashRjtMachine || charts.dashRjtShift){
+      const slide = pptx.addSlide();
+      const accent = sectionAccent('section-reject');
+      addHeaderBand(slide, sectionTitle('section-reject', dict.sectionRejectOverview), accent);
+      await addChartImage(slide, charts.dashRjtMachine, { x:1.0, y:1.7, w:5.6, h:5.2 }, dict.chartRejectByMachine, accent);
+      await addChartImage(slide, charts.dashRjtShift, { x:6.8, y:1.7, w:5.6, h:5.2 }, dict.chartRejectByShift, accent);
     }
 
     // ===== Slide 7: Performance Test summary =====
@@ -6815,8 +7039,8 @@ function exportRejectExcel(){
   const rows = rejectRowsFiltered().slice().reverse();
   const header = [t.colNo, t.date, t.shift, t.machine, t.rejectHeightShort, t.rejectTimeStart, t.rejectTimeEnd, t.rejectInputQtyShort, t.rejectRejectQtyShort, t.rejectRateShort, t.rejectDefectQtyShort, t.rejectDefectRateShort, t.recorder, t.rejectNoteLabel];
   const body = rows.map((r,i)=>{
-    const d = rejectDerived(r);
-    return [rows.length-i, r.date, r.shift, r.machine, r.heightSetting, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), r.inputQty, r.rejectQty, +d.rejectRate.toFixed(2), r.defectQty, +d.defectRate.toFixed(2), r.recorder||'-', r.note||''];
+    const d = rejectDerivedLive(r);
+    return [rows.length-i, r.date, r.shift, r.machine, r.heightSetting, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), d.inputQty, r.rejectQty, +d.rejectRate.toFixed(2), d.defectQty, +d.defectRate.toFixed(2), r.recorder||'-', r.note||''];
   });
   excelDownload([header, ...body], 'RejectTest', 'RejectStationTest_Report');
 }
