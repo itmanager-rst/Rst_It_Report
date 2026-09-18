@@ -31,6 +31,16 @@
 // action==='screenshotAttempt' ด้านล่าง) แค่บันทึกว่าใครกด Print Screen/พยายามคัดลอกเมื่อไหร่
 // ลงตาราง user_activity_log เพื่อให้ตรวจสอบย้อนหลังได้ — เพิ่มเข้า ACTIVITY_LOG_WHITELIST แล้ว
 //
+// หมายเหตุ (2026-09-18 รอบถัดมา — แก้บั๊กร้ายแรง "user หายหมดเหลือแต่ admin"):
+// พบว่า addUserHTML ซิงก์ตาราง users เข้า BigQuery แบบ WRITE_TRUNCATE ทุกครั้งที่เพิ่ม
+// สมาชิก โดยอ่านข้อมูลจาก Sheet แท็บ "users" ที่ไม่เคย backfill user เดิมจาก BigQuery
+// เข้ามาก่อน (ต่างจากตาราง customers ที่ export มาแล้วตอน migration) ทำให้ TRUNCATE
+// ทับข้อมูลเดิมหายไปหมด — แก้ 2 จุด: (1) เพิ่ม assertSafeRowCountForTruncateSync_
+// เช็คก่อน sync ทุกครั้งว่าจำนวนแถวใหม่ลดลงจากของเดิมผิดปกติหรือไม่ ถ้าใช่ throw error
+// ไม่ยอม sync ทับให้ (ใช้ป้องกันทั้งตาราง users และ customers) (2) เพิ่มฟังก์ชัน
+// runOneTimeSetup_BackfillUsersFromBigQuery_ ให้ดึง user ที่ยังเหลืออยู่ใน BigQuery
+// กลับเข้า Sheet ให้ครบ — ต้องรันฟังก์ชันนี้ครั้งเดียวก่อนใช้งานเมนู "เพิ่มสมาชิก" ต่อ
+//
 // หมายเหตุ (2026-09-17 รอบถัดมา): โปรเจกต์ BigQuery ไม่ได้ผูก Billing Account จึงรัน
 // DML (INSERT/UPDATE/DELETE) ไม่ได้เลย (Free Tier บล็อกเสมอ ไม่เกี่ยวกับปริมาณข้อมูล) —
 // ย้ายจุด "เขียน" ข้อมูลลูกค้าทั้งหมด (เพิ่ม/แก้ไข/ลบ/บันทึกการติดตาม) จากเดิมที่ยิง SQL
@@ -39,7 +49,7 @@
 // (ต้องผูก Sheet นี้เป็น BigQuery External Table ชื่อ customers ไว้ด้วย — ดูคู่มือ setup)
 // ⚠️ ต้องตั้งค่า CUSTOMER_SHEET_ID ให้เป็น Sheet ID จริงก่อนใช้งาน ไม่งั้นการเพิ่ม/แก้ไข/
 // ลบข้อมูลลูกค้าจะ error ทันที (ดูข้อความ error ที่ getCustomerSheet_ ด้านล่าง)
-var CODE_VERSION = 'r23-2026-09-17-write-via-sheets-no-billing';
+var CODE_VERSION = 'r28-2026-09-18-async-activity-log-fix-slow-login';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -451,12 +461,58 @@ function waitForBigQueryLoadJob_(insertResult) {
   return job;
 }
 
+// =================================================================
+// 🛡️ Safety guard (2026-09-18): กันบั๊ก "user หายหมดเหลือแต่ admin" ที่เคยเกิดจริง —
+// สาเหตุเดิม: addUserHTML ซิงก์ตาราง users เข้า BigQuery แบบ WRITE_TRUNCATE (ลบข้อมูล
+// เดิมทั้งตารางทิ้งแล้วโหลดใหม่ทั้งหมด) ทุกครั้งที่มีการเพิ่มสมาชิก โดยอ่านข้อมูลจากแท็บ
+// Google Sheet "users" ซึ่งถูกสร้างขึ้นมาใหม่แบบว่างเปล่าตอน migration (ไม่มีขั้นตอน
+// backfill user เดิมที่มีอยู่แล้วใน BigQuery กลับเข้า Sheet ก่อน) ผลคือพอมีคนกด "เพิ่ม
+// สมาชิก" ครั้งแรก ระบบ TRUNCATE ตาราง users ทับด้วยข้อมูลใน Sheet ที่มีแค่ไม่กี่แถว —
+// user เก่าทั้งหมดที่มีอยู่ใน BigQuery (แต่ไม่มีใน Sheet) หายไปทันที
+//
+// ฟังก์ชันนี้เช็คก่อน sync ทุกครั้งว่าจำนวนแถวที่กำลังจะเขียนทับ (จาก Sheet) ต่ำกว่า
+// จำนวนแถวที่มีอยู่จริงใน BigQuery ตอนนี้แบบ "ผิดปกติ" หรือไม่ (ลดลงเกิน
+// ALLOWED_ROW_DROP_RATIO ที่กำหนด) ถ้าใช่ จะ throw error ทันทีและไม่ยอม sync เลย —
+// ป้องกันไม่ให้ TRUNCATE ทับข้อมูลจริงโดยไม่ได้ตั้งใจซ้ำอีก
+var ALLOWED_ROW_DROP_RATIO = 0.5; // ยอมให้จำนวนแถวลดได้ไม่เกินครึ่งหนึ่งของของเดิมต่อการ sync 1 ครั้ง
+
+function getBigQueryRowCount_(tableId) {
+  try {
+    var sql = "SELECT COUNT(*) as cnt FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + "." + tableId + "`";
+    var rows = runParamQueryFetch(sql, []);
+    var cnt = (rows && rows.length && rows[0].cnt !== '' && rows[0].cnt != null) ? parseInt(rows[0].cnt, 10) : 0;
+    return isNaN(cnt) ? 0 : cnt;
+  } catch (e) {
+    // ตารางอาจยังไม่มีอยู่เลย (เช่น sync ครั้งแรกสุด) — ถือว่ามี 0 แถว ไม่ต้อง block
+    Logger.log('getBigQueryRowCount_(' + tableId + ') อ่านไม่สำเร็จ (ถือว่ามี 0 แถว): ' + e.toString());
+    return 0;
+  }
+}
+
+// throw error ถ้าจำนวนแถวใหม่ (จาก Sheet) น้อยกว่าที่มีอยู่ใน BigQuery ตอนนี้แบบผิดปกติ
+function assertSafeRowCountForTruncateSync_(tableId, newRowCount) {
+  var currentCount = getBigQueryRowCount_(tableId);
+  if (currentCount > 0 && newRowCount < currentCount * ALLOWED_ROW_DROP_RATIO) {
+    throw new Error(
+      'ยกเลิกการซิงก์ตาราง "' + tableId + '" เพื่อความปลอดภัย (ป้องกันเหตุข้อมูลหายซ้ำแบบเดิม): ' +
+      'ข้อมูลที่จะเขียนทับมีแค่ ' + newRowCount + ' แถว แต่ตาราง BigQuery ปัจจุบันมี ' + currentCount +
+      ' แถว (ลดลงเกิน ' + Math.round((1 - ALLOWED_ROW_DROP_RATIO) * 100) + '%) — น่าจะเกิดจากข้อมูลใน ' +
+      'Google Sheet ไม่ครบ (ยังไม่ backfill) ไม่ใช่ต้องการลบข้อมูลจริง จึงไม่ยอม TRUNCATE ทับให้ ' +
+      '(ถ้าเป็นตาราง users ให้รัน runOneTimeSetup_BackfillUsersFromBigQuery_ ก่อน แล้วลองใหม่)'
+    );
+  }
+}
+
 function syncSheetTabToBigQueryTable_(tabName, columns, typeMap, tableId) {
   var sheet = getOrCreateSheetTab_(tabName, columns);
   var headerMap = buildHeaderMapForColumns_(sheet, columns);
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
   var allValues = (lastRow > 1) ? sheet.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+
+  // 🛡️ เช็คก่อนเสมอ — ถ้าจำนวนแถวจาก Sheet น้อยกว่าที่มีอยู่ใน BigQuery แบบผิดปกติ
+  // จะ throw error ออกไปตรงนี้เลย ไม่ทำ Load Job ต่อ (ดูคอมเมนต์ที่ฟังก์ชันด้านบน)
+  assertSafeRowCountForTruncateSync_(tableId, allValues.length);
 
   var csvLines = allValues.map(function(row) {
     return columns.map(function(colName) {
@@ -572,6 +628,11 @@ function syncCustomerSheetToBigQuery_() {
   }
   var csvText = csvLines.join('\r\n');
 
+  // 🛡️ เช็คก่อนเสมอ — กันบั๊กเดียวกับที่เกิดกับตาราง users (ดูคอมเมนต์ที่
+  // assertSafeRowCountForTruncateSync_ ด้านบนไฟล์) เผื่อ Sheet customers ถูกลบ/เคลียร์
+  // แถวไปโดยไม่ได้ตั้งใจ ก่อนที่ trigger จะรันซิงก์รอบถัดไป
+  assertSafeRowCountForTruncateSync_(TABLE_ID, allValues.length);
+
   var schemaFields = CUSTOMER_SHEET_COLUMNS.map(function(colName) {
     return { name: colName, type: bigQueryTypeForColumn_(colName), mode: 'NULLABLE' };
   });
@@ -669,8 +730,22 @@ function buildActivityLogDetail_(normalizedAction, payload, result) {
 
 // บันทึก 1 แถวลง user_activity_log — ห่อด้วย try/catch เสมอ เพื่อไม่ให้การบันทึก log
 // ล้มเหลวไปทำให้ action หลัก (เช่นบันทึกลูกค้า) ที่สำเร็จไปแล้วดูเหมือนพังไปด้วย
-// แก้ไข (2026-09-17 รอบที่ 3): เขียนลงแท็บ user_activity_log ใน Sheet ก่อน แล้วค่อย
-// append 1 แถวเข้า BigQuery table เดียวกัน (ดูคอมเมนต์ที่ ACTIVITY_LOG_SHEET_NAME ด้านบนไฟล์)
+//
+// แก้ไข (2026-09-18 — ปัญหา login/logout ช้าผิดปกติ): เดิมฟังก์ชันนี้เขียนลง Sheet แล้ว
+// เรียก appendRowToBigQueryTable_() ซิงก์เข้า BigQuery "ทันที" แบบ synchronous ก่อน
+// ตอบกลับหน้าเว็บ — ซึ่ง appendRowToBigQueryTable_ รอ BigQuery Load Job จนเสร็จจริง
+// (waitForBigQueryLoadJob_ poll ทุก 1 วิ นานสุด 25 วิ) และ Load Job ใช้เวลาขั้นต่ำ
+// 2-10+ วิเสมอไม่ว่าจะมีกี่แถว (เป็น overhead จัดคิวงานของ BigQuery เอง ไม่ใช่ปริมาณข้อมูล)
+// ผลคือ "ทุก" action ที่อยู่ใน ACTIVITY_LOG_WHITELIST (login, logout, add, update, delete,
+// exportAll, addFollowUp, addUser, screenshotAttempt) ต้องรอ Load Job นี้ก่อนตอบกลับ
+// หน้าเว็บเสมอ ทำให้ login/logout (และจริงๆ add/update/delete ด้วย) ช้าผิดปกติ
+//
+// ตอนนี้เปลี่ยนให้เขียนลง Sheet เท่านั้น (เร็ว ~100-300ms) แล้ว "ไม่รอ" ซิงก์เข้า BigQuery
+// ทันทีอีกต่อไป — ปล่อยให้ scheduledSyncActivityLogToBigQuery_ (ตั้ง trigger รันทุก 5 นาที
+// ดูฟังก์ชัน installScheduledActivityLogSync_ ด้านล่างไฟล์) ไปซิงก์แถวใหม่เข้า BigQuery
+// เป็นรอบๆ ทีหลังแทน — ผลข้างเคียงเดียวคือหน้า "📋 ประวัติการใช้งาน" (อ่านจาก BigQuery)
+// จะเห็นข้อมูลล่าช้าได้สูงสุด ~5 นาที ซึ่งยอมรับได้เพราะเป็นแค่หน้า audit log ไม่ใช่ข้อมูล
+// ที่ต้องเรียลไทม์ ต่างจาก login/logout ที่ user รอผลอยู่หน้าจอตรงๆ
 function logUserActivity_(user, action, detail, isSuccess) {
   try {
     var now = new Date();
@@ -685,16 +760,103 @@ function logUserActivity_(user, action, detail, isSuccess) {
     ];
     var sheet = getOrCreateSheetTab_(ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS);
     sheet.appendRow(rowValues);
-    try {
-      appendRowToBigQueryTable_(rowValues, ACTIVITY_LOG_SHEET_COLUMNS, ACTIVITY_LOG_TYPE_MAP, ACTIVITY_LOG_TABLE_ID);
-    } catch (syncErr) {
-      Logger.log('sync user_activity_log error: ' + syncErr);
-    }
+    // ⛔ ไม่เรียก appendRowToBigQueryTable_ ตรงนี้แล้ว (ดูคอมเมนต์ด้านบน) — ปล่อยให้
+    // scheduledSyncActivityLogToBigQuery_ ซิงก์เป็นรอบๆ ทีหลังแทน เพื่อไม่ให้ login/logout/
+    // add/update/delete ต้องรอ BigQuery Load Job ก่อนตอบกลับหน้าเว็บ
   } catch (e) {
     Logger.log('logUserActivity_ error (ไม่กระทบการทำงานหลัก): ' + e.toString());
   }
 }
 
+// =================================================================
+// ⏰ (2026-09-18) ซิงก์แถวใหม่ของ log แบบ "เป็นรอบๆ" เข้า BigQuery ผ่าน trigger — แทนที่
+// การรอ BigQuery Load Job แบบ synchronous ทุกครั้งที่มี log ใหม่ 1 แถว (ดูคอมเมนต์ที่
+// logUserActivity_ ด้านบนไฟล์ — เป็นสาเหตุที่ login/logout/add/update/delete ช้าผิดปกติ)
+// =================================================================
+// เก็บ "เลขแถวล่าสุดที่ซิงก์ไปแล้ว" ไว้ใน Script Properties เพื่อรู้ว่าต้องอ่านจากแถว
+// ไหนต่อ (ไม่ใช้ WRITE_TRUNCATE เหมือน customers/users เพราะ log เป็น append-only ไม่มี
+// การแก้ไข/ลบแถวเดิม จึงซิงก์แค่ "แถวที่เพิ่มใหม่ตั้งแต่รอบก่อน" ด้วย WRITE_APPEND พอ)
+function syncNewSheetRowsToBigQueryAppend_(tabName, columns, typeMap, tableId, lastSyncedRowPropKey) {
+  var sheet = getOrCreateSheetTab_(tabName, columns);
+  var headerMap = buildHeaderMapForColumns_(sheet, columns);
+  var lastRow = sheet.getLastRow();
+
+  var props = PropertiesService.getScriptProperties();
+  var lastSyncedRow = parseInt(props.getProperty(lastSyncedRowPropKey) || '1', 10); // แถว 1 = หัวตาราง
+  if (isNaN(lastSyncedRow) || lastSyncedRow < 1) lastSyncedRow = 1;
+
+  if (lastRow <= lastSyncedRow) {
+    return; // ไม่มีแถวใหม่ตั้งแต่รอบก่อน ไม่ต้องทำอะไร
+  }
+
+  var numNewRows = lastRow - lastSyncedRow;
+  var lastCol = sheet.getLastColumn();
+  var newValues = sheet.getRange(lastSyncedRow + 1, 1, numNewRows, lastCol).getValues();
+
+  var csvLines = newValues.map(function(row) {
+    return columns.map(function(colName) {
+      var idx = headerMap[colName] - 1;
+      return csvEscape_(formatValueForCsvByType_(typeMap[colName], row[idx]));
+    }).join(',');
+  });
+  var csvText = csvLines.join('\r\n');
+  var schemaFields = columns.map(function(c) { return { name: c, type: typeMap[c], mode: 'NULLABLE' }; });
+
+  var job = {
+    configuration: {
+      load: {
+        destinationTable: { projectId: GCP_PROJECT_ID, datasetId: DATASET_ID, tableId: tableId },
+        sourceFormat: 'CSV',
+        writeDisposition: 'WRITE_APPEND',
+        schema: { fields: schemaFields },
+        allowQuotedNewlines: true,
+        allowJaggedRows: false,
+        maxBadRecords: 100
+      }
+    }
+  };
+  var blob = Utilities.newBlob(csvText, 'text/csv', tableId + '_batch_append.csv');
+  var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+  waitForBigQueryLoadJob_(insertResult); // ที่นี่รอได้ เพราะรันจาก trigger เบื้องหลัง ไม่มี user รอหน้าเว็บ
+
+  // อัปเดต "แถวล่าสุดที่ซิงก์แล้ว" เฉพาะตอน Load Job สำเร็จเท่านั้น (ถ้า throw ก่อนถึงบรรทัด
+  // นี้ รอบถัดไปจะลองซิงก์แถวชุดเดิมใหม่อีกครั้ง กันข้อมูลตกหาย)
+  props.setProperty(lastSyncedRowPropKey, String(lastRow));
+}
+
+var ACTIVITY_LOG_LAST_SYNCED_ROW_KEY = 'ACTIVITY_LOG_LAST_SYNCED_ROW';
+
+function scheduledSyncActivityLogToBigQuery_() {
+  try {
+    syncNewSheetRowsToBigQueryAppend_(
+      ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS, ACTIVITY_LOG_TYPE_MAP,
+      ACTIVITY_LOG_TABLE_ID, ACTIVITY_LOG_LAST_SYNCED_ROW_KEY
+    );
+  } catch (err) {
+    Logger.log('scheduledSyncActivityLogToBigQuery_ error: ' + err);
+  }
+}
+
+// ⚙️ Setup ครั้งเดียว: ตั้ง time-driven trigger ให้รัน scheduledSyncActivityLogToBigQuery_
+// ทุก 5 นาที (เหมือน installScheduledCustomerSync_ ด้านบนไฟล์) — วิธีรัน: เลือกฟังก์ชัน
+// "installScheduledActivityLogSync_" จาก dropdown ▶ Run แล้วกดรัน ครั้งเดียวพอ (รันซ้ำได้
+// ปลอดภัย จะลบ trigger เดิมของฟังก์ชันนี้ทิ้งก่อนเสมอ กันสร้างซ้ำซ้อนหลายอัน)
+// ⚠️ ต้องรันฟังก์ชันนี้ 1 ครั้ง ไม่งั้น log ใหม่จะเขียนเข้า Sheet ได้ปกติ (login/logout เร็ว
+// ตามที่ตั้งใจ) แต่จะไม่ถูกซิงก์เข้า BigQuery เลย ทำให้หน้า "📋 ประวัติการใช้งาน" ไม่มี
+// ข้อมูลใหม่ขึ้นเลย
+function installScheduledActivityLogSync() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'scheduledSyncActivityLogToBigQuery_') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('scheduledSyncActivityLogToBigQuery_')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  Logger.log('ตั้ง trigger สำเร็จ: จะรัน scheduledSyncActivityLogToBigQuery_ ทุก 5 นาที');
+}
 // ดึงประวัติการใช้งานมาแสดงในหน้า "📋 ประวัติการใช้งาน" — เฉพาะ admin เรียกได้
 // (เช็คสิทธิ์ที่ doPost ก่อนเรียกฟังก์ชันนี้แล้ว)
 function getUserActivityLogHTML(filters) {
@@ -2805,6 +2967,249 @@ function runOneTimeSetup_CreateUserActivityLogTable() {
   } catch (err) {
     Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
   }
+}
+
+// =================================================================
+// ⚙️ Setup ครั้งเดียว (กู้คืน/ป้องกันเหตุซ้ำ): ดึง user ทั้งหมดที่มีอยู่จริงใน BigQuery
+// (ตาราง users) กลับมาใส่ไว้ในแท็บ Google Sheet "users" ให้ครบ
+// =================================================================
+// ทำไมต้องมีฟังก์ชันนี้: ตั้งแต่ 2026-09-17 ระบบเปลี่ยนมาถือ Google Sheet เป็นข้อมูล
+// ต้นทางของ users แล้วซิงก์เข้า BigQuery แบบ WRITE_TRUNCATE ทุกครั้งที่เพิ่มสมาชิก
+// (ดูคอมเมนต์ที่ assertSafeRowCountForTruncateSync_ ด้านบนไฟล์ — เป็นสาเหตุที่ user เดิม
+// หายไปหมดเหลือแต่ admin) เพราะตอน migration ไม่ได้ backfill user เดิมจาก BigQuery
+// เข้า Sheet ก่อน ฟังก์ชันนี้แก้ที่ต้นเหตุนั้น โดยดึง user ที่ "ยังเหลืออยู่จริง" ใน
+// BigQuery ตอนนี้ กลับไปเติมใน Sheet ให้ครบ (เพิ่มเฉพาะ username ที่ Sheet ยังไม่มี
+// เทียบแบบไม่สนตัวพิมพ์เล็ก/ใหญ่ — ปลอดภัยที่จะรันซ้ำได้หลายครั้ง ไม่ทำให้ข้อมูลซ้ำ)
+//
+// ⚠️ ถ้า user ที่หายไปแล้วถูก TRUNCATE ทับไปจริงๆ (ไม่เหลือใน BigQuery แล้ว) ฟังก์ชันนี้
+// กู้คืนให้ไม่ได้ — ต้องกู้จาก BigQuery time travel (ปกติย้อนได้ 7 วัน ใช้
+// FOR SYSTEM_TIME AS OF ตอน query) หรือจาก backup ก่อน แล้วค่อยรันฟังก์ชันนี้อีกครั้ง
+// เพื่อดึงเข้า Sheet ให้ครบ
+//
+// วิธีรัน: เลือกฟังก์ชัน "runOneTimeSetup_BackfillUsersFromBigQuery_" จาก dropdown ข้าง
+// ปุ่ม ▶ Run (เรียกใช้) ที่แถบด้านบน แล้วกด ▶ Run > เช็คแท็บ "Executions" ว่าขึ้น
+// "สำเร็จ" ก่อนใช้งานเมนู "เพิ่มสมาชิก" ต่อ — แนะนำให้รันฟังก์ชันนี้ก่อนเสมอหลัง deploy
+// โค้ดชุดนี้ครั้งแรก แม้จะยังไม่เจอปัญหา user หายก็ตาม (กันไว้ก่อนเกิดเหตุ)
+function runOneTimeSetup_BackfillUsersFromBigQuery_() {
+  try {
+    var sql = "SELECT user_id, username, password_hash, role, status FROM `" +
+      GCP_PROJECT_ID + "." + DATASET_ID + ".users`";
+    var bqRows = runParamQueryFetch(sql, []);
+    if (!bqRows || !bqRows.length) {
+      Logger.log('ไม่พบ user เลยใน BigQuery ตาราง users ตอนนี้ (ถ้าเพิ่งถูกบั๊กเดิมลบไป ' +
+        'ให้กู้จาก time travel/backup ก่อน แล้วรันฟังก์ชันนี้ใหม่อีกครั้ง — ไม่มีอะไรให้ backfill ตอนนี้)');
+      return;
+    }
+
+    var usersSheet = getOrCreateSheetTab_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS);
+    var usersHeaderMap = buildHeaderMapForColumns_(usersSheet, USERS_SHEET_COLUMNS);
+    var lastRow = usersSheet.getLastRow();
+    var existingUsernames = {};
+    if (lastRow > 1) {
+      var usernameCol = usersHeaderMap['username'];
+      var existingVals = usersSheet.getRange(2, usernameCol, lastRow - 1, 1).getValues();
+      existingVals.forEach(function(r) {
+        var u = (r[0] || '').toString().trim().toLowerCase();
+        if (u) existingUsernames[u] = true;
+      });
+    }
+
+    var rowsToAppend = [];
+    bqRows.forEach(function(row) {
+      var uname = (row.username || '').toString().trim().toLowerCase();
+      if (!uname || existingUsernames[uname]) return; // มีอยู่แล้วใน Sheet ข้าม ไม่ใส่ซ้ำ
+      rowsToAppend.push(USERS_SHEET_COLUMNS.map(function(c) {
+        return (row[c] !== undefined && row[c] !== null) ? row[c] : '';
+      }));
+      existingUsernames[uname] = true; // กันซ้ำกันเองถ้า BigQuery มี username ซ้ำหลายแถว
+    });
+
+    if (rowsToAppend.length === 0) {
+      Logger.log('ไม่มี user ใหม่ที่ต้อง backfill (Sheet มีครบแล้วเทียบกับ BigQuery ที่อ่านได้ตอนนี้)');
+      return;
+    }
+
+    usersSheet.getRange(usersSheet.getLastRow() + 1, 1, rowsToAppend.length, USERS_SHEET_COLUMNS.length)
+      .setValues(rowsToAppend);
+
+    Logger.log('สำเร็จ: backfill user จาก BigQuery เข้า Sheet แล้ว ' + rowsToAppend.length + ' คน — ' +
+      'ตรวจสอบแท็บ "users" ใน Google Sheet ให้ครบก่อนใช้งานเมนู "เพิ่มสมาชิก" ต่อ');
+  } catch (err) {
+    Logger.log('เกิดข้อผิดพลาด: ' + err.toString());
+  }
+}
+
+// =================================================================
+// ⚙️ Helper (2026-09-18): เพิ่ม/แก้ user ตรงๆ จาก Apps Script โดยไม่ต้องผ่านหน้าเว็บแอป
+// =================================================================
+// ⚠️ อย่าเพิ่ม/แก้ user โดยพิมพ์ลง BigQuery Console ตรงๆ อีก (เป็นสาเหตุที่เพิ่งเจอปัญหา
+// login ไม่ได้) เพราะ 2 เหตุผล:
+//   1) ตาราง users ใน BigQuery ตอนนี้เป็นแค่ "กระจก" (mirror) ที่ถูกเขียนทับใหม่ทั้งหมด
+//      (WRITE_TRUNCATE) จาก Google Sheet แท็บ "users" ทุกครั้งที่มีคนกด "เพิ่มสมาชิก" ใน
+//      แอป — user ที่เพิ่มตรงๆ ใน BigQuery แต่ไม่มีอยู่ใน Sheet ด้วย จะถูกลบทิ้งอีกครั้ง
+//      ในการ sync รอบถัดไป (ถ้าจำนวนที่ลดลงไม่เกิน 50% จะไม่ถูก safety guard บล็อกด้วย)
+//   2) password_hash ต้องเป็นผลลัพธ์จาก sha256Hex_() ของรหัสผ่านเป๊ะๆ ทุกตัวอักษร ถ้า
+//      คำนวณเองด้วยเครื่องมืออื่น (เว็บ sha256 ออนไลน์, คำสั่ง echo ใน terminal ที่มักแอบ
+//      เติม "\n" ต่อท้ายให้อัตโนมัติ) hash จะไม่ตรงกัน login ไม่ได้ทั้งที่ข้อมูลอื่นถูกหมด
+//
+// ฟังก์ชันนี้เขียนเข้า Google Sheet แท็บ "users" ให้ถูกต้องเสมอ (คำนวณ hash ด้วย
+// sha256Hex_ ตัวเดียวกับที่หน้าเว็บใช้จริง) แล้วซิงก์เข้า BigQuery ให้เสร็จในตัวเลย —
+// ปลอดภัยกว่าพิมพ์ลง BigQuery Console ตรงๆ 100% ใช้ได้ทั้งเพิ่มใหม่และแก้ของเดิม
+//
+// วิธีใช้: แก้ 3 ค่า username / plainPassword / role ด้านในฟังก์ชันด้านล่างนี้ชั่วคราว
+// ให้ตรงกับที่ต้องการ (ถ้า username มีอยู่แล้วจะ "แก้" password/role/status ให้ ถ้ายังไม่
+// มีจะ "เพิ่ม" ใหม่) > เลือกฟังก์ชัน "runOneTimeSetup_AddOrFixUserDirectly_" จาก dropdown
+// ข้างปุ่ม ▶ Run แล้วกดรัน > เช็ค Logger ว่าขึ้น "สำเร็จ" > ลอง login ด้วย username/
+// password ที่ตั้งไว้ได้เลย (แนะนำให้ตั้งค่ากลับเป็นค่า placeholder เดิมหลังใช้เสร็จ กัน
+// เผลอรันซ้ำโดยไม่ได้ตั้งใจ)
+function runOneTimeSetup_AddOrFixUserDirectly() {
+  var username = 'admin'.toLowerCase();          // 👈 แก้ username ที่ต้องการที่นี่
+  var plainPassword = 'rst311728it';   // 👈 แก้รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)
+  var role = 'admin';                             // 👈 แก้ role ที่ต้องการ (admin / staff / sale)
+
+  if (!username || !plainPassword || plainPassword.length < 6) {
+    Logger.log('กรุณากรอก username และ password (อย่างน้อย 6 ตัวอักษร) ให้ครบก่อนรัน');
+    return;
+  }
+
+  var usersSheet = getOrCreateSheetTab_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS);
+  var usersHeaderMap = buildHeaderMapForColumns_(usersSheet, USERS_SHEET_COLUMNS);
+  var lastRow = usersSheet.getLastRow();
+  var passwordHash = sha256Hex_(plainPassword);
+  var targetRowIndex = -1;
+
+  if (lastRow > 1) {
+    var usernameCol = usersHeaderMap['username'];
+    var existingUsernames = usersSheet.getRange(2, usernameCol, lastRow - 1, 1).getValues();
+    for (var i = 0; i < existingUsernames.length; i++) {
+      if ((existingUsernames[i][0] || '').toString().trim().toLowerCase() === username) {
+        targetRowIndex = i + 2; // แถวจริงใน Sheet (แถว 1 เป็นหัวตาราง)
+        break;
+      }
+    }
+  }
+
+  if (targetRowIndex === -1) {
+    // ยังไม่มี username นี้ใน Sheet — เพิ่มแถวใหม่
+    usersSheet.appendRow(USERS_SHEET_COLUMNS.map(function(c) {
+      if (c === 'user_id') return Utilities.getUuid();
+      if (c === 'username') return username;
+      if (c === 'password_hash') return passwordHash;
+      if (c === 'role') return role;
+      if (c === 'status') return 'active';
+      return '';
+    }));
+    Logger.log('เพิ่ม user "' + username + '" ใหม่ใน Sheet แล้ว');
+  } else {
+    // มีอยู่แล้ว (เช่น แถวที่เพิ่มตรงเข้า BigQuery ไปก่อนหน้านี้) — แก้ให้ถูกต้องตามที่ตั้งไว้
+    usersSheet.getRange(targetRowIndex, usersHeaderMap['password_hash']).setValue(passwordHash);
+    usersSheet.getRange(targetRowIndex, usersHeaderMap['role']).setValue(role);
+    usersSheet.getRange(targetRowIndex, usersHeaderMap['status']).setValue('active');
+    Logger.log('แก้ไข user "' + username + '" ที่มีอยู่แล้วใน Sheet ให้ถูกต้องตามที่ตั้งไว้แล้ว');
+  }
+
+  syncSheetTabToBigQueryTable_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS, USERS_TYPE_MAP, 'users');
+  Logger.log('สำเร็จ: ซิงก์เข้า BigQuery แล้ว ลอง login ด้วย username="' + username + '" ได้เลย');
+}
+
+// =================================================================
+// 🔍 Debug (2026-09-18): เทียบ password_hash ที่เก็บจริงใน BigQuery กับ hash ที่คำนวณ
+// จากรหัสผ่านที่ตั้งใจจะใช้ login — ใช้หาสาเหตุตอน login ไม่ผ่านทั้งที่รันฟังก์ชันเพิ่ม/
+// แก้ user ไปแล้ว (เช่น รันฟังก์ชันสำเร็จแต่ sync เข้า BigQuery ไม่ทัน/ล้มเหลวเงียบๆ หรือ
+// พิมพ์รหัสผ่านตอน login ผิดจากที่ตั้งไว้ตอนรันฟังก์ชัน)
+//
+// วิธีใช้: แก้ username / testPassword ด้านในให้ตรงกับที่กำลังจะลอง login จริง (ตัวพิมพ์
+// เล็ก-ใหญ่ต้องตรงเป๊ะ) > เลือกฟังก์ชัน "debugCompareUserPasswordHash_" จาก dropdown ▶ Run
+// แล้วกดรัน > ดูผลที่แท็บ Executions — ถ้าขึ้น "✅ ตรงกัน" แปลว่า login ควรผ่านแน่นอน (ถ้า
+// ยัง login ไม่ได้ ปัญหาน่าจะอยู่ที่หน้าเว็บ/deploy ไม่ใช่ข้อมูล) ถ้าขึ้น "❌ ไม่ตรงกัน" ให้
+// ดู hash ทั้ง 2 ค่าที่ print ออกมาเทียบกัน แล้วรัน runOneTimeSetup_AddOrFixUserDirectly_
+// ใหม่อีกครั้งด้วยรหัสผ่านเดียวกับที่ตั้งไว้ใน testPassword นี้เป๊ะๆ
+function debugCompareUserPasswordHash_() {
+  var username = 'admin'.toLowerCase();   // 👈 ใส่ username ที่จะลอง login
+  var testPassword = 'รหัสผ่านที่จะลอง login'; // 👈 ใส่รหัสผ่านที่ "จะพิมพ์ตอน login จริง" ให้ตรงเป๊ะ
+
+  try {
+    var sql = "SELECT username, password_hash, role, status FROM `" +
+      GCP_PROJECT_ID + "." + DATASET_ID + ".users` WHERE username = @username LIMIT 1";
+    var rows = runParamQueryFetch(sql, [{ name: 'username', value: username }]);
+
+    if (!rows.length) {
+      Logger.log('❌ ไม่พบ username "' + username + '" ใน BigQuery เลย — ต้องรัน ' +
+        'runOneTimeSetup_AddOrFixUserDirectly_ ก่อน (หรือเช็คว่า sync ล้มเหลวหรือไม่)');
+      return;
+    }
+
+    var row = rows[0];
+    var storedHash = String(row.password_hash || '').trim();
+    var computedHash = sha256Hex_(testPassword);
+    var status = String(row.status || '').trim().toLowerCase();
+
+    Logger.log('username ที่พบใน BigQuery: "' + row.username + '"');
+    Logger.log('role: "' + row.role + '" | status: "' + row.status + '"');
+    Logger.log('password_hash ที่เก็บอยู่จริงใน BigQuery: ' + storedHash);
+    Logger.log('hash ที่คำนวณจาก testPassword ("' + testPassword + '"): ' + computedHash);
+
+    if (status !== 'active') {
+      Logger.log('⚠️ status ไม่ใช่ "active" (เป็น "' + row.status + '") — login จะไม่ผ่านแม้ password ตรง');
+    }
+    if (storedHash.toLowerCase() === computedHash.toLowerCase() || storedHash === testPassword) {
+      Logger.log('✅ ตรงกัน — password ถูกต้อง ถ้า login ไม่ผ่านอีก ปัญหาน่าจะอยู่ที่หน้าเว็บ/deploy');
+    } else {
+      Logger.log('❌ ไม่ตรงกัน — password_hash ใน BigQuery กับ testPassword ที่ตั้งไว้ไม่ตรงกัน ' +
+        'ให้รัน runOneTimeSetup_AddOrFixUserDirectly_ ใหม่ด้วยรหัสผ่านเดียวกับ testPassword นี้เป๊ะๆ');
+    }
+  } catch (e) {
+    Logger.log('เกิดข้อผิดพลาด: ' + e.toString());
+  }
+}
+
+// =================================================================
+// ⚙️ Helper (2026-09-18): ลบ user ออกจากระบบ (Sheet + BigQuery) อย่างปลอดภัย
+// =================================================================
+// ⚠️ อย่าลบแถวใน BigQuery Console ตรงๆ (ทำไม่ได้อยู่แล้วเพราะ DML ถูกบล็อก — แต่ถ้าลบผ่าน
+// วิธีอื่น เช่น export/reload ตาราง ก็จะเจอปัญหาเดิม: ตาราง users เป็นแค่กระจกจาก Sheet
+// พอมีคนกด "เพิ่มสมาชิก" ในแอปครั้งถัดไป ข้อมูลจะกลับมาเหมือนเดิมเพราะ Sheet ยังมีอยู่)
+// ฟังก์ชันนี้ลบออกจาก Sheet ก่อน (ต้นทางจริง) แล้วซิงก์เข้า BigQuery ให้ตรงกันทันที
+//
+// วิธีใช้: แก้ username ด้านในให้ตรงกับที่ต้องการลบ > เลือกฟังก์ชัน
+// "runOneTimeSetup_DeleteUserByUsername_" จาก dropdown ▶ Run แล้วกดรัน > เช็ค Logger
+// ว่าขึ้น "สำเร็จ" — ลบแล้วกู้คืนไม่ได้ (ยกเว้นไปดึงจาก BigQuery time travel เอาเอง)
+// ⚠️ ถ้าตั้งใจจะ "แก้รหัสผ่าน/role" ของ user เดิม ไม่ต้องลบ — ใช้
+// runOneTimeSetup_AddOrFixUserDirectly_ แทน จะปลอดภัยกว่าและขั้นตอนน้อยกว่า
+function runOneTimeSetup_DeleteUserByUsername_() {
+  var username = 'ใส่ username ที่ต้องการลบตรงนี้'.toLowerCase(); // 👈 แก้ตรงนี้
+
+  var usersSheet = getOrCreateSheetTab_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS);
+  var usersHeaderMap = buildHeaderMapForColumns_(usersSheet, USERS_SHEET_COLUMNS);
+  var lastRow = usersSheet.getLastRow();
+
+  if (lastRow <= 1) {
+    Logger.log('ไม่มี user อยู่ใน Sheet เลย ไม่มีอะไรให้ลบ');
+    return;
+  }
+
+  var usernameCol = usersHeaderMap['username'];
+  var existingUsernames = usersSheet.getRange(2, usernameCol, lastRow - 1, 1).getValues();
+  var targetRowIndex = -1;
+  for (var i = 0; i < existingUsernames.length; i++) {
+    if ((existingUsernames[i][0] || '').toString().trim().toLowerCase() === username) {
+      targetRowIndex = i + 2; // แถวจริงใน Sheet (แถว 1 เป็นหัวตาราง)
+      break;
+    }
+  }
+
+  if (targetRowIndex === -1) {
+    Logger.log('ไม่พบ username "' + username + '" ใน Sheet — ไม่มีอะไรให้ลบ ' +
+      '(ถ้า user นี้เพิ่งถูกเพิ่มตรงเข้า BigQuery โดยไม่ผ่าน Sheet ให้ไปลบที่ BigQuery แยก ' +
+      'หรือปล่อยไว้เฉยๆ ก็ได้ เพราะ sync รอบถัดไปจะลบให้เองอยู่แล้วถ้าลดไม่เกิน 50%)');
+    return;
+  }
+
+  usersSheet.deleteRow(targetRowIndex);
+  Logger.log('ลบ user "' + username + '" ออกจาก Sheet แล้ว');
+
+  syncSheetTabToBigQueryTable_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS, USERS_TYPE_MAP, 'users');
+  Logger.log('สำเร็จ: ซิงก์เข้า BigQuery แล้ว — user "' + username + '" ถูกลบออกจากระบบเรียบร้อย');
 }
 
 // ฟังก์ชันช่วย debug: พิมพ์ schema จริงของตาราง users ออกทาง Logger เพื่อดูว่ามีคอลัมน์
