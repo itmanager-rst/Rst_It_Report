@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RST CRM Mobile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+    /* ===== เวอร์ชันมือถือ: เบา เร็ว เน้นงานหลัก 2 อย่างของเซลล์ — เพิ่มลูกค้าใหม่ / ค้นหา-ติดตาม =====
+       ตัด export CSV, ตั้งค่าคอลัมน์, ปฏิทิน, รายงาน, สมาชิก, ประวัติการใช้งาน ออกทั้งหมด
+       (ฟีเจอร์เหล่านี้เป็นงานบริหาร/office ทำบนคอมพิวเตอร์สะดวกกว่า) เชื่อมต่อ backend ตัวเดียวกับ
+       เวอร์ชันเดสก์ท็อป — ไม่ต้องแก้ Code.js ใดๆ เพิ่มเติม */
+    :root {
+        --primary-color: #0284c7;
+        --bg-color: #f1f5f9;
+        --text-color: #1e293b;
+        --border-color: #cbd5e1;
+        --accent-color: #f97316;
+        color-scheme: light;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Prompt', sans-serif; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; overscroll-behavior-y: contain; }
+    body { background: var(--bg-color); color: var(--text-color); display: flex; flex-direction: column; }
+
+    /* แถบบนสุด */
+    #topbar {
+        position: sticky; top: 0; z-index: 20; background: var(--primary-color); color: #fff;
+        padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;
+        box-shadow: 0 2px 6px rgba(0,0,0,.12);
+    }
+    #topbar .title { font-weight: 700; font-size: 16px; }
+    #topbar .user-badge { font-size: 11.5px; opacity: .92; display: flex; align-items: center; gap: 8px; }
+    #topbar button.logout { background: rgba(255,255,255,.18); border: none; color: #fff; padding: 5px 10px; border-radius: 7px; font-size: 11.5px; }
+
+    main { flex: 1; overflow-y: auto; padding: 12px 12px 84px; }
+
+    /* แท็บล่าง (thumb-friendly) */
+    #bottom-nav {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex;
+        background: #fff; border-top: 1px solid var(--border-color); box-shadow: 0 -2px 10px rgba(0,0,0,.06);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    #bottom-nav button {
+        flex: 1; border: none; background: none; padding: 10px 4px 8px; font-size: 12px; color: #94a3b8;
+        display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 56px;
+    }
+    #bottom-nav button .ic { font-size: 21px; }
+    #bottom-nav button.active { color: var(--primary-color); font-weight: 600; }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    label { display: block; font-size: 12.5px; color: #475569; margin: 12px 0 4px; font-weight: 500; }
+    label:first-child { margin-top: 0; }
+    .form-control {
+        width: 100%; padding: 11px 12px; border: 1px solid var(--border-color); border-radius: 9px;
+        font-size: 15px; background: #fff; color: var(--text-color); min-height: 44px;
+    }
+    textarea.form-control { min-height: 70px; resize: vertical; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+    .card { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 12px; }
+    .card-title { font-weight: 600; font-size: 14.5px; margin-bottom: 8px; color: #0f172a; }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: none; border-radius: 9px; font-size: 14px; font-weight: 600; padding: 11px 14px; min-height: 44px; cursor: pointer; }
+    .btn-primary { background: var(--primary-color); color: #fff; width: 100%; }
+    .btn-accent { background: var(--accent-color); color: #fff; }
+    .btn-secondary { background: #e2e8f0; color: #334155; }
+    .btn-danger { background: #fee2e2; color: #b91c1c; }
+    .btn-sm { padding: 7px 10px; font-size: 12.5px; min-height: 36px; }
+    .btn:disabled { opacity: .55; }
+
+    /* ผลค้นหา: การ์ดแทนตาราง (มือถือปัดนิ้วอ่านง่ายกว่า) */
+    .search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search-bar input { flex: 1; }
+    .customer-card { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); border-left: 4px solid var(--border-color); }
+    .customer-card.type-เป้าหมาย { border-left-color: #a855f7; }
+    .customer-card.type-จอง { border-left-color: #f59e0b; }
+    .customer-card.type-ติดตาม { border-left-color: #0284c7; }
+    .customer-card.type-ทำสัญญา { border-left-color: #16a34a; }
+    .customer-card.type-ส่งมอบ { border-left-color: #64748b; }
+    .cc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .cc-name { font-weight: 700; font-size: 15px; }
+    .cc-badge { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; white-space: nowrap; }
+    .cc-meta { font-size: 12.5px; color: #64748b; margin-top: 3px; }
+    .cc-meta a { color: var(--primary-color); text-decoration: none; }
+    .cc-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .cc-actions .btn { flex: 1; }
+    .empty-hint { text-align: center; color: #94a3b8; font-size: 13px; padding: 30px 10px; }
+
+    /* ===== แบนเนอร์หน้าหลัก ===== */
+    #home-banner {
+        background: linear-gradient(135deg, #3b0a0a 0%, #7a1414 55%, #a91f1f 100%);
+        border-radius: 16px; padding: 26px 20px 20px; margin-bottom: 14px; text-align: center;
+        box-shadow: 0 8px 20px rgba(122,20,20,.28);
+    }
+    #home-logo { max-width: 220px; width: 78%; height: auto; display: block; margin: 0 auto 12px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.25)); border-radius: 6px; }
+    #home-banner-sub { color: rgba(255,255,255,.88); font-size: 12px; letter-spacing: .2px; }
+    #home-greeting-card { display: flex; flex-direction: column; }
+    .home-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+    .home-action-btn {
+        display: flex; align-items: center; gap: 14px; text-align: left; background: #fff; border: 1px solid var(--border-color);
+        border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .home-action-btn .haic { font-size: 26px; flex: 0 0 auto; line-height: 1; }
+    .home-action-btn .hatext { display: flex; flex-direction: column; }
+    .home-action-btn .hatxt { font-weight: 700; font-size: 15px; color: #0f172a; }
+    .home-action-btn .hasub { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+    .home-action-btn.accent { border-color: #fed7aa; background: #fff7ed; }
+
+    /* Modal (bottom-sheet style บนมือถือ) */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 50; display: none; align-items: flex-end; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; width: 100%; max-height: 88vh; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .modal-header span { font-weight: 700; font-size: 15.5px; }
+    .modal-header button { background: none; border: none; font-size: 20px; color: #94a3b8; line-height: 1; padding: 4px; }
+
+    .followup-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .followup-type-btn { padding: 10px 6px; border: 1px solid var(--border-color); border-radius: 9px; background: #fff; font-size: 12.5px; }
+    .followup-type-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+
+    .timeline-item { border-left: 2px solid var(--border-color); padding: 6px 0 10px 12px; margin-left: 4px; position: relative; }
+    .timeline-item::before { content: ''; position: absolute; left: -5px; top: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-color); }
+    .timeline-date { font-size: 12px; color: #475569; font-weight: 600; }
+    .timeline-by { float: right; font-size: 10.5px; color: #94a3b8; font-weight: normal; }
+    .timeline-note { font-size: 13px; margin-top: 3px; white-space: pre-line; }
+    .timeline-type-tag { display: inline-block; margin-left: 6px; font-size: 10px; background: #f1f5f9; padding: 1px 7px; border-radius: 999px; color: #64748b; }
+
+    #login-screen {
+        position: fixed; inset: 0; z-index: 100; background: linear-gradient(160deg, var(--primary-color), #075985);
+        display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    #login-screen .box { background: #fff; border-radius: 16px; padding: 26px 22px; width: 100%; max-width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,.25); }
+    #login-screen h1 { font-size: 19px; text-align: center; margin-bottom: 4px; }
+    #login-screen p.sub { text-align: center; font-size: 12px; color: #94a3b8; margin-bottom: 18px; }
+    #login-status { font-size: 12.5px; text-align: center; margin-top: 10px; color: #ef4444; min-height: 16px; }
+
+    /* ===== ลายน้ำกันข้อมูลรั่ว (เหมือนเวอร์ชันเดสก์ท็อป แต่เบากว่า — ไม่มีระบบเบลอเมื่อสลับแท็บ
+       เพราะมือถือสลับแอปบ่อยเป็นปกติ จะทำให้ใช้งานลำบากเกินไป) ===== */
+    #wm-overlay { position: fixed; inset: 0; z-index: 15; pointer-events: none; display: none; overflow: hidden; }
+    #wm-overlay .wm-row { display: flex; white-space: nowrap; opacity: .06; transform: rotate(-25deg); }
+    #wm-overlay .wm-item { font-size: 11px; font-weight: 700; padding: 46px 60px; }
+    .no-select { -webkit-user-select: none; user-select: none; }
+
+    #phone-check-msg { display: block; font-size: 11.5px; margin-top: 4px; }
+    .duplicate-warn { background: #fef2f2; border: 1px solid #fecaca; border-radius: 9px; padding: 10px; font-size: 12.5px; color: #991b1b; margin-top: 6px; }
+    .field-locked { background: #f8fafc !important; color: #94a3b8 !important; }
+    .sale-restrict-note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 12px; padding: 8px 10px; border-radius: 9px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<div id="wm-overlay"></div>
+
+<div id="login-screen">
+    <div class="box">
+        <h1>🚜 RST CRM</h1>
+        <p class="sub">เวอร์ชันมือถือ — สำหรับเพิ่ม/ติดตามลูกค้าภาคสนาม</p>
+        <label>ชื่อผู้ใช้งาน</label>
+        <input id="login-username" class="form-control" placeholder="username" autocomplete="username">
+        <label>รหัสผ่าน</label>
+        <input id="login-password" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password">
+        <div style="margin-top:16px;"></div>
+        <button class="btn btn-primary" onclick="loginUser()">เข้าสู่ระบบ</button>
+        <div id="login-status"></div>
+    </div>
+</div>
+
+<div id="app" style="display:none;">
+    <div id="topbar">
+        <span class="title">🚜 RST CRM</span>
+        <span class="user-badge">
+            <span id="current-user-name"></span>
+            <button class="logout" onclick="logoutUser()">ออกจากระบบ</button>
+        </span>
+    </div>
+
+    <main>
+        <!-- ===== หน้าหลัก ===== -->
+        <div class="page active" id="page-home">
+            <div id="home-banner">
+                <img src="data:image/jpeg;base64,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" alt="RST Solutions" id="home-logo">
+                <div id="home-banner-sub">ระบบบริหารลูกค้าสัมพันธ์ (CRM) — เวอร์ชันมือถือ</div>
+            </div>
+            <div class="card" id="home-greeting-card">
+                <div style="font-size:13px; color:#64748b;">สวัสดี 👋</div>
+                <div style="font-size:18px; font-weight:700; margin-top:2px;" id="home-user-display">-</div>
+                <div style="font-size:12px; color:#94a3b8; margin-top:2px;" id="home-date-display"></div>
+            </div>
+            <div class="home-actions">
+                <button class="home-action-btn" onclick="switchPage('add')">
+                    <span class="haic">➕</span>
+                    <span class="hatext"><span class="hatxt">เพิ่มลูกค้าใหม่</span><span class="hasub">บันทึกลูกค้ารายใหม่จากภาคสนาม</span></span>
+                </button>
+                <button class="home-action-btn accent" onclick="switchPage('search')">
+                    <span class="haic">🔍</span>
+                    <span class="hatext"><span class="hatxt">ค้นหา / ติดตาม</span><span class="hasub">ค้นหาลูกค้าเดิม บันทึกการติดตาม</span></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ===== หน้าเพิ่มลูกค้าใหม่ / แก้ไข ===== -->
+        <div class="page" id="page-add">
+            <div class="card">
+                <div class="card-title" id="add-form-title">➕ เพิ่มลูกค้าใหม่</div>
+                <div id="sale-restrict-notice" class="sale-restrict-note" style="display:none;">
+                    สิทธิ์ของคุณแก้ไขได้เฉพาะ "ชื่อ-นามสกุล" และ "ที่อยู่" เท่านั้น
+                </div>
+                <input type="hidden" id="form-row-index" value="">
+                <input type="hidden" id="cust-date" value="">
+
+                <div class="row2">
+                    <div><label>ชื่อ *</label><input id="cust-fname" class="form-control" placeholder="ชื่อจริง"></div>
+                    <div><label>นามสกุล</label><input id="cust-lname" class="form-control" placeholder="นามสกุล"></div>
+                </div>
+                <label>เบอร์โทรศัพท์ *</label>
+                <input id="cust-phone" class="form-control" inputmode="tel" placeholder="08xxxxxxxx" onblur="checkDuplicatePhone()">
+                <span id="phone-check-msg"></span>
+
+                <label>ประเภท</label>
+                <select id="cust-type" class="form-control">
+                    <option value="ลงทะเบียน">ลงทะเบียน</option>
+                    <option value="เป้าหมาย">เป้าหมาย</option>
+                    <option value="จอง">จอง</option>
+                    <option value="ติดตาม">ติดตาม</option>
+                </select>
+
+                <label>วันที่นัดหมายครั้งถัดไป</label>
+                <input type="date" id="cust-appdate" class="form-control">
+
+                <div class="row2">
+                    <div><label>ประเภทสินค้า</label><select id="cust-product-category" class="form-control" onchange="onCustProductCategoryChange()"></select></div>
+                    <div><label>รุ่น</label>
+                        <select id="cust-product-model" class="form-control"></select>
+                        <input id="cust-product-model-text" class="form-control" style="display:none; margin-top:6px;" placeholder="ระบุรุ่น/ชื่อสินค้า">
+                    </div>
+                </div>
+
+                <label>ที่อยู่</label>
+                <div class="row3">
+                    <input id="cust-addressno" class="form-control" placeholder="เลขที่">
+                    <input id="cust-moo" class="form-control" placeholder="หมู่ที่">
+                    <input id="cust-village" class="form-control" placeholder="หมู่บ้าน">
+                </div>
+                <div class="row3" style="margin-top:8px;">
+                    <input id="cust-subdistrict" class="form-control" placeholder="ตำบล">
+                    <input id="cust-district" class="form-control" placeholder="อำเภอ">
+                    <input id="cust-province" class="form-control" placeholder="จังหวัด" value="อุบลราชธานี">
+                </div>
+                <input id="cust-zipcode" class="form-control" placeholder="รหัสไปรษณีย์" style="margin-top:8px;">
+
+                <div class="row2">
+                    <div><label>LINE ID</label><input id="cust-line" class="form-control"></div>
+                    <div><label>Facebook</label><input id="cust-facebook" class="form-control"></div>
+                </div>
+
+                <label>หมายเหตุ</label>
+                <textarea id="cust-note" class="form-control" placeholder="บันทึกรายละเอียดเพิ่มเติม..."></textarea>
+
+                <div style="margin-top:16px; display:flex; gap:8px;">
+                    <button class="btn btn-primary" id="btn-submit" onclick="onFormSubmit()" style="flex:1;">💾 บันทึก</button>
+                    <button class="btn btn-secondary" id="btn-cancel-edit" style="display:none;" onclick="resetFormState()">ยกเลิก</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== หน้าค้นหา / ติดตาม ===== -->
+        <div class="page" id="page-search">
+            <div class="search-bar">
+                <input id="search-keyword" class="form-control" placeholder="ค้นหาชื่อหรือเบอร์โทร..." onkeydown="if(event.key==='Enter')doSearch()">
+                <button class="btn btn-primary" style="width:auto; padding:11px 16px;" onclick="doSearch()">🔍</button>
+            </div>
+            <div id="search-results"><div class="empty-hint">พิมพ์ชื่อหรือเบอร์โทรแล้วกดค้นหา</div></div>
+        </div>
+    </main>
+
+    <div id="bottom-nav">
+        <button id="nav-home" class="active" onclick="switchPage('home')"><span class="ic">🏠</span>หน้าหลัก</button>
+        <button id="nav-add" onclick="switchPage('add')"><span class="ic">➕</span>เพิ่มลูกค้า</button>
+        <button id="nav-search" onclick="switchPage('search')"><span class="ic">🔍</span>ค้นหา/ติดตาม</button>
+    </div>
+</div>
+
+<!-- ===== Modal ไทม์ไลน์การติดตาม ===== -->
+<div id="history-modal-overlay" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-header">
+            <span id="history-modal-name">ประวัติการติดตาม</span>
+            <button onclick="closeHistoryModal()">✕</button>
+        </div>
+        <div id="history-timeline-list" style="margin-bottom:14px;"></div>
+        <div class="card-title" style="font-size:13.5px;">➕ บันทึกการติดตามรอบใหม่</div>
+        <label>วันที่ติดต่อ</label>
+        <input type="date" id="history-new-date" class="form-control">
+        <label>วันนัดครั้งถัดไป</label>
+        <input type="date" id="history-next-followup-date" class="form-control">
+        <label>ประเภทการติดตาม</label>
+        <input type="hidden" id="history-followup-type" value="">
+        <div class="followup-type-grid" id="history-followup-type-grid">
+            <button type="button" class="followup-type-btn" data-value="โทรศัพท์" onclick="selectFollowupType(this)">📞 โทรศัพท์</button>
+            <button type="button" class="followup-type-btn" data-value="แชท / LINE / Facebook" onclick="selectFollowupType(this)">💬 แชท/LINE/FB</button>
+            <button type="button" class="followup-type-btn" data-value="เข้าพบลูกค้า" onclick="selectFollowupType(this)">🤝 เข้าพบลูกค้า</button>
+            <button type="button" class="followup-type-btn" data-value="ส่งโปร / ใบเสนอราคา" onclick="selectFollowupType(this)">📄 ส่งโปร/ใบเสนอ</button>
+            <button type="button" class="followup-type-btn" data-value="นัดทดลองรถ / ดูสินค้า" onclick="selectFollowupType(this)">🚜 นัดทดลอง/ดูสินค้า</button>
+            <button type="button" class="followup-type-btn" data-value="อื่น ๆ" onclick="selectFollowupType(this)">🔁 อื่น ๆ</button>
+        </div>
+        <label>หมายเหตุ (คุยเรื่องอะไร ผลเป็นอย่างไร)</label>
+        <textarea id="history-new-note" class="form-control" placeholder="เช่น โทรเสนอโปรโมชั่น Solis30 ลูกค้าขอคิดดูก่อน 1 สัปดาห์"></textarea>
+        <button class="btn btn-accent" id="btn-submit-followup" style="width:100%; margin-top:12px;" onclick="submitFollowUpEntry()">💾 บันทึกการติดตามนี้</button>
+    </div>
+</div>
+
+<script>
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
+    const authTokenKey = 'crm_tracker_token';
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = function(url, options) {
+        options = options || {};
+        if (typeof options.body === 'string') {
+            try {
+                const parsed = JSON.parse(options.body);
+                if (parsed && parsed.action && parsed.action !== 'login') {
+                    parsed.token = parsed.token || localStorage.getItem(authTokenKey) || '';
+                    options.body = JSON.stringify(parsed);
+                }
+            } catch (e) { }
+        }
+        return nativeFetch(url, options);
+    };
+
+    let currentRole = 'user';
+    let currentUserDisplayName = '';
+    let duplicatePhoneMatch = null;
+    let editOriginalPhone = '';
+    let searchResultsData = [];
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str === null || str === undefined ? '' : String(str);
+        return div.innerHTML;
+    }
+    function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+    // ===== Login / Logout =====
+    function loginUser() {
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value.trim();
+        const status = document.getElementById('login-status');
+        status.style.color = '#64748b';
+        status.innerText = 'กำลังเข้าสู่ระบบ...';
+        fetch(WEB_APP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'login', payload: { username, password } })
+        })
+        .then(res => res.json())
+        .then(resData => {
+            if (resData && resData.success && resData.token) {
+                localStorage.setItem(authTokenKey, resData.token);
+                currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
+                currentUserDisplayName = (resData.user && (resData.user.name || resData.user.username)) || username;
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+                document.getElementById('current-user-name').innerText = currentUserDisplayName;
+                document.getElementById('home-user-display').innerText = currentUserDisplayName + (currentRole === 'sale' ? ' (Sale)' : currentRole === 'admin' ? ' (admin)' : ' (พนักงาน)');
+                document.getElementById('home-date-display').innerText = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                document.getElementById('sale-restrict-notice').style.display = (currentRole === 'sale') ? '' : 'none';
+                populateProductCategorySelect();
+                document.getElementById('cust-date').value = todayStr();
+                activateWatermark_();
+                return;
+            }
+            status.style.color = '#ef4444';
+            const message = resData && resData.message ? resData.message : '';
+            status.innerText = message.indexOf('Invalid Action') !== -1
+                ? 'ระบบยังใช้ deployment เก่า กรุณา Deploy Code.js เวอร์ชันใหม่ก่อน'
+                : (message || 'เข้าสู่ระบบไม่สำเร็จ');
+        })
+        .catch(() => { status.style.color = '#ef4444'; status.innerText = 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ'; });
+    }
+    function logoutUser() {
+        if (!confirm('ต้องการออกจากระบบใช่หรือไม่?')) return;
+        const token = localStorage.getItem(authTokenKey) || '';
+        fetch(WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'logout', token }) })
+            .catch(() => {})
+            .finally(() => {
+                localStorage.removeItem(authTokenKey);
+                location.reload();
+            });
+    }
+
+    // ===== Nav =====
+    function switchPage(name) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('page-' + name).classList.add('active');
+        document.getElementById('nav-home').classList.toggle('active', name === 'home');
+        document.getElementById('nav-add').classList.toggle('active', name === 'add');
+        document.getElementById('nav-search').classList.toggle('active', name === 'search');
+        window.scrollTo({ top: 0 });
+    }
+
+    // ===== สินค้า (เหมือนเวอร์ชันเดสก์ท็อป) =====
+    const FREE_TEXT_CATEGORY = 'อื่นๆ (ระบุเอง)';
+    const PRODUCT_CATALOG = {
+        'Yanmar': ['EF393A / EF393T-45th', 'YM351R', 'YM358R', 'YM358R-L1', 'EF725T'],
+        'Solis': ['Solis 26', 'Solis26', 'YM-Solis22', 'YM-Solis26', 'YM-Solis30', 'YM-Solis30-45th', 'YM-Solis50', 'YM-Solis50-45th', 'YM-Solis 65', 'YM-Solis75', 'YM-Solis75-45th', 'YM-Solis90', 'YM-Solis105', 'YM-Solis 105 Cabin'],
+        'รถเกี่ยว': ['AW82V', 'YH700', 'YH700 Cabin', 'YH850GUW 2.3', 'YH850 Cabin', 'YH1180G26WU-TH'],
+        'รถขุด': ['Vio17', 'Vio23', 'Vio30-7', 'Vio30-Air-7', 'Vio35-7', 'Vio35-Air-7', 'Vio50', 'Vio55 Air', 'Vio80', 'Vio100'],
+        'รถแทรกเตอร์มือ 2': ['EF353T', 'EF393T', 'EF453T', 'EF494T', 'EF514T', 'YM351R', 'YM358R', 'EF725', 'Solis22', 'Solis26', 'Solis30', 'Solis50', 'Solis75', 'Solis90'],
+        'รถเกี่ยวมือ 2': ['AW82V', 'YH700', 'YH700 Cabin', 'YH850GUW 2.3', 'YH850 Cabin', 'YH1180G26WU-TH'],
+        [FREE_TEXT_CATEGORY]: [],
+        'อื่นๆ': ['เครื่องอัดฟาง', 'Drone']
+    };
+    function populateProductCategorySelect() {
+        const sel = document.getElementById('cust-product-category');
+        sel.innerHTML = '<option value="">-- เลือกประเภทสินค้า --</option>' + Object.keys(PRODUCT_CATALOG).map(c => `<option value="${c}">${c}</option>`).join('');
+        onCustProductCategoryChange();
+    }
+    function populateProductModelSelect(category, selected) {
+        const sel = document.getElementById('cust-product-model');
+        const models = PRODUCT_CATALOG[category] || [];
+        sel.innerHTML = '<option value="">-- เลือกรุ่น --</option>' + models.map(m => `<option value="${m}">${m}</option>`).join('');
+        if (selected && models.includes(selected)) sel.value = selected;
+    }
+    function onCustProductCategoryChange() {
+        const category = document.getElementById('cust-product-category').value;
+        const isFreeText = category === FREE_TEXT_CATEGORY;
+        document.getElementById('cust-product-model').style.display = isFreeText ? 'none' : '';
+        document.getElementById('cust-product-model-text').style.display = isFreeText ? '' : 'none';
+        if (!isFreeText) populateProductModelSelect(category, '');
+    }
+    function getProductModelValue() {
+        const textEl = document.getElementById('cust-product-model-text');
+        if (textEl.style.display !== 'none') return textEl.value.trim();
+        return document.getElementById('cust-product-model').value;
+    }
+
+    // ===== เช็คเบอร์ซ้ำ =====
+    function checkDuplicatePhone() {
+        const phoneVal = document.getElementById('cust-phone').value.trim();
+        const msgSpan = document.getElementById('phone-check-msg');
+        const editRowIndex = document.getElementById('form-row-index').value;
+        duplicatePhoneMatch = null;
+        if (editRowIndex || phoneVal.length < 9) { msgSpan.innerHTML = ''; return; }
+        msgSpan.innerHTML = '⚡ กำลังเช็ก...';
+        fetch(WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'checkDuplicatePhone', payload: { phone: phoneVal } }) })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success && resData.isDuplicate) {
+                    duplicatePhoneMatch = { phone: phoneVal, name: resData.customerName };
+                    msgSpan.innerHTML = `<b style="color:#ef4444;">⚠️ มีในระบบแล้ว (${escapeHtml(resData.customerName)})</b>`;
+                } else {
+                    msgSpan.innerHTML = '<b style="color:#10b981;">✓ เบอร์ใช้งานได้</b>';
+                }
+            }).catch(() => { msgSpan.innerHTML = ''; });
+    }
+
+    // ===== เพิ่ม/แก้ไขลูกค้า =====
+    const SALE_LOCKED_FIELDS = ['cust-phone', 'cust-type', 'cust-appdate', 'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-line', 'cust-facebook', 'cust-note'];
+    function applySaleRestriction_(restricted) {
+        SALE_LOCKED_FIELDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = restricted;
+            el.classList.toggle('field-locked', restricted);
+        });
+    }
+    function resetFormState() {
+        document.getElementById('form-row-index').value = '';
+        editOriginalPhone = '';
+        ['cust-fname','cust-lname','cust-phone','cust-line','cust-facebook','cust-note','cust-addressno','cust-moo','cust-village','cust-subdistrict','cust-district','cust-zipcode'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('cust-province').value = 'อุบลราชธานี';
+        document.getElementById('cust-date').value = todayStr();
+        document.getElementById('cust-appdate').value = '';
+        document.getElementById('cust-type').value = 'ลงทะเบียน';
+        document.getElementById('phone-check-msg').innerHTML = '';
+        populateProductCategorySelect();
+        document.getElementById('add-form-title').innerText = '➕ เพิ่มลูกค้าใหม่';
+        document.getElementById('btn-submit').innerText = '💾 บันทึก';
+        document.getElementById('btn-cancel-edit').style.display = 'none';
+        applySaleRestriction_(false);
+    }
+    function editCustomerFromCard(idx) {
+        const row = searchResultsData[idx];
+        if (!row) return;
+        resetFormState();
+        document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
+        editOriginalPhone = row.phone || row.phone1 || '';
+        document.getElementById('cust-date').value = row.date || todayStr();
+        const nm = (row.name || '').split(' ');
+        document.getElementById('cust-fname').value = row.firstName || row.firstname || nm[0] || '';
+        document.getElementById('cust-lname').value = row.lastName || row.lastname || nm.slice(1).join(' ') || '';
+        document.getElementById('cust-phone').value = row.phone || '';
+        document.getElementById('cust-appdate').value = row.booking_date || '';
+        document.getElementById('cust-type').value = row.type || 'ลงทะเบียน';
+        const parts = String(row.product || '').split(' | ');
+        populateProductCategorySelect();
+        if (parts[0]) { document.getElementById('cust-product-category').value = parts[0]; onCustProductCategoryChange(); }
+        if (parts[1]) {
+            const modelSel = document.getElementById('cust-product-model');
+            if (modelSel.style.display !== 'none') modelSel.value = parts[1]; else document.getElementById('cust-product-model-text').value = parts[1];
+        }
+        document.getElementById('cust-addressno').value = row.addressNo || row.addressno || '';
+        document.getElementById('cust-moo').value = row.moo || '';
+        document.getElementById('cust-village').value = row.village || '';
+        document.getElementById('cust-subdistrict').value = row.subdistrict || '';
+        document.getElementById('cust-district').value = row.district || '';
+        document.getElementById('cust-province').value = row.province || '';
+        document.getElementById('cust-zipcode').value = row.zipcode || '';
+        document.getElementById('cust-line').value = row.line || '';
+        document.getElementById('cust-facebook').value = row.facebook || '';
+        document.getElementById('cust-note').value = row.remark || '';
+        applySaleRestriction_(currentRole === 'sale');
+        document.getElementById('add-form-title').innerText = currentRole === 'sale' ? '✏️ แก้ไขชื่อ/ที่อยู่' : '✏️ แก้ไขข้อมูลลูกค้า';
+        document.getElementById('btn-submit').innerText = '💾 บันทึกการแก้ไข';
+        document.getElementById('btn-cancel-edit').style.display = '';
+        switchPage('add');
+        window.scrollTo({ top: 0 });
+    }
+    function onFormSubmit() {
+        const rid = document.getElementById('form-row-index').value;
+        const fname = document.getElementById('cust-fname').value.trim();
+        const phone = document.getElementById('cust-phone').value.trim();
+        if (!fname || !phone) { alert('กรุณากรอกชื่อและเบอร์โทรศัพท์'); return; }
+        if (!rid && duplicatePhoneMatch && duplicatePhoneMatch.phone === phone) {
+            if (!confirm(`⚠️ เบอร์นี้มีในระบบแล้ว (${duplicatePhoneMatch.name})\nกด "ตกลง" เพื่อเพิ่มซ้ำต่อไป หรือ "ยกเลิก" เพื่อไปค้นหารายเดิมแทน`)) {
+                switchPage('search');
+                document.getElementById('search-keyword').value = phone;
+                doSearch();
+                return;
+            }
+        }
+        const lname = document.getElementById('cust-lname').value.trim();
+        const addrNo = document.getElementById('cust-addressno').value.trim();
+        const moo = document.getElementById('cust-moo').value.trim();
+        const village = document.getElementById('cust-village').value.trim();
+        const packData = {
+            date: document.getElementById('cust-date').value || todayStr(),
+            booking_date: document.getElementById('cust-appdate').value,
+            appdate: document.getElementById('cust-appdate').value,
+            firstname: fname, lastname: lname, name: `${fname} ${lname}`.trim(),
+            phone: phone,
+            type: document.getElementById('cust-type').value,
+            productCategory: document.getElementById('cust-product-category').value,
+            productModel: getProductModelValue(),
+            product: [document.getElementById('cust-product-category').value, getProductModelValue()].filter(Boolean).join(' | '),
+            addressno: addrNo, moo: moo, village: village,
+            address: [addrNo, moo ? `หมู่ ${moo}` : '', village].filter(Boolean).join(' '),
+            subdistrict: document.getElementById('cust-subdistrict').value,
+            district: document.getElementById('cust-district').value,
+            province: document.getElementById('cust-province').value,
+            zipcode: document.getElementById('cust-zipcode').value,
+            remark: document.getElementById('cust-note').value,
+            line: document.getElementById('cust-line').value,
+            facebook: document.getElementById('cust-facebook').value,
+            financialInfo: '{}'
+        };
+        const actionType = rid ? 'update' : 'add';
+        const payloadReq = rid ? { rowIndex: rid, cust: packData, phoneHint: editOriginalPhone } : packData;
+        const btn = document.getElementById('btn-submit');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true; btn.innerHTML = '⏳ กำลังบันทึก...';
+        fetch(WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: actionType, payload: payloadReq }) })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success) {
+                    alert('💾 บันทึกข้อมูลสำเร็จ!');
+                    resetFormState();
+                } else {
+                    alert('❌ เกิดข้อผิดพลาดในการบันทึก: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'))
+            .finally(() => { btn.disabled = false; btn.innerHTML = originalHtml; });
+    }
+
+    // ===== ค้นหา (การ์ดแทนตาราง) =====
+    function doSearch() {
+        const keyword = document.getElementById('search-keyword').value.trim();
+        const box = document.getElementById('search-results');
+        if (!keyword) { box.innerHTML = '<div class="empty-hint">พิมพ์ชื่อหรือเบอร์โทรแล้วกดค้นหา</div>'; return; }
+        box.innerHTML = '<div class="empty-hint">⚡ กำลังค้นหา...</div>';
+        fetch(WEB_APP_URL, {
+            method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'search', page: 1, pageSize: 30, sortBy: 'date_desc', filters: { keyword, exactPhone: '', types: [], startDate: '', endDate: '', appdate: '', followupStartDate: '', followupEndDate: '', productCategory: '', productModel: '', province: '', subdistrict: '', district: '', note: '' } })
+        })
+        .then(res => res.json())
+        .then(resData => {
+            if (!resData || !resData.success) { box.innerHTML = `<div class="empty-hint">❌ ${resData ? resData.message : 'เกิดข้อผิดพลาด'}</div>`; return; }
+            searchResultsData = resData.data || [];
+            if (!searchResultsData.length) { box.innerHTML = '<div class="empty-hint">❌ ไม่พบข้อมูลที่ตรงเงื่อนไข</div>'; return; }
+            box.innerHTML = searchResultsData.map((row, idx) => {
+                const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
+                return `<div class="customer-card type-${escapeHtml(row.type || '')}">
+                    <div class="cc-top">
+                        <span class="cc-name">${escapeHtml(row.name || '-')}</span>
+                        <span class="cc-badge">${escapeHtml(row.type || '-')}</span>
+                    </div>
+                    <div class="cc-meta">📞 <a href="tel:${escapeHtml(row.phone || '')}">${escapeHtml(row.phone || '-')}</a>${row.product ? ' · ' + escapeHtml(row.product) : ''}</div>
+                    <div class="cc-meta">นัดหมาย: ${escapeHtml(row.booking_date || '-')} · ติดตามล่าสุด: ${escapeHtml(row.lastFollowupDate || '-')}${row.created_by ? ' · 👤 ' + escapeHtml(row.created_by) : ''}</div>
+                    <div class="cc-actions">
+                        <button class="btn btn-primary btn-sm" onclick="openHistoryModal(${idx})">🕓 ติดตาม${followCount ? ' (' + followCount + ')' : ''}</button>
+                        <button class="btn btn-secondary btn-sm" onclick="editCustomerFromCard(${idx})">✏️ แก้ไข</button>
+                    </div>
+                </div>`;
+            }).join('');
+        })
+        .catch(() => { box.innerHTML = '<div class="empty-hint">🛑 เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว</div>'; });
+    }
+
+    // ===== ไทม์ไลน์การติดตาม =====
+    let historyModalKey = null, historyModalPhoneHint = '', historyModalRowIdx = null, historyModalEntries = [];
+    function openHistoryModal(idx) {
+        const row = searchResultsData[idx];
+        if (!row) return;
+        historyModalRowIdx = idx;
+        historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
+        historyModalPhoneHint = row.phone || row.phone1 || '';
+        historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
+        document.getElementById('history-modal-name').innerText = `🕓 ${row.name || '-'} · ${row.phone || ''}`;
+        document.getElementById('history-new-date').value = todayStr();
+        document.getElementById('history-next-followup-date').value = '';
+        document.getElementById('history-new-note').value = '';
+        document.getElementById('history-followup-type').value = '';
+        document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(b => b.classList.remove('active'));
+        renderHistoryTimeline();
+        document.getElementById('history-modal-overlay').classList.add('show');
+    }
+    function closeHistoryModal() { document.getElementById('history-modal-overlay').classList.remove('show'); }
+    function selectFollowupType(btn) {
+        document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('history-followup-type').value = btn.dataset.value;
+    }
+    function renderHistoryTimeline() {
+        const container = document.getElementById('history-timeline-list');
+        if (!historyModalEntries.length) { container.innerHTML = '<div class="empty-hint" style="padding:14px;">ยังไม่มีประวัติการติดตาม</div>'; return; }
+        const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        container.innerHTML = sorted.map(e => `
+            <div class="timeline-item">
+                <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type-tag">${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span class="timeline-by">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
+                <div class="timeline-note">${escapeHtml(e.note || '')}</div>
+            </div>
+        `).join('');
+    }
+    function submitFollowUpEntry() {
+        const btn = document.getElementById('btn-submit-followup');
+        if (btn.disabled) return;
+        const dateVal = document.getElementById('history-new-date').value;
+        const noteVal = document.getElementById('history-new-note').value.trim();
+        const nextFollowUpVal = document.getElementById('history-next-followup-date').value;
+        const followupTypeVal = document.getElementById('history-followup-type').value;
+        if (!dateVal || !followupTypeVal || !noteVal) { alert('กรุณาระบุวันที่ ประเภท และหมายเหตุการติดตามให้ครบ'); return; }
+        if (!historyModalKey) { alert('ไม่พบข้อมูลอ้างอิงลูกค้ารายนี้'); return; }
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true; btn.innerHTML = '⏳ กำลังบันทึก...';
+        const newEntry = { date: dateVal, followupType: followupTypeVal, note: noteVal, nextFollowUpDate: nextFollowUpVal };
+        fetch(WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry, phoneHint: historyModalPhoneHint } }) })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success) {
+                    historyModalEntries.push(newEntry);
+                    if (searchResultsData[historyModalRowIdx]) {
+                        searchResultsData[historyModalRowIdx].followUpLog = historyModalEntries.slice();
+                        searchResultsData[historyModalRowIdx].lastFollowupDate = dateVal;
+                        searchResultsData[historyModalRowIdx].booking_date = resData.nextFollowUpDate || nextFollowUpVal;
+                    }
+                    renderHistoryTimeline();
+                    document.getElementById('history-new-note').value = '';
+                    document.getElementById('history-followup-type').value = '';
+                    document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(b => b.classList.remove('active'));
+                } else {
+                    alert('❌ บันทึกการติดตามไม่สำเร็จ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
+                }
+            })
+            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'))
+            .finally(() => { btn.disabled = false; btn.innerHTML = originalHtml; });
+    }
+
+    // ===== ลายน้ำกันข้อมูลรั่ว (เบาแรง เฉพาะลายน้ำ ไม่มีเบลอ/ดักคีย์ เพื่อความลื่นไหลบนมือถือ) =====
+    function activateWatermark_() {
+        const overlay = document.getElementById('wm-overlay');
+        const text = `${currentUserDisplayName} · ${new Date().toLocaleString('th-TH', { hour12: false })}`;
+        let rowsHtml = '';
+        for (let r = 0; r < 8; r++) {
+            let itemsHtml = '';
+            for (let c = 0; c < 3; c++) itemsHtml += `<span class="wm-item">${escapeHtml(text)}</span>`;
+            rowsHtml += `<div class="wm-row">${itemsHtml}</div>`;
+        }
+        overlay.innerHTML = rowsHtml;
+        overlay.style.display = 'block';
+        document.addEventListener('contextmenu', e => e.preventDefault());
+    }
+</script>
+</body>
+</html>
