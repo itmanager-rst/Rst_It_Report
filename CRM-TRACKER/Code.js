@@ -49,7 +49,7 @@
 // (ต้องผูก Sheet นี้เป็น BigQuery External Table ชื่อ customers ไว้ด้วย — ดูคู่มือ setup)
 // ⚠️ ต้องตั้งค่า CUSTOMER_SHEET_ID ให้เป็น Sheet ID จริงก่อนใช้งาน ไม่งั้นการเพิ่ม/แก้ไข/
 // ลบข้อมูลลูกค้าจะ error ทันที (ดูข้อความ error ที่ getCustomerSheet_ ด้านล่าง)
-var CODE_VERSION = 'r28-2026-09-18-async-activity-log-fix-slow-login';
+var CODE_VERSION = 'r31-2026-09-19-sync-created-by-updated-by-to-bigquery';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -157,7 +157,14 @@ var CUSTOMER_SHEET_COLUMNS = [
   'created_date', 'first_name', 'last_name', 'phone', 'booking_date', 'type', 'product',
   'address_no', 'moo', 'village', 'subdistrict', 'district', 'province', 'zipcode',
   'remark', 'line', 'facebook', 'follow_up_log', 'financial_info', 'created_at_ts',
-  'last_followup_date'
+  'last_followup_date',
+  // (2026-09-19) เพิ่ม 2 คอลัมน์นี้เข้ามาให้เป็น "บังคับ" แล้ว (ผู้ใช้เพิ่มหัวคอลัมน์ทั้งคู่ในชีต
+  // จริงแล้ว) — จำเป็นต้องอยู่ในลิสต์นี้ ไม่งั้น syncCustomerSheetToBigQuery_() ด้านล่างจะไม่ดึง
+  // 2 คอลัมน์นี้ไปสร้าง schema/ข้อมูลใน BigQuery เลย (สร้าง schema จากลิสต์นี้ล้วนๆ ทุกครั้งที่
+  // sync แบบ WRITE_TRUNCATE) ทำให้หน้าเว็บค้นหา/แสดงผลผ่าน BigQuery ไม่เห็นค่าเหล่านี้ แม้จะเขียน
+  // ลง Sheet ไปแล้วจริงก็ตาม — ⚠️ ถ้าใครเผลอลบหัวคอลัมน์นี้ออกจากชีตในอนาคต ระบบทั้งระบบจะพัง
+  // ทันที (getCustomerHeaderMap_ โยน error ถ้าขาดคอลัมน์ในลิสต์นี้แม้แต่ตัวเดียว)
+  'created_by', 'updated_by'
 ];
 
 // เปิด Sheet object ของแท็บข้อมูลลูกค้า — โยน error ชัดเจนถ้ายังไม่ได้ตั้งค่า/หาไม่เจอ
@@ -277,7 +284,14 @@ function findCustomerRowNumberByKey_(sheet, headerMap, key, phoneHint) {
     var row = values[i];
     var createdDateStr = formatDateStr(row[cdCol]);
     var phoneStr = formatPhoneNumber(row[phCol]);
-    var fp = computeCustomerFingerprint_(createdDateStr, row[fnCol], row[lnCol], phoneStr);
+    // ⚠️ (2026-09-19) แก้บั๊ก: เดิมคำนวณ fingerprint จาก phoneStr ที่ผ่าน formatPhoneNumber()
+    // ซึ่งเติมเลข 0 นำหน้าให้เบอร์ 9 หลัก (เช่น 453112222 -> 0453112222) แต่ฝั่ง BigQuery
+    // (FINGERPRINT_EXPR) คำนวณจาก CAST(phone AS STRING) ตรงๆ ไม่เติม 0 ให้ — ทำให้ fingerprint
+    // สองฝั่งไม่ตรงกันแทบทุกแถวที่เบอร์เก็บเป็น 9 หลักไม่มี 0 นำหน้า (คือเกือบทุกแถวในชีตจริง)
+    // ผลคือ "แก้ไข"/"บันทึกการติดตาม" ล้มเหลวแทบทุกครั้งด้วย error "ไม่พบข้อมูลลูกค้ารายนี้ในชีต"
+    // แก้โดยใช้ค่าเบอร์ดิบ (แค่ trim ไม่เติม 0) ให้ตรงกับที่ BigQuery เห็นจริงๆ
+    var rawPhoneForFp = (row[phCol] === null || row[phCol] === undefined) ? '' : row[phCol].toString().trim();
+    var fp = computeCustomerFingerprint_(createdDateStr, row[fnCol], row[lnCol], rawPhoneForFp);
     if (fp === key) return i + 2;
     if (phoneStr && phoneStr === key) return i + 2;
     if (keyDigits && phoneStr) {
@@ -706,7 +720,8 @@ function buildActivityLogDetail_(normalizedAction, payload, result) {
         return 'ลูกค้าใหม่: ' + cleanStr(c.firstname || c.first_name) + ' ' + cleanStr(c.lastname || c.last_name) +
                (c.phone1 || c.phone ? ' (' + cleanStr(c.phone1 || c.phone) + ')' : '');
       case 'update':
-        return 'แก้ไขลูกค้า key: ' + cleanStr(payload.rowIndex || payload.phoneKey);
+        return 'แก้ไขลูกค้า key: ' + cleanStr(payload.rowIndex || payload.phoneKey) +
+               (result && result.changedSummary ? ' — ' + cleanStr(result.changedSummary) : '');
       case 'delete':
         return 'ลบลูกค้า key: ' + cleanStr(payload.phoneKey || payload.rowIndex);
       case 'addFollowUp':
@@ -1477,16 +1492,24 @@ function doPost(e) {
     //  - sale/user     : ดูข้อมูลได้อย่างเดียว (ปริ้นได้ แต่ปริ้นเป็นแค่การแสดงผลฝั่งหน้าเว็บ
     //                     ไม่ได้เรียก action นี้ จึงไม่ต้องเช็คตรงนี้)
     var CUSTOMER_WRITE_ALLOWED_ROLES = ['admin', 'staff'];
+    // (2026-09-19) เพิ่ม role 'sale' ให้ "แก้ไข" ข้อมูลลูกค้าได้ ตามคำขอผู้บริหาร — แต่จำกัดแค่
+    // "ชื่อ-นามสกุล" และ "ที่อยู่" เท่านั้น ฟิลด์อื่นที่ส่งมาด้วย (ถ้ามี) จะถูกตัดทิ้งเงียบๆ ใน
+    // updateCustomerHTML (ดู SALE_EDITABLE_FIELDS_ ในฟังก์ชันนั้น) — ชั้นป้องกันที่ 2 ต่อจากหน้าเว็บ
+    // ที่ซ่อน/ปิดฟิลด์อื่นไว้ให้ role นี้อยู่แล้วเป็นชั้นแรก ไม่ได้ให้สิทธิ์ "เพิ่ม"/"ลบ" เพิ่มขึ้นแต่อย่างใด
+    var CUSTOMER_UPDATE_ALLOWED_ROLES = ['admin', 'staff', 'sale'];
     var CUSTOMER_DELETE_ALLOWED_ROLES = ['admin']; // ลบข้อมูลลูกค้า จำกัดเฉพาะ admin เท่านั้น (staff แก้ไข/เพิ่มได้ปกติ แต่ลบไม่ได้)
     var CUSTOMER_EXPORT_ALLOWED_ROLES = ['admin']; // เฉพาะ admin เท่านั้นที่ export ได้
     if (action === 'delete' || action === 'deleteCustomer') {
       if (CUSTOMER_DELETE_ALLOWED_ROLES.indexOf(user.role) === -1) {
         return createJsonResponse({ success: false, message: 'เฉพาะ admin เท่านั้นที่ลบข้อมูลลูกค้าได้' });
       }
-    } else if (action === 'add' || action === 'addCustomer' || action === 'update' || action === 'editCustomer'
-        || action === 'addFollowUp') {
+    } else if (action === 'add' || action === 'addCustomer' || action === 'addFollowUp') {
       if (CUSTOMER_WRITE_ALLOWED_ROLES.indexOf(user.role) === -1) {
-        return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่ม แก้ไข หรือ ลบได้ (เฉพาะ admin และพนักงานเท่านั้นที่ทำได้)' });
+        return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่มข้อมูลลูกค้าหรือบันทึกการติดตามได้ (เฉพาะ admin และพนักงานเท่านั้นที่ทำได้)' });
+      }
+    } else if (action === 'update' || action === 'editCustomer') {
+      if (CUSTOMER_UPDATE_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถแก้ไขข้อมูลลูกค้าได้' });
       }
     }
     if (action === 'exportAll') {
@@ -1502,10 +1525,10 @@ function doPost(e) {
     } else if (action === 'search' || action === 'searchCustomers') {
       result = searchCustomersHTML(contents.payload || contents);
     } else if (action === 'add' || action === 'addCustomer') {
-      result = addCustomerHTML(contents.payload || contents.data || {});
+      result = addCustomerHTML(contents.payload || contents.data || {}, user);
     } else if (action === 'update' || action === 'editCustomer') {
       var editData = contents.payload || contents;
-      result = updateCustomerHTML(editData.rowIndex || editData.phoneKey || editData.key, editData.cust || editData.data || {}, editData.phoneHint);
+      result = updateCustomerHTML(editData.rowIndex || editData.phoneKey || editData.key, editData.cust || editData.data || {}, editData.phoneHint, user);
     } else if (action === 'delete' || action === 'deleteCustomer') {
       var delData = contents.payload || contents;
       // แก้บั๊ก (2026-09-17 รอบที่ 4): เดิมไม่ได้เช็ค delData.key เลย ทั้งที่หน้าเว็บส่งมาในชื่อ
@@ -1529,7 +1552,7 @@ function doPost(e) {
       result = getAllCustomersExport();
     } else if (action === 'addFollowUp') {
       var flData = contents.payload || contents;
-      result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {}, flData.phoneHint);
+      result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {}, flData.phoneHint, user);
     } else if (action === 'getDailyLeadReport') {
       result = getDailyLeadReportHTML(contents.payload || contents);
     } else if (action === 'getLeadIntakeLogDetail') {
@@ -2183,7 +2206,26 @@ function logLeadIntake_(info) {
   }
 }
 
-function addCustomerHTML(cust) {
+// ⚠️ (2026-09-19) แก้บั๊ก: ฟังก์ชันนี้ถูกเรียกใช้จาก addCustomerHTML ด้านล่างมาตลอด แต่ไม่เคย
+// ถูกนิยามไว้ในไฟล์นี้เลย — แปลว่า "ทุกครั้ง" ที่มีการเพิ่มลูกค้าใหม่ (ไม่ใช่กรณีซ้ำเบอร์/Facebook
+// ที่ไปรวมเป็นการติดตามแทน) โค้ดจะโยน ReferenceError ตรง appendRow() นี้ทันที ทำให้บันทึกลูกค้า
+// ใหม่ไม่สำเร็จเลยสักรายเดียวจนกว่าจะมีฟังก์ชันนี้ — เพิ่มเข้ามาให้ ณ ที่นี้
+//
+// สร้าง array สำหรับ appendRow() ตามตำแหน่งคอลัมน์ใน headerMap (1-based) — คีย์ใน fields ที่ไม่มี
+// หัวคอลัมน์ตรงกันในชีตจะถูกข้ามไปเงียบๆ (ทำให้เพิ่มฟิลด์ optional ใหม่ๆ เช่น created_by ได้
+// โดยไม่ทำให้ของเดิมพัง แม้ยังไม่ได้เพิ่มหัวคอลัมน์นั้นในชีตจริงก็ตาม)
+function buildCustomerRowArray_(headerMap, fields) {
+  var maxCol = 0;
+  for (var k in headerMap) { if (headerMap[k] > maxCol) maxCol = headerMap[k]; }
+  var row = new Array(maxCol);
+  for (var i = 0; i < maxCol; i++) row[i] = '';
+  for (var key in fields) {
+    var col = headerMap[key];
+    if (col) row[col - 1] = fields[key];
+  }
+  return row;
+}
+function addCustomerHTML(cust, user) {
   try {
     var fbNameForDup = cleanStr(cust.facebook);
     var newPhoneForDup = formatPhoneNumber(cust.phone1 || cust.phone);
@@ -2228,7 +2270,8 @@ function addCustomerHTML(cust) {
       logArrForDup.push({
         date: todayStrForDup,
         note: noteText,
-        loggedAt: new Date().toISOString()
+        loggedAt: new Date().toISOString(),
+        by: user ? (user.name || user.username) : ''
       });
 
       // แก้ไข (2026-09-17): เขียนกลับตรงลง Google Sheet แทนการยิง UPDATE เข้า BigQuery
@@ -2310,7 +2353,10 @@ function addCustomerHTML(cust) {
       facebook: cleanStr(cust.facebook),
       follow_up_log: '[]',
       financial_info: cleanStr(cust.financialInfo || cust.financial_info) || '{}',
-      created_at_ts: new Date()
+      created_at_ts: new Date(),
+      // (2026-09-19) ชื่อผู้คีย์ข้อมูลลูกค้ารายนี้เข้าระบบ — เป็นคอลัมน์ optional: ถ้ายังไม่ได้เพิ่ม
+      // หัวคอลัมน์ "created_by" ในชีตจริง buildCustomerRowArray_ ด้านล่างจะข้ามค่านี้ไปเงียบๆ ไม่ error
+      created_by: user ? (user.name || user.username) : ''
     };
     newCustSheet.appendRow(buildCustomerRowArray_(newCustHeaderMap, newCustFields));
     // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
@@ -2338,7 +2384,20 @@ function addCustomerHTML(cust) {
 // แก้ไข (2026-09-17): เปลี่ยนจาก UPDATE SQL เข้า BigQuery มาเป็นการหาแถวในชีตด้วย
 // findCustomerRowNumberByKey_ (จำลองตรรกะเดียวกับ ROW_MATCH_WHARE เดิมทุกประการ)
 // แล้วเขียนทับค่าลงในเซลล์ของแถวนั้นแทน
-function updateCustomerHTML(rowIndex, cust, phoneHint) {
+// ป้ายชื่อฟิลด์ภาษาไทย ใช้ทำ diff แสดงใน "ประวัติการใช้งาน" (admin ดูได้) ทุกครั้งที่มีการแก้ไข
+var FIELD_LABELS_TH_ = {
+  first_name: 'ชื่อ', last_name: 'นามสกุล', phone: 'เบอร์โทร', booking_date: 'วันนัด',
+  type: 'ประเภท', product: 'สินค้า', address_no: 'บ้านเลขที่', moo: 'หมู่ที่',
+  village: 'หมู่บ้าน', subdistrict: 'ตำบล', district: 'อำเภอ', province: 'จังหวัด',
+  zipcode: 'รหัสไปรษณีย์', remark: 'หมายเหตุ', line: 'LINE', facebook: 'Facebook',
+  created_date: 'วันที่บันทึก'
+};
+// (2026-09-19) role 'sale' แก้ได้เฉพาะฟิลด์ในลิสต์นี้เท่านั้น (ชื่อ-นามสกุล + ที่อยู่ทุกส่วน)
+// ตามคำขอผู้บริหาร — ฟิลด์อื่นที่ส่งมาด้วยจะถูกตัดทิ้งก่อนเขียนลงชีต (ชั้นป้องกันที่ 2
+// ต่อจากหน้าเว็บที่ปิด/ซ่อนช่องพวกนี้ไว้ให้ role นี้เป็นชั้นแรกอยู่แล้ว)
+var SALE_EDITABLE_FIELDS_ = ['first_name', 'last_name', 'address_no', 'moo', 'village', 'subdistrict', 'district', 'province', 'zipcode'];
+
+function updateCustomerHTML(rowIndex, cust, phoneHint, user) {
   try {
     var rawKey = cleanStr(rowIndex || '');
     if (!rawKey) return { success: false, message: 'ไม่พบอ้างอิงรายการที่จะแก้ไข' };
@@ -2372,17 +2431,48 @@ function updateCustomerHTML(rowIndex, cust, phoneHint) {
       facebook: cleanStr(cust.facebook),
       financial_info: cleanStr(cust.financialInfo || cust.financial_info) || '{}'
     };
+
+    // จำกัดฟิลด์ที่แก้ได้จริงถ้าเป็น role 'sale' — ตัดฟิลด์อื่นทิ้งทั้งหมดก่อนเขียน
+    if (user && user.role === 'sale') {
+      var restrictedFields = {};
+      SALE_EDITABLE_FIELDS_.forEach(function (k) { restrictedFields[k] = fields[k]; });
+      fields = restrictedFields;
+    }
+
+    // เก็บ diff (ค่าเดิม → ค่าใหม่) เฉพาะฟิลด์ที่เปลี่ยนจริง เพื่อโชว์ใน "ประวัติการใช้งาน"
+    // (ข้าม financial_info เพราะเป็น JSON ยาว ไม่เหมาะโชว์เป็นข้อความ diff ตรงนี้)
+    var changedParts = [];
     for (var field in fields) {
       var colNum = headerMap[field];
-      if (colNum) sheet.getRange(rowNum, colNum).setValue(fields[field]);
+      if (!colNum) continue;
+      if (field !== 'financial_info') {
+        var oldVal = cleanStr(sheet.getRange(rowNum, colNum).getValue());
+        var newVal = cleanStr(fields[field]);
+        if (oldVal !== newVal) {
+          changedParts.push((FIELD_LABELS_TH_[field] || field) + ': "' + (oldVal || '-') + '" → "' + (newVal || '-') + '"');
+        }
+      }
+      sheet.getRange(rowNum, colNum).setValue(fields[field]);
     }
+
+    // (2026-09-19) บันทึกชื่อผู้แก้ไขล่าสุด — คอลัมน์ optional เช่นเดียวกับ created_by
+    // (เพิ่มหัวคอลัมน์ "updated_by" ในชีตเองถ้าต้องการใช้ ไม่มีคอลัมน์นี้ก็ข้ามไปเงียบๆ ไม่ error)
+    var updatedByCol = headerMap['updated_by'];
+    if (updatedByCol && user) {
+      sheet.getRange(rowNum, updatedByCol).setValue(user.name || user.username || '');
+    }
+
     // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
       // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
       // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
       // เปลี่ยนไปใช้ time-driven trigger เรียก scheduledSyncCustomersToBigQuery_()
       // เป็นระยะแทน (ดูคำอธิบายที่ฟังก์ชันนั้น) — ข้อมูลใน Sheet จะเห็นล่าสุดทันที
       // เสมอ ส่วนฝั่ง BigQuery (ที่ใช้ค้นหา/รายงาน) จะตามหลังไม่กี่นาทีตาม trigger
-    return { success: true, message: 'อัปเดตข้อมูลสำเร็จ' };
+    return {
+      success: true,
+      message: 'อัปเดตข้อมูลสำเร็จ',
+      changedSummary: changedParts.length ? changedParts.join('; ') : 'ไม่มีการเปลี่ยนแปลงค่าใดๆ'
+    };
   } catch (err) {
     return { success: false, message: err.toString() };
   }
@@ -2766,7 +2856,7 @@ function parseFollowUpLog(raw) {
   }
 }
 
-function addFollowUpLogHTML(rawKeyInput, entry, phoneHint) {
+function addFollowUpLogHTML(rawKeyInput, entry, phoneHint, user) {
   try {
     var rawKey = cleanStr(rawKeyInput || '');
     if (!rawKey) return { success: false, message: 'ไม่พบรหัสอ้างอิงลูกค้า' };
@@ -2803,7 +2893,11 @@ function addFollowUpLogHTML(rawKeyInput, entry, phoneHint) {
       date: dateVal,
       followupType: followupTypeVal,
       note: noteVal,
-      loggedAt: new Date().toISOString()
+      loggedAt: new Date().toISOString(),
+      // (2026-09-19) ชื่อผู้บันทึกการติดตามรอบนี้ — แต่ละรอบอาจคนละคนกัน จึงเก็บแยกทีละ entry
+      // ในนี้เลย (ไม่ใช่คอลัมน์ระดับลูกค้า) ไม่ต้องเพิ่มหัวคอลัมน์ใดๆ ในชีต เพราะ follow_up_log
+      // เก็บเป็น JSON array อยู่แล้วในคอลัมน์เดิม
+      by: user ? (user.name || user.username) : ''
     });
 
     // 2) เขียนกลับทั้ง array ที่อัปเดตแล้ว พร้อมอัปเดต last_followup_date (วันที่ของ

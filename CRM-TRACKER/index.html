@@ -411,7 +411,7 @@
                                 <div id="address-summary" style="font-size:11px; color:#64748b; margin-top:4px;"></div>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
-                                <button type="button" class="btn btn-secondary" style="width:100%; justify-content:center;" onclick="openFinancialModal()">💰 กรอกข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน</button>
+                                <button type="button" id="btn-open-financial-modal" class="btn btn-secondary" style="width:100%; justify-content:center;" onclick="openFinancialModal()">💰 กรอกข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน</button>
                                 <div id="financial-summary" style="font-size:11px; color:#64748b; margin-top:4px;"></div>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
@@ -1362,6 +1362,10 @@
         let currentRenderedData = [];
         let lastSavedCustomer = null;
         let duplicatePhoneMatch = null; // { phone, name } ถ้าเบอร์ที่กำลังกรอกอยู่มีลูกค้ารายนี้ในระบบแล้ว
+        let editOriginalPhone = ''; // (2026-09-19) เบอร์เดิมของลูกค้า ณ ตอนเปิดฟอร์มแก้ไข — ส่งเป็น phoneHint
+        // ให้ backend หาแถวด้วย TextFinder เร็วๆ แทนพึ่ง fallback คำนวณ fingerprint วนทั้งชีต (เสี่ยง
+        // mismatch รูปแบบวันที่/เบอร์ระหว่าง BigQuery กับ Sheet) — ต้องใช้ค่า "เดิม" เสมอ ไม่ใช่ค่าที่
+        // พึ่งพิมพ์ใหม่ในฟอร์ม เพราะถ้าผู้ใช้แก้เบอร์ด้วย เบอร์ใหม่จะหาแถวเดิมไม่เจอ
         let dailyReportLoadedOnce = false; // โหลดรายงานประจำวันครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น (ครั้งต่อไปกดปุ่ม "ดึงรายงาน" เอง)
         let staleLeadsLoadedOnce = false; // โหลดรายงานลูกค้าค้างติดตามครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น
         let staleLeadsData = [];
@@ -1912,13 +1916,16 @@
             { key: 'zipcode', label: 'รหัสไปรษณีย์', width: 90, render: row => row.zipcode || '-' },
             { key: 'line', label: 'LINE ID', width: 110, render: row => escapeHtml(row.line || '-') },
             { key: 'facebook', label: 'Facebook', width: 130, render: row => escapeHtml(row.facebook || '-') },
-            { key: 'followUpCount', label: 'จำนวนครั้งที่ติดตาม', width: 100, render: (row, ctx) => String(ctx.followCount || 0) }
+            { key: 'followUpCount', label: 'จำนวนครั้งที่ติดตาม', width: 100, render: (row, ctx) => String(ctx.followCount || 0) },
+            // (2026-09-19) ชื่อผู้คีย์ข้อมูลลูกค้ารายนี้เข้าระบบครั้งแรก — มาจากคอลัมน์ optional
+            // "created_by" ฝั่ง Sheet/BigQuery ถ้ายังไม่ได้เพิ่มหัวคอลัมน์นี้ในชีตจริง จะโชว์ "-" ไปก่อน
+            { key: 'createdBy', label: 'ผู้บันทึกลูกค้า', width: 120, render: row => escapeHtml(row.created_by || row.createdBy || '-') }
         ];
         const ALL_COLUMN_KEYS = new Set(ALL_COLUMNS.map(c => c.key));
         // ลำดับ/คอลัมน์ที่โชว์เป็นค่าเริ่มต้น — ตรงกับตารางเดิมทุกคอลัมน์ บวก "รถ/เครื่องจักรที่ถือครอง" ที่เพิ่มใหม่
         // (เดิมข้อมูลนี้ถูกกรอกได้ในโมดัลการเงินอยู่แล้ว แต่ไม่เคยโชว์ในตารางเลย จึงเปิดโชว์เป็นค่าเริ่มต้นให้เห็นเลย)
-        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount'];
-        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark']);
+        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy'];
+        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy']);
 
         function getDefaultColumnConfig() {
             return DEFAULT_COLUMN_ORDER.map(key => {
@@ -2625,8 +2632,11 @@
                 const fin = parseFinancialInfo(row.financialInfo || row.financial);
                 const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
                 const ctx = { idx, badgeClass, prodParts, fin, followCount };
-                const adminEditDelete = (currentRole === 'admin' || currentRole === 'staff')
-                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>`
+                // (2026-09-19) เพิ่ม role 'sale' ให้เห็นปุ่มแก้ไขได้ด้วย — แต่เปิดฟอร์มแล้วแก้ได้แค่
+                // ชื่อ-นามสกุล/ที่อยู่เท่านั้น (ดู editCustomerByIndex ที่ปิดช่องอื่นไว้ให้ role นี้)
+                // สิทธิ์ลบยังจำกัดเฉพาะ admin เหมือนเดิม ไม่เปลี่ยน
+                const adminEditDelete = (currentRole === 'admin' || currentRole === 'staff' || currentRole === 'sale')
+                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="${currentRole === 'sale' ? 'แก้ไขชื่อและที่อยู่' : 'แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า'}">✏️</button>`
                         + (currentRole === 'admin' ? `<button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>` : '')
                     : '';
                 const cells = visibleColumns.map(col => {
@@ -2817,6 +2827,8 @@
         }
         function resetFormState() {
             document.getElementById('customer-form').reset();
+            applySaleEditFieldRestriction_(false); // เคลียร์การปิดฟิลด์จากรอบแก้ไขก่อนหน้า (ถ้ามี)
+            editOriginalPhone = '';
             document.getElementById('form-row-index').value = '';
             document.getElementById('phone-check-msg').innerHTML = '';
             duplicatePhoneMatch = null;
@@ -2852,6 +2864,7 @@
 
             resetFormState();
             document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
+            editOriginalPhone = row.phone || row.phone1 || '';
             document.getElementById('cust-date').value = row.date || '';
             document.getElementById('cust-appdate').value = row.booking_date || row.appdate || '';
             document.getElementById('cust-fname').value = row.firstname || '';
@@ -2886,10 +2899,31 @@
             updateFinancialSummary();
             updateAddressSummary();
 
-            document.getElementById('form-title').innerText = '✏️ แก้ไขข้อมูลลูกค้า';
+            // (2026-09-19) role 'sale' แก้ได้แค่ชื่อ-นามสกุล/ที่อยู่เท่านั้น — ปิดช่องอื่นทั้งหมด
+            // ไว้ก่อนเปิดฟอร์ม (เซิร์ฟเวอร์ก็ตัดฟิลด์อื่นทิ้งอยู่แล้วเป็นชั้นป้องกันที่ 2)
+            applySaleEditFieldRestriction_(currentRole === 'sale');
+
+            document.getElementById('form-title').innerText = currentRole === 'sale'
+                ? '✏️ แก้ไขชื่อ/ที่อยู่ลูกค้า (สิทธิ์ของคุณแก้ได้เฉพาะ 2 ส่วนนี้)'
+                : '✏️ แก้ไขข้อมูลลูกค้า';
             document.getElementById('btn-submit').innerText = '💾 บันทึกการแก้ไข';
             switchPage('add');
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        // เปิด/ปิดการแก้ไขฟิลด์ที่ role 'sale' ไม่มีสิทธิ์แตะ — เรียกตอนเปิดฟอร์มแก้ไข (restricted=true)
+        // และตอน resetFormState() (restricted=false เสมอ กันค้างจากการแก้ไขรอบก่อน)
+        function applySaleEditFieldRestriction_(restricted) {
+            const restrictedFieldIds = [
+                'cust-date', 'cust-appdate', 'cust-phone', 'cust-line', 'cust-facebook',
+                'cust-type', 'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-note'
+            ];
+            restrictedFieldIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = restricted;
+            });
+            const finBtn = document.getElementById('btn-open-financial-modal');
+            if (finBtn) finBtn.disabled = restricted;
+            // ที่อยู่ (📍 กรอกที่อยู่) ยังแก้ได้ปกติ เพราะอยู่ในสิทธิ์ของ role นี้ — ไม่ปิด
         }
         function onFormSubmit(e) {
             e.preventDefault();
@@ -2961,7 +2995,7 @@
                 financialInfo: JSON.stringify(customerFinancial)
             };
             const actionType = rid ? 'update' : 'add';
-            const payloadReq = rid ? { rowIndex: rid, cust: packData } : packData;
+            const payloadReq = rid ? { rowIndex: rid, cust: packData, phoneHint: editOriginalPhone } : packData;
             const originalBtnHtml = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
@@ -3080,6 +3114,10 @@
         /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
         let historyModalRowIdx = null;
         let historyModalKey = null;
+        let historyModalPhoneHint = ''; // (2026-09-19) เบอร์โทรของแถวนี้ ณ ตอนเปิดไทม์ไลน์ — ส่งเป็น phoneHint
+        // ให้ backend หาแถวด้วย TextFinder เร็วๆ แทนการ fallback ไปคำนวณ fingerprint วนทั้งชีต
+        // (ทางลัดนี้มีอยู่แล้วฝั่ง backend แต่ frontend ไม่เคยส่งมาให้เลย ทำให้พึ่งพา fallback
+        // ที่เสี่ยง mismatch ระหว่างรูปแบบวันที่/เบอร์ของ BigQuery กับ Sheet เสมอมา)
         let historyModalEntries = [];
         let historyModalSource = 'main'; // 'main' = currentRenderedData (ตารางหลัก), 'stale' = staleLeadsData (รายงานลูกค้าค้างติดตาม)
         function selectFollowupType(button) {
@@ -3107,6 +3145,7 @@
             historyModalRowIdx = idx;
             historyModalSource = source || 'main';
             historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
+            historyModalPhoneHint = row.phone || row.phone1 || '';
             historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
             document.getElementById('history-customer-info').innerHTML =
                 `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
@@ -3133,7 +3172,7 @@
             const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
             container.innerHTML = sorted.map(e => `
                 <div class="timeline-item">
-                    <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type">${escapeHtml(e.followupType)}</span>` : ''}</div>
+                    <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type">${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span style="float:right; font-size:10.5px; color:#94a3b8; font-weight:normal;">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
                     <div class="timeline-note">${escapeHtml(e.note || '')}</div>
                 </div>
             `).join('');
@@ -3154,7 +3193,7 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry } })
+                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry, phoneHint: historyModalPhoneHint } })
             })
             .then(res => res.json())
             .then(resData => {
