@@ -123,6 +123,15 @@
         table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; font-size: 11px; }
         #main-table { width: 1950px; min-width: 1950px; }
         th { background: #f8fafc; color: #475569; padding: 6px 4px; font-weight: 600; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 10; overflow-wrap: break-word; word-break: normal; line-height: 1.25; }
+        /* ===== ปรับความกว้างคอลัมน์ตารางด้วยการลาก (2026-09-14) ===== */
+        .col-resize-handle { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 11; }
+        .col-resize-handle:hover, .col-resize-handle:active { background: rgba(14,165,233,0.35); }
+        /* ===== เมนู "ตั้งค่าตาราง" — รายการคอลัมน์ลากย้ายลำดับได้ ===== */
+        .col-settings-item { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 9px; margin-bottom: 6px; cursor: default; }
+        .col-settings-item.dragging { opacity: 0.4; }
+        .col-drag-handle { cursor: grab; color: #94a3b8; font-size: 15px; user-select: none; flex: 0 0 auto; }
+        .col-settings-label { flex: 1 1 auto; font-size: 12.5px; color: #1e293b; }
+        .col-width-input { width: 56px; padding: 3px 5px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px; text-align: right; }
         td { padding: 6px 4px; border-bottom: 1px solid #edf2f7; vertical-align: middle; overflow-wrap: break-word; word-break: normal; line-height: 1.35; }
         tr:hover { background-color: #f1f5f9; }
         .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 12px; }
@@ -270,9 +279,43 @@
             .funnel-meta { width: auto; text-align: left; }
             .funnel-conversion { margin-left: 0; }
         }
+        /* ===== ลายน้ำกันข้อมูลรั่ว (watermark) — โชว์หลัง login แล้วเท่านั้น =====
+           แปะชื่อผู้ใช้งาน+เวลาไว้ทับหน้าจอบางๆ ทั่วทั้งจอ เพื่อให้ภาพที่แคปหน้าจอออกไป
+           (ถ้ามี) ตามตัวกลับมาได้ว่าใครเป็นคนแคป — ไม่ได้ "ป้องกัน" การแคปหน้าจอ (ทำไม่ได้จริงบนเว็บ
+           ดูคำอธิบายในแชท) แต่ช่วยยับยั้งด้วยการทำให้ตรวจสอบย้อนหลังได้ */
+        #leak-watermark-overlay {
+            position: fixed; inset: 0; z-index: 99998; pointer-events: none;
+            display: none; overflow: hidden;
+        }
+        #leak-watermark-overlay .wm-row { display: flex; white-space: nowrap; opacity: 0.065; transform: rotate(-25deg); }
+        #leak-watermark-overlay .wm-item { font-size: 12px; font-weight: 700; color: #0f172a; padding: 60px 90px; }
+        /* เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป (ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ เช่น
+           แชร์หน้าจอ/บันทึกหน้าจอเบื้องหลัง) — กลับมาโฟกัสหน้าต่างแล้วเนื้อหาจะชัดเจนตามปกติทันที */
+        body.leak-blur-when-hidden > *:not(#leak-watermark-overlay) { filter: blur(14px); transition: filter .15s ease; }
+        /* ===== กันคัดลอกข้อมูลลูกค้าออกไปวางที่อื่น (2026-09-15) =====
+           ปิดการ "เลือกข้อความ" ในตารางผลลัพธ์ / การ์ดรายละเอียดลูกค้า เพื่อให้คัดลอกเบอร์โทร/
+           ชื่อ/ที่อยู่ ไปวาง LINE, Excel ส่วนตัว ฯลฯ ยากขึ้น — กันได้แค่การคัดลอกแบบลากเมาส์
+           ธรรมดาเท่านั้น ไม่ได้กันคนที่ตั้งใจเปิด DevTools/View Source เพื่อดึงข้อมูลจริงจัง
+           (ดูคำอธิบายเรื่องข้อจำกัดของมาตรการทั้งหมดในแชทที่ขอให้เพิ่มมาตรการนี้) */
+        .table-container, .customer-detail-grid, .customer-detail-card,
+        .calendar-customer, .timeline-list, #print-form-area {
+            -webkit-user-select: none; -moz-user-select: none; user-select: none;
+        }
+        /* ป้ายเตือน + แจ้งเตือนเมื่อระบบตรวจพบการกด Print Screen หรือพยายามคัดลอกข้อมูล
+           (activateLeakDeterrentMeasures_ ในสคริปต์ด้านล่างเป็นคนเรียกใช้) */
+        #leak-security-toast {
+            position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+            z-index: 99999; background: #7f1d1d; color: #fff; padding: 12px 20px; border-radius: 10px;
+            font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+            opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+            max-width: min(90vw, 420px); text-align: center; line-height: 1.5;
+        }
+        #leak-security-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     </style>
 </head>
 <body>
+<div id="leak-watermark-overlay"></div>
+<div id="leak-security-toast"></div>
     <div id="login-modal" class="login-modal">
         <div class="login-card">
             <h2>🔐 CRM LOGIN</h2>
@@ -491,59 +534,28 @@
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size: 11px; font-weight: normal; color: #94a3b8;" id="sort-indicator"></span>
                         <span style="font-size: 12px; font-weight: normal; color: #64748b;" id="page-info">หน้า 1</span>
+                        <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:11.5px;" onclick="openTableSettingsModal()">⚙️ ตั้งค่าตาราง</button>
                     </div>
                 </div>
                 <div class="table-responsive">
                     <table id="main-table">
-                        <colgroup>
-                            <col style="width:120px"><!-- จัดการ (แก้ไข / พิมพ์ / ประวัติติดตาม) -->
-                            <col style="width:105px"><!-- วันที่บันทึก -->
-                            <col style="width:105px"><!-- วันที่นัดหมาย -->
-                            <col style="width:105px"><!-- ติดตามล่าสุด -->
-                            <col style="width:230px"><!-- ชื่อ - นามสกุล + ดูข้อมูล -->
-                            <col style="width:120px"><!-- เบอร์โทรศัพท์ -->
-                            <col style="width:95px"><!-- ประเภท -->
-                            <col style="width:120px"><!-- ประเภทสินค้า -->
-                            <col style="width:120px"><!-- รุ่นรถ -->
-                            <col style="width:55px"><!-- หมู่ที่ -->
-                            <col style="width:110px"><!-- หมู่บ้าน -->
-                            <col style="width:100px"><!-- ตำบล -->
-                            <col style="width:100px"><!-- อำเภอ -->
-                            <col style="width:110px"><!-- จังหวัด -->
-                            <col style="width:90px"><!-- จำนวนไร่ -->
-                            <col style="width:190px"><!-- รายได้ -->
-                            <col style="width:305px"><!-- หมายเหตุ (Remark) -->
+                        <colgroup id="main-table-colgroup">
+                            <col style="width:120px"><!-- จัดการ (แก้ไข / พิมพ์ / ประวัติติดตาม) — คอลัมน์นี้ตรึงไว้เสมอ ปรับ/ซ่อนไม่ได้ -->
                         </colgroup>
                         <thead>
-                            <tr>
+                            <tr id="main-table-headrow">
                                 <th>จัดการ</th>
-                                <th>วันที่บันทึก</th>
-                                <th style="color: var(--accent-color);">วันที่นัดหมาย</th>
-                                <th style="color: #6b21a8;">ติดตามล่าสุด</th>
-                                <th>ชื่อ - นามสกุล</th>
-                                <th>เบอร์โทรศัพท์</th>
-                                <th>ประเภท</th>
-                                <th>ประเภทสินค้า</th>
-                                <th>รุ่นรถ</th>
-                                <th>หมู่ที่</th>
-                                <th>หมู่บ้าน</th>
-                                <th>ตำบล</th>
-                                <th>อำเภอ</th>
-                                <th>จังหวัด</th>
-                                <th>จำนวนไร่</th>
-                                <th>รายได้</th>
-                                <th>หมายเหตุ (Remark)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="18" style="text-align: center; padding: 30px; color: #64748b;">🔄 กำลังโหลดข้อมูล...</td></tr>
+                            <tr><td colspan="99" style="text-align: center; padding: 30px; color: #64748b;">🔄 กำลังโหลดข้อมูล...</td></tr>
                         </tbody>
                     </table>
                 </div>
                 <div class="pagination-container">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span>แสดงแถวต่อหน้า:</span>
-                        <select id="filter-pagesize" class="form-control" style="width: auto; padding: 2px 6px;" onchange="fetchDataFromServer(1)">
+                        <select id="filter-pagesize" class="form-control" style="width: auto; padding: 2px 6px;" onchange="onPageSizeSelectChange()">
                             <option value="20" selected>20</option>
                             <option value="50">50</option>
                             <option value="100">100</option>
@@ -913,6 +925,42 @@
             <button type="button" class="btn-done" onclick="closeReportCustomerDetail()">✓ ปิดหน้าต่าง</button>
         </div>
     </div>
+    <!-- Modal ตั้งค่าตาราง: ย้ายลำดับคอลัมน์ (ลาก), ซ่อน/โชว์คอลัมน์, ปรับความกว้าง, จำนวนแถวต่อหน้า -->
+    <div id="table-settings-modal-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:480px;">
+            <div class="modal-header">
+                <span>⚙️ ตั้งค่าตาราง</span>
+                <button type="button" class="modal-close-btn" onclick="closeTableSettingsModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section-title">📄 จำนวนแถวต่อหน้า (ค่าเริ่มต้น)</div>
+                <select id="settings-pagesize" class="form-control" style="width:auto;" onchange="onSettingsPageSizeChange()">
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
+                <div style="font-size:11px; color:#94a3b8; margin:4px 0 14px;">ค่านี้จะถูกจำไว้ในเครื่องนี้ ไม่ต้องมาตั้งใหม่ทุกครั้งที่เข้าใช้งาน</div>
+                <div class="modal-section-title">📊 คอลัมน์ที่แสดงในตาราง</div>
+                <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">✔️ ติ๊กเพื่อแสดง/ซ่อนคอลัมน์ &nbsp;·&nbsp; ลากไอคอน ⠿ เพื่อย้ายลำดับ &nbsp;·&nbsp; พิมพ์ตัวเลขปรับความกว้าง (หรือลากขอบคอลัมน์บนตารางจริงก็ได้)</div>
+                <div id="column-settings-list"></div>
+                <button type="button" class="btn-add-item" onclick="resetColumnSettings()">↩️ คืนค่าคอลัมน์ทั้งหมดเป็นค่าเริ่มต้น</button>
+                <div class="modal-section-title">📁 Template ตาราง (บันทึกไว้สลับใช้หลายแบบ)</div>
+                <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">บันทึกชุดคอลัมน์ปัจจุบัน (ลำดับ/โชว์-ซ่อน/ความกว้าง) เป็น Template ตั้งชื่อเอง เพื่อสลับกลับมาใช้ภายหลัง หรือสร้างมุมมองตารางแบบอื่นเพิ่มได้เรื่อยๆ — เก็บไว้ในเครื่องนี้เหมือนค่าปัจจุบัน</div>
+                <div style="display:flex; gap:6px; margin-bottom:8px;">
+                    <select id="column-template-select" class="form-control" style="flex:1;"></select>
+                    <button type="button" class="btn btn-secondary" style="flex:0 0 auto;" onclick="applySelectedColumnTemplate()">📂 โหลด</button>
+                    <button type="button" class="btn btn-secondary" style="flex:0 0 auto; color:#ef4444;" onclick="deleteSelectedColumnTemplate()">🗑️ ลบ</button>
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="column-template-name-input" class="form-control" placeholder="ตั้งชื่อ Template เช่น มุมมองสำหรับพิมพ์" style="flex:1;">
+                    <button type="button" class="btn btn-accent" style="flex:0 0 auto;" onclick="saveCurrentAsColumnTemplate()">💾 บันทึกเป็น Template</button>
+                </div>
+            </div>
+            <button type="button" class="btn-done" onclick="closeTableSettingsModal()">✓ เสร็จแล้ว</button>
+        </div>
+    </div>
     <!-- แบบฟอร์มติดตามลูกค้า สำหรับพิมพ์ -->
     <div id="print-form-area">
         <div class="pf-page">
@@ -1032,6 +1080,7 @@
                     currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
                     status.innerText = 'เข้าสู่ระบบสำเร็จ';
                     document.getElementById('login-modal').classList.add('hidden');
+                    activateLeakDeterrentMeasures_();
                     // แสดงชื่อผู้ใช้งานปัจจุบัน + ปุ่มออกจากระบบ ที่แถบด้านบน
                     const displayName = (resData.user && (resData.user.name || resData.user.username)) || username;
                     document.getElementById('current-user-name').innerText = `${displayName} (${roleLabelTH(currentRole)})`;
@@ -1084,6 +1133,9 @@
                 document.getElementById('login-password').value = '';
                 document.getElementById('login-status').innerText = '';
                 document.getElementById('login-modal').classList.remove('hidden');
+                const wmEl = document.getElementById('leak-watermark-overlay');
+                if (wmEl) { wmEl.style.display = 'none'; wmEl.innerHTML = ''; }
+                document.body.classList.remove('leak-blur-when-hidden');
             });
         }
 
@@ -1786,6 +1838,319 @@
             const total = nums.reduce((sum, n) => sum + n, 0);
             return `${total.toLocaleString()} ไร่`;
         }
+        // แสดง "รถ/เครื่องจักรกลที่ลูกค้าถือครองอยู่แล้ว" ทีละรายการ (ไม่ได้สรุปย่อ/รวมนับ) — ก่อนหน้านี้ข้อมูลนี้
+        // ถูกเก็บไว้ใน financialInfo.machinery แล้ว (โมดัล "ข้อมูลรายได้/ทรัพย์สิน/หนี้สิน" มีอยู่แล้ว) แต่ไม่เคยถูกเอามาโชว์ในตารางหลักเลย
+        function financialMachinerySummary(fin) {
+            const machines = fin.machinery || [];
+            if (!machines.length) return '-';
+            return machines.map(m => {
+                const parts = [m.type, m.brandModel].filter(Boolean).map(escapeHtml).join(' ');
+                const qty = m.qty ? ` x${escapeHtml(m.qty)} คัน` : '';
+                const note = m.note ? ` (${escapeHtml(m.note)})` : '';
+                return `${parts || 'ไม่ระบุประเภท'}${qty}${note}`;
+            }).join('<br>');
+        }
+        function financialJobSummary(fin) {
+            const parts = [];
+            if (fin.regularJob === 'yes') parts.push(escapeHtml(fin.regularJobDetail || 'มีงานประจำ') + (fin.regularJobIncome ? ` (${moneyText(fin.regularJobIncome)}/ด.)` : ''));
+            else if (fin.regularJob === 'no') parts.push('ไม่มีงานประจำ');
+            if (fin.sideIncome === 'yes') parts.push('เสริม: ' + escapeHtml(fin.sideIncomeDetail || '-') + (fin.sideIncomeAmount ? ` (${moneyText(fin.sideIncomeAmount)}/ด.)` : ''));
+            return parts.length ? parts.join('<br>') : '-';
+        }
+        function renderMaskedPhoneCell_(phone) {
+            const raw = String(phone || '').trim();
+            if (!raw) return '-';
+            const masked = maskPhoneNumber_(raw);
+            return `<span class="masked-phone-cell" data-full="${escapeHtml(raw)}" data-masked="${escapeHtml(masked)}" data-revealed="0"
+                onclick="togglePhoneMask(event, this)" title="คลิกเพื่อดู/ซ่อนเบอร์เต็ม"
+                style="cursor:pointer; white-space:nowrap;">${escapeHtml(masked)} <span style="opacity:.45; font-size:9.5px;">👁️</span></span>`;
+        }
+        function maskPhoneNumber_(raw) {
+            const digits = String(raw || '').replace(/\D/g, '');
+            if (digits.length < 6) return raw;
+            return digits.slice(0, 3) + '-xxx-' + digits.slice(-2);
+        }
+        function togglePhoneMask(e, el) {
+            e.stopPropagation(); // กันไม่ให้ไปโดน onclick อื่นของแถว/เซลล์ (ถ้ามี) ทำงานซ้อน
+            const revealed = el.dataset.revealed === '1';
+            el.dataset.revealed = revealed ? '0' : '1';
+            el.innerHTML = (revealed ? el.dataset.masked : el.dataset.full) + ' <span style="opacity:.45; font-size:9.5px;">👁️</span>';
+        }
+
+        /* =====================================================================================
+         * ระบบตั้งค่าคอลัมน์ตาราง (2026-09-14): ผู้ใช้ปรับเอง — ย้ายลำดับ/ซ่อน-โชว์/ปรับความกว้าง — ได้เอง
+         * ไม่ต้องแก้โค้ดทุกครั้งที่อยากปรับตาราง ค่าที่ปรับจะถูกจำไว้ใน localStorage ของเบราว์เซอร์เครื่องนั้น
+         * (คนละแนวคิดกับ "ตัวกรองค้นหา" ที่ตั้งใจให้เคลียร์ทุกครั้งที่รีเฟรช — นี่คือ "รูปแบบการแสดงผลตาราง"
+         * ซึ่งควรจำไว้ข้ามเซสชัน)
+         * ===================================================================================== */
+        const COLUMN_CONFIG_STORAGE_KEY = 'crm_tracker_column_config_v1';
+        const PAGESIZE_STORAGE_KEY = 'crm_tracker_pagesize_pref_v1';
+
+        // รายชื่อคอลัมน์ "ทั้งหมด" ที่เลือกโชว์ในตารางได้ (ไม่รวมคอลัมน์ "จัดการ" ซึ่งตรึงไว้เป็นคอลัมน์แรกเสมอ)
+        // render(row, ctx) คืนค่า HTML ของ <td> นั้น — ctx เก็บค่าที่คำนวณร่วมกันของแถวนั้น (badgeClass/prodParts/fin/followCount/idx)
+        const ALL_COLUMNS = [
+            { key: 'date', label: 'วันที่บันทึก', width: 105, render: row => row.date || '-' },
+            { key: 'booking_date', label: 'วันที่นัดหมาย', width: 105, render: row => `<span style="color:var(--accent-color); font-weight:600;">${row.booking_date || '-'}</span>` },
+            { key: 'lastFollowupDate', label: 'ติดตามล่าสุด', width: 105, render: row => `<span style="color:#6b21a8;">${row.lastFollowupDate || '-'}</span>` },
+            { key: 'name', label: 'ชื่อ - นามสกุล', width: 230, render: (row, ctx) => `<div style="display:flex; align-items:center; gap:6px;"><b>${escapeHtml(row.name || '-')}</b><button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:9.5px; flex:0 0 auto;" onclick="openMainCustomerDetail(${ctx.idx})">👤 ดูข้อมูล</button></div>` },
+            { key: 'phone', label: 'เบอร์โทรศัพท์', width: 120, render: row => renderMaskedPhoneCell_(row.phone) },
+            { key: 'type', label: 'ประเภท', width: 95, render: (row, ctx) => `<span class="badge ${ctx.badgeClass}">${escapeHtml(row.type || '-')}</span>` },
+            { key: 'productCategory', label: 'ประเภทสินค้า', width: 120, render: (row, ctx) => ctx.prodParts.category },
+            { key: 'productModel', label: 'รุ่นรถ', width: 120, render: (row, ctx) => ctx.prodParts.model },
+            { key: 'moo', label: 'หมู่ที่', width: 55, render: row => row.moo || '-' },
+            { key: 'village', label: 'หมู่บ้าน', width: 110, render: row => row.village || '-' },
+            { key: 'subdistrict', label: 'ตำบล', width: 100, render: row => row.subdistrict || '-' },
+            { key: 'district', label: 'อำเภอ', width: 100, render: row => row.district || '-' },
+            { key: 'province', label: 'จังหวัด', width: 110, render: row => row.province || '-' },
+            { key: 'rai', label: 'จำนวนไร่ (รวมทุกแปลง)', width: 90, render: (row, ctx) => financialRaiSummary(ctx.fin) },
+            { key: 'income', label: 'รายได้ (แยกตามแปลง/แหล่ง)', width: 190, render: (row, ctx) => financialIncomeSummary(ctx.fin) },
+            { key: 'machinery', label: 'รถ/เครื่องจักรที่ถือครอง', width: 210, render: (row, ctx) => financialMachinerySummary(ctx.fin) },
+            { key: 'remark', label: 'หมายเหตุ (Remark)', width: 305, cellStyle: 'white-space:pre-line;', render: row => escapeHtml(row.remark || '-').replace(/\n/g, '<br>') },
+            { key: 'debts', label: 'หนี้สิน', width: 190, render: (row, ctx) => financialDebtSummary(ctx.fin) },
+            { key: 'regularJob', label: 'งานประจำ/รายได้เสริม', width: 180, render: (row, ctx) => financialJobSummary(ctx.fin) },
+            { key: 'addressno', label: 'บ้านเลขที่', width: 90, render: row => row.addressNo || row.addressno || row.address_no || '-' },
+            { key: 'zipcode', label: 'รหัสไปรษณีย์', width: 90, render: row => row.zipcode || '-' },
+            { key: 'line', label: 'LINE ID', width: 110, render: row => escapeHtml(row.line || '-') },
+            { key: 'facebook', label: 'Facebook', width: 130, render: row => escapeHtml(row.facebook || '-') },
+            { key: 'followUpCount', label: 'จำนวนครั้งที่ติดตาม', width: 100, render: (row, ctx) => String(ctx.followCount || 0) }
+        ];
+        const ALL_COLUMN_KEYS = new Set(ALL_COLUMNS.map(c => c.key));
+        // ลำดับ/คอลัมน์ที่โชว์เป็นค่าเริ่มต้น — ตรงกับตารางเดิมทุกคอลัมน์ บวก "รถ/เครื่องจักรที่ถือครอง" ที่เพิ่มใหม่
+        // (เดิมข้อมูลนี้ถูกกรอกได้ในโมดัลการเงินอยู่แล้ว แต่ไม่เคยโชว์ในตารางเลย จึงเปิดโชว์เป็นค่าเริ่มต้นให้เห็นเลย)
+        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount'];
+        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark']);
+
+        function getDefaultColumnConfig() {
+            return DEFAULT_COLUMN_ORDER.map(key => {
+                const def = ALL_COLUMNS.find(c => c.key === key);
+                return { key, visible: DEFAULT_VISIBLE_KEYS.has(key), width: def ? def.width : 100 };
+            });
+        }
+        function loadColumnConfig() {
+            let stored = null;
+            try {
+                const raw = localStorage.getItem(COLUMN_CONFIG_STORAGE_KEY);
+                if (raw) stored = JSON.parse(raw);
+            } catch (e) { stored = null; }
+            if (!Array.isArray(stored) || !stored.length) return getDefaultColumnConfig();
+            // กรองคีย์ที่ไม่รู้จักออก (เผื่อไฟล์เก่ากว่า/ใหม่กว่านี้) แล้วเติมคอลัมน์ใหม่ที่ยังไม่เคยอยู่ใน config เดิมต่อท้าย (ซ่อนไว้ก่อน)
+            const seen = new Set();
+            const merged = stored.filter(c => c && ALL_COLUMN_KEYS.has(c.key)).map(c => {
+                seen.add(c.key);
+                const def = ALL_COLUMNS.find(x => x.key === c.key);
+                const w = Number(c.width);
+                return { key: c.key, visible: !!c.visible, width: (Number.isFinite(w) && w >= 40) ? w : (def ? def.width : 100) };
+            });
+            ALL_COLUMNS.forEach(c => { if (!seen.has(c.key)) merged.push({ key: c.key, visible: false, width: c.width }); });
+            return merged;
+        }
+        let columnConfig = loadColumnConfig();
+        function saveColumnConfig() {
+            try { localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(columnConfig)); } catch (e) { /* localStorage ใช้ไม่ได้ (โหมดส่วนตัว ฯลฯ) — ข้ามการจำค่าไปเงียบๆ */ }
+        }
+        function getVisibleColumns() {
+            return columnConfig.filter(c => c.visible).map(c => {
+                const def = ALL_COLUMNS.find(x => x.key === c.key);
+                return Object.assign({}, def, { width: c.width });
+            });
+        }
+        function getPreferredPageSize() {
+            try { return localStorage.getItem(PAGESIZE_STORAGE_KEY) || '20'; } catch (e) { return '20'; }
+        }
+        function onPageSizeSelectChange() {
+            const val = document.getElementById('filter-pagesize').value;
+            try { localStorage.setItem(PAGESIZE_STORAGE_KEY, val); } catch (e) { }
+            fetchDataFromServer(1);
+        }
+
+        // สร้าง <colgroup>/<thead> ของ #main-table ใหม่ทั้งหมดตาม columnConfig ปัจจุบัน — เรียกทุกครั้งที่ลำดับ/การโชว์/ความกว้างคอลัมน์เปลี่ยน
+        function renderTableHeader() {
+            const colgroupEl = document.getElementById('main-table-colgroup');
+            const headRow = document.getElementById('main-table-headrow');
+            const visible = getVisibleColumns();
+            colgroupEl.innerHTML = '<col style="width:120px">' + visible.map(c => `<col style="width:${c.width}px">`).join('');
+            headRow.innerHTML = '<th>จัดการ</th>' + visible.map(c =>
+                `<th data-key="${c.key}" style="position:relative;">${escapeHtml(c.label)}<span class="col-resize-handle" title="ลากเพื่อปรับความกว้างคอลัมน์" onmousedown="startColumnResize(event, '${c.key}')"></span></th>`
+            ).join('');
+            const totalWidth = 120 + visible.reduce((sum, c) => sum + c.width, 0);
+            const tableEl = document.getElementById('main-table');
+            tableEl.style.width = totalWidth + 'px';
+            tableEl.style.minWidth = totalWidth + 'px';
+        }
+
+        function openTableSettingsModal() {
+            document.getElementById('settings-pagesize').value = document.getElementById('filter-pagesize').value || '20';
+            renderColumnSettingsList();
+            renderColumnTemplateOptions();
+            document.getElementById('table-settings-modal-overlay').classList.add('show');
+        }
+        function closeTableSettingsModal() {
+            document.getElementById('table-settings-modal-overlay').classList.remove('show');
+        }
+        function onSettingsPageSizeChange() {
+            document.getElementById('filter-pagesize').value = document.getElementById('settings-pagesize').value;
+            onPageSizeSelectChange();
+        }
+        function renderColumnSettingsList() {
+            const container = document.getElementById('column-settings-list');
+            container.innerHTML = columnConfig.map((c, i) => {
+                const def = ALL_COLUMNS.find(x => x.key === c.key);
+                return `<div class="col-settings-item" draggable="true" data-index="${i}"
+                        ondragstart="onColDragStart(event)" ondragover="onColDragOver(event)" ondrop="onColDrop(event)" ondragend="onColDragEnd(event)">
+                    <span class="col-drag-handle" title="ลากเพื่อย้ายลำดับคอลัมน์">⠿</span>
+                    <input type="checkbox" ${c.visible ? 'checked' : ''} onchange="toggleColumnVisible(${i}, this.checked)" title="แสดง/ซ่อนคอลัมน์นี้">
+                    <span class="col-settings-label">${escapeHtml(def ? def.label : c.key)}</span>
+                    <input type="number" class="col-width-input" value="${c.width}" min="40" max="600" onchange="setColumnWidth(${i}, this.value)" title="ความกว้าง (px)"><span style="font-size:10.5px; color:#94a3b8;">px</span>
+                </div>`;
+            }).join('');
+        }
+        let dragSrcIndex = null;
+        function onColDragStart(e) {
+            dragSrcIndex = Number(e.currentTarget.dataset.index);
+            e.currentTarget.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        function onColDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+        function onColDrop(e) {
+            e.preventDefault();
+            const targetIndex = Number(e.currentTarget.dataset.index);
+            if (dragSrcIndex === null || targetIndex === dragSrcIndex) return;
+            const moved = columnConfig.splice(dragSrcIndex, 1)[0];
+            columnConfig.splice(targetIndex, 0, moved);
+            dragSrcIndex = null;
+            saveColumnConfig();
+            renderColumnSettingsList();
+            renderTableHeader();
+            renderTableRows(currentRenderedData);
+        }
+        function onColDragEnd(e) {
+            e.currentTarget.classList.remove('dragging');
+            dragSrcIndex = null;
+        }
+        function toggleColumnVisible(i, checked) {
+            columnConfig[i].visible = checked;
+            saveColumnConfig();
+            renderTableHeader();
+            renderTableRows(currentRenderedData);
+        }
+        function setColumnWidth(i, val) {
+            const w = parseInt(val, 10);
+            columnConfig[i].width = (Number.isFinite(w) && w >= 40) ? Math.min(w, 600) : columnConfig[i].width;
+            saveColumnConfig();
+            renderColumnSettingsList();
+            renderTableHeader();
+            renderTableRows(currentRenderedData);
+        }
+        function resetColumnSettings() {
+            if (!confirm('คืนค่าลำดับ/การแสดงผล/ความกว้างของทุกคอลัมน์กลับเป็นค่าเริ่มต้น?')) return;
+            columnConfig = getDefaultColumnConfig();
+            saveColumnConfig();
+            renderColumnSettingsList();
+            renderTableHeader();
+            renderTableRows(currentRenderedData);
+        }
+
+        /* ===== Template ตาราง (2026-09-15) =====
+           columnConfig ด้านบนเป็น "ค่าที่ใช้งานอยู่ตอนนี้" ตัวเดียว — ส่วนนี้เพิ่มคลัง preset หลายชุด
+           ที่ตั้งชื่อเองได้ แยก key ใน localStorage ต่างหาก ไม่ปนกับค่าที่ใช้งานอยู่ ผู้ใช้จะบันทึกไว้
+           กี่ชุดก็ได้ (เช่น "มุมมองสำหรับพิมพ์", "มุมมองดูข้อมูลการเงิน") แล้วสลับโหลดกลับมาใช้ทีหลัง */
+        const COLUMN_TEMPLATES_STORAGE_KEY = 'crm_tracker_column_templates_v1';
+        function loadColumnTemplates() {
+            try {
+                const raw = localStorage.getItem(COLUMN_TEMPLATES_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (e) { return {}; }
+        }
+        function saveColumnTemplatesStore(templates) {
+            try { localStorage.setItem(COLUMN_TEMPLATES_STORAGE_KEY, JSON.stringify(templates)); } catch (e) { /* localStorage ใช้ไม่ได้ (โหมดส่วนตัว ฯลฯ) — ข้ามไปเงียบๆ */ }
+        }
+        function renderColumnTemplateOptions() {
+            const sel = document.getElementById('column-template-select');
+            if (!sel) return;
+            const templates = loadColumnTemplates();
+            const names = Object.keys(templates).sort((a, b) => a.localeCompare(b, 'th'));
+            sel.innerHTML = names.length
+                ? names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')
+                : '<option value="">— ยังไม่มี Template ที่บันทึกไว้ —</option>';
+            sel.disabled = !names.length;
+        }
+        function saveCurrentAsColumnTemplate() {
+            const input = document.getElementById('column-template-name-input');
+            const name = (input.value || '').trim();
+            if (!name) { alert('กรุณาตั้งชื่อ Template ก่อนบันทึก'); return; }
+            const templates = loadColumnTemplates();
+            const isOverwrite = Object.prototype.hasOwnProperty.call(templates, name);
+            if (isOverwrite && !confirm('มี Template ชื่อ "' + name + '" อยู่แล้ว ต้องการบันทึกทับหรือไม่?')) return;
+            // เก็บสำเนา (ผ่าน JSON) ของ columnConfig ปัจจุบัน ไม่ใช่ reference — กันไม่ให้การแก้คอลัมน์ต่อจากนี้กระทบ template ที่เพิ่งบันทึกไป
+            templates[name] = JSON.parse(JSON.stringify(columnConfig));
+            saveColumnTemplatesStore(templates);
+            input.value = '';
+            renderColumnTemplateOptions();
+            const sel = document.getElementById('column-template-select');
+            if (sel) sel.value = name;
+            alert('บันทึก Template "' + name + '" เรียบร้อย — เปิดเมนูตั้งค่าตารางครั้งหน้าแล้วกด "โหลด" เพื่อสลับกลับมาใช้ได้เลย');
+        }
+        function applySelectedColumnTemplate() {
+            const sel = document.getElementById('column-template-select');
+            const name = sel ? sel.value : '';
+            if (!name) { alert('ยังไม่มี Template ที่เลือกไว้'); return; }
+            const templates = loadColumnTemplates();
+            const tpl = templates[name];
+            if (!Array.isArray(tpl)) { alert('ไม่พบ Template นี้'); return; }
+            // ใช้ตรรกะเดียวกับ loadColumnConfig(): กรองคีย์คอลัมน์ที่ไม่รู้จักออก + เติมคอลัมน์ใหม่ที่ยังไม่มีใน template
+            // เก่าต่อท้าย (ซ่อนไว้ก่อน) — เผื่อ template นี้บันทึกไว้ตั้งแต่ก่อนมีการเพิ่มคอลัมน์ใหม่ในระบบ
+            const seen = new Set();
+            const merged = tpl.filter(c => c && ALL_COLUMN_KEYS.has(c.key)).map(c => {
+                seen.add(c.key);
+                const def = ALL_COLUMNS.find(x => x.key === c.key);
+                const w = Number(c.width);
+                return { key: c.key, visible: !!c.visible, width: (Number.isFinite(w) && w >= 40) ? w : (def ? def.width : 100) };
+            });
+            ALL_COLUMNS.forEach(c => { if (!seen.has(c.key)) merged.push({ key: c.key, visible: false, width: c.width }); });
+            columnConfig = merged;
+            saveColumnConfig();
+            renderColumnSettingsList();
+            renderTableHeader();
+            renderTableRows(currentRenderedData);
+        }
+        function deleteSelectedColumnTemplate() {
+            const sel = document.getElementById('column-template-select');
+            const name = sel ? sel.value : '';
+            if (!name) { alert('ยังไม่มี Template ที่เลือกไว้'); return; }
+            if (!confirm('ลบ Template "' + name + '" ใช่หรือไม่? (กู้คืนไม่ได้)')) return;
+            const templates = loadColumnTemplates();
+            delete templates[name];
+            saveColumnTemplatesStore(templates);
+            renderColumnTemplateOptions();
+        }
+        // ลากขอบขวาของหัวตารางเพื่อปรับความกว้างคอลัมน์นั้นสดๆ (เห็นผลทันทีบนตารางจริง ไม่ต้องเปิดเมนูตั้งค่า)
+        let resizingColEntry = null, resizeStartX = 0, resizeStartWidth = 0;
+        function startColumnResize(e, key) {
+            e.preventDefault();
+            e.stopPropagation();
+            resizingColEntry = columnConfig.find(c => c.key === key);
+            if (!resizingColEntry) return;
+            resizeStartX = e.clientX;
+            resizeStartWidth = resizingColEntry.width;
+            document.addEventListener('mousemove', onColumnResizeMove);
+            document.addEventListener('mouseup', onColumnResizeEnd);
+        }
+        function onColumnResizeMove(e) {
+            if (!resizingColEntry) return;
+            const delta = e.clientX - resizeStartX;
+            resizingColEntry.width = Math.max(40, Math.min(600, resizeStartWidth + delta));
+            renderTableHeader();
+        }
+        function onColumnResizeEnd() {
+            if (resizingColEntry) saveColumnConfig();
+            resizingColEntry = null;
+            document.removeEventListener('mousemove', onColumnResizeMove);
+            document.removeEventListener('mouseup', onColumnResizeEnd);
+        }
         function openIntakeDetailModal(dateOrRange, filterType, isRange) {
             const overlay = document.getElementById('intake-detail-modal-overlay');
             const tbody = document.getElementById('intake-detail-tbody');
@@ -1867,6 +2232,9 @@
             // ทุกครั้งที่รีเฟรชหน้าเว็บ ตัวกรองจะเริ่มเป็นค่าว่างใหม่เสมอ ไม่ดึงเงื่อนไขค้นหารอบก่อนกลับมาแล้ว
             document.getElementById('report-start-date').value = getDateStrOffset(6);
             document.getElementById('report-end-date').value = getDateStrOffset(0);
+            // จำนวนแถวต่อหน้า/รูปแบบคอลัมน์ตาราง (ลำดับ/ซ่อน-โชว์/ความกว้าง) เป็นการตั้งค่าที่จำไว้ข้ามเซสชัน (localStorage)
+            document.getElementById('filter-pagesize').value = getPreferredPageSize();
+            renderTableHeader();
             loadInitialMeta();
             fetchDataFromServer(1);
             document.getElementById('customer-form').addEventListener('submit', onFormSubmit);
@@ -2162,7 +2530,7 @@
         function fetchDataFromServer(page = 1) {
             currentPage = page;
             const tbody = document.querySelector('#main-table tbody');
-            tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูล...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูล...</td></tr>';
             const selectedTypes = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
             const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
             const sortByVal = determineSortBy();
@@ -2204,10 +2572,10 @@
                     updatePaginationControls();
                     fetchDashboardSummary(payload.filters);
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="18" style="text-align: center; color: red;">❌ เกิดข้อผิดพลาด: ${resData.message}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="99" style="text-align: center; color: red;">❌ เกิดข้อผิดพลาด: ${resData.message}</td></tr>`;
                 }
             }).catch(err => {
-                tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; color: red;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; color: red;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</td></tr>';
             });
         }
         function fetchDashboardSummary(filters) {
@@ -2242,9 +2610,10 @@
             const tbody = document.querySelector('#main-table tbody');
             tbody.innerHTML = '';
             if(!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="17" style="text-align: center; padding: 20px; color: #94a3b8;">❌ ไม่พบข้อมูลรายชื่อลูกค้าที่ตรงเงื่อนไข</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; padding: 20px; color: #94a3b8;">❌ ไม่พบข้อมูลรายชื่อลูกค้าที่ตรงเงื่อนไข</td></tr>';
                 return;
             }
+            const visibleColumns = getVisibleColumns();
             let html = data.map((row, idx) => {
                 let badgeClass = 'badge-reg';
                 if(row.type === 'เป้าหมาย') badgeClass = 'badge-target';
@@ -2255,10 +2624,17 @@
                 const prodParts = getRowProductParts(row);
                 const fin = parseFinancialInfo(row.financialInfo || row.financial);
                 const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
+                const ctx = { idx, badgeClass, prodParts, fin, followCount };
                 const adminEditDelete = (currentRole === 'admin' || currentRole === 'staff')
                     ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>`
                         + (currentRole === 'admin' ? `<button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>` : '')
                     : '';
+                const cells = visibleColumns.map(col => {
+                    const styleAttr = col.cellStyle ? ` style="${col.cellStyle}"` : '';
+                    let cellHtml = '';
+                    try { cellHtml = col.render(row, ctx); } catch (e) { cellHtml = '-'; }
+                    return `<td${styleAttr}>${cellHtml}</td>`;
+                }).join('');
                 return `<tr>
                     <td style="text-align:center;">
                         <div class="row-action-group">
@@ -2267,22 +2643,7 @@
                             <button class="btn btn-secondary btn-row-icon${followCount ? ' has-log' : ''}" onclick="openHistoryModal(${idx})" title="ดูไทม์ไลน์การติดตามลูกค้ารายนี้">🕓${followCount ? ' ' + followCount : ''}</button>
                         </div>
                     </td>
-                    <td>${row.date || '-'}</td>
-                    <td style="color: var(--accent-color); font-weight: 600;">${row.booking_date || '-'}</td>
-                    <td style="color: #6b21a8;">${row.lastFollowupDate || '-'}</td>
-                    <td><div style="display:flex; align-items:center; gap:6px;"><b>${escapeHtml(row.name || '-')}</b><button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:9.5px; flex:0 0 auto;" onclick="openMainCustomerDetail(${idx})">👤 ดูข้อมูล</button></div></td>
-                    <td>${row.phone}</td>
-                    <td><span class="badge ${badgeClass}">${row.type}</span></td>
-                    <td>${prodParts.category}</td>
-                    <td>${prodParts.model}</td>
-                    <td>${row.moo || '-'}</td>
-                    <td>${row.village || '-'}</td>
-                    <td>${row.subdistrict || '-'}</td>
-                    <td>${row.district || '-'}</td>
-                    <td>${row.province || '-'}</td>
-                    <td>${financialRaiSummary(fin)}</td>
-                    <td>${financialIncomeSummary(fin)}</td>
-                    <td style="white-space:pre-line;">${row.remark || '-'}</td>
+                    ${cells}
                 </tr>`;
             }).join('');
             tbody.innerHTML = html;
@@ -2909,6 +3270,101 @@
             })
             .catch(err => {
                 alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง');
+            });
+        }
+
+        /* ===== มาตรการยับยั้งข้อมูลรั่ว (ไม่ใช่การ "ป้องกัน" การแคปหน้าจอ — ทำไม่ได้จริงบนเว็บ ดูคำอธิบายในแชท) =====
+           1) ลายน้ำชื่อผู้ใช้งาน+เวลา ทับทั่วจอ — ถ้ามีภาพหลุดออกไป ตามตัวได้ว่าใครล็อกอินอยู่ตอนนั้น
+           2) เบลอเนื้อหาเวลาสลับแท็บ/มินิไมซ์หน้าต่างไป — ลดโอกาสถูกจับภาพตอนไม่ได้ใช้งานอยู่ (เช่น แชร์จอ/บันทึกจอเบื้องหลัง)
+              ⚠️ ข้อจำกัด: Snipping Tool แบบใหม่ของ Windows (กด Win+Shift+S) บางครั้งไม่ทำให้
+              หน้าต่างเบราว์เซอร์ "เสียโฟกัส" จริง (เป็นแค่โอเวอร์เลย์ลอยทับ) จึงอาจไม่ trigger
+              การเบลอนี้เสมอไป — ทดสอบพฤติกรรมจริงบนเครื่องที่ใช้งานก่อนพึ่งพา 100%
+           3) ปิดคลิกขวา — กันการ "บันทึกรูปภาพ"/"ตรวจสอบ" แบบง่ายๆ (ไม่ใช่มาตรการความปลอดภัยขั้นสูง แค่กันคนทั่วไปเผลอกด)
+           4) ปิดการคัดลอกข้อความในตาราง/การ์ดรายละเอียดลูกค้า (ดู CSS user-select:none ด้านบนของไฟล์)
+              + ดักการกด Ctrl+C/คลิกขวา>คัดลอก ในบริเวณนั้น
+           5) ดักปุ่ม Print Screen เท่าที่ทำได้ — สกัดไม่ได้จริง (OS จับภาพไปก่อนที่ JavaScript จะรู้ตัวด้วยซ้ำ)
+              แต่ "หลังจากนั้นทันที" จะเบลอหน้าจอ + เตือน + บันทึกชื่อผู้ใช้/เวลาไว้ใน "ประวัติการใช้งาน"
+              (user_activity_log) ให้ตามรอยได้ว่าใครกดเมื่อไหร่ — เป็นมาตรการ "ตามรอยหลังเกิดเหตุ" ไม่ใช่ตัวป้องกัน */
+        function buildWatermarkText_() {
+            const el = document.getElementById('current-user-name');
+            const who = el ? el.innerText : 'ไม่ทราบผู้ใช้';
+            const now = new Date().toLocaleString('th-TH', { hour12: false });
+            return who + ' · ' + now;
+        }
+        function renderLeakWatermark_() {
+            const overlay = document.getElementById('leak-watermark-overlay');
+            if (!overlay) return;
+            const text = buildWatermarkText_();
+            let rowsHtml = '';
+            for (let r = 0; r < 10; r++) {
+                let itemsHtml = '';
+                for (let c = 0; c < 4; c++) itemsHtml += `<span class="wm-item">${text}</span>`;
+                rowsHtml += `<div class="wm-row">${itemsHtml}</div>`;
+            }
+            overlay.innerHTML = rowsHtml;
+            overlay.style.display = 'block';
+        }
+        let _leakSecurityToastTimer = null;
+        function showLeakSecurityToast_(message) {
+            const toast = document.getElementById('leak-security-toast');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.add('show');
+            clearTimeout(_leakSecurityToastTimer);
+            _leakSecurityToastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 4000);
+        }
+        // ส่งบันทึกไปเก็บที่ฝั่งเซิร์ฟเวอร์ (user_activity_log) — ใช้ token ผู้ใช้ที่ล็อกอินอยู่
+        // ยิงแบบ fire-and-forget ไม่ต้องรอผล ไม่ให้กระทบการใช้งานหน้าเว็บถ้าเน็ตช้า/หลุด
+        function logScreenshotEvent_(method) {
+            try {
+                fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'screenshotAttempt', payload: { method: method }, token: localStorage.getItem(authTokenKey) || '' })
+                }).catch(function(){});
+            } catch (e) { /* เงียบไว้ ไม่ให้กระทบการทำงานหลัก */ }
+        }
+        // เรียกทันทีที่ตรวจพบสัญญาณว่าอาจมีการแคปหน้าจอ — เบลอเนื้อหาชั่วคราว + เตือน + บันทึกร่องรอย
+        function triggerScreenshotDeterrent_(method, toastMessage) {
+            document.body.classList.add('leak-blur-when-hidden');
+            setTimeout(function(){ document.body.classList.remove('leak-blur-when-hidden'); }, 2500);
+            showLeakSecurityToast_(toastMessage);
+            logScreenshotEvent_(method);
+        }
+        let _leakDeterrentBound = false;
+        // เรียกหลัง login สำเร็จเท่านั้น (ดูจุดเรียกใน loginUser())
+        function activateLeakDeterrentMeasures_() {
+            renderLeakWatermark_();
+            setInterval(renderLeakWatermark_, 60000); // อัปเดตเวลาบนลายน้ำทุก 1 นาที
+
+            if (_leakDeterrentBound) return; // กันผูก event ซ้ำถ้ามีการ logout แล้ว login ใหม่ในหน้าเดิม
+            _leakDeterrentBound = true;
+
+            document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+            document.addEventListener('visibilitychange', function(){
+                document.body.classList.toggle('leak-blur-when-hidden', document.hidden);
+            });
+            window.addEventListener('blur', function(){ document.body.classList.add('leak-blur-when-hidden'); });
+            window.addEventListener('focus', function(){ document.body.classList.remove('leak-blur-when-hidden'); });
+
+            // ดักปุ่ม Print Screen (บางเบราว์เซอร์/OS อาจไม่ส่ง keydown ให้เว็บเลยเพราะ OS ดักไปก่อน
+            // — ทำได้เท่าที่เบราว์เซอร์ยอมส่ง event มาให้เท่านั้น ไม่ใช่ทุกกรณี)
+            document.addEventListener('keyup', function(e){
+                if (e.key === 'PrintScreen') {
+                    triggerScreenshotDeterrent_('printscreen', '⚠️ ตรวจพบการกดปุ่ม Print Screen — ระบบบันทึกชื่อผู้ใช้และเวลาไว้แล้ว');
+                }
+            });
+
+            // ดักการคัดลอกข้อความในตาราง/การ์ดรายละเอียดลูกค้า (ทำงานคู่กับ CSS user-select:none
+            // ด้านบน — กันได้เฉพาะคัดลอกแบบลากเมาส์/Ctrl+C ธรรมดา)
+            ['.table-container', '.customer-detail-grid', '.calendar-customer-list'].forEach(function(sel){
+                document.querySelectorAll(sel).forEach(function(el){
+                    el.addEventListener('copy', function(e){
+                        e.preventDefault();
+                        triggerScreenshotDeterrent_('copy', '⚠️ ไม่อนุญาตให้คัดลอกข้อมูลลูกค้าออกจากระบบ');
+                    });
+                });
             });
         }
     </script>
