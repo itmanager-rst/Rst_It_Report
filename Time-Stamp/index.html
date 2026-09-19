@@ -160,6 +160,7 @@
         </form>
 
         <div id="loginState" class="small" style="margin-top: 10px; font-weight: 500; color: var(--muted); text-align: center;">🛡️ สภาพการยืนยันตัวตน: รอการเข้าสู่ระบบ</div>
+        <button type="button" id="logoutBtn" class="secondary" style="display:none; margin-top:10px; width:auto; padding:8px 16px; font-size:12px; margin-left:auto; margin-right:auto;">🚪 ออกจากระบบ (Logout)</button>
 
         <div id="adminPanel" class="admin-section">
           <h4 style="color: var(--primary); margin-top:0; margin-bottom:12px; font-size:14px;">👑 แผงบริหารจัดการระบบสำหรับผู้ดูแล</h4>
@@ -351,7 +352,7 @@
   </div>
 
   <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyrpZHEqEK2TOOyN8azuV239KidO-ttMgF0cE6UiOTQc0mKLqoPFPNtinEomvo8QDDo/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwxh4AZezAHkfhrksXM-eJFisZI7i8ML2ShLLnXKg1p9Hy48KAWzkvti52rFzrKc7Kx/exec';
 
     // รายชื่อสาขาทั้งหมดที่ระบบรองรับ (ต้องตรงกับ BRANCH_LIST ฝั่ง Config.gs)
     const BRANCH_LIST = ['กุฉินารายณ์', 'ขุขันธ์', 'เบญจลักษณ์', 'ศรีเมืองใหม่', 'เดชอุดม', 'ตระการ', 'อำนาจเจริญ'];
@@ -360,7 +361,7 @@
     let loginIdStr = ''; let loginPinStr = '';
     let currentEmployee = null; let activeEditingRowId = null;
     let globalCachedRows = []; // เก็บแคชอาร์เรย์ของผลลัพธ์ล่าสุดจาก server
-    let branchConfigCache = []; // เก็บค่าพิกัด Geo-Fence ของทุกสาขา (โหลดตอน Admin ล็อกอิน)
+    let branchConfigCache = []; // เก็บค่าพิกัด Geo-Fence ของทุกสาขา (ใช้แสดงผลในแผงตั้งค่า Admin)
 
     function showStatus(message, isError) {
       const status = document.getElementById('status');
@@ -443,9 +444,9 @@
       document.getElementById('employeeId').value = employee.employeeId;
       document.getElementById('employeeName').value = employee.employeeName;
       document.getElementById('department').value = employee.department;
-      document.getElementById('branchDisplay').value = employee.branch || '-';
 
       const stateBox = document.getElementById('loginState');
+      document.getElementById('branchDisplay').value = employee.branch || '-';
       if (employee.isAdmin) {
         stateBox.textContent = '👑 สิทธิ์แอดมินระดับสูงสุด: ' + employee.employeeName + ' (' + employee.employeeId + ')';
         stateBox.style.color = '#15803d';
@@ -458,9 +459,48 @@
         document.getElementById('adminPanel').style.display = 'none';
         document.getElementById('adminTh').style.display = 'none';
       }
+      document.getElementById('logoutBtn').style.display = 'block';
+      document.getElementById('loginForm').style.display = 'none';
       autoSelectAttendanceMode();
       initGeoLocationFetch();
     }
+
+    function logoutUser() {
+      if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; }
+
+      currentEmployee = null; loginIdStr = ''; loginPinStr = '';
+      branchConfigCache = [];
+
+      document.getElementById('loginForm').reset();
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('logoutBtn').style.display = 'none';
+      document.getElementById('loginState').textContent = '🛡️ สภาพการยืนยันตัวตน: รอการเข้าสู่ระบบ';
+      document.getElementById('loginState').style.color = 'var(--muted)';
+      document.getElementById('adminPanel').style.display = 'none';
+      document.getElementById('adminTh').style.display = 'none';
+
+      document.getElementById('employeeId').value = '';
+      document.getElementById('employeeName').value = '';
+      document.getElementById('department').value = '';
+      document.getElementById('branchDisplay').value = '';
+      document.getElementById('note').value = '';
+
+      document.getElementById('video').style.display = 'block';
+      document.getElementById('video').srcObject = null;
+      document.getElementById('photoPreview').style.display = 'none';
+      capturedImage = '';
+
+      document.getElementById('mapFrame').style.display = 'none';
+      document.getElementById('mapPlaceholder').style.display = 'block';
+      document.getElementById('latText').textContent = 'รอเรียกพิกัด...';
+      document.getElementById('lngText').textContent = 'รอเรียกพิกัด...';
+
+      resetEditFields();
+      showStatus('🟢 ออกจากระบบแล้ว พร้อมให้พนักงานคนถัดไปเข้าสู่ระบบ');
+      loadDashboard();
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', logoutUser);
 
     async function callWebApi(action, data = {}) {
       const searchParams = new URLSearchParams();
