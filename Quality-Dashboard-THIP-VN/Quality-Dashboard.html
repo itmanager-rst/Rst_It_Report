@@ -2722,6 +2722,41 @@ function shiftCellHTML(shift){
   const rangeHtml = range ? `<br><small style="color:var(--muted);font-weight:400;">${timeTH(range[0])}-${timeTH(range[1])}</small>` : '';
   return `<span class="tag tag-${shift}">${shift}</span>${rangeHtml}`;
 }
+// Parses a plain "HH:MM" time-input value into the Shift it falls in, reusing shiftFromTime's own
+// boundaries above - returns null for an empty/unparseable value so callers can leave the Shift field
+// alone rather than forcing it to a wrong guess.
+function shiftFromTimeStr(v){
+  if(!v) return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(v));
+  if(!m) return null;
+  return shiftFromTime(parseInt(m[1],10), parseInt(m[2],10));
+}
+// Auto-sets a module's Shift <select> from its manually-typed data-collection start/end time fields, per
+// explicit request ("เมื่อลงเวลาเริ่มเก็บข้อมูล - เวลาสิ้นสุด ให้แสดงกะให้สัมพันธ์กับเวลาของแต่ละกะ โดยไม่ได้กดเลือกกะเอง"):
+// the Shift shown should follow the entered collection time window, without the user separately clicking
+// a Shift option. Prefers the start time when both are filled in (that's the moment that determines which
+// shift the work belongs to); falls back to the end time if only that one has a value yet. Leaves the
+// Shift field untouched if neither time has been entered, so the page's own shiftFromDate(now) default at
+// load time is left alone until the user actually types a collection time. `onAfterChange`, if given, runs
+// only when the Shift value actually changes - used to re-run a page's own live auto-calculation (e.g.
+// refreshPerfAuto/refreshRejectAuto) exactly as if the user had picked the Shift by hand, since setting
+// .value via script doesn't fire those pages' own 'change' listeners on the Shift <select> itself.
+function wireAutoShiftFromCollectionTime(startId, endId, shiftId, onAfterChange){
+  const startEl = document.getElementById(startId);
+  const endEl = document.getElementById(endId);
+  const shiftEl = document.getElementById(shiftId);
+  if(!shiftEl) return;
+  const apply = ()=>{
+    const time = (startEl && startEl.value) || (endEl && endEl.value) || '';
+    const shift = shiftFromTimeStr(time);
+    if(shift && shiftEl.value !== shift){
+      shiftEl.value = shift;
+      if(typeof onAfterChange === 'function') onAfterChange();
+    }
+  };
+  if(startEl) startEl.addEventListener('change', apply);
+  if(endEl) endEl.addEventListener('change', apply);
+}
 
 /* ============================================================
    I18N
@@ -3609,6 +3644,10 @@ document.getElementById('d-time').addEventListener('change', (e)=>{
   const [hh,mm] = e.target.value.split(':').map(Number);
   document.getElementById('d-shift').value = shiftFromTime(hh,mm);
 });
+// Also auto-set Shift from the collection start/end time fields (d-time-start/d-time-end), per explicit
+// request - independent of the "เวลาที่เกิด" (d-time) listener just above; whichever time field the user
+// fills in last decides the shown Shift.
+wireAutoShiftFromCollectionTime('d-time-start', 'd-time-end', 'd-shift');
 
 
 // Resize/compress a photo before storing it (camera shots can be several MB each; localStorage has a
@@ -3981,6 +4020,10 @@ function refreshPerfAuto(){
   document.getElementById(id).addEventListener('change', refreshPerfAuto);
 });
 refreshPerfAuto();
+// Auto-set Shift from the collection start/end time fields (p-time-start/p-time-end), per explicit
+// request - re-runs refreshPerfAuto() when it changes the Shift, matching what picking the Shift by hand
+// would have triggered.
+wireAutoShiftFromCollectionTime('p-time-start', 'p-time-end', 'p-shift', refreshPerfAuto);
 
 document.getElementById('p-save').addEventListener('click', ()=>{
   const date = document.getElementById('p-date').value;
@@ -4344,6 +4387,10 @@ function refreshRejectAuto(){
   document.getElementById(id).addEventListener('change', refreshRejectAuto);
 });
 initRejectDefaults();
+// Auto-set Shift from the collection start/end time fields (r-time-start/r-time-end), per explicit
+// request - re-runs refreshRejectAuto() when it changes the Shift, matching what picking the Shift by
+// hand would have triggered.
+wireAutoShiftFromCollectionTime('r-time-start', 'r-time-end', 'r-shift', refreshRejectAuto);
 
 document.getElementById('r-save').addEventListener('click', ()=>{
   const date = document.getElementById('r-date').value;
