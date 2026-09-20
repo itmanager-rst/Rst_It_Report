@@ -3376,6 +3376,31 @@ function setupEntryFilter(prefix, onChange){
 function filterEntries(arr, state){
   return arr.filter(r => (!state.dateStart || r.date>=state.dateStart) && (!state.dateEnd || r.date<=state.dateEnd) && (state.machine==='all' || r.machine===state.machine));
 }
+// Sorts a filtered "Recent Entries" array by date (newest first) and then start time collected (latest
+// first) - per request, these tables must always list entries in true chronological order rather than by
+// insertion/save order, so a backdated entry, an edit that changes date/time, or a bulk import added
+// later lands in its correct position instead of jumping to the top. Uses each record's own `timeStart`
+// (Defect/Performance/Reject Station Test's "เวลาเก็บข้อมูล เริ่ม" field) when present, falling back to the
+// plain `time` field for modules that only have one (Performance Test/Normal), and to the start of the
+// day so date order alone still applies when neither is filled in. Array.prototype.sort is stable (per
+// spec), so entries tying on both date and time keep their original relative (insertion) order.
+function sortRecentEntries(arr){
+  return arr.slice().sort((a,b)=>{
+    const ka = a.date + 'T' + (a.timeStart || a.time || '00:00');
+    const kb = b.date + 'T' + (b.timeStart || b.time || '00:00');
+    if(ka === kb) return 0;
+    return ka < kb ? 1 : -1;
+  });
+}
+// Same idea, for Breakdown - its record already stores a full ISO start timestamp (startDT) rather than
+// separate date+time fields, so sorting directly on that is simpler and exactly as precise.
+function sortRecentEntriesByDT(arr, dtKey){
+  return arr.slice().sort((a,b)=>{
+    const ka = a[dtKey] || '', kb = b[dtKey] || '';
+    if(ka === kb) return 0;
+    return ka < kb ? 1 : -1;
+  });
+}
 const defectFilter = setupEntryFilter('d', ()=>{ renderDefectTable(); renderDefectMiniDashboard(); });
 const breakdownFilter = setupEntryFilter('b', ()=>{ renderBreakdownTable(); renderBreakdownMiniDashboard(); });
 const perfFilter = setupEntryFilter('p', ()=>{ renderPerfTable(); renderPerfMiniDashboard(); });
@@ -3728,7 +3753,7 @@ document.getElementById('d-save').addEventListener('click', async ()=>{
 });
 
 function renderDefectTable(){
-  const full = filterEntries(getArr(LS.defects), defectFilter).slice().reverse();
+  const full = sortRecentEntries(filterEntries(getArr(LS.defects), defectFilter));
   const arr = full.slice(0,50);
   // No. reflects each row's position among ALL entries matching the current filter (not just the 50
   // shown) - since the newest entry is listed first, its No. equals the total filtered count, so the
@@ -3860,7 +3885,7 @@ document.getElementById('b-run').addEventListener('click', ()=>{
 document.getElementById('b-reset').addEventListener('click', initBreakdownDefaults);
 
 function renderBreakdownTable(){
-  const full = filterEntries(getArr(LS.breakdowns), breakdownFilter).slice().reverse();
+  const full = sortRecentEntriesByDT(filterEntries(getArr(LS.breakdowns), breakdownFilter), 'startDT');
   const arr = full.slice(0,50);
   // No. reflects each row's position among ALL entries matching the current filter (not just the 50
   // shown) - the newest entry's No. equals the total filtered count, so the top row alone tells you
@@ -3985,7 +4010,7 @@ document.getElementById('p-save').addEventListener('click', ()=>{
 });
 
 function renderPerfTable(){
-  const full = filterEntries(getArr(LS.perf), perfFilter).slice().reverse();
+  const full = sortRecentEntries(filterEntries(getArr(LS.perf), perfFilter));
   const arr = full.slice(0,50);
   // No. reflects each row's position among ALL entries matching the current filter (not just the 50
   // shown) - the newest entry's No. equals the total filtered count, so the top row alone tells you
@@ -4105,7 +4130,7 @@ document.getElementById('t-save').addEventListener('click', ()=>{
 document.getElementById('t-reset').addEventListener('click', initPerftestDefaults);
 
 function renderPerftestTable(){
-  const full = filterEntries(getArr(LS.perftest), perftestFilter).slice().reverse();
+  const full = sortRecentEntries(filterEntries(getArr(LS.perftest), perftestFilter));
   const arr = full.slice(0,50);
   // No. reflects each row's position among ALL entries matching the current filter (not just the 50
   // shown) - the newest entry's No. equals the total filtered count, so the top row alone tells you
@@ -4204,7 +4229,7 @@ document.getElementById('pn-save').addEventListener('click', ()=>{
 document.getElementById('pn-reset').addEventListener('click', initPerfNormalDefaults);
 
 function renderPerfNormalTable(){
-  const full = filterEntries(getArr(LS.perfNormal), perfNormalFilter).slice().reverse();
+  const full = sortRecentEntries(filterEntries(getArr(LS.perfNormal), perfNormalFilter));
   const arr = full.slice(0,50);
   const totalCount = full.length;
   const tbody = document.querySelector('#pn-table tbody');
@@ -4343,7 +4368,7 @@ document.getElementById('r-save').addEventListener('click', ()=>{
 document.getElementById('r-reset').addEventListener('click', initRejectDefaults);
 
 function renderRejectTable(){
-  const full = rejectRowsFiltered().slice().reverse();
+  const full = sortRecentEntries(rejectRowsFiltered());
   const arr = full.slice(0,50);
   // No. reflects each row's position among ALL entries matching the current filter (not just the 50
   // shown) - same convention as every other module's Recent Entries table.
@@ -4922,7 +4947,7 @@ function refreshDashboard(){
 function renderDashRejectTable(){
   const tbody = document.querySelector('#dash-r-table tbody');
   if(!tbody) return;
-  const full = filterByPeriodMachine(getArr(LS.rejectTest)).slice().reverse();
+  const full = sortRecentEntries(filterByPeriodMachine(getArr(LS.rejectTest)));
   const cap = 15;
   const arr = full.slice(0, cap);
   const totalCount = full.length;
@@ -6991,7 +7016,7 @@ function excelDownload(rows, sheetName, filenamePrefix){
 }
 function exportDefectExcel(){
   const t = I18N[currentLang];
-  const rows = filterEntries(getArr(LS.defects), defectFilter).slice().reverse();
+  const rows = sortRecentEntries(filterEntries(getArr(LS.defects), defectFilter));
   const header = [t.colNo, t.date, t.timeOccurred, t.collectTimeStart, t.collectTimeEnd, t.shift, t.machine, t.defectType, t.qtyFound, t.cause, t.causeNoteLabel, t.recorder, 'Photos'];
   const body = rows.map((r,i)=>{
     const typeName = r.defectType==='other' ? (r.defectTypeOther||typeLabel('other')) : typeLabel(r.defectType);
@@ -7001,7 +7026,7 @@ function exportDefectExcel(){
 }
 function exportBreakdownExcel(){
   const t = I18N[currentLang];
-  const rows = filterEntries(getArr(LS.breakdowns), breakdownFilter).slice().reverse();
+  const rows = sortRecentEntriesByDT(filterEntries(getArr(LS.breakdowns), breakdownFilter), 'startDT');
   const header = [t.colNo, t.date, t.shift, t.machine, t.startTime, t.endTime, t.breakdownMin, t.breakdownCause, t.causeNoteLabel, t.recorder];
   const body = rows.map((r,i)=>{
     const st = new Date(r.startDT), en = new Date(r.endDT);
@@ -7012,7 +7037,7 @@ function exportBreakdownExcel(){
 }
 function exportPerfExcel(){
   const t = I18N[currentLang];
-  const rows = filterEntries(getArr(LS.perf), perfFilter).slice().reverse();
+  const rows = sortRecentEntries(filterEntries(getArr(LS.perf), perfFilter));
   const header = [t.colNo, t.date, t.collectTimeStart, t.collectTimeEnd, t.shift, t.machine, t.totalProduced, t.perfRejectBoxQty, t.perfKpiDefectQty, t.goodQty, t.perfKpiBreakdownTime, t.defectRate, t.recorder];
   const body = rows.map((r,i)=>{
     const d = perfDerived(r);
@@ -7022,21 +7047,21 @@ function exportPerfExcel(){
 }
 function exportPerftestExcel(){
   const t = I18N[currentLang];
-  const rows = filterEntries(getArr(LS.perftest), perftestFilter).slice().reverse();
+  const rows = sortRecentEntries(filterEntries(getArr(LS.perftest), perftestFilter));
   const header = [t.colNo, t.date, t.timeOccurred, t.shift, t.machine, t.testDuration, t.boxResult, t.speedResult, t.resultStatus, t.recorder];
   const body = rows.map((r,i)=>[rows.length-i, r.date, timeTH(timeOnly(r.time)), r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.pass?t.pass:t.fail, r.recorder||'-']);
   excelDownload([header, ...body], 'PerfTest', 'PerfTest_Report');
 }
 function exportPerfNormalExcel(){
   const t = I18N[currentLang];
-  const rows = filterEntries(getArr(LS.perfNormal), perfNormalFilter).slice().reverse();
+  const rows = sortRecentEntries(filterEntries(getArr(LS.perfNormal), perfNormalFilter));
   const header = [t.colNo, t.date, t.timeOccurred, t.shift, t.machine, t.pnDurationLabel, t.pnBoxResultLabel, t.speedResult, t.recorder];
   const body = rows.map((r,i)=>[rows.length-i, r.date, timeTH(timeOnly(r.time)), r.shift, r.machine, r.durationSec, r.boxes, +r.speed.toFixed(1), r.recorder||'-']);
   excelDownload([header, ...body], 'PerfNormal', 'MachinePerformanceNormal_Report');
 }
 function exportRejectExcel(){
   const t = I18N[currentLang];
-  const rows = rejectRowsFiltered().slice().reverse();
+  const rows = sortRecentEntries(rejectRowsFiltered());
   const header = [t.colNo, t.date, t.shift, t.machine, t.rejectHeightShort, t.rejectTimeStart, t.rejectTimeEnd, t.rejectInputQtyShort, t.rejectRejectQtyShort, t.rejectRateShort, t.rejectDefectQtyShort, t.rejectDefectRateShort, t.recorder, t.rejectNoteLabel];
   const body = rows.map((r,i)=>{
     const d = rejectDerivedLive(r);
