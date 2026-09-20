@@ -1312,16 +1312,11 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
       <div class="machine-pick-row" id="r-height-picker"></div>
     </div>
 
-    <div class="grid" style="margin-top:14px;">
-      <div class="field">
-        <label data-i18n="rejectRejectQty">จำนวนที่ถูก Reject (กล่อง)</label>
-        <input type="number" id="r-reject" min="0" value="0">
-      </div>
-    </div>
-    <div class="mini-dash-note" data-i18n="rejectLiveNote">Input และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน)</div>
+    <div class="mini-dash-note" data-i18n="rejectLiveNote">Input, Reject และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน) เพื่อให้ข้อมูล Reject ของสองหน้านี้ตรงกันเสมอ</div>
 
     <div class="stat-grid" style="margin-top:10px;">
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectInputQtyLive">Input (จากหน้า Performance)</div><div class="val" id="r-live-input">0</div></div>
+      <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectRejectQtyLive">Reject (จากหน้า Performance)</div><div class="val" id="r-live-reject">0</div></div>
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectDefectQtyLive">Defect (จากหน้า Defect)</div><div class="val" id="r-live-defect">0</div></div>
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectRateLabel">Reject Rate</div><div class="val" id="r-live-rejectrate">0%</div></div>
       <div class="stat-box stat-reject"><div class="lbl" data-i18n="rejectPassQtyLabel">จำนวนที่ผ่าน (Pass Qty)</div><div class="val" id="r-live-pass">0</div></div>
@@ -2313,10 +2308,10 @@ const EDIT_SCHEMAS = {
     {key:'shift', label:'shift', type:'select', optionsFn:edShiftOpts},
     {key:'machine', label:'machine', type:'select', optionsFn:edMachineOpts},
     {key:'heightSetting', label:'rejectHeightShort', type:'select', optionsFn:()=>REJECT_HEIGHTS.map(h=>({value:String(h),label:String(h)}))},
-    // inputQty/defectQty are no longer editable here - they're always live-derived (see
-    // rejectDerivedLive/liveProdQtyFor/liveDefectQtyFor) and shown as read-only context via
-    // EDIT_DERIVED_INFO instead. Only Reject Qty is genuine manual data for this module.
-    {key:'rejectQty', label:'rejectRejectQtyShort', type:'number', min:0},
+    // inputQty/rejectQty/defectQty are no longer editable here - they're always live-derived (see
+    // rejectDerivedLive/liveProdQtyFor/liveRejectBoxFor/liveDefectQtyFor) and shown as read-only context
+    // via EDIT_DERIVED_INFO instead. No genuinely-manual numeric quantity remains on this module - only
+    // heightSetting/timeStart/timeEnd/note/recorder are still directly editable.
     {key:'timeStart', label:'rejectTimeStart', type:'time'},
     {key:'timeEnd', label:'rejectTimeEnd', type:'time'},
     {key:'note', label:'rejectNoteLabel', type:'text'},
@@ -2381,6 +2376,7 @@ const EDIT_DERIVED_INFO = {
     const dict = I18N[currentLang];
     return [
       { label: dict.rejectInputQtyShort, value: d.inputQty },
+      { label: dict.rejectRejectQtyShort, value: d.rejectQty },
       { label: dict.rejectDefectQtyShort, value: d.defectQty },
       { label: dict.rejectRateLabel, value: d.rejectRate.toFixed(2)+'%' },
       { label: dict.rejectDefectRateLabel, value: d.defectRate.toFixed(2)+'%' }
@@ -2489,11 +2485,12 @@ function applyEditedFields(lsKey, rec, edited){
     rec.pass = rec.speed>=40;
   } else if(lsKey===LS.rejectTest){
     rec.heightSetting = parseInt(rec.heightSetting)||REJECT_HEIGHTS[0];
-    rec.rejectQty = Math.max(0, parseInt(rec.rejectQty)||0);
-    // inputQty/defectQty are no longer editable (live-derived) - refresh the stored point-in-time
-    // snapshot to match the record's (possibly just-edited) date/shift/machine, same as when it was
-    // first saved, so the Google Sheets/historical snapshot never goes stale after an edit.
+    // inputQty/rejectQty/defectQty are no longer editable (all live-derived) - refresh the stored
+    // point-in-time snapshot of all three to match the record's (possibly just-edited) date/shift/machine,
+    // same as when it was first saved, so the Google Sheets/historical snapshot never goes stale after an
+    // edit, and Reject Qty always stays equal to Performance's own Reject Box figure (see liveRejectBoxFor).
     rec.inputQty = liveProdQtyFor(rec.date, rec.shift, rec.machine);
+    rec.rejectQty = liveRejectBoxFor(rec.date, rec.shift, rec.machine);
     rec.defectQty = liveDefectQtyFor(rec.date, rec.shift, rec.machine);
   } else if(lsKey===LS.perfNormal){
     rec.durationSec = Math.max(1, parseInt(rec.durationSec)||1);
@@ -2777,7 +2774,7 @@ testsFail:"จำนวนครั้งที่ไม่ผ่าน", chartS
 rejectFormTitle:"ทดสอบเครื่อง Reject Station (หาความสูงมาตรฐาน)", rejectHeightLabel:"ความสูงที่ตั้ง Reject Station (ทดสอบ)", rejectHeightShort:"ความสูง",
 rejectInputQty:"จำนวน Input ทั้งหมด (กล่อง)", rejectInputQtyShort:"Input", rejectRejectQty:"จำนวนที่ถูก Reject (กล่อง)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"จำนวน Defect ที่หลุดผ่าน (กล่อง)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
-rejectInputQtyLive:"Input (จากหน้า Performance)", rejectDefectQtyLive:"Defect (จากหน้า Defect)", rejectLiveNote:"Input และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน)",
+rejectInputQtyLive:"Input (จากหน้า Performance)", rejectRejectQtyLive:"Reject (จากหน้า Performance)", rejectDefectQtyLive:"Defect (จากหน้า Defect)", rejectLiveNote:"Input, Reject และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน) เพื่อให้ข้อมูล Reject ของสองหน้านี้ตรงกันเสมอ",
 rejectNoProdDataAlert:"ไม่พบข้อมูลจำนวนผลิต (Performance) ที่ตรงกันสำหรับข้อมูลด้านล่าง กรุณาไปบันทึกจำนวนผลิตในหน้า Performance ให้ตรงกับ วันที่/Shift/เครื่องจักรนี้ก่อน แล้วจึงกลับมาบันทึกผลทดสอบ Reject Station",
 editCurrentDataTitle:"ข้อมูลปัจจุบัน (คำนวณอัตโนมัติ)",
 rejectPassQtyLabel:"จำนวนที่ผ่าน (Pass Qty)", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"หมายเหตุ (เพิ่มเติม)",
@@ -2888,7 +2885,7 @@ testsFail:"Failed Tests", chartSpeedVsTarget:"Test Result vs Target",
 rejectFormTitle:"Reject Station Test (Find Standard Height)", rejectHeightLabel:"Reject Station Height Setting (Test)", rejectHeightShort:"Height",
 rejectInputQty:"Total Input Qty (Box)", rejectInputQtyShort:"Input", rejectRejectQty:"Rejected Qty (Box)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Defect Qty (escaped, found downstream)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
-rejectInputQtyLive:"Input (from Performance page)", rejectDefectQtyLive:"Defect (from Defect page)", rejectLiveNote:"Input and Defect below are pulled automatically from the Performance and Defect pages, matched by the Date/Shift/Machine selected above (record the produced quantity on the Performance page first).",
+rejectInputQtyLive:"Input (from Performance page)", rejectRejectQtyLive:"Reject (from Performance page)", rejectDefectQtyLive:"Defect (from Defect page)", rejectLiveNote:"Input, Reject and Defect below are pulled automatically from the Performance and Defect pages, matched by the Date/Shift/Machine selected above (record the produced quantity on the Performance page first), so the Reject data on both pages always match.",
 rejectNoProdDataAlert:"No matching Performance production data was found for the details below. Please record the produced quantity on the Performance page for this Date/Shift/Machine first, then come back to save this Reject Station test result.",
 editCurrentDataTitle:"Current Data (Auto-calculated)",
 rejectPassQtyLabel:"Pass Qty", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Note (optional)",
@@ -2999,7 +2996,7 @@ testsFail:"Số lần không đạt", chartSpeedVsTarget:"Kết quả kiểm tra
 rejectFormTitle:"Kiểm tra máy Reject Station (Tìm độ cao chuẩn)", rejectHeightLabel:"Độ cao cài đặt Reject Station (kiểm tra)", rejectHeightShort:"Độ cao",
 rejectInputQty:"Tổng số lượng Input (hộp)", rejectInputQtyShort:"Input", rejectRejectQty:"Số lượng bị Reject (hộp)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Số lượng Defect lọt qua (hộp)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
-rejectInputQtyLive:"Input (từ trang Performance)", rejectDefectQtyLive:"Defect (từ trang Defect)", rejectLiveNote:"Input và Defect bên dưới được lấy tự động từ trang Performance và trang Defect, khớp theo Ngày/Shift/Máy đã chọn ở trên (cần ghi số lượng sản xuất ở trang Performance trước).",
+rejectInputQtyLive:"Input (từ trang Performance)", rejectRejectQtyLive:"Reject (từ trang Performance)", rejectDefectQtyLive:"Defect (từ trang Defect)", rejectLiveNote:"Input, Reject và Defect bên dưới được lấy tự động từ trang Performance và trang Defect, khớp theo Ngày/Shift/Máy đã chọn ở trên (cần ghi số lượng sản xuất ở trang Performance trước), để dữ liệu Reject của hai trang luôn khớp nhau.",
 rejectNoProdDataAlert:"Không tìm thấy dữ liệu sản xuất (Performance) khớp với thông tin bên dưới. Vui lòng ghi số lượng sản xuất ở trang Performance cho đúng Ngày/Shift/Máy này trước, sau đó quay lại lưu kết quả kiểm tra Reject Station.",
 editCurrentDataTitle:"Dữ liệu hiện tại (tự động tính)",
 rejectPassQtyLabel:"Số lượng Pass", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Ghi chú (không bắt buộc)",
@@ -3954,6 +3951,13 @@ function liveBdSecFor(date,shift,machine){
 function liveProdQtyFor(date,shift,machine){
   return getArr(LS.perf).filter(p=>p.date===date && p.shift===shift && p.machine===machine).reduce((s,p)=>s+(p.total||0),0);
 }
+// Live-derived Reject Box qty for a date+shift+machine, summed from the Performance page's own `rejectBox`
+// field (its "Reject box" input) - per explicit request, the Reject Station Test module's own Reject Qty
+// must always be the SAME number as Performance's Reject Box for that date+shift+machine, so it's never
+// entered a second time by hand here either - same convention as liveProdQtyFor/liveDefectQtyFor above.
+function liveRejectBoxFor(date,shift,machine){
+  return getArr(LS.perf).filter(p=>p.date===date && p.shift===shift && p.machine===machine).reduce((s,p)=>s+(p.rejectBox||0),0);
+}
 // Live-derived Defect Qty / Breakdown time (sec) / Good Qty / Rate for a saved Performance record. Only
 // `total` (and date/shift/machine) is the record's own stored input - everything else is recomputed
 // fresh every time from the current Defect/Breakdown data, so it's never a stale/frozen snapshot.
@@ -4278,34 +4282,40 @@ function rejectDerived(r){
   const defectRate = r.inputQty>0 ? (r.defectQty/r.inputQty*100) : 0;
   return { rejectRate, passQty, defectRate };
 }
-// Live-derived Input Qty / Defect Qty for a saved Reject Station Test record - mirrors perfDerived()'s
-// pattern above: only heightSetting/rejectQty (plus date/shift/machine) are genuine manual input here.
-// Input Qty is never trusted from the record's own stored snapshot - it's always the SAME production
-// count already recorded on the Performance page for that date+shift+machine (liveProdQtyFor), and Defect
-// Qty is always pulled fresh from the Defect module the same way the Performance page already does it
-// (liveDefectQtyFor). The record still stores a point-in-time snapshot of both purely for Google
-// Sheets/historical export reference (see the r-save handler) - display always goes through this function.
+// Live-derived Input Qty / Reject Qty / Defect Qty for a saved Reject Station Test record - mirrors
+// perfDerived()'s pattern above: only heightSetting/timeStart/timeEnd/note (plus date/shift/machine) are
+// genuine manual input here. None of Input/Reject/Defect Qty are ever trusted from the record's own stored
+// snapshot - Input is always the SAME production count already recorded on the Performance page for that
+// date+shift+machine (liveProdQtyFor), Reject Qty is always the SAME Reject Box count already recorded on
+// the Performance page for that date+shift+machine (liveRejectBoxFor, per explicit request that these two
+// pages' Reject data must always match), and Defect Qty is always pulled fresh from the Defect module the
+// same way the Performance page already does it (liveDefectQtyFor). The record still stores a point-in-time
+// snapshot of all three purely for Google Sheets/historical export reference (see the r-save handler) -
+// display always goes through this function.
 function rejectDerivedLive(r){
   const inputQty = liveProdQtyFor(r.date, r.shift, r.machine);
   const defectQty = liveDefectQtyFor(r.date, r.shift, r.machine);
-  const base = rejectDerived({ inputQty, rejectQty: r.rejectQty, defectQty });
-  return Object.assign({ inputQty, defectQty }, base);
+  const rejectQty = liveRejectBoxFor(r.date, r.shift, r.machine);
+  const base = rejectDerived({ inputQty, rejectQty, defectQty });
+  return Object.assign({ inputQty, defectQty, rejectQty }, base);
 }
-// Totals over a set of Reject Station Test rows, safe against double-counting Input/Defect when several
-// rows share the same date+shift+machine - a normal, expected case here since testing multiple height
-// settings within one shift creates several rows that all point at the same underlying Performance/Defect
-// data (unlike Reject Qty, which is genuinely per-row manual data and is always summed directly). Input
-// and Defect are each counted only once per UNIQUE date|shift|machine key - the same double-counting trap
-// already documented/avoided for Performance's own Defect totals elsewhere in this file.
+// Totals over a set of Reject Station Test rows, safe against double-counting Input/Reject/Defect when
+// several rows share the same date+shift+machine - a normal, expected case here since testing multiple
+// height settings within one shift creates several rows that all point at the same underlying
+// Performance/Defect data. Since Reject Qty is now ALSO live-derived from Performance's single Reject Box
+// figure for that date+shift+machine (see rejectDerivedLive above), it is no longer genuinely per-row data -
+// summing it per row would double (or triple) count it exactly like Input/Defect would, so all three are
+// counted only once per UNIQUE date|shift|machine key - the same double-counting trap already
+// documented/avoided for Performance's own Defect totals elsewhere in this file.
 function rejectTotalsLive(rows){
-  const totalReject = rows.reduce((s,r)=>s+(r.rejectQty||0),0);
   const seen = new Set();
-  let totalInput = 0, totalDefect = 0;
+  let totalInput = 0, totalReject = 0, totalDefect = 0;
   rows.forEach(r=>{
     const key = r.date+'|'+r.shift+'|'+r.machine;
     if(seen.has(key)) return;
     seen.add(key);
     totalInput += liveProdQtyFor(r.date, r.shift, r.machine);
+    totalReject += liveRejectBoxFor(r.date, r.shift, r.machine);
     totalDefect += liveDefectQtyFor(r.date, r.shift, r.machine);
   });
   const rejectRate = totalInput>0 ? (totalReject/totalInput*100) : 0;
@@ -4318,29 +4328,30 @@ function initRejectDefaults(){
   document.getElementById('r-shift').value = shiftFromDate(now);
   document.getElementById('r-time-start').value = '';
   document.getElementById('r-time-end').value = '';
-  document.getElementById('r-reject').value = 0;
   document.getElementById('r-note').value = '';
   refreshRejectAuto();
 }
-// Input Qty / Defect Qty are no longer manual entry - they're always the live production/defect counts
-// for the currently selected date+shift+machine (see liveProdQtyFor/liveDefectQtyFor and the architecture
-// comment on rejectDerivedLive above), recomputed on every relevant field change exactly like
-// refreshPerfAuto() already does for Performance's own live Defect Qty/Good Qty/Rate.
+// Input Qty / Reject Qty / Defect Qty are no longer manual entry - they're always the live
+// production/reject-box/defect counts for the currently selected date+shift+machine (see
+// liveProdQtyFor/liveRejectBoxFor/liveDefectQtyFor and the architecture comment on rejectDerivedLive
+// above), recomputed on every relevant field change exactly like refreshPerfAuto() already does for
+// Performance's own live Defect Qty/Good Qty/Rate.
 function refreshRejectAuto(){
   const date = document.getElementById('r-date').value;
   const shift = document.getElementById('r-shift').value;
   const machine = document.getElementById('r-machine').value;
   const inputQty = liveProdQtyFor(date, shift, machine);
   const defectQty = liveDefectQtyFor(date, shift, machine);
-  const rejectQty = parseInt(document.getElementById('r-reject').value)||0;
+  const rejectQty = liveRejectBoxFor(date, shift, machine);
   const d = rejectDerived({ inputQty, rejectQty, defectQty });
   document.getElementById('r-live-input').innerHTML = qtyBoxHtml(inputQty);
+  document.getElementById('r-live-reject').innerHTML = qtyBoxHtml(rejectQty);
   document.getElementById('r-live-defect').innerHTML = qtyBoxHtml(defectQty);
   document.getElementById('r-live-rejectrate').textContent = d.rejectRate.toFixed(2)+'%';
   document.getElementById('r-live-pass').textContent = d.passQty;
   document.getElementById('r-live-defectrate').textContent = d.defectRate.toFixed(2)+'%';
 }
-['r-date','r-shift','r-machine','r-reject'].forEach(id=>{
+['r-date','r-shift','r-machine'].forEach(id=>{
   document.getElementById(id).addEventListener('input', refreshRejectAuto);
   document.getElementById(id).addEventListener('change', refreshRejectAuto);
 });
@@ -4352,6 +4363,7 @@ document.getElementById('r-save').addEventListener('click', ()=>{
   const machine = document.getElementById('r-machine').value;
   const inputQty = liveProdQtyFor(date, shift, machine);
   const defectQty = liveDefectQtyFor(date, shift, machine);
+  const rejectQty = liveRejectBoxFor(date, shift, machine);
   // Per request: verify the Reject Station Test data actually matches (i.e. exists against) the
   // Performance page's production data for this date+shift+machine before saving - if no matching
   // Performance record exists (Input would resolve to 0), block the save and alert the recorder rather
@@ -4360,10 +4372,10 @@ document.getElementById('r-save').addEventListener('click', ()=>{
     alert(I18N[currentLang].rejectNoProdDataAlert);
     return;
   }
-  // inputQty/defectQty are only stored as a point-in-time snapshot for reference (Google Sheets/history) -
-  // every actual display (table, mini-dashboard, Dashboard) recomputes them live via rejectDerivedLive()/
-  // rejectTotalsLive(), never trusting this stored snapshot - same pattern as Performance's own
-  // defectQty/bdSec/good/rate (see perfDerived's comment).
+  // inputQty/rejectQty/defectQty are only stored as a point-in-time snapshot for reference (Google
+  // Sheets/history) - every actual display (table, mini-dashboard, Dashboard) recomputes them live via
+  // rejectDerivedLive()/rejectTotalsLive(), never trusting this stored snapshot - same pattern as
+  // Performance's own defectQty/bdSec/good/rate (see perfDerived's comment).
   const rec = {
     id: uid(),
     recorder: document.getElementById('r-recorder').value || '-',
@@ -4372,7 +4384,7 @@ document.getElementById('r-save').addEventListener('click', ()=>{
     timeStart: document.getElementById('r-time-start').value || '',
     timeEnd: document.getElementById('r-time-end').value || '',
     inputQty,
-    rejectQty: parseInt(document.getElementById('r-reject').value)||0,
+    rejectQty,
     defectQty,
     note: document.getElementById('r-note').value.trim()
   };
@@ -4397,7 +4409,7 @@ function renderRejectTable(){
     const noteCell = r.note ? `<br><small style="color:var(--muted);font-weight:400;">${r.note}</small>` : '';
     return `<tr>
       <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
-      <td>${r.heightSetting}${noteCell}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${d.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
+      <td>${r.heightSetting}${noteCell}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${d.inputQty}</td><td>${d.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
       <td>${d.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
       <td><button class="small-btn" onclick="openEditModal('${LS.rejectTest}','${r.id}')">${I18N[currentLang].settingsEditBtn}</button> <button class="small-btn" onclick="deleteRow('${LS.rejectTest}','${r.id}', renderRejectTable)">${I18N[currentLang].delete}</button></td>
     </tr>`;
@@ -4973,7 +4985,7 @@ function renderDashRejectTable(){
     const d = rejectDerivedLive(r);
     return `<tr>
       <td>${totalCount-i}</td><td>${dateOnly(r.date)}</td><td>${shiftCellHTML(r.shift)}</td><td>${r.machine}</td>
-      <td>${r.heightSetting}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${d.inputQty}</td><td>${r.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
+      <td>${r.heightSetting}</td><td>${timeTH(r.timeStart)}</td><td>${timeTH(r.timeEnd)}</td><td>${d.inputQty}</td><td>${d.rejectQty}</td><td>${d.rejectRate.toFixed(2)}%</td>
       <td>${d.defectQty}</td><td>${d.defectRate.toFixed(2)}%</td><td>${r.recorder||'-'}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="13" style="text-align:center;color:var(--muted);">${I18N[currentLang].noData}</td></tr>`;
@@ -7083,7 +7095,7 @@ function exportRejectExcel(){
   const header = [t.colNo, t.date, t.shift, t.machine, t.rejectHeightShort, t.rejectTimeStart, t.rejectTimeEnd, t.rejectInputQtyShort, t.rejectRejectQtyShort, t.rejectRateShort, t.rejectDefectQtyShort, t.rejectDefectRateShort, t.recorder, t.rejectNoteLabel];
   const body = rows.map((r,i)=>{
     const d = rejectDerivedLive(r);
-    return [rows.length-i, r.date, r.shift, r.machine, r.heightSetting, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), d.inputQty, r.rejectQty, +d.rejectRate.toFixed(2), d.defectQty, +d.defectRate.toFixed(2), r.recorder||'-', r.note||''];
+    return [rows.length-i, r.date, r.shift, r.machine, r.heightSetting, timeTH(r.timeStart,''), timeTH(r.timeEnd,''), d.inputQty, d.rejectQty, +d.rejectRate.toFixed(2), d.defectQty, +d.defectRate.toFixed(2), r.recorder||'-', r.note||''];
   });
   excelDownload([header, ...body], 'RejectTest', 'RejectStationTest_Report');
 }
