@@ -2533,6 +2533,13 @@ document.getElementById('edit-modal-save').addEventListener('click', ()=>{
   const photoField = schema.find(f=>f.type==='photos');
   if(photoField) edited[photoField.key] = editModalPhotoData.slice();
   applyEditedFields(lsKey, rec, edited);
+  // Same Performance-data-must-match check as the Reject Station Test entry form's own Save button (see
+  // its handler's comment) - applyEditedFields() has already refreshed rec.inputQty live for the
+  // (possibly just-edited) date/shift/machine, so if it resolves to 0 here too, block the save.
+  if(lsKey===LS.rejectTest && rec.inputQty<=0){
+    alert(I18N[currentLang].rejectNoProdDataAlert);
+    return;
+  }
   arr[idx] = rec;
   setArr(lsKey, arr);
   gsPushWhole(lsKey).then(refreshConnectionAfterSave);
@@ -2771,6 +2778,7 @@ rejectFormTitle:"ทดสอบเครื่อง Reject Station (หาค�
 rejectInputQty:"จำนวน Input ทั้งหมด (กล่อง)", rejectInputQtyShort:"Input", rejectRejectQty:"จำนวนที่ถูก Reject (กล่อง)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"จำนวน Defect ที่หลุดผ่าน (กล่อง)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectInputQtyLive:"Input (จากหน้า Performance)", rejectDefectQtyLive:"Defect (จากหน้า Defect)", rejectLiveNote:"Input และ Defect ด้านล่างดึงข้อมูลอัตโนมัติจากหน้า Performance และหน้า Defect ตาม วันที่/Shift/เครื่องจักร ที่เลือกไว้ด้านบน (ต้องบันทึกจำนวนผลิตได้ในหน้า Performance ก่อน)",
+rejectNoProdDataAlert:"ไม่พบข้อมูลจำนวนผลิต (Performance) ที่ตรงกันสำหรับข้อมูลด้านล่าง กรุณาไปบันทึกจำนวนผลิตในหน้า Performance ให้ตรงกับ วันที่/Shift/เครื่องจักรนี้ก่อน แล้วจึงกลับมาบันทึกผลทดสอบ Reject Station",
 editCurrentDataTitle:"ข้อมูลปัจจุบัน (คำนวณอัตโนมัติ)",
 rejectPassQtyLabel:"จำนวนที่ผ่าน (Pass Qty)", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"หมายเหตุ (เพิ่มเติม)",
 statRejectTestCount:"จำนวนครั้งที่ทดสอบ", statRejectTotalInput:"Input รวม (กล่อง)", statRejectTotalReject:"Reject รวม (กล่อง)", statRejectOverallRate:"% Reject ภาพรวม", statRejectOverallDefectRate:"% Defect ภาพรวม",
@@ -2881,6 +2889,7 @@ rejectFormTitle:"Reject Station Test (Find Standard Height)", rejectHeightLabel:
 rejectInputQty:"Total Input Qty (Box)", rejectInputQtyShort:"Input", rejectRejectQty:"Rejected Qty (Box)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Defect Qty (escaped, found downstream)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectInputQtyLive:"Input (from Performance page)", rejectDefectQtyLive:"Defect (from Defect page)", rejectLiveNote:"Input and Defect below are pulled automatically from the Performance and Defect pages, matched by the Date/Shift/Machine selected above (record the produced quantity on the Performance page first).",
+rejectNoProdDataAlert:"No matching Performance production data was found for the details below. Please record the produced quantity on the Performance page for this Date/Shift/Machine first, then come back to save this Reject Station test result.",
 editCurrentDataTitle:"Current Data (Auto-calculated)",
 rejectPassQtyLabel:"Pass Qty", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Note (optional)",
 statRejectTestCount:"Tests Count", statRejectTotalInput:"Total Input (Box)", statRejectTotalReject:"Total Reject (Box)", statRejectOverallRate:"Overall % Reject", statRejectOverallDefectRate:"Overall % Defect",
@@ -2991,6 +3000,7 @@ rejectFormTitle:"Kiểm tra máy Reject Station (Tìm độ cao chuẩn)", rejec
 rejectInputQty:"Tổng số lượng Input (hộp)", rejectInputQtyShort:"Input", rejectRejectQty:"Số lượng bị Reject (hộp)", rejectRejectQtyShort:"Reject",
 rejectDefectQty:"Số lượng Defect lọt qua (hộp)", rejectDefectQtyShort:"Defect", rejectRateLabel:"Reject Rate", rejectRateShort:"Reject %",
 rejectInputQtyLive:"Input (từ trang Performance)", rejectDefectQtyLive:"Defect (từ trang Defect)", rejectLiveNote:"Input và Defect bên dưới được lấy tự động từ trang Performance và trang Defect, khớp theo Ngày/Shift/Máy đã chọn ở trên (cần ghi số lượng sản xuất ở trang Performance trước).",
+rejectNoProdDataAlert:"Không tìm thấy dữ liệu sản xuất (Performance) khớp với thông tin bên dưới. Vui lòng ghi số lượng sản xuất ở trang Performance cho đúng Ngày/Shift/Máy này trước, sau đó quay lại lưu kết quả kiểm tra Reject Station.",
 editCurrentDataTitle:"Dữ liệu hiện tại (tự động tính)",
 rejectPassQtyLabel:"Số lượng Pass", rejectDefectRateLabel:"Defect Rate", rejectDefectRateShort:"Defect %", rejectNoteLabel:"Ghi chú (không bắt buộc)",
 statRejectTestCount:"Số lần kiểm tra", statRejectTotalInput:"Tổng Input (hộp)", statRejectTotalReject:"Tổng Reject (hộp)", statRejectOverallRate:"% Reject tổng thể", statRejectOverallDefectRate:"% Defect tổng thể",
@@ -4342,6 +4352,14 @@ document.getElementById('r-save').addEventListener('click', ()=>{
   const machine = document.getElementById('r-machine').value;
   const inputQty = liveProdQtyFor(date, shift, machine);
   const defectQty = liveDefectQtyFor(date, shift, machine);
+  // Per request: verify the Reject Station Test data actually matches (i.e. exists against) the
+  // Performance page's production data for this date+shift+machine before saving - if no matching
+  // Performance record exists (Input would resolve to 0), block the save and alert the recorder rather
+  // than silently storing a Reject test with no real Input to measure against.
+  if(inputQty<=0){
+    alert(I18N[currentLang].rejectNoProdDataAlert);
+    return;
+  }
   // inputQty/defectQty are only stored as a point-in-time snapshot for reference (Google Sheets/history) -
   // every actual display (table, mini-dashboard, Dashboard) recomputes them live via rejectDerivedLive()/
   // rejectTotalsLive(), never trusting this stored snapshot - same pattern as Performance's own
