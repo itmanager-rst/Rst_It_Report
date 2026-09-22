@@ -81,7 +81,7 @@
     .status { margin-top: 14px; padding: 14px; border-radius: 12px; background: #ffffff; color: var(--muted); border: 1px solid var(--border); line-height: 1.5; font-size: 13px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
     .status.error { background: rgba(239, 68, 68, 0.1); color: #b91c1c; border-color: rgba(239, 68, 68, 0.2); }
 
-    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
     .summary .box { background: #ffffff; border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .summary .box div:last-child { font-size: 24px; font-weight: 700; margin-top: 4px; color: #1e293b; }
     .small { font-size: 12px; color: var(--muted); }
@@ -133,7 +133,7 @@
     .close-modal { position: absolute; top: 12px; right: 16px; font-size: 24px; cursor: pointer; color: var(--muted); font-weight: bold; }
     @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .summary { grid-template-columns: 1fr; } .row, .row3 { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .summary { grid-template-columns: repeat(2, 1fr); } .row, .row3 { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -196,8 +196,10 @@
              </div>
              <div class="row" style="margin-top:8px;">
                 <select id="editMode" style="padding:8px 12px; font-size:12px;">
-                   <option value="CHECK_IN">CHECK_IN</option>
-                   <option value="CHECK_OUT">CHECK_OUT</option>
+                   <option value="CHECK_IN">CHECK_IN (เข้างาน)</option>
+                   <option value="BREAK_OUT">BREAK_OUT (ออกพักเที่ยง)</option>
+                   <option value="BREAK_IN">BREAK_IN (กลับพักเที่ยง)</option>
+                   <option value="CHECK_OUT">CHECK_OUT (ออกงาน)</option>
                 </select>
                 <input id="editNote" placeholder="หมายเหตุเพิ่มเติม" style="padding:8px 12px; font-size:12px;" />
              </div>
@@ -254,8 +256,11 @@
               <label>ประเภทรายการ</label>
               <select id="mode">
                 <option value="CHECK_IN">ลงเวลาเข้างาน (CHECK IN)</option>
+                <option value="BREAK_OUT">ออกพักเที่ยง (BREAK OUT)</option>
+                <option value="BREAK_IN">กลับจากพักเที่ยง (BREAK IN)</option>
                 <option value="CHECK_OUT">ลงเวลาออกงาน (CHECK OUT)</option>
               </select>
+              <div class="small" style="margin-top:4px; color:var(--muted);">ระบบเลือกประเภทให้อัตโนมัติตามลำดับการสแกนวันนี้ (สามารถเปลี่ยนเองได้)</div>
             </div>
           </div>
 
@@ -310,15 +315,23 @@
 
         <div class="summary">
           <div class="box">
-            <div class="small" style="color: #64748b; font-weight:600;">บันทึกรวมในช่วงที่เลือก</div>
+            <div class="small" style="color: #64748b; font-weight:600;">รวมในช่วงที่เลือก</div>
             <div id="totalCount">0</div>
           </div>
           <div class="box">
-            <div class="small" style="color: #16a34a; font-weight:600;">เข้างาน (IN)</div>
+            <div class="small" style="color: #16a34a; font-weight:600;">เข้างาน</div>
             <div id="checkInCount" style="color: #16a34a !important;">0</div>
           </div>
           <div class="box">
-            <div class="small" style="color: #dc2626; font-weight:600;">ออกงาน (OUT)</div>
+            <div class="small" style="color: #b45309; font-weight:600;">ออกพักเที่ยง</div>
+            <div id="breakOutCount" style="color: #b45309 !important;">0</div>
+          </div>
+          <div class="box">
+            <div class="small" style="color: #0284c7; font-weight:600;">กลับพักเที่ยง</div>
+            <div id="breakInCount" style="color: #0284c7 !important;">0</div>
+          </div>
+          <div class="box">
+            <div class="small" style="color: #dc2626; font-weight:600;">ออกงาน</div>
             <div id="checkOutCount" style="color: #dc2626 !important;">0</div>
           </div>
         </div>
@@ -362,6 +375,28 @@
 
     // รายชื่อสาขาทั้งหมดที่ระบบรองรับ (ต้องตรงกับ BRANCH_LIST ฝั่ง Config.gs)
     const BRANCH_LIST = ['กุฉินารายณ์', 'ขุขันธ์', 'เบญจลักษณ์', 'ศรีเมืองใหม่', 'เดชอุดม', 'ตระการ', 'อำนาจเจริญ'];
+
+    // ประเภทการลงเวลาทั้งหมด (รวมระบบพักเที่ยง) + สี/ป้ายชื่อสำหรับแสดงผล
+    // ลำดับที่คาดหวังตามปกติ: CHECK_IN -> BREAK_OUT -> BREAK_IN -> CHECK_OUT -> (วันถัดไป) CHECK_IN
+    const MODE_META = {
+      CHECK_IN:  { label: 'เข้างาน',       color: '#16a34a' },
+      BREAK_OUT: { label: 'ออกพักเที่ยง',  color: '#b45309' },
+      BREAK_IN:  { label: 'กลับพักเที่ยง', color: '#0284c7' },
+      CHECK_OUT: { label: 'ออกงาน',        color: '#dc2626' }
+    };
+    function getModeMeta(mode) {
+      return MODE_META[mode] || { label: mode || '-', color: '#475569' };
+    }
+    // คำนวณโหมดถัดไปที่ควรแนะนำ จากโหมดล่าสุดที่พนักงานคนนี้สแกนไปในวันนี้
+    function getNextModeFromLastMode(lastMode) {
+      switch (lastMode) {
+        case 'CHECK_IN': return 'BREAK_OUT';
+        case 'BREAK_OUT': return 'BREAK_IN';
+        case 'BREAK_IN': return 'CHECK_OUT';
+        case 'CHECK_OUT': return 'CHECK_IN';
+        default: return 'CHECK_IN';
+      }
+    }
 
     let stream = null; let capturedImage = '';
     let loginIdStr = ''; let loginPinStr = '';
@@ -435,14 +470,26 @@
       }
     }
 
+    // ค่าเริ่มต้นแบบง่าย (ใช้ตอนยังไม่ล็อกอิน หรือดึงประวัติวันนี้ไม่สำเร็จ): ก่อน 15:00 น. = CHECK_IN, หลังจากนั้น = CHECK_OUT
     function autoSelectAttendanceMode() {
       const now = new Date();
-      const currentHour = now.getHours();
       const modeSelect = document.getElementById('mode');
-      if (currentHour >= 15) {
-        modeSelect.value = "CHECK_OUT";
-      } else {
-        modeSelect.value = "CHECK_IN";
+      modeSelect.value = (now.getHours() >= 15) ? "CHECK_OUT" : "CHECK_IN";
+    }
+
+    // เรียกหลังล็อกอินสำเร็จ และหลังบันทึกเวลาแต่ละครั้ง: ดึงประวัติของ "วันนี้" เฉพาะพนักงานคนนี้
+    // มาดูว่ารายการล่าสุดคือโหมดอะไร แล้วเลือกโหมดถัดไปที่ควรเป็นให้อัตโนมัติ (พนักงานยังแก้ไขเองได้เสมอ)
+    async function autoSelectModeForCurrentEmployee() {
+      if (!currentEmployee) { autoSelectAttendanceMode(); return; }
+      try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const result = await callWebApi('getRecentAttendance', { startDate: todayStr, endDate: todayStr, branch: '', limit: 500 });
+        const rows = (result.rows || []).filter(r => String(r.employeeId) === String(currentEmployee.employeeId));
+        const lastMode = rows.length > 0 ? rows[0].mode : null; // rows[0] คือรายการล่าสุด (เรียงใหม่สุดก่อนจาก server)
+        document.getElementById('mode').value = getNextModeFromLastMode(lastMode);
+      } catch (err) {
+        console.error('ไม่สามารถตรวจสอบประวัติวันนี้เพื่อแนะนำโหมดอัตโนมัติได้:', err);
+        autoSelectAttendanceMode();
       }
     }
 
@@ -467,7 +514,7 @@
       }
       document.getElementById('logoutBtn').style.display = 'block';
       document.getElementById('loginForm').style.display = 'none';
-      autoSelectAttendanceMode();
+      autoSelectModeForCurrentEmployee();
       initGeoLocationFetch();
     }
 
@@ -619,17 +666,21 @@
       const tbody = document.getElementById('recentBody');
       const isAdminActive = currentEmployee && currentEmployee.isAdmin;
 
-      let total = rows.length; let checkIn = 0; let checkOut = 0; let latest = '-';
+      let total = rows.length; let checkIn = 0; let breakOut = 0; let breakIn = 0; let checkOut = 0; let latest = '-';
       if (total > 0) {
         rows.forEach(row => {
           if (row.mode === 'CHECK_IN') checkIn++;
-          if (row.mode === 'CHECK_OUT') checkOut++;
+          else if (row.mode === 'BREAK_OUT') breakOut++;
+          else if (row.mode === 'BREAK_IN') breakIn++;
+          else if (row.mode === 'CHECK_OUT') checkOut++;
         });
         latest = rows[0].timestamp + ' (' + rows[0].employeeName + ')';
       }
 
       document.getElementById('totalCount').textContent = total;
       document.getElementById('checkInCount').textContent = checkIn;
+      document.getElementById('breakOutCount').textContent = breakOut;
+      document.getElementById('breakInCount').textContent = breakIn;
       document.getElementById('checkOutCount').textContent = checkOut;
       document.getElementById('latestEntry').textContent = 'บันทึกล่าสุดของช่วงที่เลือก: ' + latest;
       document.getElementById('serverTime').textContent = 'ซิงค์ระบบเมื่อ: ' + new Date().toLocaleString('th-TH');
@@ -658,10 +709,11 @@
           </td>` : '';
 
         const branchTag = row.branch ? `<span class="branch-tag">🏢 ${escapeHtml(row.branch)}</span> ` : '';
+        const modeMeta = getModeMeta(row.mode);
 
         return `<tr>
           <td><b style="color:#1e293b;">${escapeHtml(row.timestamp)}</b><br/><span class="small" style="color:#475569">${escapeHtml(row.employeeId)} - ${escapeHtml(row.employeeName)}</span><br/><span class="small">${branchTag}</span><span class="small" style="color:var(--muted);">${row.note ? '📝 ' + escapeHtml(row.note) : ''}</span></td>
-          <td style="vertical-align:middle; font-weight:700; color:${row.mode==='CHECK_IN'?'#16a34a':'#dc2626'};">${escapeHtml(row.mode)}</td>
+          <td style="vertical-align:middle; font-weight:700; color:${modeMeta.color};">${escapeHtml(modeMeta.label)}</td>
           <td style="vertical-align:middle; text-align:center;">${photoCell}</td>${adminActionCell}
         </tr>`;
       }).join('');
@@ -854,7 +906,7 @@
             });
             showStatus(result.message); document.getElementById('note').value = '';
             document.getElementById('photoPreview').style.display = 'none'; document.getElementById('video').style.display = 'block';
-            capturedImage = ''; autoSelectAttendanceMode(); loadDashboard();
+            capturedImage = ''; autoSelectModeForCurrentEmployee(); loadDashboard();
           } catch (err) { showStatus(err.message, true); }
           resolve();
         }, function() { showStatus('⚠️ กรุณาเปิดระบบระบุตำแหน่ง GPS', true); resolve(); });
