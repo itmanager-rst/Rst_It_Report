@@ -1,4 +1,8 @@
-// VN Asset Tracker & Stock - Phase 1 critical fixes
+// VN Asset Tracker & Stock - Phase 2 fixes (2026-09-23)
+// - Stock qty read by header name + robust number parsing (fixes missing/0 balance)
+// - Stock_Log column I = Balance after each transaction
+// - Admin Override logs change (new-old) + real item name
+// Phase 1 critical fixes
 // - Fix image field mismatch
 // - Add delete item/log actions
 // - Add LockService for stock mutations
@@ -50,6 +54,36 @@ function parsePositiveInt(value, fieldName) {
     throw new Error(fieldName + " ต้องเป็นจำนวนเต็มมากกว่า 0");
   }
   return n;
+}
+
+// ---- Stock balance helpers (Phase 2 fix: missing remaining stock) ----
+// Parse a stock cell to an integer. Handles numbers, "1,200", " 15 ", "15 pcs", and blank cells.
+function parseStockQty(value) {
+  if (typeof value === "number") return isFinite(value) ? Math.trunc(value) : 0;
+  const cleaned = normalizeText(value).replace(/,/g, "").replace(/[^\d.\-]/g, "");
+  const n = parseFloat(cleaned);
+  return isFinite(n) ? Math.trunc(n) : 0;
+}
+
+// Find the Inventory columns from the header row, so an extra/moved column no longer breaks the qty read.
+// Falls back to A=Code, B=Name, C=Qty.
+function getInventoryCols(headerRow) {
+  const cols = { code: 0, name: 1, qty: 2 };
+  const header = (headerRow || []).map(function (h) { return normalizeText(h).toLowerCase(); });
+  const qtyIdx = header.findIndex(function (h) {
+    if (/(code|รหัส|mã|name|ชื่อ|tên)/i.test(h)) return false;
+    return /(qty|quantity|stock|balance|available|remain|คงเหลือ|จำนวน|สต็อก|สต๊อก|tồn|số lượng)/i.test(h);
+  });
+  if (qtyIdx >= 0) cols.qty = qtyIdx;
+  return cols;
+}
+
+// Stock_Log column I (index 8) = remaining balance after the transaction
+const LOG_BALANCE_COL = 9;
+
+function ensureLogBalanceHeader(logSheet) {
+  const cell = logSheet.getRange(1, LOG_BALANCE_COL);
+  if (normalizeText(cell.getValue()) === "") cell.setValue("Balance");
 }
 
 function findUser(ss, username) {
@@ -107,14 +141,15 @@ function doGet(e) {
     if (action === "getInventory") {
       const sheet = getSheetOrThrow(ss, "Inventory");
       const data = sheet.getDataRange().getValues();
+      const cols = getInventoryCols(data[0]);
       const result = [];
 
       for (let i = 1; i < data.length; i++) {
-        if (data[i][0]) {
+        if (normalizeText(data[i][cols.code])) {
           result.push({
-            code: normalizeText(data[i][0]),
-            name: normalizeText(data[i][1]),
-            qty: parseInt(data[i][2], 10) || 0
+            code: normalizeText(data[i][cols.code]),
+            name: normalizeText(data[i][cols.name]),
+            qty: parseStockQty(data[i][cols.qty])
           });
         }
       }
@@ -136,13 +171,17 @@ function doGet(e) {
           }
 
           const imgBase64 = normalizeText(data[i][7]);
+          const rawBalance = data[i][LOG_BALANCE_COL - 1];
+          const signedQty = parseStockQty(data[i][3]);
           result.push({
             id: i + 1,
             rowNumber: i + 1,
             timestamp: normalizeText(formattedDate),
             user: normalizeText(data[i][1]),
             itemName: normalizeText(data[i][2]),
-            qty: data[i][3] !== "" ? Math.abs(parseInt(data[i][3], 10)) || 0 : 0,
+            qty: Math.abs(signedQty),
+            signedQty: signedQty,
+            balance: (rawBalance === "" || rawBalance === null || rawBalance === undefined) ? null : parseStockQty(rawBalance),
             type: normalizeText(data[i][4]),
             reason: normalizeText(data[i][5]),
             matchainLine: normalizeText(data[i][6]) || "Non",
@@ -211,6 +250,7 @@ function doPost(e) {
       const logSheet = getSheetOrThrow(ss, "Stock_Log");
       const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
+      const cols = getInventoryCols(invData[0]);
 
       const itemCode = normalizeCode(data.itemCode);
       const changeQty = parsePositiveInt(data.qty, "จำนวน");
@@ -225,17 +265,17 @@ function doPost(e) {
       let newQty = 0;
 
       for (let i = 1; i < invData.length; i++) {
-        if (normalizeCode(invData[i][0]) === itemCode) {
+        if (normalizeCode(invData[i][cols.code]) === itemCode) {
           foundRow = i + 1;
-          currentItemName = normalizeText(invData[i][1]);
-          const currentQty = parseInt(invData[i][2], 10) || 0;
+          currentItemName = normalizeText(invData[i][cols.name]);
+          const currentQty = parseStockQty(invData[i][cols.qty]);
           newQty = isOut ? currentQty - changeQty : currentQty + changeQty;
 
           if (isOut && newQty < 0) {
-            return jsonOutput({ success: false, message: "Error: สินค้าในสต็อกมีไม่พอให้เบิก!" });
+            return jsonOutput({ success: false, message: "Error: สินค้าในสต็อกมีไม่พอให้เบิก! (คงเหลือ " + currentQty + ")" });
           }
 
-          invSheet.getRange(foundRow, 3).setValue(newQty);
+          invSheet.getRange(foundRow, cols.qty + 1).setValue(newQty);
           break;
         }
       }
@@ -244,6 +284,7 @@ function doPost(e) {
         return jsonOutput({ success: false, message: "ไม่พบรหัสสินค้านี้ในคลัง" });
       }
 
+      ensureLogBalanceHeader(logSheet);
       logSheet.appendRow([
         timestamp,
         normalizeText(data.username),
@@ -252,7 +293,8 @@ function doPost(e) {
         txType,
         normalizeText(data.reason),
         normalizeText(data.matchainLine) || "Non",
-        imgBase64
+        imgBase64,
+        newQty
       ]);
 
       return jsonOutput({ success: true, newQty: newQty });
@@ -264,13 +306,18 @@ function doPost(e) {
 
       const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
+      const cols = getInventoryCols(invData[0]);
       const itemCode = normalizeCode(data.itemCode);
       const newQty = parseNonNegativeInt(data.newQty, "จำนวนสต็อกใหม่");
       let isUpdated = false;
+      let oldQty = 0;
+      let itemName = "";
 
       for (let i = 1; i < invData.length; i++) {
-        if (normalizeCode(invData[i][0]) === itemCode) {
-          invSheet.getRange(i + 1, 3).setValue(newQty);
+        if (normalizeCode(invData[i][cols.code]) === itemCode) {
+          oldQty = parseStockQty(invData[i][cols.qty]);
+          itemName = normalizeText(invData[i][cols.name]);
+          invSheet.getRange(i + 1, cols.qty + 1).setValue(newQty);
           isUpdated = true;
           break;
         }
@@ -278,7 +325,9 @@ function doPost(e) {
 
       if (isUpdated) {
         const logSheet = getSheetOrThrow(ss, "Stock_Log");
-        logSheet.appendRow([timestamp, admin.fullName + " (Admin)", "Code: " + itemCode, newQty, "Admin Override", "Database Manual Adjustment", "Non", ""]);
+        ensureLogBalanceHeader(logSheet);
+        // Qty = change (new - old), Balance = new stock
+        logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName || itemCode, newQty - oldQty, "Admin Override", "Manual Adjustment " + oldQty + " → " + newQty, "Non", "", newQty]);
         return jsonOutput({ success: true });
       }
 
@@ -291,6 +340,7 @@ function doPost(e) {
 
       const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
+      const cols = getInventoryCols(invData[0]);
       const newCode = normalizeCode(data.itemCode);
       const itemName = normalizeText(data.itemName);
       const initialQty = parseNonNegativeInt(data.initialQty, "ยอดเริ่มต้นคลัง");
@@ -300,14 +350,22 @@ function doPost(e) {
       }
 
       for (let i = 1; i < invData.length; i++) {
-        if (normalizeCode(invData[i][0]) === newCode) {
+        if (normalizeCode(invData[i][cols.code]) === newCode) {
           return jsonOutput({ success: false, message: "Error: รหัสอุปกรณ์พัสดุนี้มีอยู่ในคลังสินค้าแล้ว!" });
         }
       }
 
-      invSheet.appendRow([newCode, itemName, initialQty]);
+      // Put values in the detected columns (not always A/B/C)
+      const width = Math.max(invSheet.getLastColumn(), cols.code + 1, cols.name + 1, cols.qty + 1);
+      const newRow = new Array(width).fill("");
+      newRow[cols.code] = newCode;
+      newRow[cols.name] = itemName;
+      newRow[cols.qty] = initialQty;
+      invSheet.appendRow(newRow);
+
       const logSheet = getSheetOrThrow(ss, "Stock_Log");
-      logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName, initialQty, "New Item Added", "Initial Stock Entry", "Non", ""]);
+      ensureLogBalanceHeader(logSheet);
+      logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName, initialQty, "New Item Added", "Initial Stock Entry", "Non", "", initialQty]);
 
       return jsonOutput({ success: true });
     }
@@ -318,12 +376,13 @@ function doPost(e) {
 
       const invSheet = getSheetOrThrow(ss, "Inventory");
       const invData = invSheet.getDataRange().getValues();
+      const cols = getInventoryCols(invData[0]);
       const itemCode = normalizeCode(data.itemCode);
 
       for (let i = 1; i < invData.length; i++) {
-        if (normalizeCode(invData[i][0]) === itemCode) {
-          const itemName = normalizeText(invData[i][1]);
-          const qty = parseInt(invData[i][2], 10) || 0;
+        if (normalizeCode(invData[i][cols.code]) === itemCode) {
+          const itemName = normalizeText(invData[i][cols.name]);
+          const qty = parseStockQty(invData[i][cols.qty]);
 
           if (qty > 0) {
             return jsonOutput({ success: false, message: "ไม่สามารถลบได้ เพราะสต็อกยังมากกว่า 0" });
@@ -331,7 +390,7 @@ function doPost(e) {
 
           invSheet.deleteRow(i + 1);
           const logSheet = getSheetOrThrow(ss, "Stock_Log");
-          logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName || itemCode, 0, "Item Deleted", "Admin deleted item from inventory", "Non", ""]);
+          logSheet.appendRow([timestamp, admin.fullName + " (Admin)", itemName || itemCode, 0, "Item Deleted", "Admin deleted item from inventory", "Non", "", 0]);
           return jsonOutput({ success: true });
         }
       }

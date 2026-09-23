@@ -175,6 +175,7 @@
                                     <th id="th-log-user" class="p-3">Operator</th>
                                     <th id="th-log-item" class="p-3">Part Name</th>
                                     <th id="th-log-qty" class="p-3 text-center">Qty</th>
+                                    <th id="th-log-balance" class="p-3 text-center">Balance</th>
                                     <th id="th-log-type" class="p-3">Type</th>
                                     <th class="p-3">Line</th>
                                     <th id="th-log-reason" class="p-3">Reason / Project</th>
@@ -183,7 +184,7 @@
                                 </tr>
                             </thead>
                             <tbody id="logTable" class="divide-y text-sm">
-                                <tr><td colspan="9" class="p-4 text-center text-slate-400">Loading Logs...</td></tr>
+                                <tr><td colspan="10" class="p-4 text-center text-slate-400">Loading Logs...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -218,7 +219,8 @@
                 promptNewQty: "Enter new stock quantity for", msgInvalidLogin: "Invalid username or password",
                 msgSaveSuccess: "Transaction saved successfully", msgConfirmDelete: "Are you sure to delete log ID:",
                 msgConfirmDeleteItem: "Are you sure to delete item:",
-                msgSelectedViaDblClick: "Selected item:"
+                msgSelectedViaDblClick: "Selected item:",
+                thLogBalance: "Balance", lblStockLeft: "Left", msgOutOfStock: "Out of stock", noItems: "No items in inventory"
             },
             th: {
                 authTitle: "ระบบเฉพาะผู้มีสิทธิ์เข้าถึงเท่านั้น", authDesc: "กรุณาลงชื่อเข้าใช้งานบัญชีของคุณเพื่อดำเนินการต่อ",
@@ -238,7 +240,8 @@
                 promptNewQty: "ระบุจำนวนสต็อกใหม่สำหรับ", msgInvalidLogin: "Username หรือ Password ไม่ถูกต้อง",
                 msgSaveSuccess: "บันทึกสต็อกเรียบร้อย", msgConfirmDelete: "⚠️ ยืนยันการลบประวัติกิจกรรมรหัส:",
                 msgConfirmDeleteItem: "⚠️ ยืนยันการลบรายการสินค้า:",
-                msgSelectedViaDblClick: "เลือกสินค้าเรียบร้อย:"
+                msgSelectedViaDblClick: "เลือกสินค้าเรียบร้อย:",
+                thLogBalance: "คงเหลือ", lblStockLeft: "คงเหลือ", msgOutOfStock: "สินค้าหมด", noItems: "ไม่มีรายการสินค้าในคลัง"
             },
             vi: {
                 authTitle: "Chỉ Truy Cập Được Ủy Quyền", authDesc: "Vui lòng đăng nhập bằng tài khoản của bạn để tiếp tục",
@@ -258,7 +261,8 @@
                 promptNewQty: "Nhập số lượng kho mới cho", msgInvalidLogin: "Tên đăng nhập hoặc mật khẩu không đúng",
                 msgSaveSuccess: "Đã lưu giao dịch kho thành công", msgConfirmDelete: "⚠️ Bạn có chắc chắn muốn xóa mã log:",
                 msgConfirmDeleteItem: "⚠️ Bạn có chắc chắn muốn xóa mặt hàng:",
-                msgSelectedViaDblClick: "Đã chọn mặt hàng:"
+                msgSelectedViaDblClick: "Đã chọn mặt hàng:",
+                thLogBalance: "Tồn kho", lblStockLeft: "Tồn", msgOutOfStock: "Hết hàng", noItems: "Không có mặt hàng trong kho"
             }
         };
 
@@ -303,6 +307,7 @@
             document.getElementById('th-log-user').innerText = t.thLogUser;
             document.getElementById('th-log-item').innerText = t.thLogItem;
             document.getElementById('th-log-qty').innerText = t.thLogQty;
+            document.getElementById('th-log-balance').innerText = t.thLogBalance;
             document.getElementById('th-log-type').innerText = t.thLogType;
             document.getElementById('th-log-reason').innerText = t.thLogReason;
             document.getElementById('th-log-photo').innerText = t.thLogPhoto;
@@ -402,43 +407,73 @@
             document.getElementById('stockForm').scrollIntoView({ behavior: 'smooth' });
         }
 
+        // Inventory cache: code -> { name, qty } (used for balance display + client-side stock check)
+        let inventoryMap = {};
+        const LOW_STOCK_LEVEL = 5;
+
+        function escapeHtml(v) {
+            return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function qtyBadge(qty) {
+            if (qty <= 0) return `<span class="px-2 py-0.5 rounded bg-red-100 text-red-700">${qty}</span>`;
+            if (qty <= LOW_STOCK_LEVEL) return `<span class="px-2 py-0.5 rounded bg-amber-100 text-amber-700">${qty}</span>`;
+            return `<span class="text-slate-800">${qty}</span>`;
+        }
+
         // LOAD INVENTORY
         async function loadInventory() {
             try {
                 const res = await fetch(`${SCRIPT_URL}?action=getInventory`);
                 const result = await res.json();
-                if(result.success) {
-                    const table = document.getElementById('inventoryTable');
-                    const select = document.getElementById('item');
-                    table.innerHTML = '';
-                    select.innerHTML = `<option value="">${langDict[currentLang].selectPlaceholder}</option>`;
-                    
-                    result.data.forEach(item => {
-                        let actionTd = '';
-                        if(currentUser && currentUser.role === 'Admin') {
-                            actionTd = `<td class="p-2 text-center" onclick="event.stopPropagation();">
-                                <button onclick="editStockInline('${item.code}', ${item.qty})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded font-bold">Edit</button>
-                                <button onclick="deleteItemAction('${item.code}')" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded font-bold ml-1"><i class="fa-solid fa-trash-can"></i> Delete</button>
-                            </td>`;
-                        }
-                        
-                        const row = document.createElement('tr');
-                        row.className = "hover:bg-slate-50 clickable-row";
-                        row.title = "Double click to select / ดับเบิ้ลคลิกเพื่อเลือกเบิก";
-                        row.ondblclick = () => selectItemToForm(item.code, item.name);
-                        
-                        row.innerHTML = `
-                            <td class="p-3 font-mono">${item.code}</td>
-                            <td class="p-3">${item.name}</td>
-                            <td class="p-3 text-center font-bold">${item.qty}</td>
-                            ${actionTd}
-                        `;
-                        
-                        table.appendChild(row);
-                        select.innerHTML += `<option value="${item.code}">${item.code} - ${item.name}</option>`;
-                    });
+                if(!result.success) { showToast("Error", result.message || "Load inventory failed", "error"); return; }
+
+                const t = langDict[currentLang];
+                const table = document.getElementById('inventoryTable');
+                const select = document.getElementById('item');
+                const prevSelected = select.value;
+                const isAdmin = currentUser && currentUser.role === 'Admin';
+
+                table.innerHTML = '';
+                inventoryMap = {};
+                let optionsHtml = `<option value="">${t.selectPlaceholder}</option>`;
+
+                if (!result.data.length) {
+                    table.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">${t.noItems}</td></tr>`;
                 }
-            } catch(e) { console.error(e); }
+
+                result.data.forEach(item => {
+                    const qty = Number(item.qty) || 0;
+                    inventoryMap[item.code] = { name: item.name, qty };
+
+                    let actionTd = '';
+                    if(isAdmin) {
+                        actionTd = `<td class="p-2 text-center" onclick="event.stopPropagation();">
+                            <button onclick="editStockInline(this.dataset.code, ${qty})" data-code="${escapeHtml(item.code)}" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded font-bold">Edit</button>
+                            <button onclick="deleteItemAction(this.dataset.code)" data-code="${escapeHtml(item.code)}" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded font-bold ml-1"><i class="fa-solid fa-trash-can"></i> Delete</button>
+                        </td>`;
+                    }
+
+                    const row = document.createElement('tr');
+                    row.className = "hover:bg-slate-50 clickable-row" + (qty <= 0 ? " bg-red-50/40" : "");
+                    row.title = "Double click to select / ดับเบิ้ลคลิกเพื่อเลือกเบิก";
+                    row.ondblclick = () => selectItemToForm(item.code, item.name);
+                    row.innerHTML = `
+                        <td class="p-3 font-mono">${escapeHtml(item.code)}</td>
+                        <td class="p-3">${escapeHtml(item.name)}</td>
+                        <td class="p-3 text-center font-bold">${qtyBadge(qty)}</td>
+                        ${actionTd}
+                    `;
+                    table.appendChild(row);
+
+                    const stockLabel = qty > 0 ? `${t.lblStockLeft}: ${qty}` : t.msgOutOfStock;
+                    optionsHtml += `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} - ${escapeHtml(item.name)} (${stockLabel})</option>`;
+                });
+
+                // Build options once (faster than += in loop) and keep the user's current selection
+                select.innerHTML = optionsHtml;
+                if (prevSelected && inventoryMap[prevSelected]) select.value = prevSelected;
+            } catch(e) { console.error(e); showToast("Error", "Load inventory failed", "error"); }
         }
 
         // ADMIN QUICK EDIT STOCK
@@ -449,7 +484,8 @@
                 const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminUpdateStock", adminName: currentUser.fullName, itemCode: code, newQty: parseInt(newQty) }) });
                 const result = await res.json();
                 if(result.success) { showToast("Updated", "Stock updated", "success"); loadInventory(); loadLogs(); }
-            } catch(err) { console.error(err); }
+                else { showToast("Error", result.message || "Update failed", "error"); }
+            } catch(err) { console.error(err); showToast("Error", "Update failed", "error"); }
         }
 
         // ADMIN DELETE ITEM
@@ -473,7 +509,8 @@
                 const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
                 const result = await res.json();
                 if(result.success) { showToast("Success", "New asset registered", "success"); document.getElementById('adminNewItemForm').reset(); loadInventory(); loadLogs(); }
-            } catch(err) { console.error(err); }
+                else { showToast("Error", result.message || "Create failed", "error"); }
+            } catch(err) { console.error(err); showToast("Error", "Create failed", "error"); }
             btn.disabled = false;
         });
 
@@ -483,8 +520,9 @@
                 const res = await fetch(`${SCRIPT_URL}?action=getLogs`);
                 const result = await res.json();
                 if(result.success) {
-                    const table = document.getElementById('logTable'); table.innerHTML = '';
-                    
+                    const table = document.getElementById('logTable');
+                    let rowsHtml = '';
+
                     result.data.reverse().forEach(log => {
                         let badgeColor = "bg-slate-100 text-slate-600";
                         if(log.type.includes("Out") || log.type.includes("เบิก") || log.type.includes("Xuất")) badgeColor = "bg-red-50 text-red-600";
@@ -500,21 +538,27 @@
                             logActionTd = `<td class="p-3 text-center"><button onclick="deleteLogAction('${log.id}')" class="bg-red-600 hover:bg-red-700 text-white font-bold px-2 py-1 text-xs rounded transition shadow"><i class="fa-solid fa-trash-can"></i> Delete</button></td>`;
                         }
 
-                        const displayReason = log.reason ? log.reason : "—";
+                        const displayReason = escapeHtml(log.reason ? log.reason : "—");
+                        const isOverride = log.type === "Admin Override";
+                        const qtyText = isOverride && log.signedQty > 0 ? `+${log.signedQty}` : (isOverride ? log.signedQty : log.qty);
+                        // Old log rows (before this fix) have no balance column -> show "—"
+                        const balanceText = (log.balance === null || log.balance === undefined) ? '<span class="text-slate-300">—</span>' : qtyBadge(log.balance);
 
-                        table.innerHTML += `
+                        rowsHtml += `
                             <tr class="hover:bg-slate-50">
-                                <td class="p-3 text-slate-500 text-xs">${log.timestamp}</td>
-                                <td class="p-3 font-medium text-xs">${log.user}</td>
-                                <td class="p-3 text-xs max-w-[200px] truncate" title="${log.itemName}">${log.itemName}</td>
-                                <td class="p-3 text-center font-bold text-xs">${log.qty}</td>
-                                <td class="p-3 text-[11px]"><span class="px-2 py-0.5 rounded font-medium ${badgeColor}">${log.type}</span></td>
-                                <td class="p-3 font-semibold text-blue-600 text-xs">${log.matchainLine || 'Non'}</td>
+                                <td class="p-3 text-slate-500 text-xs">${escapeHtml(log.timestamp)}</td>
+                                <td class="p-3 font-medium text-xs">${escapeHtml(log.user)}</td>
+                                <td class="p-3 text-xs max-w-[200px] truncate" title="${escapeHtml(log.itemName)}">${escapeHtml(log.itemName)}</td>
+                                <td class="p-3 text-center font-bold text-xs">${qtyText}</td>
+                                <td class="p-3 text-center font-bold text-xs">${balanceText}</td>
+                                <td class="p-3 text-[11px]"><span class="px-2 py-0.5 rounded font-medium ${badgeColor}">${escapeHtml(log.type)}</span></td>
+                                <td class="p-3 font-semibold text-blue-600 text-xs">${escapeHtml(log.matchainLine || 'Non')}</td>
                                 <td class="p-3 text-slate-600 text-xs max-w-[180px] truncate" title="${displayReason}">${displayReason}</td>
                                 ${imageTd}
                                 ${logActionTd}
                             </tr>`;
                     });
+                    table.innerHTML = rowsHtml || `<tr><td colspan="10" class="p-4 text-center text-slate-400">—</td></tr>`;
                 }
             } catch(e) { console.error(e); }
         }
@@ -524,17 +568,32 @@
             if (!logIdValue || logIdValue === '') return;
             if (!confirm(`${langDict[currentLang].msgConfirmDelete} [${logIdValue}]?`)) return;
             try {
-                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminDeleteLog", logId: logIdValue }) });
+                // BUG FIX: adminName was not sent -> server always returned "Permission denied: Admin only"
+                const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "adminDeleteLog", adminName: currentUser.fullName, logId: logIdValue }) });
                 const result = await res.json();
                 if(result.success) { showToast("Deleted", "Log deleted successfully", "success"); loadInventory(); loadLogs(); }
+                else { showToast("Error", result.message || "Failed", "error"); }
             } catch(err) { showToast("Error", "Failed", "error"); }
         }
 
         // SUBMIT TRANSACTION FORM
         document.getElementById('stockForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            const btn = document.getElementById('btn-submit'); btn.disabled = true;
-            const payload = { 
+            const btn = document.getElementById('btn-submit');
+
+            // Client-side stock check (server still validates under LockService)
+            const selCode = document.getElementById('item').value;
+            const reqQty = parseInt(document.getElementById('qty').value, 10) || 0;
+            const txVal = document.getElementById('transactionType').value;
+            const isOutTx = txVal.includes("Out");
+            const stock = inventoryMap[selCode];
+            if (isOutTx && stock && reqQty > stock.qty) {
+                showToast("Error", `${langDict[currentLang].msgOutOfStock} — ${langDict[currentLang].lblStockLeft}: ${stock.qty}`, 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            const payload = {
                 action: "submitForm", username: currentUser.fullName, itemCode: document.getElementById('item').value, 
                 qty: document.getElementById('qty').value, type: document.getElementById('transactionType').value, 
                 reason: document.getElementById('reason').value, matchainLine: document.getElementById('matchainLine').value,
