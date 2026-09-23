@@ -4,6 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>RST CRM Mobile</title>
+<script>
+    // ข้อมูลจังหวัด/อำเภอ/ตำบล — ดึงจากไฟล์เดียวกับเวอร์ชันเดสก์ท็อป (GitHub) เพื่อให้รายชื่อตรงกันทุกตัวอักษร
+    // (raw.githubusercontent.com เสิร์ฟ .js เป็น text/plain + nosniff จึงต้อง fetch มา parse เอง ใช้ <script src> ตรงๆ ไม่ได้)
+    var THAILAND_GEO_DATA = [];
+    var THAILAND_GEO_DATA_URL = 'https://raw.githubusercontent.com/itmanager-rst/Rst_It_Report/main/CRM-TRACKER/thailand-geo.js';
+    var thailandGeoDataReady = false;
+    var thailandGeoDataLoadFailed = false;
+    var thailandGeoDataPromise = null;
+    function loadThailandGeoData_() {
+        if (thailandGeoDataPromise) return thailandGeoDataPromise;
+        thailandGeoDataPromise = fetch(THAILAND_GEO_DATA_URL, { cache: 'no-store' })
+            .then(function(res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.text(); })
+            .then(function(text) {
+                var jsonPart = text.replace(/^\s*(?:const|var|let)\s+THAILAND_GEO_DATA\s*=\s*/, '').replace(/;\s*$/, '');
+                var parsed = JSON.parse(jsonPart);
+                THAILAND_GEO_DATA.length = 0;
+                Array.prototype.push.apply(THAILAND_GEO_DATA, parsed);
+                thailandGeoDataReady = true; thailandGeoDataLoadFailed = false;
+            })
+            .catch(function(err) {
+                console.error('โหลดข้อมูลจังหวัด/อำเภอ/ตำบลไม่สำเร็จ:', err);
+                thailandGeoDataReady = false; thailandGeoDataLoadFailed = true;
+                thailandGeoDataPromise = null; // ให้ลองใหม่ได้รอบหน้า
+            });
+        return thailandGeoDataPromise;
+    }
+    loadThailandGeoData_(); // เริ่มโหลดทันที ระหว่างที่ผู้ใช้กำลังล็อกอิน
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -149,6 +177,90 @@
     #phone-check-msg { display: block; font-size: 11.5px; margin-top: 4px; }
     .duplicate-warn { background: #fef2f2; border: 1px solid #fecaca; border-radius: 9px; padding: 10px; font-size: 12.5px; color: #991b1b; margin-top: 6px; }
     .field-locked { background: #f8fafc !important; color: #94a3b8 !important; }
+    /* ===== ปุ่มเปิดส่วนข้อมูล (ที่อยู่ / รายได้-หนี้สิน) ===== */
+    .section-open-btn {
+        width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; margin: 14px 0 6px;
+        background: #f8fafc; border: 1px solid var(--border-color); border-radius: 11px; padding: 12px 14px; min-height: 52px;
+        font-size: 14px; font-weight: 600; color: #0f172a;
+    }
+    .section-open-btn .sob-ic { font-size: 20px; }
+    .section-open-btn .sob-txt { flex: 1; display: flex; flex-direction: column; }
+    .section-open-btn .sob-sub { font-size: 11.5px; font-weight: 400; color: #64748b; margin-top: 2px; }
+    .section-open-btn .sob-sub.filled { color: #15803d; }
+    .section-open-btn .sob-arrow { color: #94a3b8; font-size: 18px; }
+    .section-open-btn:disabled { opacity: .55; }
+    .form-section-title { font-weight: 600; font-size: 13.5px; color: #0f172a; margin: 18px 0 2px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+    .geo-loading { font-size: 11.5px; color: #b45309; margin-top: 4px; }
+
+    /* ===== Bottom-sheet รายได้ / ทรัพย์สิน / หนี้สิน (ฟิลด์เดียวกับเดสก์ท็อปทุกตัว) ===== */
+    .modal-section-title { font-weight: 600; font-size: 14px; margin: 18px 0 8px; color: #0f172a; }
+    .modal-section-title:first-of-type { margin-top: 4px; }
+    .item-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 11px; padding: 12px; margin-bottom: 10px; }
+    .item-card-title { font-size: 12.5px; font-weight: 600; color: #475569; display: flex; justify-content: space-between; align-items: center; }
+    .item-card label { margin-top: 8px; }
+    .item-remove-btn { background: #fff; border: 1px solid #fecaca; color: #ef4444; font-size: 12px; padding: 5px 10px; border-radius: 7px; }
+    .btn-add-item { width: 100%; background: #fff; border: 1.5px dashed #94a3b8; color: #475569; padding: 11px; border-radius: 10px; font-size: 13.5px; min-height: 44px; }
+    .toggle-pair { display: flex; gap: 8px; }
+    .toggle-btn { flex: 1; padding: 10px; border-radius: 9px; border: 1px solid var(--border-color); background: #fff; color: #475569; font-size: 13.5px; min-height: 44px; }
+    .toggle-btn.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .toggle-detail { display: none; }
+    .toggle-detail.show { display: block; }
+    .btn-done { width: 100%; background: #16a34a; color: #fff; border: none; padding: 13px; border-radius: 11px; font-size: 15px; font-weight: 600; margin-top: 18px; min-height: 48px; }
+    .sheet-sticky-header { position: sticky; top: -16px; background: #fff; z-index: 2; margin: -16px -16px 10px; padding: 16px 16px 10px; border-bottom: 1px solid #e2e8f0; }
+
+    /* ===== หน้าค้นหา / ติดตาม (ตัวกรองชุดเดียวกับเดสก์ท็อป) ===== */
+    .filter-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+    .filter-open-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff; border: 1px solid var(--border-color); border-radius: 9px; min-height: 40px; font-size: 13.5px; font-weight: 600; color: #334155; }
+    .filter-open-btn.has-filter { border-color: var(--primary-color); color: var(--primary-color); background: #f0f9ff; }
+    .fc-badge { background: var(--primary-color); color: #fff; border-radius: 999px; font-size: 11px; padding: 1px 7px; }
+    .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .filter-chip { font-size: 11.5px; background: #e0f2fe; color: #0369a1; border-radius: 999px; padding: 4px 10px; border: none; }
+    .result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 4px 2px 8px; }
+    .result-count { font-size: 13px; font-weight: 600; color: #0f172a; }
+    .sort-indicator { font-size: 11px; color: #94a3b8; text-align: right; }
+    .pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+    .pager .page-info { font-size: 12.5px; color: #64748b; text-align: center; flex: 1; }
+    .pager .btn { min-width: 92px; }
+    .pagesize-row { display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 12px; color: #64748b; margin-top: 10px; }
+    .pagesize-row select { width: auto; min-height: 34px; padding: 4px 8px; font-size: 13px; }
+    .chip-select { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip-opt { border: 1px solid var(--border-color); background: #fff; color: #475569; border-radius: 999px; padding: 8px 12px; font-size: 12.5px; min-height: 38px; text-align: left; }
+    .chip-opt.active { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+    .filter-actions { display: flex; gap: 8px; margin-top: 18px; position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom)); background: #fff; padding: 10px 0 calc(6px + env(safe-area-inset-bottom)); }
+    .filter-actions .btn { flex: 1; }
+    #filter-modal-overlay .row2 label { margin-top: 12px; }
+
+    /* การ์ดลูกค้า — สีสถานะเดียวกับเดสก์ท็อป */
+    .cc-badge.badge-reg { background: #e0f2fe; color: #0369a1; }
+    .cc-badge.badge-target { background: #fef3c7; color: #d97706; }
+    .cc-badge.badge-book { background: #dcfce7; color: #15803d; }
+    .cc-badge.badge-track { background: #f3e8ff; color: #6b21a8; }
+    .cc-badge.badge-contract { background: #ccfbf1; color: #0f766e; }
+    .cc-badge.badge-deliver { background: #fae8ff; color: #86198f; }
+    .customer-card.type-ลงทะเบียน { border-left-color: #0369a1; }
+    .customer-card.type-เป้าหมาย { border-left-color: #d97706; }
+    .customer-card.type-จอง { border-left-color: #15803d; }
+    .customer-card.type-ติดตาม { border-left-color: #6b21a8; }
+    .customer-card.type-ทำสัญญา { border-left-color: #0f766e; }
+    .customer-card.type-ส่งมอบ { border-left-color: #86198f; }
+    .cc-dates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+    .cc-date { background: #f8fafc; border-radius: 8px; padding: 6px 8px; }
+    .cc-date .l { font-size: 10.5px; color: #94a3b8; }
+    .cc-date .v { font-size: 12px; font-weight: 600; color: #334155; }
+    .cc-date.appt .v { color: var(--accent-color); }
+    .cc-date.overdue { background: #fef2f2; }
+    .cc-date.overdue .v { color: #dc2626; }
+    .cc-actions .btn.has-log { background: #f3e8ff; color: #6b21a8; }
+
+    /* ข้อมูลลูกค้า (หัวไทม์ไลน์) + รายละเอียดลูกค้า */
+    .timeline-cust-info { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .timeline-cust-info .sub { font-size: 11.5px; color: #64748b; margin-top: 4px; }
+    .customer-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .customer-detail-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 9px 10px; }
+    .customer-detail-card.full { grid-column: span 2; }
+    .customer-detail-label { font-size: 11px; color: #64748b; margin-bottom: 3px; }
+    .customer-detail-value { font-size: 13px; color: #1e293b; white-space: pre-line; word-break: break-word; }
+
     .sale-restrict-note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 12px; padding: 8px 10px; border-radius: 9px; margin-bottom: 12px; }
 </style>
 </head>
@@ -229,6 +341,19 @@
                     <option value="ติดตาม">ติดตาม</option>
                 </select>
 
+                <label>กลุ่มลูกค้า</label>
+                <select id="cust-customer-group" class="form-control">
+                    <option value="">-- ไม่ระบุ --</option>
+                    <option value="กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)">กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)</option>
+                    <option value="ลูกค้าชั้นดี ธกส (3A, 3A+)">ลูกค้าชั้นดี ธกส (3A, 3A+)</option>
+                    <option value="สมาชิกกลุ่มแปลงใหญ่">สมาชิกกลุ่มแปลงใหญ่</option>
+                    <option value="ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)">ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)</option>
+                    <option value="รัฐวิสาหกิจ&amp;ข้าราชการ">รัฐวิสาหกิจ&amp;ข้าราชการ</option>
+                    <option value="พนักงานเอกชน">พนักงานเอกชน</option>
+                </select>
+                <label>รายละเอียดกลุ่มลูกค้า (ถ้ามี)</label>
+                <input id="cust-customer-group-detail" class="form-control" placeholder="เช่น เกษียณแล้ว, เคยเป็นลูกค้า 3A">
+
                 <label>วันที่นัดหมายครั้งถัดไป</label>
                 <input type="date" id="cust-appdate" class="form-control">
 
@@ -240,18 +365,29 @@
                     </div>
                 </div>
 
-                <label>ที่อยู่</label>
-                <div class="row3">
-                    <input id="cust-addressno" class="form-control" placeholder="เลขที่">
-                    <input id="cust-moo" class="form-control" placeholder="หมู่ที่">
-                    <input id="cust-village" class="form-control" placeholder="หมู่บ้าน">
+                <div class="form-section-title">📍 ที่อยู่</div>
+                <div class="row2">
+                    <div><label>บ้านเลขที่</label><input id="cust-addressno" class="form-control" placeholder="เลขที่"></div>
+                    <div><label>หมู่ที่</label><input id="cust-moo" class="form-control" inputmode="numeric" placeholder="หมู่"></div>
                 </div>
-                <div class="row3" style="margin-top:8px;">
-                    <input id="cust-subdistrict" class="form-control" placeholder="ตำบล">
-                    <input id="cust-district" class="form-control" placeholder="อำเภอ">
-                    <input id="cust-province" class="form-control" placeholder="จังหวัด" value="อุบลราชธานี">
+                <label>ชื่อหมู่บ้าน</label>
+                <input id="cust-village" class="form-control" placeholder="หมู่บ้าน">
+                <label>จังหวัด</label>
+                <select id="cust-province" class="form-control" onchange="onProvinceChange()"><option value="">-- เลือกจังหวัด --</option></select>
+                <div id="geo-loading-msg" class="geo-loading" style="display:none;">⏳ กำลังโหลดรายชื่อจังหวัด/อำเภอ/ตำบล...</div>
+                <div class="row2">
+                    <div><label>อำเภอ</label><select id="cust-district" class="form-control" onchange="onDistrictChange()"><option value="">-- เลือกอำเภอ --</option></select></div>
+                    <div><label>ตำบล</label><select id="cust-subdistrict" class="form-control"><option value="">-- เลือกตำบล --</option></select></div>
                 </div>
-                <input id="cust-zipcode" class="form-control" placeholder="รหัสไปรษณีย์" style="margin-top:8px;">
+                <label>รหัสไปรษณีย์</label>
+                <input id="cust-zipcode" class="form-control" inputmode="numeric" maxlength="5" placeholder="เช่น 34000">
+
+                <button type="button" id="btn-open-financial-modal" class="section-open-btn" onclick="openFinancialModal()">
+                    <span class="sob-ic">💰</span>
+                    <span class="sob-txt">ข้อมูลรายได้ / ทรัพย์สิน / หนี้สิน<span class="sob-sub" id="financial-summary">แตะเพื่อกรอก: ทำเกษตร งานประจำ รายได้เสริม เครื่องจักร หนี้สิน</span></span>
+                    <span class="sob-arrow">›</span>
+                </button>
+
 
                 <div class="row2">
                     <div><label>LINE ID</label><input id="cust-line" class="form-control"></div>
@@ -268,13 +404,36 @@
             </div>
         </div>
 
-        <!-- ===== หน้าค้นหา / ติดตาม ===== -->
+        <!-- ===== หน้าค้นหา / ติดตาม (ตัวกรองและข้อมูลเหมือนหน้า "ประวัติ / ค้นหา" บนคอม) ===== -->
         <div class="page" id="page-search">
             <div class="search-bar">
-                <input id="search-keyword" class="form-control" placeholder="ค้นหาชื่อหรือเบอร์โทร..." onkeydown="if(event.key==='Enter')doSearch()">
-                <button class="btn btn-primary" style="width:auto; padding:11px 16px;" onclick="doSearch()">🔍</button>
+                <input id="filter-keyword" class="form-control" placeholder="ค้นหาชื่อ-สกุล..." enterkeyhint="search" onkeydown="if(event.key==='Enter')fetchSearch(1)">
+                <button class="btn btn-primary" style="width:auto; padding:11px 16px;" onclick="fetchSearch(1)">🔍</button>
             </div>
-            <div id="search-results"><div class="empty-hint">พิมพ์ชื่อหรือเบอร์โทรแล้วกดค้นหา</div></div>
+            <div class="filter-toolbar">
+                <button type="button" class="filter-open-btn" id="btn-open-filter" onclick="openFilterSheet()">⚙️ ตัวกรองขั้นสูง <span class="fc-badge" id="filter-count-badge" style="display:none;"></span></button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="clearFilters(true)">🔄 ล้างเงื่อนไข</button>
+            </div>
+            <div class="filter-chips" id="active-filter-chips"></div>
+            <div class="result-head">
+                <span class="result-count" id="result-count"></span>
+                <span class="sort-indicator" id="sort-indicator"></span>
+            </div>
+            <div id="search-results"><div class="empty-hint">⚡ กำลังโหลดข้อมูล...</div></div>
+            <div class="pager" id="pager" style="display:none;">
+                <button class="btn btn-secondary btn-sm" id="btn-prev-page" onclick="fetchSearch(currentPage - 1)">◀ ก่อนหน้า</button>
+                <span class="page-info" id="page-info">หน้า 1</span>
+                <button class="btn btn-secondary btn-sm" id="btn-next-page" onclick="fetchSearch(currentPage + 1)">ถัดไป ▶</button>
+            </div>
+            <div class="pagesize-row" id="pagesize-row" style="display:none;">
+                แสดงต่อหน้า
+                <select id="filter-pagesize" class="form-control" onchange="fetchSearch(1)">
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+                ราย
+            </div>
         </div>
     </main>
 
@@ -285,18 +444,150 @@
     </div>
 </div>
 
+<!-- ===== Bottom-sheet รายได้ / ทรัพย์สิน / หนี้สิน (โครงสร้างข้อมูลเดียวกับเดสก์ท็อป) ===== -->
+<div id="financial-modal-overlay" class="modal-overlay" onclick="if(event.target===this)closeFinancialModal()">
+    <div class="modal-box">
+        <div class="modal-header sheet-sticky-header">
+            <span>💰 รายได้ / ทรัพย์สิน / หนี้สิน</span>
+            <button type="button" onclick="closeFinancialModal()">✕</button>
+        </div>
+
+        <div class="modal-section-title">🌾 ทำเกษตร</div>
+        <div id="farm-plots-container"></div>
+        <button type="button" class="btn-add-item" onclick="addFarmPlot()">+ เพิ่มแปลง / ชนิดพืช</button>
+
+        <div class="modal-section-title">📋 งานประจำ</div>
+        <div class="toggle-pair" id="toggle-regular-job">
+            <button type="button" class="toggle-btn" data-val="yes" onclick="setFinancialToggle('regularJob','yes')">✓ มีงานประจำ</button>
+            <button type="button" class="toggle-btn" data-val="no" onclick="setFinancialToggle('regularJob','no')">ไม่มี</button>
+        </div>
+        <div class="toggle-detail" id="regular-job-fields">
+            <label>อาชีพ / สถานที่ทำงาน</label>
+            <input id="regular-job-detail" class="form-control" placeholder="เช่น พนักงานบริษัท" oninput="customerFinancial.regularJobDetail=this.value">
+            <label>รายได้ต่อเดือน (บาท)</label>
+            <input id="regular-job-income" class="form-control" inputmode="numeric" placeholder="เช่น 18,000" oninput="customerFinancial.regularJobIncome=this.value">
+        </div>
+
+        <div class="modal-section-title">💵 รายได้เสริม</div>
+        <div class="toggle-pair" id="toggle-side-income">
+            <button type="button" class="toggle-btn" data-val="yes" onclick="setFinancialToggle('sideIncome','yes')">✓ มีรายได้เสริม</button>
+            <button type="button" class="toggle-btn" data-val="no" onclick="setFinancialToggle('sideIncome','no')">ไม่มี</button>
+        </div>
+        <div class="toggle-detail" id="side-income-fields">
+            <label>รายได้เสริมจากอะไร</label>
+            <input id="side-income-detail" class="form-control" placeholder="เช่น รับจ้างไถนา" oninput="customerFinancial.sideIncomeDetail=this.value">
+            <label>รายได้เฉลี่ยต่อเดือน (บาท)</label>
+            <input id="side-income-amount" class="form-control" inputmode="numeric" placeholder="เช่น 10,000" oninput="customerFinancial.sideIncomeAmount=this.value">
+        </div>
+
+        <div class="modal-section-title">🚜 เครื่องจักรที่มีอยู่แล้ว</div>
+        <div id="machinery-container"></div>
+        <button type="button" class="btn-add-item" onclick="addMachinery()">+ เพิ่มเครื่องจักร</button>
+
+        <div class="modal-section-title">📉 หนี้สิน</div>
+        <div id="debt-container"></div>
+        <button type="button" class="btn-add-item" onclick="addDebt()">+ เพิ่มรายการหนี้สิน</button>
+
+        <button type="button" class="btn-done" onclick="closeFinancialModal()">✓ เสร็จแล้ว</button>
+    </div>
+</div>
+
+<!-- ===== Bottom-sheet ตัวกรองขั้นสูง (ช่องเดียวกับเดสก์ท็อป) ===== -->
+<div id="filter-modal-overlay" class="modal-overlay" onclick="if(event.target===this)closeFilterSheet()">
+    <div class="modal-box">
+        <div class="modal-header sheet-sticky-header">
+            <span>⚙️ ค้นหาและกรองข้อมูลขั้นสูง</span>
+            <button type="button" onclick="closeFilterSheet()">✕</button>
+        </div>
+        <label>เบอร์โทร</label>
+        <input id="filter-exact-phone" class="form-control" inputmode="tel" placeholder="เช่น 0812345678">
+
+        <label>สถานะลูกค้า (เลือกได้หลายอัน)</label>
+        <div class="chip-select" id="filter-types">
+            <button type="button" class="chip-opt" data-value="ลงทะเบียน" onclick="this.classList.toggle('active')">ลงทะเบียน</button>
+            <button type="button" class="chip-opt" data-value="เป้าหมาย" onclick="this.classList.toggle('active')">เป้าหมาย</button>
+            <button type="button" class="chip-opt" data-value="จอง" onclick="this.classList.toggle('active')">จอง</button>
+            <button type="button" class="chip-opt" data-value="ติดตาม" onclick="this.classList.toggle('active')">ติดตาม</button>
+            <button type="button" class="chip-opt" data-value="ทำสัญญา" onclick="this.classList.toggle('active')">ทำสัญญา</button>
+            <button type="button" class="chip-opt" data-value="ส่งมอบ" onclick="this.classList.toggle('active')">ส่งมอบ</button>
+        </div>
+
+        <div class="row2">
+            <div><label>วันที่บันทึก (เริ่ม)</label><input type="date" id="filter-start-date" class="form-control"></div>
+            <div><label>วันที่บันทึก (ถึง)</label><input type="date" id="filter-end-date" class="form-control"></div>
+        </div>
+        <label style="color: var(--accent-color); font-weight: 600;">วันที่นัดหมาย</label>
+        <input type="date" id="filter-appdate" class="form-control">
+        <div class="row2">
+            <div><label>ติดตามล่าสุด (เริ่ม)</label><input type="date" id="filter-followup-start-date" class="form-control"></div>
+            <div><label>ติดตามล่าสุด (ถึง)</label><input type="date" id="filter-followup-end-date" class="form-control"></div>
+        </div>
+
+        <div class="row2">
+            <div><label>ประเภทสินค้า</label><select id="filter-product-category" class="form-control" onchange="onFilterProductCategoryChange()"></select></div>
+            <div><label>รุ่นรถ / อุปกรณ์</label>
+                <select id="filter-product-model" class="form-control"><option value="ALL">-- ทุกรุ่น --</option></select>
+                <input id="filter-product-model-text" class="form-control" style="display:none;" placeholder="เว้นว่าง = ทุกอุปกรณ์">
+            </div>
+        </div>
+
+        <label>กลุ่มลูกค้า (เลือกได้หลายอัน)</label>
+        <div class="chip-select" id="filter-customer-groups">
+            <button type="button" class="chip-opt" data-value="กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)" onclick="this.classList.toggle('active')">กลุ่มผู้นำชุมชน</button>
+            <button type="button" class="chip-opt" data-value="ลูกค้าชั้นดี ธกส (3A, 3A+)" onclick="this.classList.toggle('active')">ลูกค้าชั้นดี ธกส (3A, 3A+)</button>
+            <button type="button" class="chip-opt" data-value="สมาชิกกลุ่มแปลงใหญ่" onclick="this.classList.toggle('active')">สมาชิกกลุ่มแปลงใหญ่</button>
+            <button type="button" class="chip-opt" data-value="ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)" onclick="this.classList.toggle('active')">ลูกค้าต่างค่าย</button>
+            <button type="button" class="chip-opt" data-value="รัฐวิสาหกิจ&amp;ข้าราชการ" onclick="this.classList.toggle('active')">รัฐวิสาหกิจ&amp;ข้าราชการ</button>
+            <button type="button" class="chip-opt" data-value="พนักงานเอกชน" onclick="this.classList.toggle('active')">พนักงานเอกชน</button>
+        </div>
+
+        <div class="form-section-title">📍 ที่อยู่</div>
+        <label>จังหวัด</label>
+        <select id="filter-province" class="form-control" onchange="onFilterProvinceChange()"><option value="">-- ทุกจังหวัด --</option></select>
+        <div class="row2">
+            <div><label>อำเภอ</label><select id="filter-district" class="form-control" onchange="onFilterDistrictChange()"><option value="">-- ทุกอำเภอ --</option></select></div>
+            <div><label>ตำบล</label><select id="filter-subdistrict" class="form-control"><option value="">-- ทุกตำบล --</option></select></div>
+        </div>
+
+        <label>หมายเหตุ</label>
+        <input id="filter-note" class="form-control" placeholder="ค้นความเห็น/หมายเหตุ...">
+
+        <div class="filter-actions">
+            <button type="button" class="btn btn-secondary" onclick="clearFilters(false)">🔄 ล้าง</button>
+            <button type="button" class="btn btn-primary" onclick="closeFilterSheet(); fetchSearch(1);">🚀 ค้นหาข้อมูล</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== Bottom-sheet รายละเอียดลูกค้า ===== -->
+<div id="detail-modal-overlay" class="modal-overlay" onclick="if(event.target===this)closeCustomerDetail()">
+    <div class="modal-box">
+        <div class="modal-header sheet-sticky-header">
+            <span>👤 รายละเอียดลูกค้า</span>
+            <button type="button" onclick="closeCustomerDetail()">✕</button>
+        </div>
+        <div class="customer-detail-grid" id="customer-detail-body"></div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+            <button class="btn btn-primary" style="flex:1;" id="detail-btn-history">🕓 ติดตาม</button>
+            <button class="btn btn-secondary" style="flex:1;" id="detail-btn-edit">✏️ แก้ไข</button>
+        </div>
+    </div>
+</div>
+
 <!-- ===== Modal ไทม์ไลน์การติดตาม ===== -->
 <div id="history-modal-overlay" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header">
-            <span id="history-modal-name">ประวัติการติดตาม</span>
+        <div class="modal-header sheet-sticky-header">
+            <span>🕓 ประวัติการติดตามลูกค้า</span>
             <button onclick="closeHistoryModal()">✕</button>
         </div>
+        <div class="timeline-cust-info" id="history-customer-info"></div>
+        <div class="card-title" style="font-size:13.5px;">📜 ไทม์ไลน์การติดตาม (ล่าสุดขึ้นก่อน)</div>
         <div id="history-timeline-list" style="margin-bottom:14px;"></div>
         <div class="card-title" style="font-size:13.5px;">➕ บันทึกการติดตามรอบใหม่</div>
-        <label>วันที่ติดต่อ</label>
+        <label>วันที่ติดต่อ/พูดคุย</label>
         <input type="date" id="history-new-date" class="form-control">
-        <label>วันนัดครั้งถัดไป</label>
+        <label>วันติดตามครั้งต่อไป</label>
         <input type="date" id="history-next-followup-date" class="form-control">
         <label>ประเภทการติดตาม</label>
         <input type="hidden" id="history-followup-type" value="">
@@ -337,6 +628,8 @@
     let duplicatePhoneMatch = null;
     let editOriginalPhone = '';
     let searchResultsData = [];
+    let searchLoadedOnce = false;
+    let currentPage = 1, totalRecords = 0;
 
     function escapeHtml(str) {
         const div = document.createElement('div');
@@ -370,6 +663,9 @@
                 document.getElementById('home-date-display').innerText = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
                 document.getElementById('sale-restrict-notice').style.display = (currentRole === 'sale') ? '' : 'none';
                 populateProductCategorySelect();
+                initGeoSelects_();
+                populateFilterSelects_();
+                resetFinancialData();
                 document.getElementById('cust-date').value = todayStr();
                 activateWatermark_();
                 return;
@@ -401,6 +697,8 @@
         document.getElementById('nav-add').classList.toggle('active', name === 'add');
         document.getElementById('nav-search').classList.toggle('active', name === 'search');
         window.scrollTo({ top: 0 });
+        // เปิดหน้าค้นหาครั้งแรก → โหลดรายชื่อล่าสุดให้เลยเหมือนบนคอม ไม่ต้องพิมพ์ก่อน
+        if (name === 'search' && !searchLoadedOnce) { searchLoadedOnce = true; fetchSearch(1); }
     }
 
     // ===== สินค้า (เหมือนเวอร์ชันเดสก์ท็อป) =====
@@ -439,6 +737,173 @@
         return document.getElementById('cust-product-model').value;
     }
 
+    // ===== จังหวัด / อำเภอ / ตำบล (logic เดียวกับเดสก์ท็อป) =====
+    const DEFAULT_PROVINCE = 'อุบลราชธานี';
+    const PRIORITY_PROVINCES = ['อุบลราชธานี', 'ศรีสะเกษ', 'กาฬสินธุ์', 'อำนาจเจริญ', 'ยโสธร', 'ร้อยเอ็ด', 'สุรินทร์', 'มุกดาหาร', 'นครพนม', 'มหาสารคาม', 'สกลนคร'];
+    function getProvinceObj(name) { return THAILAND_GEO_DATA.find(p => p.n === name); }
+    function getAmphoeObj(provName, distName) {
+        const prov = getProvinceObj(provName);
+        return prov ? (prov.a || []).find(a => a.n === distName) : null;
+    }
+    function populateProvinceSelect() {
+        const sel = document.getElementById('cust-province');
+        const allNames = THAILAND_GEO_DATA.map(p => p.n);
+        const priority = PRIORITY_PROVINCES.filter(n => allNames.includes(n));
+        const rest = allNames.filter(n => !PRIORITY_PROVINCES.includes(n)).sort((a, b) => a.localeCompare(b, 'th'));
+        sel.innerHTML = '<option value="">-- เลือกจังหวัด --</option>'
+            + (priority.length ? `<optgroup label="ใช้บ่อย">${priority.map(n => `<option value="${n}">${n}</option>`).join('')}</optgroup>` : '')
+            + (rest.length ? `<optgroup label="จังหวัดอื่นๆ">${rest.map(n => `<option value="${n}">${n}</option>`).join('')}</optgroup>` : '');
+    }
+    function populateDistrictSelect(provName, selected) {
+        const sel = document.getElementById('cust-district');
+        const prov = getProvinceObj(provName);
+        const dists = prov ? (prov.a || []).map(a => a.n).sort((a, b) => a.localeCompare(b, 'th')) : [];
+        sel.innerHTML = '<option value="">-- เลือกอำเภอ --</option>' + dists.map(n => `<option value="${n}">${n}</option>`).join('');
+        if (selected) setSelectValueWithFallback('cust-district', selected);
+    }
+    function populateSubdistrictSelect(provName, distName, selected) {
+        const sel = document.getElementById('cust-subdistrict');
+        const amphoe = getAmphoeObj(provName, distName);
+        const subs = amphoe ? (amphoe.t || []).map(t => t.n).sort((a, b) => a.localeCompare(b, 'th')) : [];
+        sel.innerHTML = '<option value="">-- เลือกตำบล --</option>' + subs.map(n => `<option value="${n}">${n}</option>`).join('');
+        if (selected) setSelectValueWithFallback('cust-subdistrict', selected);
+    }
+    function onProvinceChange() {
+        const prov = document.getElementById('cust-province').value;
+        populateDistrictSelect(prov, '');
+        populateSubdistrictSelect(prov, '', '');
+    }
+    function onDistrictChange() {
+        populateSubdistrictSelect(document.getElementById('cust-province').value, document.getElementById('cust-district').value, '');
+    }
+    // ถ้าค่าเดิมของลูกค้าไม่มีในรายการ (เช่น สะกดต่างกันเล็กน้อย) ให้เพิ่มเป็นตัวเลือกไว้ก่อน ข้อมูลจะไม่หาย
+    function setSelectValueWithFallback(selectId, value) {
+        const el = document.getElementById(selectId);
+        if (!el) return;
+        const wanted = String(value || '').trim();
+        if (!wanted) { el.value = ''; return; }
+        if (!Array.from(el.options).some(o => o.value === wanted)) el.add(new Option(wanted, wanted));
+        el.value = wanted;
+    }
+    function setGeoValues_(prov, dist, sub) {
+        populateProvinceSelect();
+        setSelectValueWithFallback('cust-province', prov);
+        populateDistrictSelect(prov, dist);
+        populateSubdistrictSelect(prov, dist, sub);
+    }
+    function initGeoSelects_() {
+        const msg = document.getElementById('geo-loading-msg');
+        setGeoValues_(DEFAULT_PROVINCE, '', '');
+        if (thailandGeoDataReady) return;
+        msg.style.display = '';
+        msg.innerText = '⏳ กำลังโหลดรายชื่อจังหวัด/อำเภอ/ตำบล...';
+        loadThailandGeoData_().then(() => {
+            if (thailandGeoDataLoadFailed) {
+                msg.innerText = '⚠️ โหลดรายชื่อจังหวัด/อำเภอ/ตำบลไม่สำเร็จ — เช็คอินเทอร์เน็ตแล้วรีเฟรชหน้า';
+                return;
+            }
+            msg.style.display = 'none';
+            // เก็บค่าที่ผู้ใช้เลือกไว้แล้ว (ถ้ามี) ก่อนเติมรายการใหม่
+            setGeoValues_(document.getElementById('cust-province').value || DEFAULT_PROVINCE,
+                document.getElementById('cust-district').value, document.getElementById('cust-subdistrict').value);
+            setFilterGeoValues_(document.getElementById('filter-province').value,
+                document.getElementById('filter-district').value, document.getElementById('filter-subdistrict').value);
+        });
+    }
+
+    // ===== รายได้ / ทรัพย์สิน / หนี้สิน (key เดียวกับเดสก์ท็อป → ข้อมูลโชว์ในคอมได้ทันที) =====
+    function emptyFinancial_() {
+        return { farmPlots: [], regularJob: null, regularJobDetail: '', regularJobIncome: '', sideIncome: null, sideIncomeDetail: '', sideIncomeAmount: '', machinery: [], debts: [] };
+    }
+    let customerFinancial = emptyFinancial_();
+    function parseFinancialInfo(raw) {
+        let fin = null;
+        if (raw && typeof raw === 'object') fin = raw;
+        else if (raw) { try { fin = JSON.parse(raw); } catch (e) { fin = null; } }
+        return Object.assign(emptyFinancial_(), fin || {});
+    }
+    function escapeAttr(v) {
+        return (v === undefined || v === null ? '' : String(v)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function resetFinancialData() { customerFinancial = emptyFinancial_(); updateFinancialSummary(); }
+    function openFinancialModal() {
+        renderFarmPlots(); renderMachinery(); renderDebts(); renderFinancialToggles();
+        document.getElementById('financial-modal-overlay').classList.add('show');
+    }
+    function closeFinancialModal() {
+        document.getElementById('financial-modal-overlay').classList.remove('show');
+        updateFinancialSummary();
+    }
+    function setFinancialToggle(key, val) { customerFinancial[key] = val; renderFinancialToggles(); }
+    function renderFinancialToggles() {
+        document.querySelectorAll('#toggle-regular-job .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.val === customerFinancial.regularJob));
+        document.querySelectorAll('#toggle-side-income .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.val === customerFinancial.sideIncome));
+        document.getElementById('regular-job-fields').classList.toggle('show', customerFinancial.regularJob === 'yes');
+        document.getElementById('side-income-fields').classList.toggle('show', customerFinancial.sideIncome === 'yes');
+        document.getElementById('regular-job-detail').value = customerFinancial.regularJobDetail || '';
+        document.getElementById('regular-job-income').value = customerFinancial.regularJobIncome || '';
+        document.getElementById('side-income-detail').value = customerFinancial.sideIncomeDetail || '';
+        document.getElementById('side-income-amount').value = customerFinancial.sideIncomeAmount || '';
+    }
+    function addFarmPlot() { customerFinancial.farmPlots.push({ type: '', rai: '', docOwner: '', annualIncome: '' }); renderFarmPlots(); }
+    function removeFarmPlot(i) { customerFinancial.farmPlots.splice(i, 1); renderFarmPlots(); }
+    function renderFarmPlots() {
+        document.getElementById('farm-plots-container').innerHTML = customerFinancial.farmPlots.map((p, i) => `
+            <div class="item-card">
+                <div class="item-card-title"><span>แปลงที่ ${i + 1}</span><button type="button" class="item-remove-btn" onclick="removeFarmPlot(${i})">✕ ลบ</button></div>
+                <label>ทำเกษตรอะไร</label>
+                <input class="form-control" value="${escapeAttr(p.type)}" placeholder="เช่น ทำนา, อ้อย, มันสำปะหลัง" oninput="customerFinancial.farmPlots[${i}].type=this.value">
+                <div class="row2">
+                    <div><label>จำนวนไร่</label><input class="form-control" inputmode="decimal" value="${escapeAttr(p.rai)}" placeholder="เช่น 7" oninput="customerFinancial.farmPlots[${i}].rai=this.value"></div>
+                    <div><label>เอกสารสิทธิ์ชื่อใคร</label><input class="form-control" value="${escapeAttr(p.docOwner)}" placeholder="เช่น ชื่อแม่" oninput="customerFinancial.farmPlots[${i}].docOwner=this.value"></div>
+                </div>
+                <label>รายได้จากเกษตรต่อปีโดยประมาณ (บาท)</label>
+                <input class="form-control" inputmode="numeric" value="${escapeAttr(p.annualIncome || '')}" placeholder="เช่น 250,000" oninput="customerFinancial.farmPlots[${i}].annualIncome=this.value">
+            </div>`).join('');
+    }
+    function addMachinery() { customerFinancial.machinery.push({ type: 'รถแทรกเตอร์', brandModel: '', qty: '', note: '' }); renderMachinery(); }
+    function removeMachinery(i) { customerFinancial.machinery.splice(i, 1); renderMachinery(); }
+    function renderMachinery() {
+        const typeOptions = ['รถแทรกเตอร์', 'รถเกี่ยว', 'รถขุด', 'อื่นๆ'];
+        document.getElementById('machinery-container').innerHTML = customerFinancial.machinery.map((m, i) => `
+            <div class="item-card">
+                <div class="item-card-title"><span>เครื่องที่ ${i + 1}</span><button type="button" class="item-remove-btn" onclick="removeMachinery(${i})">✕ ลบ</button></div>
+                <label>ประเภท</label>
+                <select class="form-control" onchange="customerFinancial.machinery[${i}].type=this.value">
+                    ${typeOptions.map(t => `<option value="${t}" ${t === m.type ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+                <div class="row2">
+                    <div><label>ยี่ห้อ/รุ่น</label><input class="form-control" value="${escapeAttr(m.brandModel)}" placeholder="เช่น Yanmar EF393" oninput="customerFinancial.machinery[${i}].brandModel=this.value"></div>
+                    <div><label>จำนวน (คัน)</label><input class="form-control" inputmode="numeric" value="${escapeAttr(m.qty)}" placeholder="1" oninput="customerFinancial.machinery[${i}].qty=this.value"></div>
+                </div>
+                <label>หมายเหตุ (ผ่อนอยู่/ปลอดภาระ/ยอดคงเหลือ)</label>
+                <input class="form-control" value="${escapeAttr(m.note)}" placeholder="เช่น เหลือยอด 136,631" oninput="customerFinancial.machinery[${i}].note=this.value">
+            </div>`).join('');
+    }
+    function addDebt() { customerFinancial.debts.push({ creditor: '', balance: '' }); renderDebts(); }
+    function removeDebt(i) { customerFinancial.debts.splice(i, 1); renderDebts(); }
+    function renderDebts() {
+        document.getElementById('debt-container').innerHTML = customerFinancial.debts.map((d, i) => `
+            <div class="item-card">
+                <div class="item-card-title"><span>หนี้สินที่ ${i + 1}</span><button type="button" class="item-remove-btn" onclick="removeDebt(${i})">✕ ลบ</button></div>
+                <div class="row2">
+                    <div><label>หนี้สิน/เจ้าหนี้</label><input class="form-control" value="${escapeAttr(d.creditor)}" placeholder="เช่น ธกส." oninput="customerFinancial.debts[${i}].creditor=this.value"></div>
+                    <div><label>ยอดคงเหลือ (บาท)</label><input class="form-control" inputmode="numeric" value="${escapeAttr(d.balance)}" placeholder="0" oninput="customerFinancial.debts[${i}].balance=this.value"></div>
+                </div>
+            </div>`).join('');
+    }
+    function updateFinancialSummary() {
+        const f = customerFinancial, parts = [];
+        if (f.farmPlots.length) parts.push(`ทำเกษตร ${f.farmPlots.length} แปลง`);
+        if (f.regularJob === 'yes') parts.push('มีงานประจำ');
+        if (f.sideIncome === 'yes') parts.push('มีรายได้เสริม');
+        if (f.machinery.length) parts.push(`เครื่องจักร ${f.machinery.length} รายการ`);
+        if (f.debts.length) parts.push(`หนี้สิน ${f.debts.length} รายการ`);
+        const el = document.getElementById('financial-summary');
+        el.textContent = parts.length ? ('✓ ' + parts.join(', ')) : 'แตะเพื่อกรอก: ทำเกษตร งานประจำ รายได้เสริม เครื่องจักร หนี้สิน';
+        el.classList.toggle('filled', parts.length > 0);
+    }
+
     // ===== เช็คเบอร์ซ้ำ =====
     function checkDuplicatePhone() {
         const phoneVal = document.getElementById('cust-phone').value.trim();
@@ -460,7 +925,7 @@
     }
 
     // ===== เพิ่ม/แก้ไขลูกค้า =====
-    const SALE_LOCKED_FIELDS = ['cust-phone', 'cust-type', 'cust-appdate', 'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-line', 'cust-facebook', 'cust-note'];
+    const SALE_LOCKED_FIELDS = ['cust-phone', 'cust-type', 'cust-customer-group', 'cust-customer-group-detail', 'btn-open-financial-modal', 'cust-appdate', 'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-line', 'cust-facebook', 'cust-note'];
     function applySaleRestriction_(restricted) {
         SALE_LOCKED_FIELDS.forEach(id => {
             const el = document.getElementById(id);
@@ -472,8 +937,10 @@
     function resetFormState() {
         document.getElementById('form-row-index').value = '';
         editOriginalPhone = '';
-        ['cust-fname','cust-lname','cust-phone','cust-line','cust-facebook','cust-note','cust-addressno','cust-moo','cust-village','cust-subdistrict','cust-district','cust-zipcode'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('cust-province').value = 'อุบลราชธานี';
+        ['cust-fname','cust-lname','cust-phone','cust-line','cust-facebook','cust-note','cust-addressno','cust-moo','cust-village','cust-zipcode','cust-customer-group-detail'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('cust-customer-group').value = '';
+        setGeoValues_(DEFAULT_PROVINCE, '', '');
+        resetFinancialData();
         document.getElementById('cust-date').value = todayStr();
         document.getElementById('cust-appdate').value = '';
         document.getElementById('cust-type').value = 'ลงทะเบียน';
@@ -496,7 +963,9 @@
         document.getElementById('cust-lname').value = row.lastName || row.lastname || nm.slice(1).join(' ') || '';
         document.getElementById('cust-phone').value = row.phone || '';
         document.getElementById('cust-appdate').value = row.booking_date || '';
-        document.getElementById('cust-type').value = row.type || 'ลงทะเบียน';
+        setSelectValueWithFallback('cust-type', row.type || 'ลงทะเบียน');
+        setSelectValueWithFallback('cust-customer-group', row.customerGroup || '');
+        document.getElementById('cust-customer-group-detail').value = row.customerGroupDetail || '';
         const parts = String(row.product || '').split(' | ');
         populateProductCategorySelect();
         if (parts[0]) { document.getElementById('cust-product-category').value = parts[0]; onCustProductCategoryChange(); }
@@ -507,10 +976,11 @@
         document.getElementById('cust-addressno').value = row.addressNo || row.addressno || '';
         document.getElementById('cust-moo').value = row.moo || '';
         document.getElementById('cust-village').value = row.village || '';
-        document.getElementById('cust-subdistrict').value = row.subdistrict || '';
-        document.getElementById('cust-district').value = row.district || '';
-        document.getElementById('cust-province').value = row.province || '';
+        setGeoValues_(row.province || DEFAULT_PROVINCE, row.district || '', row.subdistrict || '');
         document.getElementById('cust-zipcode').value = row.zipcode || '';
+        // โหลดข้อมูลรายได้/หนี้สินเดิมกลับมา — เดิมตรงนี้ส่ง '{}' ไปทับ ทำให้ข้อมูลที่กรอกจากคอมหายเมื่อแก้ไขจากมือถือ
+        customerFinancial = parseFinancialInfo(row.financialInfo || row.financial);
+        updateFinancialSummary();
         document.getElementById('cust-line').value = row.line || '';
         document.getElementById('cust-facebook').value = row.facebook || '';
         document.getElementById('cust-note').value = row.remark || '';
@@ -528,9 +998,11 @@
         if (!fname || !phone) { alert('กรุณากรอกชื่อและเบอร์โทรศัพท์'); return; }
         if (!rid && duplicatePhoneMatch && duplicatePhoneMatch.phone === phone) {
             if (!confirm(`⚠️ เบอร์นี้มีในระบบแล้ว (${duplicatePhoneMatch.name})\nกด "ตกลง" เพื่อเพิ่มซ้ำต่อไป หรือ "ยกเลิก" เพื่อไปค้นหารายเดิมแทน`)) {
+                clearFilters(false);
+                document.getElementById('filter-exact-phone').value = phone;
+                searchLoadedOnce = true;
                 switchPage('search');
-                document.getElementById('search-keyword').value = phone;
-                doSearch();
+                fetchSearch(1);
                 return;
             }
         }
@@ -545,6 +1017,8 @@
             firstname: fname, lastname: lname, name: `${fname} ${lname}`.trim(),
             phone: phone,
             type: document.getElementById('cust-type').value,
+            customerGroup: document.getElementById('cust-customer-group').value,
+            customerGroupDetail: document.getElementById('cust-customer-group-detail').value.trim(),
             productCategory: document.getElementById('cust-product-category').value,
             productModel: getProductModelValue(),
             product: [document.getElementById('cust-product-category').value, getProductModelValue()].filter(Boolean).join(' | '),
@@ -557,7 +1031,7 @@
             remark: document.getElementById('cust-note').value,
             line: document.getElementById('cust-line').value,
             facebook: document.getElementById('cust-facebook').value,
-            financialInfo: '{}'
+            financialInfo: JSON.stringify(customerFinancial)
         };
         const actionType = rid ? 'update' : 'add';
         const payloadReq = rid ? { rowIndex: rid, cust: packData, phoneHint: editOriginalPhone } : packData;
@@ -578,55 +1052,258 @@
             .finally(() => { btn.disabled = false; btn.innerHTML = originalHtml; });
     }
 
-    // ===== ค้นหา (การ์ดแทนตาราง) =====
-    function doSearch() {
-        const keyword = document.getElementById('search-keyword').value.trim();
+    // ===== ตัวกรองค้นหา (ชุดเดียวกับหน้า "ประวัติ / ค้นหา" บนคอม) =====
+    function populateFilterSelects_() {
+        const catSel = document.getElementById('filter-product-category');
+        catSel.innerHTML = '<option value="ALL">-- ทุกประเภท --</option>' + Object.keys(PRODUCT_CATALOG).map(c => `<option value="${c}">${c}</option>`).join('');
+        onFilterProductCategoryChange();
+        setFilterGeoValues_('', '', '');
+    }
+    function onFilterProductCategoryChange() {
+        const category = document.getElementById('filter-product-category').value;
+        const isFree = category === FREE_TEXT_CATEGORY;
+        const modelSel = document.getElementById('filter-product-model');
+        const modelText = document.getElementById('filter-product-model-text');
+        modelSel.style.display = isFree ? 'none' : '';
+        modelText.style.display = isFree ? '' : 'none';
+        if (isFree) { modelText.value = ''; return; }
+        const models = PRODUCT_CATALOG[category] || [];
+        modelSel.innerHTML = '<option value="ALL">-- ทุกรุ่น --</option>' + models.map(m => `<option value="${m}">${m}</option>`).join('');
+    }
+    function getFilterProductModel_() {
+        const t = document.getElementById('filter-product-model-text');
+        return t.style.display !== 'none' ? t.value.trim() : document.getElementById('filter-product-model').value;
+    }
+    function fillOptions_(selId, names, allLabel, selected) {
+        const sel = document.getElementById(selId);
+        sel.innerHTML = `<option value="">${allLabel}</option>` + names.map(n => `<option value="${n}">${n}</option>`).join('');
+        if (selected) setSelectValueWithFallback(selId, selected);
+    }
+    function setFilterGeoValues_(prov, dist, sub) {
+        const allNames = THAILAND_GEO_DATA.map(p => p.n);
+        const priority = PRIORITY_PROVINCES.filter(n => allNames.includes(n));
+        const rest = allNames.filter(n => !PRIORITY_PROVINCES.includes(n)).sort((a, b) => a.localeCompare(b, 'th'));
+        const provSel = document.getElementById('filter-province');
+        provSel.innerHTML = '<option value="">-- ทุกจังหวัด --</option>'
+            + (priority.length ? `<optgroup label="ใช้บ่อย">${priority.map(n => `<option value="${n}">${n}</option>`).join('')}</optgroup>` : '')
+            + (rest.length ? `<optgroup label="จังหวัดอื่นๆ">${rest.map(n => `<option value="${n}">${n}</option>`).join('')}</optgroup>` : '');
+        if (prov) setSelectValueWithFallback('filter-province', prov);
+        const p = getProvinceObj(prov);
+        fillOptions_('filter-district', p ? (p.a || []).map(a => a.n).sort((a, b) => a.localeCompare(b, 'th')) : [], '-- ทุกอำเภอ --', dist);
+        const a = getAmphoeObj(prov, dist);
+        fillOptions_('filter-subdistrict', a ? (a.t || []).map(t => t.n).sort((x, y) => x.localeCompare(y, 'th')) : [], '-- ทุกตำบล --', sub);
+    }
+    function onFilterProvinceChange() { setFilterGeoValues_(document.getElementById('filter-province').value, '', ''); }
+    function onFilterDistrictChange() { setFilterGeoValues_(document.getElementById('filter-province').value, document.getElementById('filter-district').value, ''); }
+    function getSelectedChips_(containerId) {
+        return Array.from(document.querySelectorAll(`#${containerId} .chip-opt.active`)).map(b => b.dataset.value);
+    }
+    function openFilterSheet() { document.getElementById('filter-modal-overlay').classList.add('show'); }
+    function closeFilterSheet() { document.getElementById('filter-modal-overlay').classList.remove('show'); }
+    function clearFilters(andSearch) {
+        ['filter-keyword','filter-exact-phone','filter-start-date','filter-end-date','filter-appdate','filter-followup-start-date','filter-followup-end-date','filter-note','filter-product-model-text']
+            .forEach(id => document.getElementById(id).value = '');
+        document.querySelectorAll('#filter-types .chip-opt, #filter-customer-groups .chip-opt').forEach(b => b.classList.remove('active'));
+        document.getElementById('filter-product-category').value = 'ALL';
+        onFilterProductCategoryChange();
+        setFilterGeoValues_('', '', '');
+        if (andSearch) fetchSearch(1); else renderActiveFilterChips_();
+    }
+    // เรียงผลลัพธ์อัตโนมัติตามตัวกรองวันที่ที่ใช้อยู่ (logic เดียวกับเดสก์ท็อป)
+    function determineSortBy() {
+        if (document.getElementById('filter-followup-start-date').value || document.getElementById('filter-followup-end-date').value) return 'last_followup_date';
+        if (document.getElementById('filter-appdate').value) return 'booking_date';
+        return 'created_date';
+    }
+    function sortByLabel(field) {
+        if (field === 'last_followup_date') return '↓ ติดตามล่าสุด ใหม่สุดก่อน';
+        if (field === 'booking_date') return '↓ วันนัดหมาย ใหม่สุดก่อน';
+        return '↓ วันที่บันทึก ใหม่สุดก่อน';
+    }
+    function collectFilters_() {
+        return {
+            keyword: document.getElementById('filter-keyword').value.trim(),
+            exactPhone: document.getElementById('filter-exact-phone').value.trim(),
+            types: getSelectedChips_('filter-types'),
+            customerGroups: getSelectedChips_('filter-customer-groups'),
+            startDate: document.getElementById('filter-start-date').value,
+            endDate: document.getElementById('filter-end-date').value,
+            appdate: document.getElementById('filter-appdate').value,
+            followupStartDate: document.getElementById('filter-followup-start-date').value,
+            followupEndDate: document.getElementById('filter-followup-end-date').value,
+            productCategory: document.getElementById('filter-product-category').value,
+            productModel: getFilterProductModel_(),
+            province: document.getElementById('filter-province').value,
+            subdistrict: document.getElementById('filter-subdistrict').value.trim(),
+            district: document.getElementById('filter-district').value.trim(),
+            note: document.getElementById('filter-note').value.trim()
+        };
+    }
+    function thDate_(d) {
+        if (!d) return '-';
+        const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return m ? `${m[3]}/${m[2]}/${(parseInt(m[1], 10) + 543) % 100}` : String(d);
+    }
+    function renderActiveFilterChips_() {
+        const f = collectFilters_(), chips = [];
+        if (f.exactPhone) chips.push('📞 ' + f.exactPhone);
+        f.types.forEach(t => chips.push(t));
+        f.customerGroups.forEach(g => chips.push(g.split(' (')[0]));
+        if (f.startDate || f.endDate) chips.push(`บันทึก ${thDate_(f.startDate)}–${thDate_(f.endDate)}`);
+        if (f.appdate) chips.push('นัด ' + thDate_(f.appdate));
+        if (f.followupStartDate || f.followupEndDate) chips.push(`ติดตาม ${thDate_(f.followupStartDate)}–${thDate_(f.followupEndDate)}`);
+        if (f.productCategory && f.productCategory !== 'ALL') chips.push(f.productCategory + (f.productModel && f.productModel !== 'ALL' ? ' ' + f.productModel : ''));
+        const area = [f.subdistrict && 'ต.' + f.subdistrict, f.district && 'อ.' + f.district, f.province && 'จ.' + f.province].filter(Boolean).join(' ');
+        if (area) chips.push('📍 ' + area);
+        if (f.note) chips.push('📝 ' + f.note);
+        document.getElementById('active-filter-chips').innerHTML = chips.map(c => `<button type="button" class="filter-chip" onclick="openFilterSheet()">${escapeHtml(c)}</button>`).join('');
+        const badge = document.getElementById('filter-count-badge');
+        badge.style.display = chips.length ? '' : 'none';
+        badge.innerText = chips.length;
+        document.getElementById('btn-open-filter').classList.toggle('has-filter', chips.length > 0);
+    }
+
+    // ===== ค้นหา (การ์ดแทนตาราง แต่ข้อมูลครบเท่าตารางบนคอม) =====
+    function fetchSearch(page) {
+        page = Math.max(1, page || 1);
+        currentPage = page;
         const box = document.getElementById('search-results');
-        if (!keyword) { box.innerHTML = '<div class="empty-hint">พิมพ์ชื่อหรือเบอร์โทรแล้วกดค้นหา</div>'; return; }
-        box.innerHTML = '<div class="empty-hint">⚡ กำลังค้นหา...</div>';
+        const pageSize = parseInt(document.getElementById('filter-pagesize').value, 10) || 20;
+        const sortBy = determineSortBy();
+        renderActiveFilterChips_();
+        document.getElementById('sort-indicator').innerText = sortByLabel(sortBy);
+        document.getElementById('result-count').innerText = '';
+        box.innerHTML = '<div class="empty-hint">⚡ กำลังดึงข้อมูล...</div>';
+        document.getElementById('pager').style.display = 'none';
         fetch(WEB_APP_URL, {
             method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'search', page: 1, pageSize: 30, sortBy: 'date_desc', filters: { keyword, exactPhone: '', types: [], startDate: '', endDate: '', appdate: '', followupStartDate: '', followupEndDate: '', productCategory: '', productModel: '', province: '', subdistrict: '', district: '', note: '' } })
+            body: JSON.stringify({ action: 'search', page, pageSize, sortBy, filters: collectFilters_() })
         })
         .then(res => res.json())
         .then(resData => {
-            if (!resData || !resData.success) { box.innerHTML = `<div class="empty-hint">❌ ${resData ? resData.message : 'เกิดข้อผิดพลาด'}</div>`; return; }
+            if (!resData || !resData.success) { box.innerHTML = `<div class="empty-hint">❌ ${escapeHtml(resData ? resData.message : 'เกิดข้อผิดพลาด')}</div>`; return; }
             searchResultsData = resData.data || [];
-            if (!searchResultsData.length) { box.innerHTML = '<div class="empty-hint">❌ ไม่พบข้อมูลที่ตรงเงื่อนไข</div>'; return; }
-            box.innerHTML = searchResultsData.map((row, idx) => {
-                const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
-                return `<div class="customer-card type-${escapeHtml(row.type || '')}">
-                    <div class="cc-top">
-                        <span class="cc-name">${escapeHtml(row.name || '-')}</span>
-                        <span class="cc-badge">${escapeHtml(row.type || '-')}</span>
-                    </div>
-                    <div class="cc-meta">📞 <a href="tel:${escapeHtml(row.phone || '')}">${escapeHtml(row.phone || '-')}</a>${row.product ? ' · ' + escapeHtml(row.product) : ''}</div>
-                    <div class="cc-meta">นัดหมาย: ${escapeHtml(row.booking_date || '-')} · ติดตามล่าสุด: ${escapeHtml(row.lastFollowupDate || '-')}${row.created_by ? ' · 👤 ' + escapeHtml(row.created_by) : ''}</div>
-                    <div class="cc-actions">
-                        <button class="btn btn-primary btn-sm" onclick="openHistoryModal(${idx})">🕓 ติดตาม${followCount ? ' (' + followCount + ')' : ''}</button>
-                        <button class="btn btn-secondary btn-sm" onclick="editCustomerFromCard(${idx})">✏️ แก้ไข</button>
-                    </div>
-                </div>`;
-            }).join('');
+            totalRecords = Number(resData.totalCount || searchResultsData.length || 0);
+            document.getElementById('result-count').innerText = `พบ ${totalRecords.toLocaleString()} ราย`;
+            renderSearchResults();
+            const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+            document.getElementById('page-info').innerText = `หน้า ${currentPage} จาก ${totalPages}`;
+            document.getElementById('btn-prev-page').disabled = currentPage <= 1;
+            document.getElementById('btn-next-page').disabled = currentPage >= totalPages;
+            document.getElementById('pager').style.display = totalPages > 1 ? '' : 'none';
+            document.getElementById('pagesize-row').style.display = totalRecords > 20 ? '' : 'none';
+            if (page > 1) window.scrollTo({ top: 0 });
         })
         .catch(() => { box.innerHTML = '<div class="empty-hint">🛑 เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว</div>'; });
     }
+    function doSearch() { fetchSearch(1); } // เผื่อโค้ดเก่าเรียกชื่อนี้
+    function typeBadgeClass_(type) {
+        return ({ 'เป้าหมาย': 'badge-target', 'จอง': 'badge-book', 'ติดตาม': 'badge-track', 'ทำสัญญา': 'badge-contract', 'ส่งมอบ': 'badge-deliver' })[type] || 'badge-reg';
+    }
+    function getRowProductParts(row) {
+        if (row.productCategory || row.productModel) return { category: row.productCategory || '', model: row.productModel || '' };
+        const parts = String(row.product || '').split(' | ');
+        return { category: parts[0] || '', model: parts.slice(1).join(' | ') || '' };
+    }
+    function renderSearchResults() {
+        const box = document.getElementById('search-results');
+        if (!searchResultsData.length) { box.innerHTML = '<div class="empty-hint">❌ ไม่พบข้อมูลรายชื่อลูกค้าที่ตรงเงื่อนไข</div>'; return; }
+        const today = todayStr();
+        box.innerHTML = searchResultsData.map((row, idx) => {
+            const followCount = Array.isArray(row.followUpLog) ? row.followUpLog.length : (row.followUpCount || 0);
+            const prod = getRowProductParts(row);
+            const prodText = [prod.category, prod.model].filter(Boolean).join(' · ');
+            const area = [row.moo ? 'ม.' + row.moo : '', row.village, row.subdistrict ? 'ต.' + row.subdistrict : '', row.district ? 'อ.' + row.district : '', row.province ? 'จ.' + row.province : ''].filter(Boolean).join(' ');
+            const appt = row.booking_date || row.appdate || '';
+            const overdue = appt && appt < today;
+            const isToday = appt && appt.slice(0, 10) === today;
+            return `<div class="customer-card type-${escapeHtml(row.type || '')}">
+                <div class="cc-top" onclick="openCustomerDetail(${idx})">
+                    <span class="cc-name">${escapeHtml(row.name || '-')}</span>
+                    <span class="cc-badge ${typeBadgeClass_(row.type)}">${escapeHtml(row.type || '-')}</span>
+                </div>
+                <div class="cc-meta">📞 <a href="tel:${escapeHtml(row.phone || '')}">${escapeHtml(row.phone || '-')}</a>${row.line ? ' · LINE ' + escapeHtml(row.line) : ''}</div>
+                ${prodText ? `<div class="cc-meta">🚜 ${escapeHtml(prodText)}</div>` : ''}
+                ${row.customerGroup ? `<div class="cc-meta">👥 ${escapeHtml(row.customerGroup)}</div>` : ''}
+                ${area ? `<div class="cc-meta">📍 ${escapeHtml(area)}</div>` : ''}
+                <div class="cc-dates">
+                    <div class="cc-date"><div class="l">วันที่บันทึก</div><div class="v">${escapeHtml(thDate_(row.date))}</div></div>
+                    <div class="cc-date appt${overdue ? ' overdue' : ''}"><div class="l">นัดหมาย${isToday ? ' (วันนี้)' : overdue ? ' (เลยนัด)' : ''}</div><div class="v">${escapeHtml(thDate_(appt))}</div></div>
+                    <div class="cc-date"><div class="l">ติดตามล่าสุด</div><div class="v">${escapeHtml(thDate_(row.lastFollowupDate))}</div></div>
+                </div>
+                ${row.remark ? `<div class="cc-meta" style="margin-top:6px;">📝 ${escapeHtml(String(row.remark).slice(0, 90))}${String(row.remark).length > 90 ? '…' : ''}</div>` : ''}
+                ${row.created_by ? `<div class="cc-meta" style="font-size:11px;">👤 บันทึกโดย ${escapeHtml(row.created_by)}</div>` : ''}
+                <div class="cc-actions">
+                    <button class="btn btn-primary btn-sm${followCount ? ' has-log' : ''}" onclick="openHistoryModal(${idx})">🕓 ติดตาม${followCount ? ' (' + followCount + ')' : ''}</button>
+                    <button class="btn btn-secondary btn-sm" onclick="openCustomerDetail(${idx})">👁️ รายละเอียด</button>
+                    <button class="btn btn-secondary btn-sm" onclick="editCustomerFromCard(${idx})">✏️ แก้ไข</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ===== รายละเอียดลูกค้า (หัวข้อเดียวกับหน้ารายละเอียดบนคอม) =====
+    function detailCard_(label, value, full) {
+        return `<div class="customer-detail-card${full ? ' full' : ''}"><div class="customer-detail-label">${label}</div><div class="customer-detail-value">${value || '-'}</div></div>`;
+    }
+    function openCustomerDetail(idx) {
+        const r = searchResultsData[idx];
+        if (!r) return;
+        const fin = parseFinancialInfo(r.financialInfo || r.financial);
+        const address = [r.addressNo || r.addressno || r.address_no || '', r.moo ? `หมู่ ${r.moo}` : '', r.village, r.subdistrict ? `ต.${r.subdistrict}` : '', r.district ? `อ.${r.district}` : '', r.province ? `จ.${r.province}` : '', r.zipcode].filter(Boolean).join(' ');
+        const farms = (fin.farmPlots || []).map((p, i) => `${i + 1}. ${p.type || 'ไม่ระบุชนิด'} ${p.rai ? p.rai + ' ไร่' : ''} | เอกสารสิทธิ์: ${p.docOwner || '-'} | รายได้/ปี: ${p.annualIncome || '-'} บาท`).join('\n');
+        const machines = (fin.machinery || []).map((m, i) => `${i + 1}. ${m.type || ''} ${m.brandModel || ''} ${m.qty ? m.qty + ' คัน' : ''} ${m.note ? '(' + m.note + ')' : ''}`).join('\n');
+        const debts = (fin.debts || []).map((d, i) => `${i + 1}. ${d.creditor || 'ไม่ระบุเจ้าหนี้'} — คงเหลือ ${d.balance || '0'} บาท`).join('\n');
+        const job = fin.regularJob === 'yes' ? `${fin.regularJobDetail || 'มีงานประจำ'} | ${fin.regularJobIncome ? fin.regularJobIncome + ' บาท/เดือน' : 'ไม่ระบุรายได้'}` : (fin.regularJob === 'no' ? 'ไม่มีงานประจำ' : '-');
+        const side = fin.sideIncome === 'yes' ? `${fin.sideIncomeDetail || 'มีรายได้เสริม'} | ${fin.sideIncomeAmount ? fin.sideIncomeAmount + ' บาท/เดือน' : 'ไม่ระบุรายได้'}` : (fin.sideIncome === 'no' ? 'ไม่มีรายได้เสริม' : '-');
+        const e = escapeHtml;
+        document.getElementById('customer-detail-body').innerHTML =
+            detailCard_('ชื่อ–นามสกุล', e(r.name || '-'), true) +
+            detailCard_('เบอร์โทร', r.phone ? `<a href="tel:${e(r.phone)}" style="color:var(--primary-color);">${e(r.phone)}</a>` : '-') +
+            detailCard_('สถานะลูกค้า', e(r.type || '-')) +
+            detailCard_('LINE / Facebook', e([r.line, r.facebook].filter(Boolean).join(' / ') || '-'), true) +
+            detailCard_('สินค้าที่สนใจ', e((() => { const pp = getRowProductParts(r); return [pp.category, pp.model].filter(Boolean).join(' | '); })() || '-'), true) +
+            detailCard_('กลุ่มลูกค้า', e([r.customerGroup, r.customerGroupDetail].filter(Boolean).join(' — ') || '-'), true) +
+            detailCard_('วันที่บันทึก', e(thDate_(r.date))) +
+            detailCard_('วันนัดหมาย', e(thDate_(r.booking_date || r.appdate))) +
+            detailCard_('ที่อยู่', e(address || '-'), true) +
+            detailCard_('🌾 การเกษตร / พื้นที่ / รายได้', e(farms || '-'), true) +
+            detailCard_('📋 งานประจำ', e(job)) + detailCard_('💵 รายได้เสริม', e(side)) +
+            detailCard_('🚜 เครื่องจักรที่มี', e(machines || '-'), true) +
+            detailCard_('📉 หนี้สิน', e(debts || '-'), true) +
+            detailCard_('📝 หมายเหตุ', e(r.remark || '-'), true);
+        document.getElementById('detail-btn-history').onclick = () => { closeCustomerDetail(); openHistoryModal(idx); };
+        document.getElementById('detail-btn-edit').onclick = () => { closeCustomerDetail(); editCustomerFromCard(idx); };
+        document.getElementById('detail-modal-overlay').classList.add('show');
+    }
+    function closeCustomerDetail() { document.getElementById('detail-modal-overlay').classList.remove('show'); }
 
     // ===== ไทม์ไลน์การติดตาม =====
     let historyModalKey = null, historyModalPhoneHint = '', historyModalRowIdx = null, historyModalEntries = [];
+    function getTomorrowDateStr() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; }
+    function renderHistoryCustomerInfo_(row) {
+        document.getElementById('history-customer-info').innerHTML =
+            `<b>${escapeHtml(row.name || '-')}</b> · 📞 <a href="tel:${escapeHtml(row.phone || '')}" style="color:var(--primary-color);">${escapeHtml(row.phone || '-')}</a> <span class="cc-badge ${typeBadgeClass_(row.type)}">${escapeHtml(row.type || '')}</span>` +
+            `<div class="sub">🕓 ติดตามล่าสุด: ${escapeHtml(thDate_(row.lastFollowupDate))} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(thDate_(row.booking_date || row.appdate))}</div>`;
+    }
+    function resetFollowupType_() {
+        document.getElementById('history-followup-type').value = '';
+        document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(b => b.classList.remove('active'));
+    }
     function openHistoryModal(idx) {
         const row = searchResultsData[idx];
-        if (!row) return;
+        if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
         historyModalRowIdx = idx;
         historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
         historyModalPhoneHint = row.phone || row.phone1 || '';
         historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
-        document.getElementById('history-modal-name').innerText = `🕓 ${row.name || '-'} · ${row.phone || ''}`;
+        renderHistoryCustomerInfo_(row);
         document.getElementById('history-new-date').value = todayStr();
-        document.getElementById('history-next-followup-date').value = '';
+        document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
         document.getElementById('history-new-note').value = '';
-        document.getElementById('history-followup-type').value = '';
-        document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(b => b.classList.remove('active'));
+        resetFollowupType_();
+        const btn = document.getElementById('btn-submit-followup');
+        btn.disabled = false; btn.innerHTML = '💾 บันทึกการติดตามนี้';
         renderHistoryTimeline();
         document.getElementById('history-modal-overlay').classList.add('show');
     }
@@ -638,12 +1315,13 @@
     }
     function renderHistoryTimeline() {
         const container = document.getElementById('history-timeline-list');
-        if (!historyModalEntries.length) { container.innerHTML = '<div class="empty-hint" style="padding:14px;">ยังไม่มีประวัติการติดตาม</div>'; return; }
+        if (!historyModalEntries.length) { container.innerHTML = '<div class="empty-hint" style="padding:14px;">ยังไม่มีบันทึกการติดตามลูกค้ารายนี้</div>'; return; }
         const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         container.innerHTML = sorted.map(e => `
             <div class="timeline-item">
-                <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type-tag">${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span class="timeline-by">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
+                <div class="timeline-date">📅 ${escapeHtml(thDate_(e.date))}${e.followupType ? `<span class="timeline-type-tag">${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span class="timeline-by">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
                 <div class="timeline-note">${escapeHtml(e.note || '')}</div>
+                ${e.nextFollowUpDate ? `<div style="font-size:11px; color:#94a3b8; margin-top:2px;">➡️ นัดครั้งต่อไป ${escapeHtml(thDate_(e.nextFollowUpDate))}</div>` : ''}
             </div>
         `).join('');
     }
@@ -663,16 +1341,23 @@
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success) {
-                    historyModalEntries.push(newEntry);
-                    if (searchResultsData[historyModalRowIdx]) {
-                        searchResultsData[historyModalRowIdx].followUpLog = historyModalEntries.slice();
-                        searchResultsData[historyModalRowIdx].lastFollowupDate = dateVal;
-                        searchResultsData[historyModalRowIdx].booking_date = resData.nextFollowUpDate || nextFollowUpVal;
+                    historyModalEntries.push(Object.assign({ by: currentUserDisplayName }, newEntry));
+                    const nextBookingDate = resData.nextFollowUpDate || nextFollowUpVal;
+                    const rowRef = searchResultsData[historyModalRowIdx];
+                    if (rowRef) {
+                        rowRef.followUpLog = historyModalEntries.slice();
+                        rowRef.followUpCount = historyModalEntries.length;
+                        rowRef.lastFollowupDate = dateVal;
+                        rowRef.booking_date = nextBookingDate;
+                        rowRef.appdate = nextBookingDate;
+                        renderHistoryCustomerInfo_(rowRef);
+                        renderSearchResults();
                     }
                     renderHistoryTimeline();
                     document.getElementById('history-new-note').value = '';
-                    document.getElementById('history-followup-type').value = '';
-                    document.querySelectorAll('#history-followup-type-grid .followup-type-btn').forEach(b => b.classList.remove('active'));
+                    document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
+                    resetFollowupType_();
+                    alert('💾 บันทึกการติดตามเรียบร้อย');
                 } else {
                     alert('❌ บันทึกการติดตามไม่สำเร็จ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
                 }
