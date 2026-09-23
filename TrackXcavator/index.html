@@ -9,6 +9,8 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <!-- 🎨 สไตล์จัดการตำแหน่งป็อปอัป Login และ Spinner -->
   <style>
@@ -506,6 +508,21 @@ body {
                     </button>
                   </div>
                 </div>
+                <div class="row g-2 mb-2 justify-content-end">
+                  <div class="col-auto">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleAllReportRows('tbDashboardTable', this)"><i class="fa-solid fa-check-double me-1"></i>เลือกทั้งหมด</button>
+                  </div>
+                  <div class="col-auto">
+                    <button class="btn btn-sm btn-outline-danger" onclick="printSelectedReport('tbDashboardTable', 'รายงานตารางสถานะเครื่องจักร')">
+                      <i class="fa-solid fa-print me-1"></i> พิมพ์ที่เลือก
+                    </button>
+                  </div>
+                  <div class="col-auto">
+                    <button class="btn btn-sm btn-danger" onclick="exportSelectedReportToPDF('tbDashboardTable', 'รายงานตารางสถานะเครื่องจักร', this)">
+                      <i class="fa-solid fa-file-pdf me-1"></i> ดาวน์โหลด PDF
+                    </button>
+                  </div>
+                </div>
 
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <h6 class="fw-bold mb-0 text-danger"><i class="fa-solid fa-list-check me-1"></i> ตารางสถานะเครื่องจักรปัจจุบัน (Service_Report)</h6>
@@ -515,6 +532,7 @@ body {
                   <table class="table table-hover align-middle" id="tbDashboardTable">
                     <thead>
                       <tr id="thDashboardRow">
+                        <th class="text-center no-print"><input type="checkbox" class="form-check-input report-select-all" aria-label="เลือกทั้งหมด" onchange="toggleReportRows('tbDashboardTable', this.checked)"></th>
                         <th class="text-center">No.</th>
                         <th>รหัสเครื่องจักร (Machine ID)</th>
                         <th>รุ่น (Model)</th>
@@ -538,7 +556,7 @@ body {
                       </tr>
                     </thead>
                     <tbody id="tbDashboard">
-                      <tr><td colspan="20" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
+                      <tr><td colspan="21" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -728,7 +746,10 @@ body {
               <div class="col-md-4 text-end">
                 <button class="btn btn-sm btn-outline-secondary me-2" type="button" onclick="toggleAllReportRows('tbHistoryTable', this)"><i class="fa-solid fa-check-double me-1"></i>เลือกทั้งหมด</button>
                 <button class="btn btn-sm btn-outline-danger me-2" onclick="printSelectedReport('tbHistoryTable', 'รายงานประวัติการทำ PM')">
-                  <i class="fa-solid fa-file-pdf me-1"></i> พิมพ์ที่เลือก
+                  <i class="fa-solid fa-print me-1"></i> พิมพ์ที่เลือก
+                </button>
+                <button class="btn btn-sm btn-danger me-2" onclick="exportSelectedReportToPDF('tbHistoryTable', 'รายงานประวัติการทำ PM', this)">
+                  <i class="fa-solid fa-file-pdf me-1"></i> ดาวน์โหลด PDF
                 </button>
                 <button class="btn btn-sm btn-excel me-2" onclick="exportToExcel('tbHistoryTable', 'PM_Log_History')">
                   <i class="fa-solid fa-file-excel me-1"></i> ส่งออก Excel
@@ -810,6 +831,22 @@ body {
               </div>
             </div>
 
+            <div class="row g-2 mb-2 justify-content-end">
+              <div class="col-auto">
+                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleAllReportRows('tbMatrixTable', this)"><i class="fa-solid fa-check-double me-1"></i>เลือกทั้งหมด</button>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-sm btn-outline-danger" onclick="printSelectedReport('tbMatrixTable', 'รายงานสถานะ PM Matrix')">
+                  <i class="fa-solid fa-print me-1"></i> พิมพ์ที่เลือก
+                </button>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-sm btn-danger" onclick="exportSelectedReportToPDF('tbMatrixTable', 'รายงานสถานะ PM Matrix', this)">
+                  <i class="fa-solid fa-file-pdf me-1"></i> ดาวน์โหลด PDF
+                </button>
+              </div>
+            </div>
+
             <div class="d-flex justify-content-between align-items-center mb-2">
               <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-diagram-project me-1 text-danger"></i> ตารางติดตามสถานะขั้นตอน PM Progress Matrix (Workflow)</h6>
             </div>
@@ -823,12 +860,14 @@ body {
               <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #6f42c1; color: #fff;"><i class="fa-solid fa-hand-holding-dollar me-1"></i>ค้างคูปอง</span>
               <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #fd7e14; color: #fff;"><i class="fa-solid fa-clock-rotate-left me-1"></i>ค้างอะไหล่</span>
               <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #198754; color: #fff;"><i class="fa-solid fa-circle-check me-1"></i>เสร็จสิ้น/ส่งครบ</span>
+              <span class="badge rounded-pill fw-normal px-2 py-1" style="background-color: #adb5bd; color: #fff;"><i class="fa-solid fa-forward me-1"></i>ข้ามรอบ (ไม่มีใบงานจริง)</span>
             </div>
 
             <div class="table-responsive" id="containerMatrixTable" style="max-height: 600px; overflow-y: auto;">
               <table class="table table-hover align-middle text-center" id="tbMatrixTable">
                 <thead>
                   <tr>
+                    <th class="no-print"><input type="checkbox" class="form-check-input report-select-all" aria-label="เลือกทั้งหมด" onchange="toggleReportRows('tbMatrixTable', this.checked)"></th>
                     <th>No.</th>
                     <th>รหัสเครื่องจักร (Machine ID)</th>
                     <th>รุ่น (Model)</th>
@@ -846,7 +885,7 @@ body {
                   </tr>
                 </thead>
                 <tbody id="tbMatrix">
-                  <tr><td colspan="14" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล Matrix...</td></tr>
+                  <tr><td colspan="15" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล Matrix...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1641,7 +1680,7 @@ function loadDashboardData(forceRefresh = false) {
 
   const tbody = document.getElementById("tbDashboard");
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="20" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="21" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
   }
 
   dashboardLoadPromise = postJson({ action: 'getDashboard' })
@@ -1662,7 +1701,7 @@ function loadDashboardData(forceRefresh = false) {
     })
     .catch(err => {
       if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="20" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="21" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${err}</td></tr>`;
       }
     })
     .finally(() => {
@@ -1678,7 +1717,7 @@ function renderDashboardTable(list) {
   tbody.innerHTML = "";
 
   if (!list || list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="20" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="21" class="text-center py-4 text-muted">ไม่พบข้อมูลเครื่องจักร</td></tr>`;
     updateActionColumnsVisibility();
     return;
   }
@@ -1785,6 +1824,7 @@ function renderDashboardTable(list) {
     `;
 
     tr.innerHTML = `
+      <td class="text-center no-print"><input type="checkbox" class="form-check-input report-row-select" aria-label="เลือก ${escapeHtml(item.machineId)}"></td>
       <td class="text-center text-muted fw-bold">${index + 1}</td>
       <td><strong>${escapeHtml(item.machineId) || '-'}</strong></td>
       <td>${escapeHtml(item.model) || '-'}</td>
@@ -1797,7 +1837,7 @@ function renderDashboardTable(list) {
       <td class="text-center ${isPmAlert ? 'text-danger fw-bold' : ''}">${nextPm} ${isPmAlert ? '<i class="fa-solid fa-bell text-danger ms-1"></i>' : ''}</td>
       <td><span class="badge ${item.status === 'Approved' ? 'badge-approved' : 'badge-pending'}">${escapeHtml(item.status) || 'Pending'}</span></td>
       <td><small class="text-muted">${escapeHtml(item.updatedBy) || '-'}</small></td>
-      <td>${escapeHtml(item.partsStore) || '-'}</td>
+      <td style="white-space: normal; word-break: break-word; min-width: 180px; max-width: 280px;">${escapeHtml(item.partsStore) || '-'}</td>
       <td><span class="badge bg-light text-dark border">${escapeHtml(item.supplierId) || '-'}</span></td>
       <td>${escapeHtml(item.partsBillNo) || '-'}</td>
       <td>${partsStatusDisplay}</td>
@@ -1805,7 +1845,7 @@ function renderDashboardTable(list) {
         ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
       </td>
       <td class="text-end">${couponDisplay}</td>
-      <td><small>${escapeHtml(item.remark) || '-'}</small></td>
+      <td style="white-space: normal; word-break: break-word; min-width: 200px; max-width: 320px;"><small>${escapeHtml(item.remark) || '-'}</small></td>
       ${actionTd}
     `;
     tbody.appendChild(tr);
@@ -2281,7 +2321,7 @@ function renderHistoryTable(list) {
       <td class="fw-bold text-center">${item.operatingHours || 0}</td>
       <td>${formattedDate}</td>
       <td class="text-end">${Number(item.serviceFee || 0).toLocaleString('th-TH')}</td>
-      <td>${escapeHtml(item.partsStore) || '-'}</td>
+      <td style="white-space: normal; word-break: break-word; min-width: 180px; max-width: 280px;">${escapeHtml(item.partsStore) || '-'}</td>
       <td><span class="badge bg-light text-dark border">${escapeHtml(item.supplierId) || '-'}</span></td>
       <td>${escapeHtml(item.partsBillNo) || '-'}</td>
       <td>${partsStatusDisplay}</td>
@@ -2289,7 +2329,7 @@ function renderHistoryTable(list) {
         ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
       </td>
       <td class="text-end">${couponDisplay}</td>
-      <td><small>${escapeHtml(item.remark) || '-'}</small></td>
+      <td style="white-space: normal; word-break: break-word; min-width: 200px; max-width: 320px;"><small>${escapeHtml(item.remark) || '-'}</small></td>
       ${actionTd}
     `;
     tbody.appendChild(tr);
@@ -2373,10 +2413,17 @@ function buildPMMatrixFromDashboard(dashboardList) {
         );
       }
 
-      let isDone = (lastPm >= r) || Boolean(matchedLog);
+      let hasRealLog = Boolean(matchedLog);
+      let isSurpassed = lastPm > r; // มีรอบหลังบันทึกไว้แล้ว แปลว่าเครื่องวิ่งผ่านรอบนี้ไปแล้ว
+      let isCurrentRound = lastPm === r; // รอบนี้คือรอบล่าสุดที่บันทึกไว้พอดี
 
-      if (isDone) {
+      if (hasRealLog || isCurrentRound) {
+        // มีใบงานจริงรองรับรอบนี้ (หรือเป็นรอบล่าสุดที่ใช้ข้อมูลรวมของเครื่องแทนได้) = เสร็จสิ้นจริง
         roundsObj[r] = { status: 'done', label: 'เสร็จสิ้น', log: matchedLog };
+      } else if (isSurpassed) {
+        // ไม่มีใบงานของรอบนี้ แต่เครื่องวิ่งชั่วโมงผ่านไปแล้ว (มีรอบหลังบันทึกไว้)
+        // แปลว่ารอบนี้ถูก "ข้าม" ไป ไม่ได้เข้าทำ PM จริงตามรอบ ไม่ควรนับว่าเสร็จ
+        roundsObj[r] = { status: 'skipped', label: 'ข้ามรอบ', log: null };
       } else if (currentHrs >= r) {
         roundsObj[r] = { status: 'overdue', label: 'เกินกำหนด', log: null };
       } else if (r - currentHrs <= 50) {
@@ -2416,7 +2463,7 @@ function renderMatrixTable(matrixData) {
   tbody.innerHTML = "";
 
   if (!matrixData || matrixData.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="14" class="text-center py-4 text-muted">ไม่พบข้อมูลเมทริกซ์ PM</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="15" class="text-center py-4 text-muted">ไม่พบข้อมูลเมทริกซ์ PM</td></tr>`;
     return;
   }
 
@@ -2474,6 +2521,9 @@ function renderMatrixTable(matrixData) {
           icon = '<i class="fa-solid fa-circle-check me-1"></i>';
           cellLabel = "เสร็จสิ้น/ส่งครบ";
         }
+      } else if (rdInfo.status === 'skipped') {
+        bgStyle = "background-color: #adb5bd; color: #fff;";
+        icon = '<i class="fa-solid fa-forward me-1"></i>';
       } else if (rdInfo.status === 'overdue') {
         bgStyle = "background-color: #dc3545; color: #fff;";
         icon = '<i class="fa-solid fa-triangle-exclamation me-1"></i>';
@@ -2493,6 +2543,7 @@ function renderMatrixTable(matrixData) {
     }).join("");
 
     tr.innerHTML = `
+      <td class="text-center no-print"><input type="checkbox" class="form-check-input report-row-select" aria-label="เลือก ${escapeHtml(item.machineId)}"></td>
       <td class="text-center text-muted fw-bold">${index + 1}</td>
       <td><strong>${escapeHtml(item.machineId)}</strong></td>
       <td>${escapeHtml(item.model)}</td>
@@ -2987,15 +3038,15 @@ function toggleAllReportRows(tableId, button) {
     : '<i class="fa-solid fa-check-double me-1"></i>เลือกทั้งหมด';
 }
 
-function printSelectedReport(tableId, title) {
+function buildPrintableTable(tableId) {
   const sourceTable = document.getElementById(tableId);
-  if (!sourceTable) return;
+  if (!sourceTable) return null;
 
   const selectedRows = Array.from(sourceTable.querySelectorAll('tbody tr'))
     .filter(row => row.querySelector('.report-row-select:checked'));
   if (selectedRows.length === 0) {
-    alert('กรุณาติ๊กเลือกรายการที่ต้องการพิมพ์ก่อน');
-    return;
+    alert('กรุณาติ๊กเลือกรายการที่ต้องการก่อน');
+    return null;
   }
 
   const printTable = sourceTable.cloneNode(true);
@@ -3007,6 +3058,12 @@ function printSelectedReport(tableId, title) {
   });
   printTable.querySelectorAll('.report-select-all, .report-row-select').forEach(input => input.closest('th, td')?.remove());
   printTable.querySelectorAll('.col-action').forEach(cell => cell.remove());
+  return printTable;
+}
+
+function printSelectedReport(tableId, title) {
+  const printTable = buildPrintableTable(tableId);
+  if (!printTable) return;
 
   const printWindow = window.open('', '_blank', 'width=1200,height=800');
   if (!printWindow) {
@@ -3027,6 +3084,82 @@ function printSelectedReport(tableId, title) {
     printWindow.print();
     printWindow.close();
   };
+}
+
+// 📄 ดาวน์โหลดเป็นไฟล์ PDF ได้ทันที โดยไม่ต้องผ่านหน้าต่างพิมพ์ของเบราว์เซอร์
+async function exportSelectedReportToPDF(tableId, title, buttonEl) {
+  const printTable = buildPrintableTable(tableId);
+  if (!printTable) return;
+
+  if (typeof html2canvas === 'undefined' || !window.jspdf) {
+    alert('ไม่สามารถโหลดไลบรารีสร้าง PDF ได้ กรุณาเช็คการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่');
+    return;
+  }
+
+  const originalBtnHtml = buttonEl ? buttonEl.innerHTML : null;
+  if (buttonEl) {
+    buttonEl.disabled = true;
+    buttonEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>กำลังสร้าง PDF...';
+  }
+
+  // สร้างกล่องชั่วคราวนอกจอ เพื่อจัดหน้าตารางให้สวยงามก่อนถ่ายเป็นภาพ
+  const wrapper = document.createElement('div');
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = '-99999px';
+  wrapper.style.top = '0';
+  wrapper.style.background = '#ffffff';
+  wrapper.style.padding = '16px';
+  wrapper.style.width = 'max-content';
+  wrapper.innerHTML = `<h3 style="font-family: 'Prompt', Arial, sans-serif; margin:0 0 10px; color:#111;">${escapeHtml(title)}</h3>`;
+
+  printTable.style.fontSize = '11px';
+  printTable.style.borderCollapse = 'collapse';
+  printTable.style.background = '#ffffff';
+  printTable.querySelectorAll('th, td').forEach(cell => {
+    cell.style.border = '1px solid #999';
+    cell.style.padding = '4px';
+    cell.style.whiteSpace = 'nowrap';
+  });
+  wrapper.appendChild(printTable);
+  document.body.appendChild(wrapper);
+
+  try {
+    const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff' });
+    document.body.removeChild(wrapper);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL('image/png');
+
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    pdf.save(`${title}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  } catch (err) {
+    if (document.body.contains(wrapper)) document.body.removeChild(wrapper);
+    console.error('สร้าง PDF ไม่สำเร็จ:', err);
+    alert('สร้าง PDF ไม่สำเร็จ กรุณาลองใหม่ หรือใช้ปุ่ม "พิมพ์ที่เลือก" แบบเดิมแทน');
+  } finally {
+    if (buttonEl) {
+      buttonEl.disabled = false;
+      buttonEl.innerHTML = originalBtnHtml;
+    }
+  }
 }
 
 function exportToExcel(tableId, filename) {
