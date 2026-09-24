@@ -1,21 +1,24 @@
 /**
- * RST Yanmar Tractor Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r03-2026-09-23-live-real-data
+ * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
+ * CODE_VERSION: r04-2026-09-24-stock-snapshot-format
+ *
+ * แหล่งข้อมูล: Ecount รายงาน "สถานะสินค้าคงคลังตามหมายเลข Serial/Lot" (ยอดคงเหลือ ณ วันที่ส่งออก)
+ * เก็บเฉพาะประเภทรถ รถแทรกเตอร์ และ รถเกี่ยวข้าว (ชื่อสินค้ามีคำว่า "รถแทรกเตอร์" หรือ "รถเกี่ยว")
  *
  * Sheets (created by setup()):
- *   Movements  รายการจาก Ecount (สมุดสินค้าหมายเลข Serial/Lot) กันซ้ำด้วย uid นำเข้าไฟล์เดิมซ้ำได้
- *   Tractors   สรุปรถ 1 แถวต่อคัน สร้างใหม่ทุกครั้งที่นำเข้า (key = เลขตัวรถ)
+ *   Tractors   รถ 1 แถวต่อคัน (key = เลขตัวรถ) นำเข้าไฟล์ใหม่ = แทนยอดคงเหลือทั้งหมด
+ *              รถที่เคยอยู่แต่ไม่มีในไฟล์ใหม่ → status "out" (ไม่อยู่ในสต็อก) แถวไม่ถูกลบ รูปยังอยู่
  *   Photos     รายการรูป ไฟล์จริงอยู่ใน Google Drive โฟลเดอร์ "RST Tractor Photos/<เลขตัวรถ>"
  *   ImportLog  ประวัติการนำเข้า
+ *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r03-2026-09-23-live-real-data';
+var CODE_VERSION = 'r04-2026-09-24-stock-snapshot-format';
 
-var SH = { MOVES: 'Movements', TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
+var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
-  Movements: ['uid', 'key', 'serial', 'date', 'seq', 'docRef', 'type', 'branch', 'product', 'project', 'qty', 'importedAt'],
-  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'model', 'series', 'cond', 'origin', 'branch', 'status', 'receivedDate', 'soldDate', 'lastDate', 'updatedAt'],
+  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt'],
   Photos: ['photoId', 'key', 'fileId', 'thumbId', 'label', 'cover', 'uploadedAt', 'uploadedBy'],
-  ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newMoves', 'dupMoves', 'tractors']
+  ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format']
 };
 var PHOTO_FOLDER_NAME = 'RST Tractor Photos';
 
@@ -26,7 +29,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('รูปรถแทรกเตอร์ยันม่าร์ RST')
+    .setTitle('RST รูปรถแทรกเตอร์ · รถเกี่ยวข้าว')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
@@ -38,9 +41,9 @@ function doGet(e) {
  */
 var API = {
   getBoot: getBoot, getPhotos: getPhotos, getCovers: getCovers, getPhotoFull: getPhotoFull,
-  importMoves: importMoves, finishImport: finishImport, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto
+  importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto
 };
-var WRITE = { importMoves: 1, finishImport: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1 };
+var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1 };
 
 function call(fn, args, pin) {
   if (!Object.prototype.hasOwnProperty.call(API, fn)) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
@@ -82,21 +85,35 @@ function setup() {
 /* ================= sheet helpers ================= */
 function ss_() { return SpreadsheetApp.getActive(); }
 function sheet_(name) {
-  var s = ss_().getSheetByName(name);
+  var s = ss_().getSheetByName(name), h = HEAD[name];
   if (!s) {
     s = ss_().insertSheet(name);
-    var h = HEAD[name];
+    ensureCols_(s, h.length);
     s.getRange(1, 1, s.getMaxRows(), h.length).setNumberFormat('@');
     s.getRange(1, 1, 1, h.length).setValues([h]).setFontWeight('bold');
     s.setFrozenRows(1);
+  } else if (name !== SH.TRACTORS) {
+    // อัปเกรดหัวตารางของชีตเดิม (Tractors จะเขียนใหม่ทั้งชีตตอนนำเข้า)
+    var cur = headerOf_(s);
+    if (cur.join('|') !== h.join('|')) {
+      ensureCols_(s, h.length);
+      s.getRange(1, 1, 1, h.length).setNumberFormat('@').setValues([h]).setFontWeight('bold');
+    }
   }
   return s;
 }
+function ensureCols_(s, n) { var need = n - s.getMaxColumns(); if (need > 0) s.insertColumnsAfter(s.getMaxColumns(), need); }
+function headerOf_(s) {
+  var c = s.getLastColumn();
+  if (!c) return [];
+  return s.getRange(1, 1, 1, c).getDisplayValues()[0].map(function (v) { return String(v).trim(); });
+}
+/** อ่านตามหัวตารางจริงในชีต (รองรับข้อมูลรูปแบบเก่า) */
 function readAll_(name) {
-  var s = sheet_(name), n = s.getLastRow(), h = HEAD[name];
-  if (n < 2) return [];
+  var s = sheet_(name), n = s.getLastRow(), h = headerOf_(s);
+  if (n < 2 || !h.length) return [];
   return s.getRange(2, 1, n - 1, h.length).getDisplayValues().map(function (r) {
-    var o = {}; h.forEach(function (k, i) { o[k] = r[i]; }); return o;
+    var o = {}; h.forEach(function (k, i) { if (k) o[k] = r[i]; }); return o;
   });
 }
 function toRow_(name, o) { return HEAD[name].map(function (k) { return o[k] == null ? '' : String(o[k]); }); }
@@ -104,6 +121,7 @@ function writeAt_(s, start, rows) {
   if (!rows.length) return;
   var need = start + rows.length - 1 - s.getMaxRows();
   if (need > 0) s.insertRowsAfter(s.getMaxRows(), need);
+  ensureCols_(s, rows[0].length);
   s.getRange(start, 1, rows.length, rows[0].length).setNumberFormat('@').setValues(rows);
 }
 function appendRows_(s, rows) { writeAt_(s, s.getLastRow() + 1, rows); }
@@ -133,53 +151,42 @@ function splitSerial_(s) {
 /** key = เลขตัวรถ ตัวพิมพ์ใหญ่ ไม่มีช่องว่าง */
 function keyOf_(serial) { return splitSerial_(serial).ch.toUpperCase().replace(/\s+/g, ''); }
 
-function seriesOf_(model) {
-  var x = String(model).replace(/^\(.*?\)\s*/, '');
+function seriesOf_(name) {
+  var x = String(name).replace(/^\(.*?\)\s*/, '');
   var m = x.match(/รุ่น\s*(.+)$/);
   x = (m ? m[1] : x).replace(/\((มือสอง|เช่า)\)/g, '').replace(/VIN.*$/i, '').replace(/^Yanmar\s*/i, '').trim();
   return x.replace(/\s*-\s*45th$/i, ' 45th').replace(/^(\d{3}[A-Z]?)$/, 'YM$1');
 }
-var USED_PROJ = { 'รับยึด': 1, 'รถมือ 2': 1, 'รับตีเทิร์น': 1, 'ซื้อคืน': 1, 'ขายคืนรถยึด': 1, 'ปรับสภาพมือสอง': 1 };
-function condOf_(model, mv) {
-  if (/สาธิต/.test(model)) return 'รถสาธิต';
-  if (/เช่า/.test(model)) return 'รถเช่า';
-  if (/มือสอง/.test(model)) return 'มือสอง';
-  for (var i = 0; i < mv.length; i++) if (mv[i].type === 'ซื้อ' && USED_PROJ[mv[i].project]) return 'มือสอง';
+/** ประเภทรถ: เก็บเฉพาะ 2 ประเภทนี้ */
+function typeOf_(name) {
+  var n = String(name || '');
+  if (/รถเกี่ยว/.test(n)) return 'รถเกี่ยวข้าว';
+  if (/รถแทรกเตอร์/.test(n)) return 'รถแทรกเตอร์';
+  return '';
+}
+function kindOf_(name) {
+  var n = String(name || '');
+  if (/สาธิต/.test(n)) return 'รถสาธิต';
+  if (/เช่า/.test(n)) return 'รถเช่า';
+  if (/มือสอง/.test(n)) return 'มือสอง';
   return 'รถใหม่';
 }
+function num_(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isNaN(n) ? 0 : n; }
+function numStr_(v) { var t = String(v == null ? '' : v).replace(/,/g, '').trim(); return t === '' || isNaN(parseFloat(t)) ? '' : String(parseFloat(t)); }
+function today_() { return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'); }
 
-function summarize_(moves, nowIso) {
-  var by = {};
-  moves.forEach(function (m) { if (m.key) (by[m.key] = by[m.key] || []).push(m); });
-  return Object.keys(by).map(function (key) {
-    var mv = by[key].sort(function (a, b) {
-      return a.date < b.date ? -1 : a.date > b.date ? 1 : (Number(a.seq) || 0) - (Number(b.seq) || 0);
-    });
-    var bal = 0; mv.forEach(function (m) { bal += Number(m.qty) || 0; });
-    var last = mv[mv.length - 1], buy = null, sale = null;
-    for (var i = mv.length - 1; i >= 0; i--) {
-      if (!buy && Number(mv[i].qty) > 0) buy = mv[i];
-      if (!sale && mv[i].type === 'ขาย') sale = mv[i];
-    }
-    var inStock = bal > 0;
-    var serial = (buy || last).serial, sp = splitSerial_(serial);
-    var tag = mv.some(function (m) { return /\(\s*GPS\s*\)/i.test(m.serial); }) ? 'GPS' : '';
-    var model = (buy || last).product;
-    return {
-      key: key, serial: serial, chassis: sp.ch, engine: sp.en, tag: tag, model: model, series: seriesOf_(model),
-      cond: condOf_(model, mv), origin: buy ? buy.project : '',
-      branch: (inStock ? (buy || last) : last).branch,
-      status: inStock ? 'stock' : 'sold', receivedDate: buy ? buy.date : '',
-      soldDate: !inStock && sale ? sale.date : '', lastDate: last.date, updatedAt: nowIso
-    };
-  });
-}
-function rebuildTractors_() {
-  var list = summarize_(readAll_(SH.MOVES), new Date().toISOString());
-  var s = sheet_(SH.TRACTORS), h = HEAD.Tractors;
-  if (s.getLastRow() > 1) s.getRange(2, 1, s.getLastRow() - 1, h.length).clearContent();
-  writeAt_(s, 2, list.map(function (t) { return toRow_(SH.TRACTORS, t); }));
-  return list.length;
+/** แปลงแถว Tractors (รวมรูปแบบเก่า r03) ให้มีฟิลด์ครบตาม HEAD.Tractors */
+function normCar_(o) {
+  if (!o.name && o.model) { // r03: model/cond(รถใหม่/มือสอง)/receivedDate/soldDate
+    o.name = o.model; o.kind = o.cond || kindOf_(o.model); o.cond = '';
+    o.firstSeen = o.receivedDate || ''; o.outDate = o.soldDate || '';
+    o.status = o.status === 'stock' ? 'stock' : 'out';
+  }
+  if (!o.type) o.type = typeOf_(o.name);
+  if (!o.kind) o.kind = kindOf_(o.name);
+  if (!o.series) o.series = seriesOf_(o.name);
+  var c = {}; HEAD.Tractors.forEach(function (k) { c[k] = o[k] == null ? '' : String(o[k]); });
+  return c;
 }
 
 /* ================= API ================= */
@@ -188,36 +195,72 @@ function getBoot() {
   readAll_(SH.PHOTOS).forEach(function (p) { photos[p.key] = (photos[p.key] || 0) + 1; });
   var logs = readAll_(SH.LOG), email = '';
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
-  return { version: CODE_VERSION, email: email, tractors: readAll_(SH.TRACTORS), photos: photos, lastImport: logs.length ? logs[logs.length - 1] : null };
+  var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type; });
+  return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, lastImport: logs.length ? logs[logs.length - 1] : null };
 }
 
-/** rows: [{serial,date,seq,docRef,type,branch,product,project,qty}] ส่งมาทีละชุด */
-function importMoves(rows) {
+/**
+ * rows: [{branch,spot,code,name,serial,gps,qty,price,cond,hours}] ทั้งไฟล์ในครั้งเดียว (เฉพาะรถแทรกเตอร์/รถเกี่ยวข้าว)
+ * แทนยอดคงเหลือทั้งหมดด้วยไฟล์นี้ รถเดิมที่ไม่มีในไฟล์ → status out
+ * Serial เดียวกันหลายแถว (เช่น โอนย้ายสาขา +1/-1) → รวมจำนวน ใช้ข้อมูลแถวบวกล่าสุด เติมช่องว่างจากแถวอื่น
+ */
+function importStock(rows, meta) {
+  meta = meta || {};
   return withLock_(function () {
-    var s = sheet_(SH.MOVES), n = s.getLastRow(), seen = {};
-    if (n > 1) s.getRange(2, 1, n - 1, 1).getDisplayValues().forEach(function (r) { seen[r[0]] = 1; });
-    var now = new Date().toISOString(), out = [], dup = 0;
-    (rows || []).forEach(function (m) {
-      if (!m || !m.serial) return;
-      var uid = [m.serial, m.docRef, m.type, m.qty, m.branch].join('|');
-      if (seen[uid]) { dup++; return; }
-      seen[uid] = 1;
-      m.uid = uid; m.key = keyOf_(m.serial); m.importedAt = now;
-      out.push(toRow_(SH.MOVES, m));
+    var now = new Date().toISOString(), today = today_(), old = {};
+    readAll_(SH.TRACTORS).forEach(function (o) { o = normCar_(o); if (o.key) old[o.key] = o; });
+
+    var groups = {}, order = [], matched = 0;
+    (rows || []).forEach(function (r) {
+      if (!r || !r.serial || !typeOf_(r.name)) return;
+      var key = keyOf_(r.serial); if (!key) return;
+      matched++;
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(r);
     });
-    appendRows_(s, out);
-    return { added: out.length, dup: dup };
-  });
-}
-function finishImport(meta) {
-  return withLock_(function () {
-    var count = rebuildTractors_();
-    meta = meta || {};
+
+    var out = [], fresh = 0, dupRows = 0, gone = 0, FILL = ['branch', 'spot', 'code', 'price', 'cond', 'hours', 'gps'];
+    order.forEach(function (key) {
+      var g = groups[key], qty = 0, pick = null;
+      dupRows += g.length - 1;
+      g.forEach(function (r) { qty += num_(r.qty); if (num_(r.qty) > 0) pick = r; });
+      var r = {}; Object.keys(pick || g[g.length - 1]).forEach(function (k) { r[k] = (pick || g[g.length - 1])[k]; });
+      FILL.forEach(function (k) {
+        if (String(r[k] || '').trim()) return;
+        for (var i = g.length - 1; i >= 0; i--) if (String(g[i][k] || '').trim()) { r[k] = g[i][k]; break; }
+      });
+      var sp = splitSerial_(r.serial), prev = old[key], inStock = qty > 0;
+      if (!prev) fresh++;
+      out.push(normCar_({
+        key: key, serial: r.serial, chassis: sp.ch, engine: sp.en,
+        tag: (sp.tag || /gps/i.test(String(r.gps || ''))) ? 'GPS' : '',
+        code: r.code, name: r.name, series: seriesOf_(r.name), type: typeOf_(r.name), kind: kindOf_(r.name),
+        branch: r.branch, spot: r.spot, qty: String(qty), price: numStr_(r.price), cond: String(r.cond || '').trim(),
+        hours: numStr_(r.hours), status: inStock ? 'stock' : 'out',
+        firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
+        outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now
+      }));
+      delete old[key];
+    });
+    Object.keys(old).forEach(function (key) {
+      var o = old[key];
+      if (o.status === 'stock') { gone++; o.status = 'out'; o.outDate = today; o.qty = '0'; o.updatedAt = now; }
+      out.push(o);
+    });
+
+    var s = sheet_(SH.TRACTORS), h = HEAD.Tractors;
+    s.clear();
+    ensureCols_(s, h.length);
+    s.getRange(1, 1, 1, h.length).setNumberFormat('@').setValues([h]).setFontWeight('bold');
+    s.setFrozenRows(1);
+    writeAt_(s, 2, out.map(function (c) { return toRow_(SH.TRACTORS, c); }));
+
+    var inStock = out.filter(function (c) { return c.status === 'stock'; }).length;
     appendRows_(sheet_(SH.LOG), [toRow_(SH.LOG, {
-      at: new Date().toISOString(), by: who_(meta.by), fileName: meta.fileName, rowsRead: meta.rowsRead,
-      rowsMatched: meta.rowsMatched, newMoves: meta.added, dupMoves: meta.dup, tractors: count
+      at: now, by: who_(meta.by), fileName: meta.fileName, rowsRead: meta.rowsRead, rowsMatched: matched,
+      newCars: fresh, dupRows: dupRows, tractors: inStock, goneCars: gone, format: 'stock-snapshot'
     })]);
-    return { tractors: count };
+    return { tractors: inStock, total: out.length, fresh: fresh, gone: gone, dupRows: dupRows };
   });
 }
 
