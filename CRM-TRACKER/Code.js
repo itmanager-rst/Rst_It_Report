@@ -49,7 +49,19 @@
 // (ต้องผูก Sheet นี้เป็น BigQuery External Table ชื่อ customers ไว้ด้วย — ดูคู่มือ setup)
 // ⚠️ ต้องตั้งค่า CUSTOMER_SHEET_ID ให้เป็น Sheet ID จริงก่อนใช้งาน ไม่งั้นการเพิ่ม/แก้ไข/
 // ลบข้อมูลลูกค้าจะ error ทันที (ดูข้อความ error ที่ getCustomerSheet_ ด้านล่าง)
-var CODE_VERSION = 'r31-2026-09-19-sync-created-by-updated-by-to-bigquery';
+// หมายเหตุ (2026-09-24 — r32 แก้บั๊ก "บันทึกข้อมูลช้าผิดปกติ"):
+//   1) logLeadIntake_ (ถูกเรียกทุกครั้งที่กดบันทึกลูกค้าใหม่ / ลีดซ้ำ) ยังเรียก
+//      appendRowToBigQueryTable_ แบบ synchronous ซึ่งรอ BigQuery Load Job จนเสร็จ (วนเช็ค
+//      ทุก 1 วิ สูงสุด 25 วิ) ก่อนตอบกลับหน้าเว็บ — เป็นบั๊กแบบเดียวกับที่ r28 แก้ไปแล้วที่
+//      logUserActivity_ แต่ตกหล่นจุดนี้ไป → ย้ายไปซิงก์เป็นรอบๆ ผ่าน trigger แทน
+//      (ดู scheduledSyncLeadLogToBigQuery_ / installScheduledLeadLogSync)
+//   2) updateCustomerHTML อ่าน-เขียนเซลล์สลับกันทีละช่อง (~36 ครั้ง) บนชีต 116,000+ แถว
+//      ทุกครั้งที่ getValue() ต่อจาก setValue() Apps Script ต้อง flush ก่อน → ช้ามาก
+//      → เปลี่ยนเป็นอ่านทั้งแถวครั้งเดียว แล้วเขียนเฉพาะช่องที่ค่าเปลี่ยนจริง
+//   3) SpreadsheetApp.openById ถูกเรียกซ้ำ 4-5 ครั้งต่อการบันทึก 1 ครั้ง → cache ไว้ต่อ request
+//   4) findCustomerRowNumberByKey_ ทางสำรองอ่านทุกคอลัมน์ทั้งชีต → อ่านเฉพาะ 4 คอลัมน์ที่ใช้
+//      และเทียบเบอร์ (ถูก) ก่อนคำนวณ MD5 (แพง)
+var CODE_VERSION = 'r32-2026-09-24-fix-slow-save';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -168,11 +180,23 @@ var CUSTOMER_SHEET_COLUMNS = [
 ];
 
 // เปิด Sheet object ของแท็บข้อมูลลูกค้า — โยน error ชัดเจนถ้ายังไม่ได้ตั้งค่า/หาไม่เจอ
-function getCustomerSheet_() {
+// ⚡ (r32) cache Spreadsheet object ไว้ตลอด 1 request — เดิม openById ซ้ำ 4-5 รอบต่อการ
+// บันทึก 1 ครั้ง (เช็คซ้ำ FB, เช็คซ้ำเบอร์, เขียนแถว, lead log, activity log) แต่ละรอบเป็น
+// service call แยกกันที่กินเวลา ตัวแปร global ของ Apps Script อยู่แค่ใน execution เดียว
+// จึงไม่มีปัญหาข้อมูลค้างข้าม request
+var cachedCustomerSpreadsheet_ = null;
+function getCustomerSpreadsheet_() {
   if (!CUSTOMER_SHEET_ID || CUSTOMER_SHEET_ID === 'PUT_YOUR_GOOGLE_SHEET_ID_HERE') {
     throw new Error('ยังไม่ได้ตั้งค่า CUSTOMER_SHEET_ID — เปิด Code.gs แล้วใส่ Sheet ID ของ Google Sheet ที่จะใช้เก็บข้อมูลลูกค้าก่อน');
   }
-  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+  if (!cachedCustomerSpreadsheet_) cachedCustomerSpreadsheet_ = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+  return cachedCustomerSpreadsheet_;
+}
+
+var cachedCustomerSheet_ = null;
+function getCustomerSheet_() {
+  if (cachedCustomerSheet_) return cachedCustomerSheet_;
+  var ss = getCustomerSpreadsheet_();
   var sheet = ss.getSheetByName(CUSTOMER_SHEET_NAME);
   if (!sheet) {
     // หาแท็บชื่อ CUSTOMER_SHEET_NAME ไม่เจอ (เช่น ตั้งชื่อไว้ไม่ตรง) — ใช้แท็บแรกสุดในไฟล์แทน
@@ -184,12 +208,15 @@ function getCustomerSheet_() {
     sheet = allSheets[0];
     Logger.log('ไม่พบแท็บชื่อ "' + CUSTOMER_SHEET_NAME + '" — ใช้แท็บแรกสุด ("' + sheet.getName() + '") แทนโดยอัตโนมัติ');
   }
+  cachedCustomerSheet_ = sheet;
   return sheet;
 }
 
 // อ่านแถวหัวตาราง (row 1) แล้วคืนค่าเป็น { ชื่อคอลัมน์: เลขคอลัมน์ (1-based) }
 // ใช้แทนการอ้างอิงตำแหน่งคอลัมน์แบบตายตัว เผื่อมีคนสลับลำดับคอลัมน์ในชีตภายหลัง
+var cachedCustomerHeaderMap_ = null;
 function getCustomerHeaderMap_(sheet) {
+  if (cachedCustomerHeaderMap_ && sheet === cachedCustomerSheet_) return cachedCustomerHeaderMap_;
   var lastCol = Math.max(sheet.getLastColumn(), CUSTOMER_SHEET_COLUMNS.length);
   var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var map = {};
@@ -202,6 +229,7 @@ function getCustomerHeaderMap_(sheet) {
     throw new Error('แถวหัวตารางในชีต "' + CUSTOMER_SHEET_NAME + '" ขาดคอลัมน์: ' + missing.join(', ') +
                      ' — ต้องเพิ่มหัวคอลัมน์เหล่านี้ในแถวที่ 1 ให้ครบก่อนใช้งาน');
   }
+  if (sheet === cachedCustomerSheet_) cachedCustomerHeaderMap_ = map;
   return map;
 }
 
@@ -274,14 +302,29 @@ function findCustomerRowNumberByKey_(sheet, headerMap, key, phoneHint) {
   // ทางสำรอง (ช้า — วนลูปทุกแถวคำนวณ fingerprint): ใช้เฉพาะกรณีข้างบนหาไม่เจอจริงๆ เท่านั้น
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
-  var lastCol = sheet.getLastColumn();
-  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  var cdCol = headerMap['created_date'] - 1;
-  var fnCol = headerMap['first_name'] - 1;
-  var lnCol = headerMap['last_name'] - 1;
-  var phCol = headerMap['phone'] - 1;
-  for (var i = 0; i < values.length; i++) {
-    var row = values[i];
+  // ⚡ (r32) อ่านเฉพาะ 4 คอลัมน์ที่ใช้คำนวณ fingerprint (เดิมอ่านทุกคอลัมน์ทั้งชีต รวม
+  // follow_up_log/financial_info ที่เป็น JSON ยาว — ข้อมูลหลายสิบ MB บนชีตแสนแถว)
+  var numRows = lastRow - 1;
+  var readCol_ = function (colName) {
+    return sheet.getRange(2, headerMap[colName], numRows, 1).getValues();
+  };
+  var cdVals = readCol_('created_date');
+  var fnVals = readCol_('first_name');
+  var lnVals = readCol_('last_name');
+  var phVals = readCol_('phone');
+
+  // ⚡ (r32) รอบแรกแบบถูก: ถ้ามี phoneHint เทียบแค่ตัวเลขของเบอร์ (ไม่ต้อง MD5) — จับกรณีเบอร์ใน
+  // ชีตมีขีด/เว้นวรรค ที่ TextFinder แบบ matchEntireCell หาไม่เจอ
+  var hintDigits = formatPhoneNumber(phoneHint).replace(/\D/g, '');
+  if (hintDigits && hintDigits !== '0') {
+    for (var h = 0; h < numRows; h++) {
+      if (formatPhoneNumber(phVals[h][0]).replace(/\D/g, '') === hintDigits) return h + 2;
+    }
+  }
+
+  var cdCol = 0, fnCol = 1, lnCol = 2, phCol = 3;
+  for (var i = 0; i < numRows; i++) {
+    var row = [cdVals[i][0], fnVals[i][0], lnVals[i][0], phVals[i][0]];
     var createdDateStr = formatDateStr(row[cdCol]);
     var phoneStr = formatPhoneNumber(row[phCol]);
     // ⚠️ (2026-09-19) แก้บั๊ก: เดิมคำนวณ fingerprint จาก phoneStr ที่ผ่าน formatPhoneNumber()
@@ -400,7 +443,7 @@ var ACTIVITY_LOG_TYPE_MAP = {
 // เปิดแท็บตามชื่อในสเปรดชีตเดียวกับ customers — ถ้ายังไม่มีแท็บนี้ (หรือแท็บว่างเปล่า
 // ไม่มีแม้แต่แถวหัวตาราง) จะสร้างให้เองพร้อมใส่หัวคอลัมน์ตาม columns ที่ส่งมา
 function getOrCreateSheetTab_(tabName, columns) {
-  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+  var ss = getCustomerSpreadsheet_();
   var sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
@@ -840,6 +883,46 @@ function syncNewSheetRowsToBigQueryAppend_(tabName, columns, typeMap, tableId, l
 }
 
 var ACTIVITY_LOG_LAST_SYNCED_ROW_KEY = 'ACTIVITY_LOG_LAST_SYNCED_ROW';
+var LEAD_LOG_LAST_SYNCED_ROW_KEY = 'LEAD_LOG_LAST_SYNCED_ROW';
+
+// (r32) ถ้ายังไม่เคยตั้งค่า property "แถวล่าสุดที่ซิงก์แล้ว" ให้ตั้งเป็นแถวสุดท้ายของแท็บตอนนี้
+// (ถือว่าแถวที่มีอยู่แล้วทั้งหมดอยู่ใน BigQuery แล้ว) — ถ้าตั้งไว้แล้วจะไม่ทำอะไร
+function initLastSyncedRowIfMissing_(propKey, sheet) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(propKey) === null) {
+    props.setProperty(propKey, String(Math.max(sheet.getLastRow(), 1)));
+  }
+}
+
+// (r32) ซิงก์แถวใหม่ของ lead_intake_log เข้า BigQuery เป็นรอบๆ (เหมือน activity log)
+function scheduledSyncLeadLogToBigQuery_() {
+  try {
+    syncNewSheetRowsToBigQueryAppend_(
+      LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS, LEAD_LOG_TYPE_MAP,
+      LOG_TABLE_ID, LEAD_LOG_LAST_SYNCED_ROW_KEY
+    );
+  } catch (err) {
+    Logger.log('scheduledSyncLeadLogToBigQuery_ error: ' + err);
+  }
+}
+
+// ⚙️ (r32) Setup ครั้งเดียว: เลือกฟังก์ชัน "installScheduledLeadLogSync" จาก dropdown แล้วกด ▶ Run
+// ⚠️ ต้องรัน ไม่งั้นลีดใหม่จะเข้า Sheet ปกติ แต่จะไม่ขึ้นในรายงานลีดรายวัน (ที่อ่านจาก BigQuery)
+function installScheduledLeadLogSync() {
+  initLastSyncedRowIfMissing_(LEAD_LOG_LAST_SYNCED_ROW_KEY,
+    getOrCreateSheetTab_(LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS));
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'scheduledSyncLeadLogToBigQuery_') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('scheduledSyncLeadLogToBigQuery_')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  Logger.log('ตั้ง trigger สำเร็จ: จะรัน scheduledSyncLeadLogToBigQuery_ ทุก 5 นาที');
+}
 
 function scheduledSyncActivityLogToBigQuery_() {
   try {
@@ -2195,12 +2278,14 @@ function logLeadIntake_(info) {
       info.isManyChat ? true : false
     ];
     var sheet = getOrCreateSheetTab_(LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS);
+    // ⚡ (r32) ครั้งแรกหลัง deploy เวอร์ชันนี้: ตั้ง "แถวล่าสุดที่ซิงก์แล้ว" = แถวสุดท้ายตอนนี้
+    // เพราะทุกแถวก่อนหน้านี้ถูกโค้ดเวอร์ชันเก่า append เข้า BigQuery ไปแล้วทีละแถว — กันไม่ให้
+    // trigger รอบแรกโหลดแถวเก่าทั้งหมดซ้ำเข้าไปอีกรอบ (ข้อมูลรายงานจะนับเบิ้ล)
+    initLastSyncedRowIfMissing_(LEAD_LOG_LAST_SYNCED_ROW_KEY, sheet);
     sheet.appendRow(rowValues);
-    try {
-      appendRowToBigQueryTable_(rowValues, LEAD_LOG_SHEET_COLUMNS, LEAD_LOG_TYPE_MAP, LOG_TABLE_ID);
-    } catch (syncErr) {
-      Logger.log('sync lead_intake_log error: ' + syncErr);
-    }
+    // ⛔ (r32) ไม่เรียก appendRowToBigQueryTable_ ตรงนี้แล้ว — เดิมรอ BigQuery Load Job จนเสร็จ
+    // (3-25 วินาที) ทุกครั้งที่กดบันทึกลูกค้า เป็นสาเหตุหลักที่ "บันทึกช้าผิดปกติ" ตอนนี้ปล่อยให้
+    // scheduledSyncLeadLogToBigQuery_ (trigger ทุก 5 นาที) ซิงก์แถวใหม่ทีหลังแทน
   } catch (e) {
     Logger.log('logLeadIntake_ error (ข้อมูลลูกค้าหลักถูกบันทึกไปแล้วตามปกติ ไม่กระทบ): ' + e.toString());
   }
@@ -2439,27 +2524,51 @@ function updateCustomerHTML(rowIndex, cust, phoneHint, user) {
       fields = restrictedFields;
     }
 
+    // ⚡ (r32) อ่านค่าเดิมทั้งแถว "ครั้งเดียว" — เดิม getValue()/setValue() สลับกันทีละช่อง
+    // ~36 ครั้ง ซึ่งบังคับให้ Apps Script flush การเขียนทุกครั้งก่อนอ่านช่องถัดไป (ช้ามาก
+    // บนชีตแสนแถว) ตอนนี้อ่าน 1 ครั้ง แล้วเขียน "เฉพาะช่องที่ค่าเปลี่ยนจริง" รวบเป็นก้อน
+    var lastColForRow = sheet.getLastColumn();
+    var oldRowValues = sheet.getRange(rowNum, 1, 1, lastColForRow).getValues()[0];
+    var DATE_FIELDS_ = { created_date: true, booking_date: true, last_followup_date: true };
+    var normalizeForCompare_ = function (fieldName, v) {
+      return DATE_FIELDS_[fieldName] ? formatDateStr(v) : cleanStr(v);
+    };
+
     // เก็บ diff (ค่าเดิม → ค่าใหม่) เฉพาะฟิลด์ที่เปลี่ยนจริง เพื่อโชว์ใน "ประวัติการใช้งาน"
     // (ข้าม financial_info เพราะเป็น JSON ยาว ไม่เหมาะโชว์เป็นข้อความ diff ตรงนี้)
     var changedParts = [];
+    var cellsToWrite = {}; // { colNum: value }
     for (var field in fields) {
       var colNum = headerMap[field];
       if (!colNum) continue;
+      var oldVal = normalizeForCompare_(field, oldRowValues[colNum - 1]);
+      var newVal = normalizeForCompare_(field, fields[field]);
+      if (oldVal === newVal) continue; // ค่าเหมือนเดิม ไม่ต้องเขียนทับ
       if (field !== 'financial_info') {
-        var oldVal = cleanStr(sheet.getRange(rowNum, colNum).getValue());
-        var newVal = cleanStr(fields[field]);
-        if (oldVal !== newVal) {
-          changedParts.push((FIELD_LABELS_TH_[field] || field) + ': "' + (oldVal || '-') + '" → "' + (newVal || '-') + '"');
-        }
+        changedParts.push((FIELD_LABELS_TH_[field] || field) + ': "' + (oldVal || '-') + '" → "' + (newVal || '-') + '"');
       }
-      sheet.getRange(rowNum, colNum).setValue(fields[field]);
+      cellsToWrite[colNum] = fields[field];
     }
 
     // (2026-09-19) บันทึกชื่อผู้แก้ไขล่าสุด — คอลัมน์ optional เช่นเดียวกับ created_by
     // (เพิ่มหัวคอลัมน์ "updated_by" ในชีตเองถ้าต้องการใช้ ไม่มีคอลัมน์นี้ก็ข้ามไปเงียบๆ ไม่ error)
     var updatedByCol = headerMap['updated_by'];
-    if (updatedByCol && user) {
-      sheet.getRange(rowNum, updatedByCol).setValue(user.name || user.username || '');
+    if (updatedByCol && user && Object.keys(cellsToWrite).length > 0) {
+      cellsToWrite[updatedByCol] = user.name || user.username || '';
+    }
+
+    // รวบช่องที่คอลัมน์ติดกันให้เป็น setValues ก้อนเดียว (ไม่แตะช่องที่ไม่ได้แก้เลย)
+    var colsSorted = Object.keys(cellsToWrite).map(Number).sort(function (a, b) { return a - b; });
+    var ci = 0;
+    while (ci < colsSorted.length) {
+      var startCol = colsSorted[ci];
+      var block = [cellsToWrite[startCol]];
+      while (ci + 1 < colsSorted.length && colsSorted[ci + 1] === colsSorted[ci] + 1) {
+        ci++;
+        block.push(cellsToWrite[colsSorted[ci]]);
+      }
+      sheet.getRange(rowNum, startCol, 1, block.length).setValues([block]);
+      ci++;
     }
 
     // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก

@@ -9,38 +9,33 @@
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script>
-        // ข้อมูลจังหวัด/อำเภอ/ตำบล ("thailand-geo.js") ไม่ได้ฝังไว้ในไฟล์นี้โดยตรงอีกต่อไป (2026-09-20)
-        // เดิมเคยลองอ้างอิงแบบ <script src="thailand-geo.js"> ซึ่งใช้ไม่ได้เมื่อเปิดผ่าน URL ของ Google Apps Script
-        // (ทุก path ใต้ .../exec ถูกดักด้วย doGet() ตัวเดียว ไม่มีการเสิร์ฟไฟล์ static แยก) จึงเคยต้องฝังข้อมูลทั้งหมดไว้ในหน้านี้ตรงๆ (~365KB)
-        // ตอนนี้เปลี่ยนมาดึงข้อมูลสดๆ จาก GitHub แทนตอนโหลดหน้าเว็บ (ผ่าน fetch() เพราะ raw.githubusercontent.com
-        // เสิร์ฟไฟล์ .js เป็น Content-Type: text/plain + nosniff จึงใช้ <script src="..."> ตรงๆ ไม่ได้ ต้อง fetch มา parse เอง)
-        // ข้อดี: ไฟล์ index.html เล็กลงมาก และถ้าจะแก้ข้อมูลจังหวัด/อำเภอ/ตำบลในอนาคต แก้ที่ไฟล์บน GitHub ที่เดียวพอ
-        var THAILAND_GEO_DATA = [];
-        var THAILAND_GEO_DATA_URL = 'https://raw.githubusercontent.com/itmanager-rst/Rst_It_Report/main/CRM-TRACKER/thailand-geo.js';
-        var thailandGeoDataReady = false;
-        var thailandGeoDataLoadFailed = false;
-        function loadThailandGeoData_() {
-            return fetch(THAILAND_GEO_DATA_URL, { cache: 'no-store' })
-                .then(function(res) {
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res.text();
-                })
-                .then(function(text) {
-                    // ไฟล์บน GitHub เป็นรูปแบบ "const THAILAND_GEO_DATA = [...];" — ตัดส่วนประกาศตัวแปรออก
-                    // เหลือแต่ตัว array literal (เป็น JSON ล้วนอยู่แล้ว) แล้ว parse ด้วย JSON.parse
-                    var jsonPart = text.replace(/^\s*(?:const|var|let)\s+THAILAND_GEO_DATA\s*=\s*/, '').replace(/;\s*$/, '');
-                    var parsed = JSON.parse(jsonPart);
-                    THAILAND_GEO_DATA.length = 0;
-                    Array.prototype.push.apply(THAILAND_GEO_DATA, parsed);
-                    thailandGeoDataReady = true;
-                    thailandGeoDataLoadFailed = false;
-                })
-                .catch(function(err) {
-                    console.error('โหลดข้อมูลจังหวัด/อำเภอ/ตำบลจาก GitHub ไม่สำเร็จ:', err);
-                    thailandGeoDataReady = false;
-                    thailandGeoDataLoadFailed = true;
-                });
-        }
+        // เดิมไฟล์นี้ถูกอ้างอิงแบบ <script src="thailand-geo.js"> ซึ่งใช้ไม่ได้เมื่อเปิดผ่าน URL ของ Google Apps Script
+        // (ทุก path ใต้ .../exec ถูกดักด้วย doGet() ตัวเดียว ไม่มีการเสิร์ฟไฟล์ static แยก) จึงต้องฝังโค้ดไว้ในหน้านี้โดยตรง
+        var THAILAND_GEO_DATA = [
+          { n: 'อุบลราชธานี', a: [
+            { n: 'อุบลราชธานี', t: [
+              { n: 'ในเมือง' }, { n: 'ชานเมือง' }, { n: 'ตลิ่งชัน' }
+            ] },
+            { n: 'วารินชำราบ', t: [
+              { n: 'วารินชำราบ' }, { n: 'หนองย่าง' }
+            ] }
+          ] },
+          { n: 'อำนาจเจริญ', a: [
+            { n: 'อำนาจเจริญ', t: [
+              { n: 'ในเมือง' }, { n: 'ทุ่งศรีเมือง' }
+            ] }
+          ] },
+          { n: 'บุรีรัมย์', a: [
+            { n: 'บุรีรัมย์', t: [
+              { n: 'ในเมือง' }, { n: 'ตะลุง' }
+            ] }
+          ] },
+          { n: 'นครราชสีมา', a: [
+            { n: 'นครราชสีมา', t: [
+              { n: 'ในเมือง' }, { n: 'ดอนตูม' }
+            ] }
+          ] }
+        ];
     </script>
     <style>
         :root {
@@ -224,7 +219,6 @@
         .calendar-customer:hover { border-color:#38bdf8; background:#f0f9ff; }
         .calendar-customer-name { font-size:13px; font-weight:600; color:#0369a1; }
         .calendar-customer-meta { font-size:11.5px; color:#64748b; margin-top:3px; }
-        .calendar-customer-note { font-size:11.5px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:5px 7px; margin-top:5px; white-space:pre-line; line-height:1.4; }
         .timeline-list { max-height: 280px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
         .timeline-item { border-left: 3px solid var(--primary-color); padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
         .timeline-date { font-size: 11px; font-weight: 600; color: var(--primary-color); margin-bottom: 3px; }
@@ -395,29 +389,13 @@
                                 <input type="text" id="cust-facebook" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label>สถานะลูกค้า</label>
+                                <label>ประเภทลูกค้า</label>
                                 <select id="cust-type" class="form-control">
                                     <option value="ลงทะเบียน">ลงทะเบียน</option>
                                     <option value="เป้าหมาย">เป้าหมาย</option>
                                     <option value="จอง">จอง</option>
                                     <option value="ติดตาม">ติดตาม</option>
                                 </select>
-                            </div>
-                            <div class="form-group">
-                                <label>กลุ่มลูกค้า</label>
-                                <select id="cust-customer-group" class="form-control">
-                                    <option value="">-- ไม่ระบุ --</option>
-                                    <option value="กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)">กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)</option>
-                                    <option value="ลูกค้าชั้นดี ธกส (3A, 3A+)">ลูกค้าชั้นดี ธกส (3A, 3A+)</option>
-                                    <option value="สมาชิกกลุ่มแปลงใหญ่">สมาชิกกลุ่มแปลงใหญ่</option>
-                                    <option value="ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)">ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)</option>
-                                    <option value="รัฐวิสาหกิจ&ข้าราชการ">รัฐวิสาหกิจ&ข้าราชการ</option>
-                                    <option value="พนักงานเอกชน">พนักงานเอกชน</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="grid-column: 1 / -1;">
-                                <label>รายละเอียดกลุ่มลูกค้า (ถ้ามี)</label>
-                                <input type="text" id="cust-customer-group-detail" class="form-control" placeholder="เช่น เกษียณแล้ว, เป็นลูกค้า 3A เมื่อปีก่อน, เคยมีรถไถฟอร์ด">
                             </div>
                             <div class="form-group">
                                 <label>ประเภทสินค้า</label>
@@ -470,7 +448,7 @@
                             <input type="text" id="filter-exact-phone" class="form-control" placeholder="เช่น 0812345678" onkeypress="handleSearchKeyPress(event)">
                         </div>
                         <div class="form-group">
-                            <label>สถานะลูกค้า</label>
+                            <label>ประเภทลูกค้า</label>
                             <div class="multiselect-box">
                                 <div class="form-control select-btn" onclick="toggleTypeDropdown(this)">
                                     <span id="type-select-label">-- เลือกประเภท --</span>
@@ -499,7 +477,7 @@
                             <input type="date" id="filter-appdate" class="form-control">
                         </div>
                 </div>
-                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / กลุ่มลูกค้า / ติดตามล่าสุด) ▾</button>
+                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▾</button>
                 <div id="advanced-filters-section" style="display:none;">
                     <div class="search-grid filter-grid">
                         <div class="form-group">
@@ -518,23 +496,6 @@
                             <label>รุ่นรถ / อุปกรณ์</label>
                             <select id="filter-product-model" class="form-control"></select>
                             <input type="text" id="filter-product-model-text" class="form-control" placeholder="พิมพ์ชื่ออุปกรณ์ (เว้นว่าง = ทุกอุปกรณ์)" style="display:none;" onkeypress="handleSearchKeyPress(event)">
-                        </div>
-                        <div class="form-group">
-                            <label>กลุ่มลูกค้า</label>
-                            <div class="multiselect-box">
-                                <div class="form-control select-btn" onclick="toggleCustomerGroupDropdown(this)">
-                                    <span id="customer-group-select-label">-- เลือกกลุ่มลูกค้า --</span>
-                                    <span>▼</span>
-                                </div>
-                                <div class="checkboxes-dropdown" id="customer-group-dropdown">
-                                    <label><input type="checkbox" value="กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)" onchange="updateCustomerGroupSelectLabel()"> กลุ่มผู้นำชุมชน (ผู้ช่วย, รอง, อบต, นายก, เทศบาล ฯ)</label>
-                                    <label><input type="checkbox" value="ลูกค้าชั้นดี ธกส (3A, 3A+)" onchange="updateCustomerGroupSelectLabel()"> ลูกค้าชั้นดี ธกส (3A, 3A+)</label>
-                                    <label><input type="checkbox" value="สมาชิกกลุ่มแปลงใหญ่" onchange="updateCustomerGroupSelectLabel()"> สมาชิกกลุ่มแปลงใหญ่</label>
-                                    <label><input type="checkbox" value="ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)" onchange="updateCustomerGroupSelectLabel()"> ลูกค้าต่างค่าย (เคยมีรถไถ รถเกี่ยว หรือรถขุด)</label>
-                                    <label><input type="checkbox" value="รัฐวิสาหกิจ&ข้าราชการ" onchange="updateCustomerGroupSelectLabel()"> รัฐวิสาหกิจ&ข้าราชการ</label>
-                                    <label><input type="checkbox" value="พนักงานเอกชน" onchange="updateCustomerGroupSelectLabel()"> พนักงานเอกชน</label>
-                                </div>
-                            </div>
                         </div>
                     </div>
                     <div class="search-grid filter-grid">
@@ -1401,6 +1362,10 @@
         let currentRenderedData = [];
         let lastSavedCustomer = null;
         let duplicatePhoneMatch = null; // { phone, name } ถ้าเบอร์ที่กำลังกรอกอยู่มีลูกค้ารายนี้ในระบบแล้ว
+        let editOriginalPhone = ''; // (2026-09-19) เบอร์เดิมของลูกค้า ณ ตอนเปิดฟอร์มแก้ไข — ส่งเป็น phoneHint
+        // ให้ backend หาแถวด้วย TextFinder เร็วๆ แทนพึ่ง fallback คำนวณ fingerprint วนทั้งชีต (เสี่ยง
+        // mismatch รูปแบบวันที่/เบอร์ระหว่าง BigQuery กับ Sheet) — ต้องใช้ค่า "เดิม" เสมอ ไม่ใช่ค่าที่
+        // พึ่งพิมพ์ใหม่ในฟอร์ม เพราะถ้าผู้ใช้แก้เบอร์ด้วย เบอร์ใหม่จะหาแถวเดิมไม่เจอ
         let dailyReportLoadedOnce = false; // โหลดรายงานประจำวันครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น (ครั้งต่อไปกดปุ่ม "ดึงรายงาน" เอง)
         let staleLeadsLoadedOnce = false; // โหลดรายงานลูกค้าค้างติดตามครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น
         let staleLeadsData = [];
@@ -1611,14 +1576,10 @@
             list.innerHTML = rows.map(row => {
                 const originalIndex = calendarCustomers.indexOf(row);
                 const product = getRowProductParts(row);
-                const noteHtml = (row.remark || '').trim()
-                    ? `<div class="calendar-customer-note">📝 ${escapeHtml(row.remark)}</div>`
-                    : '';
                 return `<button type="button" class="calendar-customer" onclick="openCalendarCustomer(${originalIndex})">
                     <div class="calendar-customer-name">${escapeHtml(row.name)}</div>
                     <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}</div>
                     <div class="calendar-customer-meta">🚜 ${escapeHtml([product.category, product.model].filter(v => v && v !== '-').join(' ') || '-')}</div>
-                    ${noteHtml}
                     <div class="calendar-customer-meta">แตะเพื่อดูประวัติและบันทึกการติดตาม ›</div>
                 </button>`;
             }).join('');
@@ -1937,12 +1898,7 @@
             { key: 'lastFollowupDate', label: 'ติดตามล่าสุด', width: 105, render: row => `<span style="color:#6b21a8;">${row.lastFollowupDate || '-'}</span>` },
             { key: 'name', label: 'ชื่อ - นามสกุล', width: 230, render: (row, ctx) => `<div style="display:flex; align-items:center; gap:6px;"><b>${escapeHtml(row.name || '-')}</b><button type="button" class="btn btn-secondary" style="padding:2px 6px; font-size:9.5px; flex:0 0 auto;" onclick="openMainCustomerDetail(${ctx.idx})">👤 ดูข้อมูล</button></div>` },
             { key: 'phone', label: 'เบอร์โทรศัพท์', width: 120, render: row => renderMaskedPhoneCell_(row.phone) },
-            { key: 'type', label: 'สถานะลูกค้า', width: 95, render: (row, ctx) => `<span class="badge ${ctx.badgeClass}">${escapeHtml(row.type || '-')}</span>` },
-            { key: 'customerGroup', label: 'กลุ่มลูกค้า', width: 200, render: row => {
-                const group = escapeHtml(row.customerGroup || '-');
-                const detail = (row.customerGroupDetail || '').trim();
-                return detail ? `${group}<br><span style="color:#64748b; font-size:10.5px;">${escapeHtml(detail)}</span>` : group;
-            } },
+            { key: 'type', label: 'ประเภท', width: 95, render: (row, ctx) => `<span class="badge ${ctx.badgeClass}">${escapeHtml(row.type || '-')}</span>` },
             { key: 'productCategory', label: 'ประเภทสินค้า', width: 120, render: (row, ctx) => ctx.prodParts.category },
             { key: 'productModel', label: 'รุ่นรถ', width: 120, render: (row, ctx) => ctx.prodParts.model },
             { key: 'moo', label: 'หมู่ที่', width: 55, render: row => row.moo || '-' },
@@ -1968,8 +1924,8 @@
         const ALL_COLUMN_KEYS = new Set(ALL_COLUMNS.map(c => c.key));
         // ลำดับ/คอลัมน์ที่โชว์เป็นค่าเริ่มต้น — ตรงกับตารางเดิมทุกคอลัมน์ บวก "รถ/เครื่องจักรที่ถือครอง" ที่เพิ่มใหม่
         // (เดิมข้อมูลนี้ถูกกรอกได้ในโมดัลการเงินอยู่แล้ว แต่ไม่เคยโชว์ในตารางเลย จึงเปิดโชว์เป็นค่าเริ่มต้นให้เห็นเลย)
-        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'customerGroup', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy'];
-        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'customerGroup', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy']);
+        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy'];
+        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy']);
 
         function getDefaultColumnConfig() {
             return DEFAULT_COLUMN_ORDER.map(key => {
@@ -2269,15 +2225,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             switchPage('add');
             setDefaultDate();
-            // ยิง fetch ข้อมูลจังหวัด/อำเภอ/ตำบลจาก GitHub ทันทีที่หน้าโหลด (2026-09-20) — ระหว่างรอ
-            // ดรอปดาวน์จังหวัดจะมีแค่ตัวเลือก "-- เลือกจังหวัด --" ไปก่อน แล้วเติมข้อมูลจริงให้อัตโนมัติเมื่อโหลดเสร็จ
-            loadThailandGeoData_().then(function() {
-                populateProvinceSelect('cust-province');
-                populateProvinceSelect('filter-province', '-- ทุกจังหวัด --');
-                if (thailandGeoDataLoadFailed) {
-                    alert('⚠️ โหลดข้อมูลจังหวัด/อำเภอ/ตำบลจาก GitHub ไม่สำเร็จ (เช็คอินเทอร์เน็ต หรือแจ้ง IT) — ช่องกรอกที่อยู่อาจเลือกจังหวัด/อำเภอ/ตำบลไม่ได้จนกว่าจะโหลดสำเร็จ ลองรีเฟรชหน้าเว็บอีกครั้ง');
-                }
-            });
             populateProvinceSelect('cust-province');
             resetGeoSelectsToDefault();
             updateAddressSummary();
@@ -2301,7 +2248,6 @@
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.multiselect-box')) {
                     document.getElementById('type-dropdown').classList.remove('show');
-                    document.getElementById('customer-group-dropdown').classList.remove('show');
                 }
                 if (!e.target.closest('.settings-menu-wrap')) {
                     closeSettingsMenu();
@@ -2309,7 +2255,6 @@
             });
             window.addEventListener('scroll', function() {
                 document.getElementById('type-dropdown').classList.remove('show');
-                document.getElementById('customer-group-dropdown').classList.remove('show');
                 closeSettingsMenu();
             }, true);
         });
@@ -2379,27 +2324,6 @@
             const checked = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
             const label = document.getElementById('type-select-label');
             if (checked.length === 0) label.innerText = '-- เลือกประเภท --';
-            else if (checked.length === 1) label.innerText = checked[0];
-            else label.innerText = `เลือกแล้ว (${checked.length})`;
-        }
-        // ตัวกรอง "กลุ่มลูกค้า" แบบ multi-select — โครงเดียวกับ toggleTypeDropdown/updateTypeSelectLabel ด้านบน
-        function toggleCustomerGroupDropdown(triggerEl) {
-            const dropdown = document.getElementById('customer-group-dropdown');
-            const isOpen = dropdown.classList.contains('show');
-            if (isOpen) {
-                dropdown.classList.remove('show');
-                return;
-            }
-            const trigger = triggerEl || dropdown.previousElementSibling;
-            const rect = trigger.getBoundingClientRect();
-            dropdown.style.top = (rect.bottom + 4) + 'px';
-            dropdown.style.left = rect.left + 'px';
-            dropdown.classList.add('show');
-        }
-        function updateCustomerGroupSelectLabel() {
-            const checked = Array.from(document.querySelectorAll('#customer-group-dropdown input:checked')).map(cb => cb.value);
-            const label = document.getElementById('customer-group-select-label');
-            if (checked.length === 0) label.innerText = '-- เลือกกลุ่มลูกค้า --';
             else if (checked.length === 1) label.innerText = checked[0];
             else label.innerText = `เลือกแล้ว (${checked.length})`;
         }
@@ -2489,7 +2413,6 @@
             document.getElementById('report-customer-detail-body').innerHTML =
                 detailCard('ชื่อ–นามสกุล', escapeHtml(name)) + detailCard('เบอร์โทร', escapeHtml(r.phone || '-')) +
                 detailCard('LINE / Facebook', escapeHtml([r.line, r.facebook].filter(Boolean).join(' / ') || '-')) + detailCard('สินค้าที่สนใจ', escapeHtml(r.product || '-')) +
-                detailCard('สถานะลูกค้า', escapeHtml(r.type || '-')) + detailCard('กลุ่มลูกค้า', escapeHtml([r.customerGroup, r.customerGroupDetail].filter(Boolean).join(' — ') || '-')) +
                 detailCard('ที่อยู่', escapeHtml(address || '-'), true) + detailCard('🌾 การเกษตร / พื้นที่ / รายได้', escapeHtml(farms || '-'), true) +
                 detailCard('📋 งานประจำ', escapeHtml(job)) + detailCard('💵 รายได้เสริม', escapeHtml(side)) +
                 detailCard('🚜 เครื่องจักรที่มี', escapeHtml(machines || '-'), true) + detailCard('📉 หนี้สิน', escapeHtml(debts || '-'), true) +
@@ -2594,8 +2517,6 @@
             document.getElementById('filter-exact-phone').value = '';
             document.querySelectorAll('#type-dropdown input').forEach(cb => cb.checked = false);
             updateTypeSelectLabel();
-            document.querySelectorAll('#customer-group-dropdown input').forEach(cb => cb.checked = false);
-            updateCustomerGroupSelectLabel();
             document.getElementById('filter-start-date').value = '';
             document.getElementById('filter-end-date').value = '';
             document.getElementById('filter-appdate').value = '';
@@ -2618,7 +2539,6 @@
             const tbody = document.querySelector('#main-table tbody');
             tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูล...</td></tr>';
             const selectedTypes = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
-            const selectedCustomerGroups = Array.from(document.querySelectorAll('#customer-group-dropdown input:checked')).map(cb => cb.value);
             const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
             const sortByVal = determineSortBy();
             document.getElementById('sort-indicator').textContent = sortByLabel(sortByVal);
@@ -2631,7 +2551,6 @@
                     keyword: document.getElementById('filter-keyword').value.trim(),
                     exactPhone: document.getElementById('filter-exact-phone').value.trim(),
                     types: selectedTypes,
-                    customerGroups: selectedCustomerGroups,
                     startDate: document.getElementById('filter-start-date').value,
                     endDate: document.getElementById('filter-end-date').value,
                     appdate: document.getElementById('filter-appdate').value,
@@ -2757,24 +2676,13 @@
             if (!prov) return null;
             return (prov.a || []).find(a => a.n === districtName);
         }
-        // จังหวัดที่ใช้บ่อย (พื้นที่ขายหลักของ RST) — ให้ขึ้นก่อนเสมอในดรอปดาวน์จังหวัด
-        // เรียงตามลำดับที่ผู้ใช้กำหนดเอง (ไม่ใช่เรียงตามตัวอักษร) ส่วนจังหวัดที่เหลือทั้งหมดเรียงตามตัวอักษรต่อท้าย (2026-09-20)
-        const PRIORITY_PROVINCES = ['อุบลราชธานี', 'ศรีสะเกษ', 'กาฬสินธุ์', 'อำนาจเจริญ', 'ยโสธร', 'ร้อยเอ็ด', 'สุรินทร์', 'มุกดาหาร', 'นครพนม', 'มหาสารคาม', 'สกลนคร'];
         function populateProvinceSelect(selectId, allLabel) {
             const sel = document.getElementById(selectId);
-            const allNames = (typeof THAILAND_GEO_DATA !== 'undefined' ? THAILAND_GEO_DATA : []).map(p => p.n);
-            const priority = PRIORITY_PROVINCES.filter(n => allNames.includes(n));
-            const rest = allNames
-                .filter(n => !PRIORITY_PROVINCES.includes(n))
+            const provinces = (typeof THAILAND_GEO_DATA !== 'undefined' ? THAILAND_GEO_DATA : [])
+                .map(p => p.n)
                 .sort((a, b) => a.localeCompare(b, 'th'));
             const placeholder = allLabel ? `<option value="">${allLabel}</option>` : '<option value="">-- เลือกจังหวัด --</option>';
-            const priorityHtml = priority.length
-                ? `<optgroup label="ใช้บ่อย">${priority.map(n => `<option value="${n}">${n}</option>`).join('')}</optgroup>`
-                : '';
-            const restHtml = rest.length
-                ? `<optgroup label="จังหวัดอื่นๆ">${rest.map(n => `<option value="${n}">${n}</option>`).join('')}</optgroup>`
-                : '';
-            sel.innerHTML = placeholder + priorityHtml + restHtml;
+            sel.innerHTML = placeholder + provinces.map(n => `<option value="${n}">${n}</option>`).join('');
         }
         function populateDistrictSelect(selectId, provName, selected, allLabel) {
             const sel = document.getElementById(selectId);
@@ -2920,6 +2828,7 @@
         function resetFormState() {
             document.getElementById('customer-form').reset();
             applySaleEditFieldRestriction_(false); // เคลียร์การปิดฟิลด์จากรอบแก้ไขก่อนหน้า (ถ้ามี)
+            editOriginalPhone = '';
             document.getElementById('form-row-index').value = '';
             document.getElementById('phone-check-msg').innerHTML = '';
             duplicatePhoneMatch = null;
@@ -2955,6 +2864,7 @@
 
             resetFormState();
             document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
+            editOriginalPhone = row.phone || row.phone1 || '';
             document.getElementById('cust-date').value = row.date || '';
             document.getElementById('cust-appdate').value = row.booking_date || row.appdate || '';
             document.getElementById('cust-fname').value = row.firstname || '';
@@ -2963,8 +2873,6 @@
             document.getElementById('cust-line').value = row.line || '';
             document.getElementById('cust-facebook').value = row.facebook || '';
             setSelectValueWithFallback('cust-type', row.type || 'ลงทะเบียน');
-            setSelectValueWithFallback('cust-customer-group', row.customerGroup || '');
-            document.getElementById('cust-customer-group-detail').value = row.customerGroupDetail || '';
 
             const product = getRowProductParts(row);
             setSelectValueWithFallback('cust-product-category', product.category === '-' ? '' : product.category);
@@ -2979,9 +2887,6 @@
             document.getElementById('cust-moo').value = row.moo || '';
             document.getElementById('cust-village').value = row.village || '';
             document.getElementById('cust-zipcode').value = row.zipcode || '';
-            // เผื่อ THAILAND_GEO_DATA เพิ่งโหลดเสร็จจาก GitHub หลังหน้าเว็บโหลดครั้งแรก (2026-09-20) —
-            // เติมดรอปดาวน์จังหวัดใหม่ให้ชัวร์ก่อนตั้งค่า ไม่งั้นถ้าคนกดแก้ไขไวมากอาจเจอดรอปดาวน์ว่างอยู่
-            populateProvinceSelect('cust-province');
             setSelectValueWithFallback('cust-province', row.province || DEFAULT_PROVINCE);
             populateDistrictSelect('cust-district', document.getElementById('cust-province').value, row.district || '');
             populateSubdistrictSelect('cust-subdistrict', document.getElementById('cust-province').value, row.district || '', row.subdistrict || '');
@@ -3010,8 +2915,7 @@
         function applySaleEditFieldRestriction_(restricted) {
             const restrictedFieldIds = [
                 'cust-date', 'cust-appdate', 'cust-phone', 'cust-line', 'cust-facebook',
-                'cust-type', 'cust-customer-group', 'cust-customer-group-detail',
-                'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-note'
+                'cust-type', 'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-note'
             ];
             restrictedFieldIds.forEach(id => {
                 const el = document.getElementById(id);
@@ -3071,8 +2975,6 @@
                 name: fullName,
                 phone: document.getElementById('cust-phone').value.trim(),
                 type: document.getElementById('cust-type').value,
-                customerGroup: document.getElementById('cust-customer-group').value,
-                customerGroupDetail: document.getElementById('cust-customer-group-detail').value.trim(),
                 productCategory: document.getElementById('cust-product-category').value,
                 productModel: getProductModelValue('cust-product-model'),
                 product: [
@@ -3093,7 +2995,7 @@
                 financialInfo: JSON.stringify(customerFinancial)
             };
             const actionType = rid ? 'update' : 'add';
-            const payloadReq = rid ? { rowIndex: rid, cust: packData } : packData;
+            const payloadReq = rid ? { rowIndex: rid, cust: packData, phoneHint: editOriginalPhone } : packData;
             const originalBtnHtml = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
@@ -3212,6 +3114,10 @@
         /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
         let historyModalRowIdx = null;
         let historyModalKey = null;
+        let historyModalPhoneHint = ''; // (2026-09-19) เบอร์โทรของแถวนี้ ณ ตอนเปิดไทม์ไลน์ — ส่งเป็น phoneHint
+        // ให้ backend หาแถวด้วย TextFinder เร็วๆ แทนการ fallback ไปคำนวณ fingerprint วนทั้งชีต
+        // (ทางลัดนี้มีอยู่แล้วฝั่ง backend แต่ frontend ไม่เคยส่งมาให้เลย ทำให้พึ่งพา fallback
+        // ที่เสี่ยง mismatch ระหว่างรูปแบบวันที่/เบอร์ของ BigQuery กับ Sheet เสมอมา)
         let historyModalEntries = [];
         let historyModalSource = 'main'; // 'main' = currentRenderedData (ตารางหลัก), 'stale' = staleLeadsData (รายงานลูกค้าค้างติดตาม)
         function selectFollowupType(button) {
@@ -3239,6 +3145,7 @@
             historyModalRowIdx = idx;
             historyModalSource = source || 'main';
             historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
+            historyModalPhoneHint = row.phone || row.phone1 || '';
             historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
             document.getElementById('history-customer-info').innerHTML =
                 `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
@@ -3286,7 +3193,7 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry } })
+                body: JSON.stringify({ action: 'addFollowUp', payload: { key: historyModalKey, entry: newEntry, phoneHint: historyModalPhoneHint } })
             })
             .then(res => res.json())
             .then(resData => {
@@ -3340,10 +3247,10 @@
                 alert('ไม่มีข้อมูลสำหรับส่งออก');
                 return;
             }
-            let csvContent = "﻿วันที่บันทึก,วันที่นัดหมาย,ติดตามล่าสุด,ชื่อ-สกุล,เบอร์โทร,สถานะลูกค้า,กลุ่มลูกค้า,รายละเอียดกลุ่มลูกค้า,ประเภทสินค้า,รุ่นรถ,ตำบล,อำเภอ,จังหวัด,หมายเหตุ\n";
+            let csvContent = "﻿วันที่บันทึก,วันที่นัดหมาย,ติดตามล่าสุด,ชื่อ-สกุล,เบอร์โทร,ประเภท,ประเภทสินค้า,รุ่นรถ,ตำบล,อำเภอ,จังหวัด,หมายเหตุ\n";
             currentRenderedData.forEach(r => {
                 const prodParts = getRowProductParts(r);
-                csvContent += `"${r.date}","${r.booking_date}","${r.lastFollowupDate || ''}","${r.name}","${r.phone}","${r.type}","${(r.customerGroup||'').replace(/"/g, '""')}","${(r.customerGroupDetail||'').replace(/"/g, '""')}","${prodParts.category}","${prodParts.model}","${r.subdistrict}","${r.district}","${r.province}","${(r.remark||'').replace(/"/g, '""')}"\n`;
+                csvContent += `"${r.date}","${r.booking_date}","${r.lastFollowupDate || ''}","${r.name}","${r.phone}","${r.type}","${prodParts.category}","${prodParts.model}","${r.subdistrict}","${r.district}","${r.province}","${(r.remark||'').replace(/"/g, '""')}"\n`;
             });
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
