@@ -1108,7 +1108,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r39-2026-09-25-created-by-dup-fix';
+        const EXPECTED_CODE_VERSION = 'r40-2026-09-25-activity-log-live';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1440,6 +1440,14 @@
             .then(resData => {
                 if (!resData || !resData.success) throw new Error(resData ? resData.message : 'ไม่ได้รับข้อมูล');
                 renderActivityLog(Array.isArray(resData.data) ? resData.data : []);
+                // (r40) เตือน admin ถ้าการซิงก์เข้า BigQuery ค้าง (หน้านี้ยังเห็นข้อมูลล่าสุดครบ เพราะอ่านจากชีตเสริมให้แล้ว)
+                const si = resData.syncInfo;
+                if (si && (si.pointerBroken || Number(si.pendingCount) > 60)) {
+                    crmNotify.info(null, si.pointerBroken
+                        ? 'การซิงก์ประวัติเข้า BigQuery หยุดอยู่ (มีการลบแถวในแท็บ log) — หน้านี้แสดงจากชีตแทน ให้รัน runRepair_ActivityLogSyncPointer ใน Apps Script'
+                        : `การซิงก์ประวัติเข้า BigQuery ค้างอยู่ ${Number(si.pendingCount).toLocaleString()} รายการ — หน้านี้แสดงจากชีตแทน ให้รัน runDiagnostic_ActivityLogSync ใน Apps Script`,
+                        { duration: 9000 });
+                }
             })
             .catch(err => {
                 tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:#ef4444;">❌ โหลดประวัติไม่สำเร็จ: ${escapeHtml(err.message)}</td></tr>`;
@@ -1459,7 +1467,7 @@
                     ? '<span style="color:#16a34a; font-weight:600;">✓ สำเร็จ</span>'
                     : '<span style="color:#ef4444; font-weight:600;">✗ ไม่สำเร็จ</span>';
                 return `<tr>
-                    <td>${escapeHtml(r.logged_at || '-')}</td>
+                    <td>${escapeHtml(r.logged_at || '-')}${r.pending_sync ? ' <span style="font-size:10.5px; color:#94a3b8;" title="บันทึกแล้วในชีต รอซิงก์เข้า BigQuery (ไม่เกิน ~5 นาที)">• ล่าสุด</span>' : ''}</td>
                     <td>${escapeHtml(r.username || '-')}</td>
                     <td>${escapeHtml(r.role || '-')}</td>
                     <td>${actionLabel}</td>

@@ -71,7 +71,9 @@
 // ซ้ำกับรายชื่อเดิม (ระบบรวมเข้ารายชื่อเดิมแทนการสร้างใหม่ แต่ไม่เคยเติม created_by ให้รายชื่อเดิมที่ยังว่าง)
 // + กันช่อง Facebook ที่กรอกแค่ "-" / "ไม่มี" ไปจับคู่ซ้ำกับลูกค้าคนอื่นผิดคน + เพิ่มฟังก์ชันเติม created_by
 // ย้อนหลังจาก user_activity_log (รันเองครั้งเดียว) — ดู addCustomerHTML และ runBackfillCreatedBy_*
-var CODE_VERSION = 'r39-2026-09-25-created-by-dup-fix';
+// หมายเหตุ (2026-09-25 — r40): หน้า "📋 ประวัติการใช้งาน" แสดงเวลาไทย + รวมแถวที่ยังไม่ซิงก์เข้า BigQuery จากชีตโดยตรง
+// (ไม่ดูเหมือนหยุดบันทึกอีกเมื่อซิงก์ช้า) + ฟังก์ชันตรวจ/ซ่อมการซิงก์ runDiagnostic_ActivityLogSync / runRepair_ActivityLogSyncPointer
+var CODE_VERSION = 'r40-2026-09-25-activity-log-live';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -936,11 +938,17 @@ function installScheduledActivityLogSync() {
 }
 // ดึงประวัติการใช้งานมาแสดงในหน้า "📋 ประวัติการใช้งาน" — เฉพาะ admin เรียกได้
 // (เช็คสิทธิ์ที่ doPost ก่อนเรียกฟังก์ชันนี้แล้ว)
+//
+// (2026-09-25 r40) ปรับ 2 อย่าง:
+//   1) เวลาแสดงเป็นเวลาไทยเสมอ (FORMAT_TIMESTAMP ... 'Asia/Bangkok') — เดิม CAST เป็น UTC ทำให้เวลาเพี้ยน 7 ชม.
+//   2) รวม "แถวที่ยังไม่ได้ซิงก์เข้า BigQuery" จากแท็บ user_activity_log ในชีตโดยตรงด้วย — เดิมหน้านี้อ่าน
+//      จาก BigQuery อย่างเดียว ถ้า trigger ซิงก์ช้า/หยุดทำงาน หน้านี้จะดูเหมือน "หยุดบันทึก" ทั้งที่ชีตยังบันทึก
+//      อยู่ปกติ — ตอนนี้เห็นข้อมูลล่าสุดทันทีเสมอ (อ่านชีตเฉพาะแถวหลังจุดที่ซิงก์ล่าสุด ไม่อ่านทั้งแท็บ)
 function getUserActivityLogHTML(filters) {
   filters = filters || {};
   try {
-    var startDate = cleanStr(filters.startDate) || formatDateStr(new Date());
-    var endDate = cleanStr(filters.endDate) || formatDateStr(new Date());
+    var startDate = cleanStr(filters.startDate) || Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
+    var endDate = cleanStr(filters.endDate) || Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
     var usernameFilter = cleanStr(filters.username);
 
     var whereParts = ["log_date BETWEEN @startDate AND @endDate"];
@@ -953,15 +961,157 @@ function getUserActivityLogHTML(filters) {
       params.push({ name: 'username', value: usernameFilter });
     }
 
-    var sql = "SELECT CAST(logged_at AS STRING) as logged_at, username, role, action, detail, is_success " +
-      "FROM " + ACTIVITY_LOG_TABLE_FULL_PATH +
-      " WHERE " + whereParts.join(' AND ') +
-      " ORDER BY logged_at DESC LIMIT 500";
-    var rows = runParamQueryFetch(sql, params);
-    return { success: true, data: rows || [] };
+    var bqRows = [];
+    var bqError = '';
+    try {
+      var sql = "SELECT FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', logged_at, 'Asia/Bangkok') as logged_at, username, role, action, detail, is_success " +
+        "FROM " + ACTIVITY_LOG_TABLE_FULL_PATH +
+        " WHERE " + whereParts.join(' AND ') +
+        " ORDER BY logged_at DESC LIMIT 500";
+      bqRows = runParamQueryFetch(sql, params) || [];
+    } catch (bqErr) {
+      bqError = bqErr.toString();
+    }
+
+    // ถ้า BigQuery ใช้ไม่ได้เลย ให้อ่านจากชีตย้อนหลังให้มากขึ้นแทน (สูงสุด 5,000 แถวล่าสุด)
+    var pending = { rows: [], info: null };
+    var pendingError = '';
+    try {
+      pending = readUnsyncedActivityLogRows_(startDate, endDate, usernameFilter, !!bqError);
+    } catch (shErr) {
+      pendingError = shErr.toString();
+    }
+    if (bqError && pendingError) {
+      return { success: false, message: bqError + ' | ' + pendingError, data: [] };
+    }
+
+    // รวม + ตัดแถวซ้ำ (แถวที่ซิงก์แล้วจะมีทั้งใน BigQuery และในชีต) แล้วเรียงใหม่ล่าสุดก่อน
+    var seen = {};
+    var merged = [];
+    var keyOf = function(r) { return cleanStr(r.logged_at) + '|' + cleanStr(r.username).toLowerCase() + '|' + cleanStr(r.action); };
+    bqRows.concat(pending.rows).forEach(function(r) {
+      var k = keyOf(r);
+      if (seen[k]) return;
+      seen[k] = true;
+      merged.push(r);
+    });
+    merged.sort(function(a, b) { return cleanStr(b.logged_at).localeCompare(cleanStr(a.logged_at)); });
+
+    return {
+      success: true,
+      data: merged.slice(0, 500),
+      syncInfo: pending.info,
+      bigQueryError: bqError || undefined
+    };
   } catch (err) {
     return { success: false, message: err.toString(), data: [] };
   }
+}
+
+// อ่านแถวจากแท็บ user_activity_log ที่ "ยังไม่ถูกซิงก์" เข้า BigQuery (หลังจุด ACTIVITY_LOG_LAST_SYNCED_ROW)
+// แปลงเป็นรูปแบบเดียวกับผลจาก BigQuery (เวลาไทย 'yyyy-MM-dd HH:mm:ss') และกรองตามช่วงวันที่/username
+function readUnsyncedActivityLogRows_(startDate, endDate, usernameFilter, wideScan) {
+  var sheet = getOrCreateSheetTab_(ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS);
+  var headerMap = buildHeaderMapForColumns_(sheet, ACTIVITY_LOG_SHEET_COLUMNS);
+  var lastRow = sheet.getLastRow();
+  var lastSynced = parseInt(PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_LAST_SYNCED_ROW_KEY) || '1', 10);
+  if (isNaN(lastSynced) || lastSynced < 1) lastSynced = 1;
+  var pointerBroken = lastSynced > lastRow; // มีคนลบแถวในแท็บ log ทำให้ตัวชี้ซิงก์เลยท้ายชีตไปแล้ว
+  var info = {
+    sheetLastRow: lastRow,
+    lastSyncedRow: lastSynced,
+    pendingCount: pointerBroken ? null : Math.max(0, lastRow - lastSynced),
+    pointerBroken: pointerBroken
+  };
+  if (lastRow < 2) return { rows: [], info: info };
+
+  var fromRow = wideScan ? 2 : (pointerBroken ? lastRow - 300 : lastSynced + 1);
+  fromRow = Math.max(2, fromRow, lastRow - 4999);
+  if (fromRow > lastRow) return { rows: [], info: info };
+
+  var lastCol = sheet.getLastColumn();
+  var values = sheet.getRange(fromRow, 1, lastRow - fromRow + 1, lastCol).getValues();
+  var col = function(name) { return headerMap[name] - 1; };
+  var userLc = usernameFilter ? usernameFilter.toLowerCase() : '';
+  var out = [];
+  values.forEach(function(v) {
+    var ts = v[col('logged_at')];
+    var d = (ts instanceof Date) ? ts : (cleanStr(ts) ? new Date(ts) : null);
+    if (!d || isNaN(d.getTime())) return;
+    // วันที่อ้างอิงจากเวลาไทยของ logged_at (ตรงกับค่าที่ logUserActivity_ เขียนลง log_date)
+    var logDate = Utilities.formatDate(d, 'GMT+7', 'yyyy-MM-dd');
+    if (logDate < startDate || logDate > endDate) return;
+    var uname = cleanStr(v[col('username')]);
+    if (userLc && uname.toLowerCase() !== userLc) return;
+    var ok = v[col('is_success')];
+    out.push({
+      logged_at: Utilities.formatDate(d, 'GMT+7', 'yyyy-MM-dd HH:mm:ss'),
+      username: uname,
+      role: cleanStr(v[col('role')]),
+      action: cleanStr(v[col('action')]),
+      detail: cleanStr(v[col('detail')]),
+      is_success: (ok === true || cleanStr(ok).toLowerCase() === 'true') ? 'true' : 'false',
+      pending_sync: true
+    });
+  });
+  return { rows: out, info: info };
+}
+
+// 🔍 (r40) ตรวจสอบการซิงก์ประวัติการใช้งาน — รันเองใน Apps Script editor:
+// เลือก runDiagnostic_ActivityLogSync จาก dropdown แล้วกด ▶ Run → ดูผลใน Execution log
+// (อ่านอย่างเดียว ยกเว้นขั้นสุดท้ายที่ลองสั่งซิงก์ 1 รอบ ซึ่งเป็นงานเดียวกับที่ trigger ทำทุก 5 นาทีอยู่แล้ว)
+function runDiagnostic_ActivityLogSync() {
+  Logger.log('CODE_VERSION = ' + CODE_VERSION);
+  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+  Logger.log('Time zone ของสเปรดชีต = ' + ss.getSpreadsheetTimeZone() + ' | Time zone ของสคริปต์ = ' + Session.getScriptTimeZone() +
+             ' (ถ้าไม่ใช่ Asia/Bangkok เวลาในคอลัมน์ logged_at ของชีตจะแสดงเพี้ยนจากเวลาไทย แต่ค่าที่บันทึกจริงถูกต้อง)');
+  var sheet = getOrCreateSheetTab_(ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS);
+  var headerMap = buildHeaderMapForColumns_(sheet, ACTIVITY_LOG_SHEET_COLUMNS);
+  var lastRow = sheet.getLastRow();
+  var lastTs = lastRow >= 2 ? sheet.getRange(lastRow, headerMap['logged_at']).getValue() : '';
+  Logger.log('ชีต: แถวสุดท้าย = ' + lastRow + ' | บันทึกล่าสุด (เวลาไทย) = ' +
+             (lastTs instanceof Date ? Utilities.formatDate(lastTs, 'GMT+7', 'yyyy-MM-dd HH:mm:ss') : String(lastTs)));
+  var pointer = parseInt(PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_LAST_SYNCED_ROW_KEY) || '1', 10);
+  Logger.log('ตัวชี้ซิงก์ (แถวล่าสุดที่ซิงก์แล้ว) = ' + pointer + (pointer > lastRow
+    ? ' ❌ เลยท้ายชีต (มีการลบแถวในแท็บ log) → รัน runRepair_ActivityLogSyncPointer'
+    : ' | รอซิงก์อีก ' + (lastRow - pointer) + ' แถว'));
+  var trig = ScriptApp.getProjectTriggers().filter(function(t) { return t.getHandlerFunction() === 'scheduledSyncActivityLogToBigQuery_'; });
+  Logger.log('trigger ซิงก์ประวัติการใช้งาน: ' + (trig.length ? 'มี ' + trig.length + ' ตัว' : '❌ ไม่มี → รัน installScheduledActivityLogSync 1 ครั้ง'));
+  try {
+    var r = runParamQueryFetch("SELECT COUNT(*) AS n, FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', MAX(logged_at), 'Asia/Bangkok') AS last_ts FROM " + ACTIVITY_LOG_TABLE_FULL_PATH, []);
+    Logger.log('BigQuery: ทั้งหมด ' + r[0].n + ' แถว | ล่าสุด (เวลาไทย) = ' + r[0].last_ts);
+  } catch (e) {
+    Logger.log('BigQuery: query ไม่ได้ — ' + e);
+  }
+  if (pointer <= lastRow && lastRow > pointer) {
+    try {
+      syncNewSheetRowsToBigQueryAppend_(ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS, ACTIVITY_LOG_TYPE_MAP,
+        ACTIVITY_LOG_TABLE_ID, ACTIVITY_LOG_LAST_SYNCED_ROW_KEY);
+      Logger.log('✅ ลองซิงก์ 1 รอบ: สำเร็จ (ตัวชี้ใหม่ = ' + PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_LAST_SYNCED_ROW_KEY) + ')');
+    } catch (e2) {
+      Logger.log('❌ ลองซิงก์ 1 รอบ: ล้มเหลว — ' + e2 + ' (นี่คือสาเหตุที่ trigger ซิงก์ไม่ผ่าน)');
+    }
+  }
+}
+
+// 🛠️ (r40) ซ่อมตัวชี้ซิงก์ กรณีมีคนลบแถวในแท็บ user_activity_log (ตัวชี้เลยท้ายชีต → ซิงก์หยุดถาวร)
+// หาแถวสุดท้ายในชีตที่เวลาไม่เกินแถวล่าสุดที่มีอยู่แล้วใน BigQuery แล้วตั้งตัวชี้ไว้ตรงนั้น (ไม่ทำให้ข้อมูลซ้ำ)
+function runRepair_ActivityLogSyncPointer() {
+  var r = runParamQueryFetch("SELECT UNIX_MILLIS(MAX(logged_at)) AS ms FROM " + ACTIVITY_LOG_TABLE_FULL_PATH, []);
+  var maxMs = parseInt(r && r[0] && r[0].ms, 10);
+  var sheet = getOrCreateSheetTab_(ACTIVITY_LOG_SHEET_NAME, ACTIVITY_LOG_SHEET_COLUMNS);
+  var headerMap = buildHeaderMapForColumns_(sheet, ACTIVITY_LOG_SHEET_COLUMNS);
+  var lastRow = sheet.getLastRow();
+  var newPointer = 1;
+  if (!isNaN(maxMs) && lastRow >= 2) {
+    var ts = sheet.getRange(2, headerMap['logged_at'], lastRow - 1, 1).getValues();
+    for (var i = 0; i < ts.length; i++) {
+      var d = ts[i][0] instanceof Date ? ts[i][0] : new Date(ts[i][0]);
+      if (!isNaN(d.getTime()) && d.getTime() <= maxMs) newPointer = i + 2;
+    }
+  }
+  PropertiesService.getScriptProperties().setProperty(ACTIVITY_LOG_LAST_SYNCED_ROW_KEY, String(newPointer));
+  Logger.log('ตั้งตัวชี้ซิงก์ใหม่ = แถว ' + newPointer + ' (ชีตมี ' + lastRow + ' แถว) — รอบซิงก์ถัดไปจะส่งแถว ' + (newPointer + 1) + ' เป็นต้นไป');
 }
 
 // =================================================================
