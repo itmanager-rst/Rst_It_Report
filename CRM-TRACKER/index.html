@@ -328,6 +328,27 @@
             max-width: min(90vw, 420px); text-align: center; line-height: 1.5;
         }
         #leak-security-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        /* ===== (2026-09-25 r40) แถบแจ้งสถานะการทำงาน (crmNotify) — บันทึก/แก้ไข/ลบ/ปริ้น/โหลดข้อมูล =====
+           มุมขวาบน (มือถือ: เต็มความกว้างด้านบน) ไม่บังการกดปุ่มอื่น ไม่ติดไปตอนสั่งพิมพ์ */
+        #crm-notify-stack { position: fixed; top: 14px; right: 14px; z-index: 99998; display: flex; flex-direction: column; gap: 8px; width: min(92vw, 360px); pointer-events: none; }
+        .crm-notify { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 8px; padding: 10px 10px 10px 12px; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12); font-size: 13px; line-height: 1.45; opacity: 0; transform: translateY(-6px); transition: opacity .18s ease, transform .18s ease; }
+        .crm-notify.show { opacity: 1; transform: none; }
+        .crm-notify.is-loading { border-left-color: #f59e0b; }
+        .crm-notify.is-success { border-left-color: #16a34a; }
+        .crm-notify.is-error { border-left-color: #dc2626; }
+        .crm-notify.is-info { border-left-color: #0284c7; }
+        .crm-notify-icon { flex-shrink: 0; width: 16px; text-align: center; font-size: 14px; line-height: 19px; }
+        .crm-notify-text { flex: 1; min-width: 0; word-break: break-word; }
+        .crm-notify-close { flex-shrink: 0; background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+        .crm-notify-close:hover { color: #475569; }
+        .crm-notify-close:focus-visible { outline: 2px solid #0284c7; outline-offset: 1px; }
+        .crm-spinner { display: inline-block; width: 14px; height: 14px; margin-top: 2px; border: 2px solid #fde68a; border-top-color: #f59e0b; border-radius: 50%; animation: crm-spin .8s linear infinite; }
+        @keyframes crm-spin { to { transform: rotate(360deg); } }
+        .crm-pending { color: #94a3b8; }
+        .crm-pending::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; border: 2px solid #e2e8f0; border-top-color: #94a3b8; border-radius: 50%; animation: crm-spin .8s linear infinite; }
+        @media (max-width: 680px) { #crm-notify-stack { top: 8px; left: 8px; right: 8px; width: auto; } }
+        @media (prefers-reduced-motion: reduce) { .crm-notify { transition: none; } .crm-spinner, .crm-pending::before { animation-duration: 2.4s; } }
+        @media print { #crm-notify-stack { display: none !important; } }
     </style>
 </head>
 <body>
@@ -2237,9 +2258,9 @@
             { key: 'followUpCount', label: 'จำนวนครั้งที่ติดตาม', width: 100, render: (row, ctx) => String(ctx.followCount || 0) },
             // (2026-09-19) ชื่อผู้คีย์ข้อมูลลูกค้ารายนี้เข้าระบบครั้งแรก — มาจากคอลัมน์ optional
             // "created_by" ฝั่ง Sheet/BigQuery ถ้ายังไม่ได้เพิ่มหัวคอลัมน์นี้ในชีตจริง จะโชว์ "-" ไปก่อน
-            { key: 'createdBy', label: 'ผู้บันทึกลูกค้า', width: 140, render: row => escapeHtml(row.created_by || row.createdBy || '-') },
+            { key: 'createdBy', label: 'ผู้บันทึกลูกค้า', width: 140, render: row => (row._auditPending && !(row.created_by || row.createdBy)) ? auditPendingHtml_('กำลังโหลด...') : escapeHtml(row.created_by || row.createdBy || '-') },
             // (2026-09-24) ผู้แก้ไขข้อมูลลูกค้าล่าสุด + ผู้บันทึกการติดตามครั้งล่าสุด
-            { key: 'updatedBy', label: 'ผู้แก้ไขล่าสุด', width: 140, render: row => escapeHtml(row.updated_by || row.updatedBy || '-') },
+            { key: 'updatedBy', label: 'ผู้แก้ไขล่าสุด', width: 140, render: row => (row._auditPending && !(row.updated_by || row.updatedBy)) ? auditPendingHtml_('กำลังโหลด...') : escapeHtml(row.updated_by || row.updatedBy || '-') },
             { key: 'lastFollowupBy', label: 'ผู้ติดตามล่าสุด', width: 140, render: row => escapeHtml(getLastFollowupBy_(row) || '-') }
         ];
         // ชื่อผู้บันทึกการติดตามครั้งล่าสุด (entry ที่ date ล่าสุด, ถ้าวันเท่ากันใช้ loggedAt)
@@ -2764,8 +2785,12 @@
                 detailCard('📋 งานประจำ', escapeHtml(job)) + detailCard('💵 รายได้เสริม', escapeHtml(side)) +
                 detailCard('🚜 เครื่องจักรที่มี', escapeHtml(machines || '-'), true) + detailCard('📉 หนี้สิน', escapeHtml(debts || '-'), true) +
                 detailCard('📝 หมายเหตุ', escapeHtml(r.remark || '-'), true) +
-                detailCard('👤 ผู้บันทึกลูกค้า', escapeHtml((r.created_by || r.createdBy || '-') + (r.date ? ` · ${r.date}` : ''))) +
-                detailCard('✏️ ผู้แก้ไขล่าสุด', escapeHtml(r.updated_by || r.updatedBy || '-'));
+                detailCard('👤 ผู้บันทึกลูกค้า', (r._auditPending && !(r.created_by || r.createdBy))
+                    ? auditPendingHtml_('กำลังโหลดชื่อผู้บันทึก...') + (r.date ? escapeHtml(` · ${r.date}`) : '')
+                    : escapeHtml((r.created_by || r.createdBy || '-') + (r.date ? ` · ${r.date}` : ''))) +
+                detailCard('✏️ ผู้แก้ไขล่าสุด', (r._auditPending && !(r.updated_by || r.updatedBy))
+                    ? auditPendingHtml_('กำลังโหลด...')
+                    : escapeHtml(r.updated_by || r.updatedBy || '-'));
             document.getElementById('report-customer-detail-overlay').classList.add('show');
         }
         function openReportCustomerDetail(idx) { showCustomerDetail(intakeDetailRows[idx]); }
@@ -2883,10 +2908,100 @@
         function handleSearchKeyPress(e) {
             if(e.key === 'Enter') fetchDataFromServer(1);
         }
+        /* ===== (2026-09-25 r40) crmNotify — แถบแจ้งสถานะการทำงานแบบไม่บล็อกหน้าจอ =====
+           ใช้: const id = crmNotify.loading('กำลังบันทึก...');  แล้วค่อย crmNotify.success(id, 'บันทึกสำเร็จ')
+                หรือ crmNotify.error(id, '...') / crmNotify.info(id, '...') / crmNotify.dismiss(id)
+           (ส่ง id = null เพื่อสร้างแถบใหม่เลยโดยไม่ต้องมี loading ก่อน) — ข้อความใส่ด้วย textContent เสมอ (กัน XSS)
+           แถบ loading ที่ค้างนานเกิน 12 วิ จะเติมข้อความ "ใช้เวลานานกว่าปกติ" และปิดตัวเองที่ 90 วิ กันค้างถาวร */
+        const crmNotify = (() => {
+            const DURATION = { success: 2600, info: 5000, error: 7000 };
+            const ICON = { success: '✓', error: '✕', info: 'ℹ' };
+            const items = new Map();
+            let seq = 0;
+            function getStack() {
+                let el = document.getElementById('crm-notify-stack');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'crm-notify-stack';
+                    el.setAttribute('role', 'status');
+                    el.setAttribute('aria-live', 'polite');
+                    document.body.appendChild(el);
+                }
+                return el;
+            }
+            function clearTimers(item) {
+                clearTimeout(item.hideTimer); clearTimeout(item.slowTimer); clearTimeout(item.maxTimer);
+            }
+            function paint(item, type, message) {
+                item.type = type;
+                item.message = String(message || '');
+                item.el.className = 'crm-notify is-' + type + ' show';
+                item.icon.textContent = '';
+                if (type === 'loading') {
+                    const sp = document.createElement('span'); sp.className = 'crm-spinner'; item.icon.appendChild(sp);
+                } else {
+                    item.icon.textContent = ICON[type] || '';
+                }
+                item.text.textContent = item.message;
+            }
+            function show(id, type, message, opts) {
+                opts = opts || {};
+                let item = id ? items.get(id) : null;
+                if (!item) {
+                    id = 'n' + (++seq);
+                    const el = document.createElement('div');
+                    const icon = document.createElement('span'); icon.className = 'crm-notify-icon'; icon.setAttribute('aria-hidden', 'true');
+                    const text = document.createElement('span'); text.className = 'crm-notify-text';
+                    const close = document.createElement('button');
+                    close.type = 'button'; close.className = 'crm-notify-close'; close.setAttribute('aria-label', 'ปิดข้อความแจ้งเตือน'); close.textContent = '×';
+                    el.appendChild(icon); el.appendChild(text); el.appendChild(close);
+                    item = { id, el, icon, text };
+                    close.addEventListener('click', () => dismiss(id));
+                    items.set(id, item);
+                    el.className = 'crm-notify';
+                    getStack().appendChild(el);
+                    requestAnimationFrame(() => { if (items.has(id)) el.classList.add('show'); });
+                }
+                clearTimers(item);
+                paint(item, type, message);
+                if (type === 'loading') {
+                    item.slowTimer = setTimeout(() => {
+                        if (items.has(id) && item.type === 'loading') item.text.textContent = item.message + ' (ใช้เวลานานกว่าปกติ กรุณารอสักครู่)';
+                    }, 12000);
+                    item.maxTimer = setTimeout(() => dismiss(id), 90000);
+                } else {
+                    const ms = opts.duration !== undefined ? opts.duration : DURATION[type];
+                    if (ms > 0) item.hideTimer = setTimeout(() => dismiss(id), ms);
+                }
+                return id;
+            }
+            function dismiss(id) {
+                const item = id ? items.get(id) : null;
+                if (!item) return;
+                clearTimers(item);
+                items.delete(id);
+                item.el.classList.remove('show');
+                setTimeout(() => { if (item.el.parentNode) item.el.parentNode.removeChild(item.el); }, 200);
+            }
+            return {
+                loading: (message) => show(null, 'loading', message),
+                success: (id, message, opts) => show(id, 'success', message, opts),
+                error: (id, message, opts) => show(id, 'error', message, opts),
+                info: (id, message, opts) => show(id, 'info', message, opts),
+                dismiss: dismiss
+            };
+        })();
+        // ข้อความ "กำลังโหลด..." เล็กๆ ในช่องชื่อผู้บันทึก/ผู้แก้ไข ระหว่างรอดึงชื่อสดจาก Google Sheet
+        function auditPendingHtml_(label) {
+            return `<span class="crm-pending">${escapeHtml(label || 'กำลังโหลด...')}</span>`;
+        }
+        let _dataLoadNotifyId = null; // (r40) แถบ "กำลังโหลดข้อมูล" ของตารางหลัก (มีได้ทีละอันเดียว)
         function fetchDataFromServer(page = 1) {
             currentPage = page;
             const tbody = document.querySelector('#main-table tbody');
             tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; padding: 20px;">⚡ กำลังดึงข้อมูล...</td></tr>';
+            crmNotify.dismiss(_dataLoadNotifyId);
+            const loadNotifyId = _dataLoadNotifyId = crmNotify.loading('กำลังโหลดข้อมูลลูกค้า...');
             const selectedTypes = Array.from(document.querySelectorAll('#type-dropdown input:checked')).map(cb => cb.value);
             const pageSizeVal = parseInt(document.getElementById('filter-pagesize').value) || 20;
             const sortByVal = determineSortBy();
@@ -2924,15 +3039,19 @@
                     totalRecords = resData.totalCount || 0;
                     currentRenderedData = resData.data || [];
                     document.getElementById('stat-display').innerText = Number(totalRecords).toLocaleString();
+                    // (r40) เรียก enrich ก่อน render เพื่อให้ธง "กำลังโหลดชื่อผู้บันทึก" ติดตั้งแต่การวาดตารางรอบแรก
+                    enrichRowsWithLiveAudit_(currentRenderedData, () => renderTableRows(currentRenderedData));
                     renderTableRows(currentRenderedData);
                     updatePaginationControls();
                     fetchDashboardSummary(payload.filters);
-                    enrichRowsWithLiveAudit_(currentRenderedData, () => renderTableRows(currentRenderedData));
+                    crmNotify.dismiss(loadNotifyId);
                 } else {
                     tbody.innerHTML = `<tr><td colspan="99" style="text-align: center; color: red;">❌ เกิดข้อผิดพลาด: ${resData.message}</td></tr>`;
+                    crmNotify.error(loadNotifyId, 'โหลดข้อมูลลูกค้าไม่สำเร็จ: ' + ((resData && resData.message) || 'ไม่ทราบสาเหตุ'));
                 }
             }).catch(err => {
                 tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; color: red;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</td></tr>';
+                crmNotify.error(loadNotifyId, 'โหลดข้อมูลลูกค้าไม่สำเร็จ: การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว');
             });
         }
         /* (2026-09-24 r34) ดึง "ผู้บันทึก / ผู้แก้ไขล่าสุด / ผู้ติดตาม" สดจาก Google Sheet มาเติมทับข้อมูลจาก BigQuery
@@ -2953,7 +3072,15 @@
         }
         function enrichRowsWithLiveAudit_(rows, onChanged) {
             if (!Array.isArray(rows) || !rows.length) return;
-            const items = rows.slice(0, 100).map(r => ({ key: r.raw_key || r.sheetRowIndex || '', phone: r.phone || r.phone1 || '' }));
+            // (r40) ติดธง _auditPending ระหว่างรอ ให้ช่องผู้บันทึก/ผู้แก้ไขขึ้น "กำลังโหลด..." แทน "-"
+            // และเรียก onChanged เสมอเมื่อเสร็จ (สำเร็จหรือล้มเหลว) เพื่อเอาข้อความกำลังโหลดออก
+            const targetRows = rows.slice(0, 100).filter(Boolean);
+            targetRows.forEach(r => { r._auditPending = true; });
+            const finishAudit = () => {
+                targetRows.forEach(r => { r._auditPending = false; });
+                if (typeof onChanged === 'function') onChanged();
+            };
+            const items = targetRows.map(r => ({ key: r.raw_key || r.sheetRowIndex || '', phone: r.phone || r.phone1 || '' }));
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -2961,15 +3088,15 @@
             })
             .then(res => res.json())
             .then(resData => {
-                if (!resData || !resData.success || !resData.data) return;
-                let changed = false;
-                rows.forEach(r => {
-                    const rec = resData.data[r.phone || r.phone1 || ''] || resData.data[r.raw_key || r.sheetRowIndex || ''];
-                    if (applyLiveAudit_(r, rec)) changed = true;
-                });
-                if (changed && typeof onChanged === 'function') onChanged();
+                if (resData && resData.success && resData.data) {
+                    targetRows.forEach(r => {
+                        const rec = resData.data[r.phone || r.phone1 || ''] || resData.data[r.raw_key || r.sheetRowIndex || ''];
+                        applyLiveAudit_(r, rec);
+                    });
+                }
+                finishAudit();
             })
-            .catch(() => {});
+            .catch(() => finishAudit());
         }
         function fetchDashboardSummary(filters) {
             fetch(WEB_APP_URL, {
@@ -3385,6 +3512,7 @@
             const originalBtnHtml = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
+            const saveNotifyId = crmNotify.loading(rid ? 'กำลังบันทึกการแก้ไขข้อมูลลูกค้า...' : 'กำลังบันทึกข้อมูลลูกค้าใหม่...');
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -3396,9 +3524,14 @@
                     // (2026-09-25 r39) กรณีเบอร์/Facebook ซ้ำกับลูกค้าเดิม ระบบไม่สร้างรายชื่อใหม่ แต่ไปเพิ่มเป็น
                     // การติดตามในรายชื่อเดิมแทน — เดิมขึ้น "บันทึกสำเร็จ" เหมือนกันหมด ทำให้เข้าใจผิดว่าสร้างลูกค้าใหม่แล้ว
                     if (!rid && (resData.duplicate || resData.skipped)) {
+                        // เคสซ้ำยังใช้ alert (ต้องให้พนักงานอ่านและรับรู้ ไม่ใช่แค่แถบแจ้งที่หายเอง)
+                        crmNotify.info(saveNotifyId, 'พบข้อมูลลูกค้ารายนี้ในระบบแล้ว — เพิ่มเป็นการติดตามแทน');
                         alert('ℹ️ ' + (resData.message || 'พบข้อมูลลูกค้ารายนี้ในระบบแล้ว'));
                     } else {
-                        alert('💾 บันทึกข้อมูลสำเร็จ!' + (!rid && resData.createdBy ? `\nผู้บันทึกลูกค้า: ${resData.createdBy}` : ''));
+                        // (r40) แจ้งผลด้วยแถบแจ้งสถานะแทน alert (ไม่ต้องกด OK ทุกครั้ง)
+                        crmNotify.success(saveNotifyId, rid
+                            ? 'บันทึกการแก้ไขข้อมูลลูกค้าสำเร็จ'
+                            : 'บันทึกลูกค้าใหม่สำเร็จ' + (resData.createdBy ? ` | ผู้บันทึก: ${resData.createdBy}` : ''), { duration: 4000 });
                     }
                     lastSavedCustomer = Object.assign({}, packData, { financial: JSON.parse(JSON.stringify(customerFinancial)) });
                     const printBtn = document.getElementById('btn-print-last');
@@ -3407,10 +3540,12 @@
                     resetFormState();
                     fetchDataFromServer(currentPage);
                 } else {
+                    crmNotify.error(saveNotifyId, 'บันทึกข้อมูลไม่สำเร็จ');
                     alert('❌ เกิดข้อผิดพลาดในการบันทึก: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
                 }
             })
             .catch(err => {
+                crmNotify.error(saveNotifyId, 'บันทึกข้อมูลไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
                 alert('🛑 เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
             })
             .finally(() => {
@@ -3456,7 +3591,17 @@
                 fillPrintField('pf-product-other', productLabel);
             }
             renderPrintFinancialSummary(data);
-            window.print();
+            // (r40) แจ้ง "กำลังเตรียมแบบฟอร์ม" ให้เห็นก่อนหน้าต่างพิมพ์เปิด (window.print() หยุดหน้าเว็บจนกว่าจะปิด
+            // หน้าต่างพิมพ์ จึงหน่วงสั้นๆ ให้แถบแจ้งวาดขึ้นก่อน) — แถบนี้ถูกซ่อนในงานพิมพ์ด้วย @media print
+            const printNotifyId = crmNotify.loading('กำลังเตรียมแบบฟอร์มสำหรับพิมพ์...');
+            setTimeout(() => {
+                try {
+                    window.print();
+                    crmNotify.success(printNotifyId, 'เปิดหน้าต่างพิมพ์แล้ว — เลือกเครื่องพิมพ์หรือบันทึกเป็น PDF ได้เลย', { duration: 3000 });
+                } catch (e) {
+                    crmNotify.error(printNotifyId, 'เปิดหน้าต่างพิมพ์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+                }
+            }, 80);
         }
         function renderPrintFinancialSummary(data) {
             let fin = data.financial;
@@ -3563,7 +3708,7 @@
             document.getElementById('history-customer-info').innerHTML =
                 `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
                 `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(row.lastFollowupDate || '-')} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(row.booking_date || '-')}</span>` +
-                `<br><span style="font-size:11.5px; color:#64748b;">👤 สร้างลูกค้าโดย: <b>${escapeHtml(createdBy || '-')}</b>${row.date ? ` (${escapeHtml(row.date)})` : ''}</span>` +
+                `<br><span style="font-size:11.5px; color:#64748b;">👤 สร้างลูกค้าโดย: ${(row._auditPending && !createdBy) ? auditPendingHtml_('กำลังโหลดชื่อผู้บันทึก...') : `<b>${escapeHtml(createdBy || '-')}</b>`}${row.date ? ` (${escapeHtml(row.date)})` : ''}</span>` +
                 (row.remark ? `<br><span style="font-size:11.5px; color:#64748b; white-space:pre-line;">📝 หมายเหตุตอนสร้าง: ${escapeHtml(row.remark)}</span>` : '');
         }
         function closeHistoryModal() {
@@ -3595,6 +3740,7 @@
             const originalBtnHtml = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
+            const followNotifyId = crmNotify.loading('กำลังบันทึกการติดตามลูกค้า...');
             const newEntry = { date: dateVal, followupType: followupTypeVal, note: noteVal, nextFollowUpDate: nextFollowUpVal };
             fetch(WEB_APP_URL, {
                 method: 'POST',
@@ -3604,6 +3750,7 @@
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success) {
+                    crmNotify.success(followNotifyId, 'บันทึกการติดตามลูกค้าสำเร็จ');
                     // (2026-09-24) ใช้ log จากเซิร์ฟเวอร์ (มีชื่อผู้บันทึก "by" ติดมาด้วย) แทนการ push ค่าที่กรอกเอง
                     if (Array.isArray(resData.followUpLog)) {
                         historyModalEntries = resData.followUpLog.slice();
@@ -3638,10 +3785,14 @@
                         selectCalendarDate(calendarSelectedDate, false);
                     }
                 } else {
+                    crmNotify.error(followNotifyId, 'บันทึกการติดตามไม่สำเร็จ');
                     alert('❌ บันทึกการติดตามไม่สำเร็จ: ' + (resData ? resData.message : 'ไม่ทราบสาเหตุ'));
                 }
             })
-            .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'))
+            .catch(() => {
+                crmNotify.error(followNotifyId, 'บันทึกการติดตามไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+                alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง');
+            })
             .finally(() => {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalBtnHtml;
@@ -3673,7 +3824,7 @@
                 alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export Excel ได้');
                 return;
             }
-            alert('⚡ กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
+            const exportNotifyId = crmNotify.loading('กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -3686,9 +3837,14 @@
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, "Database");
                     XLSX.writeFile(wb, `CRM_Full_Database_${new Date().toISOString().split('T')[0]}.xlsx`);
+                    crmNotify.success(exportNotifyId, `สร้างไฟล์ Excel สำเร็จ (${Number(resData.data.length).toLocaleString()} รายการ)`, { duration: 4000 });
                 } else {
+                    crmNotify.error(exportNotifyId, 'สร้างไฟล์ Excel ไม่สำเร็จ');
                     alert('❌ ไม่สามารถดึงข้อมูลสำหรับ Excel ได้: ' + (resData ? resData.message : 'Unknown error'));
                 }
+            })
+            .catch(() => {
+                crmNotify.error(exportNotifyId, 'สร้างไฟล์ Excel ไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
             });
         }
         function deleteCustomerByIndex(idx) {
@@ -3702,6 +3858,7 @@
             if (!key) { alert('ไม่พบรหัสข้อมูลสำหรับลบ'); return; }
             if (!confirm('ต้องการลบข้อมูลลูกค้า ' + (row.name || row.phone || 'นี้') + ' จริงหรือไม่')) return;
 
+            const deleteNotifyId = crmNotify.loading('กำลังลบข้อมูลลูกค้า ' + (row.name || row.phone || '') + '...');
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -3710,13 +3867,15 @@
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success) {
-                    alert('ลบข้อมูลสำเร็จ');
+                    crmNotify.success(deleteNotifyId, 'ลบข้อมูลลูกค้าสำเร็จ', { duration: 3500 });
                     fetchDataFromServer(currentPage);
                 } else {
+                    crmNotify.error(deleteNotifyId, 'ลบข้อมูลไม่สำเร็จ');
                     alert('❌ ลบข้อมูลไม่สำเร็จ: ' + (resData ? resData.message : 'Unknown error'));
                 }
             })
             .catch(err => {
+                crmNotify.error(deleteNotifyId, 'ลบข้อมูลไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
                 alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง');
             });
         }
