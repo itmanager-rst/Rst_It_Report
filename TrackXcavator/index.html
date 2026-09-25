@@ -271,6 +271,10 @@ body {
   user-select: none;
 }
 
+.matrix-round-menu { max-height: 320px; overflow-y: auto; font-size: 0.85rem; }
+.matrix-round-menu .form-check { padding-top: 2px; padding-bottom: 2px; }
+.matrix-round-menu .form-check-input, .matrix-round-menu .form-check-label { cursor: pointer; }
+
 .model-parts-panel {
   border: 1px dashed #dc3545;
   border-radius: 8px;
@@ -841,9 +845,20 @@ body {
                 </select>
               </div>
               <div class="col-md-2">
-                <select id="matrixRoundFilter" class="form-select form-select-sm" onchange="filterMatrixTable()">
-                  <option value="all">รอบ PM: ทั้งหมด</option>
-                </select>
+                <!-- ✅ เลือกรอบ PM ได้หลายรอบ: โชว์เฉพาะคอลัมน์รอบที่เลือก รอบอื่นซ่อน -->
+                <div class="dropdown w-100" id="matrixRoundFilter">
+                  <button type="button" class="form-select form-select-sm text-start text-truncate" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" id="matrixRoundFilterBtn">รอบ PM: ทั้งหมด</button>
+                  <div class="dropdown-menu p-2 w-100 matrix-round-menu">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="matrixRoundAll" checked onchange="toggleAllMatrixRounds(this.checked)">
+                      <label class="form-check-label fw-bold" for="matrixRoundAll">ทั้งหมด</label>
+                    </div>
+                    <hr class="my-1">
+                    <div id="matrixRoundOptions"></div>
+                    <hr class="my-1">
+                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 py-0" style="font-size: 0.75rem;" onclick="toggleAllMatrixRounds(true)"><i class="fa-solid fa-rotate-left me-1"></i>ล้างตัวกรองรอบ</button>
+                  </div>
+                </div>
               </div>
               <div class="col-md-2 text-end">
                 <button class="btn btn-sm btn-excel me-2" onclick="exportToExcel('tbMatrixTable', 'PM_Workflow_Matrix')">
@@ -897,15 +912,15 @@ body {
                     <th>รุ่น (Model)</th>
                     <th>ชื่อลูกค้า</th>
                     <th>เบอร์โทรศัพท์</th>
-                    <th>50 ชม.</th>
-                    <th>250 ชม.</th>
-                    <th>500 ชม.</th>
-                    <th>750 ชม.</th>
-                    <th>1,000 ชม.</th>
-                    <th>1,250 ชม.</th>
-                    <th>1,500 ชม.</th>
-                    <th>1,750 ชม.</th>
-                    <th>2,000 ชม.</th>
+                    <th class="matrix-round-th">50 ชม.</th>
+                    <th class="matrix-round-th">250 ชม.</th>
+                    <th class="matrix-round-th">500 ชม.</th>
+                    <th class="matrix-round-th">750 ชม.</th>
+                    <th class="matrix-round-th">1,000 ชม.</th>
+                    <th class="matrix-round-th">1,250 ชม.</th>
+                    <th class="matrix-round-th">1,500 ชม.</th>
+                    <th class="matrix-round-th">1,750 ชม.</th>
+                    <th class="matrix-round-th">2,000 ชม.</th>
                   </tr>
                 </thead>
                 <tbody id="tbMatrix">
@@ -1317,7 +1332,16 @@ function initializePmRoundOptions() {
     });
   }
 
-  ['dashboardRoundFilter', 'historyRoundFilter', 'matrixRoundFilter'].forEach(filterId => {
+  const matrixRoundOptions = document.getElementById('matrixRoundOptions');
+  if (matrixRoundOptions) {
+    matrixRoundOptions.innerHTML = PM_ROUNDS.map(round => `
+      <div class="form-check">
+        <input class="form-check-input matrix-round-cb" type="checkbox" id="matrixRound_${round}" value="${round}" onchange="onMatrixRoundChange()">
+        <label class="form-check-label" for="matrixRound_${round}">${round.toLocaleString()} ชม.</label>
+      </div>`).join('');
+  }
+
+  ['dashboardRoundFilter', 'historyRoundFilter'].forEach(filterId => {
     const filter = document.getElementById(filterId);
     if (!filter) return;
     PM_ROUNDS.forEach(round => {
@@ -2587,18 +2611,66 @@ function buildPMMatrixFromDashboard(dashboardList) {
   });
 }
 
+// ==========================================
+// 🔎 ตัวกรองรอบ PM หลายรอบ (หน้า Matrix)
+// ไม่ติ๊กรอบใดเลย = แสดงทุกรอบ
+// ==========================================
+function getSelectedMatrixRounds() {
+  return Array.from(document.querySelectorAll('#matrixRoundOptions .matrix-round-cb:checked'))
+    .map(cb => Number(cb.value))
+    .sort((a, b) => a - b);
+}
+
+function updateMatrixRoundFilterLabel() {
+  const btn = document.getElementById('matrixRoundFilterBtn');
+  const allCb = document.getElementById('matrixRoundAll');
+  const selected = getSelectedMatrixRounds();
+  if (allCb) allCb.checked = selected.length === 0;
+  if (!btn) return;
+  if (selected.length === 0) {
+    btn.textContent = 'รอบ PM: ทั้งหมด';
+  } else if (selected.length <= 3) {
+    btn.textContent = 'รอบ PM: ' + selected.map(r => r.toLocaleString()).join(', ') + ' ชม.';
+  } else {
+    btn.textContent = `รอบ PM: เลือก ${selected.length} รอบ`;
+  }
+  btn.title = btn.textContent;
+}
+
+function onMatrixRoundChange() {
+  updateMatrixRoundFilterLabel();
+  filterMatrixTable();
+}
+
+function toggleAllMatrixRounds(showAll) {
+  // ติ๊ก "ทั้งหมด" = ล้างรอบที่เลือก (แสดงทุกรอบ)
+  if (showAll) {
+    document.querySelectorAll('#matrixRoundOptions .matrix-round-cb').forEach(cb => { cb.checked = false; });
+  }
+  updateMatrixRoundFilterLabel();
+  filterMatrixTable();
+}
+
+function updateMatrixRoundHeaders(visibleRounds) {
+  document.querySelectorAll('#tbMatrixTable thead .matrix-round-th').forEach((th, i) => {
+    th.style.display = visibleRounds.includes(PM_ROUNDS[i]) ? '' : 'none';
+  });
+}
+
 function renderMatrixTable(matrixData) {
   const tbody = document.getElementById("tbMatrix");
   if (!tbody) return;
 
   tbody.innerHTML = "";
 
+  const selectedRounds = getSelectedMatrixRounds();
+  const pmRounds = selectedRounds.length ? selectedRounds : PM_ROUNDS.slice();
+  updateMatrixRoundHeaders(pmRounds);
+
   if (!matrixData || matrixData.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="15" class="text-center py-4 text-muted">ไม่พบข้อมูลเมทริกซ์ PM</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${6 + pmRounds.length}" class="text-center py-4 text-muted">ไม่พบข้อมูลเมทริกซ์ PM</td></tr>`;
     return;
   }
-
-  const pmRounds = [50, 250, 500, 750, 1000, 1250, 1500, 1750, 2000];
 
   matrixData.forEach((item, index) => {
     const tr = document.createElement("tr");
@@ -2691,8 +2763,7 @@ function filterMatrixTable() {
   const search = searchInput ? searchInput.value.toLowerCase().trim() : "";
   const statusFilterEl = document.getElementById("matrixStatusFilter");
   const statusFilter = statusFilterEl ? statusFilterEl.value : "all";
-  const roundFilterEl = document.getElementById("matrixRoundFilter");
-  const roundFilter = roundFilterEl ? roundFilterEl.value : "all";
+  const selectedRounds = getSelectedMatrixRounds();
 
   let filtered = rawMatrixData.filter(item => {
     const formattedCusId = formatCustomerId(item.customerId).toLowerCase();
@@ -2705,12 +2776,22 @@ function filterMatrixTable() {
     );
     if (!matchesSearch) return false;
 
-    const round = roundFilter === 'all' ? Number(item.lastPm || 0) : Number(roundFilter);
+    const lastPm = Number(item.lastPm || 0);
 
     if (statusFilter === 'all') {
-      return roundFilter === 'all' || Number(item.lastPm || 0) >= round;
+      // เลือกรอบไว้ = แสดงเครื่องที่ทำ PM ถึงรอบใดรอบหนึ่งที่เลือกแล้ว (เหมือนเดิมตอนเลือกรอบเดียว)
+      return selectedRounds.length === 0 || selectedRounds.some(r => lastPm >= r);
     }
 
+    // เลือกรอบไว้ = ตรวจสถานะค้างในรอบที่เลือก (ตรงรอบใดรอบหนึ่งก็แสดง), ไม่เลือก = ดูรอบล่าสุด
+    const roundsToCheck = selectedRounds.length ? selectedRounds : [lastPm];
+    return roundsToCheck.some(round => matrixRoundMatchesStatus(item, round, statusFilter));
+  });
+
+  renderMatrixTable(filtered);
+}
+
+function matrixRoundMatchesStatus(item, round, statusFilter) {
     const rdInfo = item.rounds[round];
     const roundLog = rdInfo ? rdInfo.log : null;
     const pStatus = roundLog ? (roundLog.partsStatus || 'ส่งครบแล้ว') : item.partsStatus;
@@ -2723,9 +2804,6 @@ function filterMatrixTable() {
     if (statusFilter === 'parts_pending') return partsPending;
     if (statusFilter === 'both_pending') return couponPending && partsPending;
     return true;
-  });
-
-  renderMatrixTable(filtered);
 }
 
 let currentWorkflowMachineId = null;
