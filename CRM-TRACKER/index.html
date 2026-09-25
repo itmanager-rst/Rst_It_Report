@@ -1037,6 +1037,8 @@
         </div>
     </div>
     <script>
+        // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
+        const EXPECTED_CODE_VERSION = 'r34-2026-09-24-live-audit-created-updated-by';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1051,59 +1053,46 @@
                     }
                 } catch (e) { }
             }
-            if (shouldRetryRequest_(url, options)) {
-                return fetchWithRetry_(url, options);
-            }
             return nativeFetch(url, options);
         };
 
-        // 🔁 (2026-09-24) ลองส่งซ้ำอัตโนมัติเมื่อ Google ตอบกลับผิดพลาดชั่วคราว — Apps Script
-        // ตอบกลับด้วยการ redirect ไปที่ script.googleusercontent.com และบางครั้งปลายทางนั้นตอบ 404
-        // หรือได้หน้า HTML แทน JSON (เกิดเป็นพักๆ ตอนมีหลาย request พร้อมกัน) ทำให้ขึ้น
-        // "เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด" / รายงานไม่ขึ้น ทั้งที่กดใหม่แล้วได้
-        // ⚠️ ลองซ้ำเฉพาะ action ที่ "อ่านอย่างเดียว" + login/ping เท่านั้น — ห้ามใส่ add/update/
-        // delete/addFollowUp/addUser เพราะถ้ารอบแรกบันทึกไปแล้วแต่แค่ตอบกลับไม่ถึง จะได้ข้อมูลซ้ำ
-        const RETRY_SAFE_ACTIONS_ = ['login', 'ping', 'getOnlineUsers', 'checkStatus', 'checkBigQuery',
-            'search', 'searchCustomers', 'getInitialData', 'getDashboardSummary', 'getDailyLeadReport',
-            'getLeadIntakeLogDetail', 'getFollowupCalendar', 'getStaleLeadsReport', 'getUserActivityLog',
-            'getByPhone', 'getCustomerByRow', 'checkDuplicatePhone'];
-        function shouldRetryRequest_(url, options) {
-            if (typeof url !== 'string' || url.indexOf(WEB_APP_URL) !== 0) return false;
-            let action = '';
-            if ((options.method || 'GET').toUpperCase() === 'GET') {
-                const q = url.split('?')[1] || '';
-                action = new URLSearchParams(q).get('action') || '';
-            } else if (typeof options.body === 'string') {
-                try { action = (JSON.parse(options.body) || {}).action || ''; } catch (e) { }
-            }
-            return RETRY_SAFE_ACTIONS_.indexOf(action) !== -1;
-        }
-        async function fetchWithRetry_(url, options) {
-            const delaysMs = [700, 1800, 3500];
-            let lastRes = null, lastErr = null;
-            for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
-                try {
-                    const res = await nativeFetch(url, options);
-                    const ctype = (res.headers.get('content-type') || '').toLowerCase();
-                    if (res.ok && ctype.indexOf('json') !== -1) return res;
-                    lastRes = res; lastErr = null;
-                } catch (err) {
-                    lastErr = err; lastRes = null;
-                }
-                if (attempt < delaysMs.length) {
-                    await new Promise(r => setTimeout(r, delaysMs[attempt] + Math.floor(Math.random() * 400)));
-                }
-            }
-            if (lastRes) return lastRes;
-            throw lastErr;
-        }
-
         let currentRole = 'user';
+        let currentUserInfo = null; // (2026-09-24) เก็บ { username, name } ของคนที่ login อยู่ ใช้แสดงชื่อผู้บันทึกการติดตามทันที
+        function currentUserDisplayLabel_() {
+            if (!currentUserInfo) return '';
+            const u = currentUserInfo.username || '', n = currentUserInfo.name || '';
+            return (n && u && n !== u) ? `${n} (${u})` : (n || u);
+        }
 
         // แปลง role (ภาษาอังกฤษที่เก็บในระบบ) เป็นข้อความไทยสำหรับโชว์ที่ป้ายชื่อผู้ใช้งาน
         function roleLabelTH(role) {
             const map = { admin: 'admin', staff: 'พนักงาน', sale: 'Sale', user: 'user' };
             return map[role] || role || '-';
+        }
+
+        // เช็คว่า Code.js ที่ deploy อยู่จริงเป็นเวอร์ชันเดียวกับหน้าเว็บนี้ + sync BigQuery ล่าสุดสำเร็จหรือไม่
+        function checkBackendVersion_() {
+            fetch(WEB_APP_URL + '?action=checkStatus')
+                .then(res => res.json())
+                .then(st => {
+                    const msgs = [];
+                    if (!st || st.codeVersion !== EXPECTED_CODE_VERSION) {
+                        msgs.push(`⚠️ Backend (Code.js) ที่ใช้งานอยู่เป็นเวอร์ชัน "${escapeHtml((st && st.codeVersion) || 'ไม่ทราบ')}" แต่หน้าเว็บนี้ต้องการ "${EXPECTED_CODE_VERSION}" — ต้อง Deploy > Manage deployments > แก้ไข (ดินสอ) > New version`);
+                    }
+                    if (st && st.lastCustomerSync && st.lastCustomerSync.ok === false && currentRole === 'admin') {
+                        msgs.push(`⚠️ Sync ชีต → BigQuery ล่าสุดล้มเหลว (${escapeHtml(st.lastCustomerSync.at || '')}): ${escapeHtml(st.lastCustomerSync.message || '')}`);
+                    }
+                    let bar = document.getElementById('backend-version-warning');
+                    if (!msgs.length) { if (bar) bar.remove(); return; }
+                    if (!bar) {
+                        bar = document.createElement('div');
+                        bar.id = 'backend-version-warning';
+                        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#fef3c7;color:#92400e;border-bottom:2px solid #f59e0b;padding:8px 14px;font-size:13px;line-height:1.5;';
+                        document.body.appendChild(bar);
+                    }
+                    bar.innerHTML = msgs.join('<br>') + ' <button type="button" style="margin-left:8px;" onclick="this.parentNode.remove()">ปิด</button>';
+                })
+                .catch(() => {});
         }
 
         function loginUser() {
@@ -1122,9 +1111,11 @@
                 if (resData && resData.success && resData.token) {
                     localStorage.setItem(authTokenKey, resData.token);
                     currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
+                    currentUserInfo = { username: (resData.user && resData.user.username) || username, name: (resData.user && resData.user.name) || '' };
                     status.innerText = 'เข้าสู่ระบบสำเร็จ';
                     document.getElementById('login-modal').classList.add('hidden');
                     activateLeakDeterrentMeasures_();
+                    checkBackendVersion_();
                     // แสดงชื่อผู้ใช้งานปัจจุบัน + ปุ่มออกจากระบบ ที่แถบด้านบน
                     const displayName = (resData.user && (resData.user.name || resData.user.username)) || username;
                     document.getElementById('current-user-name').innerText = `${displayName} (${roleLabelTH(currentRole)})`;
@@ -1167,6 +1158,7 @@
             .finally(() => {
                 localStorage.removeItem(authTokenKey);
                 currentRole = 'user';
+                currentUserInfo = null;
                 document.getElementById('current-user-badge').style.display = 'none';
                 document.getElementById('logout-btn').style.display = 'none';
                 document.getElementById('nav-btn-members').style.display = 'none';
@@ -1963,13 +1955,23 @@
             { key: 'followUpCount', label: 'จำนวนครั้งที่ติดตาม', width: 100, render: (row, ctx) => String(ctx.followCount || 0) },
             // (2026-09-19) ชื่อผู้คีย์ข้อมูลลูกค้ารายนี้เข้าระบบครั้งแรก — มาจากคอลัมน์ optional
             // "created_by" ฝั่ง Sheet/BigQuery ถ้ายังไม่ได้เพิ่มหัวคอลัมน์นี้ในชีตจริง จะโชว์ "-" ไปก่อน
-            { key: 'createdBy', label: 'ผู้บันทึกลูกค้า', width: 120, render: row => escapeHtml(row.created_by || row.createdBy || '-') }
+            { key: 'createdBy', label: 'ผู้บันทึกลูกค้า', width: 140, render: row => escapeHtml(row.created_by || row.createdBy || '-') },
+            // (2026-09-24) ผู้แก้ไขข้อมูลลูกค้าล่าสุด + ผู้บันทึกการติดตามครั้งล่าสุด
+            { key: 'updatedBy', label: 'ผู้แก้ไขล่าสุด', width: 140, render: row => escapeHtml(row.updated_by || row.updatedBy || '-') },
+            { key: 'lastFollowupBy', label: 'ผู้ติดตามล่าสุด', width: 140, render: row => escapeHtml(getLastFollowupBy_(row) || '-') }
         ];
+        // ชื่อผู้บันทึกการติดตามครั้งล่าสุด (entry ที่ date ล่าสุด, ถ้าวันเท่ากันใช้ loggedAt)
+        function getLastFollowupBy_(row) {
+            const logs = Array.isArray(row && row.followUpLog) ? row.followUpLog : [];
+            if (!logs.length) return '';
+            const sorted = logs.slice().sort((a, b) => ((b.date || '') + (b.loggedAt || '')).localeCompare((a.date || '') + (a.loggedAt || '')));
+            return sorted[0].by || '';
+        }
         const ALL_COLUMN_KEYS = new Set(ALL_COLUMNS.map(c => c.key));
         // ลำดับ/คอลัมน์ที่โชว์เป็นค่าเริ่มต้น — ตรงกับตารางเดิมทุกคอลัมน์ บวก "รถ/เครื่องจักรที่ถือครอง" ที่เพิ่มใหม่
         // (เดิมข้อมูลนี้ถูกกรอกได้ในโมดัลการเงินอยู่แล้ว แต่ไม่เคยโชว์ในตารางเลย จึงเปิดโชว์เป็นค่าเริ่มต้นให้เห็นเลย)
-        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy'];
-        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy']);
+        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy', 'updatedBy', 'lastFollowupBy'];
+        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy', 'updatedBy', 'lastFollowupBy']);
 
         function getDefaultColumnConfig() {
             return DEFAULT_COLUMN_ORDER.map(key => {
@@ -1996,6 +1998,20 @@
             return merged;
         }
         let columnConfig = loadColumnConfig();
+        // (2026-09-24) เปิดโชว์คอลัมน์ ผู้บันทึก/ผู้แก้ไข/ผู้ติดตาม ให้อัตโนมัติ 1 ครั้ง — เดิมเครื่องที่เคยตั้งค่าตารางไว้
+        // คอลัมน์ใหม่จะถูกซ่อนไว้ ทำให้ไม่เห็นชื่อ (ถ้าผู้ใช้ปิดเองทีหลัง จะไม่บังคับเปิดซ้ำ)
+        (function migrateAuditColumnsVisible_() {
+            const FLAG = 'crm_tracker_audit_cols_shown_v1';
+            try {
+                if (localStorage.getItem(FLAG)) return;
+                ['createdBy', 'updatedBy', 'lastFollowupBy'].forEach(k => {
+                    const c = columnConfig.find(x => x.key === k);
+                    if (c) c.visible = true;
+                });
+                localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(columnConfig));
+                localStorage.setItem(FLAG, '1');
+            } catch (e) { /* localStorage ใช้ไม่ได้ — ใช้ค่าในหน่วยความจำไปก่อน */ }
+        })();
         function saveColumnConfig() {
             try { localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(columnConfig)); } catch (e) { /* localStorage ใช้ไม่ได้ (โหมดส่วนตัว ฯลฯ) — ข้ามการจำค่าไปเงียบๆ */ }
         }
@@ -2443,8 +2459,13 @@
         function detailCard(label, value, full) {
             return `<div class="customer-detail-card${full ? ' full' : ''}"><div class="customer-detail-label">${label}</div><div class="customer-detail-value">${value || '-'}</div></div>`;
         }
-        function showCustomerDetail(r) {
+        function showCustomerDetail(r, skipLiveAudit) {
             if (!r) return;
+            if (!skipLiveAudit) {
+                enrichRowsWithLiveAudit_([r], () => {
+                    if (document.getElementById('report-customer-detail-overlay').classList.contains('show')) showCustomerDetail(r, true);
+                });
+            }
             const fin = parseFinancialInfo(r.financialInfo || r.financial);
             const name = r.name || `${r.firstName || r.firstname || ''} ${r.lastName || r.lastname || ''}`.trim() || '-';
             const addressNo = r.addressNo || r.addressno || r.address_no || '';
@@ -2460,7 +2481,9 @@
                 detailCard('ที่อยู่', escapeHtml(address || '-'), true) + detailCard('🌾 การเกษตร / พื้นที่ / รายได้', escapeHtml(farms || '-'), true) +
                 detailCard('📋 งานประจำ', escapeHtml(job)) + detailCard('💵 รายได้เสริม', escapeHtml(side)) +
                 detailCard('🚜 เครื่องจักรที่มี', escapeHtml(machines || '-'), true) + detailCard('📉 หนี้สิน', escapeHtml(debts || '-'), true) +
-                detailCard('📝 หมายเหตุ', escapeHtml(r.remark || '-'), true);
+                detailCard('📝 หมายเหตุ', escapeHtml(r.remark || '-'), true) +
+                detailCard('👤 ผู้บันทึกลูกค้า', escapeHtml((r.created_by || r.createdBy || '-') + (r.date ? ` · ${r.date}` : ''))) +
+                detailCard('✏️ ผู้แก้ไขล่าสุด', escapeHtml(r.updated_by || r.updatedBy || '-'));
             document.getElementById('report-customer-detail-overlay').classList.add('show');
         }
         function openReportCustomerDetail(idx) { showCustomerDetail(intakeDetailRows[idx]); }
@@ -2622,12 +2645,49 @@
                     renderTableRows(currentRenderedData);
                     updatePaginationControls();
                     fetchDashboardSummary(payload.filters);
+                    enrichRowsWithLiveAudit_(currentRenderedData, () => renderTableRows(currentRenderedData));
                 } else {
                     tbody.innerHTML = `<tr><td colspan="99" style="text-align: center; color: red;">❌ เกิดข้อผิดพลาด: ${resData.message}</td></tr>`;
                 }
             }).catch(err => {
                 tbody.innerHTML = '<tr><td colspan="99" style="text-align: center; color: red;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</td></tr>';
             });
+        }
+        /* (2026-09-24 r34) ดึง "ผู้บันทึก / ผู้แก้ไขล่าสุด / ผู้ติดตาม" สดจาก Google Sheet มาเติมทับข้อมูลจาก BigQuery
+         * — BigQuery sync ตามหลังชีตทุก ~5 นาที (หรือ sync ล้มเหลว) ทำให้ลูกค้าที่เพิ่งสร้าง/แก้ไขขึ้น "-" */
+        function applyLiveAudit_(row, rec) {
+            if (!row || !rec) return false;
+            let changed = false;
+            if (rec.created_by && rec.created_by !== row.created_by) { row.created_by = row.createdBy = rec.created_by; changed = true; }
+            if (rec.updated_by && rec.updated_by !== row.updated_by) { row.updated_by = row.updatedBy = rec.updated_by; changed = true; }
+            if (Array.isArray(rec.follow_up_log) && rec.follow_up_log.length >= (Array.isArray(row.followUpLog) ? row.followUpLog.length : 0)) {
+                if (JSON.stringify(rec.follow_up_log) !== JSON.stringify(row.followUpLog || [])) {
+                    row.followUpLog = rec.follow_up_log;
+                    row.followUpCount = rec.follow_up_log.length;
+                    changed = true;
+                }
+            }
+            return changed;
+        }
+        function enrichRowsWithLiveAudit_(rows, onChanged) {
+            if (!Array.isArray(rows) || !rows.length) return;
+            const items = rows.slice(0, 100).map(r => ({ key: r.raw_key || r.sheetRowIndex || '', phone: r.phone || r.phone1 || '' }));
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getCustomerAudit', payload: { items: items, includeLogs: true } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success || !resData.data) return;
+                let changed = false;
+                rows.forEach(r => {
+                    const rec = resData.data[r.phone || r.phone1 || ''] || resData.data[r.raw_key || r.sheetRowIndex || ''];
+                    if (applyLiveAudit_(r, rec)) changed = true;
+                });
+                if (changed && typeof onChanged === 'function') onChanged();
+            })
+            .catch(() => {});
         }
         function fetchDashboardSummary(filters) {
             fetch(WEB_APP_URL, {
@@ -3191,9 +3251,14 @@
             historyModalKey = row.raw_key || row.sheetRowIndex || row.phone;
             historyModalPhoneHint = row.phone || row.phone1 || '';
             historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
-            document.getElementById('history-customer-info').innerHTML =
-                `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
-                `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(row.lastFollowupDate || '-')} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(row.booking_date || '-')}</span>`;
+            renderHistoryCustomerInfo_(row);
+            const keyAtOpen = historyModalKey;
+            enrichRowsWithLiveAudit_([row], () => {
+                if (historyModalKey !== keyAtOpen) return; // ผู้ใช้เปิดลูกค้าคนอื่นไปแล้ว
+                historyModalEntries = Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [];
+                renderHistoryCustomerInfo_(row);
+                renderHistoryTimeline();
+            });
             document.getElementById('history-new-date').value = new Date().toISOString().split('T')[0];
             document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
             document.getElementById('history-new-note').value = '';
@@ -3203,6 +3268,15 @@
             followupBtn.innerHTML = '💾 บันทึกการติดตามนี้';
             renderHistoryTimeline();
             document.getElementById('history-modal-overlay').classList.add('show');
+        }
+        // หัวหน้าต่างไทม์ไลน์ — (2026-09-24) เพิ่มบรรทัด "สร้างโดย" + หมายเหตุตอนสร้างลูกค้า
+        function renderHistoryCustomerInfo_(row) {
+            const createdBy = row.created_by || row.createdBy || '';
+            document.getElementById('history-customer-info').innerHTML =
+                `<b>${escapeHtml(row.name)}</b> · 📞 ${escapeHtml(row.phone || '-')} · <span class="badge badge-track">${escapeHtml(row.type || '')}</span>` +
+                `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(row.lastFollowupDate || '-')} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(row.booking_date || '-')}</span>` +
+                `<br><span style="font-size:11.5px; color:#64748b;">👤 สร้างลูกค้าโดย: <b>${escapeHtml(createdBy || '-')}</b>${row.date ? ` (${escapeHtml(row.date)})` : ''}</span>` +
+                (row.remark ? `<br><span style="font-size:11.5px; color:#64748b; white-space:pre-line;">📝 หมายเหตุตอนสร้าง: ${escapeHtml(row.remark)}</span>` : '');
         }
         function closeHistoryModal() {
             document.getElementById('history-modal-overlay').classList.remove('show');
@@ -3242,7 +3316,12 @@
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success) {
-                    historyModalEntries.push(newEntry);
+                    // (2026-09-24) ใช้ log จากเซิร์ฟเวอร์ (มีชื่อผู้บันทึก "by" ติดมาด้วย) แทนการ push ค่าที่กรอกเอง
+                    if (Array.isArray(resData.followUpLog)) {
+                        historyModalEntries = resData.followUpLog.slice();
+                    } else {
+                        historyModalEntries.push(Object.assign({}, newEntry, { by: currentUserDisplayLabel_() }));
+                    }
                     const nextBookingDate = resData.nextFollowUpDate || nextFollowUpVal;
                     const sourceArray = historyModalSource === 'stale' ? staleLeadsData : currentRenderedData;
                     if (sourceArray[historyModalRowIdx]) {
@@ -3261,9 +3340,7 @@
                         closeHistoryModal();
                     } else {
                         renderTableRows(currentRenderedData);
-                        document.getElementById('history-customer-info').innerHTML =
-                            `<b>${escapeHtml(currentRenderedData[historyModalRowIdx].name)}</b> · 📞 ${escapeHtml(currentRenderedData[historyModalRowIdx].phone || '-')} · <span class="badge badge-track">${escapeHtml(currentRenderedData[historyModalRowIdx].type || '')}</span>` +
-                            `<br><span style="font-size:11.5px; color:#64748b;">🕓 ติดตามล่าสุด: ${escapeHtml(dateVal)} &nbsp;|&nbsp; 📅 นัดครั้งต่อไป: ${escapeHtml(nextBookingDate)}</span>`;
+                        renderHistoryCustomerInfo_(currentRenderedData[historyModalRowIdx]);
                         document.getElementById('history-new-note').value = '';
                         document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
                         resetFollowupType();

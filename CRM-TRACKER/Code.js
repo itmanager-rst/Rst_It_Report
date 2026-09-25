@@ -49,32 +49,18 @@
 // (ต้องผูก Sheet นี้เป็น BigQuery External Table ชื่อ customers ไว้ด้วย — ดูคู่มือ setup)
 // ⚠️ ต้องตั้งค่า CUSTOMER_SHEET_ID ให้เป็น Sheet ID จริงก่อนใช้งาน ไม่งั้นการเพิ่ม/แก้ไข/
 // ลบข้อมูลลูกค้าจะ error ทันที (ดูข้อความ error ที่ getCustomerSheet_ ด้านล่าง)
-// หมายเหตุ (2026-09-24 — r32 แก้บั๊ก "บันทึกข้อมูลช้าผิดปกติ"):
-//   1) logLeadIntake_ (ถูกเรียกทุกครั้งที่กดบันทึกลูกค้าใหม่ / ลีดซ้ำ) ยังเรียก
-//      appendRowToBigQueryTable_ แบบ synchronous ซึ่งรอ BigQuery Load Job จนเสร็จ (วนเช็ค
-//      ทุก 1 วิ สูงสุด 25 วิ) ก่อนตอบกลับหน้าเว็บ — เป็นบั๊กแบบเดียวกับที่ r28 แก้ไปแล้วที่
-//      logUserActivity_ แต่ตกหล่นจุดนี้ไป → ย้ายไปซิงก์เป็นรอบๆ ผ่าน trigger แทน
-//      (ดู scheduledSyncLeadLogToBigQuery_ / installScheduledLeadLogSync)
-//   2) updateCustomerHTML อ่าน-เขียนเซลล์สลับกันทีละช่อง (~36 ครั้ง) บนชีต 116,000+ แถว
-//      ทุกครั้งที่ getValue() ต่อจาก setValue() Apps Script ต้อง flush ก่อน → ช้ามาก
-//      → เปลี่ยนเป็นอ่านทั้งแถวครั้งเดียว แล้วเขียนเฉพาะช่องที่ค่าเปลี่ยนจริง
-//   3) SpreadsheetApp.openById ถูกเรียกซ้ำ 4-5 ครั้งต่อการบันทึก 1 ครั้ง → cache ไว้ต่อ request
-//   4) findCustomerRowNumberByKey_ ทางสำรองอ่านทุกคอลัมน์ทั้งชีต → อ่านเฉพาะ 4 คอลัมน์ที่ใช้
-//      และเทียบเบอร์ (ถูก) ก่อนคำนวณ MD5 (แพง)
-// หมายเหตุ (2026-09-24 — r33 แก้บั๊ก "บางครั้งรายงานดึงไม่มา / login เชื่อมต่อผิดพลาด"):
-//   1) รอผล BigQuery query ด้วย getQueryResults โดยไม่ระบุ location — ถ้า query เสร็จเร็ว
-//      (ภายใน ~10 วิแรก) จะไม่เข้าลูปนี้เลยเลยดูเหมือนปกติ แต่ถ้าช้ากว่านั้น (รายงานช่วงวันยาว /
-//      ช่วงที่ trigger กำลังซิงก์ข้อมูล) getQueryResults จะ error "Not found: Job" ทันทีเมื่อ
-//      dataset ไม่ได้อยู่โซน US → รายงานพัง "เป็นบางครั้ง" แก้ด้วย waitForQueryJob_ ที่ส่ง
-//      location + มีเพดานเวลารอ
-//   2) session ของทุกคนเก็บรวมใน Script Property ก้อนเดียว และ login / ping (ทุก 20 วิ ต่อคน) /
-//      logout เขียนทับทั้งก้อนโดยไม่ล็อก — ถ้าชนกันพอดี token ของอีกคนหายไป → request ถัดไป
-//      โดนเด้งให้ login ใหม่ แก้ด้วย LockService + อ่านค่าล่าสุดใหม่ก่อนเขียนเสมอ
-// หมายเหตุ (2026-09-24 — r34): doGet ไม่มี try/catch เลย ถ้าฟังก์ชันรายงานใดโยน error ออกมา
-//   (เช่น BigQuery ช้า/quota เต็ม/เกินเวลา) Google จะตอบเป็นหน้า HTML error แทน JSON ซึ่งไม่มี
-//   header CORS → หน้าเว็บเห็นแค่ "blocked by CORS policy" + "Failed to fetch" ไม่รู้สาเหตุจริง
-//   ตอนนี้ห่อ doGet ด้วย try/catch ให้ตอบเป็น JSON พร้อมข้อความ error จริงเสมอ
-var CODE_VERSION = 'r34-2026-09-24-doget-json-errors';
+// หมายเหตุ (2026-09-20 รอบถัดมา — เปิดให้ Salepromofinder ใช้ users ชุดเดียวกัน):
+// เพิ่มคอลัมน์ 'name' (ชื่อ-นามสกุลจริง) และ 'branch' (สาขา) ให้ตาราง users เพื่อให้แอป
+// Salepromofinder (อีกแอปของบริษัท) login ผ่าน backend ตัวนี้แล้วแสดงชื่อ-สาขาได้ถูกต้อง
+// แทนที่จะเห็นแค่ username เฉยๆ — ออกแบบให้ "ไม่ทำให้ login เดิมพัง" แม้จะยัง[ไม่]ได้เพิ่ม
+// คอลัมน์ name/branch ในตาราง BigQuery จริงก่อน deploy ก็ตาม (ดู getBigQueryUserExtraFields_
+// ด้านล่าง — ดึง name/branch แยกเป็นคนละ query ต่างหากจาก query login หลัก ถ้า query นี้พลาด/
+// คอลัมน์ยังไม่มี จะได้แค่ name/branch ว่างเปล่า ไม่กระทบผลการ login เลย)
+// ⚠️ แนะนำให้เพิ่มคอลัมน์ name, branch (STRING, NULLABLE) ในตาราง BigQuery `users` ก่อน
+// deploy โค้ดรุ่นนี้ (กด Edit schema ในหน้า BigQuery Console) และเพิ่มหัวคอลัมน์ name, branch
+// ในแถวที่ 1 ของแท็บ Sheet "users" ด้วย — แต่ถ้าลืม ระบบจะไม่พัง แค่ยังไม่เห็น name/branch
+// จนกว่าจะเพิ่มคอลัมน์แล้วมีคนกด "เพิ่มสมาชิก" อีกครั้ง (ทำให้ sync ทับ schema ใหม่อัตโนมัติ)
+var CODE_VERSION = 'r34-2026-09-24-live-audit-created-updated-by';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -193,23 +179,11 @@ var CUSTOMER_SHEET_COLUMNS = [
 ];
 
 // เปิด Sheet object ของแท็บข้อมูลลูกค้า — โยน error ชัดเจนถ้ายังไม่ได้ตั้งค่า/หาไม่เจอ
-// ⚡ (r32) cache Spreadsheet object ไว้ตลอด 1 request — เดิม openById ซ้ำ 4-5 รอบต่อการ
-// บันทึก 1 ครั้ง (เช็คซ้ำ FB, เช็คซ้ำเบอร์, เขียนแถว, lead log, activity log) แต่ละรอบเป็น
-// service call แยกกันที่กินเวลา ตัวแปร global ของ Apps Script อยู่แค่ใน execution เดียว
-// จึงไม่มีปัญหาข้อมูลค้างข้าม request
-var cachedCustomerSpreadsheet_ = null;
-function getCustomerSpreadsheet_() {
+function getCustomerSheet_() {
   if (!CUSTOMER_SHEET_ID || CUSTOMER_SHEET_ID === 'PUT_YOUR_GOOGLE_SHEET_ID_HERE') {
     throw new Error('ยังไม่ได้ตั้งค่า CUSTOMER_SHEET_ID — เปิด Code.gs แล้วใส่ Sheet ID ของ Google Sheet ที่จะใช้เก็บข้อมูลลูกค้าก่อน');
   }
-  if (!cachedCustomerSpreadsheet_) cachedCustomerSpreadsheet_ = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
-  return cachedCustomerSpreadsheet_;
-}
-
-var cachedCustomerSheet_ = null;
-function getCustomerSheet_() {
-  if (cachedCustomerSheet_) return cachedCustomerSheet_;
-  var ss = getCustomerSpreadsheet_();
+  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
   var sheet = ss.getSheetByName(CUSTOMER_SHEET_NAME);
   if (!sheet) {
     // หาแท็บชื่อ CUSTOMER_SHEET_NAME ไม่เจอ (เช่น ตั้งชื่อไว้ไม่ตรง) — ใช้แท็บแรกสุดในไฟล์แทน
@@ -221,15 +195,12 @@ function getCustomerSheet_() {
     sheet = allSheets[0];
     Logger.log('ไม่พบแท็บชื่อ "' + CUSTOMER_SHEET_NAME + '" — ใช้แท็บแรกสุด ("' + sheet.getName() + '") แทนโดยอัตโนมัติ');
   }
-  cachedCustomerSheet_ = sheet;
   return sheet;
 }
 
 // อ่านแถวหัวตาราง (row 1) แล้วคืนค่าเป็น { ชื่อคอลัมน์: เลขคอลัมน์ (1-based) }
 // ใช้แทนการอ้างอิงตำแหน่งคอลัมน์แบบตายตัว เผื่อมีคนสลับลำดับคอลัมน์ในชีตภายหลัง
-var cachedCustomerHeaderMap_ = null;
 function getCustomerHeaderMap_(sheet) {
-  if (cachedCustomerHeaderMap_ && sheet === cachedCustomerSheet_) return cachedCustomerHeaderMap_;
   var lastCol = Math.max(sheet.getLastColumn(), CUSTOMER_SHEET_COLUMNS.length);
   var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var map = {};
@@ -242,7 +213,6 @@ function getCustomerHeaderMap_(sheet) {
     throw new Error('แถวหัวตารางในชีต "' + CUSTOMER_SHEET_NAME + '" ขาดคอลัมน์: ' + missing.join(', ') +
                      ' — ต้องเพิ่มหัวคอลัมน์เหล่านี้ในแถวที่ 1 ให้ครบก่อนใช้งาน');
   }
-  if (sheet === cachedCustomerSheet_) cachedCustomerHeaderMap_ = map;
   return map;
 }
 
@@ -315,29 +285,14 @@ function findCustomerRowNumberByKey_(sheet, headerMap, key, phoneHint) {
   // ทางสำรอง (ช้า — วนลูปทุกแถวคำนวณ fingerprint): ใช้เฉพาะกรณีข้างบนหาไม่เจอจริงๆ เท่านั้น
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
-  // ⚡ (r32) อ่านเฉพาะ 4 คอลัมน์ที่ใช้คำนวณ fingerprint (เดิมอ่านทุกคอลัมน์ทั้งชีต รวม
-  // follow_up_log/financial_info ที่เป็น JSON ยาว — ข้อมูลหลายสิบ MB บนชีตแสนแถว)
-  var numRows = lastRow - 1;
-  var readCol_ = function (colName) {
-    return sheet.getRange(2, headerMap[colName], numRows, 1).getValues();
-  };
-  var cdVals = readCol_('created_date');
-  var fnVals = readCol_('first_name');
-  var lnVals = readCol_('last_name');
-  var phVals = readCol_('phone');
-
-  // ⚡ (r32) รอบแรกแบบถูก: ถ้ามี phoneHint เทียบแค่ตัวเลขของเบอร์ (ไม่ต้อง MD5) — จับกรณีเบอร์ใน
-  // ชีตมีขีด/เว้นวรรค ที่ TextFinder แบบ matchEntireCell หาไม่เจอ
-  var hintDigits = formatPhoneNumber(phoneHint).replace(/\D/g, '');
-  if (hintDigits && hintDigits !== '0') {
-    for (var h = 0; h < numRows; h++) {
-      if (formatPhoneNumber(phVals[h][0]).replace(/\D/g, '') === hintDigits) return h + 2;
-    }
-  }
-
-  var cdCol = 0, fnCol = 1, lnCol = 2, phCol = 3;
-  for (var i = 0; i < numRows; i++) {
-    var row = [cdVals[i][0], fnVals[i][0], lnVals[i][0], phVals[i][0]];
+  var lastCol = sheet.getLastColumn();
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var cdCol = headerMap['created_date'] - 1;
+  var fnCol = headerMap['first_name'] - 1;
+  var lnCol = headerMap['last_name'] - 1;
+  var phCol = headerMap['phone'] - 1;
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
     var createdDateStr = formatDateStr(row[cdCol]);
     var phoneStr = formatPhoneNumber(row[phCol]);
     // ⚠️ (2026-09-19) แก้บั๊ก: เดิมคำนวณ fingerprint จาก phoneStr ที่ผ่าน formatPhoneNumber()
@@ -436,8 +391,30 @@ function formatCellForCsv_(colName, val) {
 // ไม่ว่า log จะสะสมมากแค่ไหนในระยะยาว การซิงก์แต่ละครั้งก็ยังเร็วเท่าเดิม (ส่งแค่ 1 แถวใหม่)
 
 var USERS_SHEET_NAME = 'users';
-var USERS_SHEET_COLUMNS = ['user_id', 'username', 'password_hash', 'role', 'status'];
-var USERS_TYPE_MAP = { user_id: 'STRING', username: 'STRING', password_hash: 'STRING', role: 'STRING', status: 'STRING' };
+// (2026-09-20) เพิ่ม 'name'/'branch' ต่อท้าย — ต่อท้ายเจตนา ไม่แทรกกลาง เพื่อไม่ให้กระทบ
+// ตำแหน่งคอลัมน์เดิมที่อาจมีโค้ด/ข้อมูลอื่นอ้างอิงอยู่ (แม้โค้ดทั้งไฟล์นี้จะหาคอลัมน์จากชื่อ
+// หัวตารางเสมออยู่แล้ว ไม่ใช้ตำแหน่งตายตัว แต่ต่อท้ายไว้ก็ยังปลอดภัยกว่า)
+var USERS_SHEET_COLUMNS = ['user_id', 'username', 'password_hash', 'role', 'status', 'name', 'branch'];
+var USERS_TYPE_MAP = { user_id: 'STRING', username: 'STRING', password_hash: 'STRING', role: 'STRING', status: 'STRING', name: 'STRING', branch: 'STRING' };
+
+// เติมหัวคอลัมน์ที่ยังขาดเข้าไปในแท็บ users อัตโนมัติ (กรณีแท็บมีอยู่แล้วจากก่อนหน้านี้ แต่ยัง
+// ไม่มีหัวคอลัมน์ใหม่ เช่น name/branch ที่เพิ่งเพิ่มเข้ามาทีหลัง) — ทำงานแบบ idempotent เรียกซ้ำ
+// ได้ปลอดภัย เพิ่มเฉพาะคอลัมน์ที่ยังไม่มีจริงๆ ต่อท้ายหัวตารางเดิม ไม่แตะ/ไม่ลบคอลัมน์หรือข้อมูล
+// เดิมเลย ป้องกันไม่ให้ buildHeaderMapForColumns_() ด้านล่าง throw error "ขาดคอลัมน์" ทันทีหลัง
+// deploy โค้ดรุ่นนี้ (ถ้าลืมไปเพิ่มหัวคอลัมน์ในชีตด้วยมือก่อน)
+function ensureUsersSheetColumns_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+  var existing = {};
+  for (var i = 0; i < headerRow.length; i++) {
+    var h = (headerRow[i] || '').toString().trim();
+    if (h) existing[h] = true;
+  }
+  var missing = USERS_SHEET_COLUMNS.filter(function(c) { return !existing[c]; });
+  if (missing.length > 0) {
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+  }
+}
 
 var LEAD_LOG_SHEET_NAME = 'lead_intake_log';
 var LEAD_LOG_SHEET_COLUMNS = ['received_at', 'received_date', 'phone', 'facebook', 'first_name', 'last_name', 'is_duplicate', 'match_type', 'is_manychat'];
@@ -456,7 +433,7 @@ var ACTIVITY_LOG_TYPE_MAP = {
 // เปิดแท็บตามชื่อในสเปรดชีตเดียวกับ customers — ถ้ายังไม่มีแท็บนี้ (หรือแท็บว่างเปล่า
 // ไม่มีแม้แต่แถวหัวตาราง) จะสร้างให้เองพร้อมใส่หัวคอลัมน์ตาม columns ที่ส่งมา
 function getOrCreateSheetTab_(tabName, columns) {
-  var ss = getCustomerSpreadsheet_();
+  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
   var sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
@@ -671,11 +648,29 @@ function installScheduledCustomerSync_() {
 }
 
 function scheduledSyncCustomersToBigQuery_() {
+  var t0 = Date.now();
   try {
     syncCustomerSheetToBigQuery_();
+    saveCustomerSyncStatus_(true, 'ok (' + Math.round((Date.now() - t0) / 1000) + 's)');
   } catch (err) {
     Logger.log('scheduledSyncCustomersToBigQuery_ error: ' + err);
+    saveCustomerSyncStatus_(false, String(err).substring(0, 300));
   }
+}
+// (2026-09-24 r34) เก็บผลการ sync ล่าสุดไว้ใน Script Properties — ดูได้จาก ?action=checkStatus
+// (ช่อง lastCustomerSync) จะได้รู้ว่า sync ชีต → BigQuery ทำงานอยู่จริงหรือพังเงียบๆ
+function saveCustomerSyncStatus_(ok, message) {
+  try {
+    PropertiesService.getScriptProperties().setProperty('LAST_CUSTOMER_SYNC', JSON.stringify({
+      ok: ok, message: message, at: Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd HH:mm:ss')
+    }));
+  } catch (e) { /* ignore */ }
+}
+function getCustomerSyncStatus_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty('LAST_CUSTOMER_SYNC');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
 }
 
 function syncCustomerSheetToBigQuery_() {
@@ -896,46 +891,6 @@ function syncNewSheetRowsToBigQueryAppend_(tabName, columns, typeMap, tableId, l
 }
 
 var ACTIVITY_LOG_LAST_SYNCED_ROW_KEY = 'ACTIVITY_LOG_LAST_SYNCED_ROW';
-var LEAD_LOG_LAST_SYNCED_ROW_KEY = 'LEAD_LOG_LAST_SYNCED_ROW';
-
-// (r32) ถ้ายังไม่เคยตั้งค่า property "แถวล่าสุดที่ซิงก์แล้ว" ให้ตั้งเป็นแถวสุดท้ายของแท็บตอนนี้
-// (ถือว่าแถวที่มีอยู่แล้วทั้งหมดอยู่ใน BigQuery แล้ว) — ถ้าตั้งไว้แล้วจะไม่ทำอะไร
-function initLastSyncedRowIfMissing_(propKey, sheet) {
-  var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(propKey) === null) {
-    props.setProperty(propKey, String(Math.max(sheet.getLastRow(), 1)));
-  }
-}
-
-// (r32) ซิงก์แถวใหม่ของ lead_intake_log เข้า BigQuery เป็นรอบๆ (เหมือน activity log)
-function scheduledSyncLeadLogToBigQuery_() {
-  try {
-    syncNewSheetRowsToBigQueryAppend_(
-      LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS, LEAD_LOG_TYPE_MAP,
-      LOG_TABLE_ID, LEAD_LOG_LAST_SYNCED_ROW_KEY
-    );
-  } catch (err) {
-    Logger.log('scheduledSyncLeadLogToBigQuery_ error: ' + err);
-  }
-}
-
-// ⚙️ (r32) Setup ครั้งเดียว: เลือกฟังก์ชัน "installScheduledLeadLogSync" จาก dropdown แล้วกด ▶ Run
-// ⚠️ ต้องรัน ไม่งั้นลีดใหม่จะเข้า Sheet ปกติ แต่จะไม่ขึ้นในรายงานลีดรายวัน (ที่อ่านจาก BigQuery)
-function installScheduledLeadLogSync() {
-  initLastSyncedRowIfMissing_(LEAD_LOG_LAST_SYNCED_ROW_KEY,
-    getOrCreateSheetTab_(LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS));
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'scheduledSyncLeadLogToBigQuery_') {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-  ScriptApp.newTrigger('scheduledSyncLeadLogToBigQuery_')
-    .timeBased()
-    .everyMinutes(5)
-    .create();
-  Logger.log('ตั้ง trigger สำเร็จ: จะรัน scheduledSyncLeadLogToBigQuery_ ทุก 5 นาที');
-}
 
 function scheduledSyncActivityLogToBigQuery_() {
   try {
@@ -1020,11 +975,11 @@ function checkBigQueryStatus() {
     var sql = "SELECT 1 as status";
     var res = runParamQueryFetch(sql, []);
     if (res && res.length > 0) {
-      return { success: true, connected: true, message: 'BigQuery Connected', codeVersion: CODE_VERSION };
+      return { success: true, connected: true, message: 'BigQuery Connected', codeVersion: CODE_VERSION, lastCustomerSync: getCustomerSyncStatus_() };
     }
-    return { success: false, connected: false, message: 'No response', codeVersion: CODE_VERSION };
+    return { success: false, connected: false, message: 'No response', codeVersion: CODE_VERSION, lastCustomerSync: getCustomerSyncStatus_() };
   } catch (err) {
-    return { success: false, connected: false, message: err.toString(), codeVersion: CODE_VERSION };
+    return { success: false, connected: false, message: err.toString(), codeVersion: CODE_VERSION, lastCustomerSync: getCustomerSyncStatus_() };
   }
 }
 /**
@@ -1223,13 +1178,21 @@ function getBigQueryLoginUser_(username, password) {
     var passwordMatches = storedPassword === password || storedPassword.toLowerCase() === sha256Hex_(password).toLowerCase();
     var status = String(row.status || '').trim().toLowerCase();
     if (!passwordMatches || (status && status !== 'active')) return { found: true, user: null };
+
+    // (2026-09-20) ดึง name/branch แบบแยก query ต่างหากจาก query login หลักด้านบนโดยตั้งใจ —
+    // ถ้าคอลัมน์ name/branch ยังไม่มีจริงในตาราง (ยังไม่ได้เพิ่ม schema/ยังไม่ sync) หรือ query นี้
+    // พลาดด้วยเหตุใดก็ตาม getBigQueryUserExtraFields_ จะคืนค่าว่างเงียบๆ ไม่ throw ออกมา จึงไม่ทำให้
+    // การ login (ที่ผ่านมาแล้วด้านบน) ล้มเหลวตามไปด้วย
+    var extra = getBigQueryUserExtraFields_(username);
+
     return {
       found: true,
       user: {
         username: String(row.username || username),
         password: password,
         role: String(row.role || 'user').toLowerCase(),
-        name: String(row.username || username)
+        name: extra.name || String(row.username || username),
+        branch: extra.branch || ''
       }
     };
   } catch (e) {
@@ -1237,24 +1200,22 @@ function getBigQueryLoginUser_(username, password) {
   }
 }
 
-function saveSessionsStore(data) {
-  PropertiesService.getScriptProperties().setProperty(CRM_LOGIN_SESSIONS_KEY, JSON.stringify(data));
+// ดึง name/branch ของ user แบบ best-effort เท่านั้น (ดูคอมเมนต์ที่จุดเรียกใช้ด้านบน) — คืนค่า
+// เป็นสตริงว่างเสมอถ้าหาไม่เจอ/คอลัมน์ยังไม่มี/query error ไม่ throw ออกไปให้กระทบ login หลัก
+function getBigQueryUserExtraFields_(username) {
+  try {
+    var sql = "SELECT name, branch FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` WHERE username = @username LIMIT 1";
+    var rows = runParamQueryFetch(sql, [{ name: 'username', value: username }]);
+    if (!rows.length) return { name: '', branch: '' };
+    return { name: String(rows[0].name || ''), branch: String(rows[0].branch || '') };
+  } catch (e) {
+    Logger.log('getBigQueryUserExtraFields_ error (ไม่กระทบ login หลัก): ' + e.toString());
+    return { name: '', branch: '' };
+  }
 }
 
-// 🔒 (r33) แก้ session ภายใต้ ScriptLock — อ่านค่าล่าสุด "ใหม่" หลังได้ล็อกแล้วค่อยแก้+เขียน
-// กันเคส login/ping/logout ของหลายคนเขียนทับกันจน token ของคนอื่นหาย (เดิมอ่านก่อน-เขียนทีหลัง
-// โดยไม่ล็อก) — mutator รับ sessions แล้วแก้ในตัวได้เลย คืนค่า false ถ้าไม่ต้องเขียนกลับ
-function mutateSessionsStore_(mutator, waitMs) {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(waitMs)) return false;
-  try {
-    var sessions = getSessionsStore();
-    if (mutator(sessions) === false) return true;
-    saveSessionsStore(sessions);
-    return true;
-  } finally {
-    lock.releaseLock();
-  }
+function saveSessionsStore(data) {
+  PropertiesService.getScriptProperties().setProperty(CRM_LOGIN_SESSIONS_KEY, JSON.stringify(data));
 }
 
 // ลบ session ทิ้งทันที (ใช้ตอนกดปุ่ม "ออกจากระบบ") — ต่างจากการปล่อยให้ session เงียบ
@@ -1263,10 +1224,11 @@ function mutateSessionsStore_(mutator, waitMs) {
 function removeSession_(token) {
   if (!token) return;
   try {
-    mutateSessionsStore_(function (sessions) {
-      if (!sessions[token]) return false;
+    var sessions = getSessionsStore();
+    if (sessions[token]) {
       delete sessions[token];
-    }, 5000);
+      saveSessionsStore(sessions);
+    }
   } catch (e) {
     Logger.log('removeSession_ error: ' + e.toString());
   }
@@ -1294,20 +1256,17 @@ function loginHTML(payload) {
   }
 
   var token = Utilities.base64EncodeWebSafe(Utilities.getUuid() + ':' + Date.now());
-  var newSession = { username: matched.username, role: matched.role, name: matched.name, createdAt: new Date().toISOString(), lastActive: Date.now() };
-  var saved = mutateSessionsStore_(function (sessions) {
-    var pruned = pruneStaleSessions_(sessions); // เก็บกวาด session เก่าทิ้งทุกครั้งที่มี login ใหม่
-    for (var t in sessions) { if (!pruned[t]) delete sessions[t]; }
-    sessions[token] = newSession;
-  }, 10000);
-  if (!saved) {
-    return { success: false, message: 'ระบบกำลังใช้งานหนาแน่น กรุณากดเข้าสู่ระบบอีกครั้ง' };
-  }
+  var sessions = getSessionsStore();
+  sessions = pruneStaleSessions_(sessions); // เก็บกวาด session เก่าทิ้งทุกครั้งที่มี login ใหม่
+  sessions[token] = { username: matched.username, role: matched.role, name: matched.name, branch: matched.branch || '', createdAt: new Date().toISOString(), lastActive: Date.now() };
+  saveSessionsStore(sessions);
 
   return {
     success: true,
     token: token,
-    user: { username: matched.username, role: matched.role, name: matched.name },
+    // (2026-09-20) เพิ่ม branch เข้า response ด้วย — ใช้โดยแอป Salepromofinder ที่ login ผ่าน
+    // backend ตัวนี้ร่วมกัน (ไม่กระทบ CRM-TRACKER Pro เอง เพราะเป็นแค่ field เพิ่มเข้ามาเฉยๆ)
+    user: { username: matched.username, role: matched.role, name: matched.name, branch: matched.branch || '' },
     message: 'เข้าสู่ระบบสำเร็จ'
   };
 }
@@ -1325,16 +1284,8 @@ function validateToken(token) {
   var shouldPersist = !session.lastActive || (now - session.lastActive) > 20000;
   session.lastActive = now;
   if (shouldPersist) {
-    // (r33) อัปเดตแค่ lastActive ของ token นี้ บนข้อมูลล่าสุดภายใต้ล็อก — ถ้ารอล็อกไม่ทัน
-    // ข้ามไปเลย (lastActive ใช้แค่โชว์ "ออนไลน์อยู่" ไม่กระทบการใช้งาน) ไม่ให้ request ต้องรอ
-    try {
-      mutateSessionsStore_(function (latest) {
-        if (!latest[token]) return false; // เพิ่ง logout ไประหว่างนี้ ไม่ต้องชุบชีวิตกลับมา
-        latest[token].lastActive = now;
-      }, 1500);
-    } catch (e) {
-      Logger.log('validateToken persist skipped: ' + e.toString());
-    }
+    sessions[token] = session;
+    saveSessionsStore(sessions);
   }
   return session;
 }
@@ -1402,8 +1353,12 @@ function getUsersTableSchema_() {
       query: "SELECT * FROM `" + GCP_PROJECT_ID + "." + DATASET_ID + ".users` LIMIT 0",
       useLegacySql: false
     };
-    request.timeoutMs = 20000; // ให้ BigQuery รอผลฝั่งเซิร์ฟเวอร์ได้นานขึ้นก่อนตอบกลับ (ลดการวนเช็ค)
-    var queryResults = waitForQueryJob_(BigQuery.Jobs.query(request, GCP_PROJECT_ID));
+    var queryResults = BigQuery.Jobs.query(request, GCP_PROJECT_ID);
+    var jobId = queryResults.jobReference.jobId;
+    while (!queryResults.jobComplete) {
+      Utilities.sleep(250);
+      queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobId);
+    }
     return (queryResults.schema && queryResults.schema.fields) ? queryResults.schema.fields : [];
   } catch (e) {
     Logger.log('getUsersTableSchema_ error: ' + e.toString());
@@ -1480,6 +1435,8 @@ function addUserHTML(payload, currentUser) {
     var username = cleanStr(payload && payload.username).toLowerCase();
     var password = cleanStr(payload && payload.password);
     var requestedRole = cleanStr(payload && payload.role).toLowerCase();
+    var name = cleanStr(payload && payload.name);     // (2026-09-20) ชื่อ-นามสกุลจริง — ไม่บังคับ (fallback เป็น username ถ้าไม่กรอก)
+    var branch = cleanStr(payload && payload.branch); // (2026-09-20) สาขา — ไม่บังคับ
 
     if (!username || !password || !requestedRole) {
       return { success: false, message: 'กรุณากรอก username, password และเลือกสิทธิ์ให้ครบ' };
@@ -1496,6 +1453,7 @@ function addUserHTML(payload, currentUser) {
     }
 
     var usersSheet = getOrCreateSheetTab_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS);
+    ensureUsersSheetColumns_(usersSheet); // (2026-09-20) เติมหัวคอลัมน์ name/branch อัตโนมัติถ้าแท็บนี้มีอยู่ก่อนแล้วแต่ยังไม่มี
     var usersHeaderMap = buildHeaderMapForColumns_(usersSheet, USERS_SHEET_COLUMNS);
 
     // เช็คว่ามี username นี้อยู่แล้วในระบบหรือยัง (กันซ้ำ) — อ่านตรงจาก Sheet
@@ -1519,9 +1477,11 @@ function addUserHTML(payload, currentUser) {
       username: username,
       password_hash: passwordHash,
       role: requestedRole,
-      status: 'active'
+      status: 'active',
+      name: name || username, // ไม่กรอกชื่อมา ก็ใช้ username แทนกันช่องว่างเปล่าๆ
+      branch: branch
     };
-    usersSheet.appendRow(USERS_SHEET_COLUMNS.map(function(c) { return newUserFields[c]; }));
+    usersSheet.appendRow(USERS_SHEET_COLUMNS.map(function(c) { return newUserFields[c] !== undefined ? newUserFields[c] : ''; }));
 
     try { syncSheetTabToBigQueryTable_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS, USERS_TYPE_MAP, 'users'); }
     catch (syncErr) { Logger.log('sync users error: ' + syncErr); }
@@ -1536,21 +1496,6 @@ function addUserHTML(payload, currentUser) {
 }
 
 function doGet(e) {
-  var action = e && e.parameter ? e.parameter.action : '';
-  if (!action) return doGetInner_(e); // เปิดหน้าเว็บ (HtmlService) — ไม่ต้องห่อ JSON
-  try {
-    return doGetInner_(e);
-  } catch (err) {
-    Logger.log('doGet error [' + action + ']: ' + err + (err && err.stack ? '\n' + err.stack : ''));
-    return createJsonResponse({
-      success: false,
-      message: 'เซิร์ฟเวอร์ error (' + action + '): ' + (err && err.message ? err.message : String(err)),
-      codeVersion: CODE_VERSION
-    });
-  }
-}
-
-function doGetInner_(e) {
   var action = e && e.parameter ? e.parameter.action : '';
   if (action === 'getInitialData') {
     return createJsonResponse(getInitialDataHTML());
@@ -1688,6 +1633,10 @@ function doPost(e) {
     } else if (action === 'addFollowUp') {
       var flData = contents.payload || contents;
       result = addFollowUpLogHTML(flData.key || flData.rowIndex || flData.phoneKey, flData.entry || {}, flData.phoneHint, user);
+    } else if (action === 'getCustomerAudit') {
+      // (2026-09-24) อ่าน "ผู้บันทึก/ผู้แก้ไขล่าสุด/ผู้ติดตาม" ตรงจาก Google Sheet (ไม่ผ่าน BigQuery)
+      // เป็น read-only ทุก role ที่ login แล้วเรียกได้ — ใช้แก้ปัญหาชื่อไม่ขึ้นเพราะ BigQuery sync ตามหลังชีต
+      result = getCustomerAuditHTML(contents.payload || contents);
     } else if (action === 'getDailyLeadReport') {
       result = getDailyLeadReportHTML(contents.payload || contents);
     } else if (action === 'getLeadIntakeLogDetail') {
@@ -1770,23 +1719,6 @@ function customerProduct_(cust) {
   var model = firstNonEmpty_(cust, ['productModel', 'product_model']);
   return [category, model].filter(function(v) { return !!v; }).join(' | ');
 }
-// ⚡ (r33) รอให้ query job เสร็จ — ต้องส่ง location ทุกครั้ง (ไม่งั้น dataset นอกโซน US จะได้
-// error "Not found: Job ...") และมีเพดานเวลา กันค้างจนหน้าเว็บ timeout
-function waitForQueryJob_(queryResults) {
-  var jobRef = queryResults.jobReference || {};
-  var opts = { timeoutMs: 10000 };
-  if (jobRef.location) opts.location = jobRef.location;
-  var deadline = Date.now() + 90000;
-  while (!queryResults.jobComplete) {
-    if (Date.now() > deadline) {
-      throw new Error('BigQuery ใช้เวลานานเกินไป (เกิน 90 วินาที) — ลองลดช่วงวันที่แล้วกดดึงใหม่');
-    }
-    Utilities.sleep(300);
-    queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobRef.jobId, opts);
-  }
-  return queryResults;
-}
-
 function runParamQueryFetch(sql, params) {
   try {
     var request = {
@@ -1797,8 +1729,12 @@ function runParamQueryFetch(sql, params) {
         return { name: p.name, parameterType: { type: 'STRING' }, parameterValue: { value: p.value } };
       })
     };
-    request.timeoutMs = 20000; // ให้ BigQuery รอผลฝั่งเซิร์ฟเวอร์ได้นานขึ้นก่อนตอบกลับ (ลดการวนเช็ค)
-    var queryResults = waitForQueryJob_(BigQuery.Jobs.query(request, GCP_PROJECT_ID));
+    var queryResults = BigQuery.Jobs.query(request, GCP_PROJECT_ID);
+    var jobId = queryResults.jobReference.jobId;
+    while (!queryResults.jobComplete) {
+      Utilities.sleep(250);
+      queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobId);
+    }
     var rows = queryResults.rows;
     var schema = queryResults.schema ? queryResults.schema.fields : [];
     var result = [];
@@ -1826,8 +1762,12 @@ function runParamQuery(sql, params) {
         return { name: p.name, parameterType: { type: 'STRING' }, parameterValue: { value: p.value } };
       })
     };
-    request.timeoutMs = 20000; // ให้ BigQuery รอผลฝั่งเซิร์ฟเวอร์ได้นานขึ้นก่อนตอบกลับ (ลดการวนเช็ค)
-    var queryResults = waitForQueryJob_(BigQuery.Jobs.query(request, GCP_PROJECT_ID));
+    var queryResults = BigQuery.Jobs.query(request, GCP_PROJECT_ID);
+    var jobId = queryResults.jobReference.jobId;
+    while (!queryResults.jobComplete) {
+      Utilities.sleep(250);
+      queryResults = BigQuery.Jobs.getQueryResults(GCP_PROJECT_ID, jobId);
+    }
     return true;
   } catch (e) {
     throw new Error('BigQuery Execute Error: ' + e.toString());
@@ -2093,7 +2033,12 @@ function searchCustomersHTML(reqPayload) {
         facebook: fbId,
         financialInfo: r.financial_info || '{}',
         followUpLog: followUpArr,
-        followUpCount: followUpArr.length
+        followUpCount: followUpArr.length,
+        // (2026-09-24) ผู้สร้าง/ผู้แก้ไขล่าสุด — เดิมเขียนลงชีตแล้วแต่ไม่เคยส่งกลับหน้าเว็บ ทำให้ขึ้น "-" ตลอด
+        created_by: cleanStr(r.created_by),
+        createdBy: cleanStr(r.created_by),
+        updated_by: cleanStr(r.updated_by),
+        updatedBy: cleanStr(r.updated_by)
       };
     });
     return { success: true, totalCount: totalCount, data: formattedData };
@@ -2161,7 +2106,12 @@ function getFollowupCalendarHTML(reqPayload) {
         line: line,
         facebook: fb,
         followUpLog: logs,
-        followUpCount: logs.length
+        followUpCount: logs.length,
+        // (2026-09-24) ผู้สร้าง/ผู้แก้ไขล่าสุด — เดิมเขียนลงชีตแล้วแต่ไม่เคยส่งกลับหน้าเว็บ ทำให้ขึ้น "-" ตลอด
+        created_by: cleanStr(r.created_by),
+        createdBy: cleanStr(r.created_by),
+        updated_by: cleanStr(r.updated_by),
+        updatedBy: cleanStr(r.updated_by)
       };
     });
     return { success: true, data: data, totalCount: data.length, startDate: startDate, endDate: endDate };
@@ -2273,7 +2223,12 @@ function getCustomerByPhone(phoneKey) {
         facebook: r.facebook || '',
         financialInfo: r.financial_info || '{}',
         followUpLog: followUpArr,
-        followUpCount: followUpArr.length
+        followUpCount: followUpArr.length,
+        // (2026-09-24) ผู้สร้าง/ผู้แก้ไขล่าสุด — เดิมเขียนลงชีตแล้วแต่ไม่เคยส่งกลับหน้าเว็บ ทำให้ขึ้น "-" ตลอด
+        created_by: cleanStr(r.created_by),
+        createdBy: cleanStr(r.created_by),
+        updated_by: cleanStr(r.updated_by),
+        updatedBy: cleanStr(r.updated_by)
       }
     };
   } catch (err) {
@@ -2339,14 +2294,12 @@ function logLeadIntake_(info) {
       info.isManyChat ? true : false
     ];
     var sheet = getOrCreateSheetTab_(LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS);
-    // ⚡ (r32) ครั้งแรกหลัง deploy เวอร์ชันนี้: ตั้ง "แถวล่าสุดที่ซิงก์แล้ว" = แถวสุดท้ายตอนนี้
-    // เพราะทุกแถวก่อนหน้านี้ถูกโค้ดเวอร์ชันเก่า append เข้า BigQuery ไปแล้วทีละแถว — กันไม่ให้
-    // trigger รอบแรกโหลดแถวเก่าทั้งหมดซ้ำเข้าไปอีกรอบ (ข้อมูลรายงานจะนับเบิ้ล)
-    initLastSyncedRowIfMissing_(LEAD_LOG_LAST_SYNCED_ROW_KEY, sheet);
     sheet.appendRow(rowValues);
-    // ⛔ (r32) ไม่เรียก appendRowToBigQueryTable_ ตรงนี้แล้ว — เดิมรอ BigQuery Load Job จนเสร็จ
-    // (3-25 วินาที) ทุกครั้งที่กดบันทึกลูกค้า เป็นสาเหตุหลักที่ "บันทึกช้าผิดปกติ" ตอนนี้ปล่อยให้
-    // scheduledSyncLeadLogToBigQuery_ (trigger ทุก 5 นาที) ซิงก์แถวใหม่ทีหลังแทน
+    try {
+      appendRowToBigQueryTable_(rowValues, LEAD_LOG_SHEET_COLUMNS, LEAD_LOG_TYPE_MAP, LOG_TABLE_ID);
+    } catch (syncErr) {
+      Logger.log('sync lead_intake_log error: ' + syncErr);
+    }
   } catch (e) {
     Logger.log('logLeadIntake_ error (ข้อมูลลูกค้าหลักถูกบันทึกไปแล้วตามปกติ ไม่กระทบ): ' + e.toString());
   }
@@ -2371,6 +2324,117 @@ function buildCustomerRowArray_(headerMap, fields) {
   }
   return row;
 }
+// (2026-09-24) ชื่อผู้ใช้ที่ใช้บันทึกลงช่อง created_by / updated_by / follow_up_log[].by
+// รูปแบบ "ชื่อจริง (username)" เพื่อให้แยกคนที่ชื่อซ้ำกันได้ — ถ้า user ยังไม่มีชื่อจริง ใช้ username
+// อย่างเดียว ถ้าไม่มี user เลย (เช่น lead ที่ส่งเข้ามาอัตโนมัติจาก Facebook/ManyChat) ใช้ fallbackLabel
+function userDisplayLabel_(user, fallbackLabel) {
+  if (!user) return fallbackLabel || '';
+  var uname = cleanStr(user.username);
+  var nm = cleanStr(user.name);
+  if (nm && uname && nm !== uname) return nm + ' (' + uname + ')';
+  return nm || uname || (fallbackLabel || '');
+}
+
+// =================================================================
+// 👤 (2026-09-24 r34) ข้อมูล "ใครสร้าง / ใครแก้ไขล่าสุด / ใครคีย์การติดตาม" แบบสดจาก Google Sheet
+// =================================================================
+// สาเหตุที่ต้องมี: หน้าค้นหาอ่านข้อมูลจาก BigQuery ซึ่ง sync จากชีตทุก ~5 นาที (ดู
+// scheduledSyncCustomersToBigQuery_) ถ้า sync ยังไม่รอบ/sync ล้มเหลว (เช่นเกินเวลา 6 นาทีของ
+// Apps Script เพราะชีตมี 116,000+ แถว) คอลัมน์ created_by/updated_by ฝั่ง BigQuery จะว่าง ทำให้
+// หน้าเว็บขึ้น "-" ทั้งที่ในชีตมีชื่ออยู่แล้ว — ฟังก์ชันนี้อ่านค่าตรงจากชีตให้หน้าเว็บเติมทับ
+//
+// payload: { items: [{ key, phone }], includeLogs: true|false } (สูงสุด 100 รายการ)
+// คืนค่า: { success, data: { <phone หรือ key>: { created_by, updated_by, follow_up_log[] } } }
+function phoneLookupKey_(v) {
+  var d = cleanStr(v).replace(/\D/g, '');
+  if (!d) return '';
+  d = d.replace(/^0+/, '');
+  return d;
+}
+function getCustomerAuditHTML(payload) {
+  try {
+    var items = (payload && Array.isArray(payload.items)) ? payload.items.slice(0, 100) : [];
+    if (!items.length && payload && (payload.phone || payload.key)) items = [{ key: payload.key, phone: payload.phone }];
+    var includeLogs = !(payload && payload.includeLogs === false);
+    if (!items.length) return { success: true, data: {} };
+
+    var sheet = getCustomerSheet_();
+    var headerMap = getCustomerHeaderMap_(sheet);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, data: {} };
+
+    // อ่านคอลัมน์เบอร์โทรทั้งคอลัมน์ครั้งเดียว (เร็วกว่าเรียก TextFinder ทีละเบอร์)
+    var wanted = {};
+    items.forEach(function(it) {
+      var pk = phoneLookupKey_(it && it.phone);
+      if (pk) wanted[pk] = true;
+    });
+    var phoneVals = sheet.getRange(2, headerMap['phone'], lastRow - 1, 1).getValues();
+    var rowByPhone = {};
+    for (var i = 0; i < phoneVals.length; i++) {
+      var pk2 = phoneLookupKey_(phoneVals[i][0]);
+      if (pk2 && wanted[pk2]) rowByPhone[pk2] = i + 2; // เบอร์ซ้ำหลายแถว → ใช้แถวล่าสุด (ล่างสุด)
+    }
+
+    var cbCol = headerMap['created_by'], ubCol = headerMap['updated_by'], flCol = headerMap['follow_up_log'];
+    var out = {};
+    items.forEach(function(it) {
+      var pk = phoneLookupKey_(it && it.phone);
+      var rowNum = pk ? rowByPhone[pk] : null;
+      if (!rowNum && it && it.key && !pk) {
+        rowNum = findCustomerRowNumberByKey_(sheet, headerMap, cleanStr(it.key), '');
+        if (rowNum === -1) rowNum = null;
+      }
+      if (!rowNum) return;
+      var rec = {
+        created_by: cbCol ? cleanStr(sheet.getRange(rowNum, cbCol).getValue()) : '',
+        updated_by: ubCol ? cleanStr(sheet.getRange(rowNum, ubCol).getValue()) : ''
+      };
+      if (includeLogs && flCol) rec.follow_up_log = parseFollowUpLog(sheet.getRange(rowNum, flCol).getValue());
+      out[cleanStr(it.phone) || cleanStr(it.key)] = rec;
+    });
+    return { success: true, data: out };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// 🔍 ตรวจสอบปัญหา "ชื่อผู้บันทึก/ผู้แก้ไขไม่ขึ้น" — รันเองใน Apps Script editor:
+// เลือกฟังก์ชัน runDiagnostic_AuditColumns จาก dropdown แล้วกด ▶ Run → ดูผลใน Execution log
+function runDiagnostic_AuditColumns() {
+  Logger.log('CODE_VERSION = ' + CODE_VERSION);
+  var sheet = getCustomerSheet_();
+  var headerMap = getCustomerHeaderMap_(sheet);
+  Logger.log('ชีต: คอลัมน์ created_by = ' + headerMap['created_by'] + ', updated_by = ' + headerMap['updated_by']);
+  var lastRow = sheet.getLastRow();
+  var n = Math.min(500, lastRow - 1);
+  if (n > 0) {
+    var start = lastRow - n + 1;
+    var cb = sheet.getRange(start, headerMap['created_by'], n, 1).getValues();
+    var ub = sheet.getRange(start, headerMap['updated_by'], n, 1).getValues();
+    var cbFilled = cb.filter(function(r) { return cleanStr(r[0]); }).length;
+    var ubFilled = ub.filter(function(r) { return cleanStr(r[0]); }).length;
+    Logger.log('ชีต (' + n + ' แถวล่าสุด): created_by มีค่า ' + cbFilled + ' แถว, updated_by มีค่า ' + ubFilled + ' แถว');
+    Logger.log('ตัวอย่าง created_by แถวล่าสุด: "' + cleanStr(cb[cb.length - 1][0]) + '"');
+  }
+  try {
+    var rows = runParamQueryFetch("SELECT COUNTIF(IFNULL(created_by,'') != '') AS cb, COUNTIF(IFNULL(updated_by,'') != '') AS ub, COUNT(*) AS total FROM " + TABLE_FULL_PATH, []);
+    Logger.log('BigQuery: total=' + rows[0].total + ', created_by มีค่า=' + rows[0].cb + ', updated_by มีค่า=' + rows[0].ub +
+               ' (ถ้าตรงนี้เป็น 0 แต่ในชีตมีค่า = BigQuery sync ไม่ทำงาน/ยังไม่รอบ)');
+  } catch (e) {
+    Logger.log('BigQuery: query คอลัมน์ created_by/updated_by ไม่ได้ → ตารางใน BigQuery ยังไม่มีคอลัมน์นี้ (sync ไม่สำเร็จเลยตั้งแต่เพิ่มคอลัมน์) — ' + e);
+  }
+  var trig = ScriptApp.getProjectTriggers().filter(function(t) { return t.getHandlerFunction() === 'scheduledSyncCustomersToBigQuery_'; });
+  Logger.log('trigger sync customers: ' + (trig.length ? 'มี ' + trig.length + ' ตัว' : '❌ ไม่มี (ต้องตั้ง trigger ก่อน)'));
+  try {
+    var t0 = Date.now();
+    syncCustomerSheetToBigQuery_();
+    Logger.log('✅ ทดลอง sync ชีต → BigQuery สำเร็จ ใช้เวลา ' + Math.round((Date.now() - t0) / 1000) + ' วินาที');
+  } catch (e2) {
+    Logger.log('❌ sync ชีต → BigQuery ล้มเหลว: ' + e2);
+  }
+}
+
 function addCustomerHTML(cust, user) {
   try {
     var fbNameForDup = cleanStr(cust.facebook);
@@ -2417,7 +2481,7 @@ function addCustomerHTML(cust, user) {
         date: todayStrForDup,
         note: noteText,
         loggedAt: new Date().toISOString(),
-        by: user ? (user.name || user.username) : ''
+        by: userDisplayLabel_(user, 'ระบบ (Facebook/ManyChat)')
       });
 
       // แก้ไข (2026-09-17): เขียนกลับตรงลง Google Sheet แทนการยิง UPDATE เข้า BigQuery
@@ -2502,7 +2566,7 @@ function addCustomerHTML(cust, user) {
       created_at_ts: new Date(),
       // (2026-09-19) ชื่อผู้คีย์ข้อมูลลูกค้ารายนี้เข้าระบบ — เป็นคอลัมน์ optional: ถ้ายังไม่ได้เพิ่ม
       // หัวคอลัมน์ "created_by" ในชีตจริง buildCustomerRowArray_ ด้านล่างจะข้ามค่านี้ไปเงียบๆ ไม่ error
-      created_by: user ? (user.name || user.username) : ''
+      created_by: userDisplayLabel_(user, 'ระบบ (Facebook/ManyChat)')
     };
     newCustSheet.appendRow(buildCustomerRowArray_(newCustHeaderMap, newCustFields));
     // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
@@ -2585,51 +2649,27 @@ function updateCustomerHTML(rowIndex, cust, phoneHint, user) {
       fields = restrictedFields;
     }
 
-    // ⚡ (r32) อ่านค่าเดิมทั้งแถว "ครั้งเดียว" — เดิม getValue()/setValue() สลับกันทีละช่อง
-    // ~36 ครั้ง ซึ่งบังคับให้ Apps Script flush การเขียนทุกครั้งก่อนอ่านช่องถัดไป (ช้ามาก
-    // บนชีตแสนแถว) ตอนนี้อ่าน 1 ครั้ง แล้วเขียน "เฉพาะช่องที่ค่าเปลี่ยนจริง" รวบเป็นก้อน
-    var lastColForRow = sheet.getLastColumn();
-    var oldRowValues = sheet.getRange(rowNum, 1, 1, lastColForRow).getValues()[0];
-    var DATE_FIELDS_ = { created_date: true, booking_date: true, last_followup_date: true };
-    var normalizeForCompare_ = function (fieldName, v) {
-      return DATE_FIELDS_[fieldName] ? formatDateStr(v) : cleanStr(v);
-    };
-
     // เก็บ diff (ค่าเดิม → ค่าใหม่) เฉพาะฟิลด์ที่เปลี่ยนจริง เพื่อโชว์ใน "ประวัติการใช้งาน"
     // (ข้าม financial_info เพราะเป็น JSON ยาว ไม่เหมาะโชว์เป็นข้อความ diff ตรงนี้)
     var changedParts = [];
-    var cellsToWrite = {}; // { colNum: value }
     for (var field in fields) {
       var colNum = headerMap[field];
       if (!colNum) continue;
-      var oldVal = normalizeForCompare_(field, oldRowValues[colNum - 1]);
-      var newVal = normalizeForCompare_(field, fields[field]);
-      if (oldVal === newVal) continue; // ค่าเหมือนเดิม ไม่ต้องเขียนทับ
       if (field !== 'financial_info') {
-        changedParts.push((FIELD_LABELS_TH_[field] || field) + ': "' + (oldVal || '-') + '" → "' + (newVal || '-') + '"');
+        var oldVal = cleanStr(sheet.getRange(rowNum, colNum).getValue());
+        var newVal = cleanStr(fields[field]);
+        if (oldVal !== newVal) {
+          changedParts.push((FIELD_LABELS_TH_[field] || field) + ': "' + (oldVal || '-') + '" → "' + (newVal || '-') + '"');
+        }
       }
-      cellsToWrite[colNum] = fields[field];
+      sheet.getRange(rowNum, colNum).setValue(fields[field]);
     }
 
     // (2026-09-19) บันทึกชื่อผู้แก้ไขล่าสุด — คอลัมน์ optional เช่นเดียวกับ created_by
     // (เพิ่มหัวคอลัมน์ "updated_by" ในชีตเองถ้าต้องการใช้ ไม่มีคอลัมน์นี้ก็ข้ามไปเงียบๆ ไม่ error)
     var updatedByCol = headerMap['updated_by'];
-    if (updatedByCol && user && Object.keys(cellsToWrite).length > 0) {
-      cellsToWrite[updatedByCol] = user.name || user.username || '';
-    }
-
-    // รวบช่องที่คอลัมน์ติดกันให้เป็น setValues ก้อนเดียว (ไม่แตะช่องที่ไม่ได้แก้เลย)
-    var colsSorted = Object.keys(cellsToWrite).map(Number).sort(function (a, b) { return a - b; });
-    var ci = 0;
-    while (ci < colsSorted.length) {
-      var startCol = colsSorted[ci];
-      var block = [cellsToWrite[startCol]];
-      while (ci + 1 < colsSorted.length && colsSorted[ci + 1] === colsSorted[ci] + 1) {
-        ci++;
-        block.push(cellsToWrite[colsSorted[ci]]);
-      }
-      sheet.getRange(rowNum, startCol, 1, block.length).setValues([block]);
-      ci++;
+    if (updatedByCol && user) {
+      sheet.getRange(rowNum, updatedByCol).setValue(userDisplayLabel_(user));
     }
 
     // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
@@ -2692,7 +2732,7 @@ function getAllCustomersExport() {
     var sql = "SELECT CAST(created_date AS STRING) AS created_date, " +
               "CAST(booking_date AS STRING) AS booking_date, " +
               "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-              "first_name, last_name, phone, type, product, address_no, moo, village, subdistrict, district, province, zipcode, line, facebook, remark " +
+              "first_name, last_name, phone, type, product, address_no, moo, village, subdistrict, district, province, zipcode, line, facebook, remark, created_by, updated_by " +
               "FROM " + TABLE_FULL_PATH + " ORDER BY " + buildRobustDateOrderExpr_('created_date') + " DESC, created_at_ts DESC LIMIT 50000";
     var rows = runParamQueryFetch(sql, []);
     return { success: true, data: rows };
@@ -2799,7 +2839,12 @@ function formatCustomerRowForList_(r) {
     facebook: fbId,
     financialInfo: r.financial_info || '{}',
     followUpLog: followUpArr,
-    followUpCount: followUpArr.length
+    followUpCount: followUpArr.length,
+    // (2026-09-24) ผู้สร้าง/ผู้แก้ไขล่าสุด — เดิมเขียนลงชีตแล้วแต่ไม่เคยส่งกลับหน้าเว็บ ทำให้ขึ้น "-" ตลอด
+    created_by: cleanStr(r.created_by),
+    createdBy: cleanStr(r.created_by),
+    updated_by: cleanStr(r.updated_by),
+    updatedBy: cleanStr(r.updated_by)
   };
 }
 
@@ -2961,7 +3006,7 @@ function getLeadIntakeLogDetailHTML(reqPayload) {
         custParams.push({ name: 'rp' + i, value: k });
       });
       var customerSql = "SELECT first_name, last_name, phone, product, address_no, moo, village, " +
-                        "subdistrict, district, province, zipcode, remark, line, facebook, financial_info " +
+                        "subdistrict, district, province, zipcode, remark, line, facebook, financial_info, created_by, updated_by " +
                         "FROM " + TABLE_FULL_PATH +
                         " WHERE CAST(SAFE_CAST(REGEXP_REPLACE(CAST(phone AS STRING), r'\\D', '') AS INT64) AS STRING) " +
                         "IN (" + holders.join(',') + ")";
@@ -2991,6 +3036,8 @@ function getLeadIntakeLogDetailHTML(reqPayload) {
         item.line = c.line || '';
         item.facebook = c.facebook || item.facebook;
         item.financialInfo = c.financial_info || '{}';
+        item.created_by = cleanStr(c.created_by);
+        item.updated_by = cleanStr(c.updated_by);
       });
     }
 
@@ -3067,7 +3114,7 @@ function addFollowUpLogHTML(rawKeyInput, entry, phoneHint, user) {
       // (2026-09-19) ชื่อผู้บันทึกการติดตามรอบนี้ — แต่ละรอบอาจคนละคนกัน จึงเก็บแยกทีละ entry
       // ในนี้เลย (ไม่ใช่คอลัมน์ระดับลูกค้า) ไม่ต้องเพิ่มหัวคอลัมน์ใดๆ ในชีต เพราะ follow_up_log
       // เก็บเป็น JSON array อยู่แล้วในคอลัมน์เดิม
-      by: user ? (user.name || user.username) : ''
+      by: userDisplayLabel_(user)
     });
 
     // 2) เขียนกลับทั้ง array ที่อัปเดตแล้ว พร้อมอัปเดต last_followup_date (วันที่ของ
