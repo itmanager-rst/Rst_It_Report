@@ -257,7 +257,7 @@
         .staff-dash-controls .form-control { width: auto; min-width: 140px; }
         .staff-dash-controls .staff-dash-sep { font-size: 12.5px; color: #475569; }
         .staff-dash-status { font-size: 11.5px; color: #94a3b8; margin-bottom: 8px; min-height: 16px; }
-        .staff-dash-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+        .staff-dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
         .staff-dash-panel { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; min-width: 0; }
         .staff-dash-panel-title { font-size: 12.5px; font-weight: 600; color: #0f172a; margin-bottom: 2px; }
         .staff-dash-summary { font-size: 11.5px; color: #64748b; margin-bottom: 8px; min-height: 16px; }
@@ -642,11 +642,11 @@
                         </div>
                     </div>
                     <div class="staff-dash-panel">
-                        <div class="staff-dash-panel-title">สัดส่วนประเภทการติดตามลูกค้า (Follow-up Methods)</div>
-                        <div id="staff-dash-methods-summary" class="staff-dash-summary"></div>
-                        <div class="staff-dash-canvas-wrap" id="staff-dash-methods-wrap">
-                            <canvas id="followup-method-chart" role="img" aria-label="กราฟโดนัทสัดส่วนวิธีการติดตามลูกค้า"></canvas>
-                            <div class="staff-dash-empty" id="staff-dash-methods-empty"></div>
+                        <div class="staff-dash-panel-title" id="staff-dash-trend-title">แนวโน้มกิจกรรมของทีมรายวัน (Team Activity Trend)</div>
+                        <div id="staff-dash-trend-summary" class="staff-dash-summary"></div>
+                        <div class="staff-dash-canvas-wrap" id="staff-dash-trend-wrap">
+                            <canvas id="staff-trend-chart" role="img" aria-label="กราฟแนวโน้มจำนวนการติดตามลูกค้า ลูกค้าที่บันทึกเพิ่ม และจำนวนพนักงานที่ใช้งานระบบ"></canvas>
+                            <div class="staff-dash-empty" id="staff-dash-trend-empty"></div>
                         </div>
                     </div>
                 </div>
@@ -1087,7 +1087,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r36-2026-09-25-staff-dashboard-admin-only';
+        const EXPECTED_CODE_VERSION = 'r37-2026-09-25-staff-dashboard-trend';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1845,20 +1845,20 @@
                 `;
             }).join('');
         }
-        /* ===== รายงาน: Dashboard กราฟผลการทำงานพนักงาน + สัดส่วนวิธีติดตาม (2026-09-25) =====
+        /* ===== รายงาน: Dashboard กราฟผลการทำงานพนักงาน (2026-09-25, เฉพาะ admin) =====
            - ตัวเลขทั้งหมดสรุป (COUNT/GROUP BY) มาจากฝั่ง Code.js แล้ว (action 'getStaffDashboardStats')
-             หน้าเว็บรับแค่ไม่กี่สิบแถว ไม่ดึง log/ลูกค้าดิบลงมาเลย
+             หน้าเว็บรับแค่ไม่กี่สิบแถว ไม่ดึง log ดิบลงมาเลย
+           - กราฟ 1: Top Staff Activity (แท่งแนวนอน: ล็อกอิน + บันทึกติดตาม ต่อพนักงาน)
+           - กราฟ 2: Team Activity Trend (เส้น: การติดตาม / ลูกค้าที่บันทึกเพิ่ม + แท่ง: พนักงานที่ใช้งาน)
            - ทุกครั้งก่อนวาดใหม่จะ destroy() Chart instance เดิมทิ้งก่อนเสมอ (กัน memory leak /
              canvas ซ้อนกัน / event listener ค้าง) และมี request sequence กันผลลัพธ์รอบเก่าที่ตอบกลับ
              ช้ากว่ามาวาดทับรอบใหม่ (กรณีกด "ดึงข้อมูล" รัวๆ หรือเปลี่ยนช่วงวันที่เร็วๆ) */
-        const staffDashCharts = { activity: null, methods: null };
+        const staffDashCharts = { activity: null, trend: null };
         let staffDashRequestSeq = 0;
         const STAFF_DASH_FONT_FAMILY = "'Prompt', sans-serif";
-        const STAFF_DASH_METHOD_COLORS = {
-            phone: '#0284c7', chat: '#22c55e', visit: '#f97316', promo: '#a855f7',
-            testdrive: '#eab308', other: '#64748b', unspecified: '#cbd5e1'
-        };
-        const STAFF_DASH_CANVAS_IDS = { activity: 'staff-activity-chart', methods: 'followup-method-chart' };
+        const STAFF_DASH_CANVAS_IDS = { activity: 'staff-activity-chart', trend: 'staff-trend-chart' };
+        const STAFF_DASH_EMPTY_IDS = { activity: 'staff-dash-activity-empty', trend: 'staff-dash-trend-empty' };
+        const STAFF_DASH_SUMMARY_IDS = { activity: 'staff-dash-activity-summary', trend: 'staff-dash-trend-summary' };
 
         function destroyStaffDashChart_(key) {
             if (staffDashCharts[key]) {
@@ -1873,21 +1873,14 @@
             }
         }
         function destroyAllStaffDashCharts_() {
-            destroyStaffDashChart_('activity');
-            destroyStaffDashChart_('methods');
+            Object.keys(staffDashCharts).forEach(destroyStaffDashChart_);
         }
         function setStaffDashPanelEmpty_(key, message) {
             const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS[key]);
-            const emptyEl = document.getElementById(key === 'activity' ? 'staff-dash-activity-empty' : 'staff-dash-methods-empty');
-            if (message) {
-                if (canvas) canvas.style.display = 'none';
-                emptyEl.textContent = message;
-                emptyEl.style.display = 'flex';
-            } else {
-                if (canvas) canvas.style.display = '';
-                emptyEl.textContent = '';
-                emptyEl.style.display = 'none';
-            }
+            const emptyEl = document.getElementById(STAFF_DASH_EMPTY_IDS[key]);
+            if (canvas) canvas.style.display = message ? 'none' : '';
+            emptyEl.textContent = message || '';
+            emptyEl.style.display = message ? 'flex' : 'none';
         }
         function initStaffDashDefaultRange_() {
             const startEl = document.getElementById('staff-dash-start-date');
@@ -1898,6 +1891,11 @@
                 d.setDate(d.getDate() - 29);
                 startEl.value = localDateISO(d);
             }
+        }
+        // 'yyyy-MM-dd' -> 'dd/MM' สำหรับป้ายแกน X (ไม่ใช้ new Date() กันเพี้ยนเรื่อง timezone)
+        function staffDashShortDate_(iso) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+            return m ? `${m[3]}/${m[2]}` : String(iso || '');
         }
 
         function renderStaffDashboardCharts() {
@@ -1943,17 +1941,17 @@
                     endEl.value = resData.range.endDate || endEl.value;
                 }
                 drawStaffActivityChart_(resData.staffActivity || {});
-                drawFollowupMethodChart_(resData.followUpMethods || {});
+                drawStaffTrendChart_(resData.activityTrend || {});
                 statusEl.textContent = `ช่วงวันที่ ${startEl.value} ถึง ${endEl.value} | อัปเดตเมื่อ ${resData.generatedAt || '-'} (ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 5 นาที)`;
             })
             .catch(err => {
                 if (seq !== staffDashRequestSeq) return;
                 destroyAllStaffDashCharts_();
                 const msg = '❌ โหลดสถิติไม่สำเร็จ: ' + (err && err.message ? err.message : 'การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว');
-                setStaffDashPanelEmpty_('activity', msg);
-                setStaffDashPanelEmpty_('methods', msg);
-                document.getElementById('staff-dash-activity-summary').textContent = '';
-                document.getElementById('staff-dash-methods-summary').textContent = '';
+                Object.keys(staffDashCharts).forEach(key => {
+                    setStaffDashPanelEmpty_(key, msg);
+                    document.getElementById(STAFF_DASH_SUMMARY_IDS[key]).textContent = '';
+                });
                 statusEl.textContent = '';
             })
             .finally(() => {
@@ -1963,7 +1961,7 @@
 
         function drawStaffActivityChart_(data) {
             destroyStaffDashChart_('activity');
-            const summaryEl = document.getElementById('staff-dash-activity-summary');
+            const summaryEl = document.getElementById(STAFF_DASH_SUMMARY_IDS.activity);
             const wrap = document.getElementById('staff-dash-activity-wrap');
             const rows = Array.isArray(data.rows) ? data.rows : [];
             summaryEl.textContent = '';
@@ -1980,14 +1978,13 @@
             // กราฟแท่งแนวนอน: ปรับความสูงตามจำนวนพนักงาน ให้ชื่อไม่เบียดกันและไม่เว้นว่างเกินไป
             wrap.style.height = Math.min(560, Math.max(220, rows.length * 38 + 60)) + 'px';
 
-            const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS.activity);
-            staffDashCharts.activity = new Chart(canvas, {
+            staffDashCharts.activity = new Chart(document.getElementById(STAFF_DASH_CANVAS_IDS.activity), {
                 type: 'bar',
                 data: {
                     labels: rows.map(r => r.username || '-'),
                     datasets: [
-                        { label: '🔐 ล็อกอิน', data: rows.map(r => Number(r.login) || 0), backgroundColor: '#0284c7', borderRadius: 4, maxBarThickness: 16 },
-                        { label: '📌 บันทึกติดตาม', data: rows.map(r => Number(r.followUp) || 0), backgroundColor: '#f97316', borderRadius: 4, maxBarThickness: 16 }
+                        { label: 'ล็อกอิน', data: rows.map(r => Number(r.login) || 0), backgroundColor: '#0284c7', borderRadius: 4, maxBarThickness: 16 },
+                        { label: 'บันทึกติดตาม', data: rows.map(r => Number(r.followUp) || 0), backgroundColor: '#f97316', borderRadius: 4, maxBarThickness: 16 }
                     ]
                 },
                 options: {
@@ -2012,45 +2009,55 @@
             });
         }
 
-        function drawFollowupMethodChart_(data) {
-            destroyStaffDashChart_('methods');
-            const summaryEl = document.getElementById('staff-dash-methods-summary');
-            const rows = (Array.isArray(data.rows) ? data.rows : []).filter(r => (Number(r.count) || 0) > 0);
+        function drawStaffTrendChart_(data) {
+            destroyStaffDashChart_('trend');
+            const summaryEl = document.getElementById(STAFF_DASH_SUMMARY_IDS.trend);
+            const titleEl = document.getElementById('staff-dash-trend-title');
+            const rows = Array.isArray(data.rows) ? data.rows : [];
+            const isWeekly = data.granularity === 'week';
+            const unitLabel = isWeekly ? 'สัปดาห์' : 'วัน';
+            titleEl.textContent = `แนวโน้มกิจกรรมของทีมราย${unitLabel} (Team Activity Trend)`;
             summaryEl.textContent = '';
-            if (data.error) { setStaffDashPanelEmpty_('methods', '❌ ' + data.error); return; }
-            const total = rows.reduce((s, r) => s + (Number(r.count) || 0), 0);
-            if (!total) { setStaffDashPanelEmpty_('methods', 'ยังไม่มีบันทึกการติดตามลูกค้าในช่วงวันที่ที่เลือก'); return; }
-            setStaffDashPanelEmpty_('methods', null);
-            summaryEl.textContent = `บันทึกการติดตามทั้งหมด ${total.toLocaleString()} ครั้ง (ของทุกคน)`;
+            if (data.error) { setStaffDashPanelEmpty_('trend', '❌ ' + data.error); return; }
+            const hasAny = rows.some(r => (Number(r.followUp) || 0) + (Number(r.added) || 0) + (Number(r.activeStaff) || 0) > 0);
+            if (!hasAny) { setStaffDashPanelEmpty_('trend', 'ยังไม่มีกิจกรรมของพนักงานในช่วงวันที่ที่เลือก'); return; }
+            setStaffDashPanelEmpty_('trend', null);
 
-            const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS.methods);
-            staffDashCharts.methods = new Chart(canvas, {
-                type: 'doughnut',
+            const n = rows.length || 1;
+            const avgFollow = Math.round(((Number(data.totalFollowUp) || 0) / n) * 10) / 10;
+            summaryEl.textContent =
+                `ติดตามลูกค้าเฉลี่ย ${avgFollow.toLocaleString()} ครั้ง/${unitLabel} | ` +
+                `บันทึกลูกค้าใหม่ ${(Number(data.totalAdded) || 0).toLocaleString()} ราย | ` +
+                `พนักงานที่ใช้งานในช่วงนี้ ${(Number(data.totalActiveStaff) || 0).toLocaleString()} คน`;
+
+            staffDashCharts.trend = new Chart(document.getElementById(STAFF_DASH_CANVAS_IDS.trend), {
+                type: 'bar',
                 data: {
-                    labels: rows.map(r => r.label || r.key),
-                    datasets: [{
-                        data: rows.map(r => Number(r.count) || 0),
-                        backgroundColor: rows.map(r => STAFF_DASH_METHOD_COLORS[r.key] || '#94a3b8'),
-                        borderColor: '#ffffff',
-                        borderWidth: 2
-                    }]
+                    labels: rows.map(r => (isWeekly ? 'สัปดาห์ ' : '') + staffDashShortDate_(r.date)),
+                    datasets: [
+                        { type: 'line', label: 'บันทึกติดตาม (ครั้ง)', data: rows.map(r => Number(r.followUp) || 0), borderColor: '#f97316', backgroundColor: '#f97316', borderWidth: 2, pointRadius: n > 45 ? 0 : 2, tension: 0.25, yAxisID: 'y', order: 1 },
+                        { type: 'line', label: 'ลูกค้าที่บันทึกเพิ่ม (ราย)', data: rows.map(r => Number(r.added) || 0), borderColor: '#16a34a', backgroundColor: '#16a34a', borderWidth: 2, pointRadius: n > 45 ? 0 : 2, tension: 0.25, yAxisID: 'y', order: 2 },
+                        { type: 'bar', label: 'พนักงานที่ใช้งาน (คน)', data: rows.map(r => Number(r.activeStaff) || 0), backgroundColor: 'rgba(2, 132, 199, 0.18)', borderRadius: 3, maxBarThickness: 22, yAxisID: 'y1', order: 3 }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    cutout: '58%',
                     animation: { duration: 300 },
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { ticks: { autoSkip: true, maxRotation: 0, font: { family: STAFF_DASH_FONT_FAMILY, size: 10.5 } }, grid: { display: false } },
+                        y: { position: 'left', beginAtZero: true, ticks: { precision: 0, font: { family: STAFF_DASH_FONT_FAMILY, size: 11 } }, grid: { color: '#f1f5f9' }, title: { display: true, text: 'ครั้ง / ราย', font: { family: STAFF_DASH_FONT_FAMILY, size: 11 } } },
+                        y1: { position: 'right', beginAtZero: true, ticks: { precision: 0, font: { family: STAFF_DASH_FONT_FAMILY, size: 11 } }, grid: { display: false }, title: { display: true, text: 'คน', font: { family: STAFF_DASH_FONT_FAMILY, size: 11 } } }
+                    },
                     plugins: {
-                        legend: { position: 'bottom', labels: { font: { family: STAFF_DASH_FONT_FAMILY, size: 11.5 }, boxWidth: 12, padding: 10 } },
+                        legend: { position: 'top', labels: { font: { family: STAFF_DASH_FONT_FAMILY, size: 11.5 }, boxWidth: 12 } },
                         tooltip: {
                             titleFont: { family: STAFF_DASH_FONT_FAMILY },
                             bodyFont: { family: STAFF_DASH_FONT_FAMILY },
                             callbacks: {
-                                label: ctx => {
-                                    const n = Number(ctx.parsed) || 0;
-                                    const pct = total ? Math.round((n / total) * 1000) / 10 : 0;
-                                    return `${ctx.label}: ${n.toLocaleString()} ครั้ง (${pct}%)`;
-                                }
+                                title: items => items.length ? (isWeekly ? 'สัปดาห์เริ่ม ' : '') + (rows[items[0].dataIndex] || {}).date : '',
+                                label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()}`
                             }
                         }
                     }
