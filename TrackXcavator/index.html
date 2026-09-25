@@ -271,6 +271,18 @@ body {
   user-select: none;
 }
 
+.model-parts-panel {
+  border: 1px dashed #dc3545;
+  border-radius: 8px;
+  background: #fff8f8;
+  padding: 8px 12px;
+}
+.model-parts-panel .form-check { margin-bottom: 0; font-size: 0.8rem; }
+.model-parts-panel .form-check-input { cursor: pointer; }
+.model-parts-panel .form-check-input:checked { background-color: #dc3545; border-color: #dc3545; }
+.model-parts-panel .form-check-label { cursor: pointer; user-select: none; }
+.model-parts-panel .form-check-input:not(:checked) + .form-check-label { color: #adb5bd; text-decoration: line-through; }
+
 .parts-badge:hover {
   background-color: #0d6efd;
   color: #fff;
@@ -618,10 +630,7 @@ body {
                     </div>
                     <div class="col-md-3">
                       <label class="form-label form-label-sm">เบิกอะไหล่บริษัท / รายการอะไหล่</label>
-                      <input type="text" id="inpPartsStore" class="form-control form-control-sm" placeholder="พิมพ์ หรือ เลือกอะไหล่ด้านล่าง">
-                      <select id="inpModelPartSelector" class="form-select form-select-sm mt-1" onchange="appendSelectedModelPart(this)" disabled>
-                        <option value="">เลือกรุ่นรถก่อน เพื่อโหลดรายการอะไหล่</option>
-                      </select>
+                      <input type="text" id="inpPartsStore" class="form-control form-control-sm" placeholder="พิมพ์ หรือ เลือกอะไหล่ด้านล่าง" oninput="syncChecklistFromPartsStore()">
                     </div>
                     <div class="col-md-3">
                       <label class="form-label form-label-sm">รหัสผู้ขาย (Supplier ID)</label>
@@ -650,10 +659,25 @@ body {
                     </div>
                   </div>
 
-                  <!-- เลือกรายการอะไหล่ตามรุ่นรถ -->
+                  <!-- ✅ อะไหล่ตามรุ่นรถ: เลือกรุ่นแล้วติ๊กให้ทั้งหมดอัตโนมัติ เอาติ๊กออกตัวที่ไม่ต้องการ -->
                   <div class="row g-2 mb-2">
                     <div class="col-md-12">
-                      <span class="text-muted d-block mb-1" style="font-size: 0.72rem;">เลือกรุ่นรถด้านบน แล้วเลือกอะไหล่จากรายการที่ตรงกับรุ่น (dropdown "เลือกรายการอะไหล่" ด้านบน):</span>
+                      <div id="modelPartsPanel" class="model-parts-panel">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                          <span class="fw-semibold" style="font-size: 0.8rem;">
+                            <i class="fa-solid fa-list-check text-danger me-1"></i>อะไหล่ตามรุ่นรถ
+                            <span id="modelPartsTitle" class="text-muted fw-normal"></span>
+                            <span id="modelPartsCount" class="badge bg-danger ms-1 d-none"></span>
+                          </span>
+                          <div id="modelPartsActions" class="d-none">
+                            <button type="button" class="btn btn-outline-success btn-sm py-0 px-2" style="font-size: 0.72rem;" onclick="toggleAllModelParts(true)"><i class="fa-solid fa-check-double me-1"></i>เลือกทั้งหมด</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size: 0.72rem;" onclick="toggleAllModelParts(false)"><i class="fa-solid fa-xmark me-1"></i>ไม่เลือกทั้งหมด</button>
+                          </div>
+                        </div>
+                        <div id="modelPartsChecklist" class="row g-1">
+                          <div class="col-12 text-muted" style="font-size: 0.75rem;">เลือกรุ่นรถด้านบนก่อน ระบบจะดึงอะไหล่ของรุ่นนั้นมาให้ทั้งหมด แล้วเอาติ๊กออกตัวที่ไม่ต้องการ</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1457,52 +1481,158 @@ function appendPartItem(itemName) {
   } else {
     input.value += ", " + itemName;
   }
+  syncChecklistFromPartsStore();
 }
 
 // ==========================================
 // 🔧 อะไหล่ตามรุ่นรถ (ดึงจากตาราง modelpart ผ่าน dropdown เลือกอะไหล่)
 // ==========================================
-function appendSelectedModelPart(select) {
-  appendPartItem(select.value);
-  select.value = '';
+// state ของรายการอะไหล่ตามรุ่นที่โหลดอยู่
+const modelPartsState = { model: '', loadingModel: '', parts: [], reqId: 0 };
+
+function splitPartsList(str) {
+  return String(str || '').split(',').map(v => v.trim()).filter(Boolean);
 }
 
-async function loadModelParts(model, selectedParts) {
-  const select = document.getElementById('inpModelPartSelector');
-  const cleanModel = String(model || '').trim();
-  if (!select) return;
+function getModelPartValue(part) {
+  return String((part && (part.maintenancePart || part.partNo)) || '').trim();
+}
 
-  select.innerHTML = '<option value="">กำลังโหลดรายการอะไหล่...</option>';
-  select.disabled = true;
-  if (!cleanModel) {
-    select.innerHTML = '<option value="">เลือกรุ่นรถก่อน เพื่อโหลดรายการอะไหล่</option>';
+function setModelPartsMessage(msg, modelLabel) {
+  const box = document.getElementById('modelPartsChecklist');
+  const title = document.getElementById('modelPartsTitle');
+  const count = document.getElementById('modelPartsCount');
+  const actions = document.getElementById('modelPartsActions');
+  if (box) box.innerHTML = `<div class="col-12 text-muted" style="font-size: 0.75rem;">${msg}</div>`;
+  if (title) title.textContent = modelLabel ? `(${modelLabel})` : '';
+  if (count) count.classList.add('d-none');
+  if (actions) actions.classList.add('d-none');
+}
+
+function renderModelPartsChecklist(checkedLowerSet) {
+  const box = document.getElementById('modelPartsChecklist');
+  const title = document.getElementById('modelPartsTitle');
+  const actions = document.getElementById('modelPartsActions');
+  if (!box) return;
+  if (title) title.textContent = modelPartsState.model ? `(${modelPartsState.model})` : '';
+  if (actions) actions.classList.remove('d-none');
+
+  box.innerHTML = modelPartsState.parts.map((part, i) => {
+    const value = getModelPartValue(part);
+    const label = [part.partNo, part.maintenancePart].filter(Boolean).join(' - ');
+    const checked = checkedLowerSet.has(value.toLowerCase()) ? 'checked' : '';
+    return `<div class="col-md-4 col-sm-6">
+      <div class="form-check">
+        <input class="form-check-input model-part-cb" type="checkbox" id="mpcb_${i}" data-value="${escapeHtml(value)}" ${checked} onchange="syncPartsStoreFromChecklist()">
+        <label class="form-check-label" for="mpcb_${i}">${escapeHtml(label)}</label>
+      </div>
+    </div>`;
+  }).join('');
+  updateModelPartsCount();
+}
+
+function updateModelPartsCount() {
+  const count = document.getElementById('modelPartsCount');
+  if (!count) return;
+  const all = document.querySelectorAll('#modelPartsChecklist .model-part-cb');
+  const on = document.querySelectorAll('#modelPartsChecklist .model-part-cb:checked');
+  count.textContent = `เลือก ${on.length}/${all.length}`;
+  count.classList.toggle('d-none', all.length === 0);
+}
+
+// checkbox -> ช่องเบิกอะไหล่ (เก็บรายการที่พิมพ์เอง/กด badge ไว้ แล้วต่อด้วยอะไหล่ที่ติ๊ก)
+function syncPartsStoreFromChecklist() {
+  const input = document.getElementById('inpPartsStore');
+  if (!input) return;
+  const modelValues = new Set(modelPartsState.parts.map(p => getModelPartValue(p).toLowerCase()));
+  const manual = splitPartsList(input.value).filter(v => !modelValues.has(v.toLowerCase()));
+  const checked = Array.from(document.querySelectorAll('#modelPartsChecklist .model-part-cb:checked'))
+    .map(cb => cb.dataset.value);
+  input.value = [...manual, ...checked].join(', ');
+  updateModelPartsCount();
+}
+
+// ช่องเบิกอะไหล่ -> checkbox (กรณีพิมพ์/ลบเองในช่อง)
+function syncChecklistFromPartsStore() {
+  const input = document.getElementById('inpPartsStore');
+  if (!input) return;
+  const current = new Set(splitPartsList(input.value).map(v => v.toLowerCase()));
+  document.querySelectorAll('#modelPartsChecklist .model-part-cb').forEach(cb => {
+    cb.checked = current.has(String(cb.dataset.value).toLowerCase());
+  });
+  updateModelPartsCount();
+}
+
+function toggleAllModelParts(checked) {
+  document.querySelectorAll('#modelPartsChecklist .model-part-cb').forEach(cb => { cb.checked = checked; });
+  syncPartsStoreFromChecklist();
+}
+
+// selectedParts: ส่งมาตอนเปิดแก้ไขใบงานเดิม (ติ๊กเฉพาะที่บันทึกไว้)
+// ไม่ส่งมา = เลือกรุ่นใหม่ -> ติ๊กทั้งหมดอัตโนมัติ
+async function loadModelParts(model, selectedParts) {
+  const cleanModel = String(model || '').trim();
+  const isRestore = selectedParts !== undefined;
+  const input = document.getElementById('inpPartsStore');
+
+  // กัน onchange + onblur ยิงซ้ำรุ่นเดิม (จะได้ไม่ติ๊กกลับตัวที่ผู้ใช้เอาออกแล้ว)
+  if (!isRestore && cleanModel && (
+      cleanModel.toLowerCase() === modelPartsState.loadingModel.toLowerCase() ||
+      (cleanModel.toLowerCase() === modelPartsState.model.toLowerCase() && !modelPartsState.loadingModel))) {
     return;
   }
 
+  const reqId = ++modelPartsState.reqId;
+  const prevValues = new Set(modelPartsState.parts.map(p => getModelPartValue(p).toLowerCase()));
+
+  // ตอนเปลี่ยนรุ่น: ลบอะไหล่ของรุ่นเก่าออกจากช่อง (เก็บที่พิมพ์เองไว้)
+  const dropPreviousModelParts = () => {
+    if (!isRestore && input && prevValues.size) {
+      input.value = splitPartsList(input.value).filter(v => !prevValues.has(v.toLowerCase())).join(', ');
+    }
+  };
+
+  if (!cleanModel) {
+    modelPartsState.model = ''; modelPartsState.loadingModel = ''; modelPartsState.parts = [];
+    dropPreviousModelParts();
+    setModelPartsMessage('เลือกรุ่นรถด้านบนก่อน ระบบจะดึงอะไหล่ของรุ่นนั้นมาให้ทั้งหมด แล้วเอาติ๊กออกตัวที่ไม่ต้องการ');
+    return;
+  }
+
+  modelPartsState.loadingModel = cleanModel;
+  setModelPartsMessage('<i class="fa-solid fa-spinner fa-spin me-1"></i>กำลังโหลดรายการอะไหล่...', cleanModel);
+
   try {
     const result = await postJson({ action: 'getModelParts', model: cleanModel });
-    const parts = Array.isArray(result && result.data) ? result.data : [];
-    const partsStoreEl = document.getElementById('inpPartsStore');
-    const selected = String(selectedParts || (partsStoreEl ? partsStoreEl.value : '') || '')
-      .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
-
-    select.innerHTML = '<option value="">-- เลือกรายการอะไหล่ --</option>';
-    parts.forEach(part => {
-      const value = part.maintenancePart || part.partNo;
-      const label = [part.partNo, part.maintenancePart].filter(Boolean).join(' - ');
-      if (!value) return;
-      const option = new Option(label, value);
-      option.selected = selected.includes(value.toLowerCase());
-      select.add(option);
+    if (reqId !== modelPartsState.reqId) return; // มีการเลือกรุ่นใหม่ระหว่างรอ
+    const seen = new Set();
+    const parts = (Array.isArray(result && result.data) ? result.data : []).filter(part => {
+      const key = getModelPartValue(part).toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key); return true;
     });
 
+    dropPreviousModelParts();
+    modelPartsState.model = cleanModel;
+    modelPartsState.loadingModel = '';
+    modelPartsState.parts = parts;
+
     if (parts.length === 0) {
-      select.innerHTML = '<option value="">ไม่พบรายการอะไหล่สำหรับรุ่นนี้</option>';
+      setModelPartsMessage('ไม่พบรายการอะไหล่สำหรับรุ่นนี้ (พิมพ์ในช่องเบิกอะไหล่ หรือกดปุ่มด้านบนแทนได้)', cleanModel);
+      return;
+    }
+
+    if (isRestore) {
+      const saved = new Set(splitPartsList(selectedParts).map(v => v.toLowerCase()));
+      renderModelPartsChecklist(saved);
     } else {
-      select.disabled = false;
+      renderModelPartsChecklist(new Set(parts.map(p => getModelPartValue(p).toLowerCase())));
+      syncPartsStoreFromChecklist();
     }
   } catch (error) {
-    select.innerHTML = '<option value="">โหลดรายการอะไหล่ไม่สำเร็จ</option>';
+    if (reqId !== modelPartsState.reqId) return;
+    modelPartsState.loadingModel = '';
+    setModelPartsMessage('<span class="text-danger">โหลดรายการอะไหล่ไม่สำเร็จ ลองเลือกรุ่นใหม่อีกครั้ง</span>', cleanModel);
     console.error('โหลดรายการอะไหล่ไม่สำเร็จ:', error);
   }
 }
@@ -1923,6 +2053,7 @@ function resetTicketForm() {
   if (inpMachineId) inpMachineId.readOnly = false;
   
   setPmRound(0);
+  loadModelParts('');
 }
 
 function editDashboardItem(machineId) {
