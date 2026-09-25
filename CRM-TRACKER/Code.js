@@ -67,7 +67,11 @@
 // role อื่นเห็นตัวเลขของตัวเองได้) — เช็คทั้งที่ doPost และในฟังก์ชันเอง (defense in depth)
 // หมายเหตุ (2026-09-25 — r37): เอากราฟ "สัดส่วนประเภทการติดตาม" (UNNEST follow_up_log จาก customers —
 // error ในระบบจริง) ออก แทนด้วย "แนวโน้มกิจกรรมของทีม" ที่อ่านจาก user_activity_log ตารางเดียวกับกราฟแรก
-var CODE_VERSION = 'r37-2026-09-25-staff-dashboard-trend';
+// หมายเหตุ (2026-09-25 — r39): แก้ปัญหา "ผู้บันทึกลูกค้า" ขึ้น "-" ตอนพนักงานเพิ่มลูกค้าที่เบอร์/Facebook
+// ซ้ำกับรายชื่อเดิม (ระบบรวมเข้ารายชื่อเดิมแทนการสร้างใหม่ แต่ไม่เคยเติม created_by ให้รายชื่อเดิมที่ยังว่าง)
+// + กันช่อง Facebook ที่กรอกแค่ "-" / "ไม่มี" ไปจับคู่ซ้ำกับลูกค้าคนอื่นผิดคน + เพิ่มฟังก์ชันเติม created_by
+// ย้อนหลังจาก user_activity_log (รันเองครั้งเดียว) — ดู addCustomerHTML และ runBackfillCreatedBy_*
+var CODE_VERSION = 'r39-2026-09-25-created-by-dup-fix';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -2620,6 +2624,126 @@ function getCustomerAuditHTML(payload) {
   }
 }
 
+// =================================================================
+// 🧩 (2026-09-25 r39) เติม "ผู้บันทึกลูกค้า" (created_by) ย้อนหลังให้ลูกค้าที่ยังว่าง — รันเองครั้งเดียว
+// =================================================================
+// หลักฐานที่ใช้: แท็บ user_activity_log ในชีต (ทุกครั้งที่มีการกดเพิ่มลูกค้า ระบบบันทึก username +
+// "ลูกค้าใหม่: ชื่อ (เบอร์)" ไว้แล้วตั้งแต่เริ่มมี log) จับคู่กับแถวลูกค้าด้วย "เบอร์โทร" + "เวลาที่สร้างแถว
+// (created_at_ts) ห่างจากเวลาใน log ไม่เกิน BACKFILL_CREATED_BY_WINDOW_MS" — ต้องตรงทั้งสองอย่าง จึงไม่
+// เดาชื่อให้แถวเก่าที่มีเบอร์ซ้ำกันแต่สร้างคนละเวลา (แถวที่หาหลักฐานไม่ได้จะเว้นว่างไว้เหมือนเดิม)
+//
+// ✅ ปลอดภัย: เขียนเฉพาะช่อง created_by ที่ "ว่าง" เท่านั้น ไม่เขียนทับชื่อเดิม ไม่แตะคอลัมน์อื่น
+// วิธีใช้ (Apps Script editor → เลือกฟังก์ชันจาก dropdown → ▶ Run → ดูผลใน Execution log):
+//   1) runBackfillCreatedBy_Preview  — ดูก่อนว่าจะเติมกี่แถว (ไม่เขียนอะไรลงชีตเลย)
+//   2) runBackfillCreatedBy_Apply    — เขียนจริง (รันซ้ำได้ปลอดภัย แถวที่เติมแล้วจะถูกข้าม)
+var BACKFILL_CREATED_BY_WINDOW_MS = 10 * 60 * 1000; // 10 นาที
+
+function runBackfillCreatedBy_Preview() { return backfillCreatedByFromActivityLog_(true); }
+function runBackfillCreatedBy_Apply() { return backfillCreatedByFromActivityLog_(false); }
+
+function backfillCreatedByFromActivityLog_(dryRun) {
+  var ss = SpreadsheetApp.openById(CUSTOMER_SHEET_ID);
+
+  // 1) ชื่อจริงของพนักงาน (ถ้ามี) จากแท็บ users — ใช้รูปแบบเดียวกับ userDisplayLabel_ "ชื่อ (username)"
+  var nameByUser = {};
+  try {
+    var us = ss.getSheetByName(USERS_SHEET_NAME);
+    if (us && us.getLastRow() >= 2) {
+      var uVals = us.getRange(1, 1, us.getLastRow(), us.getLastColumn()).getValues();
+      var uHead = uVals[0].map(function(h) { return cleanStr(h); });
+      var iU = uHead.indexOf('username'), iN = uHead.indexOf('name');
+      for (var u = 1; u < uVals.length; u++) {
+        if (iU !== -1 && cleanStr(uVals[u][iU])) nameByUser[cleanStr(uVals[u][iU]).toLowerCase()] = iN !== -1 ? cleanStr(uVals[u][iN]) : '';
+      }
+    }
+  } catch (e) { Logger.log('อ่านแท็บ users ไม่ได้ จะใช้ username อย่างเดียว: ' + e); }
+
+  // 2) อ่าน log การเพิ่มลูกค้าที่สำเร็จ → { เบอร์: [{ ts, label }] }
+  var logSheet = ss.getSheetByName(ACTIVITY_LOG_SHEET_NAME);
+  if (!logSheet || logSheet.getLastRow() < 2) { Logger.log('ไม่พบข้อมูลในแท็บ ' + ACTIVITY_LOG_SHEET_NAME); return; }
+  var lVals = logSheet.getRange(1, 1, logSheet.getLastRow(), logSheet.getLastColumn()).getValues();
+  var lHead = lVals[0].map(function(h) { return cleanStr(h); });
+  var iTs = lHead.indexOf('logged_at'), iUser = lHead.indexOf('username'), iAct = lHead.indexOf('action'),
+      iDet = lHead.indexOf('detail'), iOk = lHead.indexOf('is_success');
+  if ([iTs, iUser, iAct, iDet, iOk].indexOf(-1) !== -1) { Logger.log('หัวคอลัมน์ในแท็บ log ไม่ครบ: ' + lHead.join(', ')); return; }
+  var evidence = {};
+  var logCount = 0;
+  for (var r = 1; r < lVals.length; r++) {
+    var row = lVals[r];
+    if (cleanStr(row[iAct]) !== 'add') continue;
+    if (!(row[iOk] === true || cleanStr(row[iOk]).toLowerCase() === 'true')) continue;
+    var uname = cleanStr(row[iUser]);
+    var m = /\(([^()]*)\)\s*$/.exec(cleanStr(row[iDet]));
+    var pk = m ? phoneLookupKey_(m[1]) : '';
+    var ts = row[iTs] instanceof Date ? row[iTs].getTime() : new Date(row[iTs]).getTime();
+    if (!uname || !pk || isNaN(ts)) continue;
+    var nm = nameByUser[uname.toLowerCase()] || '';
+    var label = userDisplayLabel_({ username: uname, name: nm });
+    (evidence[pk] = evidence[pk] || []).push({ ts: ts, label: label });
+    logCount++;
+  }
+
+  // 3) สแกนชีตลูกค้า เฉพาะ 3 คอลัมน์ (เบอร์ / created_by / created_at_ts) — อ่านทีละคอลัมน์ ไม่โหลดทั้งแถว
+  var sheet = getCustomerSheet_();
+  var headerMap = getCustomerHeaderMap_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  var n = lastRow - 1;
+  var phones = sheet.getRange(2, headerMap['phone'], n, 1).getValues();
+  var creators = sheet.getRange(2, headerMap['created_by'], n, 1).getValues();
+  var createdTs = sheet.getRange(2, headerMap['created_at_ts'], n, 1).getValues();
+  var cbColLetter = sheet.getRange(1, headerMap['created_by']).getA1Notation().replace(/\d+$/, '');
+
+  var a1ByLabel = {};
+  var matched = 0, emptyTotal = 0;
+  for (var i = 0; i < n; i++) {
+    if (cleanStr(creators[i][0])) continue;
+    emptyTotal++;
+    var ev = evidence[phoneLookupKey_(phones[i][0])];
+    if (!ev) continue;
+    var cv = createdTs[i][0];
+    var cts = cv instanceof Date ? cv.getTime() : (cleanStr(cv) ? new Date(cv).getTime() : NaN);
+    if (isNaN(cts)) continue;
+    var best = null;
+    for (var k = 0; k < ev.length; k++) {
+      var diff = Math.abs(ev[k].ts - cts);
+      if (diff <= BACKFILL_CREATED_BY_WINDOW_MS && (!best || diff < best.diff)) best = { diff: diff, label: ev[k].label };
+    }
+    if (!best) continue;
+    (a1ByLabel[best.label] = a1ByLabel[best.label] || []).push(cbColLetter + (i + 2));
+    matched++;
+  }
+
+  Logger.log('log การเพิ่มลูกค้าที่ใช้เป็นหลักฐาน: ' + logCount + ' รายการ');
+  Logger.log('ลูกค้าที่ช่อง created_by ยังว่าง: ' + emptyTotal + ' แถว | หาหลักฐานเจอ (จะเติมชื่อ): ' + matched + ' แถว');
+  Object.keys(a1ByLabel).forEach(function(lb) { Logger.log('  - ' + lb + ': ' + a1ByLabel[lb].length + ' แถว'); });
+  if (dryRun) { Logger.log('🔎 Preview เท่านั้น — ยังไม่ได้เขียนอะไรลงชีต (รัน runBackfillCreatedBy_Apply เพื่อเขียนจริง)'); return; }
+
+  // 4) เขียนจริง: จัดกลุ่มตามชื่อ แล้วใช้ RangeList เขียนทีละกลุ่ม (เร็วกว่าเขียนทีละเซลล์มาก)
+  //    และเช็คซ้ำก่อนเขียนว่าเซลล์ยังว่างจริง กันกรณีมีคนเพิ่ม/แก้ระหว่างที่สคริปต์กำลังรัน
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var written = 0;
+    // อ่านคอลัมน์ created_by ใหม่อีกรอบหลังได้ lock (อ่านครั้งเดียวทั้งคอลัมน์) แล้วข้ามเซลล์ที่มีค่าแล้ว
+    var freshCreators = sheet.getRange(2, headerMap['created_by'], n, 1).getValues();
+    Object.keys(a1ByLabel).forEach(function(lb) {
+      var list = a1ByLabel[lb].filter(function(a1) {
+        var rowIdx = parseInt(a1.replace(/^[A-Z]+/, ''), 10) - 2;
+        return !cleanStr(freshCreators[rowIdx] && freshCreators[rowIdx][0]);
+      });
+      for (var s = 0; s < list.length; s += 400) {
+        var chunk = list.slice(s, s + 400);
+        sheet.getRangeList(chunk).setValue(lb);
+        written += chunk.length;
+      }
+    });
+    Logger.log('✅ เติม created_by สำเร็จ ' + written + ' แถว — BigQuery จะเห็นค่าหลัง sync รอบถัดไป (~5 นาที)');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // 🔍 ตรวจสอบปัญหา "ชื่อผู้บันทึก/ผู้แก้ไขไม่ขึ้น" — รันเองใน Apps Script editor:
 // เลือกฟังก์ชัน runDiagnostic_AuditColumns จาก dropdown แล้วกด ▶ Run → ดูผลใน Execution log
 function runDiagnostic_AuditColumns() {
@@ -2656,6 +2780,15 @@ function runDiagnostic_AuditColumns() {
   }
 }
 
+// (2026-09-25 r39) ค่าที่พนักงานมักกรอกแทน "ไม่มี" ในช่อง Facebook — ห้ามใช้ค่าพวกนี้จับคู่ลูกค้าซ้ำ
+// (เดิม TextFinder จะไปเจอ "ลูกค้าคนแรกในชีตที่ช่อง Facebook เป็น - เหมือนกัน" แล้วรวมลูกค้าใหม่
+// เข้าไปในรายชื่อของคนอื่นผิดคน) ค่าที่กรอกยังถูกบันทึกลงชีตตามเดิม แค่ไม่เอามาใช้เช็คซ้ำ
+function isPlaceholderContactValue_(v) {
+  var s = cleanStr(v).toLowerCase();
+  if (!s) return true;
+  if (/^[\s\-–—_.,0\/]+$/.test(s)) return true;
+  return ['ไม่มี', 'ไม่ระบุ', 'ไม่มีข้อมูล', 'none', 'n/a', 'na', 'null', 'nil', 'no'].indexOf(s) !== -1;
+}
 function addCustomerHTML(cust, user) {
   try {
     var fbNameForDup = cleanStr(cust.facebook);
@@ -2679,6 +2812,8 @@ function addCustomerHTML(cust, user) {
     // แต่บันทึกเป็น "การติดตาม" เพิ่มเข้ารายชื่อเดิม พร้อมตั้งวันนัดติดตามเป็นวันถัดไป
     // ให้เซลล์กรองวันที่มาดูว่าต้องโทรตามใครต่อ — ข้อมูลเบอร์/ชื่อที่ส่งมาใหม่ล่าสุดจะถูก
     // เก็บไว้ในบันทึกไทม์ไลน์ (follow_up_log) ของลูกค้ารายเดิมด้วย ไม่ทิ้งไปเฉยๆ
+    // (r39) ไม่ใช้ค่า Facebook ที่เป็นแค่ "-" / "ไม่มี" ฯลฯ มาจับคู่ซ้ำ (ดู isPlaceholderContactValue_)
+    if (isPlaceholderContactValue_(fbNameForDup)) fbNameForDup = '';
     var existingByFb = fbNameForDup ? findCustomerByFacebookName(fbNameForDup) : null;
     var existingByPhone = newPhoneForDup ? findCustomerByPhoneNumber(newPhoneForDup) : null;
     var existing = existingByFb || existingByPhone;
@@ -2694,15 +2829,27 @@ function addCustomerHTML(cust, user) {
       var nextDayStrForDup = Utilities.formatDate(followUpBaseForDup, 'GMT+7', 'yyyy-MM-dd');
 
       var logArrForDup = parseFollowUpLog(existing.follow_up_log);
-      var noteText = 'ลูกค้าส่งข้อมูลมาอีกรอบผ่าน Facebook/ManyChat (พบซ้ำจาก: ' + matchLabel + ')';
+      var actorLabelForDup = userDisplayLabel_(user, 'ระบบ (Facebook/ManyChat)');
+      // (r39) แยกข้อความตามที่มา — เดิมเขียนว่า "ผ่าน Facebook/ManyChat" เสมอแม้พนักงานคีย์เองจากหน้าเว็บ
+      var noteText = isManyChatLead
+        ? 'ลูกค้าส่งข้อมูลมาอีกรอบผ่าน Facebook/ManyChat (พบซ้ำจาก: ' + matchLabel + ')'
+        : 'มีการบันทึกลูกค้ารายนี้เข้ามาซ้ำจากหน้าเว็บโดย ' + (actorLabelForDup || '-') +
+          ' (พบซ้ำจาก: ' + matchLabel + ') — ระบบไม่สร้างรายชื่อใหม่ แต่เพิ่มเป็นการติดตามแทน';
       if (newPhoneForDup) noteText += ' — เบอร์ที่ส่งมาล่าสุด: ' + newPhoneForDup;
       if (fbNameForDup) noteText += ' — Facebook: ' + fbNameForDup;
+      // (r39) เก็บสิ่งที่พนักงานกรอกมารอบนี้ไว้ในไทม์ไลน์ด้วย (เดิมข้อมูลรอบซ้ำหายทั้งหมด ไม่ได้บันทึกที่ไหนเลย)
+      if (!isManyChatLead) {
+        var dupProduct = customerProduct_(cust);
+        var dupRemark = cleanStr(cust.remark || cust.note);
+        if (dupProduct) noteText += ' — สินค้าที่สนใจ: ' + dupProduct;
+        if (dupRemark) noteText += ' — หมายเหตุที่กรอก: ' + dupRemark;
+      }
 
       logArrForDup.push({
         date: todayStrForDup,
         note: noteText,
         loggedAt: new Date().toISOString(),
-        by: userDisplayLabel_(user, 'ระบบ (Facebook/ManyChat)')
+        by: actorLabelForDup
       });
 
       // แก้ไข (2026-09-17): เขียนกลับตรงลง Google Sheet แทนการยิง UPDATE เข้า BigQuery
@@ -2719,6 +2866,24 @@ function addCustomerHTML(cust, user) {
       }
       if (fbNameForDup) {
         sheetForDup.getRange(rowNumForDup, headerMapForDup['facebook']).setValue(fbNameForDup);
+      }
+      // (r39) ต้นเหตุที่ "ผู้บันทึกลูกค้า" ขึ้น "-": รายชื่อเดิมที่ถูกจับคู่ซ้ำ มักเป็นลูกค้าที่เข้าระบบก่อนมี
+      // คอลัมน์ created_by (หรือมาจาก ManyChat ก่อนหน้านั้น) จึงไม่มีชื่อผู้บันทึก — เติมให้ "เฉพาะตอนที่ยังว่าง"
+      // เท่านั้น (ไม่เขียนทับชื่อผู้บันทึกเดิมที่มีอยู่แล้วเด็ดขาด) และบันทึกผู้แก้ไขล่าสุดเป็นคนที่คีย์รอบนี้
+      var existingCreatedBy = '';
+      try {
+        var cbColDup = headerMapForDup['created_by'];
+        if (cbColDup) {
+          existingCreatedBy = cleanStr(sheetForDup.getRange(rowNumForDup, cbColDup).getValue());
+          if (!existingCreatedBy && actorLabelForDup) {
+            sheetForDup.getRange(rowNumForDup, cbColDup).setValue(actorLabelForDup);
+            existingCreatedBy = actorLabelForDup;
+          }
+        }
+        var ubColDup = headerMapForDup['updated_by'];
+        if (ubColDup && actorLabelForDup) sheetForDup.getRange(rowNumForDup, ubColDup).setValue(actorLabelForDup);
+      } catch (auditErr) {
+        Logger.log('addCustomerHTML: เติม created_by/updated_by ของรายชื่อเดิมไม่สำเร็จ (ไม่กระทบการบันทึกหลัก): ' + auditErr);
       }
       // ซิงก์เข้า BigQuery native table หลังเขียน Sheet สำเร็จ (ดูคอมเมนต์ที่
       // syncCustomerSheetToBigQuery_ ด้านบนไฟล์) — ถ้า sync ล้มเหลวไม่ทำให้การบันทึกหลักพัง
@@ -2742,7 +2907,9 @@ function addCustomerHTML(cust, user) {
       return {
         success: true,
         duplicate: true,
-        message: 'พบข้อมูลลูกค้ารายนี้ในระบบแล้ว (ซ้ำจาก: ' + matchLabel + ') — เพิ่มเป็นการติดตามใหม่ (นัดวันพรุ่งนี้) ไม่ได้สร้างรายชื่อซ้ำ'
+        createdBy: existingCreatedBy,
+        message: 'พบข้อมูลลูกค้ารายนี้ในระบบแล้ว (ซ้ำจาก: ' + matchLabel + ') — เพิ่มเป็นการติดตามใหม่ (นัดวันพรุ่งนี้) ไม่ได้สร้างรายชื่อซ้ำ' +
+          (existingCreatedBy ? ' | ผู้บันทึกลูกค้ารายนี้: ' + existingCreatedBy : '')
       };
     }
 
@@ -2807,7 +2974,7 @@ function addCustomerHTML(cust, user) {
       isManyChat: isManyChatLead
     });
 
-    return { success: true, message: 'บันทึกข้อมูลเรียบร้อยแล้ว' };
+    return { success: true, message: 'บันทึกข้อมูลเรียบร้อยแล้ว', createdBy: newCustFields.created_by };
   } catch (err) {
     return { success: false, message: err.toString() };
   }

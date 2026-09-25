@@ -1087,7 +1087,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r37-2026-09-25-staff-dashboard-trend';
+        const EXPECTED_CODE_VERSION = 'r39-2026-09-25-created-by-dup-fix';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -3393,7 +3393,13 @@
             .then(res => res.json())
             .then(resData => {
                 if(resData && resData.success) {
-                    alert('💾 บันทึกข้อมูลสำเร็จ!');
+                    // (2026-09-25 r39) กรณีเบอร์/Facebook ซ้ำกับลูกค้าเดิม ระบบไม่สร้างรายชื่อใหม่ แต่ไปเพิ่มเป็น
+                    // การติดตามในรายชื่อเดิมแทน — เดิมขึ้น "บันทึกสำเร็จ" เหมือนกันหมด ทำให้เข้าใจผิดว่าสร้างลูกค้าใหม่แล้ว
+                    if (!rid && (resData.duplicate || resData.skipped)) {
+                        alert('ℹ️ ' + (resData.message || 'พบข้อมูลลูกค้ารายนี้ในระบบแล้ว'));
+                    } else {
+                        alert('💾 บันทึกข้อมูลสำเร็จ!' + (!rid && resData.createdBy ? `\nผู้บันทึกลูกค้า: ${resData.createdBy}` : ''));
+                    }
                     lastSavedCustomer = Object.assign({}, packData, { financial: JSON.parse(JSON.stringify(customerFinancial)) });
                     const printBtn = document.getElementById('btn-print-last');
                     printBtn.disabled = false;
