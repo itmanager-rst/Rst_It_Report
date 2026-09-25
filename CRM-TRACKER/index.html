@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- (2026-09-25) Chart.js สำหรับกราฟ Dashboard หน้า "รายงาน" — ใช้ defer ให้ไม่บล็อกการเปิดหน้าเว็บ (ดู renderStaffDashboardCharts) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
     <script>
         // เดิมไฟล์นี้ถูกอ้างอิงแบบ <script src="thailand-geo.js"> ซึ่งใช้ไม่ได้เมื่อเปิดผ่าน URL ของ Google Apps Script
         // (ทุก path ใต้ .../exec ถูกดักด้วย doGet() ตัวเดียว ไม่มีการเสิร์ฟไฟล์ static แยก) จึงต้องฝังโค้ดไว้ในหน้านี้โดยตรง
@@ -249,6 +251,21 @@
             #print-form-area, #print-form-area * { visibility: visible; }
             #print-form-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; }
             @page { margin: 12mm; }
+        }
+        /* ===== (2026-09-25) Dashboard กราฟผลการทำงานพนักงาน — หน้า "📈 รายงาน" ===== */
+        .staff-dash-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .staff-dash-controls .form-control { width: auto; min-width: 140px; }
+        .staff-dash-controls .staff-dash-sep { font-size: 12.5px; color: #475569; }
+        .staff-dash-status { font-size: 11.5px; color: #94a3b8; margin-bottom: 8px; min-height: 16px; }
+        .staff-dash-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+        .staff-dash-panel { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; min-width: 0; }
+        .staff-dash-panel-title { font-size: 12.5px; font-weight: 600; color: #0f172a; margin-bottom: 2px; }
+        .staff-dash-summary { font-size: 11.5px; color: #64748b; margin-bottom: 8px; min-height: 16px; }
+        .staff-dash-canvas-wrap { position: relative; height: 300px; width: 100%; }
+        .staff-dash-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; color: #94a3b8; font-size: 13px; padding: 10px; }
+        @media (max-width: 680px) {
+            .staff-dash-grid { grid-template-columns: 1fr; }
+            .staff-dash-controls .form-control { min-width: 0; flex: 1 1 130px; }
         }
         /* ===== มือถือ/จอแคบ (≤680px) ===== */
         @media (max-width: 680px) {
@@ -602,6 +619,38 @@
         </div>
         <!-- ===== หน้าที่ 4: รายงาน ===== -->
         <div id="page-report" class="page-view" style="display:none;">
+            <!-- (2026-09-25) Dashboard กราฟผลการทำงานพนักงาน + การติดตามลูกค้า (Chart.js) — เฉพาะ admin
+                 ซ่อนไว้ก่อนเสมอ แสดงเฉพาะเมื่อ currentRole === 'admin' (ดู switchPage) -->
+            <div class="card" id="staff-dash-card" style="display:none;">
+                <div class="card-title" style="flex-wrap: wrap; row-gap: 6px;">
+                    <span>📊 Dashboard ผลการทำงานพนักงาน & การติดตามลูกค้า</span>
+                    <div class="staff-dash-controls">
+                        <input type="date" id="staff-dash-start-date" class="form-control" aria-label="วันที่เริ่ม">
+                        <span class="staff-dash-sep">ถึง</span>
+                        <input type="date" id="staff-dash-end-date" class="form-control" aria-label="วันที่สิ้นสุด">
+                        <button class="btn btn-primary" id="btn-staff-dash-refresh" onclick="renderStaffDashboardCharts()">🔄 ดึงข้อมูล</button>
+                    </div>
+                </div>
+                <div id="staff-dash-status" class="staff-dash-status"></div>
+                <div class="staff-dash-grid">
+                    <div class="staff-dash-panel">
+                        <div class="staff-dash-panel-title">สถิติการเข้าใช้งานและติดตามลูกค้า แยกตามพนักงาน (Top Staff Activity)</div>
+                        <div id="staff-dash-activity-summary" class="staff-dash-summary"></div>
+                        <div class="staff-dash-canvas-wrap" id="staff-dash-activity-wrap">
+                            <canvas id="staff-activity-chart" role="img" aria-label="กราฟแท่งจำนวนครั้งล็อกอินและบันทึกติดตามลูกค้าแยกตามพนักงาน"></canvas>
+                            <div class="staff-dash-empty" id="staff-dash-activity-empty"></div>
+                        </div>
+                    </div>
+                    <div class="staff-dash-panel">
+                        <div class="staff-dash-panel-title">สัดส่วนประเภทการติดตามลูกค้า (Follow-up Methods)</div>
+                        <div id="staff-dash-methods-summary" class="staff-dash-summary"></div>
+                        <div class="staff-dash-canvas-wrap" id="staff-dash-methods-wrap">
+                            <canvas id="followup-method-chart" role="img" aria-label="กราฟโดนัทสัดส่วนวิธีการติดตามลูกค้า"></canvas>
+                            <div class="staff-dash-empty" id="staff-dash-methods-empty"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="card">
                 <div class="card-title" style="flex-wrap: wrap; row-gap: 6px;">
                     <span>⏰ ลูกค้าที่ค้างนานไม่ได้ติดตาม</span>
@@ -1038,7 +1087,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r34-2026-09-24-live-audit-created-updated-by';
+        const EXPECTED_CODE_VERSION = 'r36-2026-09-25-staff-dashboard-admin-only';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1172,6 +1221,12 @@
                 const wmEl = document.getElementById('leak-watermark-overlay');
                 if (wmEl) { wmEl.style.display = 'none'; wmEl.innerHTML = ''; }
                 document.body.classList.remove('leak-blur-when-hidden');
+                // (2026-09-25) ล้างกราฟ Dashboard ของผู้ใช้เดิม — คนถัดไปที่ login จะโหลดข้อมูลตามสิทธิ์ของตัวเองใหม่
+                staffDashRequestSeq++;
+                destroyAllStaffDashCharts_();
+                staffDashLoadedOnce = false;
+                const staffDashCardOnLogout = document.getElementById('staff-dash-card');
+                if (staffDashCardOnLogout) staffDashCardOnLogout.style.display = 'none';
             });
         }
 
@@ -1406,6 +1461,7 @@
         let staleLeadsLoadedOnce = false; // โหลดรายงานลูกค้าค้างติดตามครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น
         let staleLeadsData = [];
         let funnelLoadedOnce = false; // โหลด Funnel การขายครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น
+        let staffDashLoadedOnce = false; // (2026-09-25) โหลดกราฟ Dashboard พนักงานครั้งแรกที่กดเข้าแท็บ "รายงาน" เท่านั้น
         let activityLogLoadedOnce = false;
         let calendarLoadedOnce = false;
         let calendarViewDate = new Date();
@@ -1503,6 +1559,13 @@
             if (name === 'report' && !funnelLoadedOnce) {
                 funnelLoadedOnce = true;
                 fetchSalesFunnel();
+            }
+            // Dashboard พนักงาน: เฉพาะ admin (backend ก็บังคับซ้ำอีกชั้น) — role อื่นไม่เห็นการ์ดและไม่ยิงคำขอเลย
+            const staffDashCard = document.getElementById('staff-dash-card');
+            if (staffDashCard) staffDashCard.style.display = (currentRole === 'admin') ? '' : 'none';
+            if (name === 'report' && currentRole === 'admin' && !staffDashLoadedOnce) {
+                staffDashLoadedOnce = true;
+                renderStaffDashboardCharts();
             }
             if (name === 'members') {
                 populateMemberRoleOptions();
@@ -1781,6 +1844,218 @@
                     ${conversionHtml}
                 `;
             }).join('');
+        }
+        /* ===== รายงาน: Dashboard กราฟผลการทำงานพนักงาน + สัดส่วนวิธีติดตาม (2026-09-25) =====
+           - ตัวเลขทั้งหมดสรุป (COUNT/GROUP BY) มาจากฝั่ง Code.js แล้ว (action 'getStaffDashboardStats')
+             หน้าเว็บรับแค่ไม่กี่สิบแถว ไม่ดึง log/ลูกค้าดิบลงมาเลย
+           - ทุกครั้งก่อนวาดใหม่จะ destroy() Chart instance เดิมทิ้งก่อนเสมอ (กัน memory leak /
+             canvas ซ้อนกัน / event listener ค้าง) และมี request sequence กันผลลัพธ์รอบเก่าที่ตอบกลับ
+             ช้ากว่ามาวาดทับรอบใหม่ (กรณีกด "ดึงข้อมูล" รัวๆ หรือเปลี่ยนช่วงวันที่เร็วๆ) */
+        const staffDashCharts = { activity: null, methods: null };
+        let staffDashRequestSeq = 0;
+        const STAFF_DASH_FONT_FAMILY = "'Prompt', sans-serif";
+        const STAFF_DASH_METHOD_COLORS = {
+            phone: '#0284c7', chat: '#22c55e', visit: '#f97316', promo: '#a855f7',
+            testdrive: '#eab308', other: '#64748b', unspecified: '#cbd5e1'
+        };
+        const STAFF_DASH_CANVAS_IDS = { activity: 'staff-activity-chart', methods: 'followup-method-chart' };
+
+        function destroyStaffDashChart_(key) {
+            if (staffDashCharts[key]) {
+                try { staffDashCharts[key].destroy(); } catch (e) { /* ignore */ }
+                staffDashCharts[key] = null;
+            }
+            // กันเคส instance หลุดจากตัวแปร (เช่น error กลางทาง) — Chart.js ผูก instance กับ canvas ไว้เสมอ
+            const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS[key]);
+            if (canvas && typeof Chart !== 'undefined' && typeof Chart.getChart === 'function') {
+                const orphan = Chart.getChart(canvas);
+                if (orphan) { try { orphan.destroy(); } catch (e) { /* ignore */ } }
+            }
+        }
+        function destroyAllStaffDashCharts_() {
+            destroyStaffDashChart_('activity');
+            destroyStaffDashChart_('methods');
+        }
+        function setStaffDashPanelEmpty_(key, message) {
+            const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS[key]);
+            const emptyEl = document.getElementById(key === 'activity' ? 'staff-dash-activity-empty' : 'staff-dash-methods-empty');
+            if (message) {
+                if (canvas) canvas.style.display = 'none';
+                emptyEl.textContent = message;
+                emptyEl.style.display = 'flex';
+            } else {
+                if (canvas) canvas.style.display = '';
+                emptyEl.textContent = '';
+                emptyEl.style.display = 'none';
+            }
+        }
+        function initStaffDashDefaultRange_() {
+            const startEl = document.getElementById('staff-dash-start-date');
+            const endEl = document.getElementById('staff-dash-end-date');
+            if (!endEl.value) endEl.value = localDateISO(new Date());
+            if (!startEl.value) {
+                const d = new Date();
+                d.setDate(d.getDate() - 29);
+                startEl.value = localDateISO(d);
+            }
+        }
+
+        function renderStaffDashboardCharts() {
+            if (currentRole !== 'admin') { destroyAllStaffDashCharts_(); return; } // เฉพาะ admin เท่านั้น
+            initStaffDashDefaultRange_();
+            const startEl = document.getElementById('staff-dash-start-date');
+            const endEl = document.getElementById('staff-dash-end-date');
+            if (startEl.value && endEl.value && startEl.value > endEl.value) {
+                const tmp = startEl.value; startEl.value = endEl.value; endEl.value = tmp;
+            }
+            const statusEl = document.getElementById('staff-dash-status');
+            const btn = document.getElementById('btn-staff-dash-refresh');
+
+            // Chart.js โหลดแบบ defer (ไม่บล็อกการเปิดหน้าเว็บ) — ถ้าผู้ใช้กดเข้าแท็บเร็วกว่าที่สคริปต์
+            // โหลดเสร็จ ให้รอ event 'load' แล้วค่อยวาด; ถ้าโหลดเสร็จแล้วแต่ยังไม่มี Chart แปลว่า CDN ล้มเหลว
+            if (typeof Chart === 'undefined') {
+                if (document.readyState !== 'complete') {
+                    statusEl.textContent = '⏳ กำลังเตรียมไลบรารีกราฟ...';
+                    window.addEventListener('load', renderStaffDashboardCharts, { once: true });
+                } else {
+                    statusEl.textContent = '❌ โหลดไลบรารีกราฟ (Chart.js) ไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ตแล้วรีเฟรชหน้าเว็บ';
+                }
+                return;
+            }
+
+            const seq = ++staffDashRequestSeq;
+            btn.disabled = true;
+            statusEl.textContent = '⏳ กำลังโหลดสถิติ...';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getStaffDashboardStats', payload: { startDate: startEl.value, endDate: endEl.value } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (seq !== staffDashRequestSeq) return; // มีคำขอใหม่กว่าแล้ว ทิ้งผลรอบนี้
+                if (!resData || !resData.success) {
+                    const msg = (resData && resData.message) || 'ไม่ได้รับข้อมูล';
+                    throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — Backend ยังไม่ได้ Deploy เวอร์ชันใหม่' : msg);
+                }
+                if (resData.range) {
+                    startEl.value = resData.range.startDate || startEl.value;
+                    endEl.value = resData.range.endDate || endEl.value;
+                }
+                drawStaffActivityChart_(resData.staffActivity || {});
+                drawFollowupMethodChart_(resData.followUpMethods || {});
+                statusEl.textContent = `ช่วงวันที่ ${startEl.value} ถึง ${endEl.value} | อัปเดตเมื่อ ${resData.generatedAt || '-'} (ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 5 นาที)`;
+            })
+            .catch(err => {
+                if (seq !== staffDashRequestSeq) return;
+                destroyAllStaffDashCharts_();
+                const msg = '❌ โหลดสถิติไม่สำเร็จ: ' + (err && err.message ? err.message : 'การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว');
+                setStaffDashPanelEmpty_('activity', msg);
+                setStaffDashPanelEmpty_('methods', msg);
+                document.getElementById('staff-dash-activity-summary').textContent = '';
+                document.getElementById('staff-dash-methods-summary').textContent = '';
+                statusEl.textContent = '';
+            })
+            .finally(() => {
+                if (seq === staffDashRequestSeq) btn.disabled = false;
+            });
+        }
+
+        function drawStaffActivityChart_(data) {
+            destroyStaffDashChart_('activity');
+            const summaryEl = document.getElementById('staff-dash-activity-summary');
+            const wrap = document.getElementById('staff-dash-activity-wrap');
+            const rows = Array.isArray(data.rows) ? data.rows : [];
+            summaryEl.textContent = '';
+            wrap.style.height = '300px';
+            if (data.error) { setStaffDashPanelEmpty_('activity', '❌ ' + data.error); return; }
+            if (!rows.length) { setStaffDashPanelEmpty_('activity', 'ยังไม่มีการล็อกอินหรือบันทึกติดตามในช่วงวันที่ที่เลือก'); return; }
+            setStaffDashPanelEmpty_('activity', null);
+
+            const totalStaff = Number(data.totalStaff) || rows.length;
+            summaryEl.textContent =
+                `พนักงานที่มีกิจกรรม ${totalStaff.toLocaleString()} คน | ` +
+                `ล็อกอิน ${(Number(data.totalLogin) || 0).toLocaleString()} ครั้ง | บันทึกติดตาม ${(Number(data.totalFollowUp) || 0).toLocaleString()} ครั้ง` +
+                (totalStaff > rows.length ? ` (แสดง Top ${rows.length})` : '');
+            // กราฟแท่งแนวนอน: ปรับความสูงตามจำนวนพนักงาน ให้ชื่อไม่เบียดกันและไม่เว้นว่างเกินไป
+            wrap.style.height = Math.min(560, Math.max(220, rows.length * 38 + 60)) + 'px';
+
+            const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS.activity);
+            staffDashCharts.activity = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: rows.map(r => r.username || '-'),
+                    datasets: [
+                        { label: '🔐 ล็อกอิน', data: rows.map(r => Number(r.login) || 0), backgroundColor: '#0284c7', borderRadius: 4, maxBarThickness: 16 },
+                        { label: '📌 บันทึกติดตาม', data: rows.map(r => Number(r.followUp) || 0), backgroundColor: '#f97316', borderRadius: 4, maxBarThickness: 16 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { beginAtZero: true, ticks: { precision: 0, font: { family: STAFF_DASH_FONT_FAMILY, size: 11 } }, grid: { color: '#f1f5f9' } },
+                        y: { ticks: { font: { family: STAFF_DASH_FONT_FAMILY, size: 11.5 } }, grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { font: { family: STAFF_DASH_FONT_FAMILY, size: 11.5 }, boxWidth: 12 } },
+                        tooltip: {
+                            titleFont: { family: STAFF_DASH_FONT_FAMILY },
+                            bodyFont: { family: STAFF_DASH_FONT_FAMILY },
+                            callbacks: { label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.x).toLocaleString()} ครั้ง` }
+                        }
+                    }
+                }
+            });
+        }
+
+        function drawFollowupMethodChart_(data) {
+            destroyStaffDashChart_('methods');
+            const summaryEl = document.getElementById('staff-dash-methods-summary');
+            const rows = (Array.isArray(data.rows) ? data.rows : []).filter(r => (Number(r.count) || 0) > 0);
+            summaryEl.textContent = '';
+            if (data.error) { setStaffDashPanelEmpty_('methods', '❌ ' + data.error); return; }
+            const total = rows.reduce((s, r) => s + (Number(r.count) || 0), 0);
+            if (!total) { setStaffDashPanelEmpty_('methods', 'ยังไม่มีบันทึกการติดตามลูกค้าในช่วงวันที่ที่เลือก'); return; }
+            setStaffDashPanelEmpty_('methods', null);
+            summaryEl.textContent = `บันทึกการติดตามทั้งหมด ${total.toLocaleString()} ครั้ง (ของทุกคน)`;
+
+            const canvas = document.getElementById(STAFF_DASH_CANVAS_IDS.methods);
+            staffDashCharts.methods = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: rows.map(r => r.label || r.key),
+                    datasets: [{
+                        data: rows.map(r => Number(r.count) || 0),
+                        backgroundColor: rows.map(r => STAFF_DASH_METHOD_COLORS[r.key] || '#94a3b8'),
+                        borderColor: '#ffffff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '58%',
+                    animation: { duration: 300 },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { font: { family: STAFF_DASH_FONT_FAMILY, size: 11.5 }, boxWidth: 12, padding: 10 } },
+                        tooltip: {
+                            titleFont: { family: STAFF_DASH_FONT_FAMILY },
+                            bodyFont: { family: STAFF_DASH_FONT_FAMILY },
+                            callbacks: {
+                                label: ctx => {
+                                    const n = Number(ctx.parsed) || 0;
+                                    const pct = total ? Math.round((n / total) * 1000) / 10 : 0;
+                                    return `${ctx.label}: ${n.toLocaleString()} ครั้ง (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
         function fetchDailyLeadReport() {
             const tbody = document.getElementById('daily-report-tbody');

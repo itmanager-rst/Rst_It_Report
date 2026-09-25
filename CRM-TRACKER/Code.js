@@ -60,7 +60,12 @@
 // deploy โค้ดรุ่นนี้ (กด Edit schema ในหน้า BigQuery Console) และเพิ่มหัวคอลัมน์ name, branch
 // ในแถวที่ 1 ของแท็บ Sheet "users" ด้วย — แต่ถ้าลืม ระบบจะไม่พัง แค่ยังไม่เห็น name/branch
 // จนกว่าจะเพิ่มคอลัมน์แล้วมีคนกด "เพิ่มสมาชิก" อีกครั้ง (ทำให้ sync ทับ schema ใหม่อัตโนมัติ)
-var CODE_VERSION = 'r34-2026-09-24-live-audit-created-updated-by';
+// หมายเหตุ (2026-09-25 — r35): เพิ่ม action ใหม่ 'getStaffDashboardStats' สำหรับกราฟ Dashboard
+// ในหน้า "📈 รายงาน" (Top Staff Activity + สัดส่วนวิธีติดตามลูกค้า) — สรุปผลด้วย COUNT/GROUP BY
+// ใน BigQuery แล้วส่งกลับเฉพาะตัวเลข ดู getStaffDashboardStatsHTML — ไม่แก้ฟังก์ชันเดิมใดๆ
+// หมายเหตุ (2026-09-25 — r36): จำกัด getStaffDashboardStats ให้ "เฉพาะ admin" เท่านั้น (เดิม r35 ให้
+// role อื่นเห็นตัวเลขของตัวเองได้) — เช็คทั้งที่ doPost และในฟังก์ชันเอง (defense in depth)
+var CODE_VERSION = 'r36-2026-09-25-staff-dashboard-admin-only';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -954,6 +959,209 @@ function getUserActivityLogHTML(filters) {
 }
 
 // =================================================================
+// 📊 (2026-09-25) Dashboard ผลการทำงานพนักงาน + สัดส่วนวิธีติดตามลูกค้า (หน้า "📈 รายงาน")
+// =================================================================
+// action: 'getStaffDashboardStats'  payload: { startDate: 'yyyy-MM-dd', endDate: 'yyyy-MM-dd' }
+//
+// หลักการ: สรุปผล (COUNT/GROUP BY) ใน BigQuery ให้เสร็จฝั่งเซิร์ฟเวอร์ แล้วส่งกลับเฉพาะ
+// "ตัวเลข" ไม่กี่สิบแถว — ไม่ส่งแถว log/ลูกค้าดิบไปหน้าเว็บเด็ดขาด (ตาราง customers มี 116k+
+// แถว ถ้าส่ง follow_up_log ทั้งหมดไปนับที่ browser หน้าเว็บจะค้าง)
+//   1) staffActivity  : จาก user_activity_log — จำนวนครั้ง login + addFollowUp (สำเร็จเท่านั้น)
+//                       แยกตาม username, เรียงจากมากไปน้อย, จำกัด Top N
+//   2) followUpMethods: จาก customers.follow_up_log (JSON array) — UNNEST แล้ว GROUP BY
+//                       ประเภทการติดตาม (followupType) ตามช่วง "วันที่ติดต่อ" ของแต่ละรอบ
+//
+// ⚠️ ข้อมูลทั้งสองตารางใน BigQuery ตามหลัง Google Sheet ได้ ~5 นาที (ซิงก์ผ่าน trigger —
+// ดู scheduledSyncActivityLogToBigQuery_ / scheduledSyncCustomersToBigQuery_) จึงแคชผลไว้
+// ใน CacheService 5 นาทีด้วย — ไม่เสียความสดของข้อมูลเพิ่ม แต่ลดการยิง query ซ้ำตอนหลายคน
+// เปิดหน้ารายงานพร้อมกันได้มาก
+//
+// สิทธิ์: "เฉพาะ admin เท่านั้น" (เหมือน getUserActivityLog) — เป็นรายงานอ่านอย่างเดียว ไม่อยู่ใน
+// ACTIVITY_LOG_WHITELIST; role อื่นเรียกมาจะได้ success:false ทันทีโดยไม่ยิง query ใดๆ
+// (หน้าเว็บซ่อนการ์ดนี้จาก role อื่นด้วย แต่นั่นเป็นแค่ UI — ตัวบังคับจริงคือฝั่งนี้)
+var STAFF_DASHBOARD_ALLOWED_ROLES = ['admin'];
+var STAFF_DASHBOARD_TOP_N = 15;
+var STAFF_DASHBOARD_MAX_RANGE_DAYS = 366;
+var STAFF_DASHBOARD_CACHE_SECONDS = 300;
+var STAFF_DASHBOARD_CACHE_PREFIX = 'staffDash:v2:';
+
+// ค่า followupType ต้องตรงกับ data-value ของปุ่มใน #history-followup-type-grid ของ index.html
+// ค่าที่ไม่รู้จักจะรวมเป็น 'other' ส่วนบันทึกรุ่นเก่าที่ยังไม่มีช่องประเภทจะเป็น 'unspecified'
+var FOLLOWUP_METHOD_BUCKETS_ = [
+  { key: 'phone',     label: 'โทรศัพท์',              value: 'โทรศัพท์' },
+  { key: 'chat',      label: 'แชท / LINE / Facebook', value: 'แชท / LINE / Facebook' },
+  { key: 'visit',     label: 'เข้าพบลูกค้า',            value: 'เข้าพบลูกค้า' },
+  { key: 'promo',     label: 'ส่งโปร / ใบเสนอราคา',     value: 'ส่งโปร / ใบเสนอราคา' },
+  { key: 'testdrive', label: 'นัดทดลองรถ / ดูสินค้า',   value: 'นัดทดลองรถ / ดูสินค้า' },
+  { key: 'other',     label: 'อื่น ๆ',                 value: 'อื่น ๆ' }
+];
+var FOLLOWUP_METHOD_UNSPECIFIED_LABEL_ = 'ไม่ระบุประเภท (บันทึกรุ่นเก่า)';
+
+function isIsoDateStr_(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s + 'T00:00:00Z').getTime());
+}
+
+// ตรวจ/เติมค่าช่วงวันที่ — default 30 วันล่าสุด (เวลาไทย), สลับให้ถ้าเริ่ม > ถึง,
+// และจำกัดความยาวช่วงไม่เกิน STAFF_DASHBOARD_MAX_RANGE_DAYS กัน query สแกนหนักเกินจำเป็น
+function resolveStaffDashboardRange_(payload) {
+  var todayStr = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
+  var endDate = cleanStr(payload.endDate);
+  var startDate = cleanStr(payload.startDate);
+  if (!isIsoDateStr_(endDate)) endDate = todayStr;
+  if (!isIsoDateStr_(startDate)) {
+    var d = new Date(endDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 29);
+    startDate = Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+  }
+  if (startDate > endDate) { var tmp = startDate; startDate = endDate; endDate = tmp; }
+  var spanDays = Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000) + 1;
+  if (spanDays > STAFF_DASHBOARD_MAX_RANGE_DAYS) {
+    var s = new Date(endDate + 'T00:00:00Z');
+    s.setUTCDate(s.getUTCDate() - (STAFF_DASHBOARD_MAX_RANGE_DAYS - 1));
+    startDate = Utilities.formatDate(s, 'UTC', 'yyyy-MM-dd');
+  }
+  return { startDate: startDate, endDate: endDate };
+}
+
+function sqlStringLiteral_(s) {
+  return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+}
+
+// กราฟที่ 1: login + addFollowUp แยกตามพนักงาน (GROUP BY username) — ส่งกลับแค่ Top N แถว
+// พร้อมยอดรวมทั้งหมด (คำนวณด้วย window function ก่อน LIMIT จึงเป็นยอดรวมของทุกคนจริง)
+function queryStaffActivityCounts_(range) {
+  var params = [
+    { name: 'startDate', value: range.startDate },
+    { name: 'endDate', value: range.endDate }
+  ];
+  var where = [
+    "log_date BETWEEN SAFE_CAST(@startDate AS DATE) AND SAFE_CAST(@endDate AS DATE)",
+    "is_success = TRUE",
+    "action IN ('login', 'addFollowUp')",
+    "username IS NOT NULL",
+    "TRIM(username) != ''"
+  ];
+  var sql =
+    "SELECT username, " +
+    "  COUNTIF(action = 'login') AS login_count, " +
+    "  COUNTIF(action = 'addFollowUp') AS followup_count, " +
+    "  SUM(COUNTIF(action = 'login')) OVER () AS total_login, " +
+    "  SUM(COUNTIF(action = 'addFollowUp')) OVER () AS total_followup, " +
+    "  COUNT(*) OVER () AS total_staff " +
+    "FROM " + ACTIVITY_LOG_TABLE_FULL_PATH +
+    " WHERE " + where.join(' AND ') +
+    " GROUP BY username" +
+    " ORDER BY (COUNTIF(action = 'login') + COUNTIF(action = 'addFollowUp')) DESC, username" +
+    " LIMIT " + STAFF_DASHBOARD_TOP_N;
+  var rows = runParamQueryFetch(sql, params) || [];
+  var first = rows[0] || {};
+  return {
+    rows: rows.map(function(r) {
+      return {
+        username: cleanStr(r.username),
+        login: parseInt(r.login_count, 10) || 0,
+        followUp: parseInt(r.followup_count, 10) || 0
+      };
+    }),
+    totalStaff: parseInt(first.total_staff, 10) || 0,
+    totalLogin: parseInt(first.total_login, 10) || 0,
+    totalFollowUp: parseInt(first.total_followup, 10) || 0
+  };
+}
+
+// กราฟที่ 2: สัดส่วนประเภทการติดตาม — UNNEST follow_up_log (JSON string) แล้ว GROUP BY
+// ใช้ "date" ของแต่ละรอบการติดตาม (fallback เป็น loggedAt ถ้า date ผิดรูปแบบ) กรองตามช่วงวันที่
+// SAFE.JSON_EXTRACT_ARRAY กันแถวที่ JSON เสียทำให้ทั้ง query พัง (แถวนั้นจะถูกข้ามไปเฉยๆ)
+function queryFollowUpMethodCounts_(range) {
+  var typeExpr = "TRIM(IFNULL(JSON_EXTRACT_SCALAR(e, '$.followupType'), ''))";
+  var caseParts = FOLLOWUP_METHOD_BUCKETS_.map(function(b) {
+    return "WHEN " + sqlStringLiteral_(b.value) + " THEN " + sqlStringLiteral_(b.key);
+  });
+  var bucketExpr = "CASE WHEN " + typeExpr + " = '' THEN 'unspecified' ELSE (CASE " + typeExpr + " " +
+    caseParts.join(' ') + " ELSE 'other' END) END";
+  var entryDateExpr =
+    "COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(JSON_EXTRACT_SCALAR(e, '$.date'), 1, 10)), " +
+    "SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(JSON_EXTRACT_SCALAR(e, '$.loggedAt'), 1, 10)))";
+  var sql =
+    "SELECT bucket, COUNT(*) AS cnt FROM (" +
+    "  SELECT " + bucketExpr + " AS bucket, " + entryDateExpr + " AS entry_date" +
+    "  FROM " + TABLE_FULL_PATH + " c," +
+    "  UNNEST(IFNULL(SAFE.JSON_EXTRACT_ARRAY(c.follow_up_log), [])) AS e" +
+    "  WHERE c.follow_up_log IS NOT NULL AND LENGTH(c.follow_up_log) > 2" +
+    ") WHERE entry_date BETWEEN SAFE_CAST(@startDate AS DATE) AND SAFE_CAST(@endDate AS DATE)" +
+    " GROUP BY bucket";
+  var rows = runParamQueryFetch(sql, [
+    { name: 'startDate', value: range.startDate },
+    { name: 'endDate', value: range.endDate }
+  ]) || [];
+  var countByKey = {};
+  rows.forEach(function(r) { countByKey[cleanStr(r.bucket)] = parseInt(r.cnt, 10) || 0; });
+  // ส่งกลับครบทุกหมวดตามลำดับคงที่ (หมวดที่เป็น 0 ด้วย) ให้สีกราฟ/ลำดับ legend คงที่ทุกครั้ง
+  var out = FOLLOWUP_METHOD_BUCKETS_.map(function(b) {
+    return { key: b.key, label: b.label, count: countByKey[b.key] || 0 };
+  });
+  if (countByKey['unspecified']) {
+    out.push({ key: 'unspecified', label: FOLLOWUP_METHOD_UNSPECIFIED_LABEL_, count: countByKey['unspecified'] });
+  }
+  var total = out.reduce(function(s, x) { return s + x.count; }, 0);
+  return { rows: out, total: total };
+}
+
+function getStaffDashboardStatsHTML(reqPayload, user) {
+  try {
+    if (!user || STAFF_DASHBOARD_ALLOWED_ROLES.indexOf(user.role) === -1) {
+      return { success: false, message: 'เฉพาะ admin เท่านั้นที่ดู Dashboard ผลการทำงานพนักงานได้' };
+    }
+    var payload = reqPayload || {};
+    var range = resolveStaffDashboardRange_(payload);
+
+    var cache = null;
+    var cacheKey = STAFF_DASHBOARD_CACHE_PREFIX + range.startDate + ':' + range.endDate;
+    try {
+      cache = CacheService.getScriptCache();
+      var cached = cache.get(cacheKey);
+      if (cached) {
+        var cachedObj = JSON.parse(cached);
+        cachedObj.cached = true;
+        return cachedObj;
+      }
+    } catch (cacheErr) {
+      cache = null; // แคชใช้ไม่ได้ก็ query ตรงตามปกติ ไม่ให้กระทบผลลัพธ์
+    }
+
+    // แยก try/catch ต่อกราฟ — ถ้าตารางใดตารางหนึ่งมีปัญหา อีกกราฟยังแสดงได้ตามปกติ
+    var staffActivity, followUpMethods;
+    try {
+      staffActivity = queryStaffActivityCounts_(range);
+    } catch (e1) {
+      staffActivity = { rows: [], totalStaff: 0, totalLogin: 0, totalFollowUp: 0, error: e1.toString() };
+    }
+    try {
+      followUpMethods = queryFollowUpMethodCounts_(range);
+    } catch (e2) {
+      followUpMethods = { rows: [], total: 0, error: e2.toString() };
+    }
+
+    var result = {
+      success: true,
+      range: range,
+      topN: STAFF_DASHBOARD_TOP_N,
+      staffActivity: staffActivity,
+      followUpMethods: followUpMethods,
+      generatedAt: Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd HH:mm'),
+      cached: false
+    };
+    // แคชเฉพาะตอนที่ทั้งสองส่วนสำเร็จ — ถ้ามี error จะได้ลองใหม่รอบถัดไปทันที ไม่ค้าง error 5 นาที
+    if (cache && !staffActivity.error && !followUpMethods.error) {
+      try { cache.put(cacheKey, JSON.stringify(result), STAFF_DASHBOARD_CACHE_SECONDS); } catch (putErr) {}
+    }
+    return result;
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// =================================================================
 // คอลัมน์ last_followup_date — "วันที่ติดตามล่าสุด" แยกจาก created_date
 // =================================================================
 // created_date (คอลัมน์ "วันที่" ที่โชว์ในตาราง) ยังคงหมายถึงวันที่ลูกค้ารายนี้
@@ -1668,6 +1876,13 @@ function doPost(e) {
       // เป็นรายงานอ่านอย่างเดียว ไม่ได้อยู่ใน CUSTOMER_WRITE_ALLOWED_ROLES/EXPORT ด้านบน
       // เหมือน getDashboardSummary/getDailyLeadReport — ทุก role ที่ login แล้วดูได้
       result = getStaleLeadsReportHTML(contents.payload || contents);
+    } else if (action === 'getStaffDashboardStats') {
+      // (2026-09-25) Dashboard กราฟในหน้า "รายงาน" — เฉพาะ admin เท่านั้น (เหมือน getUserActivityLog)
+      if (user.role !== 'admin') {
+        result = { success: false, message: 'เฉพาะ admin เท่านั้นที่ดู Dashboard ผลการทำงานพนักงานได้' };
+      } else {
+        result = getStaffDashboardStatsHTML(contents.payload || contents, user);
+      }
     }
 
     // บันทึกประวัติการใช้งาน (เฉพาะ action ที่อยู่ใน ACTIVITY_LOG_WHITELIST เท่านั้น —
