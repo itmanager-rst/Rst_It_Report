@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>RST RUAMSINTHAIGROUP - สต็อกและรูปรถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง</title>
+<title>RST RUAMSINTHAIGROUP - สต็อกและรูปรถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง · รถสาธิต</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -198,6 +198,7 @@ section.view{display:none}section.view.on{display:block}
 .chip.sold{background:#1A1A1A;border-color:#1A1A1A;color:#FFFFFF}
 .chip.cond{background:#E7EEF9;border-color:#C5D5EF;color:#1E4A8C}
 .chip.type{background:#FFFFFF}
+.chip.demo{background:#EFE8FA;border-color:#D3C2F0;color:#5B2E9E}
 .chip.gps{background:var(--field-soft);border-color:#F4B8BC;color:var(--red)}
 .more{display:flex;justify-content:center;margin-top:28px}
 .empty{padding:60px 20px;text-align:center;color:var(--ink-2);grid-column:1/-1;border:1px dashed var(--line);border-radius:var(--radius-m);background:#FFFFFF}
@@ -308,7 +309,7 @@ section.view{display:none}section.view.on{display:block}
   <div class="wrap">
     <div class="mark">
       <b>RST RUAMSINTHAIGROUP</b>
-      <span>รถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง</span>
+      <span>รถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง · รถสาธิต</span>
     </div>
     <nav class="tabs" aria-label="เมนูหลัก">
       <button data-go="cars" aria-current="true">รถในระบบ</button>
@@ -327,6 +328,7 @@ section.view{display:none}section.view.on{display:block}
     <div class="bar">
       <label class="grow">ค้นหา<input id="q" autocomplete="off" placeholder="Serial/Lot รหัสสินค้า รุ่น หรือจุดจอด เช่น 352-114164 หรือ AW82V"></label>
       <label>ประเภทรถ<select id="fType"></select></label>
+      <label>มือสอง / สาธิต<select id="fKind"></select></label>
       <label>รุ่น<select id="fModel"></select></label>
       <label>ชื่อสถานที่<select id="fBranch"></select></label>
       <label>สภาพรถ<select id="fCond"></select></label>
@@ -347,7 +349,7 @@ section.view{display:none}section.view.on{display:block}
     <div class="stack">
       <div class="panel">
         <h3>นำเข้าไฟล์จาก Ecount (RST RUAMSINTHAIGROUP)</h3>
-        <p class="small muted" style="margin:0 0 16px">ใช้รายงาน สถานะสินค้าคงคลังตามหมายเลข Serial/Lot ที่ส่งออกเป็น Excel ระบบเก็บเฉพาะ รถแทรกเตอร์ และ รถเกี่ยวข้าว ที่เป็น มือสอง (รถใหม่ รถเช่า รถสาธิต จะไม่ถูกนำเข้า) ไฟล์ใหม่จะแทนยอดคงเหลือทั้งหมด รถที่ไม่อยู่ในไฟล์ใหม่จะย้ายไปเป็น ไม่อยู่ในสต็อก รูปที่ถ่ายไว้ไม่หาย</p>
+        <p class="small muted" style="margin:0 0 16px">ใช้รายงาน สถานะสินค้าคงคลังตามหมายเลข Serial/Lot ที่ส่งออกเป็น Excel ระบบเก็บเฉพาะ รถแทรกเตอร์ และ รถเกี่ยวข้าว ที่เป็น มือสอง และ รถสาธิต (รถใหม่ รถเช่า จะไม่ถูกนำเข้า) ไฟล์ใหม่จะแทนยอดคงเหลือทั้งหมด รถที่ไม่อยู่ในไฟล์ใหม่จะย้ายไปเป็น ไม่อยู่ในสต็อก รูปที่ถ่ายไว้ไม่หาย</p>
         <label class="drop" id="drop">
           <input type="file" id="xfile" accept=".xlsx,.xls">
           <strong>เลือกไฟล์ Excel</strong>
@@ -467,7 +469,7 @@ $("#whoBtn").onclick=askName; paintMe();
 
 function load(){
   return api("getBoot").then(function(b){
-    CARS=b.tractors.map(function(t){ t.nk=[t.serial,t.chassis,t.engine,t.code,t.name,t.series,t.spot,t.branch].map(norm).join(" "); return t; })
+    CARS=b.tractors.map(function(t){ t.nk=[t.serial,t.chassis,t.engine,t.code,t.name,t.series,t.spot,t.branch,t.kind].map(norm).join(" "); return t; })
       .sort(function(a,b){ return brCmp(a.branch,b.branch)||String(a.spot).localeCompare(String(b.spot),"th")||String(a.series).localeCompare(String(b.series)); });
     BYKEY={}; CARS.forEach(function(c){BYKEY[c.key]=c});
     PCOUNT=b.photos||{};
@@ -486,6 +488,7 @@ var NOCOND="(ไม่ระบุสภาพ)";
 function condOf(c){ return c.cond||NOCOND; }
 function fillFilters(){
   opts($("#fType"),"ทุกประเภท",["รถแทรกเตอร์","รถเกี่ยวข้าว"].filter(function(t){return CARS.some(function(c){return c.type===t})}));
+  opts($("#fKind"),"ทั้งมือสอง และ สาธิต",KEEP_KINDS.filter(function(k){return CARS.some(function(c){return c.kind===k})}));
   opts($("#fModel"),"ทุกรุ่น",uniq(CARS.map(function(c){return c.series})).sort());
   opts($("#fBranch"),"ทุกสถานที่",uniq(CARS.map(function(c){return c.branch})).sort(brCmp));
   opts($("#fCond"),"ทุกสภาพ",uniq(CARS.map(condOf)).sort(function(a,b){ if(a===NOCOND)return 1; if(b===NOCOND)return-1; return a.localeCompare(b,"th"); }));
@@ -501,11 +504,11 @@ $$("nav.tabs button").forEach(function(b){b.onclick=function(){go(b.dataset.go)}
 var shown=0, PER=24, list=[];
 function stVal(){ return ($('input[name=st]:checked')||{}).value||"stock"; }
 function filtered(){
-  var q=norm($("#q").value), ty=$("#fType").value, m=$("#fModel").value, br=$("#fBranch").value, cd=$("#fCond").value, st=stVal();
+  var q=norm($("#q").value), ty=$("#fType").value, kd=$("#fKind").value, m=$("#fModel").value, br=$("#fBranch").value, cd=$("#fCond").value, st=stVal();
   return CARS.filter(function(c){
     if(st==="stock"&&c.status!=="stock")return false;
     if(st==="nophoto"&&(c.status!=="stock"||PCOUNT[c.key]))return false;
-    if(ty&&c.type!==ty)return false; if(m&&c.series!==m)return false; if(br&&c.branch!==br)return false; if(cd&&condOf(c)!==cd)return false;
+    if(ty&&c.type!==ty)return false; if(kd&&c.kind!==kd)return false; if(m&&c.series!==m)return false; if(br&&c.branch!==br)return false; if(cd&&condOf(c)!==cd)return false;
     if(q&&c.nk.indexOf(q)<0)return false;
     return true;
   });
@@ -513,7 +516,7 @@ function filtered(){
 function cardHtml(c){
   var n=PCOUNT[c.key]||0, cov=COVER[c.key];
   var img=cov?'<img src="'+esc(cov)+'" alt="" loading="lazy">':(n?'<div class="none">กำลังโหลดรูป</div>':'<div class="none">ยังไม่มีรูป<br>กดเพื่อถ่ายรูป</div>');
-  var chips=['<span class="chip type">'+esc(c.type)+'</span>']; if(c.cond)chips.push('<span class="chip cond">'+esc(c.cond)+'</span>'); if(c.tag)chips.push('<span class="chip gps">'+esc(c.tag)+'</span>'); if(c.status!=="stock")chips.push('<span class="chip sold">ไม่อยู่ในสต็อก</span>');
+  var chips=['<span class="chip type">'+esc(c.type)+'</span>']; if(c.kind==="รถสาธิต")chips.push('<span class="chip demo">รถสาธิต</span>'); if(c.cond)chips.push('<span class="chip cond">'+esc(c.cond)+'</span>'); if(c.tag)chips.push('<span class="chip gps">'+esc(c.tag)+'</span>'); if(c.status!=="stock")chips.push('<span class="chip sold">ไม่อยู่ในสต็อก</span>');
   var pr=money(c.price), hr=hrs(c.hours), place=c.branch+(c.spot?" · "+c.spot:"");
   return '<button class="card" data-k="'+esc(c.key)+'"><div class="img">'+img+(n?'<span class="n">'+n+' รูป</span>':'')+'</div><div class="txt"><div class="model">'+esc(c.series)+'</div><div class="ch">'+esc(c.serial)+'</div>'+(pr||hr?'<div class="price">'+esc(pr||"ยังไม่ระบุราคา")+(hr?'<span class="hr">'+esc(hr)+'</span>':'')+'</div>':'')+'<div class="meta"><span>'+esc(place)+'</span>'+chips.join("")+'</div></div></button>';
 }
@@ -533,7 +536,7 @@ function loadCovers(keys){
   api("getCovers",keys).then(function(m){ Object.keys(m).forEach(function(k){ COVER[k]=m[k]; paintCard(k); }); }).catch(function(){});
 }
 var qT; $("#q").addEventListener("input",function(){ clearTimeout(qT); qT=setTimeout(function(){renderCards(true)},180); });
-["#fType","#fModel","#fBranch","#fCond"].forEach(function(s){ $(s).addEventListener("change",function(){renderCards(true)}); });
+["#fType","#fKind","#fModel","#fBranch","#fCond"].forEach(function(s){ $(s).addEventListener("change",function(){renderCards(true)}); });
 $$('input[name=st]').forEach(function(r){ r.addEventListener("change",function(){renderCards(true)}); });
 $("#moreBtn").onclick=function(){renderCards(false)};
 $("#cards").addEventListener("click",function(e){ var b=e.target.closest(".card"); if(b)openCar(b.dataset.k); });
@@ -656,7 +659,9 @@ var COLS={branch:"ชื่อสถานที่",spot:"จุดจอด",c
 var REQUIRED=["branch","code","name","serial","qty"];
 var SHOWN=["spot","price","cond","hours"];
 var CAR_TYPE=/รถแทรกเตอร์|รถเกี่ยว/;
-function isUsed(name){ name=String(name||""); return !/สาธิต/.test(name)&&!/เช่า/.test(name)&&/มือสอง/.test(name); } // ตรงกับ kindOf_ ใน code.js
+function kindOf(name){ name=String(name||""); return /สาธิต/.test(name)?"รถสาธิต":/เช่า/.test(name)?"รถเช่า":/มือสอง/.test(name)?"มือสอง":"รถใหม่"; } // ตรงกับ kindOf_ ใน code.js
+var KEEP_KINDS=["มือสอง","รถสาธิต"]; // ตรงกับ KEEP_KINDS ใน code.js
+function isKept(name){ return KEEP_KINDS.indexOf(kindOf(name))>=0; }
 function carType(name){ return /รถเกี่ยว/.test(name)?"รถเกี่ยวข้าว":/รถแทรกเตอร์/.test(name)?"รถแทรกเตอร์":""; }
 function num(v){ var n=parseFloat(String(v==null?"":v).replace(/,/g,"")); return isNaN(n)?0:n; }
 function chassisKey(serial){ return String(serial).replace(/\(\s*GPS\s*\)/i,"").split("/")[0].trim().toUpperCase().replace(/\s+/g,""); }
@@ -671,21 +676,21 @@ function parseEcount(wb){
   if(missing.length) return {error:"ไฟล์ขาดคอลัมน์: "+missing.join(", ")+" ตอนส่งออกจาก Ecount ให้เปิดแสดงคอลัมน์เหล่านี้ด้วย"};
   var soft=SHOWN.filter(function(k){return idx[k]<0}).map(function(k){return COLS[k]});
   var title=(aoa.slice(0,hi).map(function(r){return r.filter(Boolean).join(" ")}).filter(Boolean)[0])||"";
-  var rows=[],read=0,keys={},byType={"รถแทรกเตอร์":0,"รถเกี่ยวข้าว":0},nonPos=0,notUsed=0;
+  var rows=[],read=0,keys={},byType={"รถแทรกเตอร์":0,"รถเกี่ยวข้าว":0},byKind={"มือสอง":0,"รถสาธิต":0},nonPos=0,notUsed=0;
   for(var r=hi+1;r<aoa.length;r++){
     var a=aoa[r], g=function(k){return idx[k]<0?"":String(a[idx[k]]==null?"":a[idx[k]]).trim()};
     var name=g("name"), serial=g("serial");
     if(!name||!serial)continue; read++;
     if(!CAR_TYPE.test(name))continue;
-    if(!isUsed(name)){ notUsed++; continue; }
+    if(!isKept(name)){ notUsed++; continue; }
     var o={}; Object.keys(COLS).forEach(function(k){ o[k]=g(k); });
-    rows.push(o); byType[carType(name)]++;
+    rows.push(o); byType[carType(name)]++; byKind[kindOf(name)]++;
     var k=chassisKey(serial); keys[k]=(keys[k]||0)+num(o.qty);
   }
   var known=0,fresh=0,dupKeys=0,cars=0; Object.keys(keys).forEach(function(k){ cars++; if(BYKEY[k])known++; else fresh++; if(keys[k]<=0)nonPos++; });
   dupKeys=rows.length-cars;
   var gone=CARS.filter(function(c){return c.status==="stock"&&!(c.key in keys)}).length;
-  return {rows:rows,read:read,cars:cars,byType:byType,known:known,fresh:fresh,gone:gone,dupKeys:dupKeys,nonPos:nonPos,notUsed:notUsed,soft:soft,title:title};
+  return {rows:rows,read:read,cars:cars,byType:byType,byKind:byKind,known:known,fresh:fresh,gone:gone,dupKeys:dupKeys,nonPos:nonPos,notUsed:notUsed,soft:soft,title:title};
 }
 var pending=null, pendingName="";
 function handleFile(file){
@@ -700,13 +705,13 @@ function stat(n,l){ return '<div class="stat"><div class="n">'+n.toLocaleString(
 function showPreview(p){
   if(p.error){ pending=null; $("#preview").innerHTML='<div class="warnbox">'+esc(p.error)+'</div>'; return; }
   pending=p;
-  var h='<div class="stats">'+stat(p.read,"รายการที่มี Serial ทั้งไฟล์")+stat(p.byType["รถแทรกเตอร์"],"รถแทรกเตอร์ มือสอง")+stat(p.byType["รถเกี่ยวข้าว"],"รถเกี่ยวข้าว มือสอง")+stat(p.notUsed,"ข้าม (รถใหม่/เช่า/สาธิต)")+
+  var h='<div class="stats">'+stat(p.read,"รายการที่มี Serial ทั้งไฟล์")+stat(p.byType["รถแทรกเตอร์"],"รถแทรกเตอร์")+stat(p.byType["รถเกี่ยวข้าว"],"รถเกี่ยวข้าว")+stat(p.byKind["มือสอง"],"มือสอง")+stat(p.byKind["รถสาธิต"],"รถสาธิต")+stat(p.notUsed,"ข้าม (รถใหม่/เช่า)")+
     stat(p.fresh,"รถคันใหม่")+stat(p.known,"รถที่มีอยู่แล้ว (อัปเดต)")+stat(p.gone,"จะย้ายเป็น ไม่อยู่ในสต็อก")+'</div>'+
     '<div class="small muted">'+esc(p.title)+'</div>';
   if(p.soft.length) h+='<div class="warnbox">ไฟล์ไม่มีคอลัมน์ '+esc(p.soft.join(", "))+' นำเข้าได้ แต่ช่องนี้จะว่างในหน้าแอป</div>';
   if(p.dupKeys) h+='<div class="warnbox">มี '+p.dupKeys+' แถวที่ Serial ซ้ำกับแถวอื่น (เช่น โอนย้ายสาขา) ระบบจะรวมจำนวนคงเหลือเป็นรถคันเดียว ใช้ข้อมูลจากแถวที่ยอดเป็นบวกล่าสุด</div>';
   if(p.nonPos) h+='<div class="warnbox">'+p.nonPos+' คันมีจำนวนคงเหลือรวม 0 หรือติดลบ จะแสดงเป็น ไม่อยู่ในสต็อก</div>';
-  h+=p.rows.length?'<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" id="doImport">นำเข้า '+p.cars.toLocaleString("th-TH")+' คัน</button><button class="btn" id="cancelImport">ยกเลิก</button></div><div class="progress" id="prog" hidden><span></span></div><div class="small muted" id="progMsg"></div>':'<div class="warnbox">ไม่พบรถแทรกเตอร์หรือรถเกี่ยวข้าว มือสอง ในไฟล์นี้</div>';
+  h+=p.rows.length?'<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" id="doImport">นำเข้า '+p.cars.toLocaleString("th-TH")+' คัน</button><button class="btn" id="cancelImport">ยกเลิก</button></div><div class="progress" id="prog" hidden><span></span></div><div class="small muted" id="progMsg"></div>':'<div class="warnbox">ไม่พบรถแทรกเตอร์หรือรถเกี่ยวข้าว มือสอง หรือ รถสาธิต ในไฟล์นี้</div>';
   $("#preview").innerHTML=h;
   if($("#doImport")){ $("#doImport").onclick=runImport; $("#cancelImport").onclick=function(){ pending=null; $("#preview").innerHTML=""; $("#xfile").value=""; }; }
 }

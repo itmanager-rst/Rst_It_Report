@@ -1,6 +1,9 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r05-2026-09-25-used-only
+ * CODE_VERSION: r06-2026-09-25-used-and-demo
+ *
+ * r06: เพิ่มรถสาธิต (kindOf_ === 'รถสาธิต') เข้าฐานข้อมูลด้วย แอปเก็บ มือสอง + รถสาธิต (ดู KEEP_KINDS)
+ *      รถใหม่/รถเช่า ยังไม่นำเข้าและไม่แสดงเหมือนเดิม
  *
  * r05: ผู้บริหารให้แอปนี้เก็บเฉพาะรถ มือสอง (kindOf_ === 'มือสอง') รถใหม่/รถเช่า/รถสาธิต ไม่นำเข้าและไม่แสดง
  *      แถวรถใหม่ที่นำเข้าไว้ก่อน r05 ยังอยู่ในชีตตามเดิม (รูปไม่หาย) แค่ถูกซ่อนและไม่ถูกแตะตอนนำเข้า
@@ -15,7 +18,7 @@
  *   ImportLog  ประวัติการนำเข้า
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r05-2026-09-25-used-only';
+var CODE_VERSION = 'r06-2026-09-25-used-and-demo';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
@@ -32,7 +35,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('RST รูปรถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง')
+    .setTitle('RST รูปรถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง · รถสาธิต')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
@@ -157,7 +160,7 @@ function keyOf_(serial) { return splitSerial_(serial).ch.toUpperCase().replace(/
 function seriesOf_(name) {
   var x = String(name).replace(/^\(.*?\)\s*/, '');
   var m = x.match(/รุ่น\s*(.+)$/);
-  x = (m ? m[1] : x).replace(/\((มือสอง|เช่า)\)/g, '').replace(/VIN.*$/i, '').replace(/^Yanmar\s*/i, '').trim();
+  x = (m ? m[1] : x).replace(/\((?:รถ)?(มือสอง|เช่า|สาธิต)\)/g, '').replace(/(?:รถ)?สาธิต/g, '').replace(/VIN.*$/i, '').replace(/^Yanmar\s*/i, '').trim();
   return x.replace(/\s*-\s*45th$/i, ' 45th').replace(/^(\d{3}[A-Z]?)$/, 'YM$1');
 }
 /** ประเภทรถ: เก็บเฉพาะ 2 ประเภทนี้ */
@@ -174,8 +177,10 @@ function kindOf_(name) {
   if (/มือสอง/.test(n)) return 'มือสอง';
   return 'รถใหม่';
 }
-/** r05: แอปนี้เก็บเฉพาะรถมือสอง */
-function isUsed_(name) { return kindOf_(name) === 'มือสอง'; }
+/** r06: แอปนี้เก็บรถ มือสอง และ รถสาธิต (รถใหม่/รถเช่า ไม่เก็บ) */
+var KEEP_KINDS = { 'มือสอง': 1, 'รถสาธิต': 1 };
+function isKeptKind_(kind) { return KEEP_KINDS.hasOwnProperty(kind); }
+function isKept_(name) { return isKeptKind_(kindOf_(name)); }
 function num_(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isNaN(n) ? 0 : n; }
 function numStr_(v) { var t = String(v == null ? '' : v).replace(/,/g, '').trim(); return t === '' || isNaN(parseFloat(t)) ? '' : String(parseFloat(t)); }
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'); }
@@ -200,7 +205,7 @@ function getBoot() {
   readAll_(SH.PHOTOS).forEach(function (p) { photos[p.key] = (photos[p.key] || 0) + 1; });
   var logs = readAll_(SH.LOG), email = '';
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
-  var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && c.kind === 'มือสอง'; });
+  var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); });
   return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, lastImport: logs.length ? logs[logs.length - 1] : null };
 }
 
@@ -217,7 +222,7 @@ function importStock(rows, meta) {
 
     var groups = {}, order = [], matched = 0;
     (rows || []).forEach(function (r) {
-      if (!r || !r.serial || !typeOf_(r.name) || !isUsed_(r.name)) return;
+      if (!r || !r.serial || !typeOf_(r.name) || !isKept_(r.name)) return;
       var key = keyOf_(r.serial); if (!key) return;
       matched++;
       if (!groups[key]) { groups[key] = []; order.push(key); }
@@ -249,7 +254,7 @@ function importStock(rows, meta) {
     });
     Object.keys(old).forEach(function (key) {
       var o = old[key];
-      if (o.kind !== 'มือสอง') { out.push(o); return; } // รถใหม่จากก่อน r05: เก็บไว้เฉยๆ ไม่แตะ
+      if (!isKeptKind_(o.kind)) { out.push(o); return; } // รถใหม่/รถเช่าจากก่อน r05: เก็บไว้เฉยๆ ไม่แตะ
       if (o.status === 'stock') { gone++; o.status = 'out'; o.outDate = today; o.qty = '0'; o.updatedAt = now; }
       out.push(o);
     });
@@ -261,7 +266,7 @@ function importStock(rows, meta) {
     s.setFrozenRows(1);
     writeAt_(s, 2, out.map(function (c) { return toRow_(SH.TRACTORS, c); }));
 
-    var inStock = out.filter(function (c) { return c.status === 'stock' && c.kind === 'มือสอง'; }).length;
+    var inStock = out.filter(function (c) { return c.status === 'stock' && isKeptKind_(c.kind); }).length;
     appendRows_(sheet_(SH.LOG), [toRow_(SH.LOG, {
       at: now, by: who_(meta.by), fileName: meta.fileName, rowsRead: meta.rowsRead, rowsMatched: matched,
       newCars: fresh, dupRows: dupRows, tractors: inStock, goneCars: gone, format: 'stock-snapshot'
