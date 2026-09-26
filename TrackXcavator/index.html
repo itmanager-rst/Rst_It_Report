@@ -1067,6 +1067,7 @@ body {
         </div>
         <div class="modal-body">
           <input type="hidden" id="claimPartsMachineId">
+          <input type="hidden" id="claimPartsOriginalList">
           
           <div class="mb-2">
             <label class="form-label form-label-sm">รหัสเครื่องจักร:</label>
@@ -1083,14 +1084,24 @@ body {
 
           <div class="mb-3" id="groupRemainingParts">
             <label class="form-label form-label-sm text-danger fw-bold">รายการอะไหล่ที่ "ยังค้างส่ง" อยู่ในขณะนี้:</label>
-            <textarea id="claimPartsListInput" class="form-control form-control-sm border-danger" rows="3" placeholder="ระบุรายการอะไหล่ที่ยังค้างส่งอยู่..."></textarea>
+            <textarea id="claimPartsListInput" class="form-control form-control-sm border-danger" rows="3" placeholder="ระบุรายการอะไหล่ที่ยังค้างส่งอยู่..." oninput="updateClaimPartsDeliveredPreview()"></textarea>
             <span class="text-muted" style="font-size: 0.72rem;">* ลบรายการที่ลูกค้าได้รับไปแล้วออก ให้เหลือเฉพาะชิ้นที่ยังค้างส่ง</span>
           </div>
 
           <div class="mb-2">
-            <label class="form-label form-label-sm fw-bold text-dark">เลขที่เอกสารรับอะไหล่ / หมายเหตุเพิ่มเติม:</label>
-            <input type="text" id="claimPartsRemarkInput" class="form-control form-control-sm" placeholder="เช่น DTT0xxxx, น้ำมัน Yanmar 5 ลิตร">
-            <span class="text-muted" style="font-size: 0.72rem;">* ข้อมูลนี้จะนำไปบันทึกไว้ในหมายเหตุเพื่อตรวจสอบย้อนหลัง</span>
+            <label class="form-label form-label-sm fw-bold text-success">รายการอะไหล่ที่ส่งในครั้งนี้:</label>
+            <div id="claimPartsDeliveredPreview" class="form-control form-control-sm bg-light" style="min-height: 2rem; white-space: normal;">-</div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm fw-bold text-dark">หมายเลขเอกสารส่งอะไหล่ (DTT): <span class="text-danger" id="claimPartsDocRequiredMark">*</span></label>
+            <input type="text" id="claimPartsDocNoInput" class="form-control form-control-sm fw-bold" placeholder="เช่น DTT0xxxx">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm text-dark">หมายเหตุเพิ่มเติม:</label>
+            <input type="text" id="claimPartsRemarkInput" class="form-control form-control-sm" placeholder="เช่น น้ำมัน Yanmar 5 ลิตร">
+            <span class="text-muted" style="font-size: 0.72rem;">* รายการที่ส่ง + เลข DTT จะถูกบันทึกลงหมายเหตุของรอบ PM นี้เพื่อตรวจสอบย้อนหลัง</span>
           </div>
 
         </div>
@@ -2288,7 +2299,9 @@ function openClaimPartsModal(machineId) {
   document.getElementById("claimPartsMachineDisplay").value = machineId;
   
   document.getElementById("claimPartsListInput").value = partsName;
+  document.getElementById("claimPartsOriginalList").value = partsName;
   document.getElementById("claimPartsRemarkInput").value = "";
+  document.getElementById("claimPartsDocNoInput").value = "";
   
   const selectEl = document.getElementById("claimPartsStatusSelect");
   if (selectEl) {
@@ -2312,6 +2325,26 @@ function togglePartsInputList(status) {
       group.style.display = "block";
     }
   }
+  updateClaimPartsDeliveredPreview();
+}
+
+// คำนวณรายการอะไหล่ที่ "ส่งในครั้งนี้"
+// - ส่งครบแล้ว  → ทุกรายการที่ค้างอยู่เดิม
+// - ส่งบางส่วน  → รายการเดิมที่ถูกลบออกจากช่อง "ยังค้างส่ง"
+function getClaimPartsDelivered() {
+  const original = splitPartsList(document.getElementById("claimPartsOriginalList").value);
+  const status = document.getElementById("claimPartsStatusSelect").value;
+  const remaining = splitPartsList(document.getElementById("claimPartsListInput").value);
+  if (status === "ส่งครบแล้ว" || remaining.length === 0) return original;
+  const remainSet = new Set(remaining.map(v => v.toLowerCase()));
+  return original.filter(v => !remainSet.has(v.toLowerCase()));
+}
+
+function updateClaimPartsDeliveredPreview() {
+  const box = document.getElementById("claimPartsDeliveredPreview");
+  if (!box) return;
+  const delivered = getClaimPartsDelivered();
+  box.textContent = delivered.length ? delivered.join(', ') : '-';
 }
 
 async function submitClaimParts() {
@@ -2322,8 +2355,19 @@ async function submitClaimParts() {
 
   if (!machineId) return;
 
+  const originalParts = document.getElementById("claimPartsOriginalList").value.trim();
+  const partsDocNo = document.getElementById("claimPartsDocNoInput").value.trim().toUpperCase();
+
   if (newStatus === "ส่งบางส่วน" && remainingParts === "") {
     newStatus = "ส่งครบแล้ว";
+  }
+
+  const deliveredParts = getClaimPartsDelivered();
+
+  if (newStatus === "ส่งครบแล้ว" && !partsDocNo) {
+    alert("กรุณาระบุหมายเลขเอกสาร DTT ของการส่งอะไหล่");
+    document.getElementById("claimPartsDocNoInput").focus();
+    return;
   }
 
   const btn = document.getElementById("btnSubmitClaimParts");
@@ -2340,14 +2384,17 @@ async function submitClaimParts() {
       action: "updatePartsStatus",
       machineId: machineId,
       partsStatus: newStatus,
-      partsStore: remainingParts,
+      // ส่งครบแล้ว: คงรายการอะไหล่ของรอบนี้ไว้ (ใช้คำนวณสิทธิ์คูปอง) / ส่งบางส่วน: เหลือเฉพาะที่ยังค้าง
+      partsStore: newStatus === "ส่งครบแล้ว" ? originalParts : remainingParts,
+      deliveredParts: deliveredParts.join(', '),
+      partsDocNo: partsDocNo,
       partsRemark: partsRemark,
       updatedBy: currentUser
     });
     hideOperation();
 
     if (res.status === "success") {
-      alert("🟢 อัปเดตรายการอะไหล่ค้างส่งเรียบร้อยแล้ว!");
+      alert("🟢 บันทึกการส่งอะไหล่เรียบร้อยแล้ว!" + (partsDocNo ? "\nเลขที่เอกสาร: " + partsDocNo : ""));
       if (modal) modal.hide();
       refreshAllData();
     } else {

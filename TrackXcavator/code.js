@@ -1061,24 +1061,58 @@ function claimCoupon(p, isRawObject) {
 function updatePartsStatus(p, isRawObject) {
   try {
     var targetMachineId = String(p.machineId || p.machine_id || '');
-    var partsRemark = p.partsRemark || '';
+    var partsRemark = String(p.partsRemark || '').trim();
     var partsStore = p.partsStore || p.parts_store || '';
     var partsStatus = p.partsStatus || p.parts_status || '';
     var updatedBy = p.updatedBy || p.updated_by || '';
+    var deliveredParts = String(p.deliveredParts || '').trim();
+    var partsDocNo = String(p.partsDocNo || '').trim().toUpperCase();
+    var nowDate = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
+    var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+    // ข้อความบันทึกการส่งอะไหล่ เช่น
+    // [ส่งอะไหล่ครบแล้ว 26/09/2026] รายการ: กรองน้ำมันเครื่อง, กรองโซล่า | DTT: DTT01234 | หมายเหตุ: ...
+    var logParts = [];
+    if (deliveredParts) logParts.push('รายการ: ' + deliveredParts);
+    if (partsDocNo) logParts.push('DTT: ' + partsDocNo);
+    if (partsRemark) logParts.push('หมายเหตุ: ' + partsRemark);
+    var label = partsStatus === 'ส่งครบแล้ว' ? 'ส่งอะไหล่ครบแล้ว' : 'ส่งอะไหล่บางส่วน';
+    var deliveryLog = logParts.length ? ('[' + label + ' ' + nowDate + '] ' + logParts.join(' | ')) : '';
+
+    function appendRemark(existing) {
+      var ex = String(existing || '').trim();
+      if (!deliveryLog) return existing;
+      return (ex && ex !== '-') ? (ex + ' | ' + deliveryLog) : deliveryLog;
+    }
 
     var dashSheet = getSheet(SHEET_TABS.service_report);
     var rows = findRows(dashSheet, function (r) {
       return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === targetMachineId.trim().toLowerCase();
     });
 
+    var roundsUpdated = {};
     rows.forEach(function (r) {
-      var newRemark = partsRemark ? (String(ciGet(r, 'remark') || '') + ' | เอกสารรับอะไหล่: ' + partsRemark) : ciGet(r, 'remark');
       updateRowByObject(dashSheet, r.__row, {
-        parts_store: partsStore, parts_status: partsStatus, updated_by: updatedBy, remark: newRemark
+        parts_store: partsStore, parts_status: partsStatus, updated_by: updatedBy,
+        remark: appendRemark(ciGet(r, 'remark')), updated_at: nowStr
+      });
+      roundsUpdated[Number(ciGet(r, 'last_pm_round')) || 0] = true;
+    });
+
+    // บันทึกลง pm_log ของรอบ PM ล่าสุดด้วย เพื่อให้ประวัติรายรอบ + Matrix แสดงสถานะตรงกัน
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    var logRows = findRows(logSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === targetMachineId.trim().toLowerCase()
+        && roundsUpdated[Number(ciGet(r, 'pm_target')) || 0] === true;
+    });
+    logRows.forEach(function (r) {
+      updateRowByObject(logSheet, r.__row, {
+        parts_store: partsStore, parts_status: partsStatus,
+        remark: appendRemark(ciGet(r, 'remark')), updated_at: nowStr
       });
     });
 
-    return responseJSON({ status: "success" }, isRawObject);
+    return responseJSON({ status: "success", deliveryLog: deliveryLog }, isRawObject);
   } catch (err) {
     return responseJSON({ status: "error", message: err.toString() }, isRawObject);
   }
