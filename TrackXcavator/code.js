@@ -377,7 +377,7 @@ function doPost(e) {
     } else if (action === "deleteDashboard") {
       return deleteDashboard(data.machineId);
     } else if (action === "deleteReport") {
-      return deleteReport(data.ticketId);
+      return deleteReport(data.ticketId, false, data.machineId, data.pmRound);
     } else if (action === "detectPmLogSwaps") {
       return detectPmLogSwaps();
     } else if (action === "fixPmLogSwaps") {
@@ -678,12 +678,33 @@ function getReportList(isRawObject) {
 }
 
 // ==========================================
+// กติกากลางของ pm_log (log ซ้ำได้): เวลาจะใช้ข้อมูล "รายรอบ" ให้ใช้แถวล่าสุดแถวเดียว
+// ==========================================
+function pmLogTime(val) {
+  if (!val) return 0;
+  if (val instanceof Date) return val.getTime();
+  var t = new Date(String(val).trim().replace(' ', 'T')).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+// เลือกแถวล่าสุดจากผล findRows: updated_at ใหม่สุดก่อน ถ้าเท่ากัน/ไม่มี ใช้แถวล่างสุดใน Sheet
+function pickLatestLogRow(rows) {
+  if (!rows || rows.length === 0) return null;
+  return rows.slice().sort(function (a, b) {
+    var d = pmLogTime(ciGet(b, 'updated_at')) - pmLogTime(ciGet(a, 'updated_at'));
+    return d !== 0 ? d : (b.__row - a.__row);
+  })[0];
+}
+
+// ==========================================
 // 3.1 ดึงข้อมูล PM Progress Matrix (ปรับปรุง Logic ดึงประวัติย้อนหลัง)
 // ==========================================
 function getPMProgressMatrix(isRawObject) {
   try {
     var sqlService = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``;
-    var sqlLogs = `SELECT machine_id, last_pm_round, current_Hours, contract_date, parts_store, parts_bill_no, parts_status, yanmar_coupon FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
+    // pm_log ใช้คอลัมน์ PM_Target / Actual_Hours / Service_Date (ไม่ใช่ last_pm_round / current_Hours / contract_date)
+    // ใช้ SELECT * + ciGet เพื่อไม่ผูกกับตัวพิมพ์เล็ก-ใหญ่ของชื่อคอลัมน์
+    var sqlLogs = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
     
     var services = runBigQuery(sqlService);
     var logs = runBigQuery(sqlLogs);
@@ -713,28 +734,35 @@ function getPMProgressMatrix(isRawObject) {
     }
 
     // Map ข้อมูลรอบ PM Log เข้ากับตัวเครื่อง
+    // pm_log เป็น log → เครื่อง+รอบเดียวกันมีหลายแถวได้ ใช้ "แถวล่าสุด" (updated_at ใหม่สุด, เท่ากันใช้แถวที่มาทีหลัง)
     var pmRoundsMap = {};
+    var pmRoundsTime = {};
     if (Array.isArray(logs)) {
-      logs.forEach(function(l) {
-        var mId = String(l.machine_id || "").trim().toLowerCase();
-        var round = Number(l.last_pm_round) || 0;
-        if (mId && round > 0) {
-          if (!pmRoundsMap[mId]) pmRoundsMap[mId] = {};
-          pmRoundsMap[mId][round] = {
-            completed: true,
-            actualHours: Number(l.current_Hours) || 0,
-            date: l.contract_date || "",
-            statuses: getWorkflowStatuses(l.parts_status, l.yanmar_coupon, l.parts_store, l.parts_bill_no)
-          };
-        }
+      logs.forEach(function(l, idx) {
+        var mId = String(ciGet(l, 'machine_id') || "").trim().toLowerCase();
+        var round = Number(ciGet(l, 'pm_target')) || 0;
+        if (!mId || round <= 0) return;
+        var t = pmLogTime(ciGet(l, 'updated_at'));
+        var key = mId + '|' + round;
+        if (pmRoundsTime[key] !== undefined && t < pmRoundsTime[key]) return;
+        pmRoundsTime[key] = t;
+        if (!pmRoundsMap[mId]) pmRoundsMap[mId] = {};
+        pmRoundsMap[mId][round] = {
+          completed: true,
+          actualHours: Number(ciGet(l, 'actual_hours')) || 0,
+          date: ciGet(l, 'service_date') || "",
+          statuses: getWorkflowStatuses(ciGet(l, 'parts_status'), ciGet(l, 'yanmar_coupon'), ciGet(l, 'parts_store'), ciGet(l, 'parts_bill_no'))
+        };
       });
     }
 
-    var matrixData = Array.isArray(services) ? services.map(function(s) {
-      var mId = String(s.machine_id || "").trim();
+    var matrixData = Array.isArray(services) ? services.filter(function(s) {
+      return String(ciGet(s, 'machine_id') || "").trim() !== "";
+    }).map(function(s) {
+      var mId = String(ciGet(s, 'machine_id') || "").trim();
       var mIdKey = mId.toLowerCase();
-      var hrs = Number(s.current_Hours) || 0;
-      var lastPm = Number(s.last_pm_round) || 0;
+      var hrs = Number(ciGet(s, 'current_hours')) || 0;
+      var lastPm = Number(ciGet(s, 'last_pm_round')) || 0;
       var roundsHistory = pmRoundsMap[mIdKey] || {};
 
       // รอบ PM มาตรฐาน
@@ -748,7 +776,7 @@ function getPMProgressMatrix(isRawObject) {
         } 
         // Priority 2: ถ้าตรงกับรอบล่าสุดใน service_report
         else if (cp === lastPm && lastPm > 0) {
-          matrix[cp] = getWorkflowStatuses(s.parts_status, s.yanmar_coupon, s.parts_store, s.parts_bill_no);
+          matrix[cp] = getWorkflowStatuses(ciGet(s, 'parts_status'), ciGet(s, 'yanmar_coupon'), ciGet(s, 'parts_store'), ciGet(s, 'parts_bill_no'));
         } 
         // Priority 3: ถ้าชั่วโมงถึงรอบแล้วแต่ยังไม่มี Log ให้ขึ้น 'เข้าบริการ'
         else if (hrs >= cp) {
@@ -763,8 +791,8 @@ function getPMProgressMatrix(isRawObject) {
       return {
         machine_id: mId,
         machineId: mId,
-        model: s.model || "",
-        customer: s.customer || "",
+        model: ciGet(s, 'model') || "",
+        customer: ciGet(s, 'customer') || "",
         current_Hours: hrs,
         currentHours: hrs,
         last_pm_round: lastPm,
@@ -954,6 +982,43 @@ function insertOrUpdateTicket(p, isRawObject) {
 }
 
 // ==========================================
+// หาแถวใน pm_log ที่ตรงกับ "ใบงานเดียว" อย่างเข้มงวด
+// ==========================================
+// เดิมใช้เงื่อนไข no === id || ticket_id === id || machine_id === id
+// ทำให้แก้/ลบใบงานเดียวแล้วไปโดนแถวอื่นด้วย (ticket_id ซ้ำ, ค่าว่างตรงกัน, เลข no ชนกับ ticket_id ฯลฯ)
+// ตอนนี้: ห้ามจับค่าว่าง, จับ ticket_id ก่อน (ถ้าไม่มีค่อยใช้ no), แล้วกรองด้วย machine_id / pm_target
+// pm_log เป็น log จึงมีแถวซ้ำ (เครื่อง+รอบเดียวกัน) ได้ตามปกติ
+// ถ้ายังเหลือมากกว่า 1 แถว → เลือก "แถวล่าสุด" (แถวล่างสุดใน Sheet) เพียงแถวเดียว ไม่เขียนทับหลายแถว
+function findPmLogTarget(logSheet, ticketId, machineId, pmRound) {
+  var id = String(ticketId || '').trim();
+  var mId = String(machineId || '').trim().toLowerCase();
+  var round = (pmRound === undefined || pmRound === null || pmRound === '') ? null : (Number(pmRound) || 0);
+
+  function sameMachine(r) { return !mId || String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === mId; }
+  function sameRound(r) { return round === null || (Number(ciGet(r, 'pm_target')) || 0) === round; }
+
+  var rows = [];
+  if (id) {
+    rows = findRows(logSheet, function (r) { return String(ciGet(r, 'ticket_id') || '').trim() === id; });
+    if (rows.length === 0) {
+      rows = findRows(logSheet, function (r) {
+        return !String(ciGet(r, 'ticket_id') || '').trim() && String(ciGet(r, 'no') || '').trim() === id;
+      });
+    }
+  }
+  // ไม่มีเลขใบงาน (หรือหาไม่เจอ) → ใช้ machine_id + รอบ PM ต้องมีครบทั้งคู่
+  if (rows.length === 0 && mId && round !== null) {
+    rows = findRows(logSheet, function (r) { return sameMachine(r) && sameRound(r); });
+  }
+
+  if (rows.length > 1) rows = rows.filter(sameMachine);
+  if (rows.length > 1) rows = rows.filter(sameRound);
+
+  if (rows.length === 0) throw new Error('ไม่พบใบงาน ' + (id || '-') + ' ใน pm_log');
+  return pickLatestLogRow(rows);
+}
+
+// ==========================================
 // 4.1 อัปเดตข้อมูล PM รอบย้อนหลัง (แก้ไขใบงานเดิม)
 // ==========================================
 function updatePmLog(p, isRawObject) {
@@ -998,10 +1063,10 @@ function updatePmLog(p, isRawObject) {
 
     // 1. อัปเดตข้อมูลใบงานเดิมใน pm_log (no หรือ ticket_id ตรงกับที่ระบุ)
     var logSheet = getSheet(SHEET_TABS.pm_log);
-    var logRows = findRows(logSheet, function (r) {
-      return String(ciGet(r, 'no') || '') === ticketId || String(ciGet(r, 'ticket_id') || '') === ticketId;
-    });
-    logRows.forEach(function (r) { updateRowByObject(logSheet, r.__row, logUpdate); });
+    var origMachineId = p.originalMachineId || p.original_machine_id || machineId;
+    var origPmRound = (p.originalPmRound !== undefined && p.originalPmRound !== '') ? p.originalPmRound : pmRound;
+    var targetRow = findPmLogTarget(logSheet, ticketId, origMachineId, origPmRound);
+    updateRowByObject(logSheet, targetRow.__row, logUpdate);
 
     // 2. sync ไป service_report เฉพาะแถวที่ machine_id ตรงกัน และ last_pm_round เดิม <= รอบที่แก้
     var dashSheet = getSheet(SHEET_TABS.service_report);
@@ -1027,11 +1092,20 @@ function claimCoupon(p, isRawObject) {
     var couponRemark = p.couponRemark || '';
 
     var logSheet = getSheet(SHEET_TABS.pm_log);
-    var logRows = findRows(logSheet, function (r) {
-      return String(ciGet(r, 'no') || '') === ticketId || String(ciGet(r, 'ticket_id') || '') === ticketId || String(ciGet(r, 'machine_id') || '') === ticketId;
-    });
+    // ปุ่มจากตารางสถานะอาจส่ง machine_id มาแทน ticket_id → ใช้คู่กับรอบ PM เพื่อหาแถวเดียว
+    var claimMachineId = p.machineId || '';
+    var claimRound = (p.pmRound !== undefined && p.pmRound !== '') ? p.pmRound : null;
+    var targetRow;
+    try {
+      targetRow = findPmLogTarget(logSheet, ticketId, claimMachineId, claimRound);
+    } catch (notFound) {
+      if (claimRound === null) throw notFound;
+      targetRow = findPmLogTarget(logSheet, '', ticketId, claimRound);
+    }
+    var logRows = [targetRow];
+    var roundOfClaim = Number(ciGet(targetRow, 'pm_target')) || 0;
 
-    var machineId = logRows.length > 0 ? String(ciGet(logRows[0], 'machine_id') || '') : '';
+    var machineId = String(ciGet(targetRow, 'machine_id') || '');
 
     logRows.forEach(function (r) {
       var newRemark = couponRemark ? (String(ciGet(r, 'remark') || '') + ' | เลขรับคูปอง: ' + couponRemark) : ciGet(r, 'remark');
@@ -1041,7 +1115,8 @@ function claimCoupon(p, isRawObject) {
     if (machineId) {
       var dashSheet = getSheet(SHEET_TABS.service_report);
       var dashRows = findRows(dashSheet, function (r) {
-        return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.trim().toLowerCase();
+        return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.trim().toLowerCase()
+          && (Number(ciGet(r, 'last_pm_round')) || 0) === roundOfClaim;
       });
       dashRows.forEach(function (r) {
         var newRemark = couponRemark ? (String(ciGet(r, 'remark') || '') + ' | เลขรับคูปอง: ' + couponRemark) : ciGet(r, 'remark');
@@ -1105,6 +1180,8 @@ function updatePartsStatus(p, isRawObject) {
       return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === targetMachineId.trim().toLowerCase()
         && roundsUpdated[Number(ciGet(r, 'pm_target')) || 0] === true;
     });
+    // ถ้ามีหลายแถวของเครื่อง+รอบเดียวกัน (ข้อมูลซ้ำ) เขียนเฉพาะแถวล่าสุดแถวเดียว
+    logRows = logRows.length ? [pickLatestLogRow(logRows)] : [];
     logRows.forEach(function (r) {
       updateRowByObject(logSheet, r.__row, {
         parts_store: partsStore, parts_status: partsStatus,
@@ -1141,6 +1218,8 @@ function updatePendingPartsByRound(p, isRawObject) {
       return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.trim().toLowerCase()
         && (Number(ciGet(r, 'pm_target')) || 0) === pmRound;
     });
+    // pm_log ซ้ำได้ → อัปเดตเฉพาะ log ล่าสุดของรอบนี้แถวเดียว
+    logRows = logRows.length ? [pickLatestLogRow(logRows)] : [];
     logRows.forEach(function (r) {
       updateRowByObject(logSheet, r.__row, {
         parts_status: partsStatus, parts_store: partsStore, parts_bill_no: partsBillNo,
@@ -1205,14 +1284,11 @@ function deleteDashboard(machineId, isRawObject) {
 // ==========================================
 // 9. ลบข้อมูลใน PM_Log
 // ==========================================
-function deleteReport(ticketId, isRawObject) {
+function deleteReport(ticketId, isRawObject, machineId, pmRound) {
   try {
-    var target = String(ticketId || '');
     var logSheet = getSheet(SHEET_TABS.pm_log);
-    var rows = findRows(logSheet, function (r) {
-      return String(ciGet(r, 'no') || '') === target || String(ciGet(r, 'ticket_id') || '') === target || String(ciGet(r, 'machine_id') || '') === target;
-    });
-    deleteRows(logSheet, rows.map(function (r) { return r.__row; }));
+    var row = findPmLogTarget(logSheet, ticketId, machineId, pmRound);
+    deleteRows(logSheet, [row.__row]);
     return responseJSON({ status: "success" }, isRawObject);
   } catch (err) {
     return responseJSON({ status: "error", message: err.toString() }, isRawObject);

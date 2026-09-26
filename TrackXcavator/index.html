@@ -1748,6 +1748,35 @@ async function initializeModelOptions() {
 
 initializeModelOptions();
 
+// pm_log เป็น log → เครื่อง+รอบเดียวกันมีได้หลายแถว
+// เวลาคำนวณ/แสดงสถานะรายรอบ ให้ใช้ "แถวล่าสุด" ของแต่ละ เครื่อง+รอบ เพียงแถวเดียว
+function getPmLogTime(item, idx) {
+  const t = new Date(String(item.updatedAt || '').replace(' ', 'T')).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+function getLatestPmLogs(list) {
+  const map = new Map();
+  (list || []).forEach((item, idx) => {
+    const mId = String(item.machineId || '').trim().toLowerCase();
+    const round = Number(item.pmRound || 0);
+    if (!mId) return;
+    const key = mId + '|' + round;
+    const prev = map.get(key);
+    const t = getPmLogTime(item);
+    // เวลาเท่ากัน/ไม่มีเวลา → ใช้แถวที่มาทีหลังในข้อมูล
+    if (!prev || t >= prev.t) map.set(key, { item, t, idx });
+  });
+  return Array.from(map.values()).map(v => v.item);
+}
+
+function findLatestPmLog(machineId, round) {
+  const mId = String(machineId || '').trim().toLowerCase();
+  const matches = (rawHistoryData || []).filter(h =>
+    String(h.machineId || '').trim().toLowerCase() === mId && Number(h.pmRound) === Number(round));
+  return matches.length ? getLatestPmLogs(matches)[0] : null;
+}
+
 function updateCouponSum() {
   const statEl = document.getElementById("statCouponSum");
   if (!statEl) return;
@@ -1757,7 +1786,8 @@ function updateCouponSum() {
     return;
   }
 
-  const totalCoupon = rawHistoryData.reduce((sum, item) => {
+  // นับ 1 สิทธิ์ต่อ 1 เครื่อง/1 รอบ (ไม่นับ log ซ้ำ)
+  const totalCoupon = getLatestPmLogs(rawHistoryData).reduce((sum, item) => {
     let valStr = String(item.yanmarCoupon || '0').replace(/,/g, '').trim();
     let val = parseFloat(valStr);
 
@@ -1789,13 +1819,14 @@ function hasCouponEntitlement(item) {
 }
 
 function loadAllData(forceRefresh = false) {
-  const dashboardRequest = loadDashboardData(forceRefresh).then(() => {
+  const dashboardRequest = loadDashboardData(forceRefresh);
+  const historyRequest = loadHistoryData(forceRefresh);
+
+  // Matrix ต้องใช้ทั้ง service_report และ pm_log → สร้างหลังโหลดครบทั้งคู่
+  return Promise.all([dashboardRequest, historyRequest]).then(() => {
     rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
     renderMatrixTable(rawMatrixData);
   });
-  const historyRequest = loadHistoryData(forceRefresh);
-
-  return Promise.all([dashboardRequest, historyRequest]);
 }
 
 function refreshAllData() {
@@ -2005,10 +2036,7 @@ function renderDashboardTable(list) {
     } else if (!hasCouponEntitlement(item)) {
       couponDisplay = `<span class="text-muted small">⚪ ไม่มีข้อมูลยืนยันสิทธิ์คูปอง</span>`;
     } else {
-      const matchedHistory = rawHistoryData.find(h => 
-        String(h.machineId).trim() === String(item.machineId).trim() && 
-        String(h.pmRound).trim() === String(lastPmRound).trim()
-      );
+      const matchedHistory = findLatestPmLog(item.machineId, lastPmRound);
 
       if (matchedHistory) {
         let valStr = String(matchedHistory.yanmarCoupon || '0').replace(/,/g, '').trim();
@@ -2245,6 +2273,15 @@ async function handleSaveTicket(e) {
     remark: getRemarkValue(),
     updatedBy: currentUser
   };
+
+  // แก้ไขใบงานเดิม: ส่งรอบ PM เดิมไปด้วย ให้ backend ระบุแถวได้แถวเดียว
+  if (ticketIdVal) {
+    const origMachine = String(payload.originalMachineId || machineId).trim().toLowerCase();
+    const orig = (rawHistoryData || []).find(x =>
+      String(x.ticketId).trim() === String(ticketIdVal).trim() &&
+      String(x.machineId || '').trim().toLowerCase() === origMachine);
+    payload.originalPmRound = orig ? orig.pmRound : pmRound;
+  }
 
   const btn = document.getElementById("btnSubmitTicket");
   if (btn) {
@@ -2561,7 +2598,7 @@ function renderHistoryTable(list) {
     let actionTd = `
       <td class="text-center col-action">
         <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-danger" onclick="deleteHistoryItem('${escapeHtml(item.ticketId)}')" title="ลบประวัติ"><i class="fa-solid fa-trash"></i></button>
+          <button class="btn btn-outline-danger" onclick="deleteHistoryItem('${escapeHtml(item.ticketId)}', '${escapeHtml(item.machineId)}', '${item.pmRound}')" title="ลบประวัติ"><i class="fa-solid fa-trash"></i></button>
         </div>
       </td>
     `;
@@ -2663,13 +2700,8 @@ function buildPMMatrixFromDashboard(dashboardList) {
     let roundsObj = {};
 
     pmRounds.forEach(r => {
-      let matchedLog = null;
-      if (rawHistoryData && rawHistoryData.length > 0) {
-        matchedLog = rawHistoryData.find(h => 
-          String(h.machineId).trim() === String(m.machineId).trim() && 
-          Number(h.pmRound) === r
-        );
-      }
+      // ใช้ log ล่าสุดของ เครื่อง+รอบ นี้ (pm_log มีแถวซ้ำได้)
+      let matchedLog = findLatestPmLog(m.machineId, r);
 
       let hasRealLog = Boolean(matchedLog);
       let isSurpassed = lastPm > r; // มีรอบหลังบันทึกไว้แล้ว แปลว่าเครื่องวิ่งผ่านรอบนี้ไปแล้ว
@@ -3145,6 +3177,7 @@ function openClaimModal(ticketOrMachineId, pmRound) {
   const rmkEl = document.getElementById("claimCouponRemarkInput");
 
   if (tIdEl) tIdEl.value = ticketOrMachineId;
+  if (tIdEl) tIdEl.dataset.pmRound = pmRound;
   if (pDispEl) pDispEl.value = `${pmRound} ชม.`;
   if (amtEl) amtEl.value = 4000;
   if (rmkEl) rmkEl.value = "";
@@ -3182,6 +3215,7 @@ async function submitClaimCoupon() {
     const res = await postJson({
       action: "claimCoupon",
       ticketId: ticketId,
+      pmRound: ticketIdInput ? ticketIdInput.dataset.pmRound : "",
       yanmarCoupon: amount,
       couponRemark: remark,
       updatedBy: currentUser
@@ -3265,7 +3299,7 @@ async function deleteDashboardItem(machineId) {
   }
 }
 
-async function deleteHistoryItem(ticketId) {
+async function deleteHistoryItem(ticketId, machineId, pmRound) {
   if (!isAdmin()) {
     alert("สิทธิ์ผู้ใช้ของคุณไม่สามารถลบประวัติได้");
     return;
@@ -3275,7 +3309,7 @@ async function deleteHistoryItem(ticketId) {
 
   showOperation('กำลังลบประวัติใบงาน...');
   try {
-    const res = await postJson({ action: "deleteReport", ticketId: ticketId });
+    const res = await postJson({ action: "deleteReport", ticketId: ticketId, machineId: machineId || "", pmRound: pmRound === undefined ? "" : pmRound });
     hideOperation();
 
     if (res.status === 'success') {
