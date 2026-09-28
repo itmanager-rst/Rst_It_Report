@@ -563,6 +563,17 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
 .pill-btn{padding:8px 16px; border-radius:8px; border:none; background:transparent; color:#cbd5e1; font-weight:700; font-size:13px; cursor:pointer; transition:.15s; font-family:inherit;}
 .pill-btn:hover{color:#fff;}
 .pill-btn.active{background:#fff; color:#0f172a; box-shadow:0 2px 8px rgba(0,0,0,.2);}
+.dash-cause-dropdown{position:relative;}
+.dash-cause-dropdown-btn{display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.07); color:#fff; font-weight:700; font-size:13px; cursor:pointer; font-family:inherit; max-width:220px;}
+.dash-cause-dropdown-btn:hover{background:rgba(255,255,255,.12);}
+.dash-cause-dropdown-btn span#dash-cause-dropdown-label{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;}
+.dash-cause-dropdown-arrow{font-size:11px; color:#94a3b8;}
+.dash-cause-dropdown-panel{position:absolute; top:calc(100% + 6px); left:0; min-width:200px; background:#1e293b; border:1px solid rgba(255,255,255,.12); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; z-index:50;}
+.dash-cause-dropdown-panel.hidden{display:none;}
+.dash-cause-dropdown-item{display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; color:#e2e8f0; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;}
+.dash-cause-dropdown-item:hover{background:rgba(255,255,255,.08);}
+.dash-cause-dropdown-item input{cursor:pointer;}
+.dash-cause-dropdown-divider{height:1px; background:rgba(255,255,255,.1); margin:4px 2px;}
 .daily-date-wrap{display:none; align-items:center; gap:8px; margin-top:9px; flex-wrap:wrap;}
 .daily-date-wrap.show{display:flex;}
 .daily-date-wrap .flabel{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; font-weight:700;}
@@ -1553,6 +1564,16 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
         <span class="filter-label" data-i18n="filterMachine">เครื่องจักร</span>
         <div class="pill-row" id="machine-filter"></div>
       </div>
+      <div>
+        <span class="filter-label" data-i18n="filterCauseLabel">สาเหตุ</span>
+        <div class="dash-cause-dropdown" id="dash-cause-dropdown">
+          <button type="button" class="dash-cause-dropdown-btn" id="dash-cause-dropdown-btn">
+            <span id="dash-cause-dropdown-label">ทั้งหมด</span>
+            <span class="dash-cause-dropdown-arrow">&#9662;</span>
+          </button>
+          <div class="dash-cause-dropdown-panel hidden" id="dash-cause-dropdown-panel"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1590,10 +1611,10 @@ table tfoot td{padding:9px 10px; border-top:2px solid var(--text); border-bottom
   </div>
   <div class="chart-grid">
     <div class="chart-box chart-performance"><h3 data-i18n="chartPerfPctByMachine">% Performance แยกตามเครื่องจักร</h3><div class="chart-scroll chart-tall"><canvas id="chart-performance-machine"></canvas></div></div>
+    <div class="chart-box chart-performance"><h3 data-i18n="chartProductionByShift">ภาพรวมการผลิต (ตามกะ/ของดี/Defect)</h3><div class="chart-scroll chart-tall"><canvas id="chart-production-shift"></canvas></div></div>
   </div>
   <div class="chart-grid">
     <div class="chart-box chart-performance"><h3 data-i18n="chartProduction">ภาพรวมการผลิต (ทั้งหมด/ของดี/Defect)</h3><div class="chart-scroll chart-tall"><canvas id="chart-production"></canvas></div></div>
-    <div class="chart-box chart-performance"><h3 data-i18n="chartProductionByShift">ภาพรวมการผลิต (ตามกะ/ของดี/Defect)</h3><div class="chart-scroll chart-tall"><canvas id="chart-production-shift"></canvas></div></div>
   </div>
 
   <div class="section-header section-defect"><span class="sdot"></span><h3 data-i18n="sectionDefect">ภาพรวม Defect</h3></div>
@@ -3136,6 +3157,7 @@ function applyI18n(){
   buildFilterMachineButtons('p', perfFilter); buildFilterMachineButtons('t', perftestFilter);
   buildFilterMachineButtons('r', rejectFilter); buildFilterMachineButtons('pn', perfNormalFilter);
   buildDefectCauseFilterButtons();
+  buildDashCauseDropdown();
   renderDefectTable(); renderBreakdownTable(); renderPerfTable(); renderPerftestTable(); renderRejectTable(); renderPerfNormalTable();
   renderDefectMiniDashboard(); renderBreakdownMiniDashboard(); renderPerfMiniDashboard(); renderPerftestDashboard();
   renderRejectMiniDashboard();
@@ -4721,6 +4743,12 @@ function fitChartCanvas(canvasId, numCategories, opts){
 
 let currentPeriod = 'daily';
 let currentMachineFilter = 'all';
+// Dashboard-only Cause filter (per request: "เพิ่ม dropdown เพื่อให้สามารถเลือกบางสาเหตุ และให้ข้อมูล defect
+// เปลี่ยนตามได้") - a separate selection from the Defect page's own Cause filter (each page keeps its own
+// filter state, same as Period/Machine already do per page). Empty set = no filter (same as every cause
+// being shown); a non-empty set restricts every Defect figure on the Dashboard to just those causes. See
+// applyDashboardCauseFilter() and the dropdown wiring further down for where this is built/consumed.
+const dashboardCauseFilter = new Set();
 // The date RANGE shown when Period = Daily (pickable via #dash-daily-date-start/#dash-daily-date-end,
 // both default to today - i.e. a single-day range). Per the user's own clarification, the existing
 // "รายวัน" (Daily) pill/control was extended in place to support picking an explicit multi-day range
@@ -4923,6 +4951,63 @@ document.getElementById('machine-filter').addEventListener('click', e=>{
   }
 });
 
+/* ============================================================
+   DASHBOARD - CAUSE FILTER DROPDOWN (per request: "เพิ่ม dropdown เพื่อให้สามารถเลือกบางสาเหตุ และให้ข้อมูล
+   defect เปลี่ยนตามได้" - a dropdown (distinct from the Defect page's own chip-row Cause filter added
+   earlier) next to the Period/Machine filters above; several causes can be picked together, and every
+   Defect-derived figure on the Dashboard updates to match. applyDashboardCauseFilter() is the single
+   source of truth every Dashboard render function applies this filter through - see refreshDashboard()
+   and renderProductionChart() for where it's wired in. Deliberately NOT applied to the "สรุปข้อมูล -
+   Reject Box" table's Defect column/total (renderDashRejectTable) - that table's whole purpose (per an
+   earlier request) is to cross-check Performance/Reject/Defect totals against each other exactly, and its
+   per-row Defect cells go through the shared liveDefectQtyFor() helper used by other pages too, which this
+   Dashboard-only filter must not silently change for those other pages; filtering just the totals row
+   there would make it disagree with its own visible rows. ============================================
+*/
+function applyDashboardCauseFilter(rows){
+  return dashboardCauseFilter.size>0 ? rows.filter(r=>dashboardCauseFilter.has(r.cause)) : rows;
+}
+function dashCauseFilterSummaryText(){
+  const dict = I18N[currentLang];
+  if(dashboardCauseFilter.size===0) return dict.allLabel;
+  return CAUSE_TYPES.filter(c=>dashboardCauseFilter.has(c.id)).map(c=>c[currentLang.toLowerCase()]).join(', ') || dict.allLabel;
+}
+function buildDashCauseDropdown(){
+  const panel = document.getElementById('dash-cause-dropdown-panel');
+  const label = document.getElementById('dash-cause-dropdown-label');
+  if(!panel || !label) return;
+  const dict = I18N[currentLang];
+  const allChecked = dashboardCauseFilter.size===0;
+  panel.innerHTML = `<label class="dash-cause-dropdown-item"><input type="checkbox" data-cause="all" ${allChecked?'checked':''}><span>${dict.allLabel}</span></label>` +
+    `<div class="dash-cause-dropdown-divider"></div>` +
+    CAUSE_TYPES.map(c=>`<label class="dash-cause-dropdown-item"><input type="checkbox" data-cause="${c.id}" ${dashboardCauseFilter.has(c.id)?'checked':''}><span>${c[currentLang.toLowerCase()]}</span></label>`).join('');
+  label.textContent = dashCauseFilterSummaryText();
+}
+buildDashCauseDropdown();
+document.getElementById('dash-cause-dropdown-btn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  document.getElementById('dash-cause-dropdown-panel').classList.toggle('hidden');
+});
+document.getElementById('dash-cause-dropdown-panel').addEventListener('change', (e)=>{
+  const cb = e.target.closest('input[type=checkbox]');
+  if(!cb) return;
+  if(cb.dataset.cause==='all'){
+    dashboardCauseFilter.clear();
+  } else if(cb.checked){
+    dashboardCauseFilter.add(cb.dataset.cause);
+  } else {
+    dashboardCauseFilter.delete(cb.dataset.cause);
+  }
+  buildDashCauseDropdown();
+  refreshDashboard();
+});
+// Click-outside-to-close, same convention as any other dropdown/popover in this app.
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('dash-cause-dropdown');
+  const panel = document.getElementById('dash-cause-dropdown-panel');
+  if(wrap && panel && !wrap.contains(e.target)) panel.classList.add('hidden');
+});
+
 function setKpiChip(chipEl, ok, naFlag){
   const dict = I18N[currentLang];
   if(naFlag){ chipEl.textContent = dict.na; chipEl.style.background='rgba(255,255,255,.24)'; return; }
@@ -4933,7 +5018,7 @@ function setKpiChip(chipEl, ok, naFlag){
 function refreshDashboard(){
   const dict = I18N[currentLang];
   if(currentPeriod==='weekly' && typeof refreshWeeklyLabel==='function') refreshWeeklyLabel();
-  const defects = filterByPeriodMachine(getCalcDefects());
+  const defects = applyDashboardCauseFilter(filterByPeriodMachine(getCalcDefects()));
   const breakdowns = filterByPeriodMachine(getArr(LS.breakdowns));
   const perf = filterByPeriodMachine(getArr(LS.perf));
   const perftest = filterByPeriodMachine(getArr(LS.perftest));
@@ -4999,7 +5084,7 @@ function refreshDashboard(){
   // inherently needs more than one machine) - now follows the Period filter like Cards 1-3 (previously
   // hardcoded to "today").
   const allPerfPeriodAllM = getArr(LS.perf).filter(p=> inRange(p.date, currentPeriod));
-  const allDefectsPeriodAllM = getCalcDefects().filter(d=> inRange(d.date, currentPeriod));
+  const allDefectsPeriodAllM = applyDashboardCauseFilter(getCalcDefects().filter(d=> inRange(d.date, currentPeriod)));
   let bestMachine = null, bestPerfPct = -1;
   MACHINES.forEach(m=>{
     const prodM = allPerfPeriodAllM.filter(p=>p.machine===m).reduce((s,p)=>s+p.total,0);
@@ -5315,8 +5400,9 @@ window.exportDashboardExcel = async function(){
     bandRow(sec.title, { bg: accent });
     statGridRows(sec.statGrid, '#f0fdf4');
     blankRow();
-    // % Performance by Machine exported first, matching its new position ahead of the Production
-    // Overview charts on the Dashboard page (per request to move it "ไว้ด้านบน").
+    // % Performance by Machine exported first, paired with Production by Shift right after it, matching
+    // their new shared row on the Dashboard page (per request to pair them together); Production
+    // Overview (Total/Good/Defect) is exported last, matching its own row below them on the page.
     if(charts.perfMachine){
       const c = charts.perfMachine;
       dataTable(
@@ -5324,17 +5410,17 @@ window.exportDashboardExcel = async function(){
         c.data.labels.map((lab,ri)=> [lab, ...c.data.datasets.map(d=>d.data[ri]==null?'':d.data[ri])] )
       );
     }
-    if(charts.production){
-      const c = charts.production;
-      dataTable(
-        [{text:dict.filterPeriod||'Period', bg:'#334155'}].concat(c.data.datasets.map(d=>({ text:d.label, bg: xlFirstColor(d.backgroundColor,0) }))),
-        c.data.labels.map((lab,ri)=> [lab, ...c.data.datasets.map(d=>d.data[ri]==null?'':d.data[ri])] )
-      );
-    }
     if(charts.productionByShift){
       const c = charts.productionByShift;
       dataTable(
         [{text:dict.shift||'Shift', bg:'#334155'}].concat(c.data.datasets.map(d=>({ text:d.label, bg: xlFirstColor(d.backgroundColor,0) }))),
+        c.data.labels.map((lab,ri)=> [lab, ...c.data.datasets.map(d=>d.data[ri]==null?'':d.data[ri])] )
+      );
+    }
+    if(charts.production){
+      const c = charts.production;
+      dataTable(
+        [{text:dict.filterPeriod||'Period', bg:'#334155'}].concat(c.data.datasets.map(d=>({ text:d.label, bg: xlFirstColor(d.backgroundColor,0) }))),
         c.data.labels.map((lab,ri)=> [lab, ...c.data.datasets.map(d=>d.data[ri]==null?'':d.data[ri])] )
       );
     }
@@ -5635,27 +5721,27 @@ window.exportDashboardPptx = async function(){
       ], { x:0.6, y:4.55, w:12.13, h:1.35 });
     }
 
-    // ===== Slide 3: % Performance by Machine (moved ahead of the Production Overview slide below, per
-    // request "% Performance แยกตามเครื่องจักร ไว้ด้านบน" matching the same reordering on the Dashboard page) =====
-    if(charts.perfMachine){
-      const slide = pptx.addSlide();
-      const accent = sectionAccent('section-performance');
-      addHeaderBand(slide, dict.chartPerfPctByMachine, accent);
-      await addChartImage(slide, charts.perfMachine, { x:1.5, y:1.8, w:10.13, h:5.1 }, null, accent);
-    }
-
-    // ===== Slide 4: Production / Performance Overview (moved below the % Performance by Machine slide
-    // above, per request "กราฟภาพรวมการผลิต...มาไว้ด้านล่าง")
-    // The Production trend chart is captured as a full-width banner (its own PPTX_BANNER_W/H aspect,
-    // wider than the standard chart box) since on screen it can span many date/category columns via
-    // horizontal scroll - see the pptxCaptureChart comment above for why a fixed wide capture size is
-    // used here instead of the standard square-ish one.
-    if(charts.production || charts.productionByShift){
+    // ===== Slide 3: % Performance by Machine paired with Production Overview by Shift (per request
+    // "ย้าย ภาพรวมการผลิต (ตามกะ/ของดี/Defect) ไปไว้คู่กับ % Performance แยกตามเครื่องจักร" - the two now sit
+    // side by side, matching their new shared row on the Dashboard page) =====
+    if(charts.perfMachine || charts.productionByShift){
       const slide = pptx.addSlide();
       const accent = sectionAccent('section-performance');
       addHeaderBand(slide, sectionTitle('section-performance', dict.sectionPerformance), accent);
-      await addChartImage(slide, charts.production, { x:0.6, y:1.55, w:12.13, h:2.55 }, dict.chartProduction, accent, PPTX_BANNER_W, PPTX_BANNER_H);
-      await addChartImage(slide, charts.productionByShift, { x:3.5, y:4.55, w:6.33, h:2.4 }, dict.chartProductionByShift, accent);
+      await addChartImage(slide, charts.perfMachine, { x:0.6, y:1.7, w:5.9, h:5.0 }, dict.chartPerfPctByMachine, accent);
+      await addChartImage(slide, charts.productionByShift, { x:6.83, y:1.7, w:5.9, h:5.0 }, dict.chartProductionByShift, accent);
+    }
+
+    // ===== Slide 4: Production Overview (Total/Good/Defect), now alone in its own row below the pair
+    // above, per the same request. Captured as a full-width banner (its own PPTX_BANNER_W/H aspect, wider
+    // than the standard chart box) since on screen it can span many date/category columns via horizontal
+    // scroll - see the pptxCaptureChart comment above for why a fixed wide capture size is used here
+    // instead of the standard square-ish one. =====
+    if(charts.production){
+      const slide = pptx.addSlide();
+      const accent = sectionAccent('section-performance');
+      addHeaderBand(slide, dict.chartProduction, accent);
+      await addChartImage(slide, charts.production, { x:0.6, y:1.9, w:12.13, h:4.4 }, null, accent, PPTX_BANNER_W, PPTX_BANNER_H);
     }
 
     // ===== Slide 5: Defect Overview (2x2 chart grid). The two doughnut charts (Type/Cause) use
@@ -5767,7 +5853,7 @@ function renderProductionChart(){
   // Good/Defect qty recomputed live per record (perfDerived) rather than the stored snapshot,
   // so edits/deletes made afterwards in Defect/Breakdown show up here immediately.
   const allPerfM = getArr(LS.perf).filter(p=> currentMachineFilter==='all' || p.machine===currentMachineFilter);
-  const allDefectsM = getCalcDefects().filter(d=> currentMachineFilter==='all' || d.machine===currentMachineFilter);
+  const allDefectsM = applyDashboardCauseFilter(getCalcDefects().filter(d=> currentMachineFilter==='all' || d.machine===currentMachineFilter));
   const trendRanges = getTrendRanges(currentPeriod);
   const labels = trendRanges.map(r=>r.label);
   const totalArr = trendRanges.map(r=> sumInRange(allPerfM, r.start, r.end, 'total'));
@@ -5801,7 +5887,7 @@ function renderProductionChart(){
   // buckets can reach further back); mirrors the same byShift pattern used by the "% Defect by Shift"
   // chart in renderCharts.
   const perfShiftScoped = filterByPeriodMachine(getArr(LS.perf));
-  const defectShiftScoped = filterByPeriodMachine(getCalcDefects());
+  const defectShiftScoped = applyDashboardCauseFilter(filterByPeriodMachine(getCalcDefects()));
   const totalByShift = {A:0,B:0,C:0}; perfShiftScoped.forEach(p=>totalByShift[p.shift]=(totalByShift[p.shift]||0)+p.total);
   const defectByShift = {A:0,B:0,C:0}; defectShiftScoped.forEach(d=>defectByShift[d.shift]=(defectByShift[d.shift]||0)+d.qty);
   const goodByShift = {A:0,B:0,C:0}; ['A','B','C'].forEach(s=>goodByShift[s]=Math.max(0,totalByShift[s]-defectByShift[s]));
@@ -6371,6 +6457,7 @@ function renderAllMasterTables(){
 // immediately, per request - admin edits shouldn't require a page reload to show up everywhere.
 function refreshAfterMasterListChange(){
   buildDefectTypeGrid(); buildBdCauseSelect(); buildDefectCauseFilterButtons();
+  buildDashCauseDropdown();
   if(typeof buildCaDefectTypeSelect==='function') buildCaDefectTypeSelect();
   if(typeof renderCaList==='function') renderCaList();
   renderDefectTable(); renderBreakdownTable();
