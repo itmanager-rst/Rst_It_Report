@@ -5866,7 +5866,7 @@ function renderProductionChart(){
   // Defect bar's on-chart label shows qty followed by (% defect) = Defect/Total x100, per request -
   // uses the valueLabels plugin's per-dataset "labels" override so the bar's height still reflects the
   // raw qty while the printed text carries both numbers.
-  const defectPctArr = totalArr.map((t,i)=> t>0 ? (defectArr[i]/t*100).toFixed(1) : '0.0');
+  const defectPctArr = totalArr.map((t,i)=> t>0 ? (defectArr[i]/t*100).toFixed(2) : '0.00');
   destroyChart('production');
   // Wider per-category spacing than before so the longer "qty (%.%)" label has room and doesn't collide
   // with the neighboring Total/Good bars' labels (per "ไม่ให้มีตัวเลขซ้อนทับกัน").
@@ -5892,7 +5892,7 @@ function renderProductionChart(){
   const defectByShift = {A:0,B:0,C:0}; defectShiftScoped.forEach(d=>defectByShift[d.shift]=(defectByShift[d.shift]||0)+d.qty);
   const goodByShift = {A:0,B:0,C:0}; ['A','B','C'].forEach(s=>goodByShift[s]=Math.max(0,totalByShift[s]-defectByShift[s]));
   // Same "qty (% defect)" on-chart label treatment as the Production Overview chart above.
-  const defectPctByShift = {A:0,B:0,C:0}; ['A','B','C'].forEach(s=>defectPctByShift[s]= totalByShift[s]>0 ? (defectByShift[s]/totalByShift[s]*100).toFixed(1) : '0.0');
+  const defectPctByShift = {A:0,B:0,C:0}; ['A','B','C'].forEach(s=>defectPctByShift[s]= totalByShift[s]>0 ? (defectByShift[s]/totalByShift[s]*100).toFixed(2) : '0.00');
   destroyChart('productionByShift');
   fitChartCanvas('chart-production-shift', 3, {minPerItem:130});
   charts.productionByShift = new Chart(document.getElementById('chart-production-shift'), {
@@ -6006,7 +6006,7 @@ function renderCharts(defects, breakdowns){
   destroyChart('type');
   fitChartCanvas('chart-type', 1);
   charts.type = new Chart(document.getElementById('chart-type'), {
-    type:'doughnut', data:{ labels:typeKeys.map(k=>typeLabel(k)), datasets:[{ data:typeKeys.map(k=>+(byType[k]/typeTotal*100).toFixed(1)), backgroundColor:CHART_COLORS }] },
+    type:'doughnut', data:{ labels:typeKeys.map(k=>typeLabel(k)), datasets:[{ data:typeKeys.map(k=>+(byType[k]/typeTotal*100).toFixed(2)), backgroundColor:CHART_COLORS }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, valueLabels:{show:false},
       // On hover, add the underlying Defect qty alongside the % already shown, per request.
       tooltip:{ callbacks:{ label:(ctx)=>{ const k = typeKeys[ctx.dataIndex]; return `${ctx.label}: ${ctx.parsed}% (${I18N[currentLang].tooltipDefectQty}: ${byType[k]} ${I18N[currentLang].unitPieces})`; } } }
@@ -6014,7 +6014,7 @@ function renderCharts(defects, breakdowns){
   });
   const dashTypeLegendEl = document.getElementById('dash-type-legend');
   dashTypeLegendEl.innerHTML = typeKeys.length ? typeKeys.map((k,i)=>{
-    const pct = (byType[k]/typeTotal*100).toFixed(1);
+    const pct = (byType[k]/typeTotal*100).toFixed(2);
     return `<div class="chart-legend-row"><span class="chart-legend-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></span><span class="chart-legend-name">${typeLabel(k)}</span><span class="chart-legend-pct">${pct}%</span></div>`;
   }).join('') : `<div class="chart-legend-row" style="color:var(--muted);">${I18N[currentLang].noData}</div>`;
 
@@ -6025,7 +6025,7 @@ function renderCharts(defects, breakdowns){
   // line crosses the ~80% mark).
   const dictP = I18N[currentLang];
   let paretoRunning = 0;
-  const paretoCum = typeKeys.map(k=>{ paretoRunning += byType[k]; return +(paretoRunning/typeTotal*100).toFixed(1); });
+  const paretoCum = typeKeys.map(k=>{ paretoRunning += byType[k]; return +(paretoRunning/typeTotal*100).toFixed(2); });
   destroyChart('pareto');
   fitChartCanvas('chart-dash-pareto', typeKeys.length, {minPerItem:70});
   charts.pareto = new Chart(document.getElementById('chart-dash-pareto'), {
@@ -6041,7 +6041,7 @@ function renderCharts(defects, breakdowns){
       plugins:{ legend:{position:'bottom'},
         valueLabels:{ show:true, datasets:{
           0:{ show:true, decimals:0 },
-          1:{ show:true, decimals:1, suffix:'%', color:'#dc2626', position:'below' }
+          1:{ show:true, decimals:2, suffix:'%', color:'#dc2626', position:'below' }
         } }
       },
       scales:{
@@ -6061,14 +6061,14 @@ function renderCharts(defects, breakdowns){
     if(typeKeys.length===0){
       insightEl.innerHTML = `<span class="pi-title">${dp.paretoInsightTitle}</span>${dp.paretoInsightNoData}`;
     } else if(typeKeys.length===1){
-      const top1pct = (byType[typeKeys[0]]/typeTotal*100).toFixed(1);
+      const top1pct = (byType[typeKeys[0]]/typeTotal*100).toFixed(2);
       insightEl.innerHTML = `<span class="pi-title">${dp.paretoInsightTitle}</span>` + dp.paretoInsightTop1.replace('{top1}', typeLabel(typeKeys[0])).replace('{top1pct}', top1pct);
     } else {
       let cutIdx = paretoCum.findIndex(v=>v>=80);
       if(cutIdx===-1) cutIdx = paretoCum.length-1;
       const vitalTypes = typeKeys.slice(0, cutIdx+1);
       const vitalLabel = vitalTypes.map(k=>typeLabel(k)).join(', ');
-      const vitalPct = paretoCum[cutIdx].toFixed(1);
+      const vitalPct = paretoCum[cutIdx].toFixed(2);
       insightEl.innerHTML = `<span class="pi-title">${dp.paretoInsightTitle}</span>` + dp.paretoInsightVitalFew
         .replace('{count}', String(cutIdx+1)).replace('{total}', String(typeKeys.length))
         .replace('{types}', vitalLabel).replace('{pct}', vitalPct);
@@ -6278,13 +6278,13 @@ function renderDefectMiniDashboard(){
   destroyChart('dfdType');
   fitChartCanvas('chart-dfd-type', 1);
   charts.dfdType = new Chart(document.getElementById('chart-dfd-type'), {
-    type:'doughnut', data:{ labels:typeKeys.map(k=>typeLabel(k)), datasets:[{ data:typeKeys.map(k=>+(byType[k]/typeTotal*100).toFixed(1)), backgroundColor:CHART_COLORS }] },
+    type:'doughnut', data:{ labels:typeKeys.map(k=>typeLabel(k)), datasets:[{ data:typeKeys.map(k=>+(byType[k]/typeTotal*100).toFixed(2)), backgroundColor:CHART_COLORS }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, valueLabels:{show:false}} }
   });
   // Type & % list to the right of the chart, replacing the on-chart numbers
   const legendEl = document.getElementById('dfd-type-legend');
   legendEl.innerHTML = typeKeys.length ? typeKeys.map((k,i)=>{
-    const pct = (byType[k]/typeTotal*100).toFixed(1);
+    const pct = (byType[k]/typeTotal*100).toFixed(2);
     return `<div class="chart-legend-row"><span class="chart-legend-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></span><span class="chart-legend-name">${typeLabel(k)}</span><span class="chart-legend-pct">${pct}%</span></div>`;
   }).join('') : `<div class="chart-legend-row" style="color:var(--muted);">${dict.noData}</div>`;
 
@@ -6298,12 +6298,12 @@ function renderDefectMiniDashboard(){
   destroyChart('dfdCause');
   fitChartCanvas('chart-dfd-cause', 1);
   charts.dfdCause = new Chart(document.getElementById('chart-dfd-cause'), {
-    type:'doughnut', data:{ labels:causeKeys.map(k=>k==='-'?dict.noData:causeLabel(k)), datasets:[{ data:causeKeys.map(k=>+(byCause[k]/causeTotal*100).toFixed(1)), backgroundColor:CHART_COLORS }] },
+    type:'doughnut', data:{ labels:causeKeys.map(k=>k==='-'?dict.noData:causeLabel(k)), datasets:[{ data:causeKeys.map(k=>+(byCause[k]/causeTotal*100).toFixed(2)), backgroundColor:CHART_COLORS }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, valueLabels:{show:false}} }
   });
   const causeLegendEl = document.getElementById('dfd-cause-legend');
   causeLegendEl.innerHTML = causeKeys.length ? causeKeys.map((k,i)=>{
-    const pct = (byCause[k]/causeTotal*100).toFixed(1);
+    const pct = (byCause[k]/causeTotal*100).toFixed(2);
     return `<div class="chart-legend-row"><span class="chart-legend-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></span><span class="chart-legend-name">${k==='-'?dict.noData:causeLabel(k)}</span><span class="chart-legend-pct">${pct}%</span></div>`;
   }).join('') : `<div class="chart-legend-row" style="color:var(--muted);">${dict.noData}</div>`;
 
@@ -6401,7 +6401,7 @@ function renderPerfMiniDashboard(){
     const mDefect = allDefectsScoped.filter(d=>d.machine===m).reduce((s,d)=>s+d.qty,0);
     prodByMachine.push(mTotal);
     defectByMachine.push(mDefect);
-    defectPctByMachine.push(mTotal>0 ? +(mDefect/mTotal*100).toFixed(1) : 0);
+    defectPctByMachine.push(mTotal>0 ? +(mDefect/mTotal*100).toFixed(2) : 0);
   });
   destroyChart('pfdComparison');
   fitChartCanvas('chart-pfd-comparison', machinesToShow.length, {minPerItem:110});
@@ -6418,7 +6418,7 @@ function renderPerfMiniDashboard(){
       plugins:{ legend:{position:'bottom'},
         valueLabels:{ show:true, decimals:0, datasets:{
           0:{ show:true, decimals:0 },
-          1:{ show:true, decimals:1, suffix:'%', labels:defectPctByMachine, color:'#dc2626' }
+          1:{ show:true, decimals:2, suffix:'%', labels:defectPctByMachine, color:'#dc2626' }
         } }
       },
       scales:{ y:{ beginAtZero:true } }
