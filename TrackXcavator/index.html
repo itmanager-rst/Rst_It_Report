@@ -2824,19 +2824,16 @@ function renderMatrixTable(matrixData) {
         // ถ้าไม่มีประวัติเฉพาะรอบ (แค่ lastPm ของเครื่อง >= รอบนี้ แต่ไม่มี ticket แยก)
         // ให้ถือว่า "เสร็จสิ้นธรรมดา" ไปเลย ไม่เดาสถานะค้าง/ไม่โชว์ปุ่มแก้ไข (เพราะไม่มีอะไรให้แก้จริง)
         const roundLog = rdInfo.log;
+        const st = getMatrixRoundState(item, r);
 
-        if (roundLog) {
-          const pStatus = roundLog.partsStatus || 'ส่งครบแล้ว';
-          const couponVal = Number(roundLog.yanmarCoupon || 0);
-          const roundHasEntitlement = hasCouponEntitlement(roundLog);
-          const isPartsPending = pStatus === "ค้างส่งอะไหล่" || pStatus === "ส่งบางส่วน";
-          const isPending = isPartsPending || (couponVal === 0 && r > 0 && roundHasEntitlement);
+        if (st.source) {
+          const isPending = st.partsPending || st.couponPending;
 
-          if (isPartsPending) {
+          if (st.partsPending) {
             bgStyle = "background-color: #fd7e14; color: #fff;";
             icon = '<i class="fa-solid fa-clock-rotate-left me-1"></i>';
-            cellLabel = pStatus === "ส่งบางส่วน" ? "ส่งบางส่วน" : "ค้างอะไหล่";
-          } else if (couponVal === 0 && r > 0 && roundHasEntitlement) {
+            cellLabel = st.partsStatus === "ส่งบางส่วน" ? "ส่งบางส่วน" : "ค้างอะไหล่";
+          } else if (st.couponPending) {
             bgStyle = "background-color: #6f42c1; color: #fff;";
             icon = '<i class="fa-solid fa-hand-holding-dollar me-1"></i>';
             cellLabel = "ค้างคูปอง";
@@ -2846,7 +2843,7 @@ function renderMatrixTable(matrixData) {
             cellLabel = "เสร็จสิ้น/ส่งครบ";
           }
 
-          if (isPending && isAdmin()) {
+          if (isPending && isAdmin() && roundLog && roundLog.ticketId) {
             editRoundHtml = `
               <br>
               <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 mt-1" style="font-size: 0.65rem;" title="แก้ไขข้อมูล PM รอบนี้"
@@ -2926,18 +2923,51 @@ function filterMatrixTable() {
   renderMatrixTable(filtered);
 }
 
-function matrixRoundMatchesStatus(item, round, statusFilter) {
-    const rdInfo = item.rounds[round];
-    const roundLog = rdInfo ? rdInfo.log : null;
-    const pStatus = roundLog ? (roundLog.partsStatus || 'ส่งครบแล้ว') : item.partsStatus;
-    const couponVal = roundLog ? Number(roundLog.yanmarCoupon || 0) : Number(item.yanmarCoupon || 0);
-    const roundHasEntitlement = roundLog ? hasCouponEntitlement(roundLog) : hasCouponEntitlement(item);
-    const partsPending = pStatus === "ค้างส่งอะไหล่" || pStatus === "ส่งบางส่วน";
-    const couponPending = couponVal === 0 && round > 0 && roundHasEntitlement;
+function isPendingPartsStatus(status) {
+  const s = String(status || '').trim();
+  return s === "ค้างส่งอะไหล่" || s === "ส่งบางส่วน";
+}
 
-    if (statusFilter === 'coupon_pending') return couponPending;
-    if (statusFilter === 'parts_pending') return partsPending;
-    if (statusFilter === 'both_pending') return couponPending && partsPending;
+// ✅ สถานะ "จริง" ของรอบ PM หนึ่งรอบ — ใช้ตัวเดียวกันทั้งช่องใน Matrix, ตัวกรองสถานะค้าง, Timeline และหน้าต่างรายละเอียด
+// (เดิมแต่ละจุดคำนวณเอง: ตัวกรอง fallback ไปใช้ service_report แต่ช่อง Matrix ไม่ fallback
+//  ทำให้กรอง "ค้างอะไหล่" แล้วเจอเครื่อง แต่ช่องรอบนั้นกลับขึ้น "เสร็จสิ้น/ส่งครบ")
+// กติกา:
+//  - รอบที่ยังไม่ done (ข้ามรอบ/เกินกำหนด/ถึงกำหนด/รอรอบ) ไม่นับเป็นค้างอะไหล่/คูปอง
+//  - มี pm_log ของรอบนี้ → ใช้ log ของรอบนี้
+//  - เป็นรอบล่าสุดของเครื่อง (lastPm) → service_report คือแหล่งที่ปุ่ม "รับอะไหล่ค้างส่ง" อัปเดต
+//    ถ้า service_report ยังค้าง ให้ถือว่ายังค้าง (ไม่ขึ้นเสร็จทั้งที่ยังค้างบางส่วน)
+//  - ไม่มี log และไม่ใช่รอบล่าสุด → ถือว่าเสร็จสิ้นธรรมดา
+function getMatrixRoundState(item, round) {
+  round = Number(round);
+  const rdInfo = (item && item.rounds && item.rounds[round]) || { status: 'pending', label: 'รอรอบ', log: null };
+  const roundLog = rdInfo.log || null;
+  const isDone = rdInfo.status === 'done';
+  const isLatestRound = Number(item && item.lastPm || 0) === round && round > 0;
+
+  let source = null;
+  if (roundLog) source = roundLog;
+  else if (isDone && isLatestRound) source = item;
+
+  let partsStatus = source ? String(source.partsStatus || 'ส่งครบแล้ว').trim() : '';
+  let partsStore = source ? source.partsStore : '';
+  if (roundLog && isLatestRound && isPendingPartsStatus(item.partsStatus) && !isPendingPartsStatus(partsStatus)) {
+    partsStatus = String(item.partsStatus).trim();
+    partsStore = item.partsStore || partsStore;
+  }
+
+  const partsPending = isDone && Boolean(source) && isPendingPartsStatus(partsStatus);
+  const couponVal = source ? Number(String(source.yanmarCoupon || 0).replace(/,/g, '')) || 0 : 0;
+  const couponRequired = Boolean(source) && hasCouponEntitlement(Object.assign({}, source, { partsStatus, partsStore }));
+  const couponPending = isDone && Boolean(source) && round > 0 && couponVal === 0 && couponRequired;
+
+  return { rdInfo, roundLog, source, isDone, isLatestRound, partsStatus, partsStore, couponVal, couponRequired, partsPending, couponPending };
+}
+
+function matrixRoundMatchesStatus(item, round, statusFilter) {
+    const st = getMatrixRoundState(item, round);
+    if (statusFilter === 'coupon_pending') return st.couponPending;
+    if (statusFilter === 'parts_pending') return st.partsPending;
+    if (statusFilter === 'both_pending') return st.couponPending && st.partsPending;
     return true;
 }
 
@@ -2949,13 +2979,12 @@ function getPMWorkflowDetails(item, round) {
   const currentHours = Number(item.currentHours) || 0;
   const rdInfo = item.rounds ? item.rounds[round] : null;
   const roundRecord = rdInfo ? rdInfo.log : null;
-  const source = roundRecord || item;
-  const partsStatus = String(source.partsStatus || '').trim();
-  const couponAmount = Number(source.yanmarCoupon || 0);
-  const partsPending = partsStatus === "ส่งบางส่วน" || partsStatus === "ค้างส่งอะไหล่";
+  const st = getMatrixRoundState(item, round);
+  const partsStatus = st.partsStatus;
+  const partsPending = st.partsPending;
   const noPartsRequired = partsStatus === "ไม่ได้เบิกอะไหล่";
-  const couponRequired = hasCouponEntitlement(source);
-  const couponPending = couponRequired && couponAmount <= 0;
+  const couponRequired = st.couponRequired;
+  const couponPending = st.couponPending;
   const isCompletedRound = !roundRecord && lastPm > round;
   const isCurrentRound = Boolean(roundRecord) || (lastPm === round && lastPm > 0);
   const isDue = !isCurrentRound && !isCompletedRound && currentHours >= round;
@@ -3035,10 +3064,11 @@ function showWorkflowModal(machineId, pmRound) {
   }
 
   // ใช้ข้อมูลของรอบนี้เป็นหลัก ถ้าไม่มี (เช่นรอบยังไม่ถึง) ค่อย fallback ไปที่ค่าล่าสุดของเครื่อง
-  const roundPartsStatus = roundLog ? (roundLog.partsStatus || '-') : item.partsStatus;
+  const roundState = getMatrixRoundState(item, pmRound);
+  const roundPartsStatus = roundState.source ? (roundState.partsStatus || '-') : (roundLog ? (roundLog.partsStatus || '-') : item.partsStatus);
   const roundPartsBillNo = roundLog ? (roundLog.partsBillNo || '-') : item.partsBillNo;
   const roundYanmarCoupon = roundLog ? Number(roundLog.yanmarCoupon || 0) : Number(item.yanmarCoupon || 0);
-  const roundPartsStore = roundLog ? (roundLog.partsStore || '-') : item.partsStore;
+  const roundPartsStore = roundState.source ? (roundState.partsStore || '-') : (roundLog ? (roundLog.partsStore || '-') : item.partsStore);
   const roundRemark = roundLog ? (roundLog.remark || '-') : item.remark;
 
   document.getElementById("workflowRoundTitle").innerText = `${pmRound} ชั่วโมง`;

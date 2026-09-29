@@ -772,7 +772,14 @@ function getPMProgressMatrix(isRawObject) {
       pmCheckpoints.forEach(function(cp) {
         // Priority 1: เช็กประวัติที่มีใน pm_log ก่อนเป็นอันดับแรก (ป้องกันการข้ามรอบ)
         if (roundsHistory[cp]) {
-          matrix[cp] = roundsHistory[cp].statuses;
+          matrix[cp] = roundsHistory[cp].statuses.slice();
+          // รอบล่าสุด: ถ้า service_report ยังค้างอะไหล่ ให้ถือว่ายังค้าง (ไม่ขึ้นเสร็จสิ้นทั้งที่ยังค้างบางส่วน)
+          var dashPartsStatus = String(ciGet(s, 'parts_status') || "").trim();
+          if (cp === lastPm && (dashPartsStatus === "ส่งบางส่วน" || dashPartsStatus === "ค้างส่งอะไหล่")
+              && matrix[cp].indexOf("ค้างอะไหล่") === -1) {
+            matrix[cp] = matrix[cp].filter(function (x) { return x !== "เสร็จสิ้น"; });
+            matrix[cp].unshift("ค้างอะไหล่");
+          }
         } 
         // Priority 2: ถ้าตรงกับรอบล่าสุดใน service_report
         else if (cp === lastPm && lastPm > 0) {
@@ -1207,6 +1214,9 @@ function updatePendingPartsByRound(p, isRawObject) {
     var partsBillNo = p.partsBillNo || '-';
     var remark = p.remark || '';
     var updatedBy = p.updatedBy || 'System';
+    // ต้องเขียน updated_at ด้วย ไม่งั้นถ้า pm_log มีแถวซ้ำของรอบเดียวกัน หน้าเว็บอาจเลือกแถวอื่นเป็น "ล่าสุด"
+    // แล้วสถานะอะไหล่ในหน้า Matrix ไม่ตรงกับที่เพิ่งบันทึก
+    var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
 
     function buildRemark(existing) {
       return remark ? (String(existing || '') + ' | [รับอะไหล่รอบ ' + pmRound + ' ชม.]: ' + remark) : existing;
@@ -1223,7 +1233,7 @@ function updatePendingPartsByRound(p, isRawObject) {
     logRows.forEach(function (r) {
       updateRowByObject(logSheet, r.__row, {
         parts_status: partsStatus, parts_store: partsStore, parts_bill_no: partsBillNo,
-        remark: buildRemark(ciGet(r, 'remark'))
+        remark: buildRemark(ciGet(r, 'remark')), updated_at: nowStr
       });
     });
 
@@ -1236,7 +1246,7 @@ function updatePendingPartsByRound(p, isRawObject) {
       if ((Number(ciGet(r, 'last_pm_round')) || 0) === pmRound) {
         updateRowByObject(dashSheet, r.__row, {
           parts_status: partsStatus, parts_store: partsStore, parts_bill_no: partsBillNo,
-          updated_by: updatedBy, remark: buildRemark(ciGet(r, 'remark'))
+          updated_by: updatedBy, remark: buildRemark(ciGet(r, 'remark')), updated_at: nowStr
         });
       }
     });
