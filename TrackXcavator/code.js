@@ -1,3 +1,4 @@
+// CODE_VERSION: r01-2026-09-29-fast-load-getAllData-cache
 // ==========================================
 // CONFIGURATION & HELPER FUNCTIONS
 // ==========================================
@@ -146,13 +147,27 @@ function updateRowByObject(sheet, rowNumber, updates) {
   var updatesLower = {};
   Object.keys(updates).forEach(function (k) { updatesLower[k.toLowerCase()] = k; });
 
+  // ⚡ รวมการเขียนเป็นช่วง (เดิม setValue ทีละเซลล์ ~15-20 ครั้งต่อแถว ทำให้บันทึกช้า)
+  var cols = [];
   headers.forEach(function (h, idx) {
     if (!h) return;
     var matchKey = updatesLower[String(h).toLowerCase()];
     if (matchKey !== undefined && updates[matchKey] !== undefined) {
-      sheet.getRange(rowNumber, idx + 1).setValue(updates[matchKey]);
+      cols.push({ col: idx + 1, value: updates[matchKey] });
     }
   });
+  if (cols.length === 0) return;
+
+  // เขียนเป็นช่วงคอลัมน์ที่ติดกัน (ไม่แตะเซลล์ที่ไม่ได้แก้ → ไม่กระทบสูตร/เลข 0 นำหน้า)
+  var start = 0;
+  for (var i = 1; i <= cols.length; i++) {
+    if (i === cols.length || cols[i].col !== cols[i - 1].col + 1) {
+      var run = cols.slice(start, i);
+      sheet.getRange(rowNumber, run[0].col, 1, run.length)
+        .setValues([run.map(function (c) { return c.value; })]);
+      start = i;
+    }
+  }
 }
 
 /**
@@ -242,6 +257,169 @@ function runBigQuery(sqlQuery) {
   }
 }
 
+// ==========================================
+// ⚡ โหลดเร็ว: รัน BigQuery หลาย query พร้อมกัน + แคชผลลัพธ์
+// ==========================================
+// แปลงผล getQueryResults/query เป็น Array of Objects (รองรับหลายหน้า pageToken)
+function bqRowsToObjects_(queryResults, fetchPage) {
+  var result = [];
+  var page = queryResults;
+  while (page) {
+    if (!page.rows || !page.schema || !page.schema.fields) break;
+    var fields = page.schema.fields;
+    for (var r = 0; r < page.rows.length; r++) {
+      var row = page.rows[r];
+      var item = {};
+      if (row && row.f) {
+        for (var c = 0; c < row.f.length; c++) {
+          var name = fields[c] && fields[c].name;
+          if (name) {
+            var cell = row.f[c];
+            item[name] = (cell && cell.v !== null && cell.v !== undefined) ? cell.v : null;
+          }
+        }
+      }
+      result.push(item);
+    }
+    page = (page.pageToken && fetchPage) ? fetchPage(page.pageToken) : null;
+  }
+  return result;
+}
+
+/**
+ * ส่งหลาย query ให้ BigQuery พร้อมกัน แล้วรอผลทีเดียว
+ * (เดิมรันทีละ query ต่อกัน → เวลารวม = บวกกันทุก query / ตอนนี้ ≈ query ที่ช้าที่สุดตัวเดียว)
+ */
+function runBigQueryParallel(sqlList) {
+  var jobs = sqlList.map(function (sql) {
+    return BigQuery.Jobs.insert({
+      configuration: { query: { query: sql, useLegacySql: false } }
+    }, BQ_PROJECT_ID);
+  });
+
+  return jobs.map(function (job) {
+    var ref = job.jobReference;
+    var opts = { timeoutMs: 20000 };
+    if (ref.location) opts.location = ref.location;
+    var res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+    var sleep = 200;
+    while (!res.jobComplete) {
+      Utilities.sleep(sleep);
+      res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+      if (sleep < 1000) sleep += 200;
+    }
+    return bqRowsToObjects_(res, function (token) {
+      var o = { pageToken: token };
+      if (ref.location) o.location = ref.location;
+      return BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, o);
+    });
+  });
+}
+
+// ---- แคช (CacheService จำกัด 100KB ต่อ key → แบ่งเก็บเป็นหลายชิ้น) ----
+var DATA_CACHE_TTL_SEC = 300;     // ข้อมูลตาราง: 5 นาที (ถูกล้างทันทีเมื่อมีการบันทึก/แก้/ลบผ่านระบบ)
+var STATIC_CACHE_TTL_SEC = 21600; // รายชื่อรุ่น/อะไหล่ตามรุ่น: 6 ชม.
+var CACHE_CHUNK_CHARS = 25000;    // ภาษาไทย 1 ตัว = 3 ไบต์ → 25,000 ตัวอักษร < 100KB
+
+function cachePutJSON_(key, obj, ttl) {
+  try {
+    var str = JSON.stringify(obj);
+    var n = Math.ceil(str.length / CACHE_CHUNK_CHARS);
+    if (n > 200) return; // ใหญ่เกินไป ไม่แคช
+    var map = {};
+    for (var i = 0; i < n; i++) map[key + '_' + i] = str.substr(i * CACHE_CHUNK_CHARS, CACHE_CHUNK_CHARS);
+    map[key + '_n'] = String(n);
+    CacheService.getScriptCache().putAll(map, ttl);
+  } catch (e) {
+    Logger.log('cachePutJSON_ error: ' + e);
+  }
+}
+
+function cacheGetJSON_(key) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = Number(cache.get(key + '_n'));
+    if (!n) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+    var parts = cache.getAll(keys);
+    var str = '';
+    for (var j = 0; j < n; j++) {
+      var part = parts[keys[j]];
+      if (part === undefined || part === null) return null; // บางชิ้นหมดอายุ → ถือว่าไม่มีแคช
+      str += part;
+    }
+    return JSON.parse(str);
+  } catch (e) {
+    return null;
+  }
+}
+
+// "รุ่น" ของข้อมูล: เปลี่ยนทุกครั้งที่มีการเขียนข้อมูล → แคชเก่าใช้ไม่ได้ทันที
+function getDataGen_() {
+  var cache = CacheService.getScriptCache();
+  var gen = cache.get('data_gen');
+  if (!gen) {
+    gen = String(new Date().getTime());
+    cache.put('data_gen', gen, 21600);
+  }
+  return gen;
+}
+
+function invalidateDataCache() {
+  CacheService.getScriptCache().put('data_gen', String(new Date().getTime()) + '_' + Math.floor(Math.random() * 1000), 21600);
+}
+
+var WRITE_ACTIONS = ['insertTicket', 'claimCoupon', 'updatePartsStatus', 'updatePendingPartsByRound',
+  'updatePmLog', 'approveMachine', 'deleteDashboard', 'deleteReport', 'fixPmLogSwaps'];
+
+/**
+ * ⚡ ดึงข้อมูลทั้งหมดที่หน้าเว็บใช้ในครั้งเดียว (ตารางสถานะ + ประวัติ PM)
+ * - 1 request แทน 2 request
+ * - BigQuery 2 query รันพร้อมกัน (เดิม 3 query: service_report ถูกดึงซ้ำ 2 รอบ)
+ * - มีแคช 5 นาที ผู้ใช้คนถัดไป/การสลับแท็บ/เปิดหน้าใหม่ แทบไม่ต้องรอ
+ */
+function getAllData(opts, isRawObject) {
+  try {
+    var noCache = opts && (opts.noCache === true || opts.noCache === 'true');
+    var gen = getDataGen_();
+    var cacheKey = 'alldata_' + gen;
+
+    if (!noCache) {
+      var cached = cacheGetJSON_(cacheKey);
+      if (cached) {
+        cached.fromCache = true;
+        return responseJSON(cached, isRawObject);
+      }
+    }
+
+    var results = runBigQueryParallel([
+      `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``,
+      `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``
+    ]);
+    var serviceRows = results[0];
+    var logRows = results[1];
+
+    var dashboard = getDashboardData(true, serviceRows);
+    var history = getReportList(true, logRows, serviceRows);
+
+    var out = {
+      status: 'success',
+      dashboard: dashboard,
+      history: history,
+      generatedAt: Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss"),
+      fromCache: false
+    };
+
+    if (dashboard && dashboard.status === 'success' && Array.isArray(history)) {
+      cachePutJSON_(cacheKey, out, DATA_CACHE_TTL_SEC);
+    }
+    return responseJSON(out, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.toString() }, isRawObject);
+  }
+}
+
 /**
  * Helper Function ส่งคืนค่า JSON หรือ Object แบบ Dynamic
  * รองรับทั้งการเรียกผ่าน Web App Fetch (CORS HTTP) และ google.script.run
@@ -312,7 +490,11 @@ function doGet(e) {
       return getReceiptImageData(e.parameter.fileId);
     }
 
-    if (action === "getDashboard") {
+    if (action === "getAllData") {
+      return getAllData(e.parameter);
+    } else if (action === "checkStatus") {
+      return responseJSON({ status: "success", codeVersion: "r01-2026-09-29-fast-load-getAllData-cache" });
+    } else if (action === "getDashboard") {
       return getDashboardData();
     } else if (action === "getReportList") {
       return getReportList();
@@ -347,8 +529,21 @@ function doPost(e) {
     }
 
     var action = data.action;
+    var result = routePost_(action, data);
+    if (WRITE_ACTIONS.indexOf(action) !== -1) {
+      try { invalidateDataCache(); } catch (cacheErr) { /* ไม่ให้ล้มเพราะแคช */ }
+    }
+    return result;
 
-    if (action === "verifyLogin" || action === "login") {
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() });
+  }
+}
+
+function routePost_(action, data) {
+    if (action === "getAllData") {
+      return getAllData(data);
+    } else if (action === "verifyLogin" || action === "login") {
       return verifyLogin(data.username, data.password);
     } else if (action === "getDashboard") {
       return getDashboardData();
@@ -385,10 +580,6 @@ function doPost(e) {
     }
 
     return responseJSON({ status: "error", message: "Unknown action" });
-
-  } catch (err) {
-    return responseJSON({ status: "error", message: err.toString() });
-  }
 }
 
 /**
@@ -483,10 +674,13 @@ function verifyLogin(username, password, isRawObject) {
 // ==========================================
 // 2. ดึงข้อมูล ตารางสถานะเครื่องจักร (Service_Report)
 // ==========================================
-function getDashboardData(isRawObject) {
+function getDashboardData(isRawObject, prefetchedRows) {
   try {
-    var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``;
-    var rows = runBigQuery(sql);
+    var rows = prefetchedRows;
+    if (!rows) {
+      var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``;
+      rows = runBigQuery(sql);
+    }
 
     var alerts = [];
     var pmAlertCount = 0;
@@ -570,16 +764,19 @@ function getDashboardData(isRawObject) {
 // ==========================================
 // 3. ดึงข้อมูล ประวัติทำ PM (PM_Log) - พร้อมระบบตรวจสอบความถูกต้อง
 // ==========================================
-function getReportList(isRawObject) {
+function getReportList(isRawObject, prefetchedRows, prefetchedServiceRows) {
   try {
-    var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
-    var rows = runBigQuery(sql);
+    var rows = prefetchedRows;
+    if (!rows) {
+      var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
+      rows = runBigQuery(sql);
+    }
     var result = [];
 
     // pm_log ไม่มีคอลัมน์เบอร์โทรศัพท์เก็บไว้ ต้องดึงมาจาก service_report แทน (จับคู่ด้วย machine_id)
     var phoneByMachineId = {};
     try {
-      var dashRows = runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``);
+      var dashRows = prefetchedServiceRows || runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``);
       dashRows.forEach(function (dr) {
         var mid = String(ciGet(dr, 'machine_id') || '').trim().toLowerCase();
         if (mid) phoneByMachineId[mid] = ciGet(dr, 'phone_number') || '';
@@ -827,6 +1024,11 @@ function getModelParts(model, isRawObject) {
     var safeModel = escapeSql(model);
     if (!safeModel.trim()) return responseJSON({ status: "success", data: [] }, isRawObject);
 
+    var partsCacheKey = 'mparts_' + Utilities.base64EncodeWebSafe(
+      Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(model).trim().toLowerCase(), Utilities.Charset.UTF_8));
+    var cachedParts = cacheGetJSON_(partsCacheKey);
+    if (cachedParts) return responseJSON(cachedParts, isRawObject);
+
     var sql = `SELECT DISTINCT partno, maintenanceparts
                FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.modelpart\`
               WHERE LOWER(TRIM(model)) = LOWER(TRIM('${safeModel}'))
@@ -844,7 +1046,9 @@ function getModelParts(model, isRawObject) {
       return row.partNo || row.maintenancePart;
     });
 
-    return responseJSON({ status: "success", data: rows }, isRawObject);
+    var partsOut = { status: "success", data: rows };
+    if (rows.length) cachePutJSON_(partsCacheKey, partsOut, STATIC_CACHE_TTL_SEC);
+    return responseJSON(partsOut, isRawObject);
   } catch (e) {
     return responseJSON({ status: "error", data: [], message: e.toString() }, isRawObject);
   }
@@ -868,6 +1072,8 @@ function getReceiptImageData(fileId, isRawObject) {
 
 function getModels(isRawObject) {
   try {
+    var cachedModels = cacheGetJSON_('models_v1');
+    if (cachedModels) return responseJSON({ status: "success", data: cachedModels }, isRawObject);
     var sql = `SELECT DISTINCT TRIM(model) AS model
                FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.modelpart\`
                WHERE NULLIF(TRIM(model), '') IS NOT NULL
@@ -876,6 +1082,7 @@ function getModels(isRawObject) {
       return String(ciGet(row, 'model') || '').trim();
     }).filter(Boolean);
 
+    if (models.length) cachePutJSON_('models_v1', models, STATIC_CACHE_TTL_SEC);
     return responseJSON({ status: "success", data: models }, isRawObject);
   } catch (e) {
     return responseJSON({ status: "error", data: [], message: e.toString() }, isRawObject);

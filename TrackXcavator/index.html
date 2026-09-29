@@ -1225,6 +1225,10 @@ body {
 
     function handleLoginSubmit(event) {
       event.preventDefault();
+      // ⚡ ถ้าสคริปต์หลักผูก handleLogin ไว้แล้ว ให้ตัวนั้นทำงานตัวเดียว
+      // (เดิมกดเข้าสู่ระบบ 1 ครั้ง ยิง login 2 request + โหลดข้อมูลซ้ำ)
+      const boundForm = document.getElementById('loginForm');
+      if (typeof handleLogin === 'function' && boundForm && boundForm.dataset.loginBound === 'true') return;
       
       const uVal = document.getElementById('loginUser').value.trim();
       const pVal = document.getElementById('loginPass').value.trim();
@@ -1770,11 +1774,26 @@ function getLatestPmLogs(list) {
   return Array.from(map.values()).map(v => v.item);
 }
 
+// ⚡ ดัชนี "เครื่อง|รอบ" → log ล่าสุด สร้างครั้งเดียวต่อชุดข้อมูล
+// (เดิม filter ทั้ง rawHistoryData ทุกครั้ง = จำนวนเครื่อง × 9 รอบ × จำนวน log → Matrix ค้างเมื่อข้อมูลเยอะ)
+let pmLogIndexCache = null;
+let pmLogIndexSource = null;
+
+function getPmLogIndex() {
+  if (pmLogIndexCache && pmLogIndexSource === rawHistoryData) return pmLogIndexCache;
+  const index = new Map();
+  getLatestPmLogs(rawHistoryData || []).forEach(item => {
+    const key = String(item.machineId || '').trim().toLowerCase() + '|' + Number(item.pmRound || 0);
+    index.set(key, item);
+  });
+  pmLogIndexCache = index;
+  pmLogIndexSource = rawHistoryData;
+  return index;
+}
+
 function findLatestPmLog(machineId, round) {
-  const mId = String(machineId || '').trim().toLowerCase();
-  const matches = (rawHistoryData || []).filter(h =>
-    String(h.machineId || '').trim().toLowerCase() === mId && Number(h.pmRound) === Number(round));
-  return matches.length ? getLatestPmLogs(matches)[0] : null;
+  const key = String(machineId || '').trim().toLowerCase() + '|' + Number(round || 0);
+  return getPmLogIndex().get(key) || null;
 }
 
 function updateCouponSum() {
@@ -1818,15 +1837,57 @@ function hasCouponEntitlement(item) {
   return partsStatus !== "ไม่ได้เบิกอะไหล่" && (hasPendingParts || hasPartsList || hasPartsBill);
 }
 
-function loadAllData(forceRefresh = false) {
-  const dashboardRequest = loadDashboardData(forceRefresh);
-  const historyRequest = loadHistoryData(forceRefresh);
+// ⚡ โหลดทุกตารางด้วย request เดียว (action getAllData: BigQuery รันพร้อมกัน + แคชฝั่งเซิร์ฟเวอร์)
+// ถ้า backend ยังเป็นเวอร์ชันเก่า (Unknown action) จะ fallback ไปโหลดแยกแบบเดิมให้อัตโนมัติ
+let allDataLoadPromise = null;
+let allDataSupported = true;
 
-  // Matrix ต้องใช้ทั้ง service_report และ pm_log → สร้างหลังโหลดครบทั้งคู่
-  return Promise.all([dashboardRequest, historyRequest]).then(() => {
+function loadAllDataSeparately(forceRefresh) {
+  return Promise.all([loadDashboardData(forceRefresh), loadHistoryData(forceRefresh)]);
+}
+
+function loadAllData(forceRefresh = false) {
+  if (!forceRefresh && dashboardLoaded && historyLoaded) {
     rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
     renderMatrixTable(rawMatrixData);
+    return Promise.resolve();
+  }
+  if (allDataLoadPromise) return allDataLoadPromise;
+
+  let request;
+  if (!allDataSupported) {
+    request = loadAllDataSeparately(forceRefresh);
+  } else {
+    const dashTbody = document.getElementById("tbDashboard");
+    if (dashTbody && !dashboardLoaded) {
+      dashTbody.innerHTML = '<tr><td colspan="21" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>';
+    }
+    request = postJson({ action: 'getAllData', noCache: forceRefresh })
+      .then(res => {
+        if (!res || res.status !== 'success' || !res.dashboard || !Array.isArray(res.history)) {
+          const msg = (res && res.message) || '';
+          if (/Unknown action/i.test(msg)) allDataSupported = false;
+          throw new Error(msg || 'getAllData failed');
+        }
+        if (res.dashboard.status === 'error') throw new Error(res.dashboard.message || 'dashboard error');
+        applyDashboardData(res.dashboard);
+        applyHistoryData(res.history);
+      })
+      .catch(err => {
+        console.warn('getAllData ใช้ไม่ได้ ใช้วิธีโหลดแยกแทน:', err);
+        return loadAllDataSeparately(forceRefresh);
+      });
+  }
+
+  // ให้การคลิกแท็บระหว่างโหลด ใช้ request เดียวกันนี้ ไม่ยิงซ้ำ
+  allDataLoadPromise = request.then(() => {
+    // Matrix ต้องใช้ทั้ง service_report และ pm_log → สร้างหลังโหลดครบทั้งคู่
+    rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
+    renderMatrixTable(rawMatrixData);
+  }).finally(() => {
+    allDataLoadPromise = null;
   });
+  return allDataLoadPromise;
 }
 
 function refreshAllData() {
@@ -1934,6 +1995,7 @@ function loadDashboardData(forceRefresh = false) {
   }
 
   if (dashboardLoadPromise) return dashboardLoadPromise;
+  if (allDataLoadPromise && !forceRefresh) return allDataLoadPromise.then(() => rawDashboardData);
 
   const tbody = document.getElementById("tbDashboard");
   if (tbody) {
@@ -1946,15 +2008,7 @@ function loadDashboardData(forceRefresh = false) {
         throw new Error((data && data.message) || 'Unable to load dashboard data');
       }
 
-      const alertEl = document.getElementById("statPmAlertCount");
-      const pendingEl = document.getElementById("statPendingInvoiceCount");
-      if (alertEl) alertEl.innerText = data.pmAlertCount || 0;
-      if (pendingEl) pendingEl.innerText = data.incompleteInvoiceCount || 0;
-
-      rawDashboardData = data.pmAlerts || [];
-      dashboardLoaded = true;
-      renderDashboardTable(rawDashboardData);
-      return rawDashboardData;
+      return applyDashboardData(data);
     })
     .catch(err => {
       if (tbody) {
@@ -1966,6 +2020,18 @@ function loadDashboardData(forceRefresh = false) {
     });
 
   return dashboardLoadPromise;
+}
+
+function applyDashboardData(data) {
+  const alertEl = document.getElementById("statPmAlertCount");
+  const pendingEl = document.getElementById("statPendingInvoiceCount");
+  if (alertEl) alertEl.innerText = data.pmAlertCount || 0;
+  if (pendingEl) pendingEl.innerText = data.incompleteInvoiceCount || 0;
+
+  rawDashboardData = data.pmAlerts || [];
+  dashboardLoaded = true;
+  renderDashboardTable(rawDashboardData);
+  return rawDashboardData;
 }
 
 function renderDashboardTable(list) {
@@ -2506,6 +2572,7 @@ function loadHistoryData(forceRefresh = false) {
   }
 
   if (historyLoadPromise) return historyLoadPromise;
+  if (allDataLoadPromise && !forceRefresh) return allDataLoadPromise.then(() => rawHistoryData);
 
   const tbody = document.getElementById("tbHistory");
   if (tbody) {
@@ -2518,11 +2585,7 @@ function loadHistoryData(forceRefresh = false) {
         throw new Error((data && data.message) || 'Unable to load history data');
       }
 
-      rawHistoryData = data || [];
-      historyLoaded = true;
-      renderHistoryTable(rawHistoryData);
-      updateCouponSum();
-      return rawHistoryData;
+      return applyHistoryData(data);
     })
     .catch(err => {
       if (tbody) {
@@ -2534,6 +2597,15 @@ function loadHistoryData(forceRefresh = false) {
     });
 
   return historyLoadPromise;
+}
+
+function applyHistoryData(data) {
+  rawHistoryData = data || [];
+  pmLogIndexCache = null; // ข้อมูลเปลี่ยน → สร้างดัชนีใหม่
+  historyLoaded = true;
+  renderHistoryTable(rawHistoryData);
+  updateCouponSum();
+  return rawHistoryData;
 }
 
 function renderHistoryTable(list) {
@@ -2675,8 +2747,11 @@ function loadPMMatrix(forceRefresh = false) {
   // เพื่อเช็กสถานะอะไหล่/คูปองของแต่ละรอบ PM แยกกัน จึงต้องรอโหลดทั้งคู่ก่อนเสมอ
   // (เดิมรอแค่ dashboard ทำให้ถ้ายังไม่เคยเปิดแท็บ "ประวัติ PM" มาก่อน rawHistoryData จะว่าง
   //  แล้ว Matrix จะ fallback ไปใช้สถานะล่าสุดของทั้งเครื่องแทนทุกรอบ มองไม่เห็นรอบที่ค้างจริง)
-  const needsDashboard = forceRefresh || !dashboardLoaded;
-  const needsHistory = forceRefresh || !historyLoaded;
+  if (forceRefresh || (!dashboardLoaded && !historyLoaded)) {
+    return loadAllData(forceRefresh).then(() => rawMatrixData);
+  }
+  const needsDashboard = !dashboardLoaded;
+  const needsHistory = !historyLoaded;
 
   const dashboardPromise = needsDashboard ? loadDashboardData(forceRefresh) : Promise.resolve();
   const historyPromise = needsHistory ? loadHistoryData(forceRefresh) : Promise.resolve();
