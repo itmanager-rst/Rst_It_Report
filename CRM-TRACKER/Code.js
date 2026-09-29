@@ -73,7 +73,10 @@
 // ย้อนหลังจาก user_activity_log (รันเองครั้งเดียว) — ดู addCustomerHTML และ runBackfillCreatedBy_*
 // หมายเหตุ (2026-09-25 — r40): หน้า "📋 ประวัติการใช้งาน" แสดงเวลาไทย + รวมแถวที่ยังไม่ซิงก์เข้า BigQuery จากชีตโดยตรง
 // (ไม่ดูเหมือนหยุดบันทึกอีกเมื่อซิงก์ช้า) + ฟังก์ชันตรวจ/ซ่อมการซิงก์ runDiagnostic_ActivityLogSync / runRepair_ActivityLogSyncPointer
-var CODE_VERSION = 'r40-2026-09-25-activity-log-live';
+// หมายเหตุ (2026-09-28 — r41): เพิ่ม "📥 นำเข้าข้อมูลลูกค้าจาก Excel" (Bulk Import) — 2 action ใหม่
+// 'bulkCheckPhones' (ตรวจเบอร์ซ้ำก่อนนำเข้า) และ 'bulkImport' (เขียนลงชีตทีละชุดด้วย setValues ครั้งเดียว)
+// ใช้คู่กับ index_r41_bulk_import.html — ดูส่วน BULK IMPORT ท้ายไฟล์ ไม่ต้องเพิ่มคอลัมน์/รัน DDL ใดๆ
+var CODE_VERSION = 'r41-2026-09-28-bulk-import';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -767,7 +770,7 @@ function normalizeActivityAction_(action) {
 // เฉพาะ action ในลิสต์นี้เท่านั้นที่จะถูกบันทึกลง user_activity_log
 // (screenshotAttempt เพิ่มเข้ามา 2026-09-15 — ดูคอมเมนต์ที่ action==='screenshotAttempt'
 // ใน doPost ด้านล่าง: เป็นมาตรการ "ตามรอย" ไม่ใช่ "ป้องกัน" การแคปหน้าจอ — เว็บทำไม่ได้จริง)
-var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser', 'screenshotAttempt'];
+var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser', 'screenshotAttempt', 'bulkImport'];
 
 // สร้างข้อความ "detail" ที่อ่านง่าย บอกรายละเอียดของแต่ละ action ไว้ในหน้า log
 function buildActivityLogDetail_(normalizedAction, payload, result) {
@@ -794,6 +797,14 @@ function buildActivityLogDetail_(normalizedAction, payload, result) {
         return 'เพิ่มสมาชิก username: ' + cleanStr(payload.username) + ' (role: ' + cleanStr(payload.role) + ')';
       case 'exportAll':
         return 'Export ข้อมูลลูกค้าทั้งหมดเป็นไฟล์';
+      case 'bulkImport':
+        // (r41) 1 แถวต่อ 1 ชุดที่ส่งมา (ไม่ใช่ทีละลูกค้า)
+        var biOpts = payload.options || {};
+        var biRows = payload.rows || [];
+        return 'นำเข้า Excel' + (cleanStr(biOpts.sourceName) ? ' "' + cleanStr(biOpts.sourceName) + '"' : '') +
+               ' ชุดละ ' + biRows.length + ' แถว (เบอร์ซ้ำ: ' + cleanStr(biOpts.dupMode || 'skip') + ')' +
+               (result && result.counts ? ' — เพิ่มใหม่ ' + result.counts.added + ', ซ้ำ ' + result.counts.duplicate +
+                 ', ข้าม ' + result.counts.skipped + ', ไม่สำเร็จ ' + result.counts.failed : '');
       case 'screenshotAttempt':
         // payload.method มาจากฝั่งหน้าเว็บ: 'printscreen' (กดปุ่ม Print Screen) หรือ
         // 'copy' (พยายามคัดลอกข้อมูลลูกค้าในตาราง/การ์ดรายละเอียด)
@@ -1960,6 +1971,12 @@ function doPost(e) {
         return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถแก้ไขข้อมูลลูกค้าได้' });
       }
     }
+    // (r41) นำเข้า Excel — สิทธิ์เดียวกับ "เพิ่มลูกค้า" (ดู BULK_IMPORT_ALLOWED_ROLES ท้ายไฟล์)
+    if (action === 'bulkImport' || action === 'bulkCheckPhones') {
+      if (BULK_IMPORT_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณนำเข้าข้อมูลจาก Excel ไม่ได้ (เฉพาะ admin และพนักงานเท่านั้น)' });
+      }
+    }
     if (action === 'exportAll') {
       if (CUSTOMER_EXPORT_ALLOWED_ROLES.indexOf(user.role) === -1) {
         return createJsonResponse({ success: false, message: 'เฉพาะ admin เท่านั้นที่ export ข้อมูลได้' });
@@ -1972,6 +1989,10 @@ function doPost(e) {
       result = checkBigQueryStatus();
     } else if (action === 'search' || action === 'searchCustomers') {
       result = searchCustomersHTML(contents.payload || contents);
+    } else if (action === 'bulkCheckPhones') {
+      result = bulkCheckPhonesHTML(contents.payload || {});
+    } else if (action === 'bulkImport') {
+      result = bulkImportCustomersHTML(contents.payload || {}, user);
     } else if (action === 'add' || action === 'addCustomer') {
       result = addCustomerHTML(contents.payload || contents.data || {}, user);
     } else if (action === 'update' || action === 'editCustomer') {
@@ -4083,4 +4104,250 @@ function testDailyLeadReportDirect() {
   });
 
   Logger.log(JSON.stringify(result));
+}
+
+
+// =====================================================================
+// (2026-09-28 r41) 📥 BULK IMPORT — นำเข้าข้อมูลลูกค้าจาก Excel (ใช้คู่กับ index_r41_bulk_import.html)
+// =====================================================================
+// - bulkCheckPhones: หน้าเว็บส่งรายการเบอร์มาตรวจว่ามีในระบบแล้วหรือยัง (ก่อนกดนำเข้า)
+// - bulkImport: รับทีละชุด (หน้าเว็บส่งชุดละ 300 แถว) อ่านคอลัมน์เบอร์ทั้งชีตครั้งเดียว แล้วเขียนแถวใหม่
+//   ทั้งหมดด้วย setValues ครั้งเดียว — เร็วกว่าเรียก addCustomerHTML ทีละแถวมาก (ที่ต้องค้นชีตทุกแถว)
+// - ข้อมูลเข้า Google Sheet ทันที ส่วน BigQuery (หน้าค้นหา) เห็นหลัง trigger sync รอบถัดไป
+// - ไม่ตั้ง province เริ่มต้นเป็น 'อุบลราชธานี' ให้ (ต่างจาก addCustomerHTML) — ไฟล์ไม่มีจังหวัดก็เว้นว่าง
+var BULK_IMPORT_ALLOWED_ROLES = ['admin', 'staff'];
+var BULK_IMPORT_MAX_ROWS_PER_REQUEST = 500; // หน้าเว็บส่งทีละ 300 — กันไว้ไม่ให้ request เดียวใหญ่จนหมดเวลา 6 นาที
+
+// อ่านคอลัมน์เบอร์/ชื่อ ของทั้งชีต "ครั้งเดียว" → { เบอร์ปกติ: { rowNum, name } }
+// (แทนการค้นทีละเบอร์ด้วย TextFinder ซึ่งช้าเกินไปเมื่อนำเข้าหลายร้อยแถวต่อครั้ง)
+function buildPhoneIndex_(sheet, headerMap) {
+  var lastRow = sheet.getLastRow();
+  var index = {};
+  if (lastRow < 2) return index;
+  var n = lastRow - 1;
+  var phones = sheet.getRange(2, headerMap['phone'], n, 1).getValues();
+  var firsts = sheet.getRange(2, headerMap['first_name'], n, 1).getValues();
+  var lasts = sheet.getRange(2, headerMap['last_name'], n, 1).getValues();
+  for (var i = 0; i < n; i++) {
+    var p = formatPhoneNumber(phones[i][0]);
+    if (!p || index[p]) continue; // มีหลายแถวเบอร์เดียวกัน → ใช้แถวแรก (เหมือน findCustomerRowNumberByPhone_)
+    index[p] = { rowNum: i + 2, name: (cleanStr(firsts[i][0]) + ' ' + cleanStr(lasts[i][0])).trim() };
+  }
+  return index;
+}
+
+// action: bulkCheckPhones — payload { phones: [...] } → { existing: { เบอร์: { name } } }
+// ใช้ในหน้า "ตรวจข้อมูล" ก่อนกดนำเข้า เพื่อบอกล่วงหน้าว่าแถวไหนมีลูกค้าในระบบแล้ว
+function bulkCheckPhonesHTML(payload) {
+  try {
+    var phones = (payload && payload.phones) || [];
+    if (!phones.length) return { success: true, existing: {} };
+    if (phones.length > 5000) return { success: false, message: 'ตรวจได้ครั้งละไม่เกิน 5,000 เบอร์' };
+    var sheet = getCustomerSheet_();
+    var headerMap = getCustomerHeaderMap_(sheet);
+    var index = buildPhoneIndex_(sheet, headerMap);
+    var existing = {};
+    phones.forEach(function(ph) {
+      var p = formatPhoneNumber(ph);
+      if (p && index[p]) existing[ph] = { name: index[p].name };
+    });
+    return { success: true, existing: existing };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// action: bulkImport — payload { rows: [cust, ...], options: { dupMode, logIntake, sourceName } }
+//   cust ใช้ชื่อฟิลด์เดียวกับคอลัมน์ในชีต (first_name, last_name, phone, created_date, ...) + _row (เลขแถว Excel)
+//   dupMode: 'skip' (ข้าม) | 'fill' (เติมเฉพาะช่องที่ว่างของแถวเดิม) | 'followup' (เพิ่มบันทึกติดตามในแถวเดิม)
+// คืนค่า { success, results: [{ row, status: 'added'|'duplicate'|'skipped'|'failed', message }], ignoredFields }
+function bulkImportCustomersHTML(payload, user) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return { success: false, message: 'มีการนำเข้า/บันทึกข้อมูลอื่นกำลังทำงานอยู่ กรุณาลองใหม่อีกครั้ง' };
+  }
+  try {
+    var rows = (payload && payload.rows) || [];
+    var opts = (payload && payload.options) || {};
+    var dupMode = ['skip', 'fill', 'followup'].indexOf(opts.dupMode) !== -1 ? opts.dupMode : 'skip';
+    if (rows.length > BULK_IMPORT_MAX_ROWS_PER_REQUEST) {
+      return { success: false, message: 'ส่งได้ครั้งละไม่เกิน ' + BULK_IMPORT_MAX_ROWS_PER_REQUEST + ' แถว' };
+    }
+    var byName = userDisplayLabel_(user, '');
+    var sourceName = cleanStr(opts.sourceName);
+    var excluded = (typeof EXCLUDED_PHONE_NUMBERS !== 'undefined') ? EXCLUDED_PHONE_NUMBERS : [];
+    var today = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
+
+    var sheet = getCustomerSheet_();
+    var headerMap = getCustomerHeaderMap_(sheet);
+    var lastCol = sheet.getLastColumn();
+    var index = buildPhoneIndex_(sheet, headerMap);
+
+    var FIELDS = ['created_date', 'first_name', 'last_name', 'phone', 'booking_date', 'type', 'product',
+      'address_no', 'moo', 'village', 'subdistrict', 'district', 'province', 'zipcode', 'remark', 'line', 'facebook',
+      'customer_group', 'customer_group_detail'];
+    // ช่องที่ "เติมเฉพาะช่องที่ว่าง" ได้ (ไม่แตะชื่อ/เบอร์/วันที่/สถานะ ของรายชื่อเดิม)
+    var FILL_FIELDS = ['address_no', 'moo', 'village', 'subdistrict', 'district', 'province', 'zipcode', 'line', 'facebook',
+      'product', 'customer_group', 'customer_group_detail'];
+
+    var results = [];
+    var newRowArrays = [];
+    var newRowRefs = [];
+    var ignored = {};
+    var intakeRows = [];
+    var now = new Date();
+
+    rows.forEach(function(c) {
+      var rowNo = c._row;
+      try {
+        var phone = formatPhoneNumber(c.phone);
+        if (!cleanStr(c.first_name) && !phone) {
+          results.push({ row: rowNo, status: 'failed', message: 'ไม่มีทั้งชื่อและเบอร์โทร' });
+          return;
+        }
+        if (phone && excluded.indexOf(phone) !== -1) {
+          results.push({ row: rowNo, status: 'skipped', message: 'เบอร์อยู่ในรายการเบอร์ที่ไม่นับเป็นลูกค้า (เช่นเบอร์เซลล์)' });
+          return;
+        }
+        FIELDS.concat(['financial_info']).forEach(function(f) {
+          var val = f === 'financial_info' ? c.financialInfo : c[f];
+          if (cleanStr(val) && !headerMap[f]) ignored[f] = true;
+        });
+
+        var hit = phone ? index[phone] : null;
+        if (hit) {
+          intakeRows.push([now, today, phone, cleanStr(c.facebook), cleanStr(c.first_name), cleanStr(c.last_name), true, 'phone', false]);
+          if (dupMode === 'skip') {
+            results.push({ row: rowNo, status: 'skipped', message: 'มีในระบบแล้ว (แถว ' + hit.rowNum + ': ' + hit.name + ') — ข้าม' });
+            return;
+          }
+          if (hit.newRowPos !== undefined) {
+            // ซ้ำกับแถวที่เพิ่งเพิ่มในชุดเดียวกันนี้ (ยังไม่ได้เขียนลงชีต) — ข้ามไปก่อน
+            results.push({ row: rowNo, status: 'skipped', message: 'เบอร์ซ้ำกับแถว Excel ' + hit.excelRow + ' ที่เพิ่งนำเข้าในรอบเดียวกัน' });
+            return;
+          }
+          var cur = sheet.getRange(hit.rowNum, 1, 1, lastCol).getValues()[0];
+          if (dupMode === 'fill') {
+            var filled = [];
+            FILL_FIELDS.forEach(function(f) {
+              var col = headerMap[f];
+              if (col && !cleanStr(cur[col - 1]) && cleanStr(c[f])) { cur[col - 1] = cleanStr(c[f]); filled.push(f); }
+            });
+            var finCol = headerMap['financial_info'];
+            if (finCol && c.financialInfo) {
+              var curFin = cleanStr(cur[finCol - 1]);
+              if (!curFin || curFin === '{}') { cur[finCol - 1] = c.financialInfo; filled.push('financial_info'); }
+            }
+            if (headerMap['updated_by'] && filled.length) cur[headerMap['updated_by'] - 1] = byName;
+            if (filled.length) sheet.getRange(hit.rowNum, 1, 1, lastCol).setValues([cur]);
+            results.push({ row: rowNo, status: 'duplicate', message: filled.length ? ('เติมข้อมูลให้รายชื่อเดิม (' + hit.name + '): ' + filled.join(', ')) : ('มีในระบบแล้ว (' + hit.name + ') — ไม่มีช่องว่างให้เติม') });
+          } else {
+            var logCol = headerMap['follow_up_log'];
+            var logArr = parseFollowUpLog(cur[logCol - 1]);
+            var noteParts = ['ข้อมูลจากไฟล์นำเข้า' + (sourceName ? ' "' + sourceName + '"' : '')];
+            if (cleanStr(c.remark)) noteParts.push(cleanStr(c.remark));
+            logArr.push({ date: today, note: noteParts.join(' — '), loggedAt: new Date().toISOString(), by: byName });
+            sheet.getRange(hit.rowNum, logCol).setValue(JSON.stringify(logArr));
+            results.push({ row: rowNo, status: 'duplicate', message: 'เพิ่มบันทึกติดตามในรายชื่อเดิม (' + hit.name + ')' });
+          }
+          return;
+        }
+
+        var fields = {
+          created_date: formatDateStr(c.created_date) || today,
+          first_name: cleanStr(c.first_name),
+          last_name: cleanStr(c.last_name),
+          phone: phone || cleanStr(c.phone),
+          booking_date: formatDateStr(c.booking_date),
+          type: cleanStr(c.type) || 'ลงทะเบียน',
+          product: cleanStr(c.product),
+          address_no: cleanStr(c.address_no),
+          moo: cleanStr(c.moo),
+          village: cleanStr(c.village),
+          subdistrict: cleanStr(c.subdistrict),
+          district: cleanStr(c.district),
+          province: cleanStr(c.province),
+          zipcode: cleanStr(c.zipcode),
+          remark: cleanStr(c.remark),
+          line: cleanStr(c.line),
+          facebook: cleanStr(c.facebook),
+          customer_group: cleanStr(c.customer_group),
+          customer_group_detail: cleanStr(c.customer_group_detail),
+          follow_up_log: '[]',
+          financial_info: cleanStr(c.financialInfo) || '{}',
+          created_at_ts: new Date(),
+          created_by: byName
+        };
+        newRowArrays.push(buildCustomerRowArray_(headerMap, fields));
+        newRowRefs.push(rowNo);
+        if (phone) index[phone] = { rowNum: -1, name: (fields.first_name + ' ' + fields.last_name).trim(), newRowPos: newRowArrays.length - 1, excelRow: rowNo };
+        intakeRows.push([now, today, phone, fields.facebook, fields.first_name, fields.last_name, false, '', false]);
+      } catch (rowErr) {
+        results.push({ row: rowNo, status: 'failed', message: String(rowErr) });
+      }
+    });
+
+    // เขียนแถวใหม่ทั้งหมดลงชีตทีเดียว (setValues ครั้งเดียว เร็วกว่า appendRow ทีละแถวมาก)
+    if (newRowArrays.length) {
+      var width = newRowArrays[0].length;
+      newRowArrays = newRowArrays.map(function(r) { while (r.length < width) r.push(''); return r.slice(0, width); });
+      var startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, newRowArrays.length, width).setValues(newRowArrays);
+      newRowRefs.forEach(function(rowNo, i) {
+        results.push({ row: rowNo, status: 'added', message: 'เพิ่มลูกค้าใหม่ (แถว ' + (startRow + i) + ' ในชีต)' });
+      });
+    }
+
+    // (เลือกได้) นับเข้า lead_intake_log — เขียนเป็นชุดเดียว + โหลดเข้า BigQuery job เดียว
+    if (opts.logIntake && intakeRows.length) {
+      try {
+        var logSheet = getOrCreateSheetTab_(LEAD_LOG_SHEET_NAME, LEAD_LOG_SHEET_COLUMNS);
+        logSheet.getRange(logSheet.getLastRow() + 1, 1, intakeRows.length, LEAD_LOG_SHEET_COLUMNS.length).setValues(intakeRows);
+        appendRowsToBigQueryTableBatch_(intakeRows, LEAD_LOG_SHEET_COLUMNS, LEAD_LOG_TYPE_MAP, LOG_TABLE_ID);
+      } catch (logErr) {
+        Logger.log('bulkImport lead_intake_log error (ข้อมูลลูกค้าบันทึกแล้วตามปกติ): ' + logErr);
+      }
+    }
+
+    var counts = { added: 0, duplicate: 0, skipped: 0, failed: 0 };
+    results.forEach(function(r) { counts[r.status] = (counts[r.status] || 0) + 1; });
+    return {
+      success: true,
+      results: results,
+      counts: counts,
+      ignoredFields: Object.keys(ignored),
+      message: 'นำเข้า ' + rows.length + ' แถว: เพิ่มใหม่ ' + counts.added + ', ซ้ำ ' + counts.duplicate + ', ข้าม ' + counts.skipped + ', ไม่สำเร็จ ' + counts.failed
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// เหมือน appendRowToBigQueryTable_ แต่ส่งหลายแถวใน Load Job เดียว
+function appendRowsToBigQueryTableBatch_(rowsInColumnOrder, columns, typeMap, tableId) {
+  if (!rowsInColumnOrder.length) return null;
+  var csvText = rowsInColumnOrder.map(function(rowVals) {
+    return columns.map(function(colName, i) {
+      return csvEscape_(formatValueForCsvByType_(typeMap[colName], rowVals[i]));
+    }).join(',');
+  }).join('\n');
+  var schemaFields = columns.map(function(c) { return { name: c, type: typeMap[c], mode: 'NULLABLE' }; });
+  var job = {
+    configuration: {
+      load: {
+        destinationTable: { projectId: GCP_PROJECT_ID, datasetId: DATASET_ID, tableId: tableId },
+        sourceFormat: 'CSV',
+        writeDisposition: 'WRITE_APPEND',
+        schema: { fields: schemaFields },
+        allowQuotedNewlines: true,
+        allowJaggedRows: false,
+        maxBadRecords: 100
+      }
+    }
+  };
+  var blob = Utilities.newBlob(csvText, 'text/csv', tableId + '_bulk_append.csv');
+  var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+  return waitForBigQueryLoadJob_(insertResult);
 }
