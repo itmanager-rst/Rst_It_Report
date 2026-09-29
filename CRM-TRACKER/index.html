@@ -826,6 +826,33 @@
                     <button type="submit" class="btn btn-accent" id="btn-submit-member" style="width:100%; justify-content:center;">💾 เพิ่มสมาชิก</button>
                 </form>
             </div>
+            <!-- (r42) รายชื่อสมาชิก + แก้ไข — เฉพาะ admin เท่านั้น (backend บังคับซ้ำที่ listUsers/updateUser) -->
+            <div class="card" id="member-list-card" style="max-width:900px; width:100%; margin:0 auto; display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                    <div style="font-size: 15px; font-weight: 600; color: #0f172a;">✏️ แก้ไขสมาชิก <span style="font-size:12px; font-weight:normal; color:#64748b;">(เฉพาะ admin)</span></div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="text" id="member-list-filter" class="form-control" placeholder="🔎 ค้นหา username / ชื่อ / สาขา" style="width:220px;" oninput="renderMemberList()">
+                        <button type="button" class="btn btn-secondary" onclick="fetchMemberList()">🔄 รีเฟรช</button>
+                    </div>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table style="min-width:640px; font-size:12.5px;">
+                        <thead>
+                            <tr>
+                                <th style="width:18%; padding:8px;">Username</th>
+                                <th style="width:24%; padding:8px;">ชื่อ-นามสกุล</th>
+                                <th style="width:18%; padding:8px;">สาขา</th>
+                                <th style="width:14%; padding:8px;">สิทธิ์</th>
+                                <th style="width:13%; padding:8px;">สถานะ</th>
+                                <th style="width:13%; padding:8px; text-align:center;">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="member-list-tbody">
+                            <tr><td colspan="6" style="text-align:center; padding:20px; color:#94a3b8;">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
         <!-- ===== หน้าที่ 6: ประวัติการใช้งาน (admin เท่านั้น) ===== -->
         <div id="page-activitylog" class="page-view" style="display:none;">
@@ -930,6 +957,50 @@
         </div>
     </div>
     <!-- Modal ไทม์ไลน์การติดตามลูกค้า -->
+    <!-- (r42) Modal แก้ไขสมาชิก — เฉพาะ admin -->
+    <div id="edit-member-modal-overlay" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span>✏️ แก้ไขสมาชิก: <span id="edit-member-username-label" style="color:var(--primary-color);"></span></span>
+                <button type="button" class="modal-close-btn" onclick="closeEditMemberModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="item-card">
+                    <input type="hidden" id="edit-member-username">
+                    <div class="form-group">
+                        <label>ชื่อ-นามสกุล</label>
+                        <input type="text" id="edit-member-name" class="form-control" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label>สาขา</label>
+                        <input type="text" id="edit-member-branch" class="form-control" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label>สิทธิ์ (Role)</label>
+                        <select id="edit-member-role" class="form-control">
+                            <option value="admin">ผู้ดูแลระบบ (admin)</option>
+                            <option value="staff">พนักงาน</option>
+                            <option value="sale">Sale</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>สถานะ</label>
+                        <select id="edit-member-status" class="form-control">
+                            <option value="active">✅ ใช้งาน (active)</option>
+                            <option value="inactive">⛔ ปิดใช้งาน (inactive) — เข้าสู่ระบบไม่ได้</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>รีเซ็ตรหัสผ่าน <span style="font-weight:normal; color:#94a3b8;">(เว้นว่าง = ไม่เปลี่ยน, อย่างน้อย 6 ตัวอักษร)</span></label>
+                        <input type="password" id="edit-member-password" class="form-control" minlength="6" autocomplete="new-password">
+                    </div>
+                    <div id="edit-member-self-note" style="display:none; font-size:12px; color:#92400e; background:#fef3c7; border-radius:6px; padding:6px 10px; margin-bottom:8px;">นี่คือบัญชีของคุณเอง — ลดสิทธิ์หรือปิดใช้งานตัวเองไม่ได้</div>
+                    <div id="edit-member-status-box" style="font-size:13px; margin:6px 0 10px; display:none;"></div>
+                    <button type="button" class="btn btn-accent" id="btn-submit-edit-member" style="width:100%; justify-content:center;" onclick="submitEditMember()">💾 บันทึกการแก้ไข</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="history-modal-overlay" class="modal-overlay">
         <div class="modal-box" style="width:480px;">
             <div class="modal-header">
@@ -1116,7 +1187,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r41-2026-09-28-bulk-import';
+        const EXPECTED_CODE_VERSION = 'r42-2026-09-29-edit-member';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1203,6 +1274,9 @@
                     const canManageMembers = currentRole === 'admin' || currentRole === 'staff';
                     document.getElementById('nav-btn-members').style.display = canManageMembers ? '' : 'none';
                     if (canManageMembers) populateMemberRoleOptions();
+                    // (r42) admin เห็นเมนูเป็น "จัดการสมาชิก" (เพิ่ม + แก้ไข) ส่วน staff ยังเป็น "เพิ่มสมาชิก" อย่างเดียว
+                    document.getElementById('nav-btn-members').innerText = (currentRole === 'admin') ? '👥 จัดการสมาชิก' : '👥 เพิ่มสมาชิก';
+                    memberListLoadedOnce = false;
                     // เมนู "ประวัติการใช้งาน" โชว์เฉพาะ admin เท่านั้น
                     document.getElementById('nav-btn-activitylog').style.display = (currentRole === 'admin') ? '' : 'none';
                     updateSettingsMenuVisibility();
@@ -1241,6 +1315,11 @@
                 document.getElementById('logout-btn').style.display = 'none';
                 document.getElementById('nav-btn-members').style.display = 'none';
                 document.getElementById('nav-btn-activitylog').style.display = 'none';
+                memberListCache = [];
+                memberListLoadedOnce = false;
+                const mlCard = document.getElementById('member-list-card');
+                if (mlCard) mlCard.style.display = 'none';
+                closeEditMemberModal();
                 updateSettingsMenuVisibility();
                 closeSettingsMenu();
                 document.getElementById('login-username').value = '';
@@ -1384,6 +1463,7 @@
                     setMemberStatusBox('success', '✅ ' + (resData.message || 'บันทึกเรียบร้อยแล้ว'));
                     document.getElementById('member-form').reset();
                     populateMemberRoleOptions();
+                    if (currentRole === 'admin') fetchMemberList();
                 } else {
                     setMemberStatusBox('error', (resData && resData.message) || 'เพิ่มสมาชิกไม่สำเร็จ');
                 }
@@ -1420,6 +1500,153 @@
             box.innerText = message;
         }
 
+        // =================================================================
+        // ✏️ (r42) แก้ไขสมาชิก — เฉพาะ admin (UI ซ่อนไว้สำหรับ role อื่น แต่ตัวบังคับจริงอยู่ที่
+        // listUsers/updateUser ใน Code.js ที่เช็ค MEMBER_EDIT_ALLOWED_ROLES เสมอ)
+        // =================================================================
+        let memberListCache = [];
+        let memberListLoadedOnce = false;
+
+        function fetchMemberList() {
+            if (currentRole !== 'admin') return;
+            const tbody = document.getElementById('member-list-tbody');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'listUsers', payload: {} })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (resData && resData.success) {
+                    memberListCache = resData.data || [];
+                    renderMemberList();
+                } else {
+                    memberListLoadedOnce = false;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:#991b1b;">${escapeHtml((resData && resData.message) || 'โหลดรายชื่อสมาชิกไม่สำเร็จ')}</td></tr>`;
+                }
+            })
+            .catch(() => {
+                memberListLoadedOnce = false;
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#991b1b;">เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด</td></tr>';
+            });
+        }
+
+        function renderMemberList() {
+            const tbody = document.getElementById('member-list-tbody');
+            if (!tbody) return;
+            const q = (document.getElementById('member-list-filter').value || '').trim().toLowerCase();
+            const myUsername = String((currentUserInfo && currentUserInfo.username) || '').toLowerCase();
+            const rows = memberListCache
+                .map((m, idx) => ({ m, idx }))
+                .filter(({ m }) => !q || [m.username, m.name, m.branch].some(v => String(v || '').toLowerCase().includes(q)));
+            if (!rows.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบสมาชิก</td></tr>';
+                return;
+            }
+            const roleStyle = { admin: 'background:#fee2e2;color:#991b1b;', staff: 'background:#e0f2fe;color:#0369a1;', sale: 'background:#dcfce7;color:#15803d;' };
+            tbody.innerHTML = rows.map(({ m, idx }) => {
+                const isMe = String(m.username).toLowerCase() === myUsername;
+                const statusHtml = m.status === 'inactive'
+                    ? '<span class="badge" style="background:#f1f5f9;color:#64748b;">⛔ ปิดใช้งาน</span>'
+                    : '<span class="badge" style="background:#dcfce7;color:#15803d;">✅ ใช้งาน</span>';
+                return `<tr style="${m.status === 'inactive' ? 'opacity:0.6;' : ''}">
+                    <td style="padding:8px; font-weight:600;">${escapeHtml(m.username)}${isMe ? ' <span style="color:#94a3b8; font-weight:normal;">(คุณ)</span>' : ''}</td>
+                    <td style="padding:8px;">${escapeHtml(m.name || '-')}</td>
+                    <td style="padding:8px;">${escapeHtml(m.branch || '-')}</td>
+                    <td style="padding:8px;"><span class="badge" style="${roleStyle[m.role] || ''}">${escapeHtml(roleLabelTH(m.role))}</span></td>
+                    <td style="padding:8px;">${statusHtml}</td>
+                    <td style="padding:8px; text-align:center;"><button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="openEditMemberModal(${idx})">✏️ แก้ไข</button></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function openEditMemberModal(idx) {
+            if (currentRole !== 'admin') return;
+            const m = memberListCache[idx];
+            if (!m) return;
+            const isMe = String(m.username).toLowerCase() === String((currentUserInfo && currentUserInfo.username) || '').toLowerCase();
+            document.getElementById('edit-member-username').value = m.username;
+            document.getElementById('edit-member-username-label').innerText = m.username;
+            document.getElementById('edit-member-name').value = m.name || '';
+            document.getElementById('edit-member-branch').value = m.branch || '';
+            document.getElementById('edit-member-role').value = ['admin', 'staff', 'sale'].includes(m.role) ? m.role : 'sale';
+            document.getElementById('edit-member-status').value = m.status === 'inactive' ? 'inactive' : 'active';
+            document.getElementById('edit-member-password').value = '';
+            document.getElementById('edit-member-role').disabled = isMe;
+            document.getElementById('edit-member-status').disabled = isMe;
+            document.getElementById('edit-member-self-note').style.display = isMe ? 'block' : 'none';
+            setEditMemberStatusBox('', '');
+            document.getElementById('btn-submit-edit-member').disabled = false;
+            document.getElementById('edit-member-modal-overlay').classList.add('show');
+        }
+
+        function closeEditMemberModal() {
+            const ov = document.getElementById('edit-member-modal-overlay');
+            if (ov) ov.classList.remove('show');
+            const pw = document.getElementById('edit-member-password');
+            if (pw) pw.value = '';
+        }
+
+        function setEditMemberStatusBox(type, message) {
+            // ใช้หน้าตาเดียวกับกล่องสถานะของฟอร์มเพิ่มสมาชิก
+            const box = document.getElementById('edit-member-status-box');
+            if (!box) return;
+            if (!message) { box.style.display = 'none'; box.innerText = ''; return; }
+            const styles = {
+                success: { bg: '#dcfce7', border: '#86efac', color: '#166534' },
+                error: { bg: '#fee2e2', border: '#fca5a5', color: '#991b1b' },
+                loading: { bg: '#f1f5f9', border: '#cbd5e1', color: '#475569' }
+            };
+            const st = styles[type] || styles.loading;
+            Object.assign(box.style, { display: 'block', background: st.bg, border: '1px solid ' + st.border, color: st.color, padding: '8px 12px', borderRadius: '6px', fontWeight: '600' });
+            box.innerText = message;
+        }
+
+        function submitEditMember() {
+            if (currentRole !== 'admin') return;
+            const username = document.getElementById('edit-member-username').value;
+            const newPassword = document.getElementById('edit-member-password').value.trim();
+            if (newPassword && newPassword.length < 6) {
+                setEditMemberStatusBox('error', 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร');
+                return;
+            }
+            const payload = {
+                username,
+                name: document.getElementById('edit-member-name').value.trim(),
+                branch: document.getElementById('edit-member-branch').value.trim(),
+                role: document.getElementById('edit-member-role').value,
+                status: document.getElementById('edit-member-status').value
+            };
+            if (newPassword) payload.newPassword = newPassword;
+            if (payload.status === 'inactive' && !confirm(`ยืนยันปิดใช้งานบัญชี "${username}"? ผู้ใช้นี้จะเข้าสู่ระบบไม่ได้จนกว่าจะเปิดใช้งานอีกครั้ง`)) return;
+
+            const btn = document.getElementById('btn-submit-edit-member');
+            btn.disabled = true;
+            setEditMemberStatusBox('loading', 'กำลังบันทึก...');
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'updateUser', payload })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                btn.disabled = false;
+                if (resData && resData.success) {
+                    setEditMemberStatusBox('success', '✅ ' + (resData.message || 'บันทึกเรียบร้อยแล้ว'));
+                    document.getElementById('edit-member-password').value = '';
+                    fetchMemberList();
+                    setTimeout(closeEditMemberModal, 1200);
+                } else {
+                    setEditMemberStatusBox('error', (resData && resData.message) || 'แก้ไขสมาชิกไม่สำเร็จ');
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                setEditMemberStatusBox('error', 'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
+            });
+        }
+
         const ACTIVITY_ACTION_LABELS = {
             login: '🔐 เข้าสู่ระบบ',
             search: '🔎 ค้นหาข้อมูล',
@@ -1428,7 +1655,8 @@
             delete: '🗑️ ลบข้อมูลลูกค้า',
             exportAll: '📥 Export ข้อมูล',
             addFollowUp: '📌 บันทึกการติดตาม',
-            addUser: '👥 เพิ่มสมาชิก'
+            addUser: '👥 เพิ่มสมาชิก',
+            updateUser: '✏️ แก้ไขสมาชิก'
         };
 
         function fetchActivityLog() {
@@ -1606,6 +1834,12 @@
             }
             if (name === 'members') {
                 populateMemberRoleOptions();
+                const memberListCard = document.getElementById('member-list-card');
+                if (memberListCard) memberListCard.style.display = (currentRole === 'admin') ? '' : 'none';
+                if (currentRole === 'admin' && !memberListLoadedOnce) {
+                    memberListLoadedOnce = true;
+                    fetchMemberList();
+                }
             }
             if (name === 'activitylog' && !activityLogLoadedOnce) {
                 activityLogLoadedOnce = true;

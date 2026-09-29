@@ -76,7 +76,13 @@
 // หมายเหตุ (2026-09-28 — r41): เพิ่ม "📥 นำเข้าข้อมูลลูกค้าจาก Excel" (Bulk Import) — 2 action ใหม่
 // 'bulkCheckPhones' (ตรวจเบอร์ซ้ำก่อนนำเข้า) และ 'bulkImport' (เขียนลงชีตทีละชุดด้วย setValues ครั้งเดียว)
 // ใช้คู่กับ index_r41_bulk_import.html — ดูส่วน BULK IMPORT ท้ายไฟล์ ไม่ต้องเพิ่มคอลัมน์/รัน DDL ใดๆ
-var CODE_VERSION = 'r41-2026-09-28-bulk-import';
+// หมายเหตุ (2026-09-29 — r42): เพิ่มระบบ "✏️ แก้ไขสมาชิก" — เฉพาะ admin เท่านั้น (MEMBER_EDIT_ALLOWED_ROLES)
+// 2 action ใหม่: 'listUsers' (ดึงรายชื่อสมาชิกจากแท็บ users ในชีต ไม่ส่ง password_hash ออกไป) และ
+// 'updateUser' (แก้ ชื่อ/สาขา/สิทธิ์/สถานะ/รีเซ็ตรหัสผ่าน ตาม username) — แก้ใน Sheet แล้วซิงก์เข้า
+// BigQuery ทันที (จำนวนแถวเท่าเดิม ไม่ติด assertSafeRowCountForTruncateSync_) + เตะ session ของ user
+// ที่ถูกแก้สิทธิ์/ปิดใช้งาน/เปลี่ยนรหัส ให้ต้อง login ใหม่ + กันแอดมินลดสิทธิ์/ปิดบัญชีตัวเอง และกัน
+// ระบบเหลือ admin ที่ใช้งานได้ 0 คน — ใช้คู่กับ index.html ที่ EXPECTED_CODE_VERSION = r42
+var CODE_VERSION = 'r42-2026-09-29-edit-member';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -762,7 +768,8 @@ function normalizeActivityAction_(action) {
     'addCustomer': 'add',
     'editCustomer': 'update',
     'deleteCustomer': 'delete',
-    'addMember': 'addUser'
+    'addMember': 'addUser',
+    'editMember': 'updateUser'
   };
   return map[action] || action;
 }
@@ -770,7 +777,7 @@ function normalizeActivityAction_(action) {
 // เฉพาะ action ในลิสต์นี้เท่านั้นที่จะถูกบันทึกลง user_activity_log
 // (screenshotAttempt เพิ่มเข้ามา 2026-09-15 — ดูคอมเมนต์ที่ action==='screenshotAttempt'
 // ใน doPost ด้านล่าง: เป็นมาตรการ "ตามรอย" ไม่ใช่ "ป้องกัน" การแคปหน้าจอ — เว็บทำไม่ได้จริง)
-var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser', 'screenshotAttempt', 'bulkImport'];
+var ACTIVITY_LOG_WHITELIST = ['login', 'search', 'add', 'update', 'delete', 'exportAll', 'addFollowUp', 'addUser', 'updateUser', 'screenshotAttempt', 'bulkImport'];
 
 // สร้างข้อความ "detail" ที่อ่านง่าย บอกรายละเอียดของแต่ละ action ไว้ในหน้า log
 function buildActivityLogDetail_(normalizedAction, payload, result) {
@@ -795,6 +802,9 @@ function buildActivityLogDetail_(normalizedAction, payload, result) {
         return 'บันทึกการติดตาม key: ' + cleanStr(payload.key || payload.rowIndex || payload.phoneKey);
       case 'addUser':
         return 'เพิ่มสมาชิก username: ' + cleanStr(payload.username) + ' (role: ' + cleanStr(payload.role) + ')';
+      case 'updateUser':
+        return 'แก้ไขสมาชิก username: ' + cleanStr(payload.username) +
+               (result && result.changedSummary ? ' — ' + cleanStr(result.changedSummary) : '');
       case 'exportAll':
         return 'Export ข้อมูลลูกค้าทั้งหมดเป็นไฟล์';
       case 'bulkImport':
@@ -1874,6 +1884,159 @@ function addUserHTML(payload, currentUser) {
   }
 }
 
+// =================================================================
+// ✏️ (r42) เมนู "แก้ไขสมาชิก" — เฉพาะ admin เท่านั้น
+// =================================================================
+// - อ่าน/เขียนแท็บ "users" ใน Google Sheet (แหล่งเขียนหลัก เหมือน addUserHTML) แล้วซิงก์เข้า BigQuery
+// - username ใช้เป็น key เปลี่ยนไม่ได้ (เป็นตัวที่ใช้ login และอ้างอิงใน log/created_by ของลูกค้า)
+// - ไม่มี "ลบสมาชิก" ตั้งใจให้ใช้ status = inactive แทน (login ปฏิเสธอยู่แล้วที่ getBigQueryLoginUser_)
+//   เพื่อไม่ให้ประวัติ/ชื่อผู้บันทึกเดิมกลายเป็นคนที่ไม่มีตัวตน
+var MEMBER_EDIT_ALLOWED_ROLES = ['admin'];
+var MEMBER_STATUSES = ['active', 'inactive'];
+
+function readUsersSheetRows_() {
+  var sheet = getOrCreateSheetTab_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS);
+  ensureUsersSheetColumns_(sheet);
+  var headerMap = buildHeaderMapForColumns_(sheet, USERS_SHEET_COLUMNS);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  var values = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+  var rows = values.map(function(v, i) {
+    var get = function(c) { return headerMap[c] ? (v[headerMap[c] - 1] === null || v[headerMap[c] - 1] === undefined ? '' : String(v[headerMap[c] - 1]).trim()) : ''; };
+    var st = get('status').toLowerCase();
+    return {
+      rowNumber: i + 2,
+      username: get('username'),
+      role: get('role').toLowerCase(),
+      status: st || 'active', // ช่องว่าง = login ได้ (ดู getBigQueryLoginUser_) จึงถือว่า active
+      name: get('name'),
+      branch: get('branch')
+    };
+  }).filter(function(r) { return r.username; });
+  return { sheet: sheet, headerMap: headerMap, rows: rows };
+}
+
+function listUsersHTML(currentUser) {
+  try {
+    if (!currentUser || MEMBER_EDIT_ALLOWED_ROLES.indexOf(currentUser.role) === -1) {
+      return { success: false, message: 'เฉพาะ admin เท่านั้นที่ดูรายชื่อสมาชิกได้' };
+    }
+    var data = readUsersSheetRows_();
+    var list = data.rows.map(function(r) {
+      return { username: r.username, role: r.role, status: r.status, name: r.name, branch: r.branch };
+    });
+    list.sort(function(a, b) { return a.username.localeCompare(b.username); });
+    return { success: true, data: list, count: list.length };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// ลบ session ทั้งหมดของ username นี้ (บังคับ login ใหม่หลังถูกเปลี่ยนสิทธิ์/ปิดใช้งาน/เปลี่ยนรหัส)
+// เพราะ role ถูกเก็บไว้ใน session ตอน login — ถ้าไม่เตะออก สิทธิ์เดิมจะยังใช้ได้ต่อจนกว่าจะ logout เอง
+function removeSessionsOfUser_(username, exceptToken) {
+  try {
+    var sessions = getSessionsStore();
+    var removed = 0;
+    var target = String(username || '').toLowerCase();
+    for (var t in sessions) {
+      if (t === exceptToken) continue;
+      if (String(sessions[t].username || '').toLowerCase() === target) { delete sessions[t]; removed++; }
+    }
+    if (removed) saveSessionsStore(sessions);
+    return removed;
+  } catch (e) {
+    Logger.log('removeSessionsOfUser_ error: ' + e.toString());
+    return 0;
+  }
+}
+
+function updateUserHTML(payload, currentUser, currentToken) {
+  var lock = LockService.getScriptLock();
+  try {
+    if (!currentUser || MEMBER_EDIT_ALLOWED_ROLES.indexOf(currentUser.role) === -1) {
+      return { success: false, message: 'เฉพาะ admin เท่านั้นที่แก้ไขข้อมูลสมาชิกได้' };
+    }
+    payload = payload || {};
+    var username = cleanStr(payload.username).toLowerCase();
+    if (!username) return { success: false, message: 'ไม่พบ username ของสมาชิกที่จะแก้ไข' };
+
+    lock.waitLock(20000);
+    var data = readUsersSheetRows_();
+    var target = null;
+    for (var i = 0; i < data.rows.length; i++) {
+      if (data.rows[i].username.toLowerCase() === username) { target = data.rows[i]; break; }
+    }
+    if (!target) {
+      return { success: false, message: 'ไม่พบสมาชิก "' + username + '" ในแท็บ users ของชีต (ถ้าเป็น user เก่าที่อยู่แต่ใน BigQuery ให้รัน runOneTimeSetup_BackfillUsersFromBigQuery_ ก่อน)' };
+    }
+
+    var newRole = payload.role !== undefined ? cleanStr(payload.role).toLowerCase() : target.role;
+    var newStatus = payload.status !== undefined ? cleanStr(payload.status).toLowerCase() : target.status;
+    var newName = payload.name !== undefined ? cleanStr(payload.name) : target.name;
+    var newBranch = payload.branch !== undefined ? cleanStr(payload.branch) : target.branch;
+    var newPassword = cleanStr(payload.newPassword);
+
+    if (KNOWN_ROLES.indexOf(newRole) === -1) return { success: false, message: 'ไม่รู้จักสิทธิ์ "' + newRole + '"' };
+    if (MEMBER_STATUSES.indexOf(newStatus) === -1) return { success: false, message: 'สถานะต้องเป็น active หรือ inactive เท่านั้น' };
+    if (newPassword && newPassword.length < 6) return { success: false, message: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' };
+
+    // กันแอดมินล็อกตัวเองออกจากระบบ
+    var isSelf = String(currentUser.username || '').toLowerCase() === username;
+    if (isSelf && newRole !== 'admin') return { success: false, message: 'ไม่สามารถลดสิทธิ์ admin ของบัญชีตัวเองได้ (ให้ admin คนอื่นเป็นคนแก้)' };
+    if (isSelf && newStatus !== 'active') return { success: false, message: 'ไม่สามารถปิดใช้งานบัญชีของตัวเองได้' };
+
+    // กันระบบเหลือ admin ที่ใช้งานได้ 0 คน
+    var wasActiveAdmin = target.role === 'admin' && target.status === 'active';
+    var willBeActiveAdmin = newRole === 'admin' && newStatus === 'active';
+    if (wasActiveAdmin && !willBeActiveAdmin) {
+      var otherActiveAdmins = data.rows.filter(function(r) {
+        return r.username.toLowerCase() !== username && r.role === 'admin' && r.status === 'active';
+      }).length;
+      if (otherActiveAdmins === 0) return { success: false, message: 'ต้องมี admin ที่ใช้งานได้อย่างน้อย 1 คนในระบบ' };
+    }
+
+    var changes = [];
+    if (newRole !== target.role) changes.push('สิทธิ์ ' + target.role + ' → ' + newRole);
+    if (newStatus !== target.status) changes.push('สถานะ ' + target.status + ' → ' + newStatus);
+    if (newName !== target.name) changes.push('ชื่อ "' + target.name + '" → "' + newName + '"');
+    if (newBranch !== target.branch) changes.push('สาขา "' + target.branch + '" → "' + newBranch + '"');
+    if (newPassword) changes.push('รีเซ็ตรหัสผ่าน');
+    if (!changes.length) return { success: true, message: 'ไม่มีข้อมูลที่เปลี่ยนแปลง', changedSummary: '' };
+
+    var sheet = data.sheet, hm = data.headerMap, r = target.rowNumber;
+    sheet.getRange(r, hm['role']).setValue(newRole);
+    sheet.getRange(r, hm['status']).setValue(newStatus);
+    sheet.getRange(r, hm['name']).setValue(newName);
+    sheet.getRange(r, hm['branch']).setValue(newBranch);
+    if (newPassword) sheet.getRange(r, hm['password_hash']).setValue(sha256Hex_(newPassword));
+    SpreadsheetApp.flush();
+
+    var syncWarning = '';
+    try { syncSheetTabToBigQueryTable_(USERS_SHEET_NAME, USERS_SHEET_COLUMNS, USERS_TYPE_MAP, 'users'); }
+    catch (syncErr) {
+      Logger.log('sync users (updateUser) error: ' + syncErr);
+      syncWarning = ' (⚠️ บันทึกในชีตแล้ว แต่ซิงก์เข้า BigQuery ไม่สำเร็จ ผลตอน login อาจยังเป็นค่าเดิม: ' + syncErr + ')';
+    }
+
+    // เตะ session เดิมของคนที่ถูกแก้ ถ้าสิทธิ์/สถานะ/รหัสผ่านเปลี่ยน
+    var kicked = 0;
+    if (newRole !== target.role || newStatus !== target.status || newPassword) {
+      kicked = removeSessionsOfUser_(username, isSelf ? (currentToken || '') : '');
+    }
+
+    return {
+      success: true,
+      message: 'บันทึกการแก้ไขสมาชิก "' + username + '" สำเร็จ' + (kicked ? ' — ให้ผู้ใช้นี้เข้าสู่ระบบใหม่แล้ว' : '') + syncWarning,
+      changedSummary: changes.join(', ')
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
 function doGet(e) {
   var action = e && e.parameter ? e.parameter.action : '';
   if (action === 'getInitialData') {
@@ -2010,6 +2173,20 @@ function doPost(e) {
       // เมนู "เพิ่มสมาชิก" — สิทธิ์เช็คแยกอยู่ในฟังก์ชันนี้เอง (ไม่ใช่ admin-only ตรงๆ
       // เพราะ role 'staff' ก็เข้าเมนูนี้ได้ แต่ตั้ง role ให้คนใหม่ได้จำกัดกว่า admin)
       result = addUserHTML(contents.payload || contents.data || {}, user);
+    } else if (action === 'listUsers') {
+      // (r42) รายชื่อสมาชิกสำหรับหน้า "แก้ไขสมาชิก" — เฉพาะ admin (เช็คซ้ำในฟังก์ชันเองด้วย)
+      if (MEMBER_EDIT_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        result = { success: false, message: 'เฉพาะ admin เท่านั้นที่ดู/แก้ไขรายชื่อสมาชิกได้' };
+      } else {
+        result = listUsersHTML(user);
+      }
+    } else if (action === 'updateUser' || action === 'editMember') {
+      // (r42) แก้ไขสมาชิก — เฉพาะ admin (เช็คซ้ำในฟังก์ชันเองด้วย)
+      if (MEMBER_EDIT_ALLOWED_ROLES.indexOf(user.role) === -1) {
+        result = { success: false, message: 'เฉพาะ admin เท่านั้นที่แก้ไขข้อมูลสมาชิกได้' };
+      } else {
+        result = updateUserHTML(contents.payload || contents.data || {}, user, token);
+      }
     } else if (action === 'getInitialData') {
       result = getInitialDataHTML();
     } else if (action === 'getDashboardSummary') {
