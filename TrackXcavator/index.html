@@ -479,7 +479,7 @@ body {
           </button>
         </div>
         <div>
-          <button class="btn btn-sm btn-outline-secondary" onclick="refreshAllData()">
+          <button class="btn btn-sm btn-outline-secondary" id="btnRefreshAll" type="button" onclick="refreshAllData()">
             <i class="fa-solid fa-rotate me-1"></i> รีเฟรชข้อมูล
           </button>
         </div>
@@ -876,11 +876,8 @@ body {
                 </div>
               </div>
               <div class="col-md-2 text-end">
-                <button class="btn btn-sm btn-excel me-2" onclick="exportToExcel('tbMatrixTable', 'PM_Workflow_Matrix')">
+                <button class="btn btn-sm btn-excel" onclick="exportToExcel('tbMatrixTable', 'PM_Workflow_Matrix')">
                   <i class="fa-solid fa-file-excel me-1"></i> ส่งออก Excel
-                </button>
-                <button class="btn btn-sm btn-outline-secondary" onclick="loadPMMatrix(true)">
-                  <i class="fa-solid fa-rotate me-1"></i> รีเฟรช Matrix
                 </button>
               </div>
             </div>
@@ -1843,7 +1840,8 @@ let allDataLoadPromise = null;
 let allDataSupported = true;
 
 function loadAllDataSeparately(forceRefresh) {
-  return Promise.all([loadDashboardData(forceRefresh), loadHistoryData(forceRefresh)]);
+  // bypassAll = true: ไม่รอ allDataLoadPromise (ตัวเองเป็นส่วนหนึ่งของ promise นั้น ถ้ารอจะค้างตลอดไป)
+  return Promise.all([loadDashboardData(forceRefresh, true), loadHistoryData(forceRefresh, true)]);
 }
 
 function loadAllData(forceRefresh = false) {
@@ -1883,15 +1881,50 @@ function loadAllData(forceRefresh = false) {
   allDataLoadPromise = request.then(() => {
     // Matrix ต้องใช้ทั้ง service_report และ pm_log → สร้างหลังโหลดครบทั้งคู่
     rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
-    renderMatrixTable(rawMatrixData);
+    reapplyAllFilters();
   }).finally(() => {
     allDataLoadPromise = null;
   });
   return allDataLoadPromise;
 }
 
+// วาดทุกตารางใหม่ตามตัวกรอง/คำค้นที่ผู้ใช้เลือกค้างไว้
+function reapplyAllFilters() {
+  try { if (typeof filterDashboardTable === 'function') filterDashboardTable(); } catch (e) { console.error(e); }
+  try { if (typeof filterHistoryTable === 'function') filterHistoryTable(); } catch (e) { console.error(e); }
+  try {
+    if (typeof filterMatrixTable === 'function') filterMatrixTable();
+    else renderMatrixTable(rawMatrixData);
+  } catch (e) {
+    console.error(e);
+    renderMatrixTable(rawMatrixData);
+  }
+}
+
+// ปุ่ม "รีเฟรชข้อมูล" (ปุ่มเดียวใช้ได้ทุกแท็บ): ดึงข้อมูลสดข้ามแคช + แสดงสถานะกำลังโหลด
 function refreshAllData() {
-  return loadAllData(true);
+  const btn = document.getElementById('btnRefreshAll');
+  const btnHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-rotate fa-spin me-1"></i> กำลังรีเฟรช...';
+  }
+  const matrixBody = document.getElementById('tbMatrix');
+  if (matrixBody) {
+    matrixBody.innerHTML = `<tr><td colspan="${6 + PM_ROUNDS.length}" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูล...</td></tr>`;
+  }
+  return loadAllData(true)
+    .catch(err => {
+      console.error('รีเฟรชข้อมูลไม่สำเร็จ:', err);
+      alert('รีเฟรชข้อมูลไม่สำเร็จ: ' + (err && err.message ? err.message : err));
+      reapplyAllFilters();
+    })
+    .finally(() => {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = btnHtml;
+      }
+    });
 }
 
 // ==========================================
@@ -1988,14 +2021,14 @@ if (document.readyState === "loading") {
 // 📊 DASHBOARD & TICKET FORM MANAGEMENT
 // ==========================================
 
-function loadDashboardData(forceRefresh = false) {
+function loadDashboardData(forceRefresh = false, bypassAll = false) {
   if (!forceRefresh && dashboardLoaded) {
     renderDashboardTable(rawDashboardData);
     return Promise.resolve(rawDashboardData);
   }
 
   if (dashboardLoadPromise) return dashboardLoadPromise;
-  if (allDataLoadPromise && !forceRefresh) return allDataLoadPromise.then(() => rawDashboardData);
+  if (allDataLoadPromise && !forceRefresh && !bypassAll) return allDataLoadPromise.then(() => rawDashboardData);
 
   const tbody = document.getElementById("tbDashboard");
   if (tbody) {
@@ -2564,7 +2597,7 @@ function previewUploadImage(input) {
 // 📜 HISTORY LOG MANAGEMENT
 // ==========================================
 
-function loadHistoryData(forceRefresh = false) {
+function loadHistoryData(forceRefresh = false, bypassAll = false) {
   if (!forceRefresh && historyLoaded) {
     renderHistoryTable(rawHistoryData);
     updateCouponSum();
@@ -2572,7 +2605,7 @@ function loadHistoryData(forceRefresh = false) {
   }
 
   if (historyLoadPromise) return historyLoadPromise;
-  if (allDataLoadPromise && !forceRefresh) return allDataLoadPromise.then(() => rawHistoryData);
+  if (allDataLoadPromise && !forceRefresh && !bypassAll) return allDataLoadPromise.then(() => rawHistoryData);
 
   const tbody = document.getElementById("tbHistory");
   if (tbody) {
@@ -2747,8 +2780,11 @@ function loadPMMatrix(forceRefresh = false) {
   // เพื่อเช็กสถานะอะไหล่/คูปองของแต่ละรอบ PM แยกกัน จึงต้องรอโหลดทั้งคู่ก่อนเสมอ
   // (เดิมรอแค่ dashboard ทำให้ถ้ายังไม่เคยเปิดแท็บ "ประวัติ PM" มาก่อน rawHistoryData จะว่าง
   //  แล้ว Matrix จะ fallback ไปใช้สถานะล่าสุดของทั้งเครื่องแทนทุกรอบ มองไม่เห็นรอบที่ค้างจริง)
-  if (forceRefresh || (!dashboardLoaded && !historyLoaded)) {
-    return loadAllData(forceRefresh).then(() => rawMatrixData);
+  if (forceRefresh) {
+    return refreshAllData().then(() => rawMatrixData);
+  }
+  if (!dashboardLoaded && !historyLoaded) {
+    return loadAllData(false).then(() => rawMatrixData);
   }
   const needsDashboard = !dashboardLoaded;
   const needsHistory = !historyLoaded;
@@ -2758,7 +2794,7 @@ function loadPMMatrix(forceRefresh = false) {
 
   return Promise.all([dashboardPromise, historyPromise]).then(() => {
     rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
-    renderMatrixTable(rawMatrixData);
+    filterMatrixTable(); // คงตัวกรองที่เลือกไว้
     return rawMatrixData;
   });
 }
