@@ -479,11 +479,19 @@
 
     // เรียกหลังล็อกอินสำเร็จ และหลังบันทึกเวลาแต่ละครั้ง: ดึงประวัติของ "วันนี้" เฉพาะพนักงานคนนี้
     // มาดูว่ารายการล่าสุดคือโหมดอะไร แล้วเลือกโหมดถัดไปที่ควรเป็นให้อัตโนมัติ (พนักงานยังแก้ไขเองได้เสมอ)
+    // วันที่ปัจจุบันตามเวลาเครื่อง (Asia/Bangkok) รูปแบบ YYYY-MM-DD
+    // (ห้ามใช้ toISOString() เพราะเป็นเวลา UTC ทำให้ก่อน 07:00 น. กลายเป็น "เมื่อวาน")
+    function getLocalDateStr() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
     async function autoSelectModeForCurrentEmployee() {
       if (!currentEmployee) { autoSelectAttendanceMode(); return; }
       try {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const result = await callWebApi('getRecentAttendance', { startDate: todayStr, endDate: todayStr, branch: '', limit: 500 });
+        const todayStr = getLocalDateStr();
+        // จำกัดเฉพาะสาขาของพนักงานเอง + ไม่ขอรูปถ่าย เพื่อลดขนาดข้อมูลที่ต้องดึง
+        const result = await callWebApi('getRecentAttendance', { startDate: todayStr, endDate: todayStr, branch: currentEmployee.branch || '', limit: 200, includePhoto: false });
         const rows = (result.rows || []).filter(r => String(r.employeeId) === String(currentEmployee.employeeId));
         const lastMode = rows.length > 0 ? rows[0].mode : null; // rows[0] คือรายการล่าสุด (เรียงใหม่สุดก่อนจาก server)
         document.getElementById('mode').value = getNextModeFromLastMode(lastMode);
@@ -568,7 +576,11 @@
       const response = await fetch(targetUrl, {
         method: 'POST', body: searchParams, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
-      if (!response.ok) throw new Error('ระบบเครือข่ายคลาวด์ขัดข้อง');
+      if (!response.ok) {
+        const err = new Error('ระบบเครือข่ายคลาวด์ขัดข้อง (HTTP ' + response.status + ')');
+        err.httpStatus = response.status;
+        throw err;
+      }
       const result = await response.json();
       if (!result.success) throw new Error(result.error);
       return result.data;
@@ -646,12 +658,27 @@
       };
     }
 
+    const DASHBOARD_LIMITS = [1000, 100, 40, 15]; // backend โหมดไม่แนบรูปดึง 1000 แถวได้สบาย ถ้าล้มจะลดจำนวนลงเอง
+
     async function loadDashboard() {
       const tbody = document.getElementById('recentBody');
       tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--muted);">⏳ กำลังโหลดข้อมูล...</td></tr>`;
       try {
         const range = getSelectedRange();
-        const result = await callWebApi('getRecentAttendance', { startDate: range.startDate, endDate: range.endDate, branch: range.branch, limit: 1000 });
+        // แต่ละแถวมีรูปถ่าย Base64 แนบมาด้วย ถ้าขอทีละมากๆ (เดิม 1000) คำตอบจะใหญ่เกินกว่าที่ Apps Script ส่งกลับได้
+        // -> ได้ 404 จาก script.googleusercontent.com  จึงขอทีละน้อย และลดจำนวนลงอัตโนมัติถ้ายังล้มเหลว
+        // (ไม่กระทบระบบ Export .txt ซึ่งเรียก exportAttendanceText แยกต่างหาก และยังดึงครบทุกแถวเหมือนเดิม)
+        let result = null; let lastErr = null;
+        for (const limit of DASHBOARD_LIMITS) {
+          try {
+            result = await callWebApi('getRecentAttendance', { startDate: range.startDate, endDate: range.endDate, branch: range.branch, limit: limit, includePhoto: false });
+            break;
+          } catch (e) {
+            lastErr = e;
+            if (!e.httpStatus) throw e; // error ที่ server ตอบกลับมาเอง (เช่น สิทธิ์ไม่พอ) ไม่ต้องลองใหม่
+          }
+        }
+        if (!result) throw lastErr;
         globalCachedRows = result.rows || [];
         renderRecentAndCalculateSummary(globalCachedRows, result.totalMatched || 0);
       } catch (err) {
@@ -699,7 +726,7 @@
 
       tbody.innerHTML = rows.map((row) => {
         // High Speed Logic: ใส่ปุ่มกดดูแทนการโหลดรูป Base64 ขนาดใหญ่มาพร้อมกันทีเดียวทั้งหมด
-        const photoCell = row.photoBase64 ?
+        const photoCell = (row.photoBase64 || row.hasPhoto) ?
           `<button type="button" class="view-photo-btn" data-action="view-photo" data-row-id="${row.rowId}">🖼️ ดูรูป</button>` : '-';
 
         let adminActionCell = isAdminActive ? `
@@ -736,7 +763,16 @@
       }
     });
 
-    function openPhotoModal(row) {
+    async function openPhotoModal(row) {
+      // รองรับกรณี backend ส่งมาแค่ hasPhoto (โหมดไม่แนบรูป) -> ดึงรูปเฉพาะแถวที่กดดู
+      if (row && !row.photoBase64 && row.hasPhoto) {
+        try {
+          const photo = await callWebApi('getAttendancePhoto', { rowId: row.rowId });
+          row.photoBase64 = (photo && photo.photoBase64) || (typeof photo === 'string' ? photo : '');
+        } catch (e) {
+          alert('โหลดรูปถ่ายไม่สำเร็จ: ' + e.message); return;
+        }
+      }
       if (row && row.photoBase64) {
         document.getElementById('modalTitle').textContent = `ภาพของ: ${row.employeeName} (${row.timestamp})`;
         document.getElementById('modalImg').src = row.photoBase64;
