@@ -7,7 +7,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- (r44) defer: ไลบรารี Excel (~900KB) ไม่บล็อกการแสดงหน้าเว็บ/หน้า Login อีกต่อไป (ใช้ตอนกดนำเข้า/ส่งออกเท่านั้น) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+    <link rel="preconnect" href="https://script.google.com">
+    <link rel="preconnect" href="https://script.googleusercontent.com">
     <!-- (2026-09-25) Chart.js สำหรับกราฟ Dashboard หน้า "รายงาน" — ใช้ defer ให้ไม่บล็อกการเปิดหน้าเว็บ (ดู renderStaffDashboardCharts) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
     <script>
@@ -521,6 +524,7 @@
                 <button id="btn-settings-menu" class="page-nav-btn" style="display:none; padding:8px 14px; font-size:13px;" onclick="toggleSettingsMenu(event)">⚙️ ตั้งค่า ▾</button>
                 <div id="settings-dropdown" class="settings-dropdown">
                     <button id="nav-btn-members" class="settings-dropdown-item" onclick="switchPage('members'); closeSettingsMenu();" style="display:none;">👥 เพิ่มสมาชิก</button>
+                    <button id="nav-btn-speed" class="settings-dropdown-item" onclick="openSpeedModal_(); closeSettingsMenu();" style="display:none;">ตรวจความเร็วระบบ</button>
                     <button id="nav-btn-activitylog" class="settings-dropdown-item" onclick="switchPage('activitylog'); closeSettingsMenu();" style="display:none;">📋 ประวัติการใช้งาน</button>
                 </div>
             </div>
@@ -1454,7 +1458,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r43-2026-09-30-session-fix';
+        const EXPECTED_CODE_VERSION = 'r44-2026-09-30-speed';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1470,8 +1474,73 @@
                     }
                 } catch (e) { }
             }
-            return nativeFetch(url, options);
+            // (r44) จับเวลาทุกคำขอไปเซิร์ฟเวอร์ — ดูได้ที่เมนู ตั้งค่า > ตรวจความเร็วระบบ (admin)
+            let reqAction = '';
+            try {
+                if (typeof options.body === 'string') reqAction = (JSON.parse(options.body) || {}).action || '';
+                if (!reqAction && typeof url === 'string') { const m = url.match(/[?&]action=([^&]+)/); reqAction = m ? decodeURIComponent(m[1]) : ''; }
+            } catch (e) { }
+            const t0 = performance.now();
+            const isApi = typeof url === 'string' && url.indexOf(WEB_APP_URL) === 0;
+            return nativeFetch(url, options).then(res => {
+                if (isApi) {
+                    res.clone().json()
+                        .then(d => recordRequestTiming_(reqAction, performance.now() - t0, d && d._serverMs, d && d.cached))
+                        .catch(() => recordRequestTiming_(reqAction, performance.now() - t0, null, false));
+                }
+                return res;
+            }, err => {
+                if (isApi) recordRequestTiming_(reqAction, performance.now() - t0, null, false, true);
+                throw err;
+            });
         };
+        const requestTimings_ = [];
+        function recordRequestTiming_(action, totalMs, serverMs, cached, failed) {
+            requestTimings_.unshift({ at: new Date(), action: action || '(หน้าเว็บ)', totalMs: totalMs, serverMs: (typeof serverMs === 'number') ? serverMs : null, cached: !!cached, failed: !!failed });
+            if (requestTimings_.length > 60) requestTimings_.length = 60;
+            const modal = document.getElementById('speed-modal-overlay');
+            if (modal && modal.style.display === 'flex') renderSpeedModal_();
+        }
+        const SPEED_ACTION_LABELS_ = { login: 'เข้าสู่ระบบ', search: 'ค้นหา/โหลดตารางลูกค้า', getDashboardSummary: 'สรุปสถิติ', getInitialData: 'ตัวเลขหัวหน้าเว็บ',
+            checkStatus: 'เช็คเวอร์ชันระบบ', getCustomerAudit: 'ชื่อผู้บันทึก/ผู้แก้ไข (อ่านจากชีต)', getOnlineUsers: 'รายชื่อผู้ใช้ออนไลน์', ping: 'สัญญาณออนไลน์',
+            add: 'บันทึกลูกค้าใหม่', update: 'แก้ไขลูกค้า', addFollowUp: 'บันทึกการติดตาม', getFollowupCalendar: 'ปฏิทินติดตาม', getDailyLeadReport: 'รายงาน lead รายวัน',
+            getStaleLeadsReport: 'รายงานลูกค้าค้างติดตาม', getStaffDashboardStats: 'Dashboard พนักงาน', bulkImport: 'นำเข้า Excel', bulkCheckPhones: 'ตรวจเบอร์ซ้ำ (นำเข้า)' };
+        function openSpeedModal_() {
+            let ov = document.getElementById('speed-modal-overlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'speed-modal-overlay';
+                ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100000;display:none;align-items:center;justify-content:center;padding:16px;';
+                ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,.25);">' +
+                    '<div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+                    '<div><div style="font-weight:700;font-size:15px;">ตรวจความเร็วระบบ</div><div style="font-size:11.5px;color:#64748b;">คำขอล่าสุดจากเครื่องนี้ (ใหม่สุดอยู่บน) — "เซิร์ฟเวอร์" คือเวลาที่ Apps Script ประมวลผลจริง ส่วน "รอ/เครือข่าย" คือเวลาที่เหลือ (อินเทอร์เน็ต + รอ Google เปิดสคริปต์)</div></div>' +
+                    '<button class="btn btn-secondary" onclick="document.getElementById(\'speed-modal-overlay\').style.display=\'none\'">ปิด</button></div>' +
+                    '<div id="speed-modal-body" style="overflow:auto;padding:8px 16px 16px;"></div></div>';
+                ov.addEventListener('click', e => { if (e.target === ov) ov.style.display = 'none'; });
+                document.body.appendChild(ov);
+            }
+            ov.style.display = 'flex';
+            renderSpeedModal_();
+        }
+        function renderSpeedModal_() {
+            const body = document.getElementById('speed-modal-body');
+            if (!body) return;
+            const sec = ms => (ms / 1000).toFixed(1) + ' วิ';
+            const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+            const pageLoad = nav ? `โหลดหน้าเว็บ: ${sec(nav.domContentLoadedEventEnd)} (แสดงผลได้) / ${sec(nav.loadEventEnd || nav.duration)} (โหลดครบ)` : '';
+            if (!requestTimings_.length) { body.innerHTML = `<div style="font-size:12.5px;color:#475569;padding:8px 0;">${pageLoad}<br>ยังไม่มีคำขอไปเซิร์ฟเวอร์</div>`; return; }
+            const rows = requestTimings_.map(t => {
+                const slow = t.totalMs > 5000;
+                const wait = (t.serverMs != null) ? Math.max(0, t.totalMs - t.serverMs) : null;
+                return `<tr style="${slow ? 'background:#fff7ed;' : ''}"><td>${t.at.toLocaleTimeString('th-TH')}</td><td>${escapeHtml(SPEED_ACTION_LABELS_[t.action] || t.action)}</td>` +
+                    `<td style="text-align:right;font-weight:${slow ? 700 : 400};color:${slow ? '#c2410c' : 'inherit'}">${t.failed ? 'ล้มเหลว' : sec(t.totalMs)}</td>` +
+                    `<td style="text-align:right;">${t.serverMs != null ? sec(t.serverMs) : '-'}</td><td style="text-align:right;">${wait != null ? sec(wait) : '-'}</td>` +
+                    `<td>${t.cached ? 'แคช' : ''}</td></tr>`;
+            }).join('');
+            body.innerHTML = `<div style="font-size:12.5px;color:#475569;margin:4px 0 8px;">${pageLoad}</div>` +
+                '<table class="bi-table" style="width:100%;"><thead><tr><th>เวลา</th><th>คำขอ</th><th style="text-align:right;">รวม</th><th style="text-align:right;">เซิร์ฟเวอร์</th><th style="text-align:right;">รอ/เครือข่าย</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
+                '<div style="font-size:11.5px;color:#64748b;margin-top:8px;">ถ้า "เซิร์ฟเวอร์" สูง = ช้าที่การประมวลผล/BigQuery/Google Sheet · ถ้า "รอ/เครือข่าย" สูง = ช้าที่อินเทอร์เน็ตหรือ Google เปิดสคริปต์ช้า (มักเกิดกับคำขอแรกหลังไม่มีใครใช้สักพัก)</div>';
+        }
 
         let currentRole = 'user';
         let currentUserInfo = null; // (2026-09-24) เก็บ { username, name } ของคนที่ login อยู่ ใช้แสดงชื่อผู้บันทึกการติดตามทันที
@@ -1723,6 +1792,8 @@
             const membersVisible = document.getElementById('nav-btn-members').style.display !== 'none';
             const activityLogVisible = document.getElementById('nav-btn-activitylog').style.display !== 'none';
             document.getElementById('btn-settings-menu').style.display = (membersVisible || activityLogVisible) ? '' : 'none';
+            const speedBtn = document.getElementById('nav-btn-speed'); // (r44) เฉพาะ admin (เห็นพร้อมเมนูประวัติการใช้งาน)
+            if (speedBtn) speedBtn.style.display = activityLogVisible ? '' : 'none';
         }
 
         // สิทธิ์ (role) ที่ตั้งให้สมาชิกใหม่ได้ ขึ้นกับ role ของคนที่ login อยู่:
