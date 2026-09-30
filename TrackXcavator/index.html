@@ -106,6 +106,29 @@ body {
 }
 
 
+
+/* ===== 🔌 Connection status ===== */
+.conn-badge { display:inline-flex; align-items:center; gap:7px; padding:4px 11px; border-radius:999px; font-size:.75rem; font-weight:500; cursor:pointer; border:1px solid rgba(255,255,255,.25); background:rgba(255,255,255,.06); color:#fff; transition:background .2s; user-select:none; }
+.conn-badge:hover { background:rgba(255,255,255,.14); }
+.conn-dot { width:9px; height:9px; border-radius:50%; background:#adb5bd; flex-shrink:0; }
+.conn-badge[data-state="online"] .conn-dot { background:#20c997; box-shadow:0 0 0 0 rgba(32,201,151,.7); animation:connPulse 2s infinite; }
+.conn-badge[data-state="slow"] .conn-dot { background:#ffc107; }
+.conn-badge[data-state="checking"] .conn-dot { background:#adb5bd; animation:connBlink 1s infinite; }
+.conn-badge[data-state="offline"] { border-color:#dc3545; background:rgba(220,53,69,.25); }
+.conn-badge[data-state="offline"] .conn-dot { background:#dc3545; }
+@keyframes connPulse { 0%{box-shadow:0 0 0 0 rgba(32,201,151,.6)} 70%{box-shadow:0 0 0 7px rgba(32,201,151,0)} 100%{box-shadow:0 0 0 0 rgba(32,201,151,0)} }
+@keyframes connBlink { 50%{opacity:.3} }
+.conn-panel { position:absolute; top:calc(100% + 8px); right:0; width:290px; background:#fff; color:#333; border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.2); padding:14px; z-index:2000; display:none; font-size:.8rem; }
+.conn-panel.show { display:block; }
+.conn-panel .row-kv { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dashed #eee; }
+.conn-panel .row-kv:last-of-type { border-bottom:none; }
+.conn-panel .row-kv span:first-child { color:#6c757d; }
+#connOfflineBanner { display:none; }
+#connOfflineBanner.show { display:flex; }
+#connToast { position:fixed; bottom:20px; right:20px; z-index:99990; min-width:260px; display:none; }
+#connToast.show { display:block; animation:connSlide .25s ease-out; }
+@keyframes connSlide { from{transform:translateY(20px);opacity:0} to{transform:none;opacity:1} }
+
 /* ===== 📊 Overview Dashboard ===== */
 .ov-kpi { cursor:pointer; border:none; border-radius:10px; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.05); padding:14px 16px; height:100%; border-top:4px solid var(--kc,#dc3545); transition:transform .15s, box-shadow .15s; }
 .ov-kpi:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.09); }
@@ -480,6 +503,11 @@ body {
   </div>
 
   <!-- 🛑 ส่วนเนื้อหาหลักทั้งหมดจะถูกใส่ app-hidden ซ่อนไว้จนกว่าจะล็อกอินผ่าน -->
+  <div id="connToast"><div class="alert alert-success shadow d-flex align-items-center justify-content-between gap-2 mb-0 py-2">
+    <span><i class="fa-solid fa-circle-check me-1"></i>กลับมาเชื่อมต่อฐานข้อมูลแล้ว</span>
+    <button class="btn btn-sm btn-success" onclick="hideConnToast(); refreshAllData();">รีเฟรชข้อมูล</button>
+  </div></div>
+
   <div id="mainAppWrapper" class="app-hidden">
     
     <!-- 🌐 แถบเมนูด้านบน -->
@@ -489,6 +517,22 @@ body {
         <span class="fw-bold">ระบบฐานข้อมูลรถขุด (Excavators Database)</span>
       </a>
       <div class="ms-auto d-flex align-items-center">
+        <div class="position-relative me-3" id="connWrap">
+          <span class="conn-badge" id="connBadge" data-state="checking" onclick="toggleConnPanel(event)" title="สถานะการเชื่อมต่อฐานข้อมูล">
+            <span class="conn-dot"></span><i class="fa-solid fa-database"></i><span id="connLabel">กำลังตรวจสอบ...</span>
+          </span>
+          <div class="conn-panel" id="connPanel" onclick="event.stopPropagation()">
+            <div class="fw-bold mb-2"><i class="fa-solid fa-server text-danger me-1"></i>สถานะการเชื่อมต่อ</div>
+            <div class="row-kv"><span>ฐานข้อมูล (Apps Script)</span><strong id="connPStatus">-</strong></div>
+            <div class="row-kv"><span>อินเทอร์เน็ตของเครื่องนี้</span><strong id="connPNet">-</strong></div>
+            <div class="row-kv"><span>เวลาตอบสนอง</span><strong id="connPLatency">-</strong></div>
+            <div class="row-kv"><span>ตรวจสอบล่าสุด</span><strong id="connPChecked">-</strong></div>
+            <div class="row-kv"><span>ติดต่อสำเร็จล่าสุด</span><strong id="connPLastOk">-</strong></div>
+            <div class="text-danger small mt-2" id="connPError" style="display:none;"></div>
+            <button class="btn btn-sm btn-outline-danger w-100 mt-2" onclick="checkConnection(true)"><i class="fa-solid fa-plug-circle-check me-1"></i>ตรวจสอบอีกครั้ง</button>
+            <div class="text-muted mt-2" style="font-size:.7rem;">ระบบตรวจสอบอัตโนมัติทุก 60 วินาที และทุกครั้งที่ดึง/บันทึกข้อมูล</div>
+          </div>
+        </div>
         <span class="text-white me-3 small">
           <i class="fa-solid fa-circle-user me-1"></i> <span id="userDisplay">-</span> 
           <span class="badge bg-danger ms-1" id="roleDisplay">-</span>
@@ -501,6 +545,10 @@ body {
 
     <!-- 📑 เนื้อหาหลัก -->
     <div class="container-fluid my-4 px-3">
+      <div id="connOfflineBanner" class="alert alert-danger align-items-center justify-content-between gap-2 py-2 mb-3">
+        <div><i class="fa-solid fa-plug-circle-xmark me-2"></i><strong>ขาดการเชื่อมต่อฐานข้อมูล</strong> — ข้อมูลที่แสดงอาจไม่เป็นปัจจุบัน และยังไม่ควรบันทึกข้อมูลจนกว่าจะเชื่อมต่อได้</div>
+        <button class="btn btn-sm btn-light" onclick="checkConnection(true)"><i class="fa-solid fa-rotate me-1"></i>ลองเชื่อมต่อใหม่</button>
+      </div>
       
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="nav nav-pills" role="tablist">
@@ -1476,6 +1524,136 @@ function postJson(payload) {
     body: JSON.stringify(payload)
   });
 }
+
+
+// ==========================================
+// 🔌 CONNECTION STATUS MONITOR (ออนไลน์ / ออฟไลน์)
+// - ติดตามผลทุก request จริง (passive) + ตรวจสอบอัตโนมัติทุก 60 วินาที (active)
+// - ถ้าเซิร์ฟเวอร์ตอบกลับเป็น JSON ได้ (แม้จะเป็น error) = เชื่อมต่อได้
+// ==========================================
+const CONN_CHECK_INTERVAL = 60000;
+const CONN_SLOW_MS = 4000;
+const connState = { state: 'checking', latency: null, lastCheck: null, lastOk: null, error: '', wasOffline: false, checking: null };
+
+function _rawPostJson(payload) {
+  if (window.google && google.script && google.script.run) {
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(result => resolve(result))
+        .withFailureHandler(err => reject(new Error(err && err.message ? err.message : String(err))))
+        .apiRequest(payload);
+    });
+  }
+  return fetchJson(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+}
+
+// ทุกการเรียก API ผ่าน postJson จะอัปเดตสถานะการเชื่อมต่อให้อัตโนมัติ
+postJson = function (payload) {
+  const t0 = performance.now();
+  return _rawPostJson(payload).then(res => {
+    setConnState(true, Math.round(performance.now() - t0));
+    return res;
+  }, err => {
+    setConnState(false, null, err && err.message ? err.message : String(err));
+    throw err;
+  });
+};
+
+function formatConnTime(d) {
+  if (!d) return '-';
+  const sec = Math.round((Date.now() - d.getTime()) / 1000);
+  if (sec < 10) return 'เมื่อสักครู่';
+  if (sec < 60) return sec + ' วินาทีที่แล้ว';
+  if (sec < 3600) return Math.floor(sec / 60) + ' นาทีที่แล้ว';
+  return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+}
+
+function setConnState(ok, latency, errMsg) {
+  connState.lastCheck = new Date();
+  if (ok) {
+    connState.state = (latency != null && latency > CONN_SLOW_MS) ? 'slow' : 'online';
+    connState.latency = latency;
+    connState.lastOk = new Date();
+    connState.error = '';
+    if (connState.wasOffline) { connState.wasOffline = false; showConnToast(); }
+  } else {
+    connState.state = 'offline';
+    connState.latency = null;
+    connState.error = errMsg || '';
+    connState.wasOffline = true;
+  }
+  renderConnStatus();
+}
+
+function renderConnStatus() {
+  const badge = document.getElementById('connBadge');
+  if (!badge) return;
+  const labels = { online: 'ออนไลน์', slow: 'ออนไลน์ (ช้า)', offline: 'ออฟไลน์', checking: 'กำลังตรวจสอบ...' };
+  const st = connState.state;
+  badge.dataset.state = st;
+  const lat = connState.latency != null ? ' · ' + (connState.latency >= 1000 ? (connState.latency / 1000).toFixed(1) + 's' : connState.latency + 'ms') : '';
+  document.getElementById('connLabel').textContent = labels[st] + ((st === 'online' || st === 'slow') ? lat : '');
+
+  const colorTxt = { online: '<span class="text-success">🟢 ออนไลน์</span>', slow: '<span class="text-warning">🟡 ตอบสนองช้า</span>', offline: '<span class="text-danger">🔴 ออฟไลน์</span>', checking: '<span class="text-muted">กำลังตรวจสอบ</span>' };
+  document.getElementById('connPStatus').innerHTML = colorTxt[st];
+  document.getElementById('connPNet').innerHTML = navigator.onLine ? '<span class="text-success">เชื่อมต่อ</span>' : '<span class="text-danger">ไม่มีอินเทอร์เน็ต</span>';
+  document.getElementById('connPLatency').textContent = connState.latency != null ? connState.latency.toLocaleString('th-TH') + ' ms' : '-';
+  document.getElementById('connPChecked').textContent = formatConnTime(connState.lastCheck);
+  document.getElementById('connPLastOk').textContent = formatConnTime(connState.lastOk);
+  const errEl = document.getElementById('connPError');
+  errEl.style.display = (st === 'offline' && connState.error) ? '' : 'none';
+  errEl.textContent = connState.error;
+
+  const banner = document.getElementById('connOfflineBanner');
+  if (banner) banner.classList.toggle('show', st === 'offline');
+}
+
+function isAppVisible() {
+  const w = document.getElementById('mainAppWrapper');
+  return w && !w.classList.contains('app-hidden');
+}
+
+// ตรวจสอบแบบเบาที่สุด: ส่ง action 'ping' ไป backend (ไม่ต้องแก้ Code.js — ถ้า backend ไม่รู้จัก action ก็จะตอบกลับเป็น JSON error ซึ่งแปลว่าเซิร์ฟเวอร์ยังออนไลน์)
+function checkConnection(manual) {
+  if (!navigator.onLine) { setConnState(false, null, 'เครื่องนี้ไม่ได้เชื่อมต่ออินเทอร์เน็ต'); return Promise.resolve(false); }
+  if (connState.checking) return connState.checking;
+  if (manual) { connState.state = 'checking'; renderConnStatus(); }
+  connState.checking = postJson({ action: 'ping' })
+    .then(() => true, () => false)
+    .finally(() => { connState.checking = null; });
+  return connState.checking;
+}
+
+function toggleConnPanel(e) {
+  if (e) e.stopPropagation();
+  const panel = document.getElementById('connPanel');
+  panel.classList.toggle('show');
+  if (panel.classList.contains('show')) renderConnStatus();
+}
+document.addEventListener('click', () => { const p = document.getElementById('connPanel'); if (p) p.classList.remove('show'); });
+
+let connToastTimer = null;
+function showConnToast() {
+  const t = document.getElementById('connToast');
+  if (!t || !isAppVisible()) return;
+  t.classList.add('show');
+  clearTimeout(connToastTimer);
+  connToastTimer = setTimeout(hideConnToast, 8000);
+}
+function hideConnToast() { const t = document.getElementById('connToast'); if (t) t.classList.remove('show'); }
+
+window.addEventListener('offline', () => setConnState(false, null, 'เครื่องนี้ขาดการเชื่อมต่ออินเทอร์เน็ต'));
+window.addEventListener('online', () => checkConnection(true));
+document.addEventListener('visibilitychange', () => { if (!document.hidden && isAppVisible()) checkConnection(false); });
+setInterval(() => {
+  if (!document.hidden && isAppVisible()) checkConnection(false);
+  else renderConnStatus();
+}, CONN_CHECK_INTERVAL);
+setInterval(renderConnStatus, 15000); // อัปเดตข้อความ "x นาทีที่แล้ว"
 
 function showOperation(message) {
   const msgEl = document.getElementById('operationMessage');
