@@ -205,7 +205,7 @@
         .btn-row-icon { flex: 0 0 auto; padding: 3px 6px; font-size: 11px; }
         .btn-row-icon.has-log { background: #f3e8ff; color: #6b21a8; font-weight: 600; }
         /* ===== ปฏิทินติดตามลูกค้า ===== */
-        .calendar-layout { display: grid; grid-template-columns: minmax(620px, 1.65fr) minmax(320px, 0.85fr); gap: 15px; align-items: start; }
+        .calendar-layout { display: grid; grid-template-columns: minmax(560px, 1.3fr) minmax(420px, 1fr); gap: 15px; align-items: start; }
         .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
         .calendar-month-title { font-size: 18px; font-weight: 600; color: #0f172a; text-align: center; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
@@ -224,6 +224,15 @@
         .calendar-customer:hover { border-color:#38bdf8; background:#f0f9ff; }
         .calendar-customer-name { font-size:13px; font-weight:600; color:#0369a1; }
         .calendar-customer-meta { font-size:11.5px; color:#64748b; margin-top:3px; }
+        /* (r45) การ์ดปฏิทิน: ข้อมูลลูกค้าซ้าย + บันทึกล่าสุดขวา (ไม่ต้องกดเข้าไปดู) */
+        .calendar-customer { display: grid; grid-template-columns: minmax(150px, 0.85fr) minmax(0, 1.4fr); gap: 10px; align-items: stretch; }
+        .cal-note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px; padding: 6px 8px; min-width: 0; }
+        .cal-note.empty { background: #f8fafc; border-color: #e2e8f0; }
+        .cal-note-head { font-size: 11px; font-weight: 600; color: #92400e; margin-bottom: 2px; }
+        .cal-note.empty .cal-note-head { color: #94a3b8; font-weight: 500; }
+        .cal-note-text { font-size: 12px; color: #334155; white-space: pre-line; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+        .cal-note-remark { font-size: 11px; color: #64748b; margin-top: 4px; border-top: 1px dashed #fde68a; padding-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+        @media (max-width: 1150px) { .calendar-customer { grid-template-columns: 1fr; } }
         .timeline-list { max-height: 280px; overflow-y: auto; margin-bottom: 12px; padding-right: 4px; }
         .timeline-item { border-left: 3px solid var(--primary-color); padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
         .timeline-date { font-size: 11px; font-weight: 600; color: var(--primary-color); margin-bottom: 3px; }
@@ -664,7 +673,7 @@
                             <input type="date" id="filter-appdate" class="form-control">
                         </div>
                 </div>
-                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▾</button>
+                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▾</button>
                 <div id="advanced-filters-section" style="display:none;">
                     <div class="search-grid filter-grid">
                         <div class="form-group">
@@ -704,6 +713,13 @@
                         <div class="form-group wide">
                             <label>หมายเหตุ</label>
                             <input type="text" id="filter-note" class="form-control" placeholder="ค้นความเห็น/หมายเหตุ..." onkeypress="handleSearchKeyPress(event)">
+                        </div>
+                        <div class="form-group">
+                            <label>ผู้อัปเดตล่าสุด</label>
+                            <select id="filter-updated-by" class="form-control" title="คนที่แก้ไขข้อมูลหรือบันทึกการติดตามลูกค้ารายนั้นเป็นคนล่าสุด">
+                                <option value="">-- ทุกคน --</option>
+                                <option value="__none__">(ยังไม่มีผู้อัปเดต)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -1458,7 +1474,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r44-2026-09-30-speed';
+        const EXPECTED_CODE_VERSION = 'r45-2026-09-30-updater-filter';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1630,6 +1646,7 @@
                     updateSettingsMenuVisibility();
                     fetchDataFromServer(1);
                     loadInitialMeta();
+                    loadUpdaterOptions_(); // (r45) รายชื่อผู้อัปเดตล่าสุดสำหรับตัวกรอง
                     return;
                 }
                 const message = resData && resData.message ? resData.message : '';
@@ -2386,7 +2403,30 @@
             grid.innerHTML = html;
         }
 
-        function selectCalendarDate(dateKey, rerender = true) {
+        // (r45) บันทึกการติดตามล่าสุดของลูกค้า (เรียงจาก loggedAt/date) — ใช้แสดงบนการ์ดปฏิทิน
+        function latestFollowUpEntry_(row) {
+            const logs = Array.isArray(row && row.followUpLog) ? row.followUpLog.filter(Boolean) : [];
+            if (!logs.length) return null;
+            const ts = e => { const t = Date.parse(e.loggedAt || '') || Date.parse((e.date || '') + 'T00:00:00') || 0; return t; };
+            return logs.reduce((a, b) => (ts(b) >= ts(a) ? b : a));
+        }
+        function calendarNoteHtml_(row) {
+            const last = latestFollowUpEntry_(row);
+            const remark = String(row.remark || row.note || '').trim();
+            if (!last) {
+                return remark
+                    ? `<div class="cal-note"><div class="cal-note-head">หมายเหตุ</div><div class="cal-note-text">${escapeHtml(remark)}</div></div>`
+                    : `<div class="cal-note empty"><div class="cal-note-head">ยังไม่มีบันทึกการติดตาม</div></div>`;
+            }
+            let when = '';
+            try { when = last.date ? new Date(last.date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : ''; } catch (e) { when = last.date || ''; }
+            const head = ['ล่าสุด ' + when, last.followupType || '', last.by ? 'โดย ' + last.by : ''].filter(Boolean).join(' · ');
+            const count = Array.isArray(row.followUpLog) ? row.followUpLog.length : 0;
+            return `<div class="cal-note"><div class="cal-note-head">${escapeHtml(head)}${count > 1 ? ` (ทั้งหมด ${count} ครั้ง)` : ''}</div>` +
+                `<div class="cal-note-text">${escapeHtml(last.note || '-')}</div>` +
+                (remark ? `<div class="cal-note-remark">หมายเหตุ: ${escapeHtml(remark)}</div>` : '') + `</div>`;
+        }
+        function selectCalendarDate(dateKey, rerender = true, skipLiveRefresh = false) {
             calendarSelectedDate = dateKey;
             if (rerender) renderFollowupCalendar();
             const rows = calendarCustomers.filter(row => (row.booking_date || row.appdate) === dateKey);
@@ -2404,12 +2444,21 @@
                 const originalIndex = calendarCustomers.indexOf(row);
                 const product = getRowProductParts(row);
                 return `<button type="button" class="calendar-customer" onclick="openCalendarCustomer(${originalIndex})">
+                    <div>
                     <div class="calendar-customer-name">${escapeHtml(row.name)}</div>
                     <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}</div>
                     <div class="calendar-customer-meta">🚜 ${escapeHtml([product.category, product.model].filter(v => v && v !== '-').join(' ') || '-')}</div>
                     <div class="calendar-customer-meta">แตะเพื่อดูประวัติและบันทึกการติดตาม ›</div>
+                    </div>
+                    ${calendarNoteHtml_(row)}
                 </button>`;
             }).join('');
+            // (r45) ดึงบันทึกการติดตามล่าสุดตรงจากชีต (BigQuery ตามหลังได้ ~5 นาที) แล้ววาดการ์ดใหม่ครั้งเดียว
+            if (!skipLiveRefresh) {
+                enrichRowsWithLiveAudit_(rows, () => {
+                    if (calendarSelectedDate === dateKey) selectCalendarDate(dateKey, false, true);
+                });
+            }
         }
 
         function openCalendarCustomer(calendarIndex) {
@@ -2425,8 +2474,8 @@
             const open = (forceOpen === true) ? true : isHidden;
             sec.style.display = open ? 'block' : 'none';
             btn.innerHTML = open
-                ? '🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▴'
-                : '🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด) ▾';
+                ? '🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▴'
+                : '🔧 ตัวกรองเพิ่มเติม (ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▾';
         }
         function getDateStrOffset(daysAgo) {
             const d = new Date();
@@ -3589,6 +3638,24 @@
             if (customerFinancial.debts.length) parts.push(`หนี้สิน ${customerFinancial.debts.length} รายการ`);
             document.getElementById('financial-summary').textContent = parts.length ? ('✓ บันทึกแล้ว: ' + parts.join(', ')) : '';
         }
+        // (r45) เติมรายชื่อ "ผู้อัปเดตล่าสุด" ลง dropdown ตัวกรอง (คงค่าที่เลือกไว้เดิม)
+        function loadUpdaterOptions_() {
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getUpdaterOptions' })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                const sel = document.getElementById('filter-updated-by');
+                if (!sel || !resData || !resData.success || !Array.isArray(resData.data)) return;
+                const keep = sel.value;
+                sel.innerHTML = '<option value="">-- ทุกคน --</option><option value="__none__">(ยังไม่มีผู้อัปเดต)</option>' +
+                    resData.data.map(o => `<option value="${escapeAttr(o.name)}">${escapeHtml(o.name)} (${Number(o.count || 0).toLocaleString()})</option>`).join('');
+                if (keep && Array.from(sel.options).some(op => op.value === keep)) sel.value = keep;
+            })
+            .catch(() => {});
+        }
         function loadInitialMeta() {
             fetch(`${WEB_APP_URL}?action=getInitialData`)
                 .then(res => res.json())
@@ -3613,6 +3680,7 @@
             populateDistrictSelect('filter-district', '', '', '-- ทุกอำเภอ --');
             populateSubdistrictSelect('filter-subdistrict', '', '', '', '-- ทุกตำบล --');
             document.getElementById('filter-note').value = '';
+            document.getElementById('filter-updated-by').value = '';
             document.getElementById('filter-pagesize').value = '20';
             fetchDataFromServer(1);
         }
@@ -3736,7 +3804,8 @@
                     province: document.getElementById('filter-province').value,
                     subdistrict: document.getElementById('filter-subdistrict').value.trim(),
                     district: document.getElementById('filter-district').value.trim(),
-                    note: document.getElementById('filter-note').value.trim()
+                    note: document.getElementById('filter-note').value.trim(),
+                    updatedBy: document.getElementById('filter-updated-by').value
                 }
             };
             fetch(WEB_APP_URL, {
@@ -5366,6 +5435,9 @@
                         rowRef.appdate = nextBookingDate;
                     }
                     renderHistoryTimeline();
+                    // (r45) ถ้าอยู่หน้าปฏิทิน ให้การ์ดโชว์บันทึกล่าสุดที่เพิ่งพิมพ์ทันที
+                    const calPage = document.getElementById('page-calendar');
+                    if (calPage && calPage.style.display !== 'none' && calendarSelectedDate) selectCalendarDate(calendarSelectedDate, true, true);
                     if (historyModalSource === 'stale') {
                         // ลูกค้ารายนี้ถูกติดตามแล้ว เอาออกจากรายงาน "ค้างติดตาม" แล้วปิดหน้าต่างนี้ไปเลย
                         staleLeadsData.splice(historyModalRowIdx, 1);
