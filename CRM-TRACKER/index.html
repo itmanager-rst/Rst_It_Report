@@ -1454,7 +1454,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r42-2026-09-29-edit-member';
+        const EXPECTED_CODE_VERSION = 'r43-2026-09-30-session-fix';
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1463,7 +1463,8 @@
             if (typeof options.body === 'string') {
                 try {
                     const parsed = JSON.parse(options.body);
-                    if (parsed && parsed.action && parsed.action !== 'login') {
+                    // (r43) ไม่แนบ token ให้ login / getOnlineUsers — เดิม token เก่าที่ค้างในเครื่องถูกส่งไปทุก 20 วิ ทำให้ถูกนับว่ายังออนไลน์
+                    if (parsed && parsed.action && parsed.action !== 'login' && parsed.action !== 'getOnlineUsers') {
                         parsed.token = parsed.token || localStorage.getItem(authTokenKey) || '';
                         options.body = JSON.stringify(parsed);
                     }
@@ -1515,15 +1516,25 @@
             const username = document.getElementById('login-username').value.trim();
             const password = document.getElementById('login-password').value.trim();
             const status = document.getElementById('login-status');
+            const loginBtn = document.getElementById('login-btn');
+            if (loginBtn.disabled) return; // (r43) กันกดซ้ำระหว่างรอ — เดิมกดซ้ำหลายครั้งยิ่งทำให้เซิร์ฟเวอร์ช้า
+            if (!username || !password) { status.innerText = 'กรุณากรอก username และ password'; return; }
             status.innerText = 'กำลังเข้าสู่ระบบ...';
+            loginBtn.disabled = true;
+            const loginAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            const loginTimer = setTimeout(() => { if (loginAbort) loginAbort.abort(); }, 45000);
+            const slowTimer = setTimeout(() => { status.innerText = 'กำลังเข้าสู่ระบบ... (เซิร์ฟเวอร์ตอบช้ากว่าปกติ กรุณารอสักครู่)'; }, 8000);
+            const loginDone = () => { clearTimeout(loginTimer); clearTimeout(slowTimer); loginBtn.disabled = false; };
 
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'login', payload: { username, password } })
+                body: JSON.stringify({ action: 'login', payload: { username, password } }),
+                signal: loginAbort ? loginAbort.signal : undefined
             })
             .then(res => res.json())
             .then(resData => {
+                loginDone();
                 if (resData && resData.success && resData.token) {
                     localStorage.setItem(authTokenKey, resData.token);
                     currentRole = resData.user && resData.user.role ? resData.user.role : 'user';
@@ -1558,7 +1569,10 @@
                     : (message || 'เข้าสู่ระบบไม่สำเร็จ');
             })
             .catch(err => {
-                status.innerText = 'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด';
+                loginDone();
+                status.innerText = (err && err.name === 'AbortError')
+                    ? 'เซิร์ฟเวอร์ไม่ตอบกลับภายใน 45 วินาที กรุณาลองกด "เข้าสู่ระบบ" อีกครั้ง'
+                    : 'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด (ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่อีกครั้ง)';
             });
         }
 
@@ -1663,8 +1677,38 @@
             }
         }
 
+        // (r43) ปิด session ฝั่งเซิร์ฟเวอร์ ให้หายจากรายชื่อ "กำลังใช้งานอยู่" ทันที (ไม่บันทึกเป็นการออกจากระบบ)
+        function closeServerSession_(token, useBeacon) {
+            if (!token) return;
+            const body = JSON.stringify({ action: 'closeSession', token: token });
+            try {
+                if (useBeacon && navigator.sendBeacon) {
+                    navigator.sendBeacon(WEB_APP_URL, new Blob([body], { type: 'text/plain;charset=utf-8' }));
+                    return;
+                }
+            } catch (e) { }
+            nativeFetch(WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body, keepalive: true }).catch(() => {});
+        }
+        // หน้านี้ต้อง login ใหม่ทุกครั้งที่เปิด — token ที่ค้างจากครั้งก่อน (ปิดจอ/ปิดแท็บโดยไม่กดออกจากระบบ)
+        // จึงใช้ต่อไม่ได้แล้ว ปิดทิ้งเลยตอนเปิดหน้า เพื่อไม่ให้คนนั้นค้างอยู่ในรายชื่อออนไลน์
+        (function closeStaleTokenOnLoad_() {
+            const stale = localStorage.getItem(authTokenKey);
+            if (stale && isLoginModalVisible()) {
+                localStorage.removeItem(authTokenKey);
+                closeServerSession_(stale, false);
+            }
+        })();
+        // ปิดแท็บ/ปิดหน้าต่าง/รีเฟรช ขณะ login อยู่ → แจ้งเซิร์ฟเวอร์ให้ปิด session นี้ทันที
+        window.addEventListener('pagehide', () => {
+            const t = localStorage.getItem(authTokenKey);
+            if (t && !isLoginModalVisible()) {
+                closeServerSession_(t, true);
+                localStorage.removeItem(authTokenKey);
+            }
+        });
+
         heartbeatTick(); // เรียกทันทีตอนโหลดหน้า ไม่ต้องรอรอบแรกของ interval
-        setInterval(heartbeatTick, 20000);
+        setInterval(heartbeatTick, 30000); // (r43) 20 → 30 วิ ลดภาระเซิร์ฟเวอร์ (ยังถือว่าออนไลน์ภายใน 5 นาทีเหมือนเดิม)
 
         // เมนู "ตั้งค่า" (มุมบนขวา) รวมปุ่ม "เพิ่มสมาชิก" กับ "ประวัติการใช้งาน" ไว้ด้วยกัน
         // เพื่อไม่ให้แถบเมนูหลัก (.page-nav) รกเกินไป
@@ -3197,8 +3241,12 @@
             // จำนวนแถวต่อหน้า/รูปแบบคอลัมน์ตาราง (ลำดับ/ซ่อน-โชว์/ความกว้าง) เป็นการตั้งค่าที่จำไว้ข้ามเซสชัน (localStorage)
             document.getElementById('filter-pagesize').value = getPreferredPageSize();
             renderTableHeader();
-            loadInitialMeta();
-            fetchDataFromServer(1);
+            // (r43) ยังไม่ได้ login (หน้าเว็บต้อง login ใหม่ทุกครั้ง) — ไม่ต้องยิงดึงข้อมูลตอนเปิดหน้า เพราะเซิร์ฟเวอร์จะตอบ
+            // "กรุณาเข้าสู่ระบบ" อยู่ดี และไปแย่งคิวเซิร์ฟเวอร์กับตอนกด login ทำให้ login ช้า (หลัง login สำเร็จ loginUser เรียก 2 ตัวนี้เองอยู่แล้ว)
+            if (localStorage.getItem(authTokenKey)) {
+                loadInitialMeta();
+                fetchDataFromServer(1);
+            }
             document.getElementById('customer-form').addEventListener('submit', onFormSubmit);
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.multiselect-box')) {
