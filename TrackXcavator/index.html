@@ -105,6 +105,42 @@ body {
   margin-right: 8px;
 }
 
+
+/* ===== 📊 Overview Dashboard ===== */
+.ov-kpi { cursor:pointer; border:none; border-radius:10px; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.05); padding:14px 16px; height:100%; border-top:4px solid var(--kc,#dc3545); transition:transform .15s, box-shadow .15s; }
+.ov-kpi:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.09); }
+.ov-kpi .ov-kpi-label { font-size:.78rem; color:#6c757d; display:flex; align-items:center; gap:6px; }
+.ov-kpi .ov-kpi-label i { color:var(--kc,#dc3545); }
+.ov-kpi .ov-kpi-val { font-size:1.9rem; font-weight:700; line-height:1.15; color:#212529; margin-top:4px; }
+.ov-kpi .ov-kpi-sub { font-size:.72rem; color:#6c757d; }
+.ov-card { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.05); padding:16px; height:100%; }
+.ov-card h6 { font-weight:600; margin-bottom:12px; }
+.ov-donut-wrap { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.ov-donut { width:150px; height:150px; border-radius:50%; position:relative; flex-shrink:0; }
+.ov-donut::after { content:''; position:absolute; inset:26px; background:#fff; border-radius:50%; }
+.ov-donut-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:1; }
+.ov-donut-center b { font-size:1.5rem; line-height:1; }
+.ov-donut-center span { font-size:.7rem; color:#6c757d; }
+.ov-legend { list-style:none; padding:0; margin:0; flex:1; min-width:170px; font-size:.82rem; }
+.ov-legend li { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
+.ov-legend li:hover { text-decoration:underline; }
+.ov-legend .dot { width:11px; height:11px; border-radius:3px; flex-shrink:0; }
+.ov-legend .num { margin-left:auto; font-weight:600; }
+.ov-hbar-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; font-size:.8rem; }
+.ov-hbar-label { width:110px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ov-hbar-track { flex:1; height:16px; background:#f1f3f5; border-radius:4px; overflow:hidden; display:flex; }
+.ov-hbar-track > div { height:100%; }
+.ov-hbar-num { width:36px; text-align:right; font-weight:600; flex-shrink:0; }
+.ov-cols { display:flex; align-items:flex-end; gap:6px; height:170px; padding-top:18px; }
+.ov-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; min-width:0; }
+.ov-col-bar { width:100%; max-width:34px; background:var(--primary-red); border-radius:4px 4px 0 0; position:relative; min-height:2px; }
+.ov-col-bar span { position:absolute; top:-17px; left:50%; transform:translateX(-50%); font-size:.68rem; font-weight:600; color:#333; }
+.ov-col-lbl { font-size:.66rem; color:#6c757d; margin-top:4px; white-space:nowrap; }
+.ov-mini-legend { display:flex; flex-wrap:wrap; gap:10px; font-size:.72rem; color:#555; margin-bottom:10px; }
+.ov-mini-legend span::before { content:''; display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; background:var(--c); }
+.ov-urgent-table td, .ov-urgent-table th { font-size:.8rem; padding:6px 8px; }
+.ov-empty { color:#adb5bd; font-size:.85rem; text-align:center; padding:24px 0; }
+
 .card-stat {
   border: none;
   border-left: 5px solid var(--primary-red);
@@ -468,7 +504,10 @@ body {
       
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="nav nav-pills" role="tablist">
-          <button class="nav-link active me-2" data-bs-toggle="pill" data-bs-target="#tab-dashboard" type="button" onclick="loadDashboardData()">
+          <button class="nav-link active me-2" data-bs-toggle="pill" data-bs-target="#tab-overview" type="button" onclick="renderOverview()">
+            <i class="fa-solid fa-chart-pie me-2"></i> ภาพรวม (Dashboard)
+          </button>
+          <button class="nav-link me-2" data-bs-toggle="pill" data-bs-target="#tab-dashboard" type="button" onclick="loadDashboardData()">
             <i class="fa-solid fa-table-cells me-2"></i> ตารางสถานะเครื่องจักร
           </button>
           <button class="nav-link me-2" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" onclick="loadHistoryData()">
@@ -486,9 +525,67 @@ body {
       </div>
 
       <div class="tab-content">
+
+        <!-- แท็บ 0: ภาพรวม (Overview Dashboard) -->
+        <div class="tab-pane fade show active" id="tab-overview">
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <h5 class="fw-bold mb-0"><i class="fa-solid fa-chart-pie text-danger me-2"></i>ภาพรวมเครื่องจักรและงาน PM</h5>
+            <small class="text-muted" id="ovUpdatedAt">กำลังโหลดข้อมูล...</small>
+          </div>
+          <p class="text-muted small mb-3">คลิกที่การ์ดหรือรายการในกราฟ เพื่อไปดูรายละเอียดในตารางสถานะเครื่องจักร</p>
+
+          <div class="row g-3 mb-3" id="ovKpiRow">
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#212529" onclick="goToDashboardFilter('all')"><div class="ov-kpi-label"><i class="fa-solid fa-tractor"></i>เครื่องจักรทั้งหมด</div><div class="ov-kpi-val" id="ovTotal">-</div><div class="ov-kpi-sub" id="ovTotalSub">&nbsp;</div></div></div>
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#dc3545" onclick="goToDashboardFilter('pm_alert')"><div class="ov-kpi-label"><i class="fa-solid fa-bell"></i>ต้องทำ PM ด่วน</div><div class="ov-kpi-val text-danger" id="ovPmAlert">-</div><div class="ov-kpi-sub">เหลือ ≤ 50 ชม. ถึงรอบถัดไป</div></div></div>
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#6f42c1" onclick="goToMatrix()"><div class="ov-kpi-label"><i class="fa-solid fa-triangle-exclamation"></i>เกินกำหนด PM</div><div class="ov-kpi-val" style="color:#6f42c1" id="ovOverdue">-</div><div class="ov-kpi-sub" id="ovOverdueSub">เครื่องที่มีรอบเลยกำหนด</div></div></div>
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#fd7e14" onclick="goToDashboardFilter('pending_parts')"><div class="ov-kpi-label"><i class="fa-solid fa-box-open"></i>ค้างส่งอะไหล่</div><div class="ov-kpi-val" style="color:#fd7e14" id="ovPendingParts">-</div><div class="ov-kpi-sub" id="ovPendingPartsSub">&nbsp;</div></div></div>
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#0d6efd" onclick="goToDashboardFilter('all')"><div class="ov-kpi-label"><i class="fa-solid fa-ticket"></i>คูปองค้างรับ</div><div class="ov-kpi-val text-primary" id="ovCouponPending">-</div><div class="ov-kpi-sub" id="ovCouponPendingSub">&nbsp;</div></div></div>
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#ffc107" onclick="goToDashboardFilter('all')"><div class="ov-kpi-label"><i class="fa-solid fa-hourglass-half"></i>รออนุมัติ</div><div class="ov-kpi-val" style="color:#b58500" id="ovPendingApprove">-</div><div class="ov-kpi-sub" id="ovApproveSub">&nbsp;</div></div></div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-lg-4"><div class="ov-card">
+              <h6><i class="fa-solid fa-boxes-stacked text-danger me-1"></i>สถานะอะไหล่ (ตามเครื่อง)</h6>
+              <div id="ovPartsChart"><div class="ov-empty">กำลังโหลด...</div></div>
+            </div></div>
+            <div class="col-lg-8"><div class="ov-card">
+              <h6><i class="fa-solid fa-diagram-project text-danger me-1"></i>ความคืบหน้า PM แต่ละรอบ</h6>
+              <div class="ov-mini-legend">
+                <span style="--c:#198754">เสร็จสิ้น</span><span style="--c:#adb5bd">ข้ามรอบ</span><span style="--c:#6f42c1">เกินกำหนด</span><span style="--c:#dc3545">ถึงกำหนด</span><span style="--c:#e9ecef">รอรอบ</span>
+              </div>
+              <div id="ovRoundChart"><div class="ov-empty">กำลังโหลด...</div></div>
+            </div></div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-lg-7"><div class="ov-card">
+              <h6><i class="fa-solid fa-calendar-days text-danger me-1"></i>จำนวนงาน PM ที่บันทึก (12 เดือนล่าสุด)</h6>
+              <div id="ovMonthChart"><div class="ov-empty">กำลังโหลด...</div></div>
+            </div></div>
+            <div class="col-lg-5"><div class="ov-card">
+              <h6><i class="fa-solid fa-layer-group text-danger me-1"></i>เครื่องจักรแยกตามรุ่น</h6>
+              <div id="ovModelChart"><div class="ov-empty">กำลังโหลด...</div></div>
+            </div></div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-12"><div class="ov-card">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0"><i class="fa-solid fa-fire text-danger me-1"></i>เครื่องที่ใกล้ถึง / เลยรอบ PM (10 อันดับแรก)</h6>
+                <button class="btn btn-sm btn-outline-danger" onclick="goToDashboardFilter('pm_alert')">ดูทั้งหมด <i class="fa-solid fa-arrow-right ms-1"></i></button>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 ov-urgent-table">
+                  <thead class="table-light"><tr><th>รหัสเครื่องจักร</th><th>รุ่น</th><th>ลูกค้า</th><th>เบอร์โทร</th><th class="text-center">ชม. ปัจจุบัน</th><th class="text-center">รอบถัดไป</th><th class="text-center">คงเหลือ</th><th>สถานะอะไหล่</th></tr></thead>
+                  <tbody id="ovUrgentBody"><tr><td colspan="8" class="ov-empty">กำลังโหลด...</td></tr></tbody>
+                </table>
+              </div>
+            </div></div>
+          </div>
+        </div>
         
         <!-- แท็บ 1: ตารางสถานะเครื่องจักร -->
-        <div class="tab-pane fade show active" id="tab-dashboard">
+        <div class="tab-pane fade" id="tab-dashboard">
           
           <div class="row mb-3">
             <div class="col-md-4 mb-2">
@@ -1890,6 +1987,7 @@ function loadAllData(forceRefresh = false) {
 
 // วาดทุกตารางใหม่ตามตัวกรอง/คำค้นที่ผู้ใช้เลือกค้างไว้
 function reapplyAllFilters() {
+  try { renderOverview(); } catch (e) { console.error(e); }
   try { if (typeof filterDashboardTable === 'function') filterDashboardTable(); } catch (e) { console.error(e); }
   try { if (typeof filterHistoryTable === 'function') filterHistoryTable(); } catch (e) { console.error(e); }
   try {
@@ -2064,6 +2162,7 @@ function applyDashboardData(data) {
   rawDashboardData = data.pmAlerts || [];
   dashboardLoaded = true;
   renderDashboardTable(rawDashboardData);
+  try { renderOverview(); } catch (e) { console.error(e); }
   return rawDashboardData;
 }
 
@@ -2638,6 +2737,7 @@ function applyHistoryData(data) {
   historyLoaded = true;
   renderHistoryTable(rawHistoryData);
   updateCouponSum();
+  try { renderOverview(); } catch (e) { console.error(e); }
   return rawHistoryData;
 }
 
@@ -3645,6 +3745,225 @@ async function exportSelectedReportToPDF(tableId, title, buttonEl) {
     if (buttonEl) {
       buttonEl.disabled = false;
       buttonEl.innerHTML = originalBtnHtml;
+    }
+  }
+}
+
+
+// ==========================================
+// 📊 OVERVIEW DASHBOARD (คำนวณจากข้อมูลที่โหลดมาแล้ว ไม่ยิง API เพิ่ม)
+// ==========================================
+function getItemPartsStatus(item) {
+  const lastPmRound = Number(item.lastPm) || 0;
+  return item.partsStatus || (lastPmRound === 0 ? "ไม่ได้เบิกอะไหล่" : "ค้างส่งอะไหล่");
+}
+
+function goToDashboardFilter(type) {
+  const tabBtn = document.querySelector('[data-bs-target="#tab-dashboard"]');
+  if (tabBtn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+  const btn = Array.from(document.querySelectorAll('.filter-btn')).find(b => (b.getAttribute('onclick') || '').includes("'" + type + "'"));
+  const searchInput = document.getElementById('searchDashboard');
+  if (searchInput) searchInput.value = '';
+  const roundSel = document.getElementById('dashboardRoundFilter');
+  if (roundSel) roundSel.value = 'all';
+  if (btn) setDashboardFilter(type, btn);
+  else filterDashboardTable();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function goToDashboardSearch(text) {
+  goToDashboardFilter('all');
+  const searchInput = document.getElementById('searchDashboard');
+  if (searchInput) { searchInput.value = text; filterDashboardTable(); }
+}
+
+function goToMatrix() {
+  const tabBtn = document.querySelector('[data-bs-target="#tab-matrix"]');
+  if (tabBtn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+  if (typeof loadPMMatrix === 'function') loadPMMatrix();
+}
+
+function getHistoryItemDate(item) {
+  const candidates = [item.serviceDate, item.date, item.service_date, item.timestamp, item.createdDate, item.updatedAt];
+  for (const c of candidates) {
+    if (!c || c === '-') continue;
+    let t = parseDateForSort(c);
+    if (!t) t = new Date(String(c).replace(' ', 'T')).getTime();
+    if (t && !isNaN(t)) return new Date(t);
+  }
+  return null;
+}
+
+function renderOverview() {
+  const pane = document.getElementById('tab-overview');
+  if (!pane) return;
+  const list = Array.isArray(rawDashboardData) ? rawDashboardData : [];
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
+  const fmt = n => Number(n || 0).toLocaleString('th-TH');
+
+  const updEl = document.getElementById('ovUpdatedAt');
+  if (!dashboardLoaded) { if (updEl) updEl.textContent = 'กำลังโหลดข้อมูล...'; return; }
+  if (updEl) updEl.innerHTML = '<i class="fa-regular fa-clock me-1"></i>อัปเดตล่าสุด ' + new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+
+  const total = list.length;
+  let pmAlert = 0, pendingParts = 0, partialParts = 0, approved = 0;
+  const partsCount = { 'ส่งครบแล้ว': 0, 'ส่งบางส่วน': 0, 'ค้างส่งอะไหล่': 0, 'ไม่ได้เบิกอะไหล่': 0 };
+  const modelCount = {};
+
+  list.forEach(item => {
+    const hrs = Number(item.currentHours) || 0;
+    const nextPm = Number(item.nextPm) || 0;
+    if (nextPm > 0 && nextPm - hrs <= 50) pmAlert++;
+    const ps = getItemPartsStatus(item);
+    if (partsCount[ps] === undefined) partsCount[ps] = 0;
+    partsCount[ps]++;
+    if (ps === 'ค้างส่งอะไหล่') pendingParts++;
+    if (ps === 'ส่งบางส่วน') partialParts++;
+    if (item.status === 'Approved') approved++;
+    const model = String(item.model || '').trim() || 'ไม่ระบุรุ่น';
+    modelCount[model] = (modelCount[model] || 0) + 1;
+  });
+
+  // Matrix (สถานะแต่ละรอบ)
+  const matrix = (historyLoaded && Array.isArray(rawMatrixData) && rawMatrixData.length === total)
+    ? rawMatrixData : buildPMMatrixFromDashboard(list);
+  let overdueMachines = 0, overdueRounds = 0;
+  const roundStats = PM_ROUNDS.map(r => ({ r, done: 0, skipped: 0, overdue: 0, due: 0, pending: 0 }));
+  matrix.forEach(m => {
+    let hasOverdue = false;
+    PM_ROUNDS.forEach((r, i) => {
+      const st = (m.rounds && m.rounds[r] && m.rounds[r].status) || 'pending';
+      if (roundStats[i][st] !== undefined) roundStats[i][st]++;
+      if (st === 'overdue') { hasOverdue = true; overdueRounds++; }
+    });
+    if (hasOverdue) overdueMachines++;
+  });
+
+  // คูปอง (1 สิทธิ์ต่อ เครื่อง/รอบ)
+  let couponPendingCount = 0, couponReceived = 0;
+  if (historyLoaded) {
+    getLatestPmLogs(rawHistoryData).forEach(item => {
+      if (Number(item.pmRound || 0) <= 0 || !hasCouponEntitlement(item)) return;
+      const val = parseFloat(String(item.yanmarCoupon || '0').replace(/,/g, '')) || 0;
+      if (val > 0) couponReceived += val; else couponPendingCount++;
+    });
+  }
+
+  setText('ovTotal', fmt(total));
+  setText('ovTotalSub', Object.keys(modelCount).length + ' รุ่น');
+  setText('ovPmAlert', fmt(pmAlert));
+  setText('ovOverdue', historyLoaded ? fmt(overdueMachines) : '-');
+  setText('ovOverdueSub', historyLoaded ? ('รวม ' + fmt(overdueRounds) + ' รอบที่เลยกำหนด') : 'รอโหลดประวัติ PM');
+  setText('ovPendingParts', fmt(pendingParts + partialParts));
+  setText('ovPendingPartsSub', 'ค้างส่ง ' + fmt(pendingParts) + ' · ส่งบางส่วน ' + fmt(partialParts));
+  setText('ovCouponPending', historyLoaded ? fmt(couponPendingCount) : '-');
+  setText('ovCouponPendingSub', historyLoaded ? ('≈ ' + fmt(couponPendingCount * 4000) + ' บาท · รับแล้ว ' + fmt(couponReceived) + ' บาท') : 'รอโหลดประวัติ PM');
+  setText('ovPendingApprove', fmt(total - approved));
+  setText('ovApproveSub', 'อนุมัติแล้ว ' + fmt(approved) + (total ? ' (' + Math.round(approved * 100 / total) + '%)' : ''));
+
+  // Donut: สถานะอะไหล่
+  const partsColors = { 'ส่งครบแล้ว': '#198754', 'ส่งบางส่วน': '#fd7e14', 'ค้างส่งอะไหล่': '#dc3545', 'ไม่ได้เบิกอะไหล่': '#adb5bd' };
+  const partsFilter = { 'ส่งบางส่วน': 'partial_parts', 'ค้างส่งอะไหล่': 'pending_parts' };
+  const partsEl = document.getElementById('ovPartsChart');
+  if (partsEl) {
+    if (!total) {
+      partsEl.innerHTML = '<div class="ov-empty">ยังไม่มีข้อมูล</div>';
+    } else {
+      let acc = 0;
+      const segs = Object.keys(partsCount).filter(k => partsCount[k] > 0).map(k => {
+        const start = acc / total * 360; acc += partsCount[k];
+        return `${partsColors[k] || '#6c757d'} ${start}deg ${acc / total * 360}deg`;
+      });
+      const legend = Object.keys(partsCount).map(k => {
+        const f = partsFilter[k];
+        const click = f ? `goToDashboardFilter('${f}')` : `goToDashboardSearch('')`;
+        const pct = total ? Math.round(partsCount[k] * 100 / total) : 0;
+        return `<li onclick="${click}"><span class="dot" style="background:${partsColors[k] || '#6c757d'}"></span>${escapeHtml(k)}<span class="num">${fmt(partsCount[k])} <small class="text-muted fw-normal">(${pct}%)</small></span></li>`;
+      }).join('');
+      partsEl.innerHTML = `<div class="ov-donut-wrap"><div class="ov-donut" style="background:conic-gradient(${segs.join(',')})"><div class="ov-donut-center"><b>${fmt(total)}</b><span>เครื่อง</span></div></div><ul class="ov-legend">${legend}</ul></div>`;
+    }
+  }
+
+  // Stacked bars: ความคืบหน้า PM แต่ละรอบ
+  const roundEl = document.getElementById('ovRoundChart');
+  if (roundEl) {
+    if (!total) {
+      roundEl.innerHTML = '<div class="ov-empty">ยังไม่มีข้อมูล</div>';
+    } else {
+      const cols = [['done', '#198754', 'เสร็จสิ้น'], ['skipped', '#adb5bd', 'ข้ามรอบ'], ['overdue', '#6f42c1', 'เกินกำหนด'], ['due', '#dc3545', 'ถึงกำหนด'], ['pending', '#e9ecef', 'รอรอบ']];
+      roundEl.innerHTML = roundStats.map(rs => {
+        const bars = cols.map(([k, c, lbl]) => rs[k] > 0 ? `<div style="width:${rs[k] / total * 100}%;background:${c}" title="${lbl}: ${rs[k]} เครื่อง"></div>` : '').join('');
+        const donePct = Math.round(rs.done * 100 / total);
+        return `<div class="ov-hbar-row" style="cursor:pointer" onclick="goToMatrix()"><div class="ov-hbar-label" style="width:70px">${rs.r} ชม.</div><div class="ov-hbar-track">${bars}</div><div class="ov-hbar-num" style="width:48px" title="เสร็จสิ้น">${donePct}%</div></div>`;
+      }).join('');
+    }
+  }
+
+  // Column chart: งาน PM ต่อเดือน
+  const monthEl = document.getElementById('ovMonthChart');
+  if (monthEl) {
+    if (!historyLoaded) {
+      monthEl.innerHTML = '<div class="ov-empty">กำลังโหลดประวัติ PM...</div>';
+    } else {
+      const now = new Date();
+      const months = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({ key: d.getFullYear() + '-' + d.getMonth(), label: d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }), count: 0 });
+      }
+      const idx = new Map(months.map((m, i) => [m.key, i]));
+      getLatestPmLogs(rawHistoryData).forEach(item => {
+        if (Number(item.pmRound || 0) <= 0) return;
+        const d = getHistoryItemDate(item);
+        if (!d) return;
+        const i = idx.get(d.getFullYear() + '-' + d.getMonth());
+        if (i !== undefined) months[i].count++;
+      });
+      const max = Math.max(1, ...months.map(m => m.count));
+      const sum = months.reduce((a, m) => a + m.count, 0);
+      monthEl.innerHTML = `<div class="ov-cols">${months.map(m => `<div class="ov-col" title="${m.label}: ${m.count} งาน"><div class="ov-col-bar" style="height:${m.count / max * 100}%">${m.count ? `<span>${m.count}</span>` : ''}</div><div class="ov-col-lbl">${m.label}</div></div>`).join('')}</div><div class="text-muted small mt-2">รวม 12 เดือน: <strong>${fmt(sum)}</strong> งาน · เฉลี่ย ${(sum / 12).toFixed(1)} งาน/เดือน</div>`;
+    }
+  }
+
+  // Horizontal bars: รุ่น
+  const modelEl = document.getElementById('ovModelChart');
+  if (modelEl) {
+    const entries = Object.entries(modelCount).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) {
+      modelEl.innerHTML = '<div class="ov-empty">ยังไม่มีข้อมูล</div>';
+    } else {
+      const top = entries.slice(0, 8);
+      const rest = entries.slice(8).reduce((a, e) => a + e[1], 0);
+      if (rest > 0) top.push(['อื่น ๆ', rest]);
+      const max = Math.max(...top.map(e => e[1]));
+      modelEl.innerHTML = top.map(([name, cnt]) => {
+        const click = name === 'อื่น ๆ' || name === 'ไม่ระบุรุ่น' ? '' : `onclick="goToDashboardSearch('${escapeHtml(name).replace(/'/g, '&#39;')}')" style="cursor:pointer"`;
+        return `<div class="ov-hbar-row" ${click}><div class="ov-hbar-label" title="${escapeHtml(name)}">${escapeHtml(name)}</div><div class="ov-hbar-track"><div style="width:${cnt / max * 100}%;background:#343a40"></div></div><div class="ov-hbar-num">${fmt(cnt)}</div></div>`;
+      }).join('');
+    }
+  }
+
+  // ตาราง: ใกล้ถึง / เลยรอบ PM
+  const urgentBody = document.getElementById('ovUrgentBody');
+  if (urgentBody) {
+    const urgent = list
+      .map(item => ({ item, hrs: Number(item.currentHours) || 0, next: Number(item.nextPm) || 0 }))
+      .filter(x => x.next > 0 && x.next - x.hrs <= 50)
+      .sort((a, b) => (a.next - a.hrs) - (b.next - b.hrs))
+      .slice(0, 10);
+    if (!urgent.length) {
+      urgentBody.innerHTML = '<tr><td colspan="8" class="ov-empty"><i class="fa-solid fa-circle-check text-success me-1"></i>ไม่มีเครื่องที่ต้องทำ PM ด่วนในขณะนี้</td></tr>';
+    } else {
+      urgentBody.innerHTML = urgent.map(({ item, hrs, next }) => {
+        const remain = next - hrs;
+        const remainHtml = remain < 0
+          ? `<span class="badge bg-danger">เลย ${fmt(-remain)} ชม.</span>`
+          : `<span class="badge bg-warning text-dark">อีก ${fmt(remain)} ชม.</span>`;
+        const ps = getItemPartsStatus(item);
+        const psColor = partsColors[ps] || '#6c757d';
+        const mid = escapeHtml(item.machineId).replace(/'/g, '&#39;');
+        return `<tr style="cursor:pointer" onclick="goToDashboardSearch('${mid}')"><td><strong>${escapeHtml(item.machineId) || '-'}</strong></td><td>${escapeHtml(item.model) || '-'}</td><td>${escapeHtml(item.customer) || '-'}</td><td>${escapeHtml(item.phone) || '-'}</td><td class="text-center">${fmt(hrs)}</td><td class="text-center">${fmt(next)}</td><td class="text-center">${remainHtml}</td><td><span class="badge" style="background:${psColor}">${escapeHtml(ps)}</span></td></tr>`;
+      }).join('');
     }
   }
 }
