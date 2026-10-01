@@ -701,7 +701,7 @@
                 </div>
                 <div class="search-actions">
                     <div style="display:flex; gap:8px;">
-                        <button id="btn-export-csv" class="btn btn-export" onclick="exportFilteredCSV()">📥 Export CSV</button>
+                        <button id="btn-export-csv" class="btn btn-export" onclick="exportFilteredCSV()">📥 Export Excel</button>
                         <button class="btn btn-secondary" onclick="clearFilters()">🔄 ล้างเงื่อนไข</button>
                     </div>
                     <button class="btn btn-primary" onclick="fetchDataFromServer(1)">🚀 ค้นหาข้อมูล</button>
@@ -1450,7 +1450,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r46-2026-10-01-manychat-key'; // (r47 front-end: export ตามตัวกรอง + geo จาก GitHub — ไม่ต้องแก้ Code.gs)
+        const EXPECTED_CODE_VERSION = 'r47-2026-10-01-stable-paging'; // คู่กับ Code_r47_stable_paging.gs
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -3802,6 +3802,8 @@
                 if(resData && resData.success) {
                     totalRecords = resData.totalCount || 0;
                     currentRenderedData = resData.data || [];
+                    // (r47) จำเงื่อนไขของผลค้นหาที่แสดงอยู่ — Export จะใช้ชุดนี้ ให้ตรงกับตัวเลขบนหน้าจอเสมอ
+                    lastSearchSnapshot_ = { filters: JSON.parse(JSON.stringify(payload.filters)), sortBy: payload.sortBy, total: totalRecords };
                     document.getElementById('stat-display').innerText = Number(totalRecords).toLocaleString();
                     // (r40) เรียก enrich ก่อน render เพื่อให้ธง "กำลังโหลดชื่อผู้บันทึก" ติดตั้งแต่การวาดตารางรอบแรก
                     enrichRowsWithLiveAudit_(currentRenderedData, () => renderTableRows(currentRenderedData));
@@ -5510,9 +5512,11 @@
         }
         /* (r47) Export CSV ตามตัวกรอง — ดึงทุกหน้าจากเซิร์ฟเวอร์ (ไม่ใช่แค่ 20/40 แถวที่แสดงในหน้าปัจจุบัน) */
         let _exportCsvRunning = false;
+        let lastSearchSnapshot_ = null;
         async function fetchAllFilteredRows_(onProgress) {
-            const filters = buildSearchFilters_();
-            const sortBy = determineSortBy();
+            const snap = lastSearchSnapshot_;
+            const filters = snap ? snap.filters : buildSearchFilters_();
+            const sortBy = snap ? snap.sortBy : determineSortBy();
             let pageSize = 500;
             let page = 1, total = Infinity, guard = 0;
             const all = [], seen = new Set();
@@ -5536,6 +5540,7 @@
                 if (typeof onProgress === 'function') onProgress(all.length, total);
                 page++;
             }
+            all._serverTotal = total;
             return all;
         }
         async function exportFilteredCSV() {
@@ -5544,15 +5549,19 @@
                 return;
             }
             if (_exportCsvRunning) return;
-            if (!totalRecords) {
-                alert('ไม่มีข้อมูลสำหรับส่งออก');
+            if (!lastSearchSnapshot_ || !lastSearchSnapshot_.total) {
+                alert('ไม่มีข้อมูลสำหรับส่งออก — กด 🚀 ค้นหาข้อมูล ก่อน');
+                return;
+            }
+            if (JSON.stringify(buildSearchFilters_()) !== JSON.stringify(lastSearchSnapshot_.filters)
+                && !confirm('เงื่อนไขในช่องกรองถูกเปลี่ยนหลังค้นหาครั้งล่าสุด\n\nจะ Export ตามผลค้นหาที่แสดงอยู่ (' + Number(lastSearchSnapshot_.total).toLocaleString() + ' รายการ)\nถ้าต้องการใช้เงื่อนไขใหม่ ให้กด ยกเลิก แล้วกด 🚀 ค้นหาข้อมูล ก่อน')) {
                 return;
             }
             _exportCsvRunning = true;
             const btn = document.getElementById('btn-export-csv');
             const btnHtml = btn ? btn.innerHTML : '';
             if (btn) { btn.disabled = true; btn.innerHTML = '⏳ กำลัง Export...'; }
-            const notifyId = crmNotify.loading(`กำลังดึงข้อมูลตามตัวกรอง 0 / ${Number(totalRecords).toLocaleString()} รายการ...`);
+            const notifyId = crmNotify.loading(`กำลังดึงข้อมูลตามตัวกรอง 0 / ${Number(lastSearchSnapshot_.total).toLocaleString()} รายการ...`);
             try {
                 const rows = await fetchAllFilteredRows_((got, total) => {
                     if (btn) btn.innerHTML = `⏳ ${got.toLocaleString()} / ${Number(total).toLocaleString()}`;
@@ -5561,26 +5570,48 @@
                     crmNotify.error(notifyId, 'ไม่มีข้อมูลสำหรับส่งออก');
                     return;
                 }
-                const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-                let csvContent = "﻿วันที่บันทึก,วันที่นัดหมาย,ติดตามล่าสุด,ชื่อ-สกุล,เบอร์โทร,ประเภท,ประเภทสินค้า,รุ่นรถ,ตำบล,อำเภอ,จังหวัด,หมายเหตุ\n";
-                rows.forEach(r => {
+                // (r47b) ส่งออกเป็น .xlsx ตั้งชื่อไฟล์มีเวลา+จำนวนแถว กันเปิดไฟล์เก่าชื่อซ้ำ และเก็บเลข 0 หน้าเบอร์โทร
+                const headers = ['วันที่บันทึก', 'วันที่นัดหมาย', 'ติดตามล่าสุด', 'ชื่อ-สกุล', 'เบอร์โทร', 'ประเภท',
+                    'ประเภทสินค้า', 'รุ่นรถ', 'ตำบล', 'อำเภอ', 'จังหวัด', 'หมายเหตุ'];
+                const aoa = [headers].concat(rows.map(r => {
                     const prodParts = getRowProductParts(r);
-                    csvContent += [r.date, r.booking_date, r.lastFollowupDate, r.name, r.phone, r.type,
+                    return [r.date, r.booking_date, r.lastFollowupDate, r.name, r.phone, r.type,
                         prodParts.category, prodParts.model, r.subdistrict, r.district, r.province, r.remark]
-                        .map(q).join(',') + '\n';
-                });
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `CRM_Filtered_Export_${new Date().toISOString().split('T')[0]}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-                crmNotify.success(notifyId, `Export CSV สำเร็จ (${rows.length.toLocaleString()} รายการ)`, { duration: 4000 });
+                        .map(v => v == null ? '' : String(v));
+                }));
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+                const baseName = `CRM_Export_${stamp}_${rows.length}rows`;
+                if (typeof XLSX !== 'undefined') {
+                    const ws = XLSX.utils.aoa_to_sheet(aoa);
+                    // บังคับทุกช่องเป็นข้อความ (เบอร์โทร 08x ไม่หาย 0 / วันที่ไม่ถูกแปลง)
+                    Object.keys(ws).forEach(k => { if (k[0] !== '!' && ws[k]) { ws[k].t = 's'; ws[k].z = '@'; } });
+                    ws['!cols'] = [12, 12, 12, 24, 13, 10, 14, 16, 14, 14, 13, 40].map(w => ({ wch: w }));
+                    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: headers.length - 1 } }) };
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'CRM Export');
+                    XLSX.writeFile(wb, baseName + '.xlsx');
+                } else {
+                    const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+                    const csvContent = '\uFEFF' + aoa.map(row => row.map(q).join(',')).join('\r\n');
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = baseName + '.csv';
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }
+                if (rows._serverTotal && rows.length < rows._serverTotal) {
+                    crmNotify.error(notifyId, `Export ได้ ${rows.length.toLocaleString()} จาก ${Number(rows._serverTotal).toLocaleString()} รายการ (ไม่ครบ) — ไฟล์ ${baseName} · ตรวจว่า deploy Code.gs r47 แล้ว`, { duration: 15000 });
+                } else {
+                    crmNotify.success(notifyId, `Export สำเร็จ ${rows.length.toLocaleString()} รายการ — ไฟล์ ${baseName}`, { duration: 8000 });
+                }
             } catch (err) {
-                crmNotify.error(notifyId, 'Export CSV ไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'));
+                crmNotify.error(notifyId, 'Export ไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'));
             } finally {
                 _exportCsvRunning = false;
                 if (btn) { btn.disabled = false; btn.innerHTML = btnHtml; }
