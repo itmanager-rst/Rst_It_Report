@@ -1,6 +1,9 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r06-2026-09-25-used-and-demo
+ * CODE_VERSION: r07-2026-10-01-legacy-data
+ *
+ * r07: แสดงข้อมูลจากระบบเก่า (AppSheet) ในหน้ารายละเอียดรถ อ่านจากชีต Legacy_Data (จับคู่ด้วยคอลัมน์ newKey)
+ *      ชีตนี้อ่านอย่างเดียว แอปไม่แก้ไข ดูข้อมูลต้องใส่ PIN ทีม เพราะมีชื่อเจ้าของเก่าและค่าใช้จ่าย
  *
  * r06: เพิ่มรถสาธิต (kindOf_ === 'รถสาธิต') เข้าฐานข้อมูลด้วย แอปเก็บ มือสอง + รถสาธิต (ดู KEEP_KINDS)
  *      รถใหม่/รถเช่า ยังไม่นำเข้าและไม่แสดงเหมือนเดิม
@@ -16,9 +19,10 @@
  *              รถที่เคยอยู่แต่ไม่มีในไฟล์ใหม่ → status "out" (ไม่อยู่ในสต็อก) แถวไม่ถูกลบ รูปยังอยู่
  *   Photos     รายการรูป ไฟล์จริงอยู่ใน Google Drive โฟลเดอร์ "RST Tractor Photos/<เลขตัวรถ>"
  *   ImportLog  ประวัติการนำเข้า
+ *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r06-2026-09-25-used-and-demo';
+var CODE_VERSION = 'r07-2026-10-01-legacy-data';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
@@ -47,9 +51,10 @@ function doGet(e) {
  */
 var API = {
   getBoot: getBoot, getPhotos: getPhotos, getCovers: getCovers, getPhotoFull: getPhotoFull,
-  importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto
+  importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto,
+  getLegacy: getLegacy
 };
-var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1 };
+var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
 
 function call(fn, args, pin) {
   if (!Object.prototype.hasOwnProperty.call(API, fn)) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
@@ -199,6 +204,41 @@ function normCar_(o) {
   return c;
 }
 
+/* ================= Legacy_Data (ระบบเก่า AppSheet) ================= */
+var LEGACY_SHEET = 'Legacy_Data';
+var LEGACY_SKIP = { newKey: 1, matchBy: 1, 'แถว': 1, 'รูป': 1, 'Front': 1, 'Back': 1, 'VDO-File': 1, 'test lo': 1 };
+/** เทียบ key แบบทน Google Sheets ตัดเลข 0 นำหน้า (เช่น 000125 → 125) และช่องว่าง */
+function legacyNorm_(k) { return String(k == null ? '' : k).toUpperCase().replace(/\s+/g, '').replace(/^0+(?=.)/, ''); }
+function legacyRead_() {
+  var s = ss_().getSheetByName(LEGACY_SHEET);
+  if (!s || s.getLastRow() < 2) return { h: [], ki: -1, rows: [] };
+  var h = headerOf_(s), ki = h.indexOf('newKey');
+  if (ki < 0) return { h: [], ki: -1, rows: [] };
+  return { h: h, ki: ki, rows: s.getRange(2, 1, s.getLastRow() - 1, h.length).getDisplayValues() };
+}
+/** {key: จำนวนระเบียนเก่า} ส่งไปกับ getBoot เพื่อซ่อนแผงในรถที่ไม่มีข้อมูลเก่า (cache 10 นาที) */
+function legacyCount_() {
+  var cache = CacheService.getScriptCache(), hit = cache.get('legacy_count');
+  if (hit) return JSON.parse(hit);
+  var d = legacyRead_(), out = {};
+  d.rows.forEach(function (r) { var k = legacyNorm_(r[d.ki]); if (k) out[k] = (out[k] || 0) + 1; });
+  try { cache.put('legacy_count', JSON.stringify(out), 600); } catch (e) { }
+  return out;
+}
+/** ระเบียนจากระบบเก่าของรถคันนี้ เป็น [[ชื่อช่อง, ค่า], ...] ต่อระเบียน (รถ 1 คันอาจมีหลายระเบียน) */
+function getLegacy(key) {
+  var d = legacyRead_(), want = legacyNorm_(key);
+  if (!want) return [];
+  return d.rows.filter(function (r) { return legacyNorm_(r[d.ki]) === want; }).map(function (r) {
+    var fields = [];
+    d.h.forEach(function (k, i) {
+      var v = String(r[i] == null ? '' : r[i]).trim();
+      if (k && !LEGACY_SKIP[k] && v && v !== '-') fields.push([k, v]);
+    });
+    return fields;
+  });
+}
+
 /* ================= API ================= */
 function getBoot() {
   var photos = {};
@@ -206,7 +246,9 @@ function getBoot() {
   var logs = readAll_(SH.LOG), email = '';
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
   var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); });
-  return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, lastImport: logs.length ? logs[logs.length - 1] : null };
+  var legacy = {};
+  try { var lc = legacyCount_(); cars.forEach(function (c) { var n = lc[legacyNorm_(c.key)]; if (n) legacy[c.key] = n; }); } catch (e) { }
+  return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, legacy: legacy, lastImport: logs.length ? logs[logs.length - 1] : null };
 }
 
 /**

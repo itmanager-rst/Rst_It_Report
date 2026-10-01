@@ -267,6 +267,11 @@ section.view{display:none}section.view.on{display:block}
 .fact .l{font-size:12px;color:var(--ink-2);margin-bottom:2px}.fact .v{font-weight:600}
 .panel{background:#FFFFFF;border-radius:var(--radius-m);padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .panel h3{margin-bottom:14px;font-size:18px;padding-left:12px;border-left:4px solid var(--red);line-height:1.2}
+.legacy{margin-bottom:16px}.legacy summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.legacy summary::-webkit-details-marker{display:none}.legacy summary::after{content:"แสดง";font-size:13px;color:var(--ink-2);white-space:nowrap}
+.legacy[open] summary::after{content:"ซ่อน"}.legacy summary h3{margin-bottom:0}.legacy[open] summary{margin-bottom:14px}
+.legacy .rec+.rec{margin-top:14px}.legacy .rec .small{margin-bottom:6px}.legacy .facts{margin-bottom:0}
+.legacy .fact .v{font-weight:500;word-break:break-word}.legacy .fact .v a{color:inherit}
 .addph{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
 .addph select{height:42px;border:1px solid #CFCFCF;border-radius:var(--radius-s);background:#FFFFFF;color:var(--ink);padding:0 10px}
 .addph input[type=file]{display:none}
@@ -401,6 +406,10 @@ section.view{display:none}section.view.on{display:block}
     <div class="plate" id="plate"></div>
     <h2 id="shTitle" class="visually-hidden">รายละเอียดรถ</h2>
     <div class="facts" id="facts"></div>
+    <details class="panel legacy" id="legacy" hidden>
+      <summary><h3>ข้อมูลจากระบบเก่า <span class="small muted" id="legacyN"></span></h3></summary>
+      <div id="legacyBody"></div>
+    </details>
     <div class="panel">
       <h3>รูปรถ</h3>
       <div class="addph">
@@ -493,7 +502,7 @@ function api(fn){
     if(/เชื่อมต่อ Apps Script ไม่ได้|หน้า HTML แทน JSON/.test(e.message)) dbStatus("err","ขาดการเชื่อมต่อฐานข้อมูล");
     if(!/^PIN:/.test(e.message)) throw e;
     if(/ยังไม่ได้ตั้ง/.test(e.message)) throw new Error(e.message.replace(/^PIN:\s*/,""));
-    var p=prompt((PIN?"PIN ทีมไม่ถูกต้อง ":"")+"ใส่ PIN ทีมเพื่อบันทึกข้อมูล (ขอจากผู้ดูแลระบบ)","");
+    var p=prompt((PIN?"PIN ทีมไม่ถูกต้อง ":"")+"ใส่ PIN ทีมเพื่อบันทึกหรือดูข้อมูลภายใน (ขอจากผู้ดูแลระบบ)","");
     if(!p) throw new Error("ต้องใส่ PIN ทีมก่อนบันทึก");
     PIN=p.trim(); store("rst_team_pin",PIN);
     return rawCall(fn,args).catch(function(e2){ if(/^PIN:/.test(e2.message)){ PIN=""; store("rst_team_pin",""); throw new Error("PIN ทีมไม่ถูกต้อง"); } throw e2; });
@@ -514,7 +523,7 @@ function thDateTime(v){ if(!v)return"-"; var d=v instanceof Date?v:new Date(v); 
 function dbStatus(s,t){ var el=$("#dbStat"); if(!el)return; el.dataset.s=s; $("#dbStatText").textContent=t||(s==="ok"?"เชื่อมต่อฐานข้อมูลแล้ว":s==="busy"?"กำลังเชื่อมต่อฐานข้อมูล...":"เชื่อมต่อฐานข้อมูลไม่ได้"); $("#dbRefresh").disabled=(s==="busy"); if(s==="err"&&t)el.title=t; else el.removeAttribute("title"); }
 
 /* ---------- state ---------- */
-var CARS=[], BYKEY={}, PCOUNT={}, COVER={};
+var CARS=[], BYKEY={}, PCOUNT={}, COVER={}, LEGACY={}, LEG={};
 var ME=store("rst_photo_user")||"";
 function paintMe(){ $("#whoBtn").textContent=ME||"ตั้งชื่อผู้ถ่ายรูป"; }
 function askName(){ var n=prompt("ชื่อผู้ถ่ายรูป (แสดงในข้อมูลรูป)",ME); if(n==null)return false; ME=n.trim(); store("rst_photo_user",ME); paintMe(); return !!ME; }
@@ -525,6 +534,7 @@ function load(){
   return api("getBoot").then(function(b){
     dbStatus("ok",(MODE==="gas"?"เชื่อมต่อฐานข้อมูลแล้ว":"เชื่อมต่อฐานข้อมูลแล้ว (Live Server)"));
     $("#dbSynced").textContent=thDateTime(new Date());
+    LEGACY=b.legacy||{}; LEG={};
     $("#dbUpdated").textContent=b.lastImport&&b.lastImport.at?thDateTime(b.lastImport.at):"ยังไม่เคยนำเข้าไฟล์";
     CARS=b.tractors.map(function(t){ t.nk=[t.serial,t.chassis,t.engine,t.code,t.name,t.series,t.spot,t.branch,t.kind].map(norm).join(" "); return t; })
       .sort(function(a,b){ return brCmp(a.branch,b.branch)||String(a.spot).localeCompare(String(b.spot),"th")||String(a.series).localeCompare(String(b.series)); });
@@ -608,8 +618,36 @@ function openCar(k){
     ["สถานะ",c.status==="stock"?"ในสต็อก":"ไม่อยู่ในสต็อก"+(c.outDate?" ตั้งแต่ "+thDate(c.outDate):"")],["ชื่อสินค้า",c.name]];
   $("#facts").innerHTML=f.map(function(x){return'<div class="fact"><div class="l">'+esc(x[0])+'</div><div class="v">'+esc(x[1])+'</div></div>'}).join("");
   $("#sheet").classList.add("on"); document.body.style.overflow="hidden";
+  setupLegacy(k);
   loadPhotos(k);
 }
+/* ---------- ข้อมูลจากระบบเก่า (Legacy_Data) ---------- */
+var LEG_MONEY={"ราคาขาย":1,"ค่าใช้จ่าย":1};
+function setupLegacy(k){
+  var el=$("#legacy"), n=LEGACY[k]||0;
+  el.hidden=!n; el.open=false; $("#legacyBody").innerHTML="";
+  $("#legacyN").textContent=n>1?"("+n+" ระเบียน)":"";
+}
+function paintLegacy(recs){
+  if(!recs.length){ $("#legacyBody").innerHTML='<div class="small muted">ไม่พบข้อมูลเก่าของรถคันนี้</div>'; return; }
+  $("#legacyBody").innerHTML=recs.map(function(f,i){
+    var cells=f.map(function(x){
+      var k=x[0], v=x[1], vh, n=String(v).replace(/,/g,"");
+      if(/^https?:\/\//i.test(v)) vh='<a href="'+esc(v)+'" target="_blank" rel="noopener">เปิดลิงก์</a>';
+      else if(LEG_MONEY[k]&&/^\d+(\.\d+)?$/.test(n)) vh=esc(money(n)||v);
+      else vh=esc(v);
+      return '<div class="fact"><div class="l">'+esc(k)+'</div><div class="v">'+vh+'</div></div>';
+    }).join("");
+    return '<div class="rec">'+(recs.length>1?'<div class="small muted">ระเบียนที่ '+(i+1)+'</div>':'')+'<div class="facts">'+cells+'</div></div>';
+  }).join("");
+}
+$("#legacy").addEventListener("toggle",function(){
+  if(!this.open||!cur)return; var key=cur.key;
+  if(LEG[key]) return paintLegacy(LEG[key]);
+  $("#legacyBody").innerHTML='<div class="small muted">กำลังโหลด...</div>';
+  api("getLegacy",key).then(function(r){ LEG[key]=r||[]; if(cur&&cur.key===key) paintLegacy(LEG[key]); })
+    .catch(function(e){ if(cur&&cur.key===key) $("#legacyBody").innerHTML='<div class="small muted">โหลดไม่ได้: '+esc(e.message)+'</div>'; });
+});
 function closeSheet(){ $("#sheet").classList.remove("on"); document.body.style.overflow=""; if(cur)paintCard(cur.key); cur=null; }
 $$("[data-close]").forEach(function(b){b.onclick=closeSheet});
 
