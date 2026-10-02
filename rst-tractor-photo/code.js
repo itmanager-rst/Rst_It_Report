@@ -1,6 +1,10 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r07-2026-10-01-legacy-data
+ * CODE_VERSION: r08-2026-10-02-excavator
+ *
+ * r08: เพิ่มประเภท รถขุด: ชื่อสินค้าต้อง "ขึ้นต้น" ด้วย รถขุด / รถแบคโฮ / Excavator (ยอมให้มี (รถสาธิต) นำหน้า)
+ *      อะไหล่ที่มีคำว่า รถขุด อยู่กลางชื่อ เช่น กรองน้ำมันไฮโดรลิก (รถขุด) จะไม่ถูกนับเป็นรถ
+ *      รุ่นรถขุดตัดรหัสตัวถัง (CCTH-QMJB1 ฯลฯ) ออก เหลือรุ่นหลัก เช่น ViO35-6B ชื่อสินค้าเต็มยังเก็บใน name
  *
  * r07: แสดงข้อมูลจากระบบเก่า (AppSheet) ในหน้ารายละเอียดรถ อ่านจากชีต Legacy_Data (จับคู่ด้วยคอลัมน์ newKey)
  *      ชีตนี้อ่านอย่างเดียว แอปไม่แก้ไข ดูข้อมูลต้องใส่ PIN ทีม เพราะมีชื่อเจ้าของเก่าและค่าใช้จ่าย
@@ -22,7 +26,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r07-2026-10-01-legacy-data';
+var CODE_VERSION = 'r08b-2026-10-02-excavator';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
@@ -39,7 +43,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('RST รูปรถแทรกเตอร์ · รถเกี่ยวข้าว มือสอง · รถสาธิต')
+    .setTitle('RST รูปรถแทรกเตอร์ · รถเกี่ยวข้าว · รถขุด มือสอง · รถสาธิต')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
@@ -162,17 +166,29 @@ function splitSerial_(s) {
 /** key = เลขตัวรถ ตัวพิมพ์ใหญ่ ไม่มีช่องว่าง */
 function keyOf_(serial) { return splitSerial_(serial).ch.toUpperCase().replace(/\s+/g, ''); }
 
+var EXC_RE = /^\s*(?:\([^)]*\)\s*)?(?:รถขุด|รถแบ็?คโฮ|excavator)/i;
+/** รุ่นรถขุด: ViO ของ Yanmar เขียนหลายแบบใน Ecount (VIO-35-6B, VI0356B, VIO3-6B) → ViO35-6B, ViO30-6B */
+function excSeries_(name) {
+  var x = String(name).replace(/^\s*\([^)]*\)\s*/, '').replace(/^(?:รถขุด|รถแบ็?คโฮ|excavator)\s*/i, '')
+    .replace(/\((?:รถ)?(มือสอง|เช่า|สาธิต)\)/g, '').replace(/(?:รถ)?สาธิต/g, '').replace(/^Yanmar\s*/i, '').replace(/รุ่น\s*/g, '').trim();
+  var m = x.match(/V[I1]?[O0]\s*-?\s*(\d{1,2})\s*-?\s*(\d{1,2}[A-Z]?)/i);
+  if (m) { var n = m[1].length === 1 ? m[1] + '0' : m[1]; return 'ViO' + n + '-' + m[2].toUpperCase(); }
+  return x.replace(/\s+/g, ' ');
+}
 function seriesOf_(name) {
+  if (EXC_RE.test(String(name || ''))) return excSeries_(name);
   var x = String(name).replace(/^\(.*?\)\s*/, '');
   var m = x.match(/รุ่น\s*(.+)$/);
   x = (m ? m[1] : x).replace(/\((?:รถ)?(มือสอง|เช่า|สาธิต)\)/g, '').replace(/(?:รถ)?สาธิต/g, '').replace(/VIN.*$/i, '').replace(/^Yanmar\s*/i, '').trim();
   return x.replace(/\s*-\s*45th$/i, ' 45th').replace(/^(\d{3}[A-Z]?)$/, 'YM$1');
 }
-/** ประเภทรถ: เก็บเฉพาะ 2 ประเภทนี้ */
+/** ประเภทรถ: เก็บเฉพาะ 3 ประเภทนี้ (ตรงกับ carType ใน index.html)
+ *  ตรวจรถแทรกเตอร์ก่อนรถขุด: รถแทรกเตอร์ที่ติดชุดแบคโฮยังนับเป็นรถแทรกเตอร์ ส่วนอุปกรณ์อย่าง "ชุดแบคโฮ" ไม่ถูกนำเข้า */
 function typeOf_(name) {
   var n = String(name || '');
   if (/รถเกี่ยว/.test(n)) return 'รถเกี่ยวข้าว';
   if (/รถแทรกเตอร์/.test(n)) return 'รถแทรกเตอร์';
+  if (EXC_RE.test(n)) return 'รถขุด';
   return '';
 }
 function kindOf_(name) {
