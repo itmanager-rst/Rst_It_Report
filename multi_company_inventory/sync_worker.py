@@ -449,9 +449,9 @@ def fetch_all_company_data():
         client.load_table_from_json(all_bal_rows, table_ref, location=LOCATION, job_config=job_config).result()
         print(f"✅ อัปเดต inventory_balance ลง BigQuery รวมสำเร็จ: {len(all_bal_rows)} รายการ")
 
-    # ซิงค์ข้อมูลใบสั่งซื้อ (PO) และค่าใช้จ่าย IT ย้อนหลังทั้งปี (365 วัน)
+    # ซิงค์ข้อมูลใบสั่งซื้อ (PO) และค่าใช้จ่าย IT ตั้งแต่ 1 ม.ค. ปีที่แล้ว ถึงวันนี้
     try:
-        fetch_all_company_po(days_back=365)
+        fetch_all_company_po()
     except Exception as exc:
         print(f"⚠️ ซิงค์ PO ไม่สำเร็จ: {exc}")
 
@@ -463,12 +463,17 @@ IT_PROJECT_CODES = {
 }
 
 
+IT_NAME_PATTERN = re.compile(r"(?<![A-Z])IT(?![A-Z])")
+
+
 def is_it_project(company_id, project_code, project_name):
     code = str(project_code or "").strip().upper()
     numeric_code = re.fullmatch(r"0*(\d+)(?:\.0+)?", code)
     normalized_code = numeric_code.group(1) if numeric_code else re.sub(r"^0+(?=\d)", "", code)
     expected_code = IT_PROJECT_CODES.get(str(company_id or "").strip().upper())
-    return normalized_code == expected_code or "IT" in str(project_name or "").upper()
+    # เดิมใช้ "IT" in name -> ชื่อโครงการภาษาอังกฤษที่มีตัวอักษร IT อยู่ข้างใน (UNIT, CREDIT, PROFIT, EDIT ฯลฯ)
+    # ถูกนับเป็นค่าใช้จ่าย IT ด้วย ทำให้ยอด IT เกินจริง -> ตอนนี้ต้องเป็นคำว่า IT เดี่ยวๆ (ไม่ติดตัวอักษรอังกฤษอื่น)
+    return normalized_code == expected_code or bool(IT_NAME_PATTERN.search(str(project_name or "").upper()))
 
 
 def get_ecount_session_client(com):
@@ -486,9 +491,16 @@ def get_ecount_session_client(com):
         "USER_ID": com["user_id"],
         "ZONE": com["zone"].upper(),
     }
-    res = s.post(login_url, json=payload, timeout=25)
+    try:
+        res = s.post(login_url, json=payload, timeout=25)
+    except requests.RequestException as exc:
+        print(f"  ❌ Login Exception ({com['id']}): {exc}")
+        return None, None, None
     if res.status_code == 200:
-        res_json = res.json()
+        try:
+            res_json = res.json()
+        except ValueError:
+            return None, None, None
         if str(res_json.get("Status")) == "200":
             datas = res_json.get("Data", {}).get("Datas", {})
             session_id = datas.get("SESSION_ID")
@@ -498,186 +510,399 @@ def get_ecount_session_client(com):
     return None, None, None
 
 
-def fetch_pos_for_company(com, days_back=365):
-    """ดึงข้อมูล PO ย้อนหลังแยกช่วงละ 30 วัน เพื่อไม่ให้ติด Limit ของ ECOUNT API"""
+# --- PO sync settings ---
+PO_PAGE_SIZE = 100
+PO_WINDOW_DAYS = 30                     # ช่วงค้นหาต่อครั้ง (รวมวันแรกและวันสุดท้าย) ไม่เกิน 30 วัน
+PO_REQUEST_DELAY_SECONDS = float(os.getenv("PO_REQUEST_DELAY_SECONDS", "1.0"))
+PO_MAX_ATTEMPTS = 4
+PO_MAX_PAGES_PER_WINDOW = 200
+
+# รายงานผลการซิงค์ PO ล่าสุด (ให้ app.py นำไปแสดงใน /api/project-expense-audit และ /api/sync-po)
+LAST_PO_SYNC_REPORT = {}
+
+PO_TABLE_SCHEMA = [
+    bigquery.SchemaField("company_id", "STRING"),
+    bigquery.SchemaField("po_no", "STRING"),
+    bigquery.SchemaField("ord_no", "STRING"),
+    bigquery.SchemaField("ord_date", "STRING"),
+    bigquery.SchemaField("wh_cd", "STRING"),
+    bigquery.SchemaField("wh_des", "STRING"),
+    bigquery.SchemaField("pjt_cd", "STRING"),
+    bigquery.SchemaField("pjt_des", "STRING"),
+    bigquery.SchemaField("cust_cd", "STRING"),
+    bigquery.SchemaField("cust_des", "STRING"),
+    bigquery.SchemaField("prod_des", "STRING"),
+    bigquery.SchemaField("size_des", "STRING"),
+    bigquery.SchemaField("qty", "FLOAT"),
+    bigquery.SchemaField("price", "FLOAT"),
+    bigquery.SchemaField("supply_amt", "FLOAT"),
+    bigquery.SchemaField("vat_amt", "FLOAT"),
+    bigquery.SchemaField("total_amt", "FLOAT"),
+    bigquery.SchemaField("pic", "STRING"),
+    bigquery.SchemaField("p_flag", "STRING"),
+    bigquery.SchemaField("status_name", "STRING"),
+    bigquery.SchemaField("ref_des", "STRING"),
+    bigquery.SchemaField("seq", "STRING"),
+    bigquery.SchemaField("updated_at", "TIMESTAMP"),
+]
+
+IT_TABLE_SCHEMA = [
+    bigquery.SchemaField("company_id", "STRING"),
+    bigquery.SchemaField("po_no", "STRING"),
+    bigquery.SchemaField("ord_no", "STRING"),
+    bigquery.SchemaField("ord_date", "STRING"),
+    bigquery.SchemaField("pjt_cd", "STRING"),
+    bigquery.SchemaField("pjt_des", "STRING"),
+    bigquery.SchemaField("cust_cd", "STRING"),
+    bigquery.SchemaField("cust_des", "STRING"),
+    bigquery.SchemaField("prod_des", "STRING"),
+    bigquery.SchemaField("qty", "FLOAT"),
+    bigquery.SchemaField("buy_amt", "FLOAT"),
+    bigquery.SchemaField("vat_amt", "FLOAT"),
+    bigquery.SchemaField("total_amt", "FLOAT"),
+    bigquery.SchemaField("pic_name", "STRING"),
+    bigquery.SchemaField("p_flag", "STRING"),
+    bigquery.SchemaField("status_name", "STRING"),
+    bigquery.SchemaField("updated_at", "TIMESTAMP"),
+]
+
+
+def default_po_sync_start():
+    """ค่าเริ่มต้นช่วงซิงค์ PO: ตั้งแต่ 1 ม.ค. ของปีที่แล้ว (เวลาไทย) ถึงวันนี้
+    เดิมใช้ 365 วันย้อนหลัง ทำให้ข้อมูลก่อนหน้านั้นหายจาก BigQuery ทุกรอบที่ซิงค์ (เพราะ WRITE_TRUNCATE)
+    เช่น เลือกดูยอดทั้งปีที่แล้วจะได้ยอดไม่ครบโดยไม่มีอะไรเตือน"""
+    today = datetime.now(timezone(timedelta(hours=7))).date()
+    return datetime(today.year - 1, 1, 1).date(), today
+
+
+def _po_items_from_body(body):
+    data = body.get("Data", {}) or {}
+    items = data.get("Result") or data.get("Datas") or data.get("List") or []
+    if isinstance(items, dict):
+        items = [items]
+    if not isinstance(items, list):
+        items = []
+    total_raw = data.get("TotalCnt", data.get("TOTAL_CNT"))
+    try:
+        total_cnt = int(total_raw) if total_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        total_cnt = None
+    return items, total_cnt
+
+
+def _ecount_error_text(r, body):
+    if body:
+        err = body.get("Error") or body.get("Errors")
+        if err:
+            return f"Status={body.get('Status')} {str(err)[:300]}"
+        return f"Status={body.get('Status')}"
+    return f"HTTP {getattr(r, 'status_code', '?')}"
+
+
+def fetch_pos_for_company(com, days_back=None, start_date=None, end_date=None):
+    """ดึง PO ของบริษัทเดียว แบ่งช่วงละไม่เกิน 30 วัน
+
+    คืนค่า (items, report) โดย report บอกว่าช่วงไหนดึงไม่สำเร็จ — เดิมถ้า ECOUNT ตอบ HTTP 200 แต่ Status != 200
+    (เช่น session หมดอายุ / เรียกถี่เกิน) โค้ดจะได้รายการว่างแล้ว break ออกเงียบๆ ทำให้ทั้งช่วง 30 วันนั้นหายไป
+    จาก BigQuery โดยไม่มี log เตือน และถ้า TotalCnt ไม่ได้ส่งมาจะหยุดที่หน้าแรก (100 รายการแรก) เสมอ
+    """
+    report = {
+        "company_id": com["id"],
+        "ok": False,
+        "rows": 0,
+        "windows_total": 0,
+        "windows_failed": [],
+        "error": "",
+    }
+
+    default_end = None
+    if start_date is None:
+        if days_back:
+            default_end = datetime.now(timezone(timedelta(hours=7))).date()
+            start_date = default_end - timedelta(days=int(days_back))
+        else:
+            start_date, default_end = default_po_sync_start()
+    if end_date is None:
+        end_date = default_end or datetime.now(timezone(timedelta(hours=7))).date()
+    report["coverage_from"] = start_date.strftime("%Y%m%d")
+    report["coverage_to"] = end_date.strftime("%Y%m%d")
+
     session, session_id, host_url = get_ecount_session_client(com)
     if not session:
+        report["error"] = "ไม่สามารถ Login ECOUNT ได้"
         print(f"  ❌ ไม่สามารถ Login บริษัท {com['id']} ได้")
-        return []
-
-    today = datetime.now().date()
-    start_date = today - timedelta(days=days_back)
+        return [], report
 
     windows = []
     curr = start_date
-    while curr <= today:
-        w_end = min(curr + timedelta(days=29), today)
+    while curr <= end_date:
+        w_end = min(curr + timedelta(days=PO_WINDOW_DAYS - 1), end_date)
         windows.append((curr.strftime("%Y%m%d"), w_end.strftime("%Y%m%d")))
         curr = w_end + timedelta(days=1)
+    report["windows_total"] = len(windows)
 
     all_items = []
     for f_date, t_date in windows:
+        window_items = []
         page = 1
-        retries = 0
-        while True:
-            url = f"https://{host_url}/OAPI/V2/Purchases/GetPurchasesOrderList?SESSION_ID={session_id}"
+        window_error = ""
+        while page <= PO_MAX_PAGES_PER_WINDOW:
             payload = {
                 "PROD_CD": "",
                 "CUST_CD": "",
                 "ListParam": {
                     "PAGE_CURRENT": page,
-                    "PAGE_SIZE": 100,
+                    "PAGE_SIZE": PO_PAGE_SIZE,
                     "BASE_DATE_FROM": f_date,
                     "BASE_DATE_TO": t_date,
                 },
             }
-            try:
-                r = session.post(url, json=payload, timeout=30)
-                if r.status_code == 412:
-                    retries += 1
-                    if retries > 3:
+            body, r, page_ok = {}, None, False
+            for attempt in range(1, PO_MAX_ATTEMPTS + 1):
+                url = f"https://{host_url}/OAPI/V2/Purchases/GetPurchasesOrderList?SESSION_ID={session_id}"
+                try:
+                    r = session.post(url, json=payload, timeout=30)
+                    try:
+                        body = r.json()
+                    except ValueError:
+                        body = {}
+                    if r.status_code == 200 and str(body.get("Status")) == "200":
+                        page_ok = True
                         break
-                    time.sleep(2)
-                    session, session_id, host_url = get_ecount_session_client(com)
-                    if not session:
-                        break
-                    continue
+                except requests.RequestException as exc:
+                    body = {"Status": "EXC", "Error": str(exc)}
 
-                if r.status_code != 200:
-                    break
+                window_error = _ecount_error_text(r, body)
+                if attempt < PO_MAX_ATTEMPTS:
+                    # รอแบบทวีคูณ แล้ว login ใหม่ (รองรับทั้ง 412, session หมดอายุ, และเรียกถี่เกิน)
+                    time.sleep(2 * attempt)
+                    new_session, new_sid, new_host = get_ecount_session_client(com)
+                    if new_session:
+                        session, session_id, host_url = new_session, new_sid, new_host
 
-                body = r.json()
-                data = body.get("Data", {}) or {}
-                items = data.get("Result", []) or []
-                all_items.extend(items)
-
-                total_cnt = int(data.get("TotalCnt") or 0)
-                if len(items) == 0 or page * 100 >= total_cnt:
-                    break
-                page += 1
-            except Exception as e:
-                print(f"  ⚠️ Fetch PO error ({com['id']} p.{page}): {e}")
+            if not page_ok:
                 break
+            window_error = ""  # หน้านี้สำเร็จหลัง retry แล้ว ไม่ถือเป็นข้อผิดพลาด
 
+            items, total_cnt = _po_items_from_body(body)
+            window_items.extend(items)
+            time.sleep(PO_REQUEST_DELAY_SECONDS)
+
+            if not items:
+                break
+            if total_cnt is not None:
+                if len(window_items) >= total_cnt:
+                    break
+            elif len(items) < PO_PAGE_SIZE:
+                # ไม่มี TotalCnt -> หน้าไม่เต็มแปลว่าหน้าสุดท้าย
+                break
+            page += 1
+        else:
+            window_error = f"เกิน {PO_MAX_PAGES_PER_WINDOW} หน้า"
+
+        if window_error and not window_items:
+            report["windows_failed"].append({"from": f_date, "to": t_date, "error": window_error})
+            print(f"  ⚠️ PO {com['id']} ช่วง {f_date}-{t_date} ดึงไม่สำเร็จ: {window_error}")
+        elif window_error:
+            # ได้มาบางหน้าแล้วหน้าถัดไปล้ม -> ข้อมูลช่วงนี้ไม่ครบ ถือว่าล้มเหลวเช่นกัน
+            report["windows_failed"].append({"from": f_date, "to": t_date, "error": f"ได้ {len(window_items)} รายการแล้วหน้าถัดไปล้ม: {window_error}"})
+            print(f"  ⚠️ PO {com['id']} ช่วง {f_date}-{t_date} ได้ไม่ครบ ({len(window_items)} รายการ): {window_error}")
+        all_items.extend(window_items)
+
+    # ตัดเฉพาะแถวที่ซ้ำกันทุกฟิลด์ (เกิดได้เฉพาะตอน ECOUNT ส่งหน้าซ้ำ) — เดิมใช้ key แค่ วันที่/เลขที่/สินค้า/จำนวน
+    # ซึ่งจะรวมบรรทัดที่สินค้าและจำนวนเหมือนกันแต่ราคาหรือโครงการต่างกันให้เหลือแถวเดียว ทำให้ยอดขาดหาย
     unique_items = []
     seen = set()
     for item in all_items:
-        key = (item.get("ORD_DATE"), item.get("ORD_NO"), item.get("IO_NO"), item.get("PROD_DES"), item.get("QTY"))
+        if not isinstance(item, dict):
+            continue
+        key = repr(sorted((str(k), str(v)) for k, v in item.items()))
         if key not in seen:
             seen.add(key)
             unique_items.append(item)
 
-    print(f"  📄 ดึงใบสั่งซื้อ {com['id']}: สำเร็จ {len(unique_items)} รายการ (ย้อนหลัง {days_back} วัน)")
-    return unique_items
+    report["rows"] = len(unique_items)
+    report["ok"] = not report["windows_failed"]
+    flag = "สำเร็จ" if report["ok"] else f"ไม่ครบ ({len(report['windows_failed'])}/{len(windows)} ช่วงล้มเหลว)"
+    print(f"  📄 ดึงใบสั่งซื้อ {com['id']}: {flag} {len(unique_items)} รายการ ({report['coverage_from']}-{report['coverage_to']})")
+    return unique_items, report
 
 
-def fetch_all_company_po(days_back=365):
-    """ดึงข้อมูล PO และค่าใช้จ่าย IT จากทุกบริษัท แล้วบันทึกลง BigQuery"""
+def _po_row_from_item(com_id, item, now_iso):
+    pick = lambda *keys: first_nonempty(item, *keys)
+    pjt_cd = pick("PJT_CD", "PROJECT_CD", "PROJECT_CODE")
+    pjt_cd = re.sub(r"\.0+$", "", pjt_cd)  # 24.0 -> 24
+    pjt_des = re.sub(r"\s+", " ", pick("PJT_DES", "PROJECT_DES", "PROJECT_NAME"))
+    ord_date_raw = pick("ORD_DATE", "IO_DATE")
+    ord_date_digits = re.sub(r"[^0-9]", "", ord_date_raw)
+    ord_date = ord_date_digits[:8] if len(ord_date_digits) >= 8 else ord_date_raw
+    ord_no = pick("ORD_NO")
+    io_no = pick("IO_NO")
+    raw_po = io_no if io_no and io_no not in ("0", "0.0") else f"PO-{ord_date}-{ord_no}"
+    qty = parse_float(pick("QTY"))
+    buy_amt = parse_float(pick("BUY_AMT", "SUPPLY_AMT"))
+    vat_amt = parse_float(pick("VAT_AMT"))
+    total_amt = parse_float(pick("TOTAL_AMT")) or (buy_amt + vat_amt)
+    p_flag = pick("P_FLAG").upper()
+
+    # Map สถานะ ECOUNT P_FLAG (รวมถึงรหัสตัวเลข 9 จาก API)
+    if p_flag in ("Y", "9", "COMPLETED", "CLOSED"):
+        status_name = "ดำเนินการเสร็จแล้ว"
+    elif p_flag in ("N", "0", "1", "PROGRESS", "PENDING"):
+        status_name = "กำลังดำเนินการ"
+    else:
+        status_name = pick("STATUS_DES", "CONFIRM_YN") or (f"สถานะ {p_flag}" if p_flag else "ไม่ระบุ")
+
+    return {
+        "company_id": com_id,
+        "po_no": raw_po,
+        "ord_no": ord_no,
+        "ord_date": ord_date,
+        "wh_cd": pick("WH_CD"),
+        "wh_des": pick("WH_DES"),
+        "pjt_cd": pjt_cd,
+        "pjt_des": pjt_des,
+        "cust_cd": pick("CUST", "CUST_CD"),
+        "cust_des": pick("CUST_DES"),
+        "prod_des": pick("PROD_DES", "TTL_CTT"),
+        "size_des": "",
+        "qty": qty,
+        "price": (buy_amt / qty) if qty > 0 else 0.0,
+        "supply_amt": buy_amt,
+        "vat_amt": vat_amt,
+        "total_amt": total_amt,
+        "pic": pick("CUST_NAME", "EMP_CD", "WRITER_ID") or "-",
+        "p_flag": p_flag,
+        "status_name": status_name,
+        "ref_des": pick("REF_DES"),
+        "seq": ord_no,
+        "updated_at": now_iso,
+    }
+
+
+def _it_row_from_po_row(row):
+    return {
+        "company_id": row["company_id"],
+        "po_no": row["po_no"],
+        "ord_no": row["ord_no"],
+        "ord_date": row["ord_date"],
+        "pjt_cd": row["pjt_cd"] or IT_PROJECT_CODES.get(row["company_id"], ""),
+        "pjt_des": row["pjt_des"] or "แผนก IT",
+        "cust_cd": row["cust_cd"],
+        "cust_des": row["cust_des"],
+        "prod_des": row["prod_des"],
+        "qty": row["qty"],
+        "buy_amt": row["supply_amt"],
+        "vat_amt": row["vat_amt"],
+        "total_amt": row["total_amt"],
+        "pic_name": row["pic"],
+        "p_flag": row["p_flag"],
+        "status_name": row["status_name"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _load_existing_po_rows(company_id):
+    """อ่านแถว PO เดิมของบริษัทนี้จาก BigQuery (ใช้เก็บข้อมูลเดิมไว้ ถ้ารอบนี้ดึงจาก ECOUNT ไม่สำเร็จ/ไม่ครบ)"""
+    fields = [f.name for f in PO_TABLE_SCHEMA]
+    query = f"""
+        SELECT * FROM `{PROJECT_ID}.{DATASET_ID}.purchase_orders`
+        WHERE UPPER(TRIM(company_id)) = @company_id
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("company_id", "STRING", company_id)]
+    )
+    rows = []
+    for r in client.query(query, job_config=job_config, location=LOCATION).result():
+        d = dict(r.items())
+        out = {}
+        for name in fields:
+            v = d.get(name)
+            if name in ("qty", "price", "supply_amt", "vat_amt", "total_amt"):
+                out[name] = parse_float(v)
+            elif name == "updated_at":
+                out[name] = v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
+            else:
+                out[name] = "" if v is None else (v.strftime("%Y%m%d") if hasattr(v, "strftime") else str(v))
+        rows.append(out)
+    return rows
+
+
+def fetch_all_company_po(days_back=None):
+    """ดึงข้อมูล PO และค่าใช้จ่าย IT จากทุกบริษัท แล้วบันทึกลง BigQuery
+
+    ป้องกันข้อมูลหาย: ถ้าบริษัทใดดึงไม่สำเร็จ/ไม่ครบ จะใช้ข้อมูลเดิมของบริษัทนั้นใน BigQuery ต่อไป
+    (เดิม WRITE_TRUNCATE ทับทั้งตาราง ทำให้บริษัทที่ login ไม่ผ่านรอบนั้นมียอดเป็น 0 ทันที)
+    """
     if client is None:
         print("⚠️ BigQuery client ไม่พร้อมใช้งาน ข้ามการซิงค์ PO")
-        return {"po_total": 0, "it_total": 0}
+        return {"po_total": 0, "it_total": 0, "companies": {}, "warnings": ["BigQuery client ไม่พร้อมใช้งาน"]}
 
-    print(f"\n🔄 เริ่มกระบวนการซิงค์ใบสั่งซื้อ (PO) ย้อนหลัง {days_back} วัน (ทั้งปี)...")
+    label = f"ย้อนหลัง {days_back} วัน" if days_back else "ตั้งแต่ 1 ม.ค. ปีที่แล้ว"
+    print(f"\n🔄 เริ่มกระบวนการซิงค์ใบสั่งซื้อ (PO) {label}...")
     now_iso = datetime.now(timezone.utc).isoformat()
     all_po_rows = []
-    it_expense_rows = []
+    companies_report = {}
+    warnings = []
 
     for idx, com in enumerate(COMPANIES):
         if not com["code"] or not com["api_key"]:
+            companies_report[com["id"]] = {"company_id": com["id"], "ok": False, "rows": 0, "error": "ไม่ได้ตั้งค่า COM_CODE/API_KEY", "windows_failed": []}
             continue
         if idx > 0:
             time.sleep(2)
 
-        items = fetch_pos_for_company(com, days_back=days_back)
-        for item in items:
-            pjt_cd = str(item.get("PJT_CD") or "").strip()
-            pjt_des = str(item.get("PJT_DES") or "").strip()
-            ord_date = str(item.get("ORD_DATE") or item.get("IO_DATE") or "").strip()
-            ord_no = str(item.get("ORD_NO") or "").strip()
-            io_no = str(item.get("IO_NO") or "").strip()
-            raw_po = io_no if io_no and io_no not in ("0", "0.0") else f"PO-{ord_date}-{ord_no}"
-            cust_cd = str(item.get("CUST") or "").strip()
-            cust_des = str(item.get("CUST_DES") or "").strip()
-            prod_des = str(item.get("PROD_DES") or item.get("TTL_CTT") or "").strip()
-            qty = parse_float(item.get("QTY"))
-            buy_amt = parse_float(item.get("BUY_AMT"))
-            vat_amt = parse_float(item.get("VAT_AMT"))
-            total_amt = parse_float(item.get("TOTAL_AMT")) or (buy_amt + vat_amt)
-            pic_name = str(item.get("CUST_NAME") or item.get("EMP_CD") or item.get("WRITER_ID") or "-").strip()
-            p_flag = str(item.get("P_FLAG") or "").strip().upper()
-            
-            # Map สถานะ ECOUNT P_FLAG (รวมถึงรหัสตัวเลข 9 จาก API)
-            if p_flag in ("Y", "9", "COMPLETED", "CLOSED"):
-                status_name = "ดำเนินการเสร็จแล้ว"
-            elif p_flag in ("N", "0", "1", "PROGRESS", "PENDING"):
-                status_name = "กำลังดำเนินการ"
+        items, report = fetch_pos_for_company(com, days_back=days_back)
+        new_rows = [_po_row_from_item(com["id"], item, now_iso) for item in items]
+
+        if report["ok"]:
+            all_po_rows.extend(new_rows)
+            report["used"] = "new"
+        else:
+            existing = []
+            try:
+                existing = _load_existing_po_rows(com["id"])
+            except Exception as exc:
+                print(f"  ⚠️ อ่านข้อมูล PO เดิมของ {com['id']} ไม่ได้: {exc}")
+            if existing:
+                all_po_rows.extend(existing)
+                report["used"] = "previous"
+                msg = f"{com['id']}: ดึงจาก ECOUNT ไม่ครบ ใช้ข้อมูลเดิม {len(existing)} รายการแทน ({report.get('error') or str(len(report['windows_failed'])) + ' ช่วงล้มเหลว'})"
             else:
-                status_name = str(item.get("STATUS_DES") or item.get("CONFIRM_YN") or (f"สถานะ {p_flag}" if p_flag else "ไม่ระบุ")).strip()
+                all_po_rows.extend(new_rows)
+                report["used"] = "partial"
+                msg = f"{com['id']}: ดึงจาก ECOUNT ไม่ครบ และไม่มีข้อมูลเดิม ใช้ข้อมูลที่ได้ {len(new_rows)} รายการ ({report.get('error') or str(len(report['windows_failed'])) + ' ช่วงล้มเหลว'})"
+            warnings.append(msg)
+            print(f"  ⚠️ {msg}")
+        companies_report[com["id"]] = report
 
-            wh_cd = str(item.get("WH_CD") or "").strip()
-            wh_des = str(item.get("WH_DES") or "").strip()
-            ref_des = str(item.get("REF_DES") or "").strip()
-
-            all_po_rows.append({
-                "company_id": com["id"],
-                "po_no": raw_po,
-                "ord_no": ord_no,
-                "ord_date": ord_date,
-                "wh_cd": wh_cd,
-                "wh_des": wh_des,
-                "pjt_cd": pjt_cd,
-                "pjt_des": pjt_des,
-                "cust_cd": cust_cd,
-                "cust_des": cust_des,
-                "prod_des": prod_des,
-                "size_des": "",
-                "qty": qty,
-                "price": (buy_amt / qty) if qty > 0 else 0.0,
-                "supply_amt": buy_amt,
-                "vat_amt": vat_amt,
-                "total_amt": total_amt,
-                "pic": pic_name,
-                "p_flag": p_flag,
-                "status_name": status_name,
-                "ref_des": ref_des,
-                "seq": ord_no,
-                "updated_at": now_iso,
-            })
-
-            if is_it_project(com["id"], pjt_cd, pjt_des):
-                it_expense_rows.append({
-                    "company_id": com["id"],
-                    "po_no": raw_po,
-                    "ord_no": ord_no,
-                    "ord_date": ord_date,
-                    "pjt_cd": pjt_cd or IT_PROJECT_CODES.get(com["id"], ""),
-                    "pjt_des": pjt_des or "แผนก IT",
-                    "cust_cd": cust_cd,
-                    "cust_des": cust_des,
-                    "prod_des": prod_des,
-                    "qty": qty,
-                    "buy_amt": buy_amt,
-                    "vat_amt": vat_amt,
-                    "total_amt": total_amt,
-                    "pic_name": pic_name,
-                    "p_flag": p_flag,
-                    "status_name": status_name,
-                    "updated_at": now_iso,
-                })
-
-    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+    it_expense_rows = [
+        _it_row_from_po_row(row) for row in all_po_rows
+        if is_it_project(row["company_id"], row["pjt_cd"], row["pjt_des"])
+    ]
 
     if all_po_rows:
+        job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE", schema=PO_TABLE_SCHEMA)
         t_ref = f"{PROJECT_ID}.{DATASET_ID}.purchase_orders"
         client.load_table_from_json(all_po_rows, t_ref, location=LOCATION, job_config=job_config).result()
         print(f"✅ อัปเดต purchase_orders ลง BigQuery สำเร็จ: {len(all_po_rows)} รายการ")
 
     if it_expense_rows:
+        job_config_it = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE", schema=IT_TABLE_SCHEMA)
         t_ref_it = f"{PROJECT_ID}.{DATASET_ID}.it_expenses"
-        client.load_table_from_json(it_expense_rows, t_ref_it, location=LOCATION, job_config=job_config).result()
+        client.load_table_from_json(it_expense_rows, t_ref_it, location=LOCATION, job_config=job_config_it).result()
         print(f"✅ อัปเดต it_expenses ลง BigQuery สำเร็จ: {len(it_expense_rows)} รายการ")
 
-    return {"po_total": len(all_po_rows), "it_total": len(it_expense_rows)}
+    LAST_PO_SYNC_REPORT.clear()
+    LAST_PO_SYNC_REPORT.update({
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "companies": companies_report,
+        "warnings": warnings,
+        "po_total": len(all_po_rows),
+        "it_total": len(it_expense_rows),
+    })
+    return {"po_total": len(all_po_rows), "it_total": len(it_expense_rows), "companies": companies_report, "warnings": warnings}
+
 
 if __name__ == "__main__":
     print("🚀 เริ่มต้นระบบ Multi-Company Inventory Sync Worker (Auto Loop)...")
