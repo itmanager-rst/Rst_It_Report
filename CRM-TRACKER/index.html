@@ -1248,6 +1248,29 @@
     </div>
     <!-- Modal ไทม์ไลน์การติดตามลูกค้า -->
     <!-- (r42) Modal แก้ไขสมาชิก — เฉพาะ admin -->
+    <!-- (r49) ยืนยันรหัสผ่านก่อนลบข้อมูลลูกค้า -->
+    <div id="delete-confirm-modal-overlay" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span style="color:#dc2626;">🗑️ ยืนยันการลบข้อมูลลูกค้า</span>
+                <button type="button" class="modal-close-btn" onclick="closeDeleteConfirmModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="item-card">
+                    <div style="font-size:13px; margin-bottom:10px;">ต้องการลบ <b id="delete-confirm-name" style="color:#dc2626;"></b> ใช่หรือไม่?<br><span style="font-size:12px; color:#64748b;">ลบแล้วกู้คืนไม่ได้ กรุณากรอกรหัสผ่านของคุณเพื่อยืนยัน</span></div>
+                    <div class="form-group">
+                        <label>รหัสผ่าน</label>
+                        <input type="password" id="delete-confirm-password" class="form-control" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();submitDeleteConfirm();}">
+                    </div>
+                    <div id="delete-confirm-error" style="display:none; font-size:12px; color:#dc2626; margin:4px 0 8px;"></div>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeDeleteConfirmModal()">ยกเลิก</button>
+                        <button type="button" class="btn btn-danger" id="btn-submit-delete-confirm" style="flex:1; justify-content:center;" onclick="submitDeleteConfirm()">🗑️ ยืนยันลบ</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="edit-member-modal-overlay" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -5713,6 +5736,8 @@
                 crmNotify.error(exportNotifyId, 'สร้างไฟล์ Excel ไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
             });
         }
+        // (r49) ลบข้อมูลลูกค้า — ต้องกรอกรหัสผ่านยืนยันก่อนทุกครั้ง (server ตรวจรหัสผ่านซ้ำอีกชั้น)
+        let pendingDelete_ = null;
         function deleteCustomerByIndex(idx) {
             if (currentRole !== 'admin') {
                 alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถลบข้อมูลได้');
@@ -5722,27 +5747,60 @@
             if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
             const key = row.raw_key || row.phone || row.date || '';
             if (!key) { alert('ไม่พบรหัสข้อมูลสำหรับลบ'); return; }
-            if (!confirm('ต้องการลบข้อมูลลูกค้า ' + (row.name || row.phone || 'นี้') + ' จริงหรือไม่')) return;
+            pendingDelete_ = { key: key, label: (row.name || row.phone || 'ลูกค้ารายนี้') };
+            document.getElementById('delete-confirm-name').innerText = pendingDelete_.label;
+            const pw = document.getElementById('delete-confirm-password');
+            pw.value = '';
+            const err = document.getElementById('delete-confirm-error');
+            err.style.display = 'none'; err.innerText = '';
+            const btn = document.getElementById('btn-submit-delete-confirm');
+            btn.disabled = false; btn.innerText = '🗑️ ยืนยันลบ';
+            document.getElementById('delete-confirm-modal-overlay').classList.add('show');
+            setTimeout(() => pw.focus(), 50);
+        }
 
-            const deleteNotifyId = crmNotify.loading('กำลังลบข้อมูลลูกค้า ' + (row.name || row.phone || '') + '...');
+        function closeDeleteConfirmModal() {
+            document.getElementById('delete-confirm-modal-overlay').classList.remove('show');
+            document.getElementById('delete-confirm-password').value = '';
+            pendingDelete_ = null;
+        }
+
+        function submitDeleteConfirm() {
+            if (!pendingDelete_) return;
+            const pwEl = document.getElementById('delete-confirm-password');
+            const err = document.getElementById('delete-confirm-error');
+            const btn = document.getElementById('btn-submit-delete-confirm');
+            const password = pwEl.value;
+            if (!password) { err.innerText = 'กรุณากรอกรหัสผ่าน'; err.style.display = 'block'; pwEl.focus(); return; }
+            const target = pendingDelete_;
+            btn.disabled = true; btn.innerText = '⏳ กำลังตรวจสอบ...';
+            err.style.display = 'none';
+
+            const deleteNotifyId = crmNotify.loading('กำลังลบข้อมูลลูกค้า ' + target.label + '...');
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'delete', payload: { key: key }, token: localStorage.getItem(authTokenKey) || '' })
+                body: JSON.stringify({ action: 'delete', payload: { key: target.key, confirmPassword: password }, token: localStorage.getItem(authTokenKey) || '' })
             })
             .then(res => res.json())
             .then(resData => {
                 if (resData && resData.success) {
+                    closeDeleteConfirmModal();
                     crmNotify.success(deleteNotifyId, 'ลบข้อมูลลูกค้าสำเร็จ', { duration: 3500 });
                     fetchDataFromServer(currentPage);
                 } else {
+                    const msg = resData ? resData.message : 'Unknown error';
                     crmNotify.error(deleteNotifyId, 'ลบข้อมูลไม่สำเร็จ');
-                    alert('❌ ลบข้อมูลไม่สำเร็จ: ' + (resData ? resData.message : 'Unknown error'));
+                    // รหัสผิด → ให้กรอกใหม่ในกล่องเดิม ไม่ต้องปิด
+                    err.innerText = '❌ ' + msg; err.style.display = 'block';
+                    btn.disabled = false; btn.innerText = '🗑️ ยืนยันลบ';
+                    pwEl.value = ''; pwEl.focus();
                 }
             })
-            .catch(err => {
+            .catch(() => {
                 crmNotify.error(deleteNotifyId, 'ลบข้อมูลไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
-                alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง');
+                err.innerText = '🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'; err.style.display = 'block';
+                btn.disabled = false; btn.innerText = '🗑️ ยืนยันลบ';
             });
         }
 
