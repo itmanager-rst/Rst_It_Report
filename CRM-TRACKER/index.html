@@ -1500,7 +1500,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r48-2026-10-02-customer-category'; // คู่กับ Code_r48_customer_category.gs
+        const EXPECTED_CODE_VERSION = 'r49-2026-10-05-sales-daily-report'; // คู่กับ Code_r49_sales_daily_report.gs
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -5904,7 +5904,7 @@
          (กดตัวเลขในตาราง "รายงานจำนวนลีดที่เข้ามาต่อวัน" แล้วหน้าต่างนี้เปิดขึ้น)
          - ติ๊กเลือกคอลัมน์ที่จะแสดง / ลาก ⠿ เพื่อเรียงลำดับก่อนหลัง / คืนค่าเริ่มต้น
          - จำค่าไว้ในเบราว์เซอร์เครื่องนี้ (localStorage) เปิดครั้งหน้ายังเป็นแบบเดิม
-         - วางบล็อกนี้ไว้ "ก่อน </body>" (หลัง </script> ตัวสุดท้าย) — ฟังก์ชัน openIntakeDetailModal
+         - วางบล็อกนี้ไว้ "ก่อน </body>" (หลังสคริปต์ตัวสุดท้าย) — ฟังก์ชัน openIntakeDetailModal
            ในนี้จะใช้แทนตัวเดิมโดยอัตโนมัติ ไม่ต้องลบโค้ดเดิม ไม่ต้องแก้ Code.gs
          ===================================================================== -->
     <script>
@@ -6143,6 +6143,300 @@
             header.insertBefore(btn, closeBtn);
             icRenderHeader_();
         })();
+    </script>
+    <!-- =====================================================================
+         (r49 2026-10-05) หน้า "📈 รายงาน":
+         1) 🧩 จัดเรียงหน้ารายงาน — ลากย้าย/เลื่อนขึ้นลง/ปรับเต็มแถว-ครึ่งแถว (ซ้าย-ขวา) จำค่าไว้ในเครื่องนี้
+         2) 👥 รายงานประจำวันแยกตามเซลล์ (admin) — action 'getSalesDailyReport' ใน Code.gs r49
+         ===================================================================== -->
+    <style>
+        .rp-toolbar { display: flex; justify-content: flex-end; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .rp-toolbar .rp-hint { font-size: 11.5px; color: #64748b; margin-right: auto; }
+        .report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; align-items: start; }
+        .report-grid > .rp-panel { position: relative; min-width: 0; margin-bottom: 0 !important; }
+        .report-grid > .rp-panel.rp-full { grid-column: 1 / -1; }
+        .rp-tools { display: none; gap: 6px; align-items: center; flex-wrap: wrap; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 5px 8px; margin-bottom: 8px; font-size: 12px; color: #3730a3; }
+        .rp-tools button { border: 1px solid #c7d2fe; background: #fff; color: #3730a3; border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+        .rp-tools button:hover { background: #e0e7ff; }
+        .rp-tools .rp-handle { cursor: grab; font-size: 15px; user-select: none; }
+        .rp-tools .rp-name { font-weight: 600; margin-right: auto; }
+        .report-grid.rp-editing > .rp-panel { outline: 2px dashed #a5b4fc; outline-offset: 3px; }
+        .report-grid.rp-editing .rp-tools { display: flex; }
+        .report-grid > .rp-panel.rp-dragging { opacity: .4; }
+        .report-grid > .rp-panel.rp-drop-target { outline: 3px solid #6366f1; }
+        .sdr-table { width: max-content; min-width: 100%; table-layout: auto; border-collapse: collapse; font-size: 12.5px; }
+        .sdr-table th { background: #f8fafc; padding: 7px 8px; text-align: left; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+        .sdr-table td { padding: 6px 8px; border-bottom: 1px solid #edf2f7; white-space: nowrap; }
+        .sdr-table td.num, .sdr-table th.num { text-align: right; }
+        .sdr-table th.sortable { cursor: pointer; }
+        .sdr-table th.sortable:hover { color: var(--primary-color); }
+        .sdr-top { background: #fef3c7; font-weight: 700; color: #92400e; border-radius: 6px; padding: 1px 6px; }
+        .sdr-day-row td { background: #f1f5f9; font-weight: 600; color: #0f172a; }
+        .sdr-note { font-size: 11.5px; color: #94a3b8; margin: 6px 0 10px; line-height: 1.5; }
+        @media (max-width: 900px) { .report-grid { grid-template-columns: 1fr; } }
+    </style>
+    <script>
+        /* ---------- 2) การ์ดรายงานประจำวันแยกตามเซลล์ ---------- */
+        let sdrLoadedOnce = false, sdrData = null, sdrSortKey = 'added', sdrSeq = 0;
+        const SDR_METRICS = [
+            { key: 'added', label: 'ลูกค้าที่เพิ่มเอง' },
+            { key: 'appointments', label: 'นัดหมาย' },
+            { key: 'followups', label: 'ติดตาม (ครั้ง)' },
+            { key: 'booked', label: 'จอง' },
+            { key: 'closing', label: 'รอปิดการขาย' }
+        ];
+        function sdrBuildCard_() {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = 'sales-daily-card';
+            card.style.display = 'none';
+            card.innerHTML = `
+                <div class="card-title" style="flex-wrap:wrap; row-gap:6px;">
+                    <span>👥 รายงานประจำวันแยกตามเซลล์</span>
+                    <div class="staff-dash-controls">
+                        <input type="date" id="sdr-start-date" class="form-control" aria-label="วันที่เริ่ม">
+                        <span class="staff-dash-sep">ถึง</span>
+                        <input type="date" id="sdr-end-date" class="form-control" aria-label="วันที่สิ้นสุด">
+                        <button class="btn btn-primary" id="btn-sdr-refresh" onclick="fetchSalesDailyReport()">🔄 ดึงรายงาน</button>
+                    </div>
+                </div>
+                <div id="sdr-status" class="staff-dash-status"></div>
+                <div class="bi-section-title">🏆 สรุปรวมรายคน (กดหัวคอลัมน์เพื่อเรียง · 🏅 = สูงสุดในคอลัมน์นั้น)</div>
+                <div class="table-responsive" style="max-height:45vh; margin-top:6px;" id="sdr-summary"></div>
+                <div class="bi-section-title" style="margin-top:12px;">📅 แยกรายวัน × รายคน</div>
+                <div class="table-responsive" style="max-height:55vh; margin-top:6px;" id="sdr-daily"></div>
+                <div class="sdr-note" id="sdr-note"></div>`;
+            return card;
+        }
+        function sdrInitRange_() {
+            const s = document.getElementById('sdr-start-date'), e = document.getElementById('sdr-end-date');
+            if (!e.value) e.value = localDateISO(new Date());
+            if (!s.value) { const d = new Date(); d.setDate(d.getDate() - 6); s.value = localDateISO(d); }
+        }
+        function fetchSalesDailyReport() {
+            if (currentRole !== 'admin') return;
+            sdrInitRange_();
+            const s = document.getElementById('sdr-start-date'), e = document.getElementById('sdr-end-date');
+            const status = document.getElementById('sdr-status');
+            const btn = document.getElementById('btn-sdr-refresh');
+            const seq = ++sdrSeq;
+            btn.disabled = true;
+            status.textContent = '⏳ กำลังโหลดรายงาน...';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getSalesDailyReport', payload: { startDate: s.value, endDate: e.value } })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (seq !== sdrSeq) return;
+                if (!resData || !resData.success) {
+                    const msg = (resData && resData.message) || 'ไม่ได้รับข้อมูล';
+                    throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs r49 ก่อน' : msg);
+                }
+                sdrData = resData;
+                if (resData.range) { s.value = resData.range.startDate; e.value = resData.range.endDate; }
+                status.textContent = `ช่วงวันที่ ${s.value} ถึง ${e.value} | อัปเดตเมื่อ ${resData.generatedAt || '-'}${resData.cached ? ' (แคช)' : ''} — ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 15 นาที`;
+                document.getElementById('sdr-note').innerHTML =
+                    '• <b>ลูกค้าที่เพิ่มเอง</b> = ผู้บันทึกลูกค้า ตามวันที่สร้างจริง (ไม่นับลีดจาก ManyChat และรายการจาก "นำเข้า Excel")<br>' +
+                    '• <b>นัดหมาย</b> = บันทึกติดตามประเภท ' + escapeHtml((resData.appointmentTypes || []).join(' / ')) + '<br>' +
+                    '• <b>จอง / รอปิดการขาย</b> = สถานะปัจจุบันของลูกค้า นับให้ผู้อัปเดตล่าสุด ลงวันที่ติดตามล่าสุด (ระบบไม่ได้เก็บวันที่เปลี่ยนสถานะ) · คอลัมน์ "ตอนนี้ทั้งหมด" ไม่จำกัดช่วงวันที่';
+                sdrRender_();
+            })
+            .catch(err => {
+                if (seq !== sdrSeq) return;
+                status.textContent = '❌ โหลดรายงานไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+            })
+            .finally(() => { if (seq === sdrSeq) btn.disabled = false; });
+        }
+        function sdrSort(key) { sdrSortKey = key; sdrRender_(); }
+        function sdrRender_() {
+            if (!sdrData) return;
+            const people = (sdrData.people || []).slice();
+            const pipeNow = p => (p.pipelineBookedNow || 0) + (p.pipelineClosingNow || 0);
+            const val = (p, k) => k === 'pipelineNow' ? pipeNow(p) : (Number(p[k]) || 0);
+            people.sort((a, b) => val(b, sdrSortKey) - val(a, sdrSortKey) || String(a.person).localeCompare(String(b.person), 'th'));
+            const cols = SDR_METRICS.concat([{ key: 'pipelineNow', label: 'จอง+รอปิด ตอนนี้ทั้งหมด' }]);
+            const max = {};
+            cols.forEach(c => { max[c.key] = Math.max(0, ...people.map(p => val(p, c.key))); });
+            const fmt = (p, c) => {
+                const v = val(p, c.key);
+                const txt = c.key === 'pipelineNow' ? `${v.toLocaleString()} <span style="color:#94a3b8; font-size:11px;">(จอง ${p.pipelineBookedNow || 0} · รอปิด ${p.pipelineClosingNow || 0})</span>` : v.toLocaleString();
+                return (v > 0 && v === max[c.key]) ? `<span class="sdr-top">🏅 ${txt}</span>` : (v ? txt : '<span style="color:#cbd5e1;">0</span>');
+            };
+            const sumBox = document.getElementById('sdr-summary');
+            if (!people.length) {
+                sumBox.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">ไม่มีกิจกรรมของเซลล์ในช่วงวันที่ที่เลือก</div>';
+            } else {
+                sumBox.innerHTML = `<table class="sdr-table"><thead><tr><th>#</th><th>เซลล์</th>${cols.map(c =>
+                    `<th class="num sortable" onclick="sdrSort('${c.key}')">${escapeHtml(c.label)}${sdrSortKey === c.key ? ' ▼' : ''}</th>`).join('')}</tr></thead><tbody>` +
+                    people.map((p, i) => `<tr><td>${i + 1}</td><td><b>${escapeHtml(p.person)}</b></td>${cols.map(c => `<td class="num">${fmt(p, c)}</td>`).join('')}</tr>`).join('') +
+                    '</tbody></table>';
+            }
+            const dailyBox = document.getElementById('sdr-daily');
+            const daily = sdrData.daily || [];
+            if (!daily.length) {
+                dailyBox.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">ไม่มีข้อมูลรายวัน</div>';
+                return;
+            }
+            let html = `<table class="sdr-table"><thead><tr><th>วันที่</th><th>เซลล์</th>${SDR_METRICS.map(c => `<th class="num">${escapeHtml(c.label)}</th>`).join('')}</tr></thead><tbody>`;
+            let curDay = null;
+            daily.forEach(d => {
+                if (d.date !== curDay) {
+                    curDay = d.date;
+                    const dayRows = daily.filter(x => x.date === curDay);
+                    const tot = k => dayRows.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+                    let label = curDay;
+                    try { label = new Date(curDay + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' }); } catch (e) {}
+                    html += `<tr class="sdr-day-row"><td>${escapeHtml(label)}</td><td>รวมทั้งวัน (${dayRows.length} คน)</td>${SDR_METRICS.map(c => `<td class="num">${tot(c.key).toLocaleString()}</td>`).join('')}</tr>`;
+                }
+                html += `<tr><td></td><td>${escapeHtml(d.person)}</td>${SDR_METRICS.map(c => `<td class="num">${(Number(d[c.key]) || 0) ? Number(d[c.key]).toLocaleString() : '<span style="color:#cbd5e1;">0</span>'}</td>`).join('')}</tr>`;
+            });
+            dailyBox.innerHTML = html + '</tbody></table>';
+        }
+
+        /* ---------- 1) จัดเรียงหน้ารายงาน ---------- */
+        const RP_LAYOUT_KEY = 'crm_tracker_report_layout_v1';
+        // id ของการ์ด → [ชื่อที่โชว์, ค่าเริ่มต้นเต็มแถวหรือไม่]
+        const RP_PANELS = [
+            ['staff-dash', '📊 Dashboard พนักงาน', true],
+            ['sales-daily', '👥 รายงานแยกตามเซลล์', true],
+            ['stale', '⏰ ลูกค้าค้างติดตาม', true],
+            ['funnel', '🔻 Funnel การขาย', true],
+            ['dash-type', '📊 สรุปสถิติ', false],
+            ['dash-prod', '🏆 Top 5 สินค้า', false],
+            ['dash-manychat', '📱 Lead จาก ManyChat', false],
+            ['daily-lead', '📅 รายงานลีดรายวัน', true]
+        ];
+        let rpEditing = false, rpDragId = null;
+        function rpDefaultLayout_() { return RP_PANELS.map(p => ({ id: p[0], full: p[2] })); }
+        function rpLoadLayout_() {
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem(RP_LAYOUT_KEY) || 'null'); } catch (e) { saved = null; }
+            if (!Array.isArray(saved)) return rpDefaultLayout_();
+            const known = RP_PANELS.map(p => p[0]), seen = new Set();
+            const out = saved.filter(x => x && known.includes(x.id) && !seen.has(x.id)).map(x => { seen.add(x.id); return { id: x.id, full: !!x.full }; });
+            RP_PANELS.forEach(p => { if (!seen.has(p[0])) out.push({ id: p[0], full: p[2] }); });
+            return out;
+        }
+        let rpLayout = rpLoadLayout_();
+        function rpSave_() { try { localStorage.setItem(RP_LAYOUT_KEY, JSON.stringify(rpLayout)); } catch (e) {} }
+        function rpGrid_() { return document.getElementById('report-grid'); }
+        function rpPanel_(id) { return rpGrid_().querySelector(`.rp-panel[data-panel="${id}"]`); }
+        function rpApply_() {
+            const grid = rpGrid_();
+            rpLayout.forEach(item => {
+                const el = rpPanel_(item.id);
+                if (!el) return;
+                el.classList.toggle('rp-full', !!item.full);
+                const wbtn = el.querySelector('.rp-width-btn');
+                if (wbtn) wbtn.textContent = item.full ? '↔ เต็มแถว → ครึ่งแถว' : '↔ ครึ่งแถว → เต็มแถว';
+                grid.appendChild(el);
+            });
+            window.dispatchEvent(new Event('resize')); // ให้กราฟปรับขนาดตามช่องใหม่
+        }
+        function rpMove(id, dir) {
+            const i = rpLayout.findIndex(x => x.id === id), j = i + dir;
+            if (i < 0 || j < 0 || j >= rpLayout.length) return;
+            const t = rpLayout[i]; rpLayout[i] = rpLayout[j]; rpLayout[j] = t;
+            rpSave_(); rpApply_();
+        }
+        function rpToggleWidth(id) {
+            const item = rpLayout.find(x => x.id === id);
+            if (!item) return;
+            item.full = !item.full;
+            rpSave_(); rpApply_();
+        }
+        function rpToggleEdit() {
+            rpEditing = !rpEditing;
+            rpGrid_().classList.toggle('rp-editing', rpEditing);
+            rpGrid_().querySelectorAll('.rp-panel').forEach(el => { el.draggable = rpEditing; });
+            document.getElementById('btn-rp-edit').textContent = rpEditing ? '✓ เสร็จสิ้นการจัดเรียง' : '🧩 จัดเรียงหน้ารายงาน';
+            document.getElementById('btn-rp-reset').style.display = rpEditing ? '' : 'none';
+            document.getElementById('rp-hint').style.display = rpEditing ? '' : 'none';
+        }
+        function rpReset() {
+            if (!confirm('คืนค่าการจัดเรียงหน้ารายงานเป็นแบบเริ่มต้น?')) return;
+            rpLayout = rpDefaultLayout_(); rpSave_(); rpApply_();
+        }
+        function rpWrapPanel_(el, id, name) {
+            el.classList.add('rp-panel');
+            el.dataset.panel = id;
+            const tools = document.createElement('div');
+            tools.className = 'rp-tools';
+            tools.innerHTML = `<span class="rp-handle" title="ลากเพื่อย้าย">⠿</span><span class="rp-name">${escapeHtml(name)}</span>` +
+                `<button type="button" onclick="rpMove('${id}', -1)" title="เลื่อนขึ้น/ไปก่อน">▲</button>` +
+                `<button type="button" onclick="rpMove('${id}', 1)" title="เลื่อนลง/ไปทีหลัง">▼</button>` +
+                `<button type="button" class="rp-width-btn" onclick="rpToggleWidth('${id}')"></button>`;
+            el.insertBefore(tools, el.firstChild);
+            el.addEventListener('dragstart', e => {
+                if (!rpEditing) { e.preventDefault(); return; }
+                rpDragId = id; el.classList.add('rp-dragging'); e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', id); } catch (x) {}
+            });
+            el.addEventListener('dragend', () => {
+                el.classList.remove('rp-dragging'); rpDragId = null;
+                rpGrid_().querySelectorAll('.rp-drop-target').forEach(x => x.classList.remove('rp-drop-target'));
+            });
+            el.addEventListener('dragover', e => { if (rpEditing && rpDragId && rpDragId !== id) { e.preventDefault(); el.classList.add('rp-drop-target'); } });
+            el.addEventListener('dragleave', () => el.classList.remove('rp-drop-target'));
+            el.addEventListener('drop', e => {
+                e.preventDefault(); el.classList.remove('rp-drop-target');
+                if (!rpDragId || rpDragId === id) return;
+                const from = rpLayout.findIndex(x => x.id === rpDragId);
+                const moved = rpLayout.splice(from, 1)[0];
+                const to = rpLayout.findIndex(x => x.id === id);
+                rpLayout.splice(from <= to ? to + 1 : to, 0, moved); // ลากลงล่าง = วางหลังการ์ดเป้าหมาย, ลากขึ้นบน = วางก่อน
+                rpSave_(); rpApply_();
+            });
+        }
+        (function rpInit_() {
+            const page = document.getElementById('page-report');
+            if (!page || document.getElementById('report-grid')) return;
+            const byId = id => document.getElementById(id);
+            const cardOf = id => { const el = byId(id); return el ? el.closest('.card, .dash-card') : null; };
+            const found = {
+                'staff-dash': byId('staff-dash-card'),
+                'stale': cardOf('stale-leads-table'),
+                'funnel': cardOf('sales-funnel-container'),
+                'dash-type': cardOf('dash-type-list'),
+                'dash-prod': cardOf('dash-prod-list'),
+                'dash-manychat': cardOf('dash-manychat-count'),
+                'daily-lead': cardOf('daily-report-table'),
+                'sales-daily': sdrBuildCard_()
+            };
+            const reportRow = page.querySelector('.report-row');
+            const toolbar = document.createElement('div');
+            toolbar.className = 'rp-toolbar';
+            toolbar.innerHTML = '<span class="rp-hint" id="rp-hint" style="display:none;">ลาก ⠿ การ์ดไปวางบนการ์ดอื่น หรือกด ▲ ▼ · "ครึ่งแถว" = วางคู่กันซ้าย-ขวา · ระบบจำการจัดเรียงไว้ในเครื่องนี้</span>' +
+                '<button type="button" class="btn btn-secondary" id="btn-rp-reset" style="display:none;" onclick="rpReset()">↩️ คืนค่าเริ่มต้น</button>' +
+                '<button type="button" class="btn btn-secondary" id="btn-rp-edit" onclick="rpToggleEdit()">🧩 จัดเรียงหน้ารายงาน</button>';
+            const grid = document.createElement('div');
+            grid.id = 'report-grid';
+            grid.className = 'report-grid';
+            page.insertBefore(toolbar, page.firstChild);
+            page.insertBefore(grid, toolbar.nextSibling);
+            RP_PANELS.forEach(([id, name]) => { const el = found[id]; if (el) { rpWrapPanel_(el, id, name); grid.appendChild(el); } });
+            if (reportRow && !reportRow.children.length) reportRow.remove();
+            rpApply_();
+        })();
+
+        // หลังเปิดหน้ารายงาน: โชว์การ์ดเซลล์เฉพาะ admin + โหลดครั้งแรก (switchPage เดิมยังทำงานครบเหมือนเดิม)
+        window.switchPage = (function(orig) {
+            return function(name) {
+                orig(name);
+                const card = document.getElementById('sales-daily-card');
+                if (card) card.style.display = (currentRole === 'admin') ? '' : 'none';
+                if (name === 'report' && currentRole === 'admin' && !sdrLoadedOnce) {
+                    sdrLoadedOnce = true;
+                    fetchSalesDailyReport();
+                }
+            };
+        })(window.switchPage);
+        // ออกจากระบบ → ล้างรายงานเซลล์ของคนเดิม ให้คนถัดไปโหลดใหม่ตามสิทธิ์ตัวเอง
+        window.logoutUser = (function(orig) {
+            return function() { orig(); sdrLoadedOnce = false; };
+        })(window.logoutUser);
     </script>
 </body>
 </html>
