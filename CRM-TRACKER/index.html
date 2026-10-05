@@ -5899,5 +5899,250 @@
             });
         }
     </script>
+    <!-- =====================================================================
+         (r48d 2026-10-05) ⚙️ ตั้งค่าคอลัมน์ ในหน้าต่าง "รายละเอียด" ของรายงานลีดรายวัน
+         (กดตัวเลขในตาราง "รายงานจำนวนลีดที่เข้ามาต่อวัน" แล้วหน้าต่างนี้เปิดขึ้น)
+         - ติ๊กเลือกคอลัมน์ที่จะแสดง / ลาก ⠿ เพื่อเรียงลำดับก่อนหลัง / คืนค่าเริ่มต้น
+         - จำค่าไว้ในเบราว์เซอร์เครื่องนี้ (localStorage) เปิดครั้งหน้ายังเป็นแบบเดิม
+         - วางบล็อกนี้ไว้ "ก่อน </body>" (หลัง </script> ตัวสุดท้าย) — ฟังก์ชัน openIntakeDetailModal
+           ในนี้จะใช้แทนตัวเดิมโดยอัตโนมัติ ไม่ต้องลบโค้ดเดิม ไม่ต้องแก้ Code.gs
+         ===================================================================== -->
+    <script>
+        const IC_STORAGE_KEY = 'crm_tracker_intake_detail_cols_v1';
+        let icDataLoaded = false;
+        let icDragSrc = null;
+
+        function icAddressText_(r) {
+            return [r.addressNo, r.moo ? 'หมู่ ' + r.moo : '', r.village].filter(Boolean).join(' ');
+        }
+        // คอลัมน์ทั้งหมดที่เลือกแสดงได้ — render(row, index, fin) คืนค่า HTML ของช่องนั้น
+        const IC_COLUMNS = [
+            { key: 'receivedAt', label: 'วันเวลาที่ส่งเข้ามา', minW: 120, render: r => escapeHtml(r.receivedAt || '-') },
+            { key: 'name', label: 'ชื่อ', minW: 140, render: (r, i) => {
+                const n = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+                return `<span class="report-customer-link" onclick="openReportCustomerDetail(${i})">${escapeHtml(n)}</span>`;
+            } },
+            { key: 'phone', label: 'เบอร์โทร', minW: 100, render: r => escapeHtml(r.phone || '-') },
+            { key: 'facebook', label: 'Facebook', minW: 120, render: r => escapeHtml(r.facebook || '-') },
+            { key: 'status', label: 'สถานะ', minW: 110, render: r => r.isDuplicate
+                ? `<span class="badge" style="background:#fee2e2; color:#b91c1c;">ส่งซ้ำ${r.matchType ? ' (' + escapeHtml(r.matchType) + ')' : ''}</span>`
+                : `<span class="badge" style="background:#dcfce7; color:#15803d;">ลูกค้าใหม่</span>` },
+            { key: 'manychat', label: 'ManyChat', minW: 70, align: 'center', render: r => r.isManychat ? '📱 ใช่' : '-' },
+            { key: 'income', label: 'รายได้', minW: 145, render: (r, i, fin) => financialIncomeSummary(fin) },
+            { key: 'debts', label: 'หนี้สิน', minW: 130, render: (r, i, fin) => financialDebtSummary(fin) },
+            { key: 'action', label: 'ดูข้อมูล', minW: 95, render: (r, i) =>
+                `<button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openReportCustomerDetail(${i})">👤 ดูข้อมูลครบ</button>` },
+            // ---- คอลัมน์เพิ่มเติม (ซ่อนไว้ก่อน เปิดได้ในตั้งค่าคอลัมน์) ----
+            { key: 'product', label: 'สินค้าที่สนใจ', minW: 130, render: r => escapeHtml(r.product || '-') },
+            { key: 'address', label: 'ที่อยู่ (เลขที่/หมู่/หมู่บ้าน)', minW: 160, render: r => escapeHtml(icAddressText_(r) || '-') },
+            { key: 'subdistrict', label: 'ตำบล', minW: 90, render: r => escapeHtml(r.subdistrict || '-') },
+            { key: 'district', label: 'อำเภอ', minW: 90, render: r => escapeHtml(r.district || '-') },
+            { key: 'province', label: 'จังหวัด', minW: 100, render: r => escapeHtml(r.province || '-') },
+            { key: 'zipcode', label: 'รหัสไปรษณีย์', minW: 80, render: r => escapeHtml(r.zipcode || '-') },
+            { key: 'line', label: 'LINE ID', minW: 100, render: r => escapeHtml(r.line || '-') },
+            { key: 'remark', label: 'หมายเหตุ', minW: 220, style: 'white-space:pre-line;', render: r => escapeHtml(r.remark || '-') },
+            { key: 'rai', label: 'จำนวนไร่ (รวม)', minW: 80, render: (r, i, fin) => financialRaiSummary(fin) },
+            { key: 'machinery', label: 'รถ/เครื่องจักรที่ถือครอง', minW: 180, render: (r, i, fin) => financialMachinerySummary(fin) },
+            { key: 'regularJob', label: 'งานประจำ/รายได้เสริม', minW: 160, render: (r, i, fin) => financialJobSummary(fin) },
+            { key: 'createdBy', label: 'ผู้บันทึกลูกค้า', minW: 130, render: r => escapeHtml(r.created_by || '-') },
+            { key: 'updatedBy', label: 'ผู้แก้ไขล่าสุด', minW: 130, render: r => escapeHtml(r.updated_by || '-') }
+        ];
+        const IC_DEFAULT_VISIBLE = ['receivedAt', 'name', 'phone', 'facebook', 'status', 'manychat', 'income', 'debts', 'action'];
+
+        function icDefaultConfig_() {
+            return IC_COLUMNS.map(c => ({ key: c.key, visible: IC_DEFAULT_VISIBLE.indexOf(c.key) !== -1 }));
+        }
+        function icLoadConfig_() {
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem(IC_STORAGE_KEY) || 'null'); } catch (e) { stored = null; }
+            if (!Array.isArray(stored) || !stored.length) return icDefaultConfig_();
+            const known = new Set(IC_COLUMNS.map(c => c.key));
+            const seen = new Set();
+            const merged = stored.filter(c => c && known.has(c.key) && !seen.has(c.key)).map(c => {
+                seen.add(c.key);
+                return { key: c.key, visible: !!c.visible };
+            });
+            IC_COLUMNS.forEach(c => { if (!seen.has(c.key)) merged.push({ key: c.key, visible: false }); });
+            return merged;
+        }
+        let icConfig = icLoadConfig_();
+        function icSaveConfig_() {
+            try { localStorage.setItem(IC_STORAGE_KEY, JSON.stringify(icConfig)); } catch (e) { /* โหมดส่วนตัว ฯลฯ — ข้าม */ }
+        }
+        function icVisibleColumns_() {
+            const vis = icConfig.filter(c => c.visible).map(c => IC_COLUMNS.find(x => x.key === c.key)).filter(Boolean);
+            return vis.length ? vis : [IC_COLUMNS[1]]; // กันกรณีซ่อนหมดทุกคอลัมน์ ให้เหลือ "ชื่อ" ไว้อย่างน้อย 1
+        }
+        function icTable_() {
+            const tbody = document.getElementById('intake-detail-tbody');
+            return tbody ? tbody.closest('table') : null;
+        }
+        function icRenderHeader_() {
+            const table = icTable_();
+            if (!table) return;
+            table.style.cssText = 'width:max-content; min-width:100%; table-layout:auto; font-size:12px; border-collapse:collapse;';
+            const thBase = 'padding:6px; background:#f8fafc; position:sticky; top:0; white-space:nowrap;';
+            let thead = table.querySelector('thead');
+            if (!thead) { thead = document.createElement('thead'); table.insertBefore(thead, table.firstChild); }
+            thead.innerHTML = '<tr>' + icVisibleColumns_().map(c =>
+                `<th style="${thBase}text-align:${c.align || 'left'};">${escapeHtml(c.label)}</th>`).join('') + '</tr>';
+        }
+        function icRenderTable_() {
+            icRenderHeader_();
+            if (!icDataLoaded) return; // ยังโหลดไม่เสร็จ/โหลดไม่สำเร็จ — คงข้อความสถานะเดิมไว้
+            const tbody = document.getElementById('intake-detail-tbody');
+            const rows = intakeDetailRows || [];
+            if (!rows.length) {
+                tbody.innerHTML = '<tr><td colspan="99" style="text-align:center; padding:20px; color:#94a3b8;">ไม่พบข้อมูล</td></tr>';
+                return;
+            }
+            const vis = icVisibleColumns_();
+            tbody.innerHTML = rows.map((r, i) => {
+                const fin = parseFinancialInfo(r.financialInfo);
+                return '<tr>' + vis.map(c => {
+                    let html;
+                    try { html = c.render(r, i, fin); } catch (e) { html = '-'; }
+                    return `<td style="padding:6px; border-bottom:1px solid #edf2f7; min-width:${c.minW || 90}px; text-align:${c.align || 'left'};${c.style || ''}">${html}</td>`;
+                }).join('') + '</tr>';
+            }).join('');
+        }
+
+        // ใช้แทนฟังก์ชันเดิม (ประกาศชื่อซ้ำในสคริปต์ที่อยู่ทีหลัง → ปุ่มตัวเลขในรายงานจะเรียกตัวนี้)
+        function openIntakeDetailModal(dateOrRange, filterType, isRange) {
+            const overlay = document.getElementById('intake-detail-modal-overlay');
+            const tbody = document.getElementById('intake-detail-tbody');
+            const titleEl = document.getElementById('intake-detail-title');
+            const summaryEl = document.getElementById('intake-detail-summary');
+            const label = INTAKE_FILTER_LABELS[filterType] || filterType;
+            const rangeObj = isRange ? _lastReportRange : null;
+            titleEl.textContent = isRange
+                ? `🔎 รายละเอียด: ${label} (${rangeObj.startDate || '...'} ถึง ${rangeObj.endDate || '...'})`
+                : `🔎 รายละเอียด: ${label} (วันที่ ${dateOrRange})`;
+            icDataLoaded = false;
+            intakeDetailRows = [];
+            icRenderHeader_();
+            tbody.innerHTML = '<tr><td colspan="99" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
+            summaryEl.textContent = '';
+            overlay.classList.add('show');
+            const onlyMc = document.getElementById('report-only-manychat').checked;
+            const reqPayload = isRange
+                ? { startDate: rangeObj.startDate, endDate: rangeObj.endDate, filter: filterType, onlyManyChat: onlyMc }
+                : { date: dateOrRange, filter: filterType, onlyManyChat: onlyMc };
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getLeadIntakeLogDetail', payload: reqPayload })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if (!resData || !resData.success) {
+                    const errorMessage = resData ? (resData.message || resData.error || 'ไม่ทราบสาเหตุ') : 'ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์';
+                    tbody.innerHTML = '<tr><td colspan="99" style="text-align:center; padding:24px; color:#ef4444;">❌ ดึงรายละเอียดไม่สำเร็จ: ' + escapeHtml(errorMessage) + '</td></tr>';
+                    return;
+                }
+                intakeDetailRows = resData.rows || [];
+                icDataLoaded = true;
+                summaryEl.textContent = `พบทั้งหมด ${intakeDetailRows.length.toLocaleString()} รายการ` +
+                    (intakeDetailRows.length >= 500 ? ' (แสดงสูงสุด 500 รายการล่าสุด — ลองย่อช่วงวันที่ถ้าต้องการดูครบทุกรายการ)' : '');
+                icRenderTable_();
+            })
+            .catch(() => {
+                tbody.innerHTML = '<tr><td colspan="99" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง</td></tr>';
+            });
+        }
+
+        // ---------- หน้าต่างตั้งค่าคอลัมน์ ----------
+        function icEnsureSettingsModal_() {
+            if (document.getElementById('intake-col-settings-overlay')) return;
+            const ov = document.createElement('div');
+            ov.id = 'intake-col-settings-overlay';
+            ov.className = 'modal-overlay';
+            ov.style.zIndex = '2100'; // อยู่เหนือหน้าต่างรายละเอียด
+            ov.innerHTML =
+                '<div class="modal-box" style="width:420px;">' +
+                '<div class="modal-header"><span>⚙️ ตั้งค่าคอลัมน์ (หน้ารายละเอียดลีด)</span>' +
+                '<button type="button" class="modal-close-btn" onclick="icCloseSettings()">✕</button></div>' +
+                '<div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">✔️ ติ๊กเพื่อแสดง/ซ่อนคอลัมน์ · ลาก ⠿ เพื่อย้ายลำดับ (บนสุด = ซ้ายสุดของตาราง) · ระบบจำค่าไว้ในเครื่องนี้</div>' +
+                '<div id="intake-col-settings-list"></div>' +
+                '<button type="button" class="btn-add-item" onclick="icResetSettings()">↩️ คืนค่าเริ่มต้น</button>' +
+                '<button type="button" class="btn-done" onclick="icCloseSettings()">✓ เสร็จแล้ว</button>' +
+                '</div>';
+            ov.addEventListener('click', e => { if (e.target === ov) icCloseSettings(); });
+            document.body.appendChild(ov);
+        }
+        function icOpenSettings() {
+            icEnsureSettingsModal_();
+            icRenderSettingsList_();
+            document.getElementById('intake-col-settings-overlay').classList.add('show');
+        }
+        function icCloseSettings() {
+            const ov = document.getElementById('intake-col-settings-overlay');
+            if (ov) ov.classList.remove('show');
+        }
+        function icRenderSettingsList_() {
+            const box = document.getElementById('intake-col-settings-list');
+            if (!box) return;
+            box.innerHTML = icConfig.map((c, i) => {
+                const def = IC_COLUMNS.find(x => x.key === c.key);
+                return `<div class="col-settings-item" draggable="true" data-index="${i}"
+                        ondragstart="icDragStart(event)" ondragover="icDragOver(event)" ondrop="icDrop(event)" ondragend="icDragEnd(event)">
+                    <span class="col-drag-handle" title="ลากเพื่อย้ายลำดับ">⠿</span>
+                    <input type="checkbox" ${c.visible ? 'checked' : ''} onchange="icToggle(${i}, this.checked)">
+                    <span class="col-settings-label">${escapeHtml(def ? def.label : c.key)}</span>
+                </div>`;
+            }).join('');
+        }
+        function icApplyChange_() {
+            icSaveConfig_();
+            icRenderSettingsList_();
+            icRenderTable_();
+        }
+        function icToggle(i, checked) {
+            if (!checked && icConfig.filter(c => c.visible).length <= 1) {
+                alert('ต้องแสดงอย่างน้อย 1 คอลัมน์');
+                icRenderSettingsList_();
+                return;
+            }
+            icConfig[i].visible = checked;
+            icApplyChange_();
+        }
+        function icResetSettings() {
+            if (!confirm('คืนค่าคอลัมน์ทั้งหมดเป็นค่าเริ่มต้น?')) return;
+            icConfig = icDefaultConfig_();
+            icApplyChange_();
+        }
+        function icDragStart(e) {
+            icDragSrc = Number(e.currentTarget.dataset.index);
+            e.currentTarget.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        function icDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function icDrop(e) {
+            e.preventDefault();
+            const target = Number(e.currentTarget.dataset.index);
+            if (icDragSrc === null || target === icDragSrc) return;
+            const moved = icConfig.splice(icDragSrc, 1)[0];
+            icConfig.splice(target, 0, moved);
+            icDragSrc = null;
+            icApplyChange_();
+        }
+        function icDragEnd(e) { e.currentTarget.classList.remove('dragging'); icDragSrc = null; }
+
+        // ใส่ปุ่ม "⚙️ ตั้งค่าคอลัมน์" ที่หัวหน้าต่างรายละเอียด (ข้างปุ่มปิด ✕)
+        (function icInjectButton_() {
+            const header = document.querySelector('#intake-detail-modal-overlay .modal-header');
+            if (!header || document.getElementById('btn-intake-col-settings')) return;
+            const closeBtn = header.querySelector('.modal-close-btn');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = 'btn-intake-col-settings';
+            btn.className = 'btn btn-secondary';
+            btn.style.cssText = 'padding:4px 10px; font-size:11.5px; margin-left:auto; margin-right:8px;';
+            btn.textContent = '⚙️ ตั้งค่าคอลัมน์';
+            btn.onclick = icOpenSettings;
+            header.insertBefore(btn, closeBtn);
+            icRenderHeader_();
+        })();
+    </script>
 </body>
 </html>
