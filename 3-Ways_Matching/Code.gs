@@ -36,7 +36,7 @@ var CONFIG = {
 
 /* ============================================================
  * DATA HUB (อ่านอย่างเดียว)
- * อ่านทุกแท็บที่ชื่อลงท้ายด้วย _LINES จากไฟล์ RST GROUP Data Hub
+ * อ่านทุกแท็บที่ชื่อลงท้ายด้วย _LINES และแท็บ ECOUNT_PURCHASE (สถานะการซื้อ) จากไฟล์ RST GROUP Data Hub
  * ครั้งแรกหลังเพิ่มส่วนนี้ ต้อง Deploy เวอร์ชันใหม่และอนุญาตสิทธิ์อ่าน Google Sheet อีกครั้ง
  * ============================================================ */
 function hubRead_(id) {
@@ -44,7 +44,7 @@ function hubRead_(id) {
   var ss = SpreadsheetApp.openById(id), tz = ss.getSpreadsheetTimeZone(), tabs = {}, names = [];
   ss.getSheets().forEach(function (sh) {
     var n = sh.getName(); names.push(n);
-    if (!/_LINES$/i.test(n) || sh.getLastRow() < 1) return;
+    if (!/_LINES$|^ECOUNT_PURCHASE$/i.test(n) || sh.getLastRow() < 1) return;
     var v = sh.getDataRange().getValues();
     for (var r = 1; r < v.length; r++) for (var c = 0; c < v[r].length; c++)
       if (v[r][c] instanceof Date) v[r][c] = Utilities.formatDate(v[r][c], tz, 'yyyy-MM-dd');

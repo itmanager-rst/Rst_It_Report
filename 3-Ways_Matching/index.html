@@ -3,9 +3,98 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html{-webkit-text-size-adjust:100%}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>RST 3-Way Matching</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/style.css">
+<style>
+/* Layout: audit desk. Header, a three-step rail that doubles as navigation, then one dense working table per step. */
+:root{
+  --bg:#f2f6f6;--panel:#ffffff;--ink:#14262a;--muted:#5a6e72;--line:#d3dedf;--soft:#e5eeee;
+  --accent:#0b6b6b;--accent-ink:#ffffff;
+  --ok:#17744a;--ok-bg:#dff3e7;--warn:#8f5400;--warn-bg:#fbebc9;--bad:#b0261e;--bad-bg:#fbe0dd;--info:#2a5a88;--info-bg:#e0ebf6;
+  --sans:"IBM Plex Sans Thai","Noto Sans Thai",Tahoma,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1a1c;--panel:#16262a;--ink:#e3eeee;--muted:#93a9ac;--line:#2a3f43;--soft:#1d3236;
+  --accent:#4fc3bd;--accent-ink:#06201f;
+  --ok:#6fd6a0;--ok-bg:#143826;--warn:#f0bf66;--warn-bg:#3d2d0c;--bad:#ff9a90;--bad-bg:#451a17;--info:#9cc4ee;--info-bg:#17304a;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1a1c;--panel:#16262a;--ink:#e3eeee;--muted:#93a9ac;--line:#2a3f43;--soft:#1d3236;
+  --accent:#4fc3bd;--accent-ink:#06201f;
+  --ok:#6fd6a0;--ok-bg:#143826;--warn:#f0bf66;--warn-bg:#3d2d0c;--bad:#ff9a90;--bad-bg:#451a17;--info:#9cc4ee;--info-bg:#17304a;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.55}
+.wrap{max-width:1680px;margin:0 auto;padding-inline:16px;padding-block:16px 48px;display:flex;flex-direction:column;gap:16px}
+header.top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+.brand small{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:600}
+.brand h1{margin:0;font-size:22px;font-weight:700;line-height:1.25;text-wrap:balance}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,.btn{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:6px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.sm{padding:3px 8px;font-size:12px;font-weight:500}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select{font:inherit;font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+.chip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:99px;background:var(--soft);color:var(--muted)}
+nav.rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+nav.rail button{border:0;border-radius:0;border-right:1px solid var(--line);text-align:left;padding:10px 12px;display:flex;flex-direction:column;gap:1px;background:transparent;font-weight:500}
+nav.rail button b{font-size:13px;font-weight:600}
+nav.rail button span{font-size:11px;color:var(--muted);font-family:var(--mono)}
+nav.rail button[aria-current="true"]{background:var(--accent);color:var(--accent-ink)}
+nav.rail button[aria-current="true"] span{color:var(--accent-ink);opacity:.85}
+.banner{border:1px dashed var(--warn);background:var(--warn-bg);color:var(--warn);padding:8px 12px;border-radius:6px;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.kpi b{display:block;font-family:var(--mono);font-size:24px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--muted)}
+.kpi.bad b{color:var(--bad)}.kpi.warn b{color:var(--warn)}.kpi.ok b{color:var(--ok)}
+section.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+section.card h2{margin:0;font-size:15px;font-weight:600}
+section.card h2 + p,.hint{margin:0;color:var(--muted);font-size:12.5px;max-width:75ch}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{background:var(--soft);text-align:left;font-weight:600;font-size:11px;color:var(--muted);padding:5px 6px;white-space:normal;line-height:1.3;vertical-align:bottom;position:sticky;top:0}
+td{padding:4px 6px;border-top:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+td.n{overflow-wrap:normal}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.c{font-family:var(--mono);font-size:11.5px}
+.code{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+td.d{min-width:110px}
+tr.clk{cursor:pointer}tr.clk:hover td{background:var(--soft)}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:10px;white-space:normal;line-height:1.35;border:1px solid transparent}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.info{background:var(--info-bg);color:var(--info)}
+.pill.wait{background:var(--soft);color:var(--muted)}
+.sub{color:var(--muted);font-size:11.5px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+ul.chk{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:12.5px}
+ul.chk li::before{content:"✓ ";color:var(--ok);font-weight:700}
+ul.chk li.x::before{content:"✕ ";color:var(--bad)}
+ul.chk li.x{color:var(--bad)}
+.inv{border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.inv h3{margin:0;font-size:13px;font-family:var(--mono);overflow-wrap:anywhere}
+#ed{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 92%,transparent);overflow:auto;padding:env(safe-area-inset-top,0px) 16px 24px;z-index:10}
+#ed .card{max-width:1100px;margin:16px auto}
+#ed td input{width:100%;padding:4px 6px;font-size:12.5px}
+#ed td.n input{text-align:right;font-family:var(--mono)}
+tr.flag td{background:var(--warn-bg)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:20;max-width:90vw}
+.ro [data-w]{display:none}
+.deep{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.deep-h{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--soft)}
+.deep-f{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;padding:12px;border-top:1px solid var(--line);font-size:12.5px}
+.deep-f>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.deep-t>div{display:flex;flex-direction:row;justify-content:space-between;gap:12px}
+.deep-t .gt{border-top:1px solid var(--line);padding-top:6px;font-size:14px;font-weight:700;color:var(--accent)}
+td.dif{background:var(--bad-bg);color:var(--bad)}
+a{color:var(--accent)}
+ol.todo{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;max-width:80ch}
+</style>
+
 </head>
 <body>
 <div class="wrap" id="app">
@@ -32,7 +121,6 @@
 <input type="file" id="fileX" accept=".xlsx,.xls,.csv" hidden>
 <input type="file" id="fileS" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden>
 
-<!-- สำเนาโค้ด Apps Script สำหรับปุ่ม "คัดลอกโค้ด" ในแท็บตั้งค่า (ต้นฉบับอยู่ที่ gas/Code.gs) -->
 <script type="text/plain" id="gas">
 /**
  * RST 3-Way Matching — Google Apps Script (Code.gs)
@@ -72,7 +160,7 @@ var CONFIG = {
 
 /* ============================================================
  * DATA HUB (อ่านอย่างเดียว)
- * อ่านทุกแท็บที่ชื่อลงท้ายด้วย _LINES จากไฟล์ RST GROUP Data Hub
+ * อ่านทุกแท็บที่ชื่อลงท้ายด้วย _LINES และแท็บ ECOUNT_PURCHASE (สถานะการซื้อ) จากไฟล์ RST GROUP Data Hub
  * ครั้งแรกหลังเพิ่มส่วนนี้ ต้อง Deploy เวอร์ชันใหม่และอนุญาตสิทธิ์อ่าน Google Sheet อีกครั้ง
  * ============================================================ */
 function hubRead_(id) {
@@ -80,7 +168,7 @@ function hubRead_(id) {
   var ss = SpreadsheetApp.openById(id), tz = ss.getSpreadsheetTimeZone(), tabs = {}, names = [];
   ss.getSheets().forEach(function (sh) {
     var n = sh.getName(); names.push(n);
-    if (!/_LINES$/i.test(n) || sh.getLastRow() < 1) return;
+    if (!/_LINES$|^ECOUNT_PURCHASE$/i.test(n) || sh.getLastRow() < 1) return;
     var v = sh.getDataRange().getValues();
     for (var r = 1; r < v.length; r++) for (var c = 0; c < v[r].length; c++)
       if (v[r][c] instanceof Date) v[r][c] = Utilities.formatDate(v[r][c], tz, 'yyyy-MM-dd');
@@ -265,29 +353,1255 @@ function dbStats() {
   return count;
 }
 </script>
-
-<!-- ไลบรารีภายนอก -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* ==========================================================================
+ * RST 3-Way Matching — โครงสร้างโปรแกรม
+ *  01  CORE  —  ค่าคงที่ ค่าเริ่มต้นของเกณฑ์ และฟังก์ชันพื้นฐาน (แปลงตัวเลข เทียบรหัส เทียบชื่อ)
+ *  02  MATCHING ENGINE  —  ตรรกะการจับคู่ทั้งหมด: อ้างอิงเอกสาร โปรโมชั่นและส่วนลด ขั้น ① ② ③ ตรวจใบกำกับ และสรุปราย PO
+ *  03  DOCUMENT TEXT PARSER  —  แยกข้อมูลจากข้อความของ PDF/OCR เป็นหัวเอกสารและรายการสินค้า (ตัวอ่านในเครื่อง)
+ *  04  SAMPLE DATA  —  ข้อมูลตัวอย่างที่แสดงเมื่อยังไม่มีข้อมูลจริง
+ *  05  UI HELPERS  —  ฟังก์ชันจัดรูปแบบตัวเลข วันที่ ป้ายสถานะ และข้อความแจ้งเตือน
+ *  06  STORE + GOOGLE SHEET  —  ฐานข้อมูลในเบราว์เซอร์ การตั้งค่า สิทธิ์ผู้ดูแล และการซิงก์กับ Google Sheet
+ *  07  VIEW CORE  —  แท็บ ตัวกรอง และฟังก์ชัน render หลัก
+ *  08  VIEW: ภาพรวม  —  ตารางสถานะทุก PO และการอนุมัติ
+ *  09  VIEW: ① PO เทียบโปรโมชั่น  —  ตารางเทียบราคาหลังหักส่วนลดกับ NP_Promotion
+ *  10  VIEW: คลังโปรโมชั่น  —  รายการโปรโมชั่น ส่วนลด DC / ส่วนลดพิเศษ ตาม Part Type และตารางรายการสินค้า
+ *  11  VIEW: ② PO เทียบใบส่งสินค้า  —  ปุ่มนำเข้าไฟล์ ตารางใบส่งสินค้า และผลเทียบรายบรรทัด
+ *  12  VIEW: ③ เทียบใบกำกับภาษี  —  ตารางใบกำกับภาษี ตารางเทียบแบบเจาะลึกราย PO และผลตรวจหัวเอกสาร
+ *  13  VIEW: เอกสารและนำเข้า  —  หน้านำเข้า PO / โปรโมชั่น และรายการเอกสาร
+ *  14  VIEW: ตั้งค่า  —  เกณฑ์การตรวจ Google Sheet ผู้ดูแลระบบ และการอ่านเอกสาร
+ *  15  EXCEL IMPORT  —  จับคู่คอลัมน์และนำเข้ารายงานสถานะการซื้อ / ไฟล์โปรโมชั่น
+ *  16  PDF / SCAN READER  —  อ่าน PDF และไฟล์สแกนด้วยข้อความในไฟล์ OCR หรือ Claude API
+ *  17  DOCUMENT REVIEW EDITOR  —  หน้าตรวจทานใบส่งสินค้า / ใบกำกับภาษีก่อนบันทึก
+ *  18  EXPORT + REPORT  —  ส่งออก Excel และส่งรายงานไป Google Sheet
+ *  19  APP: EVENTS + START  —  ตัวจัดการปุ่มและช่องกรอกทั้งหมด และการเริ่มทำงานของระบบ
+ * ========================================================================== */
 
-<!-- โมดูลของระบบ โหลดตามลำดับเลข -->
-<script src="js/01-core.js"></script>
-<script src="js/02-matching.js"></script>
-<script src="js/03-doc-parser.js"></script>
-<script src="js/04-sample-data.js"></script>
-<script src="js/05-ui-helpers.js"></script>
-<script src="js/06-store.js"></script>
-<script src="js/07-view-core.js"></script>
-<script src="js/08-view-overview.js"></script>
-<script src="js/09-view-po-promo.js"></script>
-<script src="js/10-view-promo-library.js"></script>
-<script src="js/11-view-delivery.js"></script>
-<script src="js/12-view-invoice.js"></script>
-<script src="js/13-view-docs.js"></script>
-<script src="js/14-view-settings.js"></script>
-<script src="js/15-import-excel.js"></script>
-<script src="js/16-doc-reader.js"></script>
-<script src="js/17-doc-editor.js"></script>
-<script src="js/18-export.js"></script>
-<script src="js/19-app.js"></script>
+/* ==========================================================================
+ * MODULE 01  CORE
+ * ค่าคงที่ ค่าเริ่มต้นของเกณฑ์ และฟังก์ชันพื้นฐาน (แปลงตัวเลข เทียบรหัส เทียบชื่อ)
+ * ฟังก์ชัน: sim, num, kc, nk, isHalf, snap5, projOK, worst, memOf
+ * ========================================================================== */
+/*LOGIC*/
+const num=v=>{if(typeof v==='number')return isFinite(v)?v:null;if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/[,\s฿]/g,''));return isFinite(n)?n:null};
+const kc=s=>String(s??'').toUpperCase().replace(/[^A-Z0-9ก-๙]/g,'');
+const nk=s=>String(s??'').toLowerCase().replace(/[\s\-_.,/()#:"']/g,'');
+function sim(a,b){a=nk(a);b=nk(b);if(!a||!b)return 0;if(a===b)return 1;if(a.length<2||b.length<2)return 0;
+  const g=s=>{const m=new Map();for(let i=0;i<s.length-1;i++){const k=s.slice(i,i+2);m.set(k,(m.get(k)||0)+1)}return m};
+  const A=g(a),B=g(b);let hit=0;for(const[k,v]of A)hit+=Math.min(v,B.get(k)||0);return 2*hit/(a.length-1+b.length-1)}
+/* ส่วนลด % เป็นจำนวนเต็มหรือลงท้าย .50 เท่านั้น: isHalf ตรวจ, snap5 ปัดค่าที่คลาดจากเศษสตางค์ให้ลงตัว */
+const isHalf=p=>p==null||Math.abs(p-Math.round(p*2)/2)<=0.06;
+const snap5=p=>p!=null&&isHalf(p)?Math.round(p*2)/2:p;
+const DEF={priceTol:0.01,vatRate:7,vatTol:0.10,buyerTaxId:'',poIncVat:false,promoVendor:'',promoProject:'MO',creditDays:30,vendorAlias:'YANMAR S.P. = บริษัท ยันม่าร์ เอส.พี. จำกัด',buyerNames:'RST, อาร์เอสที, รวมสินไทย, RUAMSINTHAI'};
+const projOK=(v,want)=>!want||kc(v)===kc(want)||String(v||'').split(/[^A-Za-z0-9ก-๙]+/).some(t=>t&&kc(t)===kc(want));
+const LV={ok:0,info:0,wait:1,warn:2,bad:3};
+const worst=a=>a.reduce((m,x)=>LV[x]>LV[m]?x:m,'ok');
+const EPS=1e-6;
+/* ดัชนีต่อชุดข้อมูล D เก็บนอกตัว D เพื่อไม่ให้ติดไปกับ {...D} และคำนวณครั้งเดียวต่อการแสดงผล */
+const CX=new WeakMap(),cx=D=>{let c=CX.get(D);if(!c){c={};CX.set(D,c)}return c},AGG=new WeakMap();
+const memOf=D=>{const c=cx(D);return c.mem||(c.mem=new Set([...(D.dels||[]),...(D.invs||[])]))};
+
+/* ==========================================================================
+ * MODULE 02  MATCHING ENGINE
+ * ตรรกะการจับคู่ทั้งหมด: อ้างอิงเอกสาร โปรโมชั่นและส่วนลด ขั้น ① ② ③ ตรวจใบกำกับ และสรุปราย PO
+ * ฟังก์ชัน: aggLines, resolveLine, findDO, docRef, docRef0, inheritRefs, poIdx, vendorName, poDateFix, applyDC, step1, matchPO, docMatch, invLines, dateIn, tally, recv, m1of, step2, step3, invComp, invBreak, invChecks, summary, hubDocs, reCheck, poRefs, findPO, isInvDoc, refTok, doNoPO, docPO, linePO, docPOs0, docPOs, addDays, dueOf, inRange, invDisc, MONTHS, isRE, m1key, r1map
+ * ========================================================================== */
+function aggLines(po){const hit=AGG.get(po);if(hit)return hit;const m=new Map();
+  for(const l of po.lines||[]){const k=kc(l.code)||('N:'+nk(l.name));
+    const up=l.net??l.price,e=m.get(k)||{k,code:l.code,name:l.name,qty:0,amt:0,price:up};
+    e.qty+=l.qty||0;e.amt+=(l.qty||0)*(up||0);m.set(k,e)}
+  for(const e of m.values())if(e.qty)e.price=e.amt/e.qty;
+  const out=[...m.values()];AGG.set(po,out);return out}
+function resolveLine(lines,l){const k=kc(l.code);
+  if(k){const f=lines.find(x=>x.k===k);if(f)return f;
+    const f2=lines.filter(x=>x.k.length>=5&&k.length>=5&&(x.k.endsWith(k)||k.endsWith(x.k)));if(f2.length===1)return f2[0]}
+  let best=null,bs=0;for(const x of lines){const s=sim(x.name,l.name);if(s>bs){bs=s;best=x}}
+  return((!k&&bs>=0.72)||(k&&bs>=0.9))?best:null}
+/* เลขอ้างอิงของผู้ขายที่บันทึกไว้ใน PO (YDS. No./หมายเหตุ) ใช้จับคู่ Customer P/O No. บนใบส่งสินค้า
+   เช่น MOHQ040826-1003 = YDS. No. MOHQ040826-1 + ลำดับบรรทัด 3 หลัก ใช้เฉพาะเลขที่ชี้ไป PO เดียว */
+const poRefs=p=>String(p.ref||'').split(/[\s,;\/|]+/).map(kc).filter(t=>t.length>=6);
+const findPO=(D,no)=>{const k=kc(no);if(!k)return null;const c=cx(D);if(!c.pm){c.pm=new Map();c.rm=new Map();for(const p of D.pos){const q=kc(p.poNo);if(q&&!c.pm.has(q))c.pm.set(q,p);for(const t of poRefs(p))c.rm.set(t,c.rm.has(t)&&c.rm.get(t)!==p?null:p)}}
+  const raw=String(no).trim();return c.pm.get(k)||c.rm.get(k)||(/-\d{4,}$/.test(raw)&&c.rm.get(kc(raw.slice(0,-3))))||null};
+/* หา PO ของเอกสาร
+   ใบกำกับภาษี: 1) เลขที่เอกสารอ้างอิงตรงกับ D/O No. ของใบส่งสินค้าในระบบ  2) ถ้าไม่มี ใช้เลขที่ PO
+   ใบส่งสินค้า: 1) เลขที่ PO / Customer P/O No.  2) ใบส่งสินค้าอื่นที่อ้างถึง */
+const isInvDoc=d=>('subtotal' in d)||('vat' in d)||('vendorTaxId' in d);
+const refTok=v=>{const a=String(v||'').split(/[,;]/).map(x=>x.trim()).filter(x=>kc(x)),o=[];for(const x of a){o.push(x);for(const y of x.split(/[\s\/|]+/))if(kc(y).length>=4&&!o.includes(y))o.push(y)}return o};
+/* ใบส่งสินค้าที่ D/O No. เป็นเลขเดียวกับเลขอ้างอิง (ไม่สนใจขีด ช่องว่าง ตัวพิมพ์เล็กใหญ่) */
+function findDO(D,d,refs){const c=cx(D);if(!c.dn){c.dn=[];c.dm=new Map();for(const x of D.dels){const n=kc(x.docNo);c.dn.push([n,x]);if(!n)continue;if(!c.dm.has(n))c.dm.set(n,[]);c.dm.get(n).push(x)}}
+  for(const r of refs){const a=c.dm.get(kc(r)),dl=a&&a.find(x=>x!==d);if(dl)return dl}
+  for(const r of refs){const k=kc(r);for(const e of c.dn){const n=e[0];if(e[1]!==d&&n.length>=5&&(k.includes(n)||(k.length>=5&&n.includes(k))))return e[1]}}return null}
+/* เอกสารที่อยู่ในชุดข้อมูลแล้วไม่ถูกแก้ระหว่างการแสดงผล จึงจำผลการจับคู่ไว้ได้ เอกสารที่กำลังกรอกหรือเพิ่งสแกนคำนวณใหม่ทุกครั้ง */
+function docRef(D,d){if(!memOf(D).has(d))return docRef0(D,d);const c=cx(D);if(!c.dr)c.dr=new Map();if(!c.dr.has(d))c.dr.set(d,docRef0(D,d));return c.dr.get(d)}
+function docRef0(D,d){const inv=isInvDoc(d),refs=inv?[...refTok(d.refNo),...refTok(d.poNo)]:[...refTok(d.poNo),...refTok(d.refNo)];
+  const viaDO=()=>{const dl=findDO(D,d,refs);if(!dl)return null;const po=findPO(D,dl.poNo)||refTok(dl.poNo).concat(refTok(dl.refNo)).map(r=>findPO(D,r)).find(Boolean)||(dl.lines||[]).map(l=>kc(l.ref)?findPO(D,l.ref):null).find(Boolean);return po?{po,via:'do',ref:dl.docNo,dl}:null};
+  const viaPO=()=>{for(const r of refs){const po=findPO(D,r);if(po)return{po,via:'po',ref:r}}return null};
+  return inv?(viaDO()||viaPO()):(viaPO()||viaDO())}
+/* ใบกำกับที่เลขอ้างอิงตรงกับ D/O No. แต่ใบส่งสินค้านั้นยังไม่ได้จับคู่ PO */
+const doNoPO=(D,d)=>{if(!isInvDoc(d))return null;const dl=findDO(D,d,refTok(d.refNo));return dl&&!docPOs(D,dl).length?dl:null};
+/* ใบกำกับที่จับคู่จากใบส่งสินค้า: ให้แต่ละรายการใช้ PO เดียวกับรายการนั้นในใบส่งสินค้า (รองรับใบส่งสินค้าที่รวมหลาย PO) */
+function inheritRefs(D,doc){if(!isInvDoc(doc))return;const rf=docRef(D,doc),ls=doc.lines||[];
+  if(!rf||rf.via!=='do'){ls.forEach(l=>{if(l._inh){l.ref='';l._inh=false}});return}
+  const dp=findPO(D,rf.dl.poNo)||rf.po,mp=new Map();for(const x of rf.dl.lines||[]){const q=(kc(x.ref)&&findPO(D,x.ref))||dp;if(q&&kc(x.code)&&!mp.has(kc(x.code)))mp.set(kc(x.code),q)}
+  ls.forEach(l=>{const q=mp.get(kc(l.code));if(q&&q!==rf.po){l.ref=q.poNo;l._inh=true}else if(l._inh){l.ref='';l._inh=false}})}
+const docPO=(D,d)=>{const m=docRef(D,d);return m?m.po:null};
+const linePO=(D,l,dp)=>(l&&kc(l.ref)&&findPO(D,l.ref))||dp;
+const docPOs0=(D,d)=>{const dp=docPO(D,d),set=new Set();for(const l of d.lines||[]){const q=linePO(D,l,dp);if(q)set.add(q)}if(!set.size&&dp)set.add(dp);return[...set]};
+const docPOs=(D,d)=>{if(!memOf(D).has(d))return docPOs0(D,d);const c=cx(D);if(!c.dp)c.dp=new Map();if(!c.dp.has(d))c.dp.set(d,docPOs0(D,d));return c.dp.get(d)};
+/* เอกสารของแต่ละ PO: ใบส่งสินค้า (pk) รับสินค้า RE (re) ใบกำกับภาษี (inv) */
+const NOIX={pk:[],re:[],inv:[]};
+function poIdx(D){const c=cx(D);if(c.ix)return c.ix;const ix=new Map(),g=po=>{let e=ix.get(po);if(!e){e={pk:[],re:[],inv:[]};ix.set(po,e)}return e};
+  for(const d of D.dels)for(const po of docPOs(D,d))g(po)[isRE(d)?'re':'pk'].push(d);
+  for(const d of D.invs)for(const po of docPOs(D,d))g(po).inv.push(d);
+  return c.ix=ix}
+function vendorName(D,raw){const st=D.set,t=nk(raw);if(!t)return raw||'';let name='';
+  for(const ln of String(st.vendorAlias||'').split(/\r?\n/)){const i=ln.indexOf('=');if(i<0)continue;const a=nk(ln.slice(0,i)),v=ln.slice(i+1).trim();if(a&&v&&t.includes(a)){name=v;break}}
+  const want=nk(name||raw).replace(/^บริษัท|จำกัด$|มหาชน|coltd|ltd|co$/g,'');
+  const hit=D.pos.map(p=>p.vendor).find(v=>v&&want&&nk(v).includes(want));
+  return hit||name||raw}
+const addDays=(iso,n)=>{const t=new Date(String(iso)+'T00:00:00Z');if(isNaN(t))return'';t.setUTCDate(t.getUTCDate()+(+n||0));return t.toISOString().slice(0,10)};
+const dueOf=inv=>inv.dueDate||'';
+
+const inRange=(p,dt)=>{if(!dt)return true;if(dt.length===7)return(!p.start||dt+'-31'>=p.start)&&(!p.end||dt+'-01'<=p.end);return(!p.start||dt>=p.start)&&(!p.end||dt<=p.end)};
+function poDateFix(p){if(p.date)return p;const m=kc(p.poNo).match(/^[A-Zก-๙]*(\d{2})(\d{2})\d{3,}$/);if(m&&+m[2]>=1&&+m[2]<=12&&+m[1]>=20&&+m[1]<=45)return{...p,date:'20'+m[1]+'-'+m[2],dateFromNo:true};return p}
+function applyDC(r,x){const t=(x.dcByType||{})[r.ptype||'(ไม่ระบุ)'],q=t?num(t.q)||0:num(x.dcQ)||0,y=t?num(t.y)||0:num(x.dcY)||0,sp=t?num(t.s)||0:num(x.dcS)||0,o={...r,discBase:r.disc??null,dcQ:q,dcY:y,dcS:sp};
+  if(r.mo!=null&&r.disc!=null&&(q||y||sp)){o.disc=Math.round((r.disc+q+y+sp)*1e4)/1e4;o.price=Math.round(r.mo*(100-o.disc))/100}
+  return o}
+function step1(D){const st=D.set,pm=new Map(),rows=[];
+  for(const p of D.promos){const k=kc(p.code);if(!pm.has(k))pm.set(k,[]);pm.get(k).push(p)}
+  for(const po of D.pos)for(const l of po.lines||[]){
+    const up=l.net??l.price,net=up==null?null:(st.poIncVat?up/(1+st.vatRate/100):up);
+    const r={listPrice:l.price??null,poNo:po.poNo,vendor:po.vendor,date:po.date||'',code:l.code,name:l.name,qty:l.qty,poPrice:net,promo:null,mo:null,disc:null,promoSet:'',nAlt:0,note:'',diff:null,leak:0,lv:'ok',label:'ตรงกัน',project:l.project||po.project||'',scope:true};
+    if((st.promoVendor&&!nk(po.vendor).includes(nk(st.promoVendor)))||!projOK(r.project,st.promoProject)){r.scope=false;r.lv='wait';r.label='ไม่ต้องเทียบโปรโมชั่น';rows.push(r);continue}
+    const c=pm.get(kc(l.code))||[],v=c.filter(p=>p.price!=null&&inRange(p,po.date)).sort((a,b)=>a.price-b.price),p=v[0];
+    if(!c.length){r.lv='info';r.label='ไม่อยู่ในโปรโมชั่น'}
+    else if(!p){r.lv='info';r.label='นอกช่วงโปรโมชั่น'}
+    else{r.promo=p.price;r.mo=p.mo??null;r.disc=p.disc??null;r.discBase=p.discBase??null;r.dc=(p.dcQ||0)+(p.dcY||0)+(p.dcS||0);r.dcQ=p.dcQ||0;r.dcY=p.dcY||0;r.dcS=p.dcS||0;r.promoSet=p.setName||'';r.nAlt=v.length;
+      if(net==null){r.lv='warn';r.label='ไม่มีราคาให้เทียบ'}
+      else{r.diff=Math.round(net*100)/100-Math.round(p.price*100)/100;
+        if(r.diff>st.priceTol){r.lv='bad';r.label=v.length>1?'ไม่ตรง · สูงกว่าโปรที่ดีที่สุด':'ไม่ตรง · สูงกว่า NP_Promotion';r.leak=r.diff*(l.qty||0);
+          const o=v.slice(1).find(x=>Math.abs(net-x.price)<=st.priceTol);if(o)r.note='ราคาตรงกับ “'+o.setName+'” แต่ “'+p.setName+'” ถูกกว่า'}
+        else if(r.diff<-st.priceTol){r.lv='warn';r.label='ไม่ตรง · ต่ำกว่า NP_Promotion'}
+        else if(Math.max(sim(l.name,p.name),sim(l.name,p.nameTh))<0.3)r.note='ชื่อสินค้าใน PO ต่างจากชื่อในโปรโมชั่น: '+(p.nameTh||p.name)}}
+    rows.push(r)}
+  return rows}
+function matchPO(D,doc){let best=null,bn=0;const n=(doc.lines||[]).length;
+  for(const po of D.pos){const ls=aggLines(po);let c=0;for(const l of doc.lines||[])if(resolveLine(ls,l))c++;if(c>bn){bn=c;best=po}}
+  return best&&bn>=Math.max(1,Math.ceil(n*0.5))?{po:best,hit:bn,n}:null}
+function docMatch(D,doc){const dp=docPO(D,doc),ps=docPOs(D,doc),n=(doc.lines||[]).length,ag=new Map();if(!ps.length)return null;let hit=0;
+  for(const l of doc.lines||[]){const q=linePO(D,l,dp);if(!q)continue;if(!ag.has(q))ag.set(q,aggLines(q));if(resolveLine(ag.get(q),l))hit++}
+  return{po:dp||ps[0],pos:ps,hit,n}}
+
+/* รายการของเอกสารพร้อมยอดหลังหักส่วนลด
+   ส่วนลดท้ายใบกำกับถูกกระจายตามส่วนลดที่ควรได้ของแต่ละรายการตามราคา PO (ถ้าหา PO ไม่ได้ กระจายตามยอดรายการ)
+   ถ้าไม่มีส่วนลดท้ายใบกำกับ ใช้ส่วนลด % รายบรรทัด */
+function invLines(d,D){const ls=d.lines||[],am=l=>l.amount!=null?l.amount:(l.qty||0)*(l.price||0),G=ls.reduce((a,l)=>a+am(l),0),F=d.discount>0&&G?d.discount:null;let w=null;
+  if(F!=null){if(D){const dp=docPO(D,d),ag=new Map(),e=ls.map(l=>{const po=linePO(D,l,dp);if(po&&!ag.has(po))ag.set(po,aggLines(po));const t=po&&resolveLine(ag.get(po),l);return t&&t.price!=null?Math.max(0,am(l)-(l.qty||0)*t.price):0}),E=e.reduce((a,b)=>a+b,0);if(E>0.005)w=e.map(x=>x/E)}
+    if(!w)w=ls.map(l=>am(l)/G)}
+  return ls.map((l,i)=>{const a=am(l),dsc=w?F*w[i]:l.disc!=null?a*l.disc/100:0,net=a-dsc;return{l,amt:a,net,dsc,pct:a?dsc/a*100:0}})}
+const invDisc=d=>Math.round(invLines(d).reduce((a,x)=>a+x.dsc,0)*100)/100;
+const MONTHS=(()=>{const m={};['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].forEach((x,i)=>m[x]=i+1);['january','february','march','april','may','june','july','august','september','october','november','december'].forEach((x,i)=>m[x]=i+1);
+  ['มค','กพ','มีค','เมย','พค','มิย','กค','สค','กย','ตค','พย','ธค'].forEach((x,i)=>m[x]=i+1);['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'].forEach((x,i)=>m[x]=i+1);return m})();
+/* หาวันที่ตัวแรกในข้อความ รองรับ 31/10/2569, 2026-10-31, 31 ต.ค. 69, 31-Oct-26 คืนค่าเป็น YYYY-MM-DD */
+function dateIn(s){s=String(s||'');const yr=y=>{y=+y;if(y<100)y+=y>=43?2500:2000;if(y>2400)y-=543;return y},iso=(y,m,d)=>(+m>=1&&+m<=12&&+d>=1&&+d<=31)?yr(y)+'-'+String(+m).padStart(2,'0')+'-'+String(+d).padStart(2,'0'):'';
+  const c=[];let m;
+  if((m=s.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/)))c.push([m.index,iso(m[1],m[2],m[3])]);
+  if((m=s.match(/(?<!\d)(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4}|\d{2})(?!\d)/)))c.push([m.index,iso(m[3],m[2],m[1])]);
+  if((m=s.match(/(?<!\d)(\d{1,2})\s*[\-\/ ]?\s*([A-Za-zก-๙.]{2,12}?)\.?\s*[\-\/ ,]?\s*(\d{4}|\d{2})(?!\d)/))){const k=MONTHS[m[2].toLowerCase().replace(/[.\s]/g,'')];if(k)c.push([m.index,iso(m[3],k,m[1])])}
+  c.sort((a,b)=>a[0]-b[0]);const f=c.find(x=>x[1]);return f?f[1]:''}
+function tally(D,docs,po){const lines=aggLines(po),m=new Map(lines.map(x=>[x.k,{qty:0,price:null,amt:0,net:0,docs:[]}])),extra=[];
+  for(const d of docs){const dp=docPO(D,d);
+    for(const x of invLines(d,D)){const l=x.l;if(linePO(D,l,dp)!==po)continue;const t=resolveLine(lines,l);
+      if(!t){extra.push({doc:d.docNo,...l,amt:x.amt,net:x.net});continue}
+      const e=m.get(t.k);if(x.dsc>0.005)e.disc=true;e.qty+=l.qty||0;e.amt+=x.amt;e.net+=x.net;if(l.price!=null)e.price=l.price;if(!e.docs.includes(d.docNo))e.docs.push(d.docNo)}}
+  return{lines,m,extra}}
+
+/* เอกสารรับสินค้า (RE) ที่นำเข้าจาก Excel เก็บรวมกับใบส่งสินค้าโดยมี kind:'re'
+   จำนวนรับของแต่ละรายการ: ใช้ใบส่งสินค้า / Packing list ถ้ามี ถ้าไม่มีจึงใช้ RE (ไม่นับซ้ำกัน) */
+const isRE=d=>!!d&&d.kind==='re';
+function recv(D,po){const ix=poIdx(D).get(po)||NOIX,pk=tally(D,ix.pk,po),re=tally(D,ix.re,po),m=new Map();
+  for(const x of pk.lines){const a=pk.m.get(x.k),b=re.m.get(x.k),u=a.docs.length?a:b;m.set(x.k,{...u,price:a.price,rePrice:b.qty>EPS&&b.amt>0?b.amt/b.qty:null,pk:a.qty,re:b.qty,pkDocs:a.docs,reDocs:b.docs,docs:[...a.docs,...b.docs]})}
+  return{lines:pk.lines,m,extra:[...pk.extra,...re.extra]}}
+const m1key=(no,code)=>kc(no)+'|'+kc(code);
+function m1of(r1){const m=new Map();for(const r of r1||[]){const k=m1key(r.poNo,r.code),v=!r.scope?'':r.lv==='ok'?'ok':(r.label==='ไม่อยู่ในโปรโมชั่น'||r.label==='นอกช่วงโปรโมชั่น')?'':'no';if(m.get(k)!=='no')m.set(k,v)}return m}
+function step2(D,m1){const st=D.set,rows=[];m1=m1||m1of(step1(D));
+  for(const po of D.pos){const{lines,m,extra}=recv(D,po);
+    for(const x of lines){const e=m.get(x.k);const out=x.qty-e.qty;
+      const r={poNo:po.poNo,date:po.date||'',vendor:po.vendor,project:po.project||((po.lines||[]).find(z=>z.project)||{}).project||'',code:x.code,name:x.name,ord:x.qty,del:e.qty,out:Math.max(out,0),poPrice:x.price,priceOk:m1.get(m1key(po.poNo,x.code))||'',docPrice:e.price,rePrice:e.rePrice,docs:e.docs,pk:e.pk,re:e.re,pkDocs:e.pkDocs,reDocs:e.reDocs,lv:'ok',label:'ส่งครบ'};
+      if(e.qty<EPS){r.lv='wait';r.label='รอส่งมอบ'}
+      else if(out>EPS){r.lv='warn';r.label='ค้างส่ง'}
+      else if(out<-EPS){r.lv='bad';r.label='ส่งเกิน PO'}
+      if(e.price!=null&&x.price!=null&&Math.abs(e.price-x.price)>st.priceTol&&e.qty>EPS){r.lv='bad';r.label=(r.label==='ค้างส่ง'?'ค้างส่ง · ':'')+'ราคาไม่ตรง PO'}
+      if(e.pk>EPS&&e.re>EPS&&Math.abs(e.pk-e.re)>EPS){if(r.lv==='ok'||r.lv==='wait')r.lv='warn';r.label+=' · ใบส่งสินค้า ≠ รับเข้า RE'}
+      rows.push(r)}
+    for(const l of extra)rows.push({poNo:po.poNo,date:po.date||'',vendor:po.vendor,project:po.project||((po.lines||[]).find(z=>z.project)||{}).project||'',code:l.code,name:l.name,ord:0,del:l.qty||0,out:0,poPrice:null,docPrice:l.price,docs:[l.doc],lv:'bad',label:'ไม่อยู่ใน PO'})}
+  return rows}
+
+function step3(D,m1){const st=D.set,rows=[];m1=m1||m1of(step1(D));
+  for(const po of D.pos){const dl=recv(D,po),iv=tally(D,(poIdx(D).get(po)||NOIX).inv,po);
+    for(const x of dl.lines){const d=dl.m.get(x.k),i=iv.m.get(x.k),eff=i.qty>EPS&&i.price!=null?i.net/i.qty:null,ptol=Math.max(st.priceTol,0.01);
+      const r={poNo:po.poNo,date:po.date||'',vendor:po.vendor,project:po.project||((po.lines||[]).find(z=>z.project)||{}).project||'',code:x.code,name:x.name,ord:x.qty,del:d.qty,inv:i.qty,poPrice:x.price,priceOk:m1.get(m1key(po.poNo,x.code))||'',invPrice:i.price,invAmt:i.amt,invNet:i.net,effPrice:eff,byDisc:!!i.disc,delDocs:d.docs,rePrice:d.rePrice,pk:d.pk,re:d.re,pkDocs:d.pkDocs,reDocs:d.reDocs,docs:i.docs,lv:'ok',label:'ตรงกันทั้ง 3 เอกสาร'};
+      if(i.qty<EPS){r.lv='wait';r.label='รอใบกำกับภาษี'}
+      else if(i.qty-d.qty>EPS){r.lv='bad';r.label='วางบิลเกินจำนวนที่รับ'}
+      else if(eff!=null&&x.price!=null&&(eff-x.price>ptol||(x.price-eff>ptol&&!i.disc))){r.lv='bad';r.label=i.disc?'ราคาหลังหักส่วนลดสูงกว่า PO':'ราคาไม่ตรง PO'}
+      else if(d.qty-i.qty>EPS){r.lv='warn';r.label='วางบิลยังไม่ครบที่รับ'}
+      else if(x.qty-i.qty>EPS){r.lv='ok';r.label='ตรงกัน · ยังค้างส่ง'}
+      if(d.pk>EPS&&d.re>EPS&&Math.abs(d.pk-d.re)>EPS){if(r.lv==='ok'){r.lv='warn';r.label='ใบส่งสินค้า ≠ รับเข้า RE'}else r.label+=' · ใบส่งสินค้า ≠ รับเข้า RE'}
+      rows.push(r)}
+    for(const l of iv.extra)rows.push({poNo:po.poNo,date:po.date||'',vendor:po.vendor,project:po.project||((po.lines||[]).find(z=>z.project)||{}).project||'',code:l.code,name:l.name,ord:0,del:0,inv:l.qty||0,poPrice:null,invPrice:l.price,invAmt:l.amt,invNet:l.net,effPrice:l.qty?l.net/l.qty:null,byDisc:false,delDocs:[],docs:[l.doc],lv:'bad',label:'ไม่อยู่ใน PO'})}
+  return rows}
+
+const r1map=D=>D._r1m||(D._r1m=new Map(step1(D).map(r=>[m1key(r.poNo,r.code),r])));
+/* ส่วนลดชดเชยของใบกำกับหนึ่งใบ: gross=ยอดตามราคาในใบกำกับ, exp=ยอดตามราคา PO หลังหักส่วนลด, ent=ยอดตาม NP_Promotion
+   poDisc=ส่วนลดตามใบสั่งซื้อ, comp=ส่วนลดชดเชยที่ได้รับ (ติดลบ = ได้ส่วนลดน้อยกว่าใบสั่งซื้อ) */
+function invComp(D,inv){const m=r1map(D),dp=docPO(D,inv),ag=new Map();let gross=0,exp=0,ent=0,un=0;
+  let dsum=0;for(const x of invLines(inv,D)){const l=x.l,amt=x.amt;gross+=amt;dsum+=x.dsc;
+    const po=linePO(D,l,dp);if(po&&!ag.has(po))ag.set(po,aggLines(po));const t=po&&resolveLine(ag.get(po),l);
+    if(!t||t.price==null){exp+=amt;ent+=amt;un++;continue}
+    const q=l.qty||0,r=m.get(m1key(po.poNo,t.code)),np=r&&r.scope&&r.promo!=null?Math.min(r.promo,t.price):t.price;
+    exp+=q*t.price;ent+=q*np}
+  const disc=dsum,net=disc>0.005?gross-disc:(inv.subtotal!=null?inv.subtotal:gross),r2=v=>Math.round(v*100)/100;
+  return{gross:r2(gross),disc:r2(disc),net:r2(net),exp:r2(exp),poDisc:r2(gross-exp),comp:r2(exp-net),due:r2(exp-ent),un}}
+/* ที่มาของส่วนลดในใบกำกับหนึ่งใบ ใช้ฐานเดียวกับทุกหน้าจอ: base = ผลรวมยอดรายการตามใบกำกับ, disc = ส่วนลดในใบกำกับ, net = base − disc
+   แยกเป็น ส่วนลดโปร + DC:Quarter + DC:Yearly + ส่วนลดพิเศษ ส่วนลดที่ไม่ได้ระบุไว้ในโปรโมชั่นทั้งหมดถือเป็นส่วนลดชดเชย */
+function invBreak(D,inv){const m=r1map(D),dp=docPO(D,inv),ag=new Map(),o={base:0,net:0,promo:0,q:0,y:0,s:0,po:0},rates=new Set();
+  for(const x of invLines(inv,D)){const l=x.l,po=linePO(D,l,dp);if(po&&!ag.has(po))ag.set(po,aggLines(po));const t=po&&resolveLine(ag.get(po),l),r=t&&m.get(m1key(po.poNo,t.code));
+    o.base+=x.amt;o.net+=x.net;rates.add(r&&r.scope&&r.discBase!=null?r.disc:t&&t.price!=null&&x.amt?Math.round((1-(l.qty||0)*t.price/x.amt)*1000)/10:-1);
+    if(r&&r.scope&&r.discBase!=null){o.promo+=x.amt*r.discBase/100;o.q+=x.amt*r.dcQ/100;o.y+=x.amt*r.dcY/100;o.s+=x.amt*r.dcS/100}
+    else if(t&&t.price!=null)o.po+=Math.max(0,x.amt-(l.qty||0)*t.price)}
+  const r2=v=>Math.round(v*100)/100,pc=v=>o.base?Math.round(v/o.base*1e4)/100:0,disc=o.base-o.net,has=disc>0.005,comp=has?disc-o.promo-o.q-o.y-o.s:0;
+  const parts=!has?[]:[['ส่วนลดโปร',o.promo],['DC:Quarter',o.q],['DC:Yearly',o.y],['ส่วนลดพิเศษ',o.s],[comp<0?'ส่วนลดขาดจากโปรโมชั่น':'ส่วนลดชดเชย',comp]].map(z=>({label:z[0],amt:r2(z[1]),pct:snap5(pc(z[1]))})).filter(z=>Math.abs(z.pct)>=0.06);
+  const raw=pc(disc),odd=has&&rates.size<=1&&!isHalf(raw);
+  return{base:r2(o.base),net:r2(o.net),disc:r2(disc),pct:snap5(raw),comp:r2(comp),parts,odd}}
+function invChecks(D,inv){const st=D.set,c=[],add=(ok,label)=>c.push({ok,label});
+  const sum=(inv.lines||[]).reduce((s,l)=>s+(l.amount!=null?l.amount:(l.qty||0)*(l.price||0)),0);
+  const rf=docRef(D,inv);add(!!rf,rf?(rf.via==='po'?'จับคู่จากเลขที่ PO '+rf.po.poNo:'จับคู่จากเอกสารอ้างอิง ตรงกับใบส่งสินค้า D/O No. '+rf.ref+' ของ PO '+docPOs(D,rf.dl).map(q=>q.poNo).join(', ')):'ไม่พบ PO หรือใบส่งสินค้าที่อ้างอิง ('+([inv.poNo,inv.refNo].filter(Boolean).join(', ')||'ไม่ระบุ')+')');
+  if(rf&&rf.via==='do'&&kc(inv.poNo)){const ps=docPOs(D,rf.dl),pn=findPO(D,inv.poNo);if(pn&&ps.length&&!ps.includes(pn))add(false,'เลขที่ PO ในใบกำกับ ('+inv.poNo+') ไม่ตรงกับ PO ของใบส่งสินค้า '+rf.ref+' ('+ps.map(q=>q.poNo).join(', ')+')')}
+  if(!rf||rf.via!=='do'){const rn=String(inv.refNo||'').trim(),dn=doNoPO(D,inv);if(dn)add(false,'เลขที่เอกสารอ้างอิงตรงกับใบส่งสินค้า D/O No. '+dn.docNo+' แล้ว แต่ใบส่งสินค้าใบนั้นยังไม่ได้จับคู่กับ PO');else if(rn)add(true,'ยังไม่พบใบส่งสินค้าเลขที่ '+rn+' ในระบบ จึงจับคู่จากเลขที่ PO')}
+  if(inv.dueDate)add(true,'วันครบกำหนดตามเอกสาร '+inv.dueDate);
+  const badLine=(inv.lines||[]).filter(l=>l.amount!=null&&l.qty!=null&&l.price!=null&&Math.abs(l.qty*l.price-l.amount)>Math.max(st.vatTol,0.05));
+  add(!badLine.length,badLine.length?'จำนวน × ราคา ไม่เท่ายอดรายการ '+badLine.length+' บรรทัด':'จำนวน × ราคา = ยอดรายการ ทุกบรรทัด');
+  const dsc=invDisc(inv);if(inv.subtotal!=null)add(Math.abs(sum-dsc-inv.subtotal)<=Math.max(st.vatTol,0.05),'ผลรวมรายการ '+sum.toFixed(2)+(dsc?' หักส่วนลดท้ายใบกำกับ '+dsc.toFixed(2):'')+' เทียบยอดก่อนภาษี '+inv.subtotal.toFixed(2));
+  {const bk=invBreak(D,inv);if(bk.odd)add(false,'ส่วนลด '+bk.pct+'% ไม่เป็นจำนวนเต็มหรือ .50 ยอดส่วนลดหรือยอดรายการอาจอ่านผิด')}
+  if(rf){const k=invComp(D,inv),ct=Math.max(st.vatTol,0.5);if(k.comp<-ct)add(false,'ยอดหลังหักส่วนลด '+k.net.toFixed(2)+' สูงกว่ายอดตามใบสั่งซื้อ '+k.exp.toFixed(2)+' ส่วนลดขาด '+(-k.comp).toFixed(2));else if(k.comp>ct)add(true,'ได้ส่วนลดชดเชย '+k.comp.toFixed(2)+' (ส่วนลดท้ายใบกำกับ '+k.disc.toFixed(2)+' ส่วนลดตามใบสั่งซื้อ '+k.poDisc.toFixed(2)+')');else if(dsc)add(true,'ส่วนลดท้ายใบกำกับ '+k.disc.toFixed(2)+' เท่ากับส่วนลดตามใบสั่งซื้อ')}
+  else add(false,'ไม่มียอดก่อนภาษี');
+  const base=inv.subtotal!=null?inv.subtotal:sum,exp=Math.round(base*st.vatRate)/100;
+  if(inv.vat!=null)add(Math.abs(inv.vat-exp)<=st.vatTol,'ภาษี '+st.vatRate+'% ควรเป็น '+exp.toFixed(2)+' เอกสารระบุ '+inv.vat.toFixed(2));
+  else add(false,'ไม่มียอดภาษีมูลค่าเพิ่ม');
+  if(inv.total!=null&&inv.vat!=null)add(Math.abs(base+inv.vat-inv.total)<=st.vatTol,'ยอดรวมสุทธิ = ก่อนภาษี + ภาษี ('+inv.total.toFixed(2)+')');
+  const tid=String(inv.vendorTaxId||'').replace(/\D/g,'');
+  add(tid.length===13,tid.length===13?'เลขผู้เสียภาษีผู้ขายครบ 13 หลัก':'เลขผู้เสียภาษีผู้ขายไม่ครบ 13 หลัก');
+  if(st.buyerTaxId){const b=String(inv.buyerTaxId||'').replace(/\D/g,'');add(b===String(st.buyerTaxId).replace(/\D/g,''),b?'เลขผู้เสียภาษีผู้ซื้อ '+(b===String(st.buyerTaxId).replace(/\D/g,'')?'ตรงกับบริษัท':'ไม่ตรงกับบริษัท'):'ไม่มีเลขผู้เสียภาษีผู้ซื้อ')}
+  const dup=D.invs.filter(x=>kc(x.docNo)===kc(inv.docNo)&&kc(x.vendor)===kc(inv.vendor)).length>1;
+  add(!dup,dup?'เลขที่ใบกำกับซ้ำ':'เลขที่ใบกำกับไม่ซ้ำ');
+  return c}
+
+function summary(D){const r1=step1(D),m1=m1of(r1),r2=step2(D,m1),r3=step3(D,m1);
+  const grp=rows=>{const m=new Map();for(const r of rows){const a=m.get(r.poNo);if(a)a.push(r);else m.set(r.poNo,[r])}return m},g1=grp(r1),g2=grp(r2),g3=grp(r3),NO=[];
+  const ivx=poIdx(D);
+  const pos=D.pos.map(po=>{const a=g1.get(po.poNo)||NO,b=g2.get(po.poNo)||NO,c=g3.get(po.poNo)||NO;
+    const a1=a.filter(r=>r.scope),na=!a1.length;let s1=worst(a1.map(r=>r.lv==='info'?'ok':r.lv));
+    let s2=worst(b.map(r=>r.lv));if(s2==='wait'&&b.some(r=>r.del>EPS))s2='warn';
+    const invs=(ivx.get(po)||NOIX).inv;
+    let s3=invs.length?worst(c.map(r=>r.lv)):'wait';
+    if(invs.some(i=>invChecks(D,i).some(k=>!k.ok)))s3='bad';
+    const due=Math.round(a1.reduce((x,r)=>x+(r.leak||0),0)*100)/100,cl=invs.map(i=>({inv:i,...invComp(D,i)})),got=Math.round(cl.reduce((x,k)=>x+Math.max(0,k.comp),0)*100)/100,out=Math.max(0,Math.round((due-got)*100)/100);
+    const comp={due,got,out,list:cl};let l1x='';
+    if(s1==='bad'&&due>0&&out<=Math.max(D.set.vatTol,0.5)&&a1.every(r=>r.lv!=='bad'||r.leak>0)){s1=worst(a1.map(r=>r.lv==='bad'||r.lv==='info'?'ok':r.lv));if(s1==='ok')l1x='ชดเชยครบแล้ว'}
+    const all=worst([s1,s2,s3]);
+    const total=(po.lines||[]).reduce((s,l)=>s+(l.qty||0)*((l.net??l.price)||0),0);
+    return{po,s1,s2,s3,total,comp,
+      na,l1:na?'ไม่ต้องเทียบ':l1x||{ok:'ตรงโปร',warn:'ราคาไม่ตรงโปร',bad:'ราคาสูงกว่าโปร'}[s1],
+      l2:{ok:'ส่งครบ',wait:'รอส่งมอบ',warn:'ค้างส่ง',bad:'ไม่ตรง PO'}[s2],
+      l3:{ok:'ตรงกัน',wait:'รอใบกำกับ',warn:'ยังไม่ครบ',bad:'ไม่ตรงกัน'}[s3],
+      all,label:{ok:'พร้อมจ่าย',wait:'รอเอกสาร',warn:'ยังไม่ครบ',bad:'ต้องแก้ไข'}[all]}});
+  return{pos,r1,r2,r3}}
+
+/* แปลงแถวจาก RST GROUP Data Hub (แท็บ PO_LINES และ PURCHASE_LINES แถวแรกเป็นหัวคอลัมน์) เป็นใบสั่งซื้อและเอกสารรับสินค้า (RE)
+   o.company = รหัสบริษัทใน Data Hub (ว่าง = ทุกบริษัท), o.from = วันที่ PO เริ่มต้น, o.vendor = คำในชื่อผู้ขาย (ว่าง = ทุกผู้ขาย)
+   เอกสารรับสินค้านำมาเฉพาะรายการที่อ้าง PO ที่โหลดมา */
+function hubDocs(poRows,reRows,o){o=o||{};const T=v=>String(v??'').trim(),H=r=>{const h={};(r||[]).forEach((x,i)=>{h[T(x)]=i});return h},g=(r,h,k)=>h[k]==null?'':r[h[k]];
+  const from=T(o.from),co=T(o.company),vf=nk(o.vendor||''),pos=new Map(),ph=H(poRows[0]);let nl=0;
+  for(let i=1;i<poRows.length;i++){const r=poRows[i];if(!r||!r.length)continue;if(co&&T(g(r,ph,'COMPANY'))!==co)continue;
+    const no=T(g(r,ph,'PO_NO')),dt=T(g(r,ph,'PO_DATE')).slice(0,10),vd=T(g(r,ph,'VENDOR'));
+    if(!no||(from&&dt<from)||(vf&&!nk(vd).includes(vf)))continue;
+    const code=T(g(r,ph,'ITEM_CODE')),qty=num(g(r,ph,'QTY'));if(!code||qty==null)continue;
+    const pj=T(g(r,ph,'PROJECT')),p=pos.get(no)||{poNo:no,date:dt,vendor:vd,project:pj,wh:T(g(r,ph,'WAREHOUSE')),ref:['YDS_NO','REMARKS','REMARK','PR_REF'].map(k=>T(g(r,ph,k))).filter(Boolean).join(' '),lines:[],_hub:true};
+    const pr=num(g(r,ph,'UNIT_PRICE')),nt=num(g(r,ph,'NET_PRICE')),am=num(g(r,ph,'AMOUNT'));
+    p.lines.push({code,name:T(g(r,ph,'ITEM_NAME')),qty,price:pr,net:nt!=null?nt:(am!=null&&qty?Math.round(am/qty*1e4)/1e4:pr),project:pj});nl++;pos.set(no,p)}
+  const rh0=H(reRows[0]),RA={COMPANY:['COMPANY','บริษัท'],RE_NO:['RE_NO','RE NO','RENO','PURCHASE_NO','PUR_NO','หมายเลขการซื้อ','เลขที่ RE','เลขที่ใบซื้อ','DOC_NO'],PO_NO:['PO_NO','PO NO','PONO','PO_REF','เลขที่ใบสั่งซื้อ'],ITEM_CODE:['ITEM_CODE','รหัสสินค้า'],ITEM_NAME:['ITEM_NAME','ชื่อสินค้า (ข้อมูลจำเพาะ)','ชื่อสินค้า'],QTY:['QTY','จำนวน'],RECEIVE_DATE:['RECEIVE_DATE','RE_DATE','DATE','วันที่รับสินค้า'],DOC_DATE:['DOC_DATE','วันที่-ลำดับ'],VENDOR:['VENDOR','ชื่อลูกค้า/ผู้ขาย','ชื่อผู้ขาย'],NET_PRICE:['NET_PRICE','ราคาต่อหน่วยหลังส่วนลด'],UNIT_PRICE:['UNIT_PRICE','ราคาต่อหน่วย'],AMOUNT:['AMOUNT','จำนวนเงิน']},rh={};
+  const hk=x=>String(x).toUpperCase().replace(/[\s_.\-]/g,''),rhN={};for(const k in rh0)rhN[hk(k)]=rh0[k];
+  for(const k in RA){const f=RA[k].find(a=>rh0[a]!=null||rhN[hk(a)]!=null);if(f!=null)rh[k]=rh0[f]!=null?rh0[f]:rhN[hk(f)]}
+  const rdt=v=>{if(typeof v==='number'&&v>20000&&v<80000)return new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10);const t=T(v);return /^\d{4}-\d{2}-\d{2}/.test(t)?t.slice(0,10):(dateIn(t)||t)};
+  const docs=new Map(),key=l=>kc(l.ref||'')+'|'+kc(l.code);let nr=0,skip=0,noPo=0;
+  for(let i=1;i<reRows.length;i++){const r=reRows[i];if(!r||!r.length)continue;if(co&&T(g(r,rh,'COMPANY'))!==co)continue;
+    const pn=T(g(r,rh,'PO_NO')),no=T(g(r,rh,'RE_NO')),code=T(g(r,rh,'ITEM_CODE')),qty=num(g(r,rh,'QTY'));
+    if(!no||!code||qty==null)continue;if(!pn){noPo++;continue}if(!pos.has(pn)){skip++;continue}
+    const d=docs.get(no)||{docNo:no,kind:'re',date:rdt(g(r,rh,'RECEIVE_DATE'))||rdt(g(r,rh,'DOC_DATE')),vendor:T(g(r,rh,'VENDOR')),poNo:pn,refNo:'',lines:[],_hub:true};
+    const gp=ks=>{for(const k of ks){const v=num(g(r,rh,k));if(v!=null)return v}return null},am0=gp(['AMOUNT','จำนวนเงิน']),up=gp(['NET_PRICE','UNIT_PRICE'])??(am0!=null&&qty?Math.round(am0/qty*1e4)/1e4:null);
+    const l={ref:pn!==d.poNo?pn:'',code,name:T(g(r,rh,'ITEM_NAME')),qty,price:up,disc:null,amount:up!=null?Math.round(up*qty*100)/100:null},x=d.lines.find(z=>key(z)===key(l));
+    if(x){x.qty+=qty;if(x.price!=null&&up!=null)x.amount=Math.round((x.amount+up*qty)*100)/100;else{x.price=null;x.amount=null}}else d.lines.push(l);nr++;docs.set(no,d)}
+  return{pos:[...pos.values()],dels:[...docs.values()],nl,nr,skip,noPo,reCols:!!(rh.RE_NO!=null&&rh.PO_NO!=null&&rh.ITEM_CODE!=null&&rh.QTY!=null),reHead:(reRows[0]||[]).map(T).filter(Boolean)}}
+
+/* ตรวจว่าใบส่งสินค้าหนึ่งใบผ่านขั้น PO เทียบใบส่งสินค้า และออก RE ได้หรือไม่
+   ผ่าน = ทุกรายการจับคู่ PO ได้ อยู่ใน PO นั้น มีราคา และจำนวนไม่เกินจำนวนค้างรับ (สั่งซื้อ − ที่มี RE แล้ว) */
+function reCheck(D,d){const why=[],lines=[],need=new Map(),dp=docPO(D,d);
+  if(!kc(d.docNo))why.push('ไม่มีเลขที่ใบส่งสินค้า');if(!(d.lines||[]).length)why.push('ไม่มีรายการสินค้า');
+  for(const l of d.lines||[]){const po=linePO(D,l,dp),t=po&&resolveLine(aggLines(po),l),nm=l.code||l.name||'?';
+    if(!(l.qty>0)){why.push(nm+' ไม่มีจำนวน');continue}
+    if(!po){why.push(nm+' ยังไม่ได้จับคู่ PO');continue}
+    if(!t){why.push(nm+' ไม่อยู่ใน '+po.poNo);continue}
+    if(t.price==null)why.push(nm+' ไม่มีราคาใน '+po.poNo);
+    const k=po.poNo+'|'+t.k,e=need.get(k)||{po,t,qty:0};e.qty+=l.qty;need.set(k,e);
+    lines.push({po,code:t.code,name:t.name||l.name||'',qty:l.qty,price:t.price==null?null:Math.round(t.price*1e4)/1e4,ref:l.ref||''})}
+  for(const e of need.values()){const r=recv(D,e.po).m.get(e.t.k),re=r?r.re:0,left=e.t.qty-re;
+    if(e.qty-left>EPS)why.push(e.t.code+' ส่ง '+e.qty+' เกินจำนวนค้างรับของ '+e.po.poNo+' (เหลือ '+Math.max(left,0)+(re>EPS?' มี RE แล้ว '+re:'')+')')}
+  const pos=[...new Set(lines.map(x=>x.po))];
+  if(new Set(pos.map(p=>nk(p.vendor))).size>1)why.push('PO ที่อ้างเป็นของผู้ขายต่างราย');
+  return{ok:!why.length,why,lines,qty:lines.reduce((a,x)=>a+x.qty,0),pos}}
+
+/* ==========================================================================
+ * MODULE 03  DOCUMENT TEXT PARSER
+ * แยกข้อมูลจากข้อความของ PDF/OCR เป็นหัวเอกสารและรายการสินค้า (ตัวอ่านในเครื่อง)
+ * ฟังก์ชัน: parseDocText, lastNum
+ * ========================================================================== */
+const NUMRE=/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/g;
+const lastNum=l=>{const m=l.match(NUMRE);return m?num(m[m.length-1]):null};
+function parseDocText(D,text,kind){
+  const lines=String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean),T=kc(text);
+  const doc={docNo:null,date:null,vendor:null,vendorTaxId:null,buyerTaxId:null,poNo:null,lines:[],subtotal:null,vat:null,total:null};
+  const hits=D.pos.filter(p=>kc(p.poNo).length>=4&&T.includes(kc(p.poNo))).sort((a,b)=>kc(b.poNo).length-kc(a.poNo).length);
+  if(hits.length===1){doc.poNo=hits[0].poNo}
+  {const head=lines.slice(0,14).join(' '),v=vendorName(D,head),mine=String(D.set.buyerNames||'').split(',').map(nk).filter(Boolean);
+    const CO=/(บริษัท\s*[^\n]{2,60}?จำกัด(?:\s*\(มหาชน\))?|ห้างหุ้นส่วน(?:จำกัด)?\s*[^\n]{2,40}|[A-Z][A-Z0-9&.,'\- ]{2,50}?(?:CO\.?,?\s*LTD\.?|COMPANY\s+LIMITED|LIMITED|CORPORATION|CORP\.|INC\.))/i;
+    let nm='';for(const ln of lines.slice(0,25)){if(/ลูกค้า|ผู้ซื้อ|customer|sold\s*to|bill\s*to|ship\s*to|ส่งถึง|ที่อยู่จัดส่ง/i.test(ln))continue;const m=ln.match(CO);if(m&&!mine.some(x=>nk(m[1]).includes(x))){nm=m[1].trim();break}}
+    doc.vendor=v!==head?v:nm?vendorName(D,nm):null}
+  const poKeys=hits.map(p=>[kc(p.poNo),p.poNo]);
+  const codes=new Map();for(const p of(hits.length?hits:D.pos))for(const l of p.lines||[]){const k=kc(l.code);if(k.length>=4&&!codes.has(k))codes.set(k,l)}
+  const keys=[...codes.keys()].sort((a,b)=>b.length-a.length);
+  const triple=n=>{for(let k=n.length-1;k>=2;k--)for(let j=k-1;j>=1;j--)for(let i=j-1;i>=0;i--)if(n[i]>0&&n[j]>0&&Math.abs(n[i]*n[j]-n[k])<=Math.max(0.05,n[k]*0.0005))return[n[i],n[j],n[k]];return null};
+  for(let li=0;li<lines.length;li++){const ln=lines[li],K=kc(ln),K2=K+'|'+kc(lines[li+1]||''),pr=poKeys.find(x=>K2.includes(x[0])),lref=pr?pr[1]:'';let hit=null;for(const k of keys)if(K.includes(k)){hit=k;break}
+    if(hit){const ref=codes.get(hit),re=new RegExp(hit.split('').map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[\\s\\-./_]*'),'i'),m=ln.match(re);
+      const rest=m?ln.slice(m.index+m[0].length):ln,ns=(rest.match(NUMRE)||[]).map(num).filter(x=>x!=null),t=triple(ns);
+      const nm=(rest.split(/\s-?\d[\d,]*(?:\.\d+)?(?:\s|$)/)[0]||'').trim();
+      let qty=null,price=null,amount=null,unsure=false;
+      if(t){[qty,price,amount]=t}else if(ns.length){qty=ns.includes(ref.qty)?ref.qty:ns[0];unsure=!ns.includes(ref.qty);if(kind==='inv')unsure=true}else unsure=true;
+      doc.lines.push({ref:lref,code:ref.code,name:nm.length>2?nm:ref.name,qty,price,amount,unsure});continue}
+    const cm=ln.match(/\b(?=[A-Z0-9\-\/]*\d)[A-Z0-9]{2,}(?:[\-\/][A-Z0-9]+)+\b|\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{6,}\b/i);
+    if(cm){const rest=ln.slice(cm.index+cm[0].length),ns=(rest.match(NUMRE)||[]).map(num).filter(x=>x!=null),t=triple(ns);
+      if(t){const nm=(rest.split(/\s-?\d[\d,]*(?:\.\d+)?(?:\s|$)/)[0]||'').trim();doc.lines.push({code:cm[0],name:nm,qty:t[0],price:t[1],amount:t[2],unsure:true})}}}
+  {const TOK='([A-Z0-9][A-Z0-9\\-\\/]{2,})',bad=x=>!/\d/.test(x)||/^\d{13}$/.test(x.replace(/\D/g,''))&&x.replace(/\D/g,'').length===13||kc(x)===kc(doc.poNo)||D.pos.some(p=>kc(p.poNo)===kc(x))||(kind==='inv'&&D.dels.some(q=>kc(q.docNo)===kc(x)));
+    const pats=kind==='inv'?['(?:เลขที่\\s*ใบกำกับ(?:ภาษี)?|ใบกำกับ(?:ภาษี)?\\s*เลขที่|Tax\\s*Invoice\\s*(?:No|Number|#)\\.?|Invoice\\s*(?:No|Number|#)\\.?|INV\\.?\\s*(?:No|#)\\.?)']:['(?:เลขที่ใบส่ง(?:สินค้า|ของ)?|ใบส่งสินค้า\\s*เลขที่|Packing\\s*(?:List|Sheet)?\\s*No\\.?|Delivery\\s*(?:Order|Note)?\\s*No\\.?|D\\/?O\\.?\\s*No\\.?)'];
+    pats.push('(?:เลขที่เอกสาร|Doc(?:ument)?\\.?\\s*No\\.?)','(?:เลขที่|No\\.)');
+    if(kind==='inv'){const re=/(?<![A-Z0-9])(?:INV|IV)[A-Z]{0,3}[\-\/ ]?\d[A-Z0-9\-\/]{2,}/ig;let m;while((m=re.exec(text))){const v=m[0].replace(/\s/g,'');if(!bad(v)){doc.docNo=v;break}}}
+    if(!doc.docNo)for(const pt of pats){const re=new RegExp(pt+'\\s*[:.#\\-]?\\s*'+TOK,'ig');let m,got=null;
+      while((m=re.exec(text))){const pre=text.slice(Math.max(0,m.index-14),m.index);if(/สั่งซื้อ|P\/?O|ประจำตัว|ผู้เสียภาษี|อ้างอิง|Ref|Tax\s*ID/i.test(pre+m[0].slice(0,m[0].length-m[1].length)))continue;if(!bad(m[1])){got=m[1];break}}
+      if(got){doc.docNo=got;break}}}
+  {const re=/(วันที่|Date)\s*[:.]?\s*([^\n]{0,26})/ig;let m;while((m=re.exec(text))){if(/ครบกำหนด|ส่งของ|สั่งซื้อ/.test(m[2].slice(0,12))||/(ครบกำหนด|Due|P\/?O|Delivery)\s*$/i.test(text.slice(Math.max(0,m.index-12),m.index)))continue;const v=dateIn(m[2]);if(v){doc.date=v;break}}
+    if(!doc.date)doc.date=dateIn(text)||null}
+  const ids=[...new Set((text.match(/\d(?:[ \-]?\d){12}(?!\d)/g)||[]).map(x=>x.replace(/\D/g,'')))],mine=String(D.set.buyerTaxId||'').replace(/\D/g,'');
+  if(mine&&ids.includes(mine))doc.buyerTaxId=mine;doc.vendorTaxId=ids.find(x=>x!==mine)||null;
+  const toIso=m=>{let y=+m[3];if(y<100)y+=y>=43?2500:2000;if(y>2400)y-=543;return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0')};
+  doc.refNo=null;doc.creditDays=null;doc.dueDate=null;
+  const kd=D.dels.filter(x=>kc(x.docNo).length>=4&&T.includes(kc(x.docNo)))[0];
+  const dom=text.match(/(?:\bD\s*\/\s*O\b|\bDO\b|Delivery\s*(?:Order|Note)|เลขที่\s*ใบส่ง(?:สินค้า|ของ)|ใบส่ง(?:สินค้า|ของ)\s*เลขที่)\.?\s*(?:No\.?|Number|เลขที่)?\s*[:.#\-]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i);
+  const rm=text.match(/(?:เลขที่อ้างอิง|เอกสารอ้างอิง|อ้างอิง|Ref(?:erence)?\.?\s*(?:No\.?|Doc\.?)?)\s*[:.]?\s*([A-Z0-9][A-Z0-9\-\/]{3,})/i);
+  const okRef=x=>x&&/\d/.test(x)&&kc(x)!==kc(doc.poNo)&&kc(x)!==kc(doc.docNo);
+  if(kind==='inv'&&dom&&okRef(dom[1]))doc.refNo=dom[1];else if(kd)doc.refNo=kd.docNo;else if(rm&&okRef(rm[1]))doc.refNo=rm[1];
+  for(const ln of lines){const ci=ln.search(/เครดิต|credit/i);if(ci<0)continue;const tail=ln.slice(ci).replace(/^(เครดิต|credit)\s*(term|เทอม)?/i,'');
+    const m=tail.match(/^[^\d\n]{0,25}?(\d{1,3})(?![\d\/\-.])/);if(m&&+m[1]<=365){doc.creditDays=+m[1];break}
+    if(/เงินสด|cash/i.test(tail)){doc.creditDays=0;break}}
+  if(doc.creditDays==null)for(const ln of lines){if(!/เครดิต|credit|เงื่อนไข(?:การ)?ชำระ|การชำระเงิน|payment|terms?\b/i.test(ln))continue;
+    const tail=ln.slice(ln.search(/เครดิต|credit|เงื่อนไข(?:การ)?ชำระ|การชำระเงิน|payment|terms?\b/i));
+    const m=tail.match(/(\d{1,3})\s*(?:วัน|days?|d\b)/i)||tail.match(/[:.]\s*(\d{1,3})(?!\s*[\/\-.]\d)(?!\d)/);
+    if(m&&+m[1]<=365){doc.creditDays=+m[1];break}
+    if(/เงินสด|cash/i.test(tail)){doc.creditDays=0;break}}
+  {const du=text.match(/(?:วันที่?\s*ครบกำหนด(?:ชำระ(?:เงิน)?)?|ครบกำหนด(?:ชำระ(?:เงิน)?)?|Due\s*Date|Payment\s*Due(?:\s*Date)?)\s*[:.]?\s*([^\n]{0,26})/i);if(du)doc.dueDate=dateIn(du[1])||null}
+  doc.discount=null;let aft=false;
+  if(kind==='inv')for(const ln of lines){
+    if(/หลังหักส่วนลด|หลังส่วนลด|after\s*discount/i.test(ln)){const v=lastNum(ln);if(v!=null){doc.subtotal=v;aft=true}}
+    else if(/ส่วนลด|discount/i.test(ln)){const v=lastNum(ln.replace(/\d+(?:\.\d+)?\s*%/g,''));if(v!=null&&v>0)doc.discount=v}
+    else if(/ภาษีมูลค่าเพิ่ม|VAT|V\.A\.T/i.test(ln)&&!/ก่อนภาษี|ไม่รวมภาษี|เลขประจำตัว|TAX\s*ID/i.test(ln)){const v=lastNum(ln.replace(/\d+(?:\.\d+)?\s*%/,''));if(v!=null)doc.vat=v}
+    else if(/รวมทั้งสิ้น|ยอดสุทธิ|จำนวนเงินรวมทั้งสิ้น|GRAND\s*TOTAL|NET\s*TOTAL|TOTAL\s*AMOUNT/i.test(ln)){const v=lastNum(ln);if(v!=null)doc.total=v}
+    else if(/รวมเป็นเงิน|รวมเงิน|มูลค่าสินค้า|ก่อนภาษี|ไม่รวมภาษี|SUB\s*TOTAL/i.test(ln)){const v=lastNum(ln);if(v!=null&&!aft)doc.subtotal=v}}
+  return doc}
+
+/* ==========================================================================
+ * MODULE 04  SAMPLE DATA
+ * ข้อมูลตัวอย่างที่แสดงเมื่อยังไม่มีข้อมูลจริง
+ * ฟังก์ชัน: SAMPLE
+ * ========================================================================== */
+const SAMPLE=(()=>{const V='บริษัท ยันม่าร์ เอส.พี. จำกัด',T='0105500000018';
+  const P=[['129150-35153','OIL FILTER ELEMENT','ไส้กรองน้ำมันเครื่อง',185],['119802-55801','FUEL FILTER','ไส้กรองน้ำมันเชื้อเพลิง',240],['129612-12560','AIR CLEANER ELEMENT','ไส้กรองอากาศ',520],['25132-004200','V-BELT FAN','สายพานพัดลม',310],['24421-354508','OIL SEAL','ซีลน้ำมัน',95],['1A8296-72100','ROTARY BLADE SET','ชุดใบมีดโรตารี่',1450],['24101-062054','BALL BEARING','ลูกปืน',160]];
+  const sets=[{id:'s1',name:'โปรอะไหล่ PM ประจำปี FY2026',start:'2026-04-01',end:'2027-03-31',d:20,it:[0,1,2,3,4,5,6]},{id:'s2',name:'โปรไส้กรอง ไตรมาส 3',start:'2026-07-01',end:'2026-09-30',d:25,it:[0,1,2]},{id:'s3',name:'PRO_COMBINE',start:'2026-10-01',end:'2026-12-31',d:15,dcQ:1,it:[3,4,5,6]}];
+  const oil={id:'s4',type:'price',name:'โปรโมชั่นน้ำมัน',start:'2026-08-01',end:'2026-12-31',count:1};
+  const promos=sets.flatMap(S=>S.it.map(i=>({code:P[i][0],name:P[i][1],nameTh:P[i][2],mo:P[i][3]/0.8,...(x=>({disc:x,discBase:S.d,dcQ:S.dcQ||0,dcY:0,price:Math.round(P[i][3]/0.8*(100-x))/100}))(S.d+(S.dcQ||0)),brand:'Yanmar',ptype:i<3?'PM':'Other',setId:S.id,setName:S.name,start:S.start,end:S.end})));
+  sets.forEach(S=>{S.count=S.it.length});
+  promos.push({code:'OIL-15W40-18L',name:'ENGINE OIL 15W-40 18L',nameTh:'น้ำมันเครื่อง 15W-40 ถัง 18 ลิตร',mo:null,disc:null,price:1850,brand:'Yanmar',setId:oil.id,setName:oil.name,start:oil.start,end:oil.end});sets.push(oil);
+  const L=(i,q,pr)=>({code:P[i][0],name:P[i][2],qty:q,price:pr??P[i][3]});
+  const D=(l,x={})=>({code:l.code,name:l.name,qty:x.qty??l.qty,price:x.price===undefined?l.price:x.price,amount:(x.qty??l.qty)*((x.price===undefined?l.price:x.price)||0)});
+  const inv=(docNo,poNo,lines,o={})=>{const sub=lines.reduce((s,l)=>s+l.amount,0),vat=o.vat??Math.round(sub*7)/100;return{docNo,date:'2026-09-22',vendor:V,vendorTaxId:T,buyerTaxId:'',poNo:o.noPo?'':poNo,refNo:o.ref||'',creditDays:30,dueDate:'2026-10-22',subtotal:sub,vat,total:sub+vat,lines}};
+  const OL={code:'OIL-15W40-18L',name:'น้ำมันเครื่อง 15W-40 ถัง 18 ลิตร',qty:10,price:1850},p1=[L(0,40,173.44),L(1,30,225),L(2,12,487.5),L(3,20),OL],p2=[L(4,100),L(5,8,1520),L(6,60)],p3=[L(0,24),L(3,10)],p4=[L(2,6),{code:'TOOL-0091',name:'ประแจบล็อกชุด 24 ชิ้น',qty:2,price:890}];
+  return{promos,sets,
+    pos:[{poNo:'PO-2609-001',date:'2026-09-08',vendor:V,project:'MO',lines:p1},{poNo:'PO-2609-002',date:'2026-09-11',vendor:V,project:'MO',lines:p2},{poNo:'PO-2609-003',date:'2026-09-15',vendor:V,project:'MO',lines:p3},{poNo:'PO-2609-004',date:'2026-09-24',vendor:V,project:'งานซ่อมบำรุง',lines:p4}],
+    dels:[{docNo:'DO-680915',date:'2026-09-15',vendor:V,poNo:'PO-2609-001',lines:p1.map(l=>D(l,{price:null}))},
+      {docNo:'DO-680918',date:'2026-09-18',vendor:V,poNo:'PO-2609-002',lines:[D(p2[0],{qty:60,price:null}),D(p2[1],{price:null}),D(p2[2],{price:null})]},
+      {docNo:'DO-680921',date:'2026-09-21',vendor:V,poNo:'PO-2609-003',lines:p3.map(l=>D(l,{price:null}))}],
+    invs:[inv('IV-6809-0112','PO-2609-001',p1.map(l=>D(l)),{ref:'DO-680915',noPo:true}),
+      inv('IV-6809-0127','PO-2609-002',[D(p2[0],{qty:60}),D(p2[1]),D(p2[2])],{ref:'DO-680918'}),
+      inv('IV-6809-0140','PO-2609-003',[D(p3[0],{price:195}),D(p3[1])],{vat:560})],
+    appr:{}}})();
+
+/* ==========================================================================
+ * MODULE 05  UI HELPERS
+ * ฟังก์ชันจัดรูปแบบตัวเลข วันที่ ป้ายสถานะ และข้อความแจ้งเตือน
+ * ฟังก์ชัน: $, esc, fm, fq, idOf, fd, fp, fdisc, pill, brkHtml
+ * ========================================================================== */
+/*ENDLOGIC*/
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fm=n=>n==null?'–':Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fq=n=>n==null?'–':Number(n).toLocaleString('th-TH',{maximumFractionDigits:3});
+const idOf=s=>{s=String(s).trim();const c=s.replace(/[^A-Za-z0-9_\-]/g,'_').slice(0,120)||'x';if(c===s)return c;let h=0;for(const ch of s)h=(h*31+ch.codePointAt(0))>>>0;return c+'-'+h.toString(36)};
+const fd=d=>{if(!d)return'ไม่ระบุ';const x=new Date(d+'T00:00:00');return isNaN(x)?d:x.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})};
+const fp=n=>n==null?'–':Number(n).toLocaleString('th-TH',{maximumFractionDigits:2})+'%';
+const fdisc=(d,price)=>d!=null?fp(d):price!=null?'<span class="sub">ราคาโปร</span>':'–';
+const pill=(lv,t)=>`<span class="pill ${lv}">${esc(t)}</span>`;
+/* แสดงส่วนลดทั้งหมดของใบกำกับและที่มา (b = ผลจาก invBreak) */
+const brkHtml=(b,long)=>b.disc>0.005||b.parts.length?`${b.odd?`<div>${pill('warn','ส่วนลด '+fp(b.pct)+' ไม่เป็นจำนวนเต็มหรือ .50 ตรวจยอดส่วนลดและยอดรายการ')}</div>`:''}<div>ส่วนลดทั้งหมด <b>${fm(b.disc)}</b> บาท คิดเป็น <b>${fp(b.pct)}</b> ของยอดตามราคาในใบกำกับ ${fm(b.base)}</div>${b.parts.map(x=>`<div class="${long?'':'sub'}">${long?'· ':''}${esc(x.label)} <b>${fp(x.pct)}</b> (${fm(x.amt)} บาท)</div>`).join('')}`:'<div class="sub">ไม่มีส่วนลดในใบกำกับ</div>';
+let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,4500)}
+
+/* ==========================================================================
+ * MODULE 06  STORE + GOOGLE SHEET
+ * ฐานข้อมูลในเบราว์เซอร์ การตั้งค่า สิทธิ์ผู้ดูแล และการซิงก์กับ Google Sheet
+ * ฟังก์ชัน: refreshAdmin, settings, DATA, hubSet, pickRE, loadHub, saveLocal, enqueue, put, rm, gsPost, flush, gsLoad, pushAll, chip, wErr, init, saveCfg, hubOn, realEmpty, isDemo, wait
+ * ========================================================================== */
+/* ---------- store: this browser + optional Google Sheet ---------- */
+const S={pos:{},dels:{},invs:{},appr:{},promos:{},promosets:{},meta:{},res:{}},COLLS=Object.keys(S);
+/* ไฟล์ HTML ไม่มีตัวเชื่อมต่อ Google Drive ของ Claude: ปุ่มออก RE ผ่าน Drive จึงปิดไว้ */
+const mcpCap=null,userCap=null;
+const CFG={gsUrl:'',aiKey:'',aiModel:'claude-sonnet-5-5',userName:''};
+try{Object.assign(CFG,JSON.parse(localStorage.getItem('m3_cfg')||'{}'))}catch(e){}
+const saveCfg=()=>{try{localStorage.setItem('m3_cfg',JSON.stringify(CFG))}catch(e){}};
+const db=null,readOnly=false,ready=true,NAMES=new Proxy({},{get:(t,k)=>k}),names=()=>{};
+let myId=CFG.userName||null;
+function refreshAdmin(){const pin=settings().adminPin||'';let u='';try{u=sessionStorage.getItem('m3_admin')||''}catch(e){}isAdmin=!pin||u===pin}
+const SYNC={state:'idle',msg:''};
+/* RST GROUP Data Hub: อ่านผ่าน Apps Script Web App (action=hub) ไม่คัดลอกลงฐานข้อมูลของหน้านี้ */
+const HUB_ID='';
+let HUB=null,HUBST={s:'idle',msg:''};
+const hubOn=()=>!!(HUB&&(HUB.pos.length||HUB.dels.length));
+const realEmpty=()=>!hubOn()&&!Object.keys(S.pos).length&&!Object.keys(S.dels).length&&!Object.keys(S.invs).length&&!Object.keys(S.promos).length;
+const isDemo=()=>realEmpty();
+function settings(){return{...DEF,...(S.meta.settings||{})}}
+function DATA(){if(isDemo())return{...SAMPLE,set:settings(),demo:true};
+  const sets=Object.entries(S.promosets).map(([id,d])=>({...d,id})),chunks=Object.keys(S.promos).sort();
+  if(chunks.some(k=>!S.promos[k].set))sets.push({id:'legacy',name:'โปรโมชั่นเดิม',...(S.meta.promo||{}),start:(S.meta.promo||{}).start||'',end:(S.meta.promo||{}).end||''});
+  const promos=chunks.flatMap(k=>{const c=S.promos[k],x=sets.find(z=>z.id===(c.set||'legacy'));return x?(c.rows||[]).map((r,i)=>applyDC({...r,_k:k,_i:i,setId:x.id,setName:x.name,start:x.start,end:x.end},x)):[]});
+  sets.forEach(x=>{x.count=promos.filter(q=>q.setId===x.id).length});sets.sort((a,b)=>String(a.start).localeCompare(String(b.start)));
+  const v=o=>Object.entries(o).map(([id,d])=>({...d,_id:id}));
+  let pos=v(S.pos).map(poDateFix),dels=v(S.dels);
+  if(hubOn()){const hp=new Set(HUB.pos.map(p=>p._id)),hd=new Set(HUB.dels.map(d=>d._id));pos=[...HUB.pos,...pos.filter(p=>!hp.has(p._id))];dels=[...dels.filter(d=>!(isRE(d)&&hd.has(d._id))),...HUB.dels]}
+  return{promos,pos:pos.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(a.poNo).localeCompare(String(b.poNo))),dels,invs:v(S.invs),appr:S.appr,sets,set:settings(),demo:false}}
+function hubSet(){const s=settings(),raw=String(s.hubFileId||'').trim(),m=raw.match(/\/d\/([\w-]{20,})/);
+  return{id:m?m[1]:raw||HUB_ID,company:s.hubCompany==null?'RUAMSINTHAI':String(s.hubCompany).trim(),from:s.hubFrom==null?'2026-01-01':String(s.hubFrom).trim(),vendor:String(s.hubVendor||'').trim()}}
+/* แท็บเอกสารรับสินค้า (สถานะการซื้อ) ใน Data Hub: ใช้แท็บที่มีข้อมูลมากที่สุดระหว่าง PURCHASE_LINES กับ ECOUNT_PURCHASE */
+function pickRE(t){for(const k in t){const r=t[k];if(r&&r.length>1)return{rows:r,tab:k}}return{rows:[[]],tab:''}}
+async function loadHub(auto){if(HUBST.s==='busy')return;if(!CFG.gsUrl){if(!auto)toast('เชื่อมต่อ Apps Script Web App ที่แท็บ “ตั้งค่า” ก่อน');return}
+  const o=hubSet();HUBST={s:'busy',msg:''};render();
+  try{const r=await fetch(CFG.gsUrl+(CFG.gsUrl.includes('?')?'&':'?')+'action=hub&id='+encodeURIComponent(o.id)),j=await r.json();
+    if(!j.tabs)throw{code:'hub_old',message:j.ok?'Apps Script ยังเป็นเวอร์ชันเก่า คัดลอก Code.gs ใหม่จากแท็บ “ตั้งค่า” แล้ว Deploy เวอร์ชันใหม่':'Apps Script อ่าน Data Hub ไม่ได้: '+(j.error||'')+' ตรวจว่าบัญชีที่ติดตั้ง Apps Script เปิดไฟล์ Data Hub ได้ และ Deploy Code.gs เวอร์ชันใหม่แล้ว'};
+    const T=t=>t?[t.headers,...t.rows]:null,po=T(j.tabs.PO_LINES),{rows:re,tab:reTab}=pickRE({PURCHASE_LINES:T(j.tabs.PURCHASE_LINES),ECOUNT_PURCHASE:T(j.tabs.ECOUNT_PURCHASE)});
+    if(!po)throw{code:'hub_tabs',message:'ไฟล์นี้ไม่มีแท็บ PO_LINES'};
+    const h=hubDocs(po,re,o);
+    for(const p of h.pos)p._id=idOf(p.poNo);
+    for(const d of h.dels){let id=idOf(d.docNo);if(S.dels[id]&&!isRE(S.dels[id])){d.docNo='RE-'+d.docNo;id=idOf(d.docNo)}d._id=id}
+    const first=!hubOn();HUB={pos:h.pos,dels:h.dels,nl:h.nl,nr:h.nr,skip:h.skip,noPo:h.noPo,reTab,reCols:h.reCols,reHead:h.reHead,rows:po.length-1+Math.max(re.length-1,0),at:Date.now(),o};
+    HUBST={s:'ok',msg:''};try{localStorage.setItem('m3_hub','1')}catch(e){}
+    if(first&&!F.month&&h.nl>1500){const ms=months(DATA());if(ms.length)F.month=ms[0]}
+    if(!auto)toast(h.pos.length?'โหลดจาก Data Hub แล้ว: ใบสั่งซื้อ '+h.pos.length+' ใบ เอกสารรับสินค้า (RE) '+h.dels.length+' ใบ'+(reTab?' จากแท็บ '+reTab:' (ไม่พบแท็บสถานะการซื้อ)'):'เชื่อมต่อ Data Hub ได้ แต่ไม่มีใบสั่งซื้อที่ตรงเงื่อนไข ตรวจบริษัท วันที่เริ่ม และผู้ขายที่แท็บตั้งค่า')}
+  catch(e){console.error(e);HUBST={s:'err',msg:e&&e.code?e.message:'โหลดจาก Data Hub ไม่สำเร็จ: '+((e&&e.message)||'')+' ตรวจ URL ของ Apps Script และการเชื่อมต่ออินเทอร์เน็ต'};if(!auto)toast(HUBST.msg)}
+  render()}
+function saveLocal(){try{localStorage.setItem('m3_state',JSON.stringify(S))}catch(e){toast('พื้นที่เก็บข้อมูลของเบราว์เซอร์เต็ม เชื่อมต่อ Google Sheet หรือลบเอกสารเก่า')}}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const QS=new Map(),QD=new Map();let qT=null,flushing=false;
+function enqueue(coll,id,del){if(!CFG.gsUrl)return;const k=coll+'/'+id;if(del){QS.delete(k);QD.set(k,{coll,id})}else{QD.delete(k);QS.set(k,{coll,id})}clearTimeout(qT);qT=setTimeout(flush,1200)}
+async function put(coll,id,data){data=JSON.parse(JSON.stringify(data));delete data._id;S[coll][id]=data;saveLocal();enqueue(coll,id,false)}
+async function rm(coll,id){delete S[coll][id];saveLocal();enqueue(coll,id,true)}
+async function gsPost(body){const r=await fetch(CFG.gsUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});const j=await r.json();if(!j.ok)throw new Error(j.error||'Google Sheet ตอบกลับผิดพลาด');return j}
+async function flush(){if(flushing||!CFG.gsUrl)return;flushing=true;SYNC.state='busy';SYNC.msg='กำลังบันทึกลง Google Sheet…';chip();
+  try{while(QS.size||QD.size){const ks=[...QS.keys()].slice(0,30),rows=[];
+      for(const k of ks){const q=QS.get(k);QS.delete(k);if(S[q.coll][q.id])rows.push({coll:q.coll,id:q.id,json:JSON.stringify(S[q.coll][q.id])})}
+      const deletes=[...QD.values()];QD.clear();
+      try{await gsPost({action:'save',rows,deletes})}catch(e){rows.forEach(r=>QS.set(r.coll+'/'+r.id,{coll:r.coll,id:r.id}));deletes.forEach(d=>QD.set(d.coll+'/'+d.id,d));throw e}}
+    SYNC.state='ok';SYNC.msg='บันทึกลง Google Sheet แล้ว '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}
+  catch(e){console.error(e);SYNC.state='err';SYNC.msg='บันทึกลง Google Sheet ไม่สำเร็จ ข้อมูลยังอยู่ในเบราว์เซอร์นี้'}
+  flushing=false;chip()}
+async function gsLoad(){const r=await fetch(CFG.gsUrl+(CFG.gsUrl.includes('?')?'&':'?')+'action=load'),j=await r.json();if(!j.ok)throw new Error(j.error||'โหลดไม่สำเร็จ');
+  if(!j.rows.length)return 0;
+  for(const c of COLLS)S[c]={};for(const x of j.rows){if(S[x.coll])try{S[x.coll][x.id]=JSON.parse(x.json)}catch(e){}}
+  saveLocal();return j.rows.length}
+function pushAll(){for(const c of COLLS)for(const id of Object.keys(S[c]))QS.set(c+'/'+id,{coll:c,id});return flush()}
+function chip(){const c=$('#storeChip');if(!c)return;c.textContent=CFG.gsUrl?(SYNC.msg||'เชื่อมต่อ Google Sheet แล้ว'):'เก็บในเบราว์เซอร์นี้ ยังไม่เชื่อมต่อ Google Sheet'}
+function wErr(e){console.error(e);toast('บันทึกไม่สำเร็จ ลองอีกครั้ง')}
+let rT;function schedule(){clearTimeout(rT);rT=setTimeout(render,60)}
+async function init(){
+  try{Object.assign(S,JSON.parse(localStorage.getItem('m3_state')||'{}'))}catch(e){}
+  for(const c of COLLS)if(!S[c])S[c]={};
+  render();
+  if(CFG.gsUrl){SYNC.state='busy';SYNC.msg='กำลังดึงข้อมูลจาก Google Sheet…';chip();
+    try{const n=await gsLoad();SYNC.state='ok';SYNC.msg='ดึงข้อมูลจาก Google Sheet แล้ว';if(!n&&!realEmpty())await pushAll();render()}
+    catch(e){console.error(e);SYNC.state='err';SYNC.msg='เชื่อมต่อ Google Sheet ไม่ได้ กำลังใช้ข้อมูลในเบราว์เซอร์นี้';chip()}
+    let on=false;try{on=localStorage.getItem('m3_hub')==='1'}catch(e){}if(on)loadHub(true)}
+}
+
+/* ==========================================================================
+ * MODULE 07  VIEW CORE
+ * แท็บ ตัวกรอง และฟังก์ชัน render หลัก
+ * ฟังก์ชัน: render, vendors, projects, months, mLabel, filt, tools
+ * ========================================================================== */
+/* ---------- view state ---------- */
+const TABS=[['overview','ภาพรวม','สถานะทุก PO'],['promo','① PO เทียบโปรโมชั่น','รหัส · รายละเอียด · ราคา'],['delivery','② PO เทียบใบส่งสินค้า','จำนวนสั่ง · ส่งมอบ · ค้างส่ง'],['invoice','③ เทียบใบกำกับภาษี','จำนวน · ราคา · ภาษี'],['promos','คลังโปรโมชั่น','รายการ · ส่วนลด · ช่วงเวลา'],['docs','เอกสารและนำเข้า','PO · โปรโมชั่น · เอกสาร'],['settings','ตั้งค่า','เกณฑ์และข้อเสนอ']];
+let tab=(location.hash||'').slice(1);if(!TABS.some(t=>t[0]===tab))tab='overview';
+const F={q:'',only:false,brand:'',vendor:'',set:'',project:'',month:'',ptype:''};
+let isAdmin=false,PE=null,DT_TYPES=[];
+let IMP=null,ED=null,BUSY=null,EXC=null,abortCtl=null;
+
+function render(){
+  if(typeof refreshAdmin==='function')refreshAdmin();
+  const D=DATA(),R=summary(D);
+  document.body.classList.toggle('ro',readOnly);
+  chip();
+  {const hb=$('#btnHub'),hc=$('#hubChip'),busy=HUBST.s==='busy';hb.hidden=!CFG.gsUrl;hb.disabled=busy;hb.textContent=busy?'กำลังโหลดจาก Data Hub…':hubOn()?'โหลดจาก Data Hub อีกครั้ง':'โหลดจาก Data Hub';
+    hc.hidden=!hubOn();if(hubOn())hc.textContent='Data Hub · PO '+HUB.pos.length+' · RE '+HUB.dels.length+' · '+new Date(HUB.at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+  $('#btnSheet').hidden=!CFG.gsUrl;
+  $('#rail').innerHTML=TABS.map(t=>`<button data-act="tab" data-v="${t[0]}" aria-current="${t[0]===tab}"><b>${t[1]}</b><span>${t[2]}</span></button>`).join('');
+  $('#banner').innerHTML=(D.demo?`<div class="banner">กำลังแสดง<b>ข้อมูลตัวอย่าง</b> ไม่ใช่ข้อมูลของบริษัท เริ่มใช้งานจริงที่แท็บ “เอกสารและนำเข้า” ข้อมูลตัวอย่างจะหายไปเมื่อนำเข้ารายการแรก</div>`:'')+(HUBST.s==='err'?`<div class="banner">${esc(HUBST.msg)}</div>`:'')+(readOnly?`<div class="banner">คุณมีสิทธิ์ดูอย่างเดียว ขอสิทธิ์ Contributor จากเจ้าของหน้าเพื่อบันทึกเอกสาร</div>`:'');
+  const m=$('#main');
+  
+  m.innerHTML=({overview:vOverview,promos:vPromos,promo:vPromo,delivery:vDelivery,invoice:vInvoice,docs:vDocs,settings:vSettings})[tab](D,R);
+  const q=$('#q');if(q&&document.activeElement!==q)q.value=F.q;
+  const g=$('#gasCode');if(g)g.value=document.getElementById('gas').textContent.trim();
+}
+const CAP=400,capNote=n=>n>CAP?`<p class="hint">แสดง ${CAP} แถวแรกจาก ${n.toLocaleString('th-TH')} แถว ใช้ช่องค้นหา ผู้จำหน่าย โครงการ หรือเดือน เพื่อจำกัดรายการ ไฟล์ส่งออก Excel มีครบทุกแถว</p>`:'';
+const vendors=D=>[...new Set(D.pos.map(p=>p.vendor).filter(Boolean))].sort();
+const projects=D=>[...new Set(D.pos.flatMap(p=>[p.project,...(p.lines||[]).map(l=>l.project)]).filter(Boolean))].sort();
+const months=D=>[...new Set(D.pos.map(p=>String(p.date||'').slice(0,7)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
+const mLabel=m=>new Date(m+'-01T00:00:00').toLocaleDateString('th-TH',{month:'long',year:'numeric'});
+const filt=rows=>rows.filter(r=>(!F.vendor||r.vendor===F.vendor)&&(!F.month||String(r.date||'').startsWith(F.month))&&(!F.project||r.project===F.project)&&(!F.only||['bad','warn'].includes(r.lv))&&(!F.q||nk(r.poNo+r.code+r.name+(r.vendor||'')).includes(nk(F.q))));
+const tools=(n,D)=>`<div class="row"><input id="q" placeholder="ค้นหา PO / รหัส / ชื่อสินค้า" style="flex:1 1 220px" aria-label="ค้นหา"><select id="vend" aria-label="ผู้จำหน่าย" style="max-width:260px"><option value="">ผู้จำหน่ายทั้งหมด</option>${vendors(D).map(v=>`<option ${F.vendor===v?'selected':''}>${esc(v)}</option>`).join('')}</select><select id="proj" aria-label="โครงการ" style="max-width:200px"><option value="">โครงการทั้งหมด</option>${projects(D).map(v=>`<option ${F.project===v?'selected':''}>${esc(v)}</option>`).join('')}</select><select id="mon" aria-label="เดือนของ PO" style="max-width:180px"><option value="">ทุกเดือน</option>${months(D).map(v=>`<option value="${v}" ${F.month===v?'selected':''}>${esc(mLabel(v))}</option>`).join('')}</select><label class="row" style="gap:4px"><input type="checkbox" id="only" ${F.only?'checked':''}> เฉพาะที่มีปัญหา</label><span class="sub">${n} รายการ</span></div>`;
+
+/* ==========================================================================
+ * MODULE 08  VIEW: ภาพรวม
+ * ตารางสถานะทุก PO และการอนุมัติ
+ * ฟังก์ชัน: vOverview
+ * ========================================================================== */
+function vOverview(D,R){
+  const P=R.pos,c=f=>P.filter(f).length;
+  const leak=R.r1.reduce((s,r)=>s+r.leak,0);
+  const ids=Object.values(D.appr||{}).map(a=>a.by);names(ids);
+  const rows=P.filter(p=>(!F.vendor||p.po.vendor===F.vendor)&&(!F.month||String(p.po.date||'').startsWith(F.month))&&(!F.project||p.po.project===F.project||(p.po.lines||[]).some(l=>l.project===F.project))&&(!F.only||['bad','warn'].includes(p.all))&&(!F.q||nk(p.po.poNo+p.po.vendor).includes(nk(F.q))));
+  return `<div class="kpis">
+    <div class="kpi"><b>${P.length}</b><span>ใบสั่งซื้อทั้งหมด</span></div>
+    <div class="kpi ok"><b>${c(p=>p.all==='ok')}</b><span>ผ่านครบ 3 ขั้น พร้อมจ่าย</span></div>
+    <div class="kpi warn"><b>${c(p=>p.s2==='warn')}</b><span>ค้างส่ง</span></div>
+    <div class="kpi bad"><b>${c(p=>p.all==='bad')}</b><span>ต้องแก้ไข</span></div>
+    <div class="kpi ${leak>0?'bad':''}"><b>${fm(leak)}</b><span>มูลค่าที่จ่ายเกินราคาโปร (บาท)</span></div>
+    <div class="kpi ${P.reduce((a,x)=>a+x.comp.out,0)>0?'warn':''}"><b>${fm(P.reduce((a,x)=>a+x.comp.out,0))}</b><span>ส่วนลดชดเชยยังไม่ครบ (บาท)</span></div></div>
+  <section class="card"><h2>สถานะใบสั่งซื้อ</h2><p>กดที่แถวเพื่อดูรายการสินค้าของ PO นั้นในขั้นที่ 3</p>${tools(rows.length,D)}
+  <div class="tw"><table><thead><tr><th>เลขที่ PO</th><th>ผู้จำหน่าย</th><th>วันที่</th><th class="n">มูลค่า</th><th>① โปรโมชั่น</th><th>② ส่งมอบ</th><th>③ ใบกำกับ</th><th>สรุป</th><th>การอนุมัติ</th></tr></thead><tbody>
+  ${rows.slice(0,CAP).map(p=>{const id=p.po._id||idOf(p.po.poNo),a=(D.appr||{})[id];
+    const ap=a?`<span class="pill ${a.kind==='ready'?'ok':'info'}">${a.kind==='ready'?'อนุมัติจ่ายแล้ว':'อนุมัติข้อยกเว้น'}</span><div class="sub">${esc(NAMES[a.by]||'')} ${esc((a.at||'').slice(0,10))}${a.note?' · '+esc(a.note):''}</div><button class="sm" data-w data-act="unappr" data-id="${esc(id)}">ยกเลิก</button>`
+      :EXC===id?`<div class="row"><input id="excNote" placeholder="เหตุผลที่อนุมัติ" style="width:150px"><button class="sm pri" data-act="excSave" data-id="${esc(id)}">บันทึก</button><button class="sm" data-act="excCancel">เลิก</button></div>`
+      :p.all==='ok'?`<button class="sm pri" data-w data-act="appr" data-id="${esc(id)}">อนุมัติจ่าย</button>`:`<button class="sm" data-w data-act="exc" data-id="${esc(id)}">อนุมัติข้อยกเว้น</button>`;
+    return `<tr class="clk" data-act="openPO" data-v="${esc(p.po.poNo)}"><td><span class="code">${esc(p.po.poNo)}</span></td><td class="d">${p.po.vendor?esc(p.po.vendor):'<span class="sub">ไม่มีชื่อในไฟล์ที่นำเข้า</span>'}</td><td class="c">${esc(p.po.date||'')}</td><td class="n">${fm(p.total)}</td><td>${pill(p.na?'wait':p.s1,p.l1)}</td><td>${pill(p.s2,p.l2)}</td><td>${pill(p.s3,p.l3)}</td><td>${pill(p.all,p.label)}</td><td data-stop>${ap}</td></tr>`}).join('')||'<tr><td colspan="9" class="sub">ไม่มีรายการ</td></tr>'}
+  </tbody></table></div>${capNote(rows.length)}</section>`}
+
+/* ==========================================================================
+ * MODULE 09  VIEW: ① PO เทียบโปรโมชั่น
+ * ตารางเทียบราคาหลังหักส่วนลดกับ NP_Promotion
+ * ฟังก์ชัน: vPromo
+ * ========================================================================== */
+function vPromo(D,R){const rows=filt(R.r1).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(b.poNo).localeCompare(String(a.poNo),undefined,{numeric:true})),out=R.r1.length-R.r1.filter(r=>r.scope).length,noProj=D.pos.length&&!R.r1.some(r=>r.project);
+  return `<section class="card"><h2>① ใบสั่งซื้อเทียบโปรโมชั่น</h2><p>เทียบราคาต่อหน่วยหลังหักส่วนลดจากใบสั่งซื้อกับ NP_Promotion ว่าตรงกันหรือไม่ โดยใช้โปรโมชั่นที่ดีที่สุด คือโปรที่ราคาสุทธิต่ำที่สุดในบรรดาโปรที่มีผล ณ วันที่เปิดใบสั่งซื้อ ไม่ใช้วันที่ใบส่งสินค้าหรือใบกำกับภาษี ถ้า PO ไม่มีวันที่ ระบบใช้ปีและเดือนจากเลขที่ PO เช่น PO26080001 คือ ส.ค. 2026 ตอนนี้มี ${D.sets.length} โปรโมชั่น ${D.promos.length} รายการ</p>
+  <p class="hint">คอลัมน์โครงการมาจากรายงานสถานะการซื้อของ ECOUNT เทียบทุกบรรทัดของโครงการ “${esc(D.set.promoProject||'ทุกโครงการ')}”${D.set.promoVendor?' เฉพาะผู้ขายที่ชื่อมีคำว่า “'+esc(D.set.promoVendor)+'”':' ทุกผู้ขาย'} กับโปรโมชั่นทั้งหมดในคลัง ตารางแสดงทุก PO รายการอื่นอีก ${out} บรรทัดแสดงสถานะ “ไม่ต้องเทียบโปรโมชั่น”${noProj?' <b>ไฟล์ที่นำเข้าไม่มีข้อมูลโครงการ จึงไม่มีรายการเข้าเงื่อนไข นำเข้าใหม่โดยเลือกคอลัมน์โครงการ</b>':''}</p>${STEPHINT}${tools(rows.length,D)}
+  <div class="tw"><table><thead><tr><th>โครงการ</th><th>PO / ผู้จำหน่าย</th><th>รหัสและรายละเอียดสินค้า</th><th>โปรโมชั่นที่แนะนำ</th><th class="n">จำนวน</th><th class="n">ราคาต่อหน่วยหลังหักส่วนลด</th><th class="n">MO</th><th class="n">ส่วนลดโปร</th><th class="n">NP_Promotion / ราคาโปรก่อน VAT</th><th class="n">ส่วนต่าง/หน่วย</th><th class="n">จ่ายเกินรวม</th><th>ผลตรวจ</th></tr></thead><tbody>
+  ${rows.slice(0,CAP).map(r=>`<tr><td>${esc(r.project)}</td><td class="d"><span class="code">${esc(r.poNo)}</span><div class="sub">${esc(r.date)} · ${esc(r.vendor)}</div>${poSteps(R,r.poNo)}</td><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="d">${esc(r.promoSet)}${r.nAlt>1?`<div class="sub">ดีที่สุดจาก ${r.nAlt} โปรที่มีผล</div>`:''}</td><td class="n">${fq(r.qty)}</td><td class="n"><b>${fm(r.poPrice)}</b>${r.listPrice!=null&&r.poPrice!=null&&Math.abs(r.listPrice-r.poPrice)>0.005&&!D.set.poIncVat?`<div class="sub">ราคาตั้ง ${fm(r.listPrice)}</div>`:''}</td><td class="n">${fm(r.mo)}</td><td class="n">${fdisc(r.disc,r.promo)}${r.dc?`<div class="sub">${fp(r.discBase)} + เพิ่ม ${fp(r.dc)}</div>`:''}</td><td class="n">${fm(r.promo)}</td><td class="n">${r.diff==null?'–':(r.diff>0?'+':'')+fm(r.diff)}</td><td class="n">${r.leak?fm(r.leak):'–'}</td><td>${pill(r.lv,r.label)}${r.note?`<div class="sub">${esc(r.note)}</div>`:''}</td></tr>`).join('')||'<tr><td colspan="12" class="sub">ไม่มีรายการ</td></tr>'}
+  </tbody></table></div>${capNote(rows.length)}</section>`}
+
+/* ==========================================================================
+ * MODULE 10  VIEW: คลังโปรโมชั่น
+ * รายการโปรโมชั่น ส่วนลด DC / ส่วนลดพิเศษ ตาม Part Type และตารางรายการสินค้า
+ * ฟังก์ชัน: vPromos, invVerdict, verdictHtml, poSteps
+ * ========================================================================== */
+function vPromos(D){const today=new Date(Date.now()+7*36e5).toISOString().slice(0,10);
+  const stOf=x=>!x.start&&!x.end?['wait','ไม่ระบุช่วงเวลา']:today<(x.start||'')?['info','ยังไม่เริ่ม']:x.end&&today>x.end?['bad','หมดอายุแล้ว']:['ok','มีผลอยู่'];
+  const best=new Map();for(const p of D.promos)if(p.price!=null&&inRange(p,today)){const k=kc(p.code),b=best.get(k);if(!b||p.price<b.price)best.set(k,p)}
+  const multi=new Map();for(const p of D.promos){const k=kc(p.code);multi.set(k,(multi.get(k)||0)+1)}
+  const ptOf=p=>p.ptype||'(ไม่ระบุ)',ptypes=[...new Set(D.promos.filter(p=>!F.set||p.setId===F.set).map(ptOf))].sort();
+  const selSet=D.sets.find(x=>x.id===F.set)||(D.sets.length===1?D.sets[0]:null),selTypes=selSet&&selSet.type!=='price'?[...new Set(D.promos.filter(p=>p.setId===selSet.id).map(ptOf))].sort():[];DT_TYPES=selTypes;
+  const gm=new Map();for(const p of D.promos){const k=kc(p.code);if(!gm.has(k))gm.set(k,[]);gm.get(k).push(p)}
+  const groups=[...gm.values()].filter(g=>(!F.set||g.some(p=>p.setId===F.set))&&(!F.ptype||g.some(p=>ptOf(p)===F.ptype))&&(!F.q||g.some(p=>nk(p.code+p.name+p.nameTh+p.brand).includes(nk(F.q))))),show=groups.slice(0,600);
+  const adm=isAdmin&&!D.demo&&!readOnly;
+  const live=D.sets.filter(x=>stOf(x)[0]==='ok').length,dup=[...multi.values()].filter(n=>n>1).length,noD=D.promos.filter(p=>p.discBase!=null&&!(p.disc>0)).length;
+  return `<div class="kpis">
+    <div class="kpi"><b>${D.sets.length}</b><span>โปรโมชั่นทั้งหมด</span></div>
+    <div class="kpi ok"><b>${live}</b><span>โปรที่มีผลวันนี้</span></div>
+    <div class="kpi"><b>${gm.size}</b><span>รายการสินค้า (ไม่นับซ้ำ)</span></div>
+    <div class="kpi"><b>${dup}</b><span>สินค้าที่อยู่มากกว่า 1 โปร</span></div></div>
+  <section class="card"><h2>โปรโมชั่นทั้งหมด</h2><p>นำเข้าได้ไม่จำกัดจำนวน แต่ละโปรมีช่วงเวลาของตัวเองและคาบเกี่ยวกันได้ ใส่ส่วนลดเพิ่ม DC:Quarter, DC:Yearly และส่วนลดพิเศษ ของแต่ละโปรได้ ระบบนำไปบวกกับส่วนลดโปรแล้วคำนวณ NP_Promotion ใหม่ การลบจะลบทั้งไฟล์ของโปรนั้นในครั้งเดียว</p>
+  <div class="row" data-w><button class="pri" data-act="impX" data-v="promo">นำเข้าโปรโมชั่นใหม่ (.xlsx)</button></div>
+  <div class="tw"><table><thead><tr><th>ชื่อโปรโมชั่น</th><th>เริ่ม</th><th>สิ้นสุด</th><th class="n">DC:Quarter %</th><th class="n">DC:Yearly %</th><th class="n">ส่วนลดพิเศษ %</th><th class="n">รายการ</th><th>สถานะ</th><th></th></tr></thead><tbody>
+  ${D.sets.map(x=>{const t=stOf(x),fx=x.type==='price';return `<tr><td class="d"><b>${esc(x.name)}</b><div class="sub">${fx?'ราคาโปรโมชั่นก่อน VAT':'ส่วนลด % จาก MO'} · ${fd(x.start)} – ${fd(x.end)}</div>${x.file?`<div class="sub">${esc(x.file)}</div>`:''}</td><td><input type="date" id="ps_start_${esc(x.id)}" value="${esc(x.start||'')}" aria-label="วันเริ่ม"></td><td><input type="date" id="ps_end_${esc(x.id)}" value="${esc(x.end||'')}" aria-label="วันสิ้นสุด"></td><td class="n">${fx?'–':`<input id="ps_q_${esc(x.id)}" inputmode="decimal" value="${x.dcQ||''}" placeholder="0" style="width:64px;text-align:right" aria-label="DC:Quarter %">`}</td><td class="n">${fx?'–':`<input id="ps_y_${esc(x.id)}" inputmode="decimal" value="${x.dcY||''}" placeholder="0" style="width:64px;text-align:right" aria-label="DC:Yearly %">`}</td><td class="n">${fx?'–':`<input id="ps_s_${esc(x.id)}" inputmode="decimal" value="${x.dcS||''}" placeholder="0" style="width:64px;text-align:right" aria-label="ส่วนลดพิเศษ %">`}</td><td class="n">${x.count}</td><td>${pill(t[0],t[1])}</td><td style="white-space:nowrap">${D.demo?'':`<button class="sm pri" data-w data-act="saveSetRange" data-id="${esc(x.id)}">บันทึก</button> <button class="sm" data-w data-act="delSet" data-id="${esc(x.id)}">ลบทั้งโปร</button>`}</td></tr>`}).join('')||'<tr><td colspan="9" class="sub">ยังไม่มีโปรโมชั่น</td></tr>'}
+  </tbody></table></div></section>
+  <section class="card"><h2>ส่วนลดเพิ่มตาม Part Type / Type Part</h2><p>กำหนด DC:Quarter, DC:Yearly และส่วนลดพิเศษ แยกตาม Part Type ของแต่ละโปรโมชั่นได้ เช่น Part Type “Other” ส่วนลดโปร 2% บวก DC:Quarter 1% ได้ส่วนลดรวม 3% Part Type ที่กำหนดค่าไว้ที่นี่จะใช้ค่านี้แทนค่าระดับโปรโมชั่นทั้งสามช่อง</p>
+  ${!selSet?'<p class="hint">เลือกโปรโมชั่นจากตัวกรอง “ทุกโปรโมชั่น” ในตารางด้านล่างก่อน เพื่อกำหนดส่วนลดตาม Part Type ของโปรนั้น</p>':selSet.type==='price'?'<p class="hint">โปรแบบราคาก่อน VAT ไม่ใช้ส่วนลด %</p>':`<div class="tw"><table><thead><tr><th>โปรโมชั่น</th><th>Part Type</th><th class="n">รายการ</th><th class="n">ส่วนลดโปรในไฟล์</th><th class="n">DC:Quarter %</th><th class="n">DC:Yearly %</th><th class="n">ส่วนลดพิเศษ %</th><th class="n">ส่วนลดรวม</th></tr></thead><tbody>
+  ${selTypes.map((t,n)=>{const rs=D.promos.filter(p=>p.setId===selSet.id&&ptOf(p)===t),bs=rs.map(p=>p.discBase).filter(v=>v!=null),lo=bs.length?Math.min(...bs):null,hi=bs.length?Math.max(...bs):null,c=(selSet.dcByType||{})[t],tot=rs.map(p=>p.disc).filter(v=>v!=null),tl=tot.length?Math.min(...tot):null,th=tot.length?Math.max(...tot):null;
+    return `<tr><td class="d">${esc(selSet.name)}</td><td><b>${esc(t)}</b></td><td class="n">${rs.length}</td><td class="n">${lo==null?'–':lo===hi?fp(lo):fp(lo)+' – '+fp(hi)}</td><td class="n"><input id="dt_q_${n}" inputmode="decimal" value="${c?c.q||'':''}" placeholder="${selSet.dcQ||0}" style="width:64px;text-align:right" aria-label="DC:Quarter %"></td><td class="n"><input id="dt_y_${n}" inputmode="decimal" value="${c?c.y||'':''}" placeholder="${selSet.dcY||0}" style="width:64px;text-align:right" aria-label="DC:Yearly %"></td><td class="n"><input id="dt_s_${n}" inputmode="decimal" value="${c?c.s||'':''}" placeholder="${selSet.dcS||0}" style="width:64px;text-align:right" aria-label="ส่วนลดพิเศษ %"></td><td class="n"><b>${tl==null?'–':tl===th?fp(tl):fp(tl)+' – '+fp(th)}</b></td></tr>`}).join('')}
+  </tbody></table></div><div class="row" data-w>${D.demo?'<span class="sub">ข้อมูลตัวอย่าง แก้ไขไม่ได้</span>':`<button class="pri" data-act="saveDcType" data-id="${esc(selSet.id)}">บันทึกส่วนลดตาม Part Type</button><span class="sub">เว้นว่างทั้งสามช่องเพื่อใช้ค่าระดับโปรโมชั่น</span>`}</div>`}</section>
+  <section class="card"><h2>รายการสินค้าในโปรโมชั่น</h2><p>แสดงทุกรายการในไฟล์โปรโมชั่น รวมรายการที่ไม่มีส่วนลด สินค้าหนึ่งรหัสแสดงครั้งเดียว และแจกแจงส่วนลดของทุกโปรโมชั่นที่มีสินค้านั้น ส่วนลดรวม = ส่วนลดโปร + DC:Quarter + DC:Yearly + ส่วนลดพิเศษ และ NP_Promotion = MO − (MO × ส่วนลดรวม) ส่วนโปรแบบราคา เช่น โปรโมชั่นน้ำมัน ใช้ราคาโปรโมชั่นก่อน VAT ตามไฟล์โดยตรง สินค้าที่อยู่หลายโปร ระบบติดป้าย “ดีที่สุดวันนี้” ให้โปรที่ราคาสุทธิต่ำที่สุดในบรรดาโปรที่มีผลวันนี้ ${adm?'คุณเป็นผู้ดูแลระบบ กด “แก้ไข” เพื่อแก้ MO ส่วนลดโปร และ NP_Promotion รายบรรทัด':D.demo?'':'การแก้ไขราคา MO ส่วนลดโปร และ NP_Promotion ทำได้เฉพาะผู้ดูแลระบบ'}</p>
+  <div class="row"><input id="q" placeholder="ค้นหารหัส / ชื่อสินค้า" style="flex:1 1 220px" aria-label="ค้นหา"><select id="setF" aria-label="โปรโมชั่น" style="max-width:260px"><option value="">ทุกโปรโมชั่น</option>${D.sets.map(x=>`<option value="${esc(x.id)}" ${F.set===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><select id="ptF" aria-label="Part Type" style="max-width:200px"><option value="">ทุก Part Type</option>${ptypes.map(t=>`<option ${F.ptype===t?'selected':''}>${esc(t)}</option>`).join('')}</select><span class="sub">${groups.length} รายการสินค้า${groups.length>show.length?' (แสดง 600 แรก ใช้ช่องค้นหาเพื่อจำกัด)':''}</span></div>
+  <div class="tw" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th>รหัสและชื่อสินค้า</th><th>Part Type</th><th>โปรโมชั่นที่มีรายการนี้</th><th class="n">MO</th><th class="n">ส่วนลดโปร</th><th class="n">DC: Quarter</th><th class="n">DC: Yearly</th><th class="n">ส่วนลดพิเศษ</th><th class="n">ส่วนลดรวม</th><th class="n">NP_Promotion / ราคาโปรก่อน VAT</th><th>คำแนะนำ</th>${adm?'<th></th>':''}</tr></thead><tbody>
+  ${show.map(g=>{const k=kc(g[0].code),b=best.get(k),m=g.length>1,nm=g.find(p=>p.name)||g[0],th=g.find(p=>p.nameTh),ts=[...new Set(g.map(ptOf))];
+    return g.map((p,ix)=>{const ed=PE&&PE.k===p._k&&PE.i===p._i,dc=v=>p.discBase==null?'–':v?'+'+fp(v):'–',none=p.discBase!=null&&!(p.disc>0);
+    return `<tr>${ix?'':`<td class="d" rowspan="${g.length}"><span class="code">${esc(g[0].code)}</span><div>${esc(nm.name)}</div>${th?`<div class="sub">${esc(th.nameTh)}</div>`:''}${m?`<div class="sub">อยู่ใน ${g.length} โปรโมชั่น</div>`:''}</td><td rowspan="${g.length}">${ts.map(esc).join('<br>')}</td>`}<td class="d">${esc(p.setName)}<div class="sub">${fd(p.start)} – ${fd(p.end)}</div>${ed?`<input id="pe_ptype" value="${esc(p.ptype||'')}" placeholder="Part Type" style="width:110px" aria-label="Part Type">`:''}</td>
+    ${ed?`<td class="n"><input id="pe_mo" inputmode="decimal" value="${p.mo??''}" style="width:84px;text-align:right" aria-label="MO"></td><td class="n"><input id="pe_disc" inputmode="decimal" value="${p.discBase??''}" style="width:64px;text-align:right" aria-label="ส่วนลดโปร %"></td><td class="n">${dc(p.dcQ)}</td><td class="n">${dc(p.dcY)}</td><td class="n">${dc(p.dcS)}</td><td class="n sub">คำนวณเมื่อบันทึก</td><td class="n"><input id="pe_price" inputmode="decimal" value="${p.price??''}" style="width:92px;text-align:right" aria-label="NP_Promotion"></td>`
+      :`<td class="n">${fm(p.mo)}</td><td class="n">${fdisc(p.discBase,p.price)}</td><td class="n">${dc(p.dcQ)}</td><td class="n">${dc(p.dcY)}</td><td class="n">${dc(p.dcS)}</td><td class="n"><b>${p.discBase==null?'–':fp(p.disc)}</b></td><td class="n"><b>${fm(p.price)}</b>${p.editedAt?`<div class="sub">แก้ไข ${esc(String(p.editedAt).slice(0,10))} ${esc(NAMES[p.editedBy]||'')}</div>`:''}</td>`}
+    <td>${!isHalf(p.discBase)?pill('bad','ส่วนลดไม่ลงตัว'):none?pill('wait','ไม่มีส่วนลด'):p.price==null?pill('wait','ไม่มีราคา'):b===p?(m?pill('ok','ดีที่สุดวันนี้'):pill('wait','โปรเดียว')):!inRange(p,today)?pill('wait','ไม่มีผลวันนี้'):pill('info','มีโปรที่ถูกกว่า')}</td>${adm?`<td style="white-space:nowrap">${ed?`<button class="sm pri" data-act="peSave">บันทึก</button> <button class="sm" data-act="peCancel">เลิก</button>`:`<button class="sm" data-act="peEdit" data-k="${esc(p._k)}" data-i="${p._i}" data-dc="${(p.dcQ||0)+(p.dcY||0)+(p.dcS||0)}">แก้ไข</button>`}</td>`:''}</tr>`}).join('')}).join('')||'<tr><td colspan="12" class="sub">ไม่พบรายการ</td></tr>'}
+  </tbody></table></div></section>`}
+
+/* ผลตรวจความถูกต้องของใบกำกับภาษีหนึ่งใบ ตามวัตถุประสงค์ของ 3-way matching:
+   สินค้า (ตรงกับ PO) · จำนวน (ไม่เกินที่รับจริง) · ราคา (ตรงกับราคา PO หลังหักส่วนลด) · ยอดเงิน (รวมรายการ ส่วนลด ภาษี ยอดรวม ลงตัว) */
+function invVerdict(D,inv){const st=D.set,dp=docPO(D,inv),X=invLines(inv,D),ptol=Math.max(st.priceTol,0.01),tol=Math.max(st.vatTol,0.05),all=D.invs.includes(inv)?D.invs:[...D.invs,inv];
+  const rc=new Map(),seen=new Set(),noPO=[],qBad=[],noRecv=[],pBad=[];let net=0,exp=0,expOk=true;
+  for(const x of X){const l=x.l,po=linePO(D,l,dp),t=po&&resolveLine(aggLines(po),l);net+=x.net;if(!t){noPO.push(l.code||l.name||'?');expOk=false;continue}
+    if(!rc.has(po))rc.set(po,{dl:recv(D,po),iv:tally(D,all,po)});const R=rc.get(po),d=R.dl.m.get(t.k),i=R.iv.m.get(t.k),k=po.poNo+'|'+t.k;
+    if(!seen.has(k)){seen.add(k);if(d.qty<EPS)noRecv.push(t.code);else if(i.qty-d.qty>EPS)qBad.push(t.code+' เรียกเก็บรวม '+fq(i.qty)+' รับจริง '+fq(d.qty));else if(i.qty-t.qty>EPS)qBad.push(t.code+' เรียกเก็บรวม '+fq(i.qty)+' เกิน PO '+fq(t.qty))}
+    const eff=l.qty?x.net/l.qty:null;if(t.price==null||eff==null){expOk=false;continue}exp+=l.qty*t.price;
+    if(eff-t.price>ptol||(t.price-eff>ptol&&!(x.dsc>0.005)))pBad.push(t.code+' '+fm(eff)+' ≠ ราคา PO '+fm(t.price))}
+  const n=X.length,sub=num(inv.subtotal),vat=num(inv.vat),tot=num(inv.total),m=[];
+  if(sub==null)m.push('ไม่มียอดก่อนภาษี');else if(Math.abs(net-sub)>tol)m.push('รวมรายการหลังหักส่วนลด '+fm(net)+' ≠ ยอดก่อนภาษี '+fm(sub));
+  if(sub!=null){const vc=Math.round(sub*st.vatRate)/100;if(vat==null)m.push('ไม่มียอดภาษี');else if(Math.abs(vat-vc)>tol)m.push('ภาษี '+fm(vat)+' ≠ '+st.vatRate+'% ของยอดก่อนภาษี '+fm(vc));
+    if(tot==null)m.push('ไม่มียอดรวม');else if(vat!=null&&Math.abs(tot-sub-vat)>tol)m.push('ยอดรวม '+fm(tot)+' ≠ ก่อนภาษี + ภาษี '+fm(sub+vat))}
+  const items=[{k:'สินค้า',ok:n>0&&!noPO.length,d:!n?'ไม่มีรายการสินค้า':noPO.length?'ไม่อยู่ใน PO: '+noPO.join(', '):'ทั้ง '+n+' รายการอยู่ใน PO'},
+    {k:'จำนวน',ok:n>0&&!noPO.length&&!qBad.length&&!noRecv.length,d:qBad.length?qBad.join(' · '):noRecv.length?'ยังไม่มีเอกสารรับสินค้า: '+noRecv.join(', '):noPO.length?'ตรวจไม่ได้เพราะมีรายการที่ไม่อยู่ใน PO':'ไม่เกินจำนวนที่รับจริงและไม่เกิน PO'},
+    {k:'ราคา',ok:n>0&&expOk&&!pBad.length,d:pBad.length?pBad.join(' · '):!expOk?'มีรายการที่ไม่มีราคา PO ให้เทียบ':'ราคาหลังหักส่วนลดตรงกับราคา PO ทุกรายการ'},
+    {k:'ยอดเงิน',ok:!m.length,d:m.length?m.join(' · '):'รวมรายการ ส่วนลด ภาษี และยอดรวมลงตัว'+(expOk?' · มูลค่าตาม PO '+fm(exp)+(Math.abs(exp-net)>tol?' ('+(net<exp?'ใบกำกับต่ำกว่า ':'ใบกำกับสูงกว่า ')+fm(Math.abs(exp-net))+')':''):'')}];
+  return{items,ok:items.every(x=>x.ok)}}
+function verdictHtml(v,compact){if(compact)return `<div style="white-space:nowrap;margin-top:3px">${v.items.map(x=>`<span title="${esc(x.d)}">${pill(x.ok?'ok':'bad',x.k+' '+(x.ok?'✓':'✕'))}</span>`).join('')}</div>`;
+  return `<div class="deep-f" style="border:1px solid var(--line);border-radius:6px;margin:6px 0;display:block"><div><b>ผลตรวจความถูกต้องของใบกำกับภาษี</b> ${pill(v.ok?'ok':'bad',v.ok?'ถูกต้องครบถ้วน':'ยังไม่ถูกต้อง')}</div>${v.items.map(x=>`<div style="margin-top:4px">${pill(x.ok?'ok':'bad',x.k+' '+(x.ok?'✓':'✕'))} <span class="sub">${esc(x.d)}</span></div>`).join('')}</div>`}
+/* ป้ายสถานะ 3 ขั้นของ PO: ① โปรโมชั่น ② ส่งมอบ ③ ใบกำกับ */
+const SYM={ok:'✓',bad:'✕',warn:'!',wait:'–'};
+function poSteps(R,no){const sm=R&&(R._m||(R._m=new Map(R.pos.map(x=>[x.po.poNo,x])))).get(no);if(!sm)return'';
+  return `<div style="white-space:nowrap;margin-top:3px" title="① โปรโมชั่น: ${esc(sm.l1)} · ② ส่งมอบ: ${esc(sm.l2)} · ③ ใบกำกับ: ${esc(sm.l3)}">${sm.all==='ok'?pill('ok','✓ ผ่านครบ 3 ขั้น'):[[sm.na?'wait':sm.s1,'โปร',sm.l1],[sm.s2,'ส่งมอบ',sm.l2],[sm.s3,'ใบกำกับ',sm.l3]].map(x=>pill(x[0],x[1]+' '+(x[0]==='ok'?'✓':x[2]))).join(' ')}</div>`}
+const STEPHINT='<p class="hint">ป้ายใต้เลขที่ PO บอกผล 3 ขั้น: โปร (เทียบโปรโมชั่น) · ส่งมอบ (เทียบใบส่งสินค้า / RE) · ใบกำกับ (เทียบใบกำกับภาษี) ✓ คือผ่าน ถ้ายังไม่ผ่านจะบอกสถานะเป็นคำ เช่น “ส่งมอบ ค้างส่ง” ใบกำกับที่สินค้า จำนวน ราคา ตรงกับ PO และของที่รับแล้ว ถือว่าผ่าน แม้ยังมีของค้างส่ง</p>';
+
+/* ==========================================================================
+ * MODULE 11  VIEW: ② PO เทียบใบส่งสินค้า
+ * ปุ่มนำเข้าไฟล์ ตารางใบส่งสินค้า และผลเทียบรายบรรทัด
+ * ฟังก์ชัน: upPanel, docTable, vDelivery, reState, reSection, sendRE, priceDetail, reDocs, reCan, drvErr, reBad
+ * ========================================================================== */
+function upPanel(kind){const t=kind==='del'?'ใบส่งสินค้า / Packing attached sheet':'ใบกำกับภาษี';
+  return `<div class="row">
+    <button class="pri" data-act="scan" data-v="${kind}" ${BUSY?'disabled':''}>นำเข้าไฟล์ PDF / รูปสแกน${kind==='del'?'ใบส่งสินค้า':'ใบกำกับภาษี'}</button>
+    ${kind==='del'?'<button data-act="impX" data-v="re">นำเข้า Excel รายงานรับสินค้า (RE)</button>':''}
+    <button data-act="manual" data-v="${kind}">กรอก${t}เอง</button>
+    ${BUSY?`<span class="chip">${esc(BUSY)}</span><button class="sm" data-act="stop">หยุด</button>`:''}
+  </div><p class="hint">เลือกได้หลายไฟล์พร้อมกัน และไฟล์ PDF หนึ่งไฟล์มีได้หลายใบ ระบบแยกตามเลขที่เอกสารแล้วเปิดให้ตรวจและ match ทีละใบ ${CFG.aiKey?'ใช้ Claude API อ่านเอกสาร รองรับ PDF ที่พิมพ์จากระบบ PDF สแกน และรูปถ่าย':'ใช้ตัวอ่านในเครื่อง: PDF ที่พิมพ์จากระบบอ่านจากข้อความในไฟล์ ส่วนไฟล์สแกนและรูปถ่ายใช้ OCR ซึ่งแม่นยำน้อยกว่า ใส่ Claude API key ที่แท็บ “ตั้งค่า” เพื่อความแม่นยำสูงขึ้น'} ระบบหา PO ที่ตรงกันให้ แล้วเปิดให้ตรวจทานก่อนบันทึกทุกครั้ง</p>`}
+function docTable(D,docs,kind,R){return `<div class="tw"><table><thead><tr><th>เลขที่เอกสาร</th><th>วันที่</th><th>ผู้ขาย (จากเอกสาร)</th><th>เลขที่อ้างอิง (Customer P/O No.)</th><th>PO ที่จับคู่ได้</th><th class="n">รายการที่ตรงกับ PO</th><th>ผลการจับคู่</th><th></th></tr></thead><tbody>
+  ${docs.map(d=>{const m=docMatch(D,d),n=(d.lines||[]).length,refs=[...new Set([...String(d.refNo||'').split(/[,;]/),...(d.lines||[]).map(l=>l.ref)].map(x=>String(x||'').trim()).filter(Boolean))];
+    return `<tr><td><span class="code">${esc(d.docNo)}</span>${kind==='dels'?`<div class="sub">${isRE(d)?'รับสินค้า RE (Excel)':'ใบส่งสินค้า / Packing list'}</div>`:''}</td><td class="c">${esc(d.date||'')}</td><td class="d">${esc(d.vendor||(m?m.po.vendor:'')||'–')}</td><td class="d">${refs.map(x=>`<span class="code">${esc(x)}</span>`).join('<br>')||esc(d.poNo||'–')}</td><td class="d">${m?m.pos.map(q=>`<span class="code">${esc(q.poNo)}</span>${poSteps(R,q.poNo)}`).join(''):pill('bad','ไม่พบ')}</td><td class="n">${m?m.hit+' / '+n:'0 / '+n}</td><td>${!m?pill('bad','ไม่พบ PO'):m.hit===n?pill('ok','ตรงทุกรายการ'):pill('warn','ตรงบางรายการ')}</td><td style="white-space:nowrap">${m?`<button class="sm" data-act="openPO2" data-v="${esc(m.pos.length===1?m.po.poNo:'')}">ดูผลเทียบ</button> `:''}${D.demo||d._hub?'':`<button class="sm" data-w data-act="edit" data-v="${kind}" data-id="${esc(d._id)}">แก้ไข</button>`}</td></tr>`}).join('')||'<tr><td colspan="8" class="sub">ยังไม่มีเอกสาร</td></tr>'}
+  </tbody></table></div>`}
+
+function vDelivery(D,R){const rows=filt(R.r2);
+  return `<section class="card"><h2>② ใบสั่งซื้อเทียบใบส่งสินค้า</h2><p>รวมจำนวนส่งมอบจากทุกใบส่งของ PO เดียวกัน จำนวนที่ยังไม่ครบแสดงสถานะ “ค้างส่ง” พร้อมจำนวนคงค้าง นำเข้ารายงานรับสินค้า (RE) จาก Excel ซ้ำได้ เอกสารและรายการที่มีอยู่แล้วจะไม่ถูกแตะ ระบบเพิ่มและจับคู่เฉพาะรายการใหม่ ถ้ารายการเดียวกันมีทั้งใบส่งสินค้าและ RE ระบบใช้จำนวนจากใบส่งสินค้าและเตือนเมื่อสองเอกสารไม่เท่ากัน</p>${upPanel('del')}<h2>ใบส่งสินค้าที่นำเข้าแล้ว และ PO ที่จับคู่ได้</h2>${hubOn()?`<p class="hint">เอกสารรับสินค้า (RE) ${HUB.dels.length.toLocaleString('th-TH')} ใบจาก Data Hub ถูกนำไปเทียบในตารางผลเทียบรายบรรทัดแล้ว และไม่แสดงซ้ำในตารางนี้</p>`:''}${docTable(D,D.dels.filter(d=>{if(d._hub)return false;const os=docPOs(D,d);return(!F.vendor&&!F.month&&!F.project)||os.some(o=>(!F.vendor||o.vendor===F.vendor)&&(!F.month||String(o.date||'').startsWith(F.month))&&(!F.project||o.project===F.project))}),'dels',R)}${reSection(D)}<h2>ผลเทียบรายบรรทัด</h2>${STEPHINT}${tools(rows.length,D)}
+  <div class="tw"><table><thead><tr><th>PO</th><th>รหัสและรายละเอียดสินค้า</th><th class="n">สั่งซื้อ</th><th class="n">ใบส่งสินค้า / Packing list</th><th class="n">รับเข้า (RE)</th><th class="n">ค้างส่ง</th><th class="n">ราคา PO หลังหักส่วนลด</th><th class="n">ราคาใบส่ง</th><th>สถานะ</th></tr></thead><tbody>
+  ${rows.slice(0,CAP).map(r=>`<tr><td><span class="code">${esc(r.poNo)}</span>${poSteps(R,r.poNo)}</td><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${r.ord?fq(r.ord):'–'}</td><td class="n">${r.pk?fq(r.pk):r.ord?'–':fq(r.del)}${(r.pkDocs||(r.ord?[]:r.docs)).length?`<div class="sub">${esc((r.pkDocs||r.docs).join(', '))}</div>`:''}</td><td class="n">${r.re?fq(r.re):'–'}${(r.reDocs||[]).length?`<div class="sub">${esc(r.reDocs.join(', '))}</div>`:''}</td><td class="n">${r.out?fq(r.out):'–'}</td><td class="n">${fm(r.poPrice)}${r.priceOk==='ok'?'<div class="sub">ตรงโปรแล้ว</div>':r.priceOk==='no'?'<div>'+pill('warn','ยังไม่ตรงโปร')+'</div>':''}</td><td class="n">${fm(r.docPrice)}</td><td>${pill(r.lv,r.label)}</td></tr>`).join('')||'<tr><td colspan="9" class="sub">ไม่มีรายการ</td></tr>'}
+  </tbody></table></div>${capNote(rows.length)}</section>`}
+
+/* ---------- ออก RE เข้า ECOUNT ----------
+   ใบส่งสินค้าที่ผ่านขั้น ② ส่งเป็นไฟล์คำสั่ง (RST-RE-QUEUE …) ไปที่ Google Drive สคริปต์ RE อัตโนมัติใน Data Hub อ่านไฟล์นี้แล้วบันทึกใบซื้อผ่าน ECOUNT OpenAPI
+   ผลการบันทึกอ่านกลับจากแท็บ RE_Log ของ Data Hub  S.res = สถานะที่หน้านี้จำไว้ต่อใบส่งสินค้า */
+let RES=null;
+const reDocs=D=>D.dels.filter(d=>!isRE(d)&&!d._hub);
+function reState(d){const s=S.res[d._id],lg=HUB&&HUB.log&&HUB.log[kc(d.docNo)];
+  if(lg&&lg.st==='บันทึกแล้ว')return{k:'done',lv:'ok',t:'ออก RE แล้ว '+lg.re};
+  if(s&&s.status==='manual')return{k:'manual',lv:'wait',t:'มี RE แล้ว (ระบุเอง)'};
+  if(lg&&(lg.st==='ECOUNT ไม่รับ'||lg.st==='ต้องแก้ไข'))return{k:'fail',lv:'bad',t:lg.st+(lg.note?' · '+lg.note:'')+' (แก้ในชีต “รออนุมัติ” ของ Data Hub)'};
+  if(lg&&lg.st==='ทดสอบแล้ว')return{k:'queued',lv:'info',t:'ทดสอบแล้ว ยังไม่เข้า ECOUNT'};
+  if(lg&&lg.st)return{k:'queued',lv:'warn',t:lg.st+(lg.note?' · '+lg.note:'')};
+  if(s)return{k:'queued',lv:'info',t:'ส่งคำสั่งแล้ว รอระบบบันทึก'};
+  return{k:'',lv:'',t:''}}
+const reCan=x=>x.c.ok&&(!x.s.k||x.s.k==='queued');
+function reSection(D){if(D.demo)return'';const docs=reDocs(D).map(d=>({d,c:reCheck(D,d),s:reState(d)})),n=docs.filter(x=>reCan(x)&&x.s.k!=='queued').length,on=mcpCap&&RES!=='busy';
+  return `<h2>ออก RE เข้า ECOUNT</h2><p class="hint">ใบส่งสินค้าที่ทุกรายการตรงกับ PO และไม่เกินจำนวนค้างรับ ถือว่าผ่าน และออก RE ได้ทันที หนึ่งใบส่งสินค้าเป็นหนึ่ง RE ราคาใช้ราคา PO หลังหักส่วนลด เมื่อกดออก RE หน้านี้ส่งคำสั่งไปที่ Google Drive แล้วสคริปต์ RE อัตโนมัติใน Data Hub บันทึกเข้า ECOUNT ในรอบถัดไป เลขที่ RE แสดงที่นี่หลังกด “โหลดจาก Data Hub” ใบที่บันทึกใน ECOUNT ด้วยมือไปแล้วให้กด “มี RE แล้ว” เพื่อไม่ให้ออกซ้ำ</p>
+  <div class="row" data-w><button class="pri" data-act="reAll" ${on&&n?'':'disabled'}>${RES==='busy'?'กำลังส่งคำสั่ง…':'ออก RE ทุกใบที่ผ่าน ('+n+' ใบ)'}</button>${mcpCap?'':'<span class="sub">ใช้ได้เมื่อเปิดหน้านี้ใน Claude ที่เชื่อมต่อ Google Drive แล้ว</span>'}</div>
+  <div class="tw"><table><thead><tr><th>ใบส่งสินค้า</th><th>วันที่</th><th>PO ที่อ้างอิง</th><th class="n">รายการ</th><th class="n">จำนวนรวม</th><th>ผลเทียบ PO</th><th>สถานะ RE</th><th></th></tr></thead><tbody>
+  ${docs.map(x=>{const id=esc(x.d._id);return `<tr><td><span class="code">${esc(x.d.docNo)}</span></td><td class="c">${esc(x.d.date||'')}</td><td class="d">${x.c.pos.map(p=>'<span class="code">'+esc(p.poNo)+'</span>').join(', ')||'–'}</td><td class="n">${(x.d.lines||[]).length}</td><td class="n">${fq(x.c.qty)}</td><td class="d">${x.c.ok?pill('ok','ผ่าน'):pill('bad','ไม่ผ่าน')+x.c.why.slice(0,4).map(w=>'<div class="sub">'+esc(w)+'</div>').join('')}</td><td class="d">${x.s.k?pill(x.s.lv,x.s.t):'<span class="sub">ยังไม่ได้ออก</span>'}</td><td style="white-space:nowrap" data-w>${reCan(x)?`<button class="sm pri" data-act="reOne" data-id="${id}" ${on?'':'disabled'}>${x.s.k?'ส่งอีกครั้ง':'ออก RE'}</button> `:''}${!x.s.k?`<button class="sm" data-act="reManual" data-id="${id}">มี RE แล้ว</button>`:x.s.k==='manual'?`<button class="sm" data-act="reClear" data-id="${id}">ยกเลิก</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="8" class="sub">ยังไม่มีใบส่งสินค้า</td></tr>'}
+  </tbody></table></div>`}
+const drvErr=e=>{const c=e&&e.code;return c==='server_not_connected'||c==='server_not_found'?'ยังไม่ได้เชื่อมต่อ Google Drive ใน Claude เชื่อมต่อที่การตั้งค่า Connectors ก่อน':c==='needs_reauth'?'การเชื่อมต่อ Google Drive หมดอายุ เชื่อมต่อใหม่ใน Claude':c==='not_granted'||c==='consent_required'||c==='approval_required'?'ยังไม่ได้อนุญาตให้หน้านี้ใช้ Google Drive':c==='blocked_by_policy'?'องค์กรไม่อนุญาตให้ใช้ Google Drive จากหน้านี้':'ส่งคำสั่งออก RE ไม่สำเร็จ: '+((e&&e.message)||c||'')};
+async function sendRE(ids){if(!mcpCap||RES==='busy')return;const D=DATA(),pick=reDocs(D).filter(d=>ids.includes(d._id)).map(d=>({d,c:reCheck(D,d),s:reState(d)})).filter(reCan);
+  if(!pick.length)return toast('ไม่มีใบส่งสินค้าที่ผ่านให้ออก RE');
+  RES='busy';render();
+  try{const co=hubSet().company,at=new Date().toISOString();let who='';try{if(userCap&&myId){const ps=await userCap.profiles([myId]);who=(ps[myId]&&ps[myId].name)||''}}catch(e){}
+    const rows=pick.flatMap(x=>x.c.lines.map(l=>({COMPANY:co,DO_NO:x.d.docNo,DO_DATE:x.d.date||'',VENDOR:l.po.vendor||'',PO_NO:l.po.poNo,WAREHOUSE:l.po.wh||'',PROJECT:l.po.project||'',CUSTOMER_PO:l.ref,ITEM_CODE:l.code,ITEM_NAME:l.name,QTY:l.qty,NET_PRICE:l.price,APPROVED_BY:who,APPROVED_AT:at})));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'RE_QUEUE');
+    const title='RST-RE-QUEUE '+stamp()+' ('+pick.length+' ใบ)';
+    await mcpCap.callTool('Google Drive','create_file',{title,contentMimeType:XLSX_MIME,base64Content:XLSX.write(wb,{type:'base64',bookType:'xlsx'})});
+    for(const x of pick)await put('res',x.d._id,{docNo:x.d.docNo,status:'queued',file:title,at,by:myId||null});
+    toast('ส่งคำสั่งออก RE '+pick.length+' ใบแล้ว สคริปต์ใน Data Hub จะบันทึกเข้า ECOUNT ในรอบถัดไป')}
+  catch(e){console.error(e);toast(drvErr(e))}
+  RES=null;render()}
+
+let SELINV=null,PRD=null;
+const reBad=(r,D)=>r.rePrice!=null&&r.poPrice!=null&&Math.abs(r.rePrice-r.poPrice)>Math.max(D.set.priceTol,0.01);
+/* รายละเอียดราคาของรายการหนึ่ง: PO เทียบ โปรโมชั่น เทียบ ราคา_RE (สถานะการซื้อ) */
+function priceDetail(D,no,r){const x=r1map(D).get(m1key(no,r.code))||{},tol=Math.max(D.set.priceTol,0.01),q=r.ord||x.qty||0,np=x.promo,d=(a,b)=>a!=null&&b!=null?a-b:null,sg=v=>v==null?'–':(v>0?'+':'')+fm(v),cl=v=>v!=null&&Math.abs(v)>tol?(v>0?'color:var(--bad)':'color:var(--warn)'):'';
+  const row=(k,v,n)=>`<tr><td>${k}</td><td class="n"><b>${v}</b></td><td class="sub">${n||''}</td></tr>`,dPO=d(r.poPrice,np),dRE=d(r.rePrice,np),dPR=d(r.rePrice,r.poPrice);
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;padding:6px 2px">
+  <div><b>ใบสั่งซื้อ ${esc(no)}</b><table>${row('ราคาตั้งใน PO',fm(x.listPrice),'ก่อนหักส่วนลด')}${row('ส่วนลดใน PO',x.listPrice!=null&&r.poPrice!=null&&x.listPrice>0?fp((1-r.poPrice/x.listPrice)*100)+' · '+fm(x.listPrice-r.poPrice):'–')}${row('ราคา PO หลังหักส่วนลด',fm(r.poPrice))}${row('จำนวนสั่ง',fq(q))}</table></div>
+  <div><b>โปรโมชั่น${x.promoSet?' · '+esc(x.promoSet):''}</b><table>${row('MO',fm(x.mo))}${row('ส่วนลดโปร',fp(x.discBase??x.disc),(x.dcQ?'DC:Quarter '+fp(x.dcQ)+' ':'')+(x.dcY?'DC:Yearly '+fp(x.dcY)+' ':'')+(x.dcS?'พิเศษ '+fp(x.dcS):''))}${row('ส่วนลดรวม',fp(x.disc))}${row('NP_Promotion',fm(np),x.nAlt>1?'ดีที่สุดจาก '+x.nAlt+' โปร':'')}</table></div>
+  <div><b>ราคา_RE (สถานะการซื้อ)</b><table>${row('ราคา_RE / หน่วย',fm(r.rePrice),(r.reDocs||[]).join(', '))}${row('จำนวนรับ (RE)',r.re?fq(r.re):'–')}</table></div>
+  <div><b>ส่วนต่างต่อหน่วย</b><table>
+    <tr><td>PO − NP_Promotion</td><td class="n" style="${cl(dPO)}"><b>${sg(dPO)}</b></td><td class="sub">${dPO!=null&&q?'รวม '+sg(dPO*q):''}</td></tr>
+    <tr><td>ราคา_RE − NP_Promotion</td><td class="n" style="${cl(dRE)}"><b>${sg(dRE)}</b></td><td class="sub">${dRE!=null&&r.re?'รวม '+sg(dRE*r.re):''}</td></tr>
+    <tr><td>ราคา_RE − PO</td><td class="n" style="${cl(dPR)}"><b>${sg(dPR)}</b></td><td class="sub">${dPR!=null&&r.re?'รวม '+sg(dPR*r.re):''}</td></tr></table>
+    <div class="sub">${dPO!=null&&dPO>tol?'PO เปิดราคาสูงกว่าโปรโมชั่น':'' }${dRE!=null&&Math.abs(dRE)<=tol&&dPO!=null&&dPO>tol?' · แต่ RE บันทึกตามราคาโปรแล้ว':''}${dPR!=null&&Math.abs(dPR)>tol?' · ราคาที่รับเข้า (RE) ต่างจาก PO ตรวจว่าผู้ขายให้ราคาตามโปรหรือบันทึก RE ผิด':''}${x.note?' · '+esc(x.note):''}</div></div></div>`}
+
+/* ==========================================================================
+ * MODULE 12  VIEW: ③ เทียบใบกำกับภาษี
+ * ตารางใบกำกับภาษี ตารางเทียบแบบเจาะลึกราย PO และผลตรวจหัวเอกสาร
+ * ฟังก์ชัน: vInvoice
+ * ========================================================================== */
+function vInvoice(D,R){const sel=SELINV&&D.invs.find(x=>x._id===SELINV)||null,selPO=sel&&new Set(docPOs(D,sel).map(q=>q.poNo));if(!sel)SELINV=null;
+  const mset=new Set([...D.dels,...D.invs].flatMap(x=>docPOs(D,x).map(q=>q.poNo))),rows=filt(R.r3).filter(r=>mset.has(r.poNo)),gmap=new Map();for(const r of rows){if(!gmap.has(r.poNo))gmap.set(r.poNo,[]);gmap.get(r.poNo).push(r)}
+  const grp=[...gmap.entries()].filter(g=>!sel||selPO.has(g[0])).sort((a,b)=>String((b[1][0]||{}).date||'').localeCompare(String((a[1][0]||{}).date||''))||String(b[0]).localeCompare(String(a[0]),undefined,{numeric:true})),shown=grp.slice(0,25);
+  const today=new Date(Date.now()+7*36e5).toISOString().slice(0,10),soon=addDays(today,7),ctol=Math.max(D.set.vatTol,0.5);
+  const invs=D.invs.filter(i=>{const o=docPO(D,i)||{};return(!F.q||nk([i.poNo,i.refNo,i.docNo,i.vendor,o.poNo].join(' ')).includes(nk(F.q)))&&(!F.vendor||o.vendor===F.vendor)&&(!F.project||o.project===F.project)&&(!F.month||String(o.date||'').startsWith(F.month))});
+  const invT=`<div class="tw"><table><thead><tr><th>เลขที่ใบกำกับ</th><th>วันที่</th><th>ผู้ขาย / เลขผู้เสียภาษี</th><th>เลขที่อ้างอิง / เอกสารอ้างอิง</th><th>PO ที่จับคู่ได้</th><th class="n">ส่วนลด (บาท) / % / ที่มา</th><th class="n">ก่อนภาษี / ภาษี</th><th class="n">ยอดรวม</th><th class="n">เครดิต (วัน)</th><th>วันครบกำหนด</th><th>ผลตรวจ</th><th></th></tr></thead><tbody>
+  ${invs.map(i=>{const rf=docRef(D,i),ck=invChecks(D,i),vd=invVerdict(D,i),ok=ck.every(k=>k.ok)&&vd.ok,due=dueOf(i,D.set),paid=rf&&(D.appr||{})[rf.po._id||''];
+    return `<tr${sel===i?' style="background:var(--sel,rgba(120,150,255,.14))"':''}><td><button class="sm" data-act="selInv" data-id="${esc(i._id)}" aria-pressed="${sel===i}" title="ดูผลการ match ของใบกำกับนี้"><span class="code">${esc(i.docNo)}</span></button>${sel===i?'<div class="sub">กำลังดู</div>':''}</td><td class="c">${esc(i.date||'–')}</td><td class="d">${esc(i.vendor||'–')}<div class="sub">${esc(i.vendorTaxId||'')}</div></td><td class="d">${[i.poNo,i.refNo].filter(Boolean).map(x=>`<span class="code">${esc(x)}</span>`).join('<br>')||'–'}</td><td>${rf?`<span class="code">${esc(rf.po.poNo)}</span><div class="sub">${rf.via==='po'?'จากเลขที่ PO':'จาก D/O No. '+esc(rf.ref)}</div>${poSteps(R,rf.po.poNo)}`:pill('bad','ไม่พบ')}</td><td class="n">${(b=>b.disc>0.005?`<b>${fm(b.disc)}</b><div><b>${fp(b.pct)}</b></div>${b.odd?`<div>${pill('warn','% ไม่ลงตัว')}</div>`:''}${b.parts.map(x=>`<div class="sub" style="white-space:nowrap">${esc(x.label.replace(' (รายการนอกโปร)',''))} ${fp(x.pct)}</div>`).join('')}`:'–')(invBreak(D,i))}</td><td class="n">${fm(i.subtotal)}<div class="sub">${fm(i.vat)}</div></td><td class="n"><b>${fm(i.total)}</b></td><td class="n">${i.creditDays??'–'}</td><td><span class="code">${esc(due||'–')}</span>${!due?'':paid?'':due<today?'<div>'+pill('bad','เกินกำหนด')+'</div>':due<=soon?'<div>'+pill('warn','ครบใน 7 วัน')+'</div>':''}</td><td>${pill(ok?'ok':'bad',ok?'ผ่าน':'ไม่ผ่าน')}${verdictHtml(vd,true)}</td><td style="white-space:nowrap">${D.demo?'':`<button class="sm" data-w data-act="edit" data-v="invs" data-id="${esc(i._id)}">แก้ไข</button>`}</td></tr>`}).join('')||'<tr><td colspan="12" class="sub">ยังไม่มีใบกำกับภาษี</td></tr>'}
+  </tbody></table></div>`;
+  return `<section class="card"><h2>③ ใบสั่งซื้อ เทียบใบส่งสินค้า เทียบใบกำกับภาษี</h2><p><b>วัตถุประสงค์: ตรวจความถูกต้องของใบกำกับภาษี ว่าสินค้า จำนวน ราคา และยอดเงิน ถูกต้องครบถ้วนก่อนจ่าย</b> ทุกใบกำกับมีผลตรวจ 4 ข้อนี้ ชี้ที่ป้ายเพื่อดูรายละเอียด </p><p>จำนวนในใบกำกับต้องไม่เกินจำนวนที่รับจริง ราคาต้องตรงกับราคา PO หลังหักส่วนลด ซึ่งเป็นราคาเดียวกับที่เทียบโปรโมชั่นในขั้น ① และภาษีต้องเท่ากับ ${D.set.vatRate}% ของยอดก่อนภาษี</p>${upPanel('inv')}<h2>ใบกำกับภาษีที่นำเข้าแล้ว</h2><p class="hint">จับคู่จากเลขที่เอกสารอ้างอิงในใบกำกับ กับ D/O No. ของใบส่งสินค้า / Packing list เป็นอันดับแรก ถ้าไม่มีจึงใช้เลขที่ใบสั่งซื้อ / PO No. เครดิตและวันครบกำหนดแสดงตามที่อ่านได้จากใบกำกับภาษี ระบบไม่คำนวณให้ ถ้าเอกสารไม่ได้พิมพ์ไว้ช่องจะว่าง</p>${invT}</section>
+  
+  <section class="card" id="deepSec"><h2>ตารางเปรียบเทียบรายการสินค้าแบบเจาะลึก (Line-Item 3-Way Cross-Check)</h2>${sel?`<div class="banner row" style="margin-bottom:8px"><span>กำลังแสดงผลการ match ของใบกำกับภาษี <b class="code">${esc(sel.docNo)}</b>${selPO.size?' · PO '+esc([...selPO].join(', ')):' · ยังจับคู่กับ PO ไม่ได้'}</span><span style="flex:1"></span><button class="sm" data-act="selInv" data-id="">ดูทุกใบกำกับ</button></div>`:''}<p>เปรียบเทียบรหัสสินค้า จำนวนที่สั่งซื้อ รับจริงตาม Packing list และเรียกเก็บตามใบกำกับภาษี ราคาต่อหน่วย และภาษี แยกทีละ PO แสดงเฉพาะ PO ที่มีใบส่งสินค้าหรือใบกำกับภาษีจับคู่แล้ว</p>${tools(grp.length+' PO · '+rows.length,D)}
+  ${shown.map(([no,rs])=>{const po=findPO(D,no)||{},iv=D.invs.filter(x=>docPOs(D,x).includes(po)),dl=D.dels.filter(x=>docPOs(D,x).includes(po)),sm=R.pos.find(x=>x.po===po)||{};
+    const sub=iv.reduce((a,x)=>a+(x.subtotal!=null?x.subtotal:(x.lines||[]).reduce((b,l)=>b+(l.amount!=null?l.amount:(l.qty||0)*(l.price||0)),0)),0),vat=iv.reduce((a,x)=>a+(x.vat||0),0),tot=iv.reduce((a,x)=>a+(x.total!=null?x.total:0),0),exp=Math.round(sub*D.set.vatRate)/100,vok=Math.abs(vat-exp)<=D.set.vatTol*Math.max(1,iv.length);
+    const tids=[...new Set(iv.map(x=>String(x.vendorTaxId||'').replace(/\D/g,'')).filter(Boolean))],tok=tids.length>0&&tids.every(t=>t.length===13),mine=String(D.set.buyerTaxId||'').replace(/\D/g,''),bids=[...new Set(iv.map(x=>String(x.buyerTaxId||'').replace(/\D/g,'')).filter(Boolean))];
+    const sumAmt=rs.reduce((a,r)=>a+(r.invAmt||0),0);
+    return `<div class="deep"><div class="deep-h"><div><b class="code" style="font-size:13px">${esc(no)}</b> <span class="sub">${esc(po.date||'')} · ${esc(po.vendor||'')}${po.project?' · โครงการ '+esc(po.project):''}</span><div class="sub">Packing list / ใบส่งสินค้า: ${dl.filter(x=>!isRE(x)).map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'} · รับสินค้า RE: ${dl.filter(isRE).map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'} · ใบกำกับภาษี: ${iv.map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'}</div>${poSteps(R,no)}</div><div class="row"><span class="chip">${rs.length} รายการ</span>${pill(sm.s3||'wait',sm.l3||'รอใบกำกับ')}</div></div>
+    <div class="tw" style="border:0;border-radius:0"><table><thead><tr><th>รหัส / รายการสินค้า</th><th class="n">PO จำนวน</th><th class="n">Packing list / ใบส่งสินค้า</th><th class="n">รับเข้า (RE)</th><th class="n">ใบกำกับ เรียกเก็บ</th><th class="n">ราคา PO / หน่วย</th><th class="n">ราคา_RE / หน่วย</th><th class="n">ราคาใบกำกับ / หน่วย</th><th class="n">ส่วนลดในใบกำกับ</th><th class="n">ยอดหลังหักส่วนลด (ก่อนภาษี)</th><th>สถานะการจับคู่</th></tr></thead><tbody>
+    ${rs.map(r=>{const qd=r.del!==r.ord,qi=r.inv!==r.del,pd=r.effPrice!=null&&r.poPrice!=null?r.effPrice-r.poPrice:null,pb=pd!=null&&(pd>Math.max(D.set.priceTol,0.01)||(pd<-Math.max(D.set.priceTol,0.01)&&!r.byDisc)),dA=(r.invAmt||0)-(r.invNet||0);
+      return `<tr><td class="d"><span class="code"><b>${esc(r.code)}</b></span><div>${esc(r.name)}</div></td><td class="n"><b>${fq(r.ord)}</b></td><td class="n ${r.pk>0&&r.pk!==r.ord?'dif':''}"><b>${r.pk?fq(r.pk):'–'}</b>${(r.pkDocs||[]).length?`<div class="sub">${esc(r.pkDocs.join(', '))}</div>`:''}</td><td class="n ${r.re>0&&(r.pk>0?r.re!==r.pk:r.re!==r.ord)?'dif':''}"><b>${r.re?fq(r.re):'–'}</b>${(r.reDocs||[]).length?`<div class="sub">${esc(r.reDocs.join(', '))}</div>`:''}</td><td class="n ${qi&&r.inv>0?'dif':''}"><b>${fq(r.inv)}</b>${r.docs.length?`<div class="sub">${esc(r.docs.join(', '))}</div>`:''}</td><td class="n">${fm(r.poPrice)}${r.priceOk==='ok'?'<div class="sub">ตรงโปรแล้ว</div>':r.priceOk==='no'?(sm.comp&&sm.comp.due>0&&sm.comp.out<=ctol?'<div class="sub">ชดเชยครบแล้ว</div>':`<div><button class="sm" data-act="prd" data-v="${esc(no+'|'+r.code)}" style="color:var(--warn);border-color:var(--warn)">ราคาไม่ตรงโปร ${PRD===no+'|'+r.code?'▴':'▾'}</button></div>`):''}</td><td class="n ${reBad(r,D)?'dif':''}">${r.rePrice!=null?fm(r.rePrice):'–'}${reBad(r,D)?`<div><button class="sm" data-act="prd" data-v="${esc(no+'|'+r.code)}" style="color:var(--bad);border-color:var(--bad)">≠ PO ${PRD===no+'|'+r.code?'▴':'▾'}</button></div>`:''}</td><td class="n ${pb?'dif':''}">${fm(r.invPrice)}${r.inv&&r.effPrice!=null&&dA>0.005?`<div class="sub">สุทธิ ${fm(r.effPrice)}</div>`:''}</td><td class="n">${r.inv&&dA>0.005?fm(dA)+`<div class="sub">${fp(dA/r.invAmt*100)}</div>`:'–'}</td><td class="n"><b>${r.inv?fm(r.invNet):'–'}</b></td><td>${pill(r.lv,r.lv==='ok'?'ผ่าน (Match)':r.label)}</td></tr>${PRD===no+'|'+r.code?`<tr><td colspan="11" style="background:var(--soft)">${priceDetail(D,no,r)}</td></tr>`:''}`}).join('')}
+    </tbody></table></div>
+    <div class="deep-f"><div><div class="sub">การคำนวณภาษีมูลค่าเพิ่ม (VAT ${D.set.vatRate}%)</div>${iv.length?`<div class="code">มูลค่าก่อนภาษี ${fm(sub)} × ${D.set.vatRate}% = ${fm(exp)}</div><div>${vok?pill('ok','ภาษีในใบกำกับตรงกัน'):pill('bad','ใบกำกับระบุ '+fm(vat)+' ต่าง '+fm(vat-exp))}</div>${(dsum=>Math.abs(sumAmt-dsum-sub)>Math.max(D.set.vatTol,0.05)?`<div>${pill('warn','ผลรวมรายการ '+fm(sumAmt)+(dsum?' หักส่วนลด '+fm(dsum):'')+' ไม่เท่ายอดก่อนภาษี')}</div>`:dsum?`<div class="sub">ผลรวมรายการ ${fm(sumAmt)} หักส่วนลดท้ายใบกำกับ ${fm(dsum)}</div>`:'')(iv.reduce((a,x)=>a+invDisc(x),0))}`:'<div class="sub">รอใบกำกับภาษี</div>'}</div>
+      <div><div class="sub">เลขประจำตัวผู้เสียภาษี 13 หลัก</div>${iv.length?`<div>${tok?pill('ok','เลขผู้ขายครบ 13 หลัก'):pill('bad',tids.length?'เลขผู้ขายไม่ครบ 13 หลัก':'ไม่มีเลขผู้ขาย')} <span class="code">${esc(tids.join(', '))}</span></div>${mine?`<div>${bids.length&&bids.every(t=>t===mine)?pill('ok','เลขผู้ซื้อตรงกับบริษัท'):pill('bad',bids.length?'เลขผู้ซื้อไม่ตรงกับบริษัท':'ไม่มีเลขผู้ซื้อ')} <span class="code">${esc(bids.join(', '))}</span></div>`:''}`:'<div class="sub">รอใบกำกับภาษี</div>'}</div>
+      <div><div class="sub">ส่วนลดท้ายใบกำกับและส่วนลดชดเชย</div>${iv.length&&sm.comp?`${sm.comp.list.map(k=>`<div><span class="code">${esc(k.inv.docNo)}</span> ส่วนลด ${fm(k.disc)} · ตาม PO ${fm(k.poDisc)} · ชดเชย <b>${k.comp>0?'+':''}${fm(k.comp)}</b>${(b=>b.parts.length?`<div class="sub">รวม ${fp(b.pct)}: ${b.parts.map(x=>esc(x.label.replace(' (รายการนอกโปร)',''))+' '+fp(x.pct)).join(' + ')}</div>`:'')(invBreak(D,k.inv))}</div>`).join('')}<div>ควรได้ ${fm(sm.comp.due)} · ได้รับแล้ว ${fm(sm.comp.got)} · ${sm.comp.out>ctol?pill('bad','ยังไม่ครบ '+fm(sm.comp.out)):sm.comp.due>0?pill('ok','ชดเชยครบแล้ว'):pill('wait','ไม่มียอดต้องชดเชย')}</div>`:'<div class="sub">รอใบกำกับภาษี</div>'}</div>
+      <div class="deep-t"><div><span>ยอดรวมก่อนภาษี (Subtotal)</span><b class="code">${iv.length?fm(sub):'–'}</b></div><div><span>ภาษีมูลค่าเพิ่ม ${D.set.vatRate}% (VAT)</span><b class="code">${iv.length?fm(vat):'–'}</b></div><div class="gt"><span>ยอดรวมสุทธิ (Grand Total)</span><b class="code">${iv.length?fm(tot||sub+vat):'–'}</b></div></div></div></div>`}).join('')||'<p class="hint">ไม่มีรายการ</p>'}
+  ${grp.length>shown.length?`<p class="hint">แสดง ${shown.length} PO แรกจาก ${grp.length} ใช้ช่องค้นหา ผู้จำหน่าย โครงการ หรือเดือน เพื่อจำกัดรายการ</p>`:''}</section>
+  <section class="card"><h2>ผลตรวจหัวเอกสารและภาษี รายใบกำกับ</h2>
+  <div class="grid2">${invs.filter(i=>!sel||i===sel).map(i=>{const ck=invChecks(D,i);return `<div class="inv"><h3>${esc(i.docNo)} ${pill(ck.every(k=>k.ok)?'ok':'bad',ck.every(k=>k.ok)?'ผ่าน':'ไม่ผ่าน')}</h3><div class="sub">${esc(i.vendor)} · ${esc(i.date||'')} · อ้างอิง ${esc([i.poNo,i.refNo].filter(Boolean).join(', ')||'–')} · ก่อนภาษี ${fm(i.subtotal)} · ภาษี ${fm(i.vat)} · รวม ${fm(i.total)} · เครดิต ${i.creditDays??'–'} วัน · ครบกำหนด ${esc(i.dueDate||'–')}</div>${verdictHtml(invVerdict(D,i))}<div style="font-size:12.5px">${brkHtml(invBreak(D,i),true)}</div><ul class="chk">${ck.map(k=>`<li class="${k.ok?'':'x'}">${esc(k.label)}</li>`).join('')}</ul></div>`}).join('')||'<p class="hint">ยังไม่มีใบกำกับภาษี</p>'}</div></section>`}
+
+/* ==========================================================================
+ * MODULE 13  VIEW: เอกสารและนำเข้า
+ * หน้านำเข้า PO / โปรโมชั่น และรายการเอกสาร
+ * ฟังก์ชัน: vDocs
+ * ========================================================================== */
+function vDocs(D){
+  const imp=IMP?`<section class="card"><h2>ตรวจคอลัมน์ก่อนนำเข้า${IMP.kind==='po'?'รายงานใบสั่งซื้อ':IMP.kind==='re'?'รายงานรับสินค้า (RE)':'ตารางโปรโมชั่น'}</h2><p>ระบบจับคู่คอลัมน์ให้แล้ว แก้ได้ถ้าไม่ตรง พบข้อมูล ${IMP.rows.length} แถว</p>
+    <div class="fgrid">${IMP.fields.map(f=>`<label class="f">${f[1]}<select id="map_${f[0]}"><option value="-1">ไม่ใช้</option>${IMP.headers.map((h,i)=>`<option value="${i}" ${IMP.map[f[0]]===i?'selected':''}>${esc(h||'(คอลัมน์ '+(i+1)+')')}</option>`).join('')}</select></label>`).join('')}</div>
+    <div class="tw"><table><thead><tr>${IMP.headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${IMP.rows.slice(0,3).map(r=>`<tr>${IMP.headers.map((h,i)=>`<td>${esc(r[i] instanceof Date?r[i].toISOString().slice(0,10):r[i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    ${IMP.kind==='promo'?`<div class="fgrid"><label class="f">รูปแบบโปรโมชั่น<select id="imp_ptype"><option value="pct" ${IMP.ptype==='pct'?'selected':''}>ส่วนลด % จาก MO</option><option value="price" ${IMP.ptype==='price'?'selected':''}>ราคาโปรโมชั่นก่อน VAT (เช่น น้ำมัน)</option></select></label><label class="f">ชื่อโปรโมชั่น<input id="imp_name" value="${esc(IMP.name||'')}"></label><label class="f">เริ่มโปรโมชั่น<input type="date" id="imp_start" value="${esc(IMP.start||'')}"></label><label class="f">สิ้นสุดโปรโมชั่น<input type="date" id="imp_end" value="${esc(IMP.end||'')}"></label></div><p class="hint">ไฟล์นี้จะถูกเพิ่มเป็นโปรโมชั่นใหม่ โปรที่มีอยู่เดิมไม่ถูกแทนที่ นำเข้าทุกรายการในไฟล์ รวมรายการที่ไม่มีส่วนลด สินค้าที่มีอยู่แล้วในโปรอื่นจะแสดงเป็นรายการเดียวพร้อมส่วนลดของทุกโปร</p>`:IMP.kind==='re'?`<p class="hint">หนึ่งแถวคือหนึ่งรายการรับสินค้า ระบบรวมแถวที่มีเลขที่เอกสารเดียวกันเป็นเอกสารเดียว และจับคู่กับ PO จากเลขที่ใบสั่งซื้อ นำเข้าไฟล์ที่อัปเดตซ้ำได้ เอกสารและรายการที่มีอยู่แล้วจะไม่ถูกแก้ ระบบเพิ่มเฉพาะเอกสารและรายการใหม่</p>`:`<div class="fgrid"><label class="f">ถ้าใช้คอลัมน์ส่วนลด ค่าในคอลัมน์คือ<select id="imp_discType"><option value="pct" ${IMP.discType==='pct'?'selected':''}>เปอร์เซ็นต์ (%)</option><option value="unit" ${IMP.discType==='unit'?'selected':''}>บาทต่อหน่วย</option><option value="line" ${IMP.discType==='line'?'selected':''}>บาทรวมทั้งบรรทัด</option></select></label></div><p class="hint">ราคาต่อหน่วยหลังหักส่วนลดเลือกจากข้อมูลที่มีตามลำดับนี้: คอลัมน์ราคาหลังหักส่วนลด ถ้าไม่มีใช้จำนวนเงินหารจำนวน ถ้าไม่มีใช้ราคาต่อหน่วยหักส่วนลด ถ้าไม่มีส่วนลดใช้ราคาต่อหน่วย</p>`}
+    <div class="row"><button class="pri" data-act="impGo" ${BUSY?'disabled':''}>นำเข้า</button><button data-act="impCancel">ยกเลิก</button>${BUSY?`<span class="chip">${esc(BUSY)}</span>`:''}</div></section>`:'';
+  const dl=(arr,kind)=>arr.map(d=>`<tr><td class="c">${esc(d.docNo)}</td><td class="c">${esc((docPO(D,d)||{}).poNo||d.poNo)}${docPO(D,d)?'':' '+pill('bad','ไม่พบ PO')}</td><td class="c">${esc(d.date||'')}</td><td class="n">${(d.lines||[]).length}</td><td>${D.demo?'':`<button class="sm" data-w data-act="edit" data-v="${kind}" data-id="${esc(d._id)}">แก้ไข</button> <button class="sm" data-w data-act="delDoc" data-v="${kind}" data-id="${esc(d._id)}">ลบ</button>`}</td></tr>`).join('')||'<tr><td colspan="5" class="sub">ยังไม่มี</td></tr>';
+  const hubP=hubOn()?`<p class="hint">ใบสั่งซื้อ ${HUB.pos.length.toLocaleString('th-TH')} ใบ และเอกสารรับสินค้า (RE) ${HUB.dels.length.toLocaleString('th-TH')} ใบ อ่านจาก RST GROUP Data Hub โดยตรง แก้ไขหรือลบที่หน้านี้ไม่ได้ และเปลี่ยนตาม Data Hub ทุกครั้งที่โหลด เงื่อนไขการโหลดอยู่ที่แท็บ “ตั้งค่า”</p>`:'';
+  return `${imp}<div class="grid2">
+  <section class="card"><h2>ใบสั่งซื้อจาก ECOUNT</h2><p>กด “โหลดจาก Data Hub” ที่มุมบนเพื่อดึงใบสั่งซื้อและเอกสารรับสินค้าจาก Google Sheet กลาง หรือส่งออกรายงานสถานะการซื้อจาก ECOUNT เป็น Excel แบบแสดงรายการสินค้า ให้มีคอลัมน์โครงการและชื่อผู้จำหน่าย แล้วนำเข้าที่นี่ PO เลขเดิมจะถูกแทนที่ด้วยข้อมูลใหม่</p>${hubP}
+    <div class="row" data-w><button class="pri" data-act="impX" data-v="po">นำเข้ารายงานสถานะการซื้อ (.xlsx)</button><span class="chip">${D.pos.length} ใบ</span></div>
+    <div class="tw" style="max-height:260px;overflow-y:auto"><table><thead><tr><th>เลขที่ PO</th><th>ผู้จำหน่าย</th><th class="n">รายการ</th><th></th></tr></thead><tbody>${D.pos.slice(0,CAP).map(p=>`<tr><td class="c">${esc(p.poNo)}</td><td>${esc(p.vendor)}</td><td class="n">${(p.lines||[]).length}</td><td>${p._hub?'<span class="sub">Data Hub</span>':D.demo?'':`<button class="sm" data-w data-act="delDoc" data-v="pos" data-id="${esc(p._id)}">ลบ</button>`}</td></tr>`).join('')}</tbody></table></div>${capNote(D.pos.length)}</section>
+  <section class="card"><h2>โปรโมชั่น</h2><p>มี ${D.sets.length} โปรโมชั่น รวม ${D.promos.length} รายการ นำเข้าเพิ่ม กำหนดช่วงเวลา และลบทั้งโปรได้ที่แท็บ “คลังโปรโมชั่น”</p>
+    <div class="row"><button class="pri" data-w data-act="impX" data-v="promo">นำเข้าโปรโมชั่นใหม่ (.xlsx)</button><button data-act="tab" data-v="promos">เปิดคลังโปรโมชั่น</button></div>
+    <div class="tw"><table><thead><tr><th>ชื่อโปรโมชั่น</th><th>ช่วงเวลา</th><th class="n">รายการ</th></tr></thead><tbody>${D.sets.map(x=>`<tr><td>${esc(x.name)}</td><td class="sub">${fd(x.start)} – ${fd(x.end)}</td><td class="n">${x.count}</td></tr>`).join('')||'<tr><td colspan="3" class="sub">ยังไม่มี</td></tr>'}</tbody></table></div></section>
+  <section class="card"><h2>ใบส่งสินค้า / Packing list</h2><div class="tw"><table><thead><tr><th>เลขที่</th><th>PO</th><th>วันที่</th><th class="n">รายการ</th><th></th></tr></thead><tbody>${dl(D.dels.filter(d=>!d._hub),'dels')}</tbody></table></div></section>
+  <section class="card"><h2>ใบกำกับภาษี</h2><div class="tw"><table><thead><tr><th>เลขที่</th><th>PO</th><th>วันที่</th><th class="n">รายการ</th><th></th></tr></thead><tbody>${dl(D.invs,'invs')}</tbody></table></div></section></div>`}
+
+/* ==========================================================================
+ * MODULE 14  VIEW: ตั้งค่า
+ * เกณฑ์การตรวจ Google Sheet ผู้ดูแลระบบ และการอ่านเอกสาร
+ * ฟังก์ชัน: vSettings
+ * ========================================================================== */
+function vSettings(D){const s=D.set;
+  return `<div class="grid2"><section class="card"><h2>เกณฑ์การตรวจ</h2>
+  <div class="fgrid">
+    <label class="f">ราคาคลาดเคลื่อนได้ (บาท/หน่วย)<input id="s_priceTol" type="number" step="0.01" value="${s.priceTol}"></label>
+    <label class="f">อัตราภาษีมูลค่าเพิ่ม (%)<input id="s_vatRate" type="number" step="0.01" value="${s.vatRate}"></label>
+    <label class="f">ภาษีปัดเศษต่างได้ (บาท)<input id="s_vatTol" type="number" step="0.01" value="${s.vatTol}"></label>
+    <label class="f">เลขผู้เสียภาษีของบริษัท (ผู้ซื้อ)<input id="s_buyerTaxId" value="${esc(s.buyerTaxId)}" placeholder="13 หลัก"></label>
+    <label class="f">เทียบโปรเฉพาะผู้ขายที่ชื่อมีคำว่า (ว่าง = ทุกผู้ขาย)<input id="s_promoVendor" value="${esc(s.promoVendor)}"></label>
+    <label class="f">เทียบโปรเฉพาะโครงการ<input id="s_promoProject" value="${esc(s.promoProject)}"></label>
+    <label class="f" style="grid-column:1/-1">ชื่อผู้ขายบนเอกสาร = ชื่อผู้ขายในระบบ (บรรทัดละคู่)<textarea id="s_vendorAlias" rows="3" style="font:inherit;font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px">${esc(s.vendorAlias||'')}</textarea></label>
+    <label class="f" style="grid-column:1/-1">คำในชื่อบริษัทของเรา (ผู้ซื้อ) คั่นด้วยจุลภาค ใช้แยกชื่อผู้ขายออกจากชื่อผู้ซื้อบนเอกสาร<input id="s_buyerNames" value="${esc(s.buyerNames||'')}"></label>
+    <label class="f">ราคาใน PO<select id="s_poIncVat"><option value="0" ${s.poIncVat?'':'selected'}>ก่อน VAT</option><option value="1" ${s.poIncVat?'selected':''}>รวม VAT แล้ว</option></select></label>
+  </div><div class="row" data-w><button class="pri" data-act="saveSet">บันทึกเกณฑ์</button></div>
+  <p class="hint">ถ้าใส่เลขผู้เสียภาษีของบริษัท ระบบจะตรวจว่าใบกำกับออกในชื่อบริษัทถูกต้อง เงื่อนไขผู้ขายและโครงการใช้กับขั้น ① เท่านั้น เว้นว่างถ้าต้องการเทียบทุกรายการ</p></section>
+  <section class="card"><h2>เชื่อมต่อ Google Sheet</h2>
+  <p>ข้อมูลถูกเก็บในเบราว์เซอร์นี้เสมอ เมื่อใส่ URL ของ Apps Script ทุกการบันทึกจะถูกส่งไป Google Sheet และทุกครั้งที่เปิดหน้าจะดึงข้อมูลล่าสุดจาก Sheet ทุกคนที่ใช้ URL เดียวกันจึงเห็นข้อมูลชุดเดียวกัน</p>
+  <div class="fgrid"><label class="f" style="grid-column:1/-1">URL ของ Apps Script Web App<input id="c_gsUrl" value="${esc(CFG.gsUrl)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
+  <label class="f">ชื่อผู้ใช้งาน (แสดงในการอนุมัติ)<input id="c_userName" value="${esc(CFG.userName)}"></label></div>
+  <div class="row"><button class="pri" data-act="saveCfg">บันทึกการเชื่อมต่อ</button><button data-act="gsPull" ${CFG.gsUrl?'':'disabled'}>ดึงข้อมูลจาก Sheet</button><button data-act="gsPush" ${CFG.gsUrl?'':'disabled'}>ส่งข้อมูลทั้งหมดไป Sheet</button><button data-act="sheet" ${CFG.gsUrl?'':'disabled'}>ส่งรายงานไป Sheet</button></div>
+  <ol class="todo"><li>สร้าง Google Sheet ใหม่ เปิดเมนู Extensions แล้วเลือก Apps Script</li><li>ลบโค้ดเดิม วางโค้ดด้านล่าง แล้วกด Save</li><li>กด Deploy เลือก New deployment ชนิด Web app ตั้ง Execute as เป็น Me และ Who has access เป็น Anyone</li><li>คัดลอก URL ที่ลงท้ายด้วย /exec มาวางในช่องด้านบน แล้วกดบันทึกการเชื่อมต่อ</li></ol>
+  <textarea id="gasCode" readonly rows="8" style="width:100%;font-family:var(--mono);font-size:11.5px;background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px" aria-label="โค้ด Apps Script"></textarea>
+  <div class="row"><button data-act="copyGas">คัดลอกโค้ด Apps Script</button></div>
+  <p class="hint">แท็บ DB ใน Sheet เป็นข้อมูลของระบบ ห้ามแก้ไขด้วยมือ ส่วนแท็บรายงานอ่านได้ตามปกติและถูกเขียนทับทุกครั้งที่ส่งรายงาน</p></section>
+  <section class="card"><h2>ผู้ดูแลระบบ</h2>
+  <p>ผู้ดูแลระบบแก้ไข MO ส่วนลดโปร และ NP_Promotion รายบรรทัดในคลังโปรโมชั่นได้ ${settings().adminPin?(isAdmin?'ตอนนี้คุณอยู่ในโหมดผู้ดูแลระบบ':'ใส่รหัสผู้ดูแลเพื่อเข้าโหมดผู้ดูแลระบบ'):'ยังไม่ได้ตั้งรหัสผู้ดูแล ทุกคนจึงแก้ไขได้ ตั้งรหัสเพื่อจำกัดสิทธิ์'}</p>
+  <div class="row"><input id="adminPin" type="password" placeholder="${isAdmin?'ตั้งรหัสผู้ดูแลใหม่':'รหัสผู้ดูแล'}" autocomplete="off" style="width:200px" aria-label="รหัสผู้ดูแล">${isAdmin?'<button class="pri" data-act="adminSet">ตั้งรหัสผู้ดูแล</button>'+(settings().adminPin?'<button data-act="adminOut">ออกจากโหมดผู้ดูแล</button>':''):'<button class="pri" data-act="adminIn">เข้าโหมดผู้ดูแล</button>'}</div>
+  <p class="hint">รหัสนี้กันการแก้ไขโดยไม่ตั้งใจ ไม่ใช่ระบบรักษาความปลอดภัยเต็มรูปแบบ ผู้ที่เข้าถึง Google Sheet ได้ยังแก้ข้อมูลได้โดยตรง</p></section>
+  <section class="card"><h2>การอ่านไฟล์ PDF และไฟล์สแกน</h2>
+  <p>ไม่ใส่ key ระบบใช้ตัวอ่านในเครื่อง: PDF ที่พิมพ์จากระบบอ่านได้ดี ส่วนไฟล์สแกนใช้ OCR ซึ่งต้องตรวจทานมากกว่า ใส่ Claude API key เพื่อให้ Claude อ่านเอกสารโดยตรง ซึ่งแม่นยำกว่ามากกับไฟล์สแกนและตารางภาษาไทย</p>
+  <div class="fgrid"><label class="f">Claude API key<input id="c_aiKey" type="password" value="${esc(CFG.aiKey)}" placeholder="sk-ant-…" autocomplete="off"></label>
+  <label class="f">รุ่นโมเดล<input id="c_aiModel" value="${esc(CFG.aiModel)}"></label></div>
+  <div class="row"><button class="pri" data-act="saveCfg">บันทึก</button></div>
+  <p class="hint">key ถูกเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ถูกส่งไป Google Sheet และไม่อยู่ในไฟล์ HTML การอ่านเอกสารคิดค่าใช้จ่ายตามการใช้งาน API ของบัญชีเจ้าของ key</p></section>
+  <section class="card"><h2>RST GROUP Data Hub</h2>
+  <p>หน้านี้อ่านใบสั่งซื้อ (แท็บ PO_LINES) และเอกสารรับสินค้า (แท็บ PURCHASE_LINES) จากไฟล์ Google Sheet กลางผ่าน Apps Script Web App ที่เชื่อมต่อไว้ (ต้องใช้ Code.gs เวอร์ชันที่มี action=hub และบัญชีที่ติดตั้งต้องเปิดไฟล์ Data Hub ได้) ข้อมูลไม่ถูกคัดลอกมาเก็บที่หน้านี้ เมื่อ Data Hub อัปเดต กดโหลดอีกครั้งก็ได้ข้อมูลใหม่</p>
+  ${(o=>`<div class="fgrid">
+    <label class="f" style="grid-column:1/-1">ไฟล์ Data Hub (ลิงก์ Google Sheet หรือรหัสไฟล์)<input id="s_hubFileId" value="${esc(settings().hubFileId||'')}" placeholder="${esc(HUB_ID)}"></label>
+    <label class="f">บริษัทใน Data Hub (ว่าง = ทุกบริษัท)<input id="s_hubCompany" value="${esc(o.company)}"></label>
+    <label class="f">โหลด PO ตั้งแต่วันที่<input type="date" id="s_hubFrom" value="${esc(o.from)}"></label>
+    <label class="f">เฉพาะผู้ขายที่ชื่อมีคำว่า (ว่าง = ทุกผู้ขาย)<input id="s_hubVendor" value="${esc(o.vendor)}"></label></div>`)(hubSet())}
+  <div class="row"><button class="pri" data-act="hubSave" ${CFG.gsUrl&&HUBST.s!=='busy'?'':'disabled'}>บันทึกเงื่อนไขและโหลด</button>${CFG.gsUrl?'':'<span class="sub">เชื่อมต่อ Apps Script Web App ในการ์ด “เชื่อมต่อ Google Sheet” ก่อน</span>'}</div>
+  ${hubOn()?`<p class="hint">โหลดล่าสุด: ใบสั่งซื้อ ${HUB.pos.length.toLocaleString('th-TH')} ใบ (${HUB.nl.toLocaleString('th-TH')} บรรทัด) เอกสารรับสินค้า ${HUB.dels.length.toLocaleString('th-TH')} ใบ (${HUB.nr.toLocaleString('th-TH')} บรรทัด จากแท็บ ${esc(HUB.reTab||'–')}) จากทั้งหมด ${HUB.rows.toLocaleString('th-TH')} บรรทัดใน Data Hub รายการรับสินค้าอีก ${HUB.skip.toLocaleString('th-TH')} บรรทัดอ้าง PO ที่อยู่นอกเงื่อนไข (บริษัท วันที่เริ่ม หรือผู้ขาย) และ ${(HUB.noPo||0).toLocaleString('th-TH')} บรรทัดไม่มีเลขที่ PO จึงไม่ได้นำมา${!HUB.reTab?' <b>ไม่พบแท็บ PURCHASE_LINES หรือ ECOUNT_PURCHASE ใน Data Hub</b>':!HUB.reCols||!HUB.nr?' <b>แท็บ '+esc(HUB.reTab)+(!HUB.reCols?' ไม่มีคอลัมน์เลขที่ RE / เลขที่ใบสั่งซื้อ / รหัสสินค้า / จำนวน ที่ระบบรู้จัก':' ไม่มีรายการที่อ้าง PO ที่โหลดมา')+'</b> หัวคอลัมน์ที่พบ: '+esc((HUB.reHead||[]).join(', '))+'':''}</p>`:HUBST.s==='err'?`<p class="hint">${esc(HUBST.msg)}</p>`:'<p class="hint">ยังไม่ได้โหลดจาก Data Hub ในการเปิดหน้าครั้งนี้</p>'}</section>
+  <section class="card"><h2>ลำดับการใช้งาน</h2><ol class="todo">
+    <li>นำเข้าตารางโปรโมชั่นและรายงานใบสั่งซื้อจาก ECOUNT ที่แท็บ “เอกสารและนำเข้า”</li>
+    <li>ขั้น ① ดูราคาที่เปิดสูงกว่าโปรโมชั่น แก้ PO ก่อนส่งให้ผู้ขาย</li>
+    <li>เมื่อของมาถึง สแกนใบส่งสินค้าในขั้น ② ตรวจทานตัวเลขที่ระบบอ่านได้ แล้วบันทึก</li>
+    <li>ใบส่งสินค้าที่ผ่านการเทียบ PO กด “ออก RE” ในขั้น ② ระบบบันทึกใบซื้อเข้า ECOUNT ให้</li>
+    <li>เมื่อได้ใบกำกับภาษี สแกนในขั้น ③ ระบบเทียบจำนวน ราคา และภาษีให้ทันที</li>
+    <li>PO ที่ผ่านครบ 3 ขั้นกด “อนุมัติจ่าย” ในภาพรวม รายการที่ยอมรับได้ใช้ “อนุมัติข้อยกเว้น” พร้อมเหตุผล</li></ol></section></div>`}
+
+/* ==========================================================================
+ * MODULE 15  EXCEL IMPORT
+ * จับคู่คอลัมน์และนำเข้ารายงานสถานะการซื้อ / ไฟล์โปรโมชั่น
+ * ฟังก์ชัน: autoMap, readXlsx, netPrice, promoPrice, importGo, hn, dstr
+ * ========================================================================== */
+/* ---------- Excel import ---------- */
+const FIELDS={po:[['poNo','เลขที่ใบสั่งซื้อ',['เลขที่ใบสั่งซื้อ','วันที่-เลขที่','เลขที่ po','po no','po number','date-no','เลขที่เอกสาร','เลขที่','ใบสั่งซื้อ']],['date','วันที่',['วันที่','date']],['project','โครงการ',['ชื่อโครงการ','โครงการ','project']],['vendor','ผู้จำหน่าย',['ชื่อผู้จำหน่าย','ชื่อผู้จัดจำหน่าย','ชื่อลูกค้า/ผู้จำหน่าย','ชื่อลูกค้า/ผู้จัดจำหน่าย','ผู้จำหน่าย','ผู้จัดจำหน่าย','ชื่อผู้ขาย','ผู้ขาย','ชื่อลูกค้า','vendor','supplier','customer']],['code','รหัสสินค้า',['รหัสสินค้า','item code','parts no','part no','รหัส']],['name','รายละเอียดสินค้า',['ชื่อสินค้า','รายละเอียดสินค้า','item name','parts name','description','รายการ']],['net','ราคาต่อหน่วยหลังหักส่วนลด',['ราคาต่อหน่วยหลังหักส่วนลด','ราคาหลังหักส่วนลด','ราคาหลังส่วนลด','ราคาสุทธิ','net price']],['amount','จำนวนเงินหลังหักส่วนลด (ก่อน VAT)',['จำนวนเงิน','มูลค่าสินค้า','มูลค่า','ยอดเงิน','supply amount','amount']],['qty','จำนวน',['จำนวน','qty','quantity']],['price','ราคาต่อหน่วย (ก่อนส่วนลด)',['ราคาต่อหน่วย','ราคา/หน่วย','unit price','ราคา','price']],['disc','ส่วนลด',['ส่วนลด','discount']],['ref','YDS. No. / หมายเหตุ (เลขอ้างอิงผู้ขาย)',['yds. no./หมายเหตุ','yds. no.','yds no','yds','หมายเหตุ','remark']]],
+  re:[['poNo','เลขที่ใบสั่งซื้อ / PO ที่อ้างอิง',['เลขที่ใบสั่งซื้อ','เลขที่ po','ใบสั่งซื้อ','po no','po number','อ้างอิง','po']],['docNo','เลขที่เอกสารรับสินค้า (RE)',['เลขที่ใบรับสินค้า','เลขที่รับสินค้า','วันที่-เลขที่','เลขที่เอกสาร','re no','gr no','doc no','เลขที่']],['date','วันที่รับ',['วันที่รับ','วันที่','date']],['vendor','ผู้จำหน่าย',['ชื่อผู้จำหน่าย','ชื่อผู้จัดจำหน่าย','ชื่อลูกค้า/ผู้จำหน่าย','ผู้จำหน่าย','ผู้จัดจำหน่าย','ผู้ขาย','ชื่อลูกค้า','vendor','supplier']],['code','รหัสสินค้า',['รหัสสินค้า','item code','parts no','part no','รหัส']],['name','รายละเอียดสินค้า',['ชื่อสินค้า','รายละเอียดสินค้า','item name','description','รายการ']],['qty','จำนวนรับ',['จำนวนรับ','จำนวน','qty','quantity']],['price','ราคาต่อหน่วยหลังส่วนลด (ราคา_RE)',['ราคาต่อหน่วยหลังส่วนลด','ราคาหลังหักส่วนลด','ราคาสุทธิ','net price','ราคาต่อหน่วย','unit price']],['amount','จำนวนเงิน (ก่อน VAT)',['จำนวนเงิน','มูลค่า','amount']]],
+  promo:[['code','รหัสสินค้า',['parts no','part no','รหัสสินค้า','item code','รหัส']],['name','ชื่อสินค้า (อังกฤษ)',['parts name','part name','item name','description']],['nameTh','ชื่อภาษาไทย',['ชื่อภาษาไทย','ชื่อไทย','ชื่อสินค้า']],['mo','MO (ราคาตั้ง)',['mo']],['disc','ส่วนลดโปรโมชั่น %',['promotion','sp discount','ส่วนลดโปร','ส่วนลด','discount','%']],['price','ราคาโปรโมชั่นก่อน VAT / NP_Promotion',['np_promotion','np promotion','sp price_net','sp price net','price_net','ราคาโปรโมชั่น','ราคาโปร','ราคาก่อน vat','ราคาก่อนภาษี','ราคาสุทธิ','net price','ราคา','price']],['brand','ยี่ห้อ / ผู้จำหน่าย',['solis/yanmar','brand','ยี่ห้อ']],['ptype','Part Type / Type Part',['part type','type part','parts type','type parts','parttype','typepart','part_type','type_part','ประเภทอะไหล่','ประเภทสินค้า','type']]]};
+const hn=s=>String(s??'').toLowerCase().replace(/\s+/g,' ').trim();
+function autoMap(headers,fields){const H=headers.map(hn),map={},used=new Set();
+  for(const pass of[0,1])for(const[f,,syn]of fields){if(map[f]!=null)continue;
+    for(const s of syn){const i=H.findIndex((h,ix)=>!used.has(ix)&&(pass===0?h===s:h.includes(s)));if(i>=0){map[f]=i;used.add(i);break}}}
+  return map}
+async function readXlsx(file,kind){
+  const wb=XLSX.read(await file.arrayBuffer(),{cellDates:true});
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:'',raw:true});
+  const fields=FIELDS[kind];let best=0,bs=-1;
+  for(let i=0;i<Math.min(rows.length,25);i++){const n=Object.keys(autoMap(rows[i],fields)).length;if(n>bs){bs=n;best=i}}
+  const headers=rows[best].map(x=>String(x??''));
+  IMP={kind,fields,headers,map:autoMap(headers,fields),rows:rows.slice(best+1).filter(r=>r.some(c=>c!=='')),file:file.name,name:file.name.replace(/\.[^.]+$/,''),start:'',end:'',discType:'pct'};
+  if(kind==='promo')IMP.ptype=(IMP.map.disc==null||/น้ำมัน|oil|lube/i.test(file.name))?'price':'pct';
+  tab='docs';render()}
+const dstr=v=>{if(v instanceof Date){const d=new Date(v.getTime()-v.getTimezoneOffset()*60000);return d.toISOString().slice(0,10)}const m=String(v||'').match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);if(m)return`${m[1]>2400?m[1]-543:m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;const m2=String(v||'').match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);if(m2)return`${m2[3]>2400?m2[3]-543:m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;return''};
+function netPrice(price,qty,netRaw,amtRaw,dRaw,type){const n=num(netRaw),a=num(amtRaw),r4=x=>Math.round(x*1e4)/1e4;
+  if(n!=null)return n;if(a!=null&&qty)return r4(a/qty);
+  let d=typeof dRaw==='string'?num(dRaw.replace('%','')):num(dRaw);if(d==null||price==null)return price;
+  if(typeof dRaw==='string'&&dRaw.includes('%'))return r4(price*(1-d/100));
+  if(type==='unit')return r4(price-d);if(type==='line')return qty?r4(price-d/qty):price;
+  if(typeof dRaw==='number'&&Math.abs(d)<1)d*=100;return r4(price*(1-d/100))}
+function promoPrice(mo,disc,np){mo=num(mo);np=num(np);let d=typeof disc==='string'&&disc.includes('%')?num(disc.replace('%','')):num(disc);
+  if(d!=null&&typeof disc!=='string'&&Math.abs(d)<=1)d=d*100;else if(d!=null&&typeof disc==='string'&&!disc.includes('%')&&Math.abs(d)<=1)d=d*100;
+  if(d!=null)d=Math.abs(d);
+  if(mo!=null&&d!=null)return{mo,disc:Math.round(d*1e4)/1e4,price:Math.round(mo*(1-d/100)*100)/100};
+  return{mo,disc:d,price:np}}
+async function importGo(){
+  const map={};for(const f of IMP.fields)map[f[0]]=+$('#map_'+f[0]).value;
+  const g=(r,f)=>map[f]>=0?r[map[f]]:'';
+  try{
+  if(IMP.kind==='promo'){
+    const fixed=IMP.ptype==='price';
+    if(map.code<0)return toast('ต้องเลือกคอลัมน์รหัสสินค้า');
+    if(fixed&&map.price<0)return toast('ต้องเลือกคอลัมน์ราคาโปรโมชั่นก่อน VAT');
+    if(!fixed&&(map.mo<0||map.disc<0)&&map.price<0)return toast('ต้องเลือกคอลัมน์ MO กับส่วนลด %');
+    const list=IMP.rows.map(r=>({code:String(g(r,'code')).trim(),name:String(g(r,'name')).trim(),nameTh:String(g(r,'nameTh')).trim(),...(fixed?{mo:null,disc:null,price:num(g(r,'price'))}:promoPrice(g(r,'mo'),g(r,'disc'),g(r,'price'))),brand:String(g(r,'brand')).trim(),ptype:String(g(r,'ptype')).trim()})).filter(p=>p.code),all=list.length;
+    if(!fixed)for(const x of list){if(x.disc==null)x.disc=0;if(x.price==null&&x.mo!=null)x.price=Math.round(x.mo*(100-x.disc))/100}
+    if(!fixed)for(const x of list)if(x.disc!=null&&isHalf(x.disc)&&x.mo!=null){x.disc=snap5(x.disc);x.price=Math.round(x.mo*(100-x.disc))/100}
+    const skipped=0,noDisc=fixed?0:list.filter(x=>!(x.disc>0)).length,oddN=fixed?0:list.filter(x=>!isHalf(x.disc)).length;
+    if(!list.length)return toast('ไม่พบแถวที่มีรหัสสินค้า');
+    const nm=(IMP.name||'').trim();if(!nm)return toast('ใส่ชื่อโปรโมชั่น');
+    if(!IMP.start||!IMP.end)return toast('ระบุวันเริ่มและวันสิ้นสุดโปรโมชั่น');
+    if(IMP.start>IMP.end)return toast('วันเริ่มต้องไม่หลังวันสิ้นสุด');
+    const sid='p'+Date.now().toString(36),n=Math.ceil(list.length/100);
+    for(let i=0;i<n;i++){BUSY=`กำลังบันทึก ${i+1}/${n}`;render();await put('promos',sid+'-c'+String(i).padStart(3,'0'),{set:sid,rows:list.slice(i*100,i*100+100)})}
+    await put('promosets',sid,{type:IMP.ptype||'pct',name:nm,start:IMP.start,end:IMP.end,file:IMP.file||'',at:new Date().toISOString(),by:myId||null});
+    tab='promos';
+    toast('เพิ่มโปรโมชั่น “'+nm+'” '+list.length+' รายการ'+(noDisc?' ในจำนวนนี้ '+noDisc+' รายการไม่มีส่วนลด':'')+(oddN?' พบ '+oddN+' รายการที่ส่วนลดไม่เป็นจำนวนเต็มหรือ .50 ตรวจในคลังโปรโมชั่น':''));
+  }else if(IMP.kind==='re'){
+    if(map.code<0||map.qty<0||(map.docNo<0&&map.poNo<0))return toast('ต้องเลือกคอลัมน์รหัสสินค้า จำนวนรับ และเลขที่เอกสารรับสินค้าหรือเลขที่ PO');
+    const docs=new Map(),key=l=>kc(l.ref||'')+'|'+kc(l.code);let last=null,lastPo='';
+    for(const r of IMP.rows){let no=g(r,'docNo');no=no instanceof Date?dstr(no):String(no).trim();let pn=String(g(r,'poNo')).trim();
+      const code=String(g(r,'code')).trim(),qty=num(g(r,'qty'));
+      if(!no&&map.docNo<0&&pn)no='RE-'+pn;if(!no&&last&&code){no=last;if(!pn)pn=lastPo}
+      if(!no||!code||qty==null)continue;last=no;lastPo=pn;
+      const d=docs.get(no)||{docNo:no,kind:'re',date:dstr(g(r,'date'))||dstr(no),vendor:String(g(r,'vendor')).trim(),poNo:pn,refNo:'',lines:[]};
+      const am0=num(g(r,'amount')),up=num(g(r,'price'))??(am0!=null&&qty?Math.round(am0/qty*1e4)/1e4:null);
+      const l={ref:pn&&pn!==d.poNo?pn:'',code,name:String(g(r,'name')).trim(),qty,price:up,disc:null,amount:up!=null?Math.round(up*qty*100)/100:null},o=d.lines.find(x=>key(x)===key(l));
+      if(o){o.qty+=qty;if(o.price!=null&&up!=null)o.amount=Math.round((o.amount+up*qty)*100)/100;else{o.price=null;o.amount=null}}else d.lines.push(l);docs.set(no,d)}
+    if(!docs.size)return toast('ไม่พบรายการรับสินค้า ตรวจการเลือกคอลัมน์');
+    const D0=DATA();let nNew=0,nAdd=0,nSame=0,nDiff=0,nNoPO=0,i=0;
+    for(const d of docs.values()){i++;if(i%5===1){BUSY=`กำลังบันทึก ${i}/${docs.size}`;render()}
+      let id=idOf(d.docNo);if(S.dels[id]&&!isRE(S.dels[id])){d.docNo='RE-'+d.docNo;id=idOf(d.docNo)}
+      const old=S.dels[id];
+      if(!old){await put('dels',id,{...d,by:myId||null,at:new Date().toISOString()});nNew++;if(!docPOs(D0,d).length)nNoPO++;continue}
+      const have=new Map((old.lines||[]).map(l=>[key(l),l])),add=d.lines.filter(l=>!have.has(key(l)));
+      nDiff+=d.lines.filter(l=>have.has(key(l))&&Math.abs((have.get(key(l)).qty||0)-l.qty)>1e-6).length;
+      if(add.length){await put('dels',id,{...old,lines:[...(old.lines||[]),...add]});nAdd+=add.length}else nSame++}
+    tab='delivery';
+    toast('รับสินค้า: เอกสารใหม่ '+nNew+' ใบ · เพิ่มรายการใหม่ในเอกสารเดิม '+nAdd+' รายการ · เอกสารเดิมไม่เปลี่ยน '+nSame+' ใบ'+(nDiff?' · มี '+nDiff+' รายการที่จำนวนในไฟล์ต่างจากที่บันทึกไว้ ระบบไม่ได้แก้ให้ ตรวจแล้วแก้ที่เอกสารนั้น':'')+(nNoPO?' · '+nNoPO+' ใบยังหา PO ไม่พบ':''));
+  }else{
+    if(map.poNo<0||map.code<0||map.qty<0)return toast('ต้องเลือกคอลัมน์เลขที่ PO รหัสสินค้า และจำนวน');
+    const pos=new Map();let last=null;
+    for(const r of IMP.rows){let no=g(r,'poNo');no=no instanceof Date?dstr(no):String(no).trim();
+      const code=String(g(r,'code')).trim(),qty=num(g(r,'qty'));
+      if(!no&&last&&code)no=last;if(!no||!code||qty==null)continue;last=no;
+      const p=pos.get(no)||{poNo:no,date:dstr(g(r,'date'))||dstr(no),vendor:String(g(r,'vendor')).trim(),project:'',lines:[]};
+      if(!p.vendor)p.vendor=String(g(r,'vendor')).trim();
+      const pj=String(g(r,'project')).trim();if(pj&&!p.project)p.project=pj;
+      const rf=String(g(r,'ref')).trim();if(rf&&!String(p.ref||'').includes(rf))p.ref=(p.ref?p.ref+' ':'')+rf;
+      const pr=num(g(r,'price'));p.lines.push({code,name:String(g(r,'name')).trim(),qty,price:pr,net:netPrice(pr,qty,g(r,'net'),g(r,'amount'),g(r,'disc'),IMP.discType),project:pj});pos.set(no,p)}
+    if(!pos.size)return toast('ไม่พบรายการ PO ตรวจการเลือกคอลัมน์');
+    let i=0;for(const p of pos.values()){i++;if(i%5===1){BUSY=`กำลังบันทึก ${i}/${pos.size}`;render()}await put('pos',idOf(p.poNo),p)}
+    toast('นำเข้า PO '+pos.size+' ใบ');
+  }
+  IMP=null}catch(e){wErr(e)}finally{BUSY=null;render()}}
+
+/* ==========================================================================
+ * MODULE 16  PDF / SCAN READER
+ * อ่าน PDF และไฟล์สแกนด้วยข้อความในไฟล์ OCR หรือ Claude API
+ * ฟังก์ชัน: loadScript, pdfLib, filePages, ocr, aiRead, scan, isPdf, b64, PROMPT
+ * ========================================================================== */
+/* ---------- reading PDF / scans ---------- */
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('โหลดไม่ได้: '+src));document.head.appendChild(s)})}
+async function pdfLib(){if(!window.pdfjsLib){const b='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';await loadScript(b+'pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc=b+'pdf.worker.min.js'}return pdfjsLib}
+const isPdf=f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name);
+async function filePages(file){
+  if(isPdf(file)){const lib=await pdfLib(),pdf=await lib.getDocument({data:await file.arrayBuffer()}).promise,out=[];
+    for(let p=1;p<=pdf.numPages;p++){const pg=await pdf.getPage(p);
+      let text='';try{const tc=await pg.getTextContent(),ln=new Map();for(const it of tc.items){if(!it.str||!it.str.trim())continue;const y=Math.round(it.transform[5]/4);if(!ln.has(y))ln.set(y,[]);ln.get(y).push(it)}
+        text=[...ln.entries()].sort((a,b)=>b[0]-a[0]).map(e=>e[1].sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join('  ')).join('\n')}catch(e){}
+      out.push({text,render:async()=>{const v0=pg.getViewport({scale:1}),vp=pg.getViewport({scale:2200/v0.width}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:cx,viewport:vp}).promise;return c}})}
+    return out}
+  return[{text:'',render:async()=>{const bmp=await createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>createImageBitmap(file));const sc=Math.min(1,2600/bmp.width),c=document.createElement('canvas');c.width=bmp.width*sc;c.height=bmp.height*sc;c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);return c}}]}
+let ocrW=null;
+async function ocr(canvas,label){if(!window.Tesseract)await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+  if(!ocrW)ocrW=await Tesseract.createWorker(['tha','eng'],1,{logger:m=>{if(m.status==='recognizing text'){BUSY=label+' '+Math.round(m.progress*100)+'%';const c=document.querySelector('.row .chip');if(c)c.textContent=BUSY}}});
+  const r=await ocrW.recognize(canvas);return r.data.text||''}
+const b64=buf=>{let s='';const u=new Uint8Array(buf);for(let i=0;i<u.length;i+=32768)s+=String.fromCharCode.apply(null,u.subarray(i,i+32768));return btoa(s)};
+const PROMPT=kind=>`You are reading a Thai procurement document for an accounts-payable check. The document is a ${kind==='inv'?'tax invoice (ใบกำกับภาษี)':'delivery note / packing list (ใบส่งสินค้า / packing attached list)'}. All attached files are pages of the same document.
+Transcribe exactly what is printed. Never guess, never correct, never compute a value that is not printed. Copy item codes character by character (watch 0/O, 1/I, 5/S, 8/B). If a character or number is unclear, give your best reading and set "unsure": true on that line. Use null for anything not printed.
+Numbers: plain numbers without thousands separators. Dates: YYYY-MM-DD in the Gregorian calendar (subtract 543 from a Buddhist-era year).
+Reply with only one JSON object in this shape:
+{"docNo":string|null,"date":string|null,"vendor":string|null,"vendorTaxId":string|null,"buyerTaxId":string|null,"poNo":string|null,"refNo":string|null,"creditDays":number|null,"dueDate":string|null,"lines":[{"ref":string|null,"code":string|null,"name":string|null,"qty":number|null,"unit":string|null,"price":number|null,"disc":number|null,"amount":number|null,"unsure":boolean}],"discount":number|null,"subtotal":number|null,"vat":number|null,"total":number|null}
+"docNo" is this document's own number: for a tax invoice the tax-invoice number (เลขที่ใบกำกับภาษี, เลขที่, Invoice No., Tax Invoice No.; it usually begins with IV or INV, and may be printed above or beside its label), never a purchase-order number, a delivery-note number or a tax ID. "vendor" is the seller who issued the document, the company on the letterhead or named as ผู้ขาย / ผู้ออกใบกำกับภาษี, never the customer the document is addressed to. "poNo" is the buyer's purchase-order number the document refers to (PO No., เลขที่ใบสั่งซื้อ, อ้างอิง). "refNo" is any other reference number or reference document printed on it (เลขที่อ้างอิง, เอกสารอ้างอิง, Ref. No., delivery note / D/O number, ใบส่งสินค้าเลขที่). On a tax invoice, when a delivery-order number is printed (D/O No., เลขที่ใบส่งสินค้า), use it as "refNo". Each line's "disc" is the discount percent printed on that row, null when none; "amount" stays the row amount as printed. "creditDays" is the credit term in days wherever the document prints it (เครดิต 30 วัน, เงื่อนไขการชำระเงิน, Credit term, Terms of payment, Payment term "30 Days"); 0 for cash (เงินสด / Cash). "dueDate" is the payment due date (วันครบกำหนด, วันครบกำหนดชำระ, Due date). "vendor" is the issuing company exactly as printed on the letterhead or logo (for example "YANMAR S.P."). Each line's "ref" is that row's customer purchase-order reference: on a packing attached sheet with a "Customer P/O No." column that prints two lines per row, use the LOWER line; null when the row has none. When every row carries the same reference, also put it in "refNo". "price" is the unit price before VAT, "amount" the line amount. "discount" is the total trade discount amount printed below the item table (ส่วนลด, ส่วนลดการค้า, หักส่วนลด, Discount), as a positive number, null when none. "subtotal" is the amount after that discount and before VAT, "vat" the VAT amount, "total" the grand total. Include every item row of every page, each exactly once.`;
+async function aiRead(kind,files,signal){const content=[];
+  for(const f of files){if(isPdf(f))content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:b64(await f.arrayBuffer())}});
+    else{const c=await(await filePages(f))[0].render(),blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.92));content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64(await blob.arrayBuffer())}})}}
+  content.push({type:'text',text:PROMPT(kind)+'\n\nIMPORTANT: this file may contain SEVERAL separate documents, each with its own document number. Reply with ONE JSON object {"documents":[...]} where every element has exactly the shape described above. A document that continues over several pages is ONE element. Never merge rows of different documents.'});
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal,headers:{'content-type':'application/json','x-api-key':CFG.aiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:CFG.aiModel||'claude-sonnet-5-5',max_tokens:32000,messages:[{role:'user',content}]})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw{code:r.status===401?'bad_key':'api',message:(j.error&&j.error.message)||('HTTP '+r.status)};
+  const t=(j.content||[]).filter(x=>x.type==='text').map(x=>x.text).join(''),a=t.indexOf('{'),z=t.lastIndexOf('}');
+  if(a<0||z<0)throw{code:'invalid_json'};
+  const o0=JSON.parse(t.slice(a,z+1));
+  return(Array.isArray(o0.documents)&&o0.documents.length?o0.documents:[o0]).map(o=>({docNo:o.docNo,date:o.date,vendor:o.vendor,vendorTaxId:o.vendorTaxId,buyerTaxId:o.buyerTaxId,poNo:o.poNo,refNo:o.refNo,creditDays:num(o.creditDays),dueDate:o.dueDate,discount:num(o.discount),subtotal:num(o.subtotal),vat:num(o.vat),total:num(o.total),
+    lines:(o.lines||[]).map(l=>({ref:l.ref?String(l.ref):'',code:l.code||'',name:l.name||'',qty:num(l.qty),price:num(l.price),disc:num(l.disc),amount:num(l.amount),unsure:!!l.unsure}))}))}
+async function scan(kind,files){
+  abortCtl=new AbortController();const D=DATA();
+  try{
+    if(CFG.aiKey){BUSY='Claude กำลังอ่านเอกสาร (ราว 20–60 วินาที)';render();const ds=await aiRead(kind,files,abortCtl.signal);
+      PEND=ds.map((doc,gi)=>({doc,warns:ds.length>1?['ไฟล์นี้มี '+ds.length+' เอกสาร ใบนี้คือใบที่ '+(gi+1)+' ตรวจว่ารายการครบและไม่ปนกับใบอื่น']:[]}))}
+    else{BUSY='กำลังเตรียมไฟล์…';render();const pt=[];let usedOcr=false;
+      for(const f of files){const pages=await filePages(f);
+        for(let i=0;i<pages.length;i++){if(abortCtl.signal.aborted)throw{code:'cancelled'};
+          if(pages[i].text.replace(/\s/g,'').length>60)pt.push(pages[i].text);
+          else{usedOcr=true;BUSY='OCR หน้า '+(i+1)+'/'+pages.length;render();pt.push(await ocr(await pages[i].render(),'OCR หน้า '+(i+1)+'/'+pages.length))}}}
+      const groups=splitDocs(pt.map(t=>({docNo:parseDocText(D,t,kind).docNo||null,text:t})));
+      PEND=groups.map((g,gi)=>{const doc=parseDocText(D,g.pages.map(x=>x.text).join('\n'),kind),warns=[];
+        if(groups.length>1)warns.push('ไฟล์นี้มี '+groups.length+' เอกสาร ระบบแยกตามเลขที่เอกสารของแต่ละหน้า ใบนี้คือใบที่ '+(gi+1)+' ('+g.pages.length+' หน้า) ตรวจว่ารายการครบและไม่ปนกับใบอื่น');
+        warns.push(usedOcr?'อ่านจากไฟล์สแกนด้วย OCR ในเครื่อง ตัวเลขและรหัสอาจคลาดเคลื่อน เทียบกับเอกสารจริงทุกบรรทัด':'อ่านจากข้อความในไฟล์ PDF ระบบดึงเฉพาะบรรทัดที่พบรหัสสินค้าของ PO ตรวจว่าครบทุกรายการ');
+        if(!doc.lines.length)warns.push('ไม่พบรหัสสินค้าที่ตรงกับ PO ในระบบ กรอกรายการเอง หรือใช้ Claude API key เพื่ออ่านเอกสารนี้');
+        return{doc,warns}})}}
+  catch(e){console.error(e);const c=e&&(e.code||e.name);toast(c==='cancelled'||c==='AbortError'?'หยุดการอ่านแล้ว':c==='bad_key'?'Claude API key ไม่ถูกต้อง ตรวจที่แท็บ “ตั้งค่า”':c==='invalid_json'?'อ่านเอกสารไม่สำเร็จ ลองสแกนให้ชัดขึ้น':'อ่านไฟล์ไม่สำเร็จ: '+((e&&e.message)||''))}
+  finally{BUSY=null;abortCtl=null;render()}}
+
+/* ==========================================================================
+ * MODULE 17  DOCUMENT REVIEW EDITOR
+ * หน้าตรวจทานใบส่งสินค้า / ใบกำกับภาษีก่อนบันทึก
+ * ฟังก์ชัน: splitDocs, scanOpen, scanPick, scanNext, sqAfter, sqStop, finDoc, fillDiscount, openEditor, edDelVal, edHints, edMatch, edWarns, renderEd, edRefresh, edDoc, edTotals, edPreview, edSave, sqPdf, sqName, sqMore, sqBar, edDelCell
+ * ========================================================================== */
+/* ---------- document editor ---------- */
+/* ---------- document queue ---------- */
+/* นำเข้าได้หลายไฟล์พร้อมกัน และหนึ่งไฟล์ PDF มีได้หลายเอกสาร (ใบกำกับภาษี หรือ ใบส่งสินค้า / Packing list)
+   ระบบแยกเป็นเอกสารตามเลขที่เอกสารของแต่ละหน้า แล้วเปิดให้ตรวจทานและ match ทีละใบ
+   SQ = คิวของไฟล์, PEND = เอกสารที่อ่านจากไฟล์ปัจจุบันแล้วและรอตรวจ */
+let SQ=null,PEND=[];
+const sqPdf=f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name||'');
+const sqName=k=>k==='inv'?'ใบกำกับภาษี':'ใบส่งสินค้า / Packing list';
+/* แบ่งหน้าเป็นเอกสาร: ขึ้นเอกสารใหม่เมื่อหน้าถัดไปมีเลขที่เอกสารต่างจากเดิม หน้าที่ไม่มีเลขที่ถือเป็นหน้าต่อของเอกสารก่อนหน้า */
+function splitDocs(pages){const out=[];let cur=null;for(const p of pages){const dn=p&&p.docNo!=null?String(p.docNo).trim():'';if(!cur||(dn&&cur.docNo&&kc(dn)!==kc(cur.docNo))){cur={docNo:dn,pages:[]};out.push(cur)}if(!cur.docNo&&dn)cur.docNo=dn;cur.pages.push(p)}return out}
+/* เตรียมเอกสารที่อ่านได้ จับคู่ PO ตามข้อมูลล่าสุด แล้วเปิดหน้าตรวจทาน */
+function scanOpen(kind,doc,warns){warns=[...(warns||[])];const D=DATA(),seen=new Set();doc.lines=(doc.lines||[]).filter(l=>l.code||l.name||l.qty!=null);
+  for(const l of doc.lines){const k=kc(l.code)+'|'+l.qty+'|'+l.amount;if(l.code&&seen.has(k)){l.unsure=true;warns.push('พบรายการที่ดูซ้ำกัน ('+l.code+') ตรวจว่าเป็นรายการจริงหรืออ่านซ้ำ')}seen.add(k)}
+  doc.vendor=vendorName(D,doc.vendor);
+  {const rs=[...new Set(doc.lines.map(l=>String(l.ref||'').trim()).filter(Boolean))];if(rs.length&&!doc.refNo)doc.refNo=rs.join(', ');if(!doc.poNo&&rs.length===1&&findPO(D,rs[0]))doc.poNo=findPO(D,rs[0]).poNo}
+  const rf0=docRef(D,doc);if(rf0&&!findPO(D,doc.poNo)){if(doc.poNo&&!doc.refNo)doc.refNo=doc.poNo;doc.poNo=rf0.po.poNo;warns.push('จับคู่ PO '+rf0.po.poNo+' จากเอกสารอ้างอิง '+rf0.ref)}
+  if(!rf0&&!docPOs(D,doc).length){const m=matchPO(D,doc);if(m){warns.push((doc.poNo?'ไม่พบ PO เลขที่ “'+doc.poNo+'” ในระบบ ':'เอกสารไม่ระบุเลขที่ PO ')+'ระบบจับคู่ให้เป็น '+m.po.poNo+' จากรายการสินค้าที่ตรงกัน '+m.hit+' จาก '+m.n+' รายการ ตรวจว่าถูกต้อง');doc.poNo=m.po.poNo}}
+  finDoc(D,doc,warns,kind);openEditor(kind,doc,warns,true)}
+function scanPick(kind,files){const pdf=files.filter(sqPdf),img=files.filter(f=>!sqPdf(f)),items=pdf.map(f=>[f]);if(img.length)items.push(img);
+  PEND=[];SQ={kind,items,i:0,n:0,ok:0,skip:0,fail:[],file:'',inFile:0};scanNext()}
+async function scanNext(){const q=SQ;if(!q)return;
+  while(SQ===q){if(PEND.length){const x=PEND.shift();q.n++;scanOpen(q.kind,x.doc,x.warns);return}
+    if(q.i>=q.items.length)break;const fs=q.items[q.i++];q.file=fs.map(f=>f.name).join(', ');await scan(q.kind,fs);if(SQ!==q)return;q.inFile=PEND.length;if(!PEND.length)q.fail.push(q.file)}
+  if(SQ===q){SQ=null;if(q.n+q.fail.length>1)toast(sqName(q.kind)+': อ่านได้ '+q.n+' ใบ จาก '+q.items.length+' ไฟล์ · บันทึก '+q.ok+' ใบ · ข้าม '+q.skip+' ใบ'+(q.fail.length?' · อ่านไม่สำเร็จ '+q.fail.length+' ไฟล์ ('+q.fail.join(', ')+')':''));render()}}
+function sqAfter(saved){if(!SQ)return;saved?SQ.ok++:SQ.skip++;setTimeout(scanNext,saved&&(PEND.length||SQ.i<SQ.items.length)?700:0)}
+const sqMore=()=>!!SQ&&(PEND.length>0||SQ.i<SQ.items.length);
+function sqStop(){if(!SQ)return;const q=SQ,left=PEND.length,lf=q.items.length-q.i;SQ=null;PEND=[];toast('หยุดคิวแล้ว บันทึก '+q.ok+' ใบ'+(left?' · เอกสารที่อ่านแล้วแต่ยังไม่ได้ตรวจ '+left+' ใบ':'')+(lf?' · ยังไม่ได้อ่านอีก '+lf+' ไฟล์':''))}
+const sqBar=()=>SQ&&ED&&ED.fromScan&&(SQ.n>1||sqMore())?`<div class="banner row" style="margin-bottom:6px"><span>${sqName(SQ.kind)} ใบที่ <b>${SQ.n}</b>${SQ.inFile>1?' · ไฟล์นี้มี <b>'+SQ.inFile+'</b> ใบ เหลือรอตรวจ '+PEND.length+' ใบ':''} · ไฟล์ ${esc(SQ.file)}${SQ.items.length>1?' (ไฟล์ที่ '+SQ.i+' จาก '+SQ.items.length+')':''} · บันทึกแล้ว ${SQ.ok} ใบ</span><span style="flex:1"></span><button class="sm" data-act="edCancel">ข้ามใบนี้</button><button class="sm" data-act="sqStop">หยุดคิว</button></div><p class="hint">ตรวจและบันทึกทีละใบ เมื่อบันทึกหรือข้ามแล้ว ระบบจะเปิดใบถัดไปให้เอง</p>`:'';
+function finDoc(D,doc,warns,kind){
+  if(kind==='inv'){inheritRefs(D,doc);const rf=docRef(D,doc),rn=String(doc.refNo||'').trim();if(rf&&rf.via==='do')warns.push('จับคู่จากเอกสารอ้างอิง: ตรงกับใบส่งสินค้า D/O No. '+rf.ref+' ของ PO '+docPOs(D,rf.dl).map(q=>q.poNo).join(', '));else if(rf&&rn)warns.push('ยังไม่พบใบส่งสินค้าเลขที่ '+rn+' ในระบบ จึงจับคู่จากเลขที่ PO '+rf.po.poNo+' แทน นำเข้าใบส่งสินค้าใบนั้นก่อนถ้าต้องการจับคู่ตาม D/O No.');else if(rf)warns.push('ใบกำกับไม่มีเลขที่เอกสารอ้างอิง จึงจับคู่จากเลขที่ PO '+rf.po.poNo)}
+  {const od=(doc.lines||[]).filter(l=>l.disc!=null&&!isHalf(l.disc));od.forEach(l=>{l.unsure=true});if(od.length)warns.push('มี '+od.length+' บรรทัดที่ส่วนลด % ไม่เป็นจำนวนเต็มหรือ .50 อาจอ่านตัวเลขผิด')}
+  if(kind==='inv'&&doc.discount>0&&doc.subtotal!=null){const sm=(doc.lines||[]).reduce((a,l)=>a+(l.amount!=null?l.amount:(l.qty||0)*(l.price||0)),0),rt=D.set.vatRate/100;
+    if(Math.abs(sm-doc.subtotal)<=0.05&&doc.vat!=null&&Math.abs(doc.vat-(sm-doc.discount)*rt)<Math.abs(doc.vat-sm*rt))doc.subtotal=Math.round((sm-doc.discount)*100)/100}
+
+  if(!doc.vendor){const po=docPO(D,doc)||docPOs(D,doc)[0];if(po&&po.vendor){doc.vendor=po.vendor;warns.push('ไม่พบชื่อผู้ขายบนเอกสาร จึงใช้ชื่อผู้ขายจาก PO ตรวจว่าถูกต้อง')}}
+  if(!doc.docNo)warns.push('ไม่พบเลขที่'+(kind==='inv'?'ใบกำกับภาษี':'เอกสาร')+' กรอกเองก่อนบันทึก');
+  if(kind==='inv'&&doc.creditDays==null)warns.push('ไม่พบเงื่อนไขเครดิตในใบกำกับภาษี ช่องเครดิตจึงว่าง');
+  if(kind==='inv'&&!doc.dueDate)warns.push('ไม่พบวันครบกำหนดในใบกำกับภาษี ช่องวันครบกำหนดจึงว่าง')}
+/* เติมช่องส่วนลด (บาท) เมื่อเอกสารไม่ได้อ่านยอดส่วนลดมา:
+   1) มีส่วนลด % รายบรรทัด → คิดจากรายบรรทัด  2) ไม่มีเลย แต่ยอดรายการมากกว่ายอดก่อนภาษี และภาษีตรงกับยอดก่อนภาษี
+      และส่วนต่างคิดเป็น % จำนวนเต็มหรือ .50 → ส่วนต่างนั้นคือส่วนลด */
+function fillDiscount(doc,warns){if(doc.discount>0)return;const ls=doc.lines||[],am=l=>l.amount!=null?l.amount:(l.qty||0)*(l.price||0),g=ls.reduce((a,l)=>a+am(l),0),r2=v=>Math.round(v*100)/100;
+  if(ls.some(l=>l.disc>0)){const by=ls.reduce((a,l)=>a+am(l)*(l.disc||0)/100,0);doc.discount=r2(doc.subtotal!=null&&Math.abs(g-by-doc.subtotal)<=1?g-doc.subtotal:by);return}
+  if(doc.subtotal==null||!(g-doc.subtotal>0.05)||!g)return;const d=g-doc.subtotal,pct=d/g*100,rt=settings().vatRate/100;
+  if(!isHalf(pct)||(doc.vat!=null&&Math.abs(doc.vat-doc.subtotal*rt)>Math.max(0.5,settings().vatTol)))return;
+  doc.discount=r2(d);if(warns)warns.push('ไม่พบยอดส่วนลดในเอกสาร ระบบคำนวณส่วนลด '+doc.discount.toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท ('+snap5(pct)+'%) จากผลรวมรายการลบยอดก่อนภาษี ตรวจว่าตรงกับบรรทัดส่วนลดในใบกำกับ')}
+function openEditor(kind,doc,warns,fromScan){warns=warns||[];if(kind==='inv'){fillDiscount(doc,warns);if(!('subtotal' in doc))doc.subtotal=null;inheritRefs(DATA(),doc)}ED={kind,id:doc._id||null,fromScan:!!fromScan,warns:warns||[],dupOk:false,
+  docNo:doc.docNo||'',date:doc.date||'',vendor:doc.vendor||'',poNo:doc.poNo||'',refNo:doc.refNo||'',creditDays:doc.creditDays??'',dueDate:doc.dueDate||'',dueAuto:false,vendorTaxId:doc.vendorTaxId||'',buyerTaxId:doc.buyerTaxId||'',
+  discount:doc.discount??'',subtotal:doc.subtotal??'',vat:doc.vat??'',total:doc.total??'',lines:(doc.lines||[]).map(l=>({...l}))};
+  if(!ED.lines.length)ED.lines.push({code:'',name:'',qty:null,price:null,amount:null});renderEd()}
+/* มูลค่าตาม PO ของแต่ละรายการในใบส่งสินค้า ใช้ราคา PO หลังหักส่วนลดซึ่งเทียบโปรโมชั่นแล้วในขั้น ① (ใช้เทียบกับใบกำกับภาษีเท่านั้น ไม่บันทึกลงเอกสาร) */
+function edDelVal(){const D=DATA(),dp=docPO(D,ED),m=r1map(D);return ED.lines.map(l=>{const po=linePO(D,l,dp),t=po&&resolveLine(aggLines(po),l);if(!t||t.price==null)return{price:null,amt:null,tag:''};
+  const r=m.get(m1key(po.poNo,t.code)),ok=r&&r.promo!=null&&r.lv==='ok',no=r&&r.promo!=null&&r.lv!=='ok';return{price:t.price,amt:l.qty!=null?Math.round(l.qty*t.price*100)/100:null,tag:ok?pill('ok','ตรงโปร'):no?pill('warn','ยังไม่ตรงโปร'):'<span class="sub">ราคา PO</span>'}})}
+const edDelCell=(v,k)=>k==='p'?(v.price!=null?fm(v.price)+'<div>'+v.tag+'</div>':'–'):'<b>'+fm(v.amt)+'</b>';
+function edHints(){const D=DATA(),dp=docPO(D,ED),inv=ED.kind==='inv',m=inv?r1map(D):null,hasD=inv&&(num(ED.discount)>0||ED.lines.some(l=>l.disc>0));
+  return ED.lines.map(l=>{const po=linePO(D,l,dp);if(!po)return pill('wait','ยังไม่ระบุ PO');const t=resolveLine(aggLines(po),l);if(!t)return pill('bad','ไม่พบใน PO');
+    if(l.qty!=null&&l.price!=null&&l.amount!=null&&Math.abs(l.qty*l.price-l.amount)>0.05)return pill('warn','จำนวน×ราคา ≠ ยอด');
+    if(inv&&l.disc!=null&&!isHalf(l.disc))return pill('warn','ส่วนลด % ต้องเป็นจำนวนเต็มหรือ .50');
+    if(inv&&l.price!=null){const r=m.get(m1key(po.poNo,t.code)),mo=r&&r.mo!=null?r.mo:null,raw=(po.lines||[]).find(z=>kc(z.code)===kc(t.code)),list=raw&&raw.price!=null?raw.price:null,eq=v=>v!=null&&Math.abs(l.price-v)<=0.01;
+      if(hasD&&(mo!=null||list!=null)&&!eq(mo)&&!eq(list))return pill('warn','ราคา ≠ MO '+fm(mo!=null?mo:list));
+      if(!hasD&&t.price!=null&&!eq(t.price)&&!eq(mo)&&!eq(list))return pill('warn','ราคา ≠ PO '+fm(t.price))}
+    if(l.qty!=null&&l.qty-t.qty>1e-6)return pill('warn','เกิน PO (สั่ง '+fq(t.qty)+')');
+    return pill('ok','PO สั่ง '+fq(t.qty))})}
+function edMatch(){const D=DATA(),m=docMatch(D,ED);
+  if(!m)return `<div class="inv"><h3>PO ที่จับคู่ได้: ${pill('bad','ยังไม่พบ')}</h3><div class="sub">ใส่เลขที่เอกสารอ้างอิงให้ตรงกับ D/O No. ของใบส่งสินค้าในระบบ หรือใส่เลขที่ PO</div></div>`;
+  const rf=docRef(D,ED),how=ED.kind!=='inv'?'':rf&&rf.via==='do'?'จับคู่จากเอกสารอ้างอิง ตรงกับใบส่งสินค้า D/O No. '+rf.ref+(rf.dl.date?' วันที่ '+rf.dl.date:''):String(ED.refNo||'').trim()?'ยังไม่พบใบส่งสินค้าเลขที่ '+ED.refNo+' ในระบบ จึงจับคู่จากเลขที่ PO':'ไม่มีเลขที่เอกสารอ้างอิง จึงจับคู่จากเลขที่ PO';
+  return `<div class="inv"><h3>PO ที่จับคู่ได้: ${esc(m.pos.map(q=>q.poNo).join(', '))} ${m.hit===m.n?pill('ok','ตรงทุกรายการ'):pill('warn','ตรง '+m.hit+' จาก '+m.n+' รายการ')}</h3><div class="sub">${esc(m.po.vendor)} · วันที่ ${esc(m.po.date||'–')} · โครงการ ${esc(m.po.project||'–')} · ${(m.po.lines||[]).length} รายการใน PO</div>${how?`<div><b>${esc(how)}</b></div>`:''}<div class="sub">${m.hit===m.n?'ตรวจแล้วตรงกับ PO กดบันทึกได้เลย':'ยังมีรายการที่ไม่ตรงกับ PO ตรวจก่อนบันทึก'}</div></div>`}
+function edWarns(){const w=[...ED.warns],D=DATA();
+  {const dn=ED.kind==='inv'&&doNoPO(D,ED);if(dn)w.push('เลขที่เอกสารอ้างอิงตรงกับใบส่งสินค้า D/O No. '+dn.docNo+' แล้ว แต่ใบส่งสินค้าใบนั้นยังไม่ได้จับคู่กับ PO เปิดใบส่งสินค้าแล้วใส่เลขที่ PO ก่อน')}
+  if((ED.poNo||ED.refNo)&&!docPOs(D,ED).length)w.push('ไม่พบ PO หรือใบส่งสินค้าจากเลขที่อ้างอิง “'+[ED.poNo,ED.refNo].filter(Boolean).join(', ')+'” ตรวจเลขที่หรือนำเข้า PO ก่อน');
+  const u=ED.lines.filter(l=>l.unsure).length;if(u)w.push('มี '+u+' บรรทัดที่อ่านได้ไม่ชัด (แถวสีเหลือง) เทียบกับเอกสารจริงก่อนบันทึก');
+  if(ED.kind==='inv'&&num(ED.subtotal)!=null){const s=ED.lines.reduce((a,l)=>a+(l.amount!=null?l.amount:(l.qty||0)*(l.price||0)),0);const ds=invDisc(edDoc(true));if(Math.abs(s-ds-num(ED.subtotal))>0.05)w.push('ผลรวมรายการ '+fm(s)+(ds?' หักส่วนลด '+fm(ds):'')+' ไม่เท่ายอดก่อนภาษี '+fm(num(ED.subtotal))+' อาจอ่านตกบรรทัดหรืออ่านตัวเลขผิด')}
+  return w}
+function renderEd(){const inv=ED.kind==='inv',D=DATA(),h=edHints(),nets=invLines(edDoc(true),D),dv=inv?[]:edDelVal();
+  const f=(k,l,ph='')=>`<label class="f">${l}<input id="ed_${k}" data-f="${k}" value="${esc(ED[k])}" placeholder="${ph}" ${k==='poNo'?'list="poList"':''}></label>`;
+  $('#ed').innerHTML=`<section class="card"><h2>${ED.fromScan?'ตรวจทานข้อมูลที่อ่านได้: ':''}${inv?'ใบกำกับภาษี':'ใบส่งสินค้า / Packing list'}</h2>
+  <p>${ED.fromScan?'เทียบกับเอกสารจริงทีละบรรทัด แก้ไขได้ทุกช่อง ข้อมูลจะเข้าระบบเมื่อกดบันทึกเท่านั้น':'กรอกข้อมูลตามเอกสาร'}</p>
+  ${sqBar()}<div id="edW">${edWarns().map(w=>`<div class="banner" style="margin-bottom:4px">${esc(w)}</div>`).join('')}</div>
+  <div class="fgrid">${f('docNo',inv?'เลขที่ใบกำกับภาษี':'เลขที่เอกสาร')}${f('date','วันที่ (ปี ค.ศ.-เดือน-วัน)','2026-10-03')}${f('poNo',inv?'เลขที่ใบสั่งซื้อ / PO No. (ใช้เมื่อไม่มี D/O)':'อ้างอิง PO เลขที่')}${f('refNo',inv?'เลขที่เอกสารอ้างอิง (D/O No. / ใบส่งสินค้า)':'เลขที่อ้างอิง / เอกสารอ้างอิง',inv?'ใช้จับคู่เป็นอันดับแรก':'Customer P/O No.')}${f('vendor',inv?'ผู้ขาย / ผู้ออกใบกำกับภาษี':'ผู้ขาย (ตามหัวเอกสาร)')}
+  ${inv?f('creditDays','เครดิต (วัน)')+f('dueDate','วันครบกำหนด (ตามที่พิมพ์ในใบกำกับ)','2026-11-02')+f('vendorTaxId','เลขผู้เสียภาษีผู้ขาย')+f('buyerTaxId','เลขผู้เสียภาษีผู้ซื้อ')+f('discount','ส่วนลด / Discount ในใบกำกับ (บาท)')+f('subtotal','ยอดก่อนภาษี (หลังหักส่วนลด)')+f('vat','ภาษีมูลค่าเพิ่ม')+f('total','ยอดรวมสุทธิ'):''}</div>
+  <div id="edM">${edMatch()}</div>
+  <div class="row" style="margin:6px 0 10px"><button class="pri" data-act="edSave">${ED.dupOk?'ยืนยันบันทึกทับ':'บันทึกเข้าระบบ'}</button></div>
+  <datalist id="poList">${D.pos.map(p=>`<option value="${esc(p.poNo)}">${esc(p.vendor)}</option>`).join('')}</datalist>
+  <div class="tw"><table><thead><tr><th>#</th><th>รหัสสินค้า</th><th>รายละเอียด</th>${inv?'':'<th>เทียบ PO</th>'}<th class="n">${inv?'จำนวน':'จำนวนส่งมอบ'}</th><th class="n">${inv?'ราคา/หน่วย':'ราคา/หน่วย (PO เทียบโปรแล้ว)'}</th><th class="n">${inv?'ยอดตามราคาในใบกำกับ':'ยอดรายการ (มูลค่าตาม PO)'}</th>${inv?'<th class="n">ส่วนลด %</th><th class="n">ราคาหลังหักส่วนลด / หน่วย</th><th class="n">ยอดหลังหักส่วนลด (ก่อนภาษี)</th><th>เทียบ PO</th>':''}<th></th></tr></thead><tbody>
+  ${ED.lines.map((l,i)=>`<tr class="${l.unsure?'flag':''}"><td class="n">${i+1}</td>
+    <td style="min-width:112px"><input data-i="${i}" data-k="code" value="${esc(l.code)}" aria-label="รหัสสินค้า"></td>
+    <td style="min-width:110px"><input data-i="${i}" data-k="name" value="${esc(l.name)}" aria-label="รายละเอียด"></td>${inv?'':`<td id="edh${i}" style="min-width:96px">${h[i]}</td>`}
+    <td class="n" style="min-width:64px"><input data-i="${i}" data-k="qty" inputmode="decimal" value="${l.qty??''}" aria-label="จำนวน"></td>
+    ${inv?`<td class="n" style="min-width:90px"><input data-i="${i}" data-k="price" inputmode="decimal" value="${l.price??''}" aria-label="ราคาต่อหน่วย"></td>
+    <td class="n" style="min-width:92px"><input data-i="${i}" data-k="amount" inputmode="decimal" value="${l.amount??''}" aria-label="ยอดรายการ"></td>`:`<td class="n" id="edv${i}">${edDelCell(dv[i],'p')}</td><td class="n" id="eda${i}">${edDelCell(dv[i],'a')}</td>`}
+    ${inv?`<td class="n" style="min-width:70px"><input data-i="${i}" data-k="disc" inputmode="decimal" value="${ED.discount!==''&&num(ED.discount)>0?(nets[i]&&nets[i].pct>0.005?Math.round(snap5(nets[i].pct)*100)/100:''):(l.disc??'')}" aria-label="ส่วนลด %"></td><td class="n" id="edu${i}">${nets[i]&&l.qty?fm(nets[i].net/l.qty):'–'}</td><td class="n" id="edn${i}"><b>${fm(nets[i]?nets[i].net:null)}</b></td>`:''}
+    ${inv?`<td id="edh${i}" style="min-width:96px">${h[i]}</td>`:''}<td><button class="sm" data-act="edDel" data-i="${i}" aria-label="ลบบรรทัด">ลบ</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <div id="edT">${edTotals()}</div>
+  <div id="edP">${edPreview()}</div>
+  <div class="row"><button data-act="edAdd">เพิ่มบรรทัด</button><span style="flex:1"></span><button data-act="edCancel">ยกเลิก</button><button class="pri" data-act="edSave">${ED.dupOk?'ยืนยันบันทึกทับ':'บันทึกเข้าระบบ'}</button></div></section>`;
+  $('#ed').hidden=false}
+function edRefresh(){if(ED.kind==='inv')inheritRefs(DATA(),ED);$('#edM').innerHTML=edMatch();$('#edT').innerHTML=edTotals();$('#edP').innerHTML=edPreview();invLines(edDoc(true),DATA()).forEach((x,i)=>{const c=$('#edn'+i);if(c)c.innerHTML='<b>'+fm(x.net)+'</b>';const u=$('#edu'+i);if(u)u.textContent=x.l.qty?fm(x.net/x.l.qty):'–';const di=document.querySelector('#ed input[data-k="disc"][data-i="'+i+'"]');if(di&&num(ED.discount)>0&&document.activeElement!==di)di.value=x.pct>0.005?Math.round(snap5(x.pct)*100)/100:''});if(ED.kind!=='inv')edDelVal().forEach((v,i)=>{const a=$('#edv'+i),b=$('#eda'+i);if(a)a.innerHTML=edDelCell(v,'p');if(b)b.innerHTML=edDelCell(v,'a')});const h=edHints();h.forEach((x,i)=>{const c=$('#edh'+i);if(c)c.innerHTML=x});$('#edW').innerHTML=edWarns().map(w=>`<div class="banner" style="margin-bottom:4px">${esc(w)}</div>`).join('')}
+/* สร้างเอกสารจากข้อมูลในหน้าตรวจทาน (all=true เก็บทุกบรรทัดตามลำดับบนจอ) */
+function edDoc(all){const lines=ED.lines.filter(l=>all||l.code||l.name).map(l=>({ref:String(l.ref||'').trim(),code:String(l.code||'').trim(),name:String(l.name||'').trim(),qty:num(l.qty),price:num(l.price),disc:num(l.disc),amount:num(l.amount)}));
+  const d={docNo:ED.docNo.trim(),date:ED.date.trim(),vendor:ED.vendor.trim(),poNo:ED.poNo.trim(),refNo:ED.refNo.trim(),lines,by:myId||null,at:new Date().toISOString()};
+  if(ED.kind==='inv')Object.assign(d,{creditDays:num(ED.creditDays),dueDate:String(ED.dueDate||'').trim(),vendorTaxId:ED.vendorTaxId.trim(),buyerTaxId:ED.buyerTaxId.trim(),discount:num(ED.discount),subtotal:num(ED.subtotal),vat:num(ED.vat),total:num(ED.total)});
+  return d}
+function edTotals(){if(ED.kind!=='inv'){const v=edDelVal(),t=v.reduce((a,x)=>a+(x.amt||0),0),miss=v.filter(x=>x.amt==null).length,vr=DATA().set.vatRate;
+    return `<div class="deep-f" style="border:1px solid var(--line);border-radius:6px"><div class="deep-t"><div><span>มูลค่าตาม PO ของใบส่งสินค้านี้ (ก่อนภาษี)</span><b class="code">${fm(t)}</b></div><div><span>ภาษีมูลค่าเพิ่ม ${vr}%</span><b class="code">${fm(Math.round(t*vr)/100)}</b></div><div class="gt"><span>รวมภาษี</span><b class="code">${fm(Math.round(t*(100+vr))/100)}</b></div></div><div><div class="sub">คำนวณจากจำนวนส่งมอบ × ราคา PO หลังหักส่วนลดที่เทียบโปรโมชั่นแล้ว ใช้เทียบกับยอดในใบกำกับภาษีเท่านั้น ไม่ใช่ราคาที่พิมพ์ในใบส่งสินค้า</div>${miss?`<div>${pill('warn',miss+' รายการยังไม่มีราคา PO')}</div>`:''}</div></div>`}const D=DATA(),doc=edDoc(true),x=invLines(doc,D),g=x.reduce((a,v)=>a+v.amt,0),n=x.reduce((a,v)=>a+v.net,0),ds=g-n,sub=num(ED.subtotal),ok=sub!=null&&Math.abs(n-sub)<=0.05,expG=sub!=null?sub+ds:null;
+  const bad=sub!=null&&!ok;
+  const vr=D.set.vatRate,tol=Math.max(D.set.vatTol,0.05),vC=Math.round(n*vr)/100,vD=ED.vat===''?null:num(ED.vat),tD=ED.total===''?null:num(ED.total),vS=vD!=null?vD:vC,tS=tD!=null?tD:Math.round((n+vS)*100)/100;
+  return `<div class="deep-f" style="border:1px solid var(--line);border-radius:6px"><div class="deep-t"><div><span>รวมยอดรายการที่อ่านได้ (ตามราคาในใบกำกับ)</span><b class="code">${fm(g)}</b></div><div><span>ส่วนลดในใบกำกับ</span><b class="code">${fm(ds)}</b></div><div><span>ยอดหลังหักส่วนลด (ก่อนภาษี)</span><b class="code">${fm(n)}</b></div><div><span>ภาษีมูลค่าเพิ่ม ${vr}% (VAT)</span><b class="code">${fm(vS)}</b></div><div class="gt"><span>ยอดรวม (Grand Total)</span><b class="code">${fm(tS)}</b></div>${vD==null||tD==null?`<div class="sub">${vD==null?'ภาษี':''}${vD==null&&tD==null?'และ':''}${tD==null?'ยอดรวม':''}คำนวณจากยอดหลังหักส่วนลด เพราะยังไม่ได้ระบุตามเอกสาร</div>`:''}${vD!=null&&Math.abs(vD-vC)>tol?`<div>${pill('bad','ภาษีในเอกสาร '+fm(vD)+' ≠ คำนวณ '+fm(vC))}</div>`:''}${tD!=null&&Math.abs(tD-(n+vS))>tol?`<div>${pill('bad','ยอดรวมในเอกสาร '+fm(tD)+' ≠ ก่อนภาษี + ภาษี '+fm(Math.round((n+vS)*100)/100))}</div>`:''}</div>
+  <div><div class="sub">เทียบกับยอดก่อนภาษีในเอกสาร</div><div>${sub==null?pill('wait','ยังไม่ระบุยอดก่อนภาษี'):ok?pill('ok','ตรงกับเอกสาร '+fm(sub)):pill('bad','ไม่ตรง: เอกสารระบุ '+fm(sub)+' ต่างกัน '+fm(Math.abs(n-sub)))}</div>${bad?`<div>ยอดก่อนภาษีในเอกสาร ${fm(sub)} บวกส่วนลด ${fm(ds)} เท่ากับ <b>${fm(expG)}</b> แต่รวมยอดรายการที่อ่านได้คือ <b>${fm(g)}</b> ${g<expG?'ขาดไป':'เกินมา'} <b>${fm(Math.abs(expG-g))}</b></div><div class="sub">สาเหตุที่เป็นไปได้: อ่านรายการตกบรรทัด อ่านจำนวน ราคา หรือยอดรายการผิด หรือยอดส่วนลด / ยอดก่อนภาษีที่อ่านได้ไม่ถูก ตรวจแถวที่มีป้ายเตือนในตารางก่อน</div>`:''}</div>
+  <div><div class="sub">ส่วนลดของใบกำกับนี้และที่มา</div>${bad?`<div>${pill('warn','ตัวเลขยังไม่ตรงกับเอกสาร')}</div><div class="sub">แก้ให้ยอดตรงกับเอกสารก่อน ระบบจึงจะแจกแจงที่มาของส่วนลดได้ถูกต้อง</div>`:brkHtml(invBreak(D,doc),true)}</div></div>`}
+/* ผลการ matching ของเอกสารชุดเดียวกัน โดยรวมเอกสารที่กำลังตรวจทานเข้าไปก่อนบันทึก */
+function edPreview(){const inv=ED.kind==='inv',D=DATA(),cur={...edDoc(),_id:ED.id||'__new'},coll=inv?'invs':'dels';
+  const D2={...D,[coll]:[...D[coll].filter(x=>x._id!==ED.id&&kc(x.docNo)!==kc(cur.docNo)),cur]};delete D2._r1m;
+  const ps=docPOs(D2,cur);if(!ps.length)return'';const R=summary(D2);
+  return (inv?verdictHtml(invVerdict(D2,cur)):'')+ps.map(po=>{const ag0=aggLines(po),have=new Set(ED.lines.map(l=>{const t=resolveLine(ag0,l);return t?kc(t.code):kc(l.code)})),miss=r=>!have.has(kc(r.code)),addB=r=>miss(r)?`<div><button class="sm" data-act="edAddPo" data-v="${esc(r.code)}" data-id="${esc(po.poNo)}">เพิ่มรายการนี้</button></div>`:'';
+    const sm=R.pos.find(x=>x.po===po)||{},rows=(inv?R.r3:R.r2).filter(r=>r.poNo===po.poNo),dl=D2.dels.filter(x=>docPOs(D2,x).includes(po)),iv=D2.invs.filter(x=>docPOs(D2,x).includes(po)),me=x=>x===cur?' (ใบนี้)':'';
+    return `<div class="deep"><div class="deep-h"><div><b>${inv?'ผลการ matching 3 ทางของเอกสารชุดนี้':'ผลการ matching กับใบสั่งซื้อ'}</b><div class="sub">PO <span class="code">${esc(po.poNo)}</span> ${esc(po.date||'')} · ${esc(po.vendor||'')} → Packing list / ใบส่งสินค้า: ${dl.filter(x=>!isRE(x)).map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)+(x.date?' '+esc(x.date):'')).join(', ')||'ยังไม่มี'} → รับสินค้า RE: ${dl.filter(isRE).map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)).join(', ')||'ยังไม่มี'}${inv?' → ใบกำกับภาษี: '+iv.map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)).join(', '):''}</div></div>
+      <div class="row">① ${pill(sm.na?'wait':sm.s1,sm.l1)} ② ${pill(sm.s2,sm.l2)}${inv?' ③ '+pill(sm.s3,sm.l3)+' '+pill(sm.all,sm.label):''}</div></div>
+    <div class="tw" style="border:0;border-radius:0"><table><thead><tr><th>รหัส / รายการสินค้า</th><th class="n">PO จำนวน</th><th class="n">Packing list / ใบส่งสินค้า</th><th class="n">รับเข้า (RE)</th>${inv?'<th class="n">ใบกำกับ เรียกเก็บ</th><th class="n">ราคา PO / หน่วย</th><th class="n">ราคาใบกำกับ / หน่วย</th><th class="n">ส่วนลด</th><th class="n">ยอดหลังหักส่วนลด</th>':'<th class="n">ค้างส่ง</th>'}<th>สถานะ</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${fq(r.ord)}</td><td class="n">${r.pk?fq(r.pk):'–'}${(r.pkDocs||[]).length?`<div class="sub">${esc(r.pkDocs.join(', '))}</div>`:''}</td><td class="n">${r.re?fq(r.re):'–'}${(r.reDocs||[]).length?`<div class="sub">${esc(r.reDocs.join(', '))}</div>`:''}</td>${inv?`<td class="n">${fq(r.inv)}</td><td class="n">${fm(r.poPrice)}</td><td class="n">${fm(r.invPrice)}${r.byDisc&&r.effPrice!=null?`<div class="sub">สุทธิ ${fm(r.effPrice)}</div>`:''}</td><td class="n">${r.inv&&r.invAmt-r.invNet>0.005?fm(r.invAmt-r.invNet):'–'}</td><td class="n"><b>${r.inv?fm(r.invNet):'–'}</b>${r.inv&&r.docs&&r.docs.length?`<div class="sub" style="font-size:11px">${esc(r.docs.join(', '))}</div>`:''}</td>`:`<td class="n">${r.out?fq(r.out):'–'}</td>`}<td>${pill(r.lv,r.lv==='ok'&&inv?'ผ่าน (Match)':r.label)}${addB(r)}</td></tr>`).join('')}
+    </tbody></table></div>${rows.some(miss)?`<div class="deep-f"><div class="row"><span>มี ${rows.filter(miss).length} รายการใน PO ที่ยังไม่อยู่ในเอกสารนี้ ถ้าเอกสารจริงมีรายการนั้น กดเพิ่มแล้วตรวจจำนวนกับเอกสาร</span><button class="sm" data-act="edAddPo" data-v="*" data-id="${esc(po.poNo)}">เพิ่มทุกรายการที่ขาด</button></div></div>`:''}${inv&&sm.comp&&(sm.comp.due>0||sm.comp.got>0)?`<div class="deep-f"><div>ส่วนลดชดเชย: ควรได้ ${fm(sm.comp.due)} · ได้รับแล้ว ${fm(sm.comp.got)} · ยังไม่ครบ ${fm(sm.comp.out)}</div></div>`:''}</div>`}).join('')}
+async function edSave(){
+  if(!ED.docNo.trim())return toast('ใส่เลขที่เอกสาร');
+  const d=edDoc(),lines=d.lines;
+  if(!lines.length)return toast('ต้องมีอย่างน้อย 1 รายการ');
+  if(lines.some(l=>l.qty==null))return toast('มีบรรทัดที่ยังไม่ใส่จำนวน');
+  const coll=ED.kind==='inv'?'invs':'dels',id=ED.id||idOf(ED.docNo);
+  if(!ED.id&&S[coll][id]&&!ED.dupOk){ED.dupOk=true;renderEd();return toast('เลขที่เอกสารนี้มีอยู่แล้ว กดอีกครั้งเพื่อบันทึกทับ')}
+  if(ED.id&&S[coll][ED.id]&&S[coll][ED.id].kind)d.kind=S[coll][ED.id].kind;
+  try{await put(coll,id,d);const wasInv=ED.kind==='inv';ED=null;$('#ed').hidden=true;if(wasInv){SELINV=id;tab='invoice'}toast(sqMore()&&!wasInv?'บันทึกแล้ว กำลังเปิดเอกสารใบถัดไป':wasInv?(sqMore()?'บันทึกแล้ว กำลังเปิดเอกสารใบถัดไป':'บันทึกแล้ว แสดงผลการ matching 3 ทางของใบกำกับนี้'):'บันทึกแล้ว ระบบเทียบกับ PO ให้เรียบร้อย');render();sqAfter(true);if(wasInv){const e=$('#deepSec');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})}}catch(e){wErr(e)}}
+
+/* ==========================================================================
+ * MODULE 18  EXPORT + REPORT
+ * ส่งออก Excel และส่งรายงานไป Google Sheet
+ * ฟังก์ชัน: buildWB, exportX, report, stamp
+ * ========================================================================== */
+/* ---------- export ---------- */
+function buildWB(){const D=DATA(),R=summary(D),wb=XLSX.utils.book_new();
+  const add=(n,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'ไม่มีข้อมูล':''}]),n);
+  add('สรุป PO',R.pos.map(p=>({'เลขที่ PO':p.po.poNo,'ผู้จำหน่าย':p.po.vendor,'วันที่':p.po.date,'มูลค่า':p.total,'1 โปรโมชั่น':p.l1,'2 ส่งมอบ':p.l2,'3 ใบกำกับ':p.l3,'สรุป':p.label})));
+  add('1 PO-โปรโมชั่น',R.r1.map(r=>({'โครงการ':r.project,PO:r.poNo,'วันที่ PO':r.date,'ผู้จำหน่าย':r.vendor,'โปรโมชั่นที่แนะนำ':r.promoSet,'รหัสสินค้า':r.code,'รายละเอียด':r.name,'จำนวน':r.qty,'ราคาตั้งใน PO':r.listPrice,'ราคาต่อหน่วยหลังหักส่วนลด':r.poPrice,'MO':r.mo,'ส่วนลดโปร %':r.disc,'NP_Promotion':r.promo,'ส่วนต่างต่อหน่วย':r.diff,'จ่ายเกินรวม':r.leak,'ผลตรวจ':r.label,'หมายเหตุ':r.note})));
+  add('2 PO-ใบส่งสินค้า',R.r2.map(r=>({PO:r.poNo,'รหัสสินค้า':r.code,'รายละเอียด':r.name,'สั่งซื้อ':r.ord,'ใบส่งสินค้า':r.pk||0,'รับเข้า RE':r.re||0,'รับแล้ว (ใช้เทียบ)':r.del,'ค้างส่ง':r.out,'ราคา PO หลังหักส่วนลด':r.poPrice,'ราคาเทียบโปร':r.priceOk==='ok'?'ตรงโปรแล้ว':r.priceOk==='no'?'ยังไม่ตรงโปร':'','ราคาใบส่ง':r.docPrice,'ใบส่งสินค้า':r.docs.join(', '),'สถานะ':r.label})));
+  add('3 สามทาง',R.r3.map(r=>({PO:r.poNo,'รหัสสินค้า':r.code,'รายละเอียด':r.name,'สั่งซื้อ':r.ord,'ใบส่งสินค้า':r.pk||0,'รับเข้า RE':r.re||0,'รับจริง (ใช้เทียบ)':r.del,'ใบกำกับ':r.inv,'ราคา PO หลังหักส่วนลด':r.poPrice,'ราคา_RE':r.rePrice??'','ราคาเทียบโปร':r.priceOk==='ok'?'ตรงโปรแล้ว':r.priceOk==='no'?'ยังไม่ตรงโปร':'','ราคาใบกำกับ':r.invPrice,'ใบกำกับภาษี':r.docs.join(', '),'ผลตรวจ':r.label})));
+  add('คลังโปรโมชั่น',D.promos.map(p=>({'โปรโมชั่น':p.setName,'Part Type':p.ptype||'','รหัสสินค้า':p.code,'ชื่อสินค้า':p.name,'ชื่อภาษาไทย':p.nameTh,'ยี่ห้อ':p.brand,'MO':p.mo,'ส่วนลดโปร %':p.discBase,'DC:Quarter %':p.dcQ||0,'DC:Yearly %':p.dcY||0,'ส่วนลดพิเศษ %':p.dcS||0,'ส่วนลดรวม %':p.disc,'NP_Promotion':p.price,'เริ่มโปรโมชั่น':p.start||'','สิ้นสุดโปรโมชั่น':p.end||''})));
+  add('ส่วนลดชดเชย',R.pos.filter(x=>x.comp.due>0||x.comp.list.some(k=>k.disc||Math.abs(k.comp)>0.5)).flatMap(x=>(x.comp.list.length?x.comp.list:[null]).map(k=>({PO:x.po.poNo,'ผู้จำหน่าย':x.po.vendor,'ใบกำกับภาษี':k?k.inv.docNo:'','ยอดตามราคาในใบกำกับ':k?k.gross:'','ส่วนลดท้ายใบกำกับ':k?k.disc:'','ส่วนลดตามใบสั่งซื้อ':k?k.poDisc:'','ส่วนลดชดเชยใบนี้':k?k.comp:'','ส่วนลดทั้งหมด %':k?invBreak(D,k.inv).pct:'','ที่มาของส่วนลด':k?invBreak(D,k.inv).parts.map(z=>z.label+' '+z.pct+'% ('+z.amt+')').join(' + '):'','ควรได้ชดเชยทั้ง PO':x.comp.due,'ได้รับแล้วทั้ง PO':x.comp.got,'ยังไม่ครบ':x.comp.out}))));
+  add('ตรวจใบกำกับ',D.invs.flatMap(i=>invChecks(D,i).map(k=>({'ใบกำกับ':i.docNo,PO:i.poNo,'ผล':k.ok?'ผ่าน':'ไม่ผ่าน','รายการตรวจ':k.label}))));
+  add('ข้อมูล PO',D.pos.flatMap(p=>(p.lines||[]).map(l=>({'เลขที่ PO':p.poNo,'วันที่':p.date,'ผู้จำหน่าย':p.vendor,'โครงการ':l.project||p.project||'','รหัสสินค้า':l.code,'รายละเอียด':l.name,'จำนวน':l.qty,'ราคาต่อหน่วย':l.price,'ราคาต่อหน่วยหลังหักส่วนลด':l.net??l.price}))));
+  const dl=(arr)=>arr.flatMap(d=>(d.lines||[]).map(l=>({'เลขที่เอกสาร':d.docNo,'วันที่':d.date,'ผู้ขาย':d.vendor,'อ้างอิง PO':d.poNo,'เอกสารอ้างอิง':d.refNo||'','PO อ้างอิงรายบรรทัด':l.ref||'','PO ที่จับคู่ได้':(linePO(D,l,docPO(D,d))||{}).poNo||'','เครดิต (วัน)':d.creditDays??'','วันครบกำหนด':d.dueDate||'','รหัสสินค้า':l.code,'รายละเอียด':l.name,'จำนวน':l.qty,'ราคาต่อหน่วย':l.price,'ยอดรายการ':l.amount,'ส่วนลดท้ายใบกำกับ':d.discount??'','ยอดก่อนภาษี':d.subtotal??'','ภาษี':d.vat??'','ยอดรวม':d.total??''})));
+  add('ข้อมูลใบส่งสินค้า',dl(D.dels));add('ข้อมูลใบกำกับ',dl(D.invs));
+  add('การอนุมัติ',Object.entries(D.appr||{}).map(([k,a])=>({PO:(S.pos[k]||{}).poNo||k,'ประเภท':a.kind==='ready'?'อนุมัติจ่าย':'อนุมัติข้อยกเว้น','เหตุผล':a.note||'','ผู้อนุมัติ':NAMES[a.by]||'','เวลา':a.at||''})));
+  return wb}
+const stamp=()=>new Date(Date.now()+7*36e5).toISOString().slice(0,16).replace('T',' ').replace(':','');
+function exportX(){try{XLSX.writeFile(buildWB(),'RST-3way-matching-'+stamp().slice(0,10)+'.xlsx')}catch(e){console.error(e);toast('ส่งออกไม่สำเร็จ')}}
+async function report(){if(!CFG.gsUrl)return toast('เชื่อมต่อ Google Sheet ที่แท็บ “ตั้งค่า” ก่อน');if(isDemo())return toast('นี่คือข้อมูลตัวอย่าง นำเข้าข้อมูลจริงก่อน');
+  const wb=buildWB(),sheets={};for(const n of wb.SheetNames)sheets[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:''});
+  SYNC.msg='กำลังส่งรายงานไป Google Sheet…';chip();
+  try{await gsPost({action:'report',sheets});SYNC.msg='ส่งรายงานไป Google Sheet แล้ว '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});toast('อัปเดตแท็บรายงานใน Google Sheet แล้ว')}
+  catch(e){console.error(e);SYNC.msg='ส่งรายงานไม่สำเร็จ';toast('ส่งรายงานไป Google Sheet ไม่สำเร็จ ตรวจ URL และการ Deploy')}
+  chip()}
+
+/* ==========================================================================
+ * MODULE 19  APP: EVENTS + START
+ * ตัวจัดการปุ่มและช่องกรอกทั้งหมด และการเริ่มทำงานของระบบ
+ * ฟังก์ชัน: -
+ * ========================================================================== */
+/* ---------- events ---------- */
+let pendKind=null;
+document.addEventListener('click',async ev=>{
+  const b=ev.target.closest('[data-act]');if(!b)return;
+  if(b.dataset.act==='openPO'&&ev.target.closest('[data-stop]'))return;
+  const a=b.dataset.act,v=b.dataset.v,id=b.dataset.id,demo=isDemo();
+  const need=()=>{if(demo){toast('นี่คือข้อมูลตัวอย่าง นำเข้าข้อมูลจริงก่อน');return true}return false};
+  try{switch(a){
+    case'tab':tab=v;F.q='';try{history.replaceState(null,'','#'+v)}catch(e){}render();window.scrollTo(0,0);break;
+    case'openPO':tab='invoice';F.q=v;F.only=false;render();break;
+    case'prd':PRD=PRD===v?null:v;render();break;
+    case'selInv':SELINV=id&&id!==SELINV?id:null;render();if(SELINV){const e=$('#deepSec');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})}break;
+    case'openPO2':F.q=v;F.only=false;render();break;
+    case'export':exportX();break;
+    case'sheet':report();break;
+    case'saveCfg':for(const k of['gsUrl','userName','aiKey','aiModel']){const el=$('#c_'+k);if(el)CFG[k]=el.value.trim()}saveCfg();myId=CFG.userName||null;toast('บันทึกแล้ว');render();
+      if(CFG.gsUrl){try{SYNC.msg='กำลังดึงข้อมูลจาก Google Sheet…';chip();const n=await gsLoad();SYNC.msg='เชื่อมต่อ Google Sheet แล้ว';if(!n&&!realEmpty())await pushAll();render();toast(n?'ดึงข้อมูลจาก Google Sheet แล้ว':'เชื่อมต่อแล้ว')}catch(e){console.error(e);SYNC.msg='เชื่อมต่อ Google Sheet ไม่ได้';chip();toast('เชื่อมต่อ Google Sheet ไม่ได้ ตรวจ URL และสิทธิ์ Anyone ตอน Deploy')}}break;
+    case'gsPull':try{const n=await gsLoad();render();toast(n?'ดึงข้อมูลจาก Google Sheet แล้ว':'Google Sheet ยังไม่มีข้อมูล')}catch(e){toast('ดึงข้อมูลไม่สำเร็จ')}break;
+    case'gsPush':if(isDemo()){toast('ยังไม่มีข้อมูลจริงให้ส่ง');break}await pushAll();toast(SYNC.state==='ok'?'ส่งข้อมูลทั้งหมดไป Google Sheet แล้ว':'ส่งข้อมูลไม่สำเร็จ');break;
+    case'adminIn':{const v=$('#adminPin').value;if(v&&v===settings().adminPin){try{sessionStorage.setItem('m3_admin',v)}catch(e){}toast('เข้าโหมดผู้ดูแลระบบแล้ว')}else toast('รหัสผู้ดูแลไม่ถูกต้อง');render();break}
+    case'adminSet':{if(!isAdmin)break;const v=$('#adminPin').value.trim();if(v.length<4){toast('รหัสต้องยาวอย่างน้อย 4 ตัว');break}await put('meta','settings',{...settings(),adminPin:v});try{sessionStorage.setItem('m3_admin',v)}catch(e){}toast('ตั้งรหัสผู้ดูแลแล้ว');render();break}
+    case'adminOut':try{sessionStorage.removeItem('m3_admin')}catch(e){}PE=null;render();break;
+    case'copyGas':{const t=$('#gasCode');try{await navigator.clipboard.writeText(t.value);toast('คัดลอกโค้ดแล้ว')}catch(e){t.focus();t.select();toast('กด Ctrl+C เพื่อคัดลอก')}break}
+    case'hub':loadHub(false);break;
+    case'hubSave':{const fr=$('#s_hubFrom').value.trim(),s={...settings(),hubFileId:$('#s_hubFileId').value.trim(),hubCompany:$('#s_hubCompany').value.trim(),hubFrom:fr,hubVendor:$('#s_hubVendor').value.trim()};
+      if(fr&&!/^\d{4}-\d{2}-\d{2}$/.test(fr)){toast('วันที่เริ่มต้องเป็นรูปแบบ ปี ค.ศ.-เดือน-วัน');break}
+      if(!readOnly){try{await put('meta','settings',s)}catch(e){wErr(e)}}else S.meta.settings=s;
+      loadHub(false);break}
+    case'impX':pendKind=v;$('#fileX').value='';$('#fileX').click();break;
+    case'impGo':importGo();break;
+    case'impCancel':IMP=null;render();break;
+    case'scan':pendKind=v;$('#fileS').value='';$('#fileS').click();break;
+    case'stop':SQ=null;PEND=[];abortCtl&&abortCtl.abort();break;
+    case'sqStop':sqStop();renderEd();break;
+    case'manual':openEditor(v,{},[],false);break;
+    case'edit':openEditor(v==='invs'?'inv':'del',{...S[v][id],_id:id},[],false);break;
+    case'delDoc':if(b.dataset.sure){await rm(v,id);toast('ลบแล้ว');render()}else{b.dataset.sure='1';b.textContent='ยืนยันลบ'}break;
+    case'edAdd':ED.lines.push({code:'',name:'',qty:null,price:null,amount:null});renderEd();break;
+    case'edAddPo':{const D=DATA(),po=findPO(D,id),inv=ED.kind==='inv';if(!po)break;const cur={...edDoc(true),_id:ED.id||'__new'},coll=inv?'invs':'dels',D2={...D,[coll]:[...D[coll].filter(x=>x._id!==ED.id&&kc(x.docNo)!==kc(cur.docNo)),cur]};delete D2._r1m;
+      const R=summary(D2),ag=aggLines(po),have=new Set(ED.lines.map(l=>{const t=resolveLine(ag,l);return t?kc(t.code):kc(l.code)})),hp=docPO(D,ED);let n=0;
+      for(const r of (inv?R.r3:R.r2).filter(r=>r.poNo===po.poNo&&!have.has(kc(r.code))&&(v==='*'||kc(r.code)===kc(v)))){const q=inv?Math.max(0,(r.del||0)-(r.inv||0)):(r.out||0),pr=inv?r.poPrice??null:null;
+        ED.lines.push({code:r.code,name:r.name,qty:q>0?q:null,price:pr,amount:pr!=null&&q>0?Math.round(q*pr*100)/100:null,ref:!inv&&hp&&hp!==po?po.poNo:'',unsure:true});n++}
+      ED.lines=ED.lines.filter(l=>l.code||l.name||l.qty!=null);renderEd();toast(n?'เพิ่ม '+n+' รายการจาก PO แล้ว ตรวจจำนวนกับเอกสารจริงก่อนบันทึก':'ไม่มีรายการให้เพิ่ม');break}
+    case'edDel':ED.lines.splice(+b.dataset.i,1);renderEd();break;
+    case'edCancel':ED=null;$('#ed').hidden=true;sqAfter(false);break;
+    case'edSave':edSave();break;
+    case'reOne':if(need())break;sendRE([id]);break;
+    case'reAll':{if(need())break;const D=DATA();sendRE(reDocs(D).filter(d=>reState(d).k!=='queued').map(d=>d._id));break}
+    case'reManual':if(need())break;await put('res',id,{docNo:(S.dels[id]||{}).docNo||'',status:'manual',at:new Date().toISOString(),by:myId||null});render();break;
+    case'reClear':await rm('res',id);render();break;
+    case'appr':if(need())break;await put('appr',id,{kind:'ready',note:'',by:myId||null,at:new Date().toISOString()});render();break;
+    case'exc':if(need())break;EXC=id;render();$('#excNote')&&$('#excNote').focus();break;
+    case'excCancel':EXC=null;render();break;
+    case'excSave':{const n=$('#excNote').value.trim();if(!n){toast('ใส่เหตุผลก่อนอนุมัติ');break}await put('appr',id,{kind:'exception',note:n,by:myId||null,at:new Date().toISOString()});EXC=null;render();break}
+    case'unappr':await rm('appr',id);render();break;
+    case'saveSetRange':{const a=$('#ps_start_'+id).value,z=$('#ps_end_'+id).value,qe=$('#ps_q_'+id),ye=$('#ps_y_'+id),se=$('#ps_s_'+id),q=qe?num(qe.value)||0:0,y=ye?num(ye.value)||0:0,sp=se?num(se.value)||0:0;
+      if(a&&z&&a>z){toast('วันเริ่มต้องไม่หลังวันสิ้นสุด');break}
+      if(q<0||y<0||sp<0||q+y+sp>100){toast('ส่วนลดเพิ่มต้องอยู่ระหว่าง 0–100');break}
+      if(![q,y,sp].every(isHalf)){toast('ส่วนลดต้องเป็นจำนวนเต็มหรือลงท้าย .50 เช่น 1, 1.5, 2');break}
+      if(id==='legacy')await put('meta','promo',{...(S.meta.promo||{}),start:a,end:z,dcQ:q,dcY:y,dcS:sp});else await put('promosets',id,{...S.promosets[id],start:a,end:z,dcQ:q,dcY:y,dcS:sp});toast('บันทึกโปรโมชั่นแล้ว'+(q||y||sp?' คำนวณ NP_Promotion ใหม่ด้วยส่วนลดเพิ่ม '+(q+y+sp)+'%':''));render();break}
+    case'saveDcType':{const by={};let bad=false;DT_TYPES.forEach((t,n)=>{const qe=$('#dt_q_'+n),ye=$('#dt_y_'+n);if(!qe)return;const se=$('#dt_s_'+n),qs=qe.value.trim(),ys=ye.value.trim(),ss=se?se.value.trim():'';if(qs===''&&ys===''&&ss==='')return;const q=num(qs)||0,y=num(ys)||0,sp=num(ss)||0;if(q<0||y<0||sp<0||q+y+sp>100||![q,y,sp].every(isHalf))bad=true;by[t]={q,y,s:sp}});
+      if(bad){toast('ส่วนลดเพิ่มต้องอยู่ระหว่าง 0–100 และเป็นจำนวนเต็มหรือลงท้าย .50');break}
+      if(id==='legacy')await put('meta','promo',{...(S.meta.promo||{}),dcByType:by});else await put('promosets',id,{...S.promosets[id],dcByType:by});toast('บันทึกส่วนลดตาม Part Type แล้ว คำนวณ NP_Promotion ใหม่');render();break}
+    case'peEdit':PE={k:b.dataset.k,i:+b.dataset.i,dc:+b.dataset.dc||0};render();break;
+    case'peCancel':PE=null;render();break;
+    case'peSave':{if(!isAdmin||!PE)break;const c=S.promos[PE.k];if(!c||!c.rows[PE.i]){PE=null;render();break}
+      const mo=num($('#pe_mo').value),d=num($('#pe_disc').value),np=num($('#pe_price').value);
+      if(np==null){toast('ใส่ NP_Promotion หรือใส่ MO กับส่วนลดเพื่อให้ระบบคำนวณ');break}
+      if(np<0||(d!=null&&(d<0||d>100))){toast('ตรวจตัวเลข: ส่วนลดต้องอยู่ระหว่าง 0–100 และราคาต้องไม่ติดลบ');break}
+      if(d!=null&&!isHalf(d)){toast('ส่วนลดโปรต้องเป็นจำนวนเต็มหรือลงท้าย .50 เช่น 12.5, 13, 15');break}
+      const rows=c.rows.slice();rows[PE.i]={...rows[PE.i],ptype:$('#pe_ptype')?$('#pe_ptype').value.trim():rows[PE.i].ptype||'',mo,disc:d,price:Math.round(np*100)/100,editedAt:new Date().toISOString(),editedBy:myId||null};
+      await put('promos',PE.k,{...c,rows});PE=null;toast('บันทึกราคาโปรโมชั่นแล้ว');render();break}
+    case'delSet':if(!b.dataset.sure){b.dataset.sure='1';b.textContent='ยืนยันลบทั้งโปร';break}
+      for(const k of Object.keys(S.promos))if((S.promos[k].set||'legacy')===id)await rm('promos',k);
+      if(S.promosets[id])await rm('promosets',id);if(F.set===id)F.set='';toast('ลบโปรโมชั่นทั้งชุดแล้ว');render();break;
+    case'saveSet':{const s={...settings(),priceTol:num($('#s_priceTol').value)??DEF.priceTol,vatRate:num($('#s_vatRate').value)??DEF.vatRate,vatTol:num($('#s_vatTol').value)??DEF.vatTol,vendorAlias:$('#s_vendorAlias').value,buyerNames:$('#s_buyerNames').value,buyerTaxId:$('#s_buyerTaxId').value.trim(),poIncVat:$('#s_poIncVat').value==='1',promoVendor:$('#s_promoVendor').value.trim(),promoProject:$('#s_promoProject').value.trim()};await put('meta','settings',s);toast('บันทึกเกณฑ์แล้ว');render();break}
+  }}catch(e){wErr(e)}});
+document.addEventListener('input',ev=>{const t=ev.target;
+  if(t.id==='q'){F.q=t.value;clearTimeout(rT);rT=setTimeout(()=>{render();const q=$('#q');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length)}},250)}
+  else if(t.id==='only'){F.only=t.checked;render()}
+  else if(IMP&&t.id&&t.id.startsWith('imp_')){IMP[t.id.slice(4)]=t.value}
+  else if(t.id==='pe_mo'||t.id==='pe_disc'){const m=num($('#pe_mo').value),d=num($('#pe_disc').value);if(m!=null&&d!=null)$('#pe_price').value=Math.round(m*(100-d-((PE&&PE.dc)||0)))/100}
+  else if(ED&&t.dataset.f){ED[t.dataset.f]=t.value;ED.dupOk=false;if(t.dataset.f==='dueDate')ED.dueAuto=false;else if(ED.kind==='inv'&&ED.dueAuto&&(t.dataset.f==='date'||t.dataset.f==='creditDays')){ED.dueDate=addDays(ED.date,num(ED.creditDays)??settings().creditDays??30);const e=$('#ed_dueDate');if(e)e.value=ED.dueDate}}
+  else if(ED&&t.dataset.k){const l=ED.lines[+t.dataset.i],k=t.dataset.k;l[k]=['qty','price','amount','disc'].includes(k)?num(t.value):t.value}});
+document.addEventListener('change',ev=>{const t=ev.target;
+  if(t.id==='vend'){F.vendor=t.value;render()}
+  else if(t.id==='proj'){F.project=t.value;render()}
+  else if(t.id==='mon'){F.month=t.value;render()}
+  else if(t.id==='setF'){F.set=t.value;F.ptype='';render()}
+  else if(t.id==='ptF'){F.ptype=t.value;render()}
+  else if(t.id==='fileX'&&t.files[0])readXlsx(t.files[0],pendKind).catch(e=>{console.error(e);toast('เปิดไฟล์ Excel ไม่ได้')});
+  else if(t.id==='fileS'&&t.files.length)scanPick(pendKind,[...t.files]);
+  else if(ED&&(t.dataset.f||t.dataset.k))edRefresh()});
+init();
+</script>
+
 </body>
 </html>
