@@ -34,10 +34,10 @@ function hubSet(){const s=settings(),raw=String(s.hubFileId||'').trim(),m=raw.ma
   return{id:m?m[1]:raw||HUB_ID,company:s.hubCompany==null?'RUAMSINTHAI':String(s.hubCompany).trim(),from:s.hubFrom==null?'2026-01-01':String(s.hubFrom).trim(),vendor:String(s.hubVendor||'').trim()}}
 /* แท็บเอกสารรับสินค้า (สถานะการซื้อ) ใน Data Hub: ใช้แท็บที่มีข้อมูลมากที่สุดระหว่าง PURCHASE_LINES กับ ECOUNT_PURCHASE */
 function pickRE(t){for(const k in t){const r=t[k];if(r&&r.length>1)return{rows:r,tab:k}}return{rows:[[]],tab:''}}
-async function loadHub(auto){if(HUBST.s==='busy')return;if(!CFG.gsUrl){if(!auto)toast('เชื่อมต่อ Apps Script Web App ที่แท็บ “ตั้งค่า” ก่อน');return}
+async function loadHub(auto){if(HUBST.s==='busy')return;if(!CFG.gsUrl){HUBST={s:'err',msg:'ยังดึงข้อมูลจาก Data Hub ไม่ได้ เพราะยังไม่ได้ใส่ URL ของ Apps Script Web App ที่แท็บ “ตั้งค่า” (เบราว์เซอร์และเว็บไซต์แต่ละแห่งต้องตั้งค่าแยกกัน)'};if(!auto)toast(HUBST.msg);render();return}
   const o=hubSet();HUBST={s:'busy',msg:''};render();
-  try{const r=await fetch(CFG.gsUrl+(CFG.gsUrl.includes('?')?'&':'?')+'action=hub&id='+encodeURIComponent(o.id)),j=await r.json();
-    if(!j.tabs)throw{code:'hub_old',message:j.ok?'Apps Script ยังเป็นเวอร์ชันเก่า คัดลอก Code.gs ใหม่จากแท็บ “ตั้งค่า” แล้ว Deploy เวอร์ชันใหม่':'Apps Script อ่าน Data Hub ไม่ได้: '+(j.error||'')+' ตรวจว่าบัญชีที่ติดตั้ง Apps Script เปิดไฟล์ Data Hub ได้ และ Deploy Code.gs เวอร์ชันใหม่แล้ว'};
+  try{const r=await fetch(CFG.gsUrl+(CFG.gsUrl.includes('?')?'&':'?')+'action=hub&id='+encodeURIComponent(o.id||'')+'&from='+encodeURIComponent(o.from||'')+'&company='+encodeURIComponent(o.company||'')),j=await r.json();
+    if(!j.tabs)throw{code:'hub_old',message:/missing file id/.test(j.error||'')?'ไม่พบไฟล์ Data Hub ใส่รหัสไฟล์ Data Hub ที่แท็บ “ตั้งค่า”':j.ok?'Apps Script ยังเป็นเวอร์ชันเก่า คัดลอก Code.gs ใหม่จากแท็บ “ตั้งค่า” แล้ว Deploy เวอร์ชันใหม่':'Apps Script อ่าน Data Hub ไม่ได้: '+(j.error||'')+' ตรวจว่าบัญชีที่ติดตั้ง Apps Script เปิดไฟล์ Data Hub ได้ และ Deploy Code.gs เวอร์ชันใหม่แล้ว'};
     const T=t=>t?[t.headers,...t.rows]:null,po=T(j.tabs.PO_LINES),{rows:re,tab:reTab}=pickRE({PURCHASE_LINES:T(j.tabs.PURCHASE_LINES),ECOUNT_PURCHASE:T(j.tabs.ECOUNT_PURCHASE)});
     if(!po)throw{code:'hub_tabs',message:'ไฟล์นี้ไม่มีแท็บ PO_LINES'};
     const h=hubDocs(po,re,o);
@@ -79,5 +79,6 @@ async function init(){
   if(CFG.gsUrl){SYNC.state='busy';SYNC.msg='กำลังดึงข้อมูลจาก Google Sheet…';chip();
     try{const n=await gsLoad();SYNC.state='ok';SYNC.msg='ดึงข้อมูลจาก Google Sheet แล้ว';if(!n&&!realEmpty())await pushAll();render()}
     catch(e){console.error(e);SYNC.state='err';SYNC.msg='เชื่อมต่อ Google Sheet ไม่ได้ กำลังใช้ข้อมูลในเบราว์เซอร์นี้';chip()}
-    if(settings().hubAuto!==false&&hubSet().id)loadHub(true)}
+    if(settings().hubAuto!==false)loadHub(true)}
+  else loadHub(true);
 }
