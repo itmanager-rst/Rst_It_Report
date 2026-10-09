@@ -7,13 +7,20 @@
 let pendKind=null;
 document.addEventListener('click',async ev=>{
   const b=ev.target.closest('[data-act]');if(!b)return;
-  if(b.dataset.act==='openPO'&&ev.target.closest('[data-stop]'))return;
+  if((b.dataset.act==='openPO'||(b.dataset.act==='pop'&&b.tagName==='TR'))&&ev.target.closest('[data-stop]'))return;
   const a=b.dataset.act,v=b.dataset.v,id=b.dataset.id,demo=isDemo();
   const need=()=>{if(demo){toast('นี่คือข้อมูลตัวอย่าง นำเข้าข้อมูลจริงก่อน');return true}return false};
   try{switch(a){
-    case'tab':tab=v;F.q='';try{history.replaceState(null,'','#'+v)}catch(e){}render();window.scrollTo(0,0);break;
+    case'tab':popClose();tab=v;F.q='';try{history.replaceState(null,'','#'+v)}catch(e){}render();window.scrollTo(0,0);break;
     case'openPO':tab='invoice';F.q=v;F.only=false;render();break;
     case'prd':PRD=PRD===v?null:v;render();break;
+    case'pop':popOpen(v);break;
+    case'popX':popClose();break;
+    case'kpi':F.st=v;F.only=false;tab='postatus';try{history.replaceState(null,'','#postatus')}catch(e){}render();window.scrollTo(0,0);break;
+    case'stF':F.st=v;render();break;
+    case'reBtn':{if(need())break;const D=DATA(),d=D.dels.find(x=>x._id===id);if(!d)break;const st=reState(d),c=reCheck(D,d);
+      if(st.k||!c.ok){popOpen('re|'+id);if(st.k==='done'||st.k==='manual')toast('ใบส่งสินค้า '+d.docNo+' ออก RE แล้ว ไม่สามารถออกซ้ำได้')}
+      else if(!mcpCap)popOpen('re|'+id);else sendRE([id]);break}
     case'selInv':SELINV=id&&id!==SELINV?id:null;render();if(SELINV){const e=$('#deepSec');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})}break;
     case'openPO2':F.q=v;F.only=false;render();break;
     case'export':exportX();break;
@@ -80,6 +87,8 @@ document.addEventListener('click',async ev=>{
       if(S.promosets[id])await rm('promosets',id);if(F.set===id)F.set='';toast('ลบโปรโมชั่นทั้งชุดแล้ว');render();break;
     case'saveSet':{const s={...settings(),priceTol:num($('#s_priceTol').value)??DEF.priceTol,vatRate:num($('#s_vatRate').value)??DEF.vatRate,vatTol:num($('#s_vatTol').value)??DEF.vatTol,vendorAlias:$('#s_vendorAlias').value,buyerNames:$('#s_buyerNames').value,buyerTaxId:$('#s_buyerTaxId').value.trim(),poIncVat:$('#s_poIncVat').value==='1',promoVendor:$('#s_promoVendor').value.trim(),promoProject:$('#s_promoProject').value.trim()};await put('meta','settings',s);toast('บันทึกเกณฑ์แล้ว');render();break}
   }}catch(e){wErr(e)}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&POP){popClose();return}const t=ev.target;if((ev.key==='Enter'||ev.key===' ')&&t.classList&&t.classList.contains('pbtn')){ev.preventDefault();t.click()}});
+document.getElementById('pop').addEventListener('click',ev=>{if(ev.target.id==='pop')popClose()});
 document.addEventListener('input',ev=>{const t=ev.target;
   if(t.id==='q'){F.q=t.value;clearTimeout(rT);rT=setTimeout(()=>{render();const q=$('#q');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length)}},250)}
   else if(t.id==='only'){F.only=t.checked;render()}

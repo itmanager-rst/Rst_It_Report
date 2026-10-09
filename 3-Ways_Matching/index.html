@@ -92,6 +92,12 @@ tr.flag td{background:var(--warn-bg)}
 .deep-t .gt{border-top:1px solid var(--line);padding-top:6px;font-size:14px;font-weight:700;color:var(--accent)}
 td.dif{background:var(--bad-bg);color:var(--bad)}
 a{color:var(--accent)}
+#pop{position:fixed;inset:0;background:rgba(8,20,22,.5);overflow:auto;padding:max(24px,env(safe-area-inset-top,0px)) 16px 32px;z-index:12}
+#pop>.card{max-width:1180px;margin:0 auto;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.pbtn{cursor:pointer;display:inline-block}.pbtn:hover .pill,.pbtn:focus-visible .pill{box-shadow:0 0 0 1px currentColor}
+th.no,td.no{width:1%;white-space:nowrap;text-align:right;font-family:var(--mono);color:var(--muted)}
+.cmp td.hit{background:var(--ok-bg)}
 ol.todo{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;max-width:80ch}
 </style>
 
@@ -117,6 +123,7 @@ ol.todo{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;ma
   <main id="main" style="display:flex;flex-direction:column;gap:16px;min-width:0"></main>
 </div>
 <div id="ed" hidden></div>
+<div id="pop" hidden></div>
 <div id="toast" hidden></div>
 <input type="file" id="fileX" accept=".xlsx,.xls,.csv" hidden>
 <input type="file" id="fileS" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden>
@@ -528,8 +535,8 @@ function m1of(r1){const m=new Map();for(const r of r1||[]){const k=m1key(r.poNo,
 function step2(D,m1){const st=D.set,rows=[];m1=m1||m1of(step1(D));
   for(const po of D.pos){const{lines,m,extra}=recv(D,po);
     for(const x of lines){const e=m.get(x.k);const out=x.qty-e.qty;
-      const r={poNo:po.poNo,date:po.date||'',vendor:po.vendor,project:po.project||((po.lines||[]).find(z=>z.project)||{}).project||'',code:x.code,name:x.name,ord:x.qty,del:e.qty,out:Math.max(out,0),poPrice:x.price,priceOk:m1.get(m1key(po.poNo,x.code))||'',docPrice:e.price,rePrice:e.rePrice,docs:e.docs,pk:e.pk,re:e.re,pkDocs:e.pkDocs,reDocs:e.reDocs,lv:'ok',label:'ส่งครบ'};
-      if(e.qty<EPS){r.lv='wait';r.label='รอส่งมอบ'}
+      const r={poNo:po.poNo,date:po.date||'',vendor:po.vendor,project:po.project||((po.lines||[]).find(z=>z.project)||{}).project||'',code:x.code,name:x.name,ord:x.qty,del:e.qty,out:Math.max(out,0),poPrice:x.price,priceOk:m1.get(m1key(po.poNo,x.code))||'',docPrice:e.price,rePrice:e.rePrice,docs:e.docs,pk:e.pk,re:e.re,pkDocs:e.pkDocs,reDocs:e.reDocs,lv:'ok',label:'จำนวนครบ'};
+      if(e.qty<EPS){r.lv='wait';r.label='รอส่ง'}
       else if(out>EPS){r.lv='warn';r.label='ค้างส่ง'}
       else if(out<-EPS){r.lv='bad';r.label='ส่งเกิน PO'}
       if(e.price!=null&&x.price!=null&&Math.abs(e.price-x.price)>st.priceTol&&e.qty>EPS){r.lv='bad';r.label=(r.label==='ค้างส่ง'?'ค้างส่ง · ':'')+'ราคาไม่ตรง PO'}
@@ -609,11 +616,12 @@ function summary(D){const r1=step1(D),m1=m1of(r1),r2=step2(D,m1),r3=step3(D,m1);
     const due=Math.round(a1.reduce((x,r)=>x+(r.leak||0),0)*100)/100,cl=invs.map(i=>({inv:i,...invComp(D,i)})),got=Math.round(cl.reduce((x,k)=>x+Math.max(0,k.comp),0)*100)/100,out=Math.max(0,Math.round((due-got)*100)/100);
     const comp={due,got,out,list:cl};let l1x='';
     if(s1==='bad'&&due>0&&out<=Math.max(D.set.vatTol,0.5)&&a1.every(r=>r.lv!=='bad'||r.leak>0)){s1=worst(a1.map(r=>r.lv==='bad'||r.lv==='info'?'ok':r.lv));if(s1==='ok')l1x='ชดเชยครบแล้ว'}
+    const dl2=b.filter(r=>r.del>EPS),d2=!dl2.length?'wait':dl2.some(r=>r.lv==='bad')?'bad':dl2.some(r=>r.out>EPS)?'warn':'ok',nOut=b.filter(r=>r.ord>0&&r.out>EPS).length,nLine=b.filter(r=>r.ord>0).length,nDone=b.filter(r=>r.ord>0&&r.del>EPS&&r.out<=EPS).length;
     const all=worst([s1,s2,s3]);
     const total=(po.lines||[]).reduce((s,l)=>s+(l.qty||0)*((l.net??l.price)||0),0);
     return{po,s1,s2,s3,total,comp,
       na,l1:na?'ไม่ต้องเทียบ':l1x||{ok:'ตรงโปร',warn:'ราคาไม่ตรงโปร',bad:'ราคาสูงกว่าโปร'}[s1],
-      l2:{ok:'ส่งครบ',wait:'รอส่งมอบ',warn:'ค้างส่ง',bad:'ไม่ตรง PO'}[s2],
+      l2:{ok:'ส่งครบ',wait:'รอส่ง',warn:'ค้างส่ง',bad:'ไม่ตรง PO'}[s2],d2,ld2:{ok:'จำนวนครบ',wait:'รอส่ง',warn:'ค้างส่ง',bad:'ไม่ตรง PO'}[d2],nOut,nLine,nDone,
       l3:{ok:'ตรงกัน',wait:'รอใบกำกับ',warn:'ยังไม่ครบ',bad:'ไม่ตรงกัน'}[s3],
       all,label:{ok:'พร้อมจ่าย',wait:'รอเอกสาร',warn:'ยังไม่ครบ',bad:'ต้องแก้ไข'}[all]}});
   return{pos,r1,r2,r3}}
@@ -630,19 +638,20 @@ function hubDocs(poRows,reRows,o){o=o||{};const T=v=>String(v??'').trim(),H=r=>{
     const pj=T(g(r,ph,'PROJECT')),p=pos.get(no)||{poNo:no,date:dt,vendor:vd,project:pj,wh:T(g(r,ph,'WAREHOUSE')),ref:['YDS_NO','REMARKS','REMARK','PR_REF'].map(k=>T(g(r,ph,k))).filter(Boolean).join(' '),lines:[],_hub:true};
     const pr=num(g(r,ph,'UNIT_PRICE')),nt=num(g(r,ph,'NET_PRICE')),am=num(g(r,ph,'AMOUNT'));
     p.lines.push({code,name:T(g(r,ph,'ITEM_NAME')),qty,price:pr,net:nt!=null?nt:(am!=null&&qty?Math.round(am/qty*1e4)/1e4:pr),project:pj});nl++;pos.set(no,p)}
-  const rh0=H(reRows[0]),RA={COMPANY:['COMPANY','บริษัท'],RE_NO:['RE_NO','RE NO','RENO','PURCHASE_NO','PUR_NO','หมายเลขการซื้อ','เลขที่ RE','เลขที่ใบซื้อ','DOC_NO'],PO_NO:['PO_NO','PO NO','PONO','PO_REF','เลขที่ใบสั่งซื้อ'],ITEM_CODE:['ITEM_CODE','รหัสสินค้า'],ITEM_NAME:['ITEM_NAME','ชื่อสินค้า (ข้อมูลจำเพาะ)','ชื่อสินค้า'],QTY:['QTY','จำนวน'],RECEIVE_DATE:['RECEIVE_DATE','RE_DATE','DATE','วันที่รับสินค้า'],DOC_DATE:['DOC_DATE','วันที่-ลำดับ'],VENDOR:['VENDOR','ชื่อลูกค้า/ผู้ขาย','ชื่อผู้ขาย'],NET_PRICE:['NET_PRICE','ราคาต่อหน่วยหลังส่วนลด'],UNIT_PRICE:['UNIT_PRICE','ราคาต่อหน่วย'],AMOUNT:['AMOUNT','จำนวนเงิน']},rh={};
+  const rh0=H(reRows[0]),RA={COMPANY:['COMPANY','บริษัท'],RE_NO:['RE_NO','RE NO','RENO','PURCHASE_NO','PUR_NO','หมายเลขการซื้อ','เลขที่ RE','เลขที่ใบซื้อ','DOC_NO'],PO_NO:['PO_NO','PO NO','PONO','PO_REF','เลขที่ใบสั่งซื้อ'],ITEM_CODE:['ITEM_CODE','รหัสสินค้า'],ITEM_NAME:['ITEM_NAME','ชื่อสินค้า (ข้อมูลจำเพาะ)','ชื่อสินค้า'],QTY:['QTY','จำนวน'],RECEIVE_DATE:['RECEIVE_DATE','RE_DATE','DATE','วันที่รับสินค้า'],DOC_DATE:['DOC_DATE','วันที่-ลำดับ'],VENDOR:['VENDOR','ชื่อลูกค้า/ผู้ขาย','ชื่อผู้ขาย'],NET_PRICE:['NET_PRICE','ราคาต่อหน่วยหลังส่วนลด'],UNIT_PRICE:['UNIT_PRICE','ราคาต่อหน่วย'],AMOUNT:['AMOUNT','จำนวนเงิน'],INV_NO:['INV_NO','เลขที่ใบกำกับภาษี']},rh={};
   const hk=x=>String(x).toUpperCase().replace(/[\s_.\-]/g,''),rhN={};for(const k in rh0)rhN[hk(k)]=rh0[k];
   for(const k in RA){const f=RA[k].find(a=>rh0[a]!=null||rhN[hk(a)]!=null);if(f!=null)rh[k]=rh0[f]!=null?rh0[f]:rhN[hk(f)]}
   const rdt=v=>{if(typeof v==='number'&&v>20000&&v<80000)return new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10);const t=T(v);return /^\d{4}-\d{2}-\d{2}/.test(t)?t.slice(0,10):(dateIn(t)||t)};
-  const docs=new Map(),key=l=>kc(l.ref||'')+'|'+kc(l.code);let nr=0,skip=0,noPo=0;
+  const docs=new Map(),key=l=>kc(l.ref||'')+'|'+kc(l.code),byDoc={};let nr=0,skip=0,noPo=0;
   for(let i=1;i<reRows.length;i++){const r=reRows[i];if(!r||!r.length)continue;if(co&&T(g(r,rh,'COMPANY'))!==co)continue;
-    const pn=T(g(r,rh,'PO_NO')),no=T(g(r,rh,'RE_NO')),code=T(g(r,rh,'ITEM_CODE')),qty=num(g(r,rh,'QTY'));
+    const pn=T(g(r,rh,'PO_NO')),no=T(g(r,rh,'RE_NO')),code=T(g(r,rh,'ITEM_CODE')),qty=num(g(r,rh,'QTY')),ivn=T(g(r,rh,'INV_NO'));
+    if(no&&kc(ivn).length>=3){const k=kc(ivn),a=byDoc[k]||(byDoc[k]={re:[],date:'',po:[]});if(!a.re.includes(no))a.re.push(no);if(pn&&!a.po.includes(pn))a.po.push(pn);a.date=a.date||rdt(g(r,rh,'RECEIVE_DATE'))}
     if(!no||!code||qty==null)continue;if(!pn){noPo++;continue}if(!pos.has(pn)){skip++;continue}
-    const d=docs.get(no)||{docNo:no,kind:'re',date:rdt(g(r,rh,'RECEIVE_DATE'))||rdt(g(r,rh,'DOC_DATE')),vendor:T(g(r,rh,'VENDOR')),poNo:pn,refNo:'',lines:[],_hub:true};
+    const d=docs.get(no)||{docNo:no,kind:'re',date:rdt(g(r,rh,'RECEIVE_DATE'))||rdt(g(r,rh,'DOC_DATE')),vendor:T(g(r,rh,'VENDOR')),poNo:pn,refNo:ivn,lines:[],_hub:true};
     const gp=ks=>{for(const k of ks){const v=num(g(r,rh,k));if(v!=null)return v}return null},am0=gp(['AMOUNT','จำนวนเงิน']),up=gp(['NET_PRICE','UNIT_PRICE'])??(am0!=null&&qty?Math.round(am0/qty*1e4)/1e4:null);
     const l={ref:pn!==d.poNo?pn:'',code,name:T(g(r,rh,'ITEM_NAME')),qty,price:up,disc:null,amount:up!=null?Math.round(up*qty*100)/100:null},x=d.lines.find(z=>key(z)===key(l));
     if(x){x.qty+=qty;if(x.price!=null&&up!=null)x.amount=Math.round((x.amount+up*qty)*100)/100;else{x.price=null;x.amount=null}}else d.lines.push(l);nr++;docs.set(no,d)}
-  return{pos:[...pos.values()],dels:[...docs.values()],nl,nr,skip,noPo,reCols:!!(rh.RE_NO!=null&&rh.PO_NO!=null&&rh.ITEM_CODE!=null&&rh.QTY!=null),reHead:(reRows[0]||[]).map(T).filter(Boolean)}}
+  return{pos:[...pos.values()],dels:[...docs.values()],byDoc,nl,nr,skip,noPo,reCols:!!(rh.RE_NO!=null&&rh.PO_NO!=null&&rh.ITEM_CODE!=null&&rh.QTY!=null),reHead:(reRows[0]||[]).map(T).filter(Boolean)}}
 
 /* ตรวจว่าใบส่งสินค้าหนึ่งใบผ่านขั้น PO เทียบใบส่งสินค้า และออก RE ได้หรือไม่
    ผ่าน = ทุกรายการจับคู่ PO ได้ อยู่ใน PO นั้น มีราคา และจำนวนไม่เกินจำนวนค้างรับ (สั่งซื้อ − ที่มี RE แล้ว) */
@@ -756,7 +765,7 @@ const SAMPLE=(()=>{const V='บริษัท ยันม่าร์ เอ�
 /* ==========================================================================
  * MODULE 05  UI HELPERS
  * ฟังก์ชันจัดรูปแบบตัวเลข วันที่ ป้ายสถานะ และข้อความแจ้งเตือน
- * ฟังก์ชัน: $, esc, fm, fq, idOf, fd, fp, fdisc, pill, brkHtml
+ * ฟังก์ชัน: vN, $, esc, fm, fq, idOf, fd, fp, fdisc, pill, pz, brkHtml
  * ========================================================================== */
 /*ENDLOGIC*/
 
@@ -768,7 +777,11 @@ const idOf=s=>{s=String(s).trim();const c=s.replace(/[^A-Za-z0-9_\-]/g,'_').slic
 const fd=d=>{if(!d)return'ไม่ระบุ';const x=new Date(d+'T00:00:00');return isNaN(x)?d:x.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})};
 const fp=n=>n==null?'–':Number(n).toLocaleString('th-TH',{maximumFractionDigits:2})+'%';
 const fdisc=(d,price)=>d!=null?fp(d):price!=null?'<span class="sub">ราคาโปร</span>':'–';
-const pill=(lv,t)=>`<span class="pill ${lv}">${esc(t)}</span>`;
+const pill=(lv,t)=>{const x=String(t??''),c=lv!=='ok'&&/ค้างส่ง/.test(x)?'bad':/^(ส่งมอบ )?รอส่ง/.test(x)?'warn':lv;return `<span class="pill ${c}">${esc(t)}</span>`};
+/* ป้ายสถานะที่กดแล้วเปิดหน้าต่างรายละเอียด k = ชนิด|ค่า */
+const pz=(k,h)=>`<span class="pbtn" role="button" tabindex="0" data-act="pop" data-v="${esc(k)}" title="กดเพื่อดูรายละเอียด">${h}</span>`;
+/* ชื่อผู้จำหน่าย: ถ้าข้อมูลเป็นรหัส ใช้ชื่อจากตั้งค่า "ชื่อผู้ขาย" (รหัส = ชื่อ) */
+function vN(D,v){const t=String(v??'').trim();if(!t)return'';const k=nk(t);for(const ln of String((D&&D.set&&D.set.vendorAlias)||'').split(/\r?\n/)){const i=ln.indexOf('=');if(i>0&&nk(ln.slice(0,i))===k){const n=ln.slice(i+1).trim();if(n)return n}}return t}
 /* แสดงส่วนลดทั้งหมดของใบกำกับและที่มา (b = ผลจาก invBreak) */
 const brkHtml=(b,long)=>b.disc>0.005||b.parts.length?`${b.odd?`<div>${pill('warn','ส่วนลด '+fp(b.pct)+' ไม่เป็นจำนวนเต็มหรือ .50 ตรวจยอดส่วนลดและยอดรายการ')}</div>`:''}<div>ส่วนลดทั้งหมด <b>${fm(b.disc)}</b> บาท คิดเป็น <b>${fp(b.pct)}</b> ของยอดตามราคาในใบกำกับ ${fm(b.base)}</div>${b.parts.map(x=>`<div class="${long?'':'sub'}">${long?'· ':''}${esc(x.label)} <b>${fp(x.pct)}</b> (${fm(x.amt)} บาท)</div>`).join('')}`:'<div class="sub">ไม่มีส่วนลดในใบกำกับ</div>';
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,4500)}
@@ -796,7 +809,7 @@ const hubOn=()=>!!(HUB&&(HUB.pos.length||HUB.dels.length));
 const realEmpty=()=>!hubOn()&&!Object.keys(S.pos).length&&!Object.keys(S.dels).length&&!Object.keys(S.invs).length&&!Object.keys(S.promos).length;
 const isDemo=()=>realEmpty();
 function settings(){return{...DEF,...(S.meta.settings||{})}}
-function DATA(){if(isDemo())return{...SAMPLE,set:settings(),demo:true};
+function DATA(){if(isDemo()){for(const k of['pos','dels','invs'])for(const x of SAMPLE[k])if(!x._id)x._id=idOf(x.docNo||x.poNo);return{...SAMPLE,set:settings(),demo:true}}
   const sets=Object.entries(S.promosets).map(([id,d])=>({...d,id})),chunks=Object.keys(S.promos).sort();
   if(chunks.some(k=>!S.promos[k].set))sets.push({id:'legacy',name:'โปรโมชั่นเดิม',...(S.meta.promo||{}),start:(S.meta.promo||{}).start||'',end:(S.meta.promo||{}).end||''});
   const promos=chunks.flatMap(k=>{const c=S.promos[k],x=sets.find(z=>z.id===(c.set||'legacy'));return x?(c.rows||[]).map((r,i)=>applyDC({...r,_k:k,_i:i,setId:x.id,setName:x.name,start:x.start,end:x.end},x)):[]});
@@ -818,7 +831,7 @@ async function loadHub(auto){if(HUBST.s==='busy')return;if(!CFG.gsUrl){if(!auto)
     const h=hubDocs(po,re,o);
     for(const p of h.pos)p._id=idOf(p.poNo);
     for(const d of h.dels){let id=idOf(d.docNo);if(S.dels[id]&&!isRE(S.dels[id])){d.docNo='RE-'+d.docNo;id=idOf(d.docNo)}d._id=id}
-    const first=!hubOn();HUB={pos:h.pos,dels:h.dels,nl:h.nl,nr:h.nr,skip:h.skip,noPo:h.noPo,reTab,reCols:h.reCols,reHead:h.reHead,rows:po.length-1+Math.max(re.length-1,0),at:Date.now(),o};
+    const first=!hubOn();HUB={pos:h.pos,dels:h.dels,byDoc:h.byDoc||{},nl:h.nl,nr:h.nr,skip:h.skip,noPo:h.noPo,reTab,reCols:h.reCols,reHead:h.reHead,rows:po.length-1+Math.max(re.length-1,0),at:Date.now(),o};
     HUBST={s:'ok',msg:''};try{localStorage.setItem('m3_hub','1')}catch(e){}
     if(first&&!F.month&&h.nl>1500){const ms=months(DATA());if(ms.length)F.month=ms[0]}
     if(!auto)toast(h.pos.length?'โหลดจาก Data Hub แล้ว: ใบสั่งซื้อ '+h.pos.length+' ใบ เอกสารรับสินค้า (RE) '+h.dels.length+' ใบ'+(reTab?' จากแท็บ '+reTab:' (ไม่พบแท็บสถานะการซื้อ)'):'เชื่อมต่อ Data Hub ได้ แต่ไม่มีใบสั่งซื้อที่ตรงเงื่อนไข ตรวจบริษัท วันที่เริ่ม และผู้ขายที่แท็บตั้งค่า')}
@@ -854,18 +867,18 @@ async function init(){
   if(CFG.gsUrl){SYNC.state='busy';SYNC.msg='กำลังดึงข้อมูลจาก Google Sheet…';chip();
     try{const n=await gsLoad();SYNC.state='ok';SYNC.msg='ดึงข้อมูลจาก Google Sheet แล้ว';if(!n&&!realEmpty())await pushAll();render()}
     catch(e){console.error(e);SYNC.state='err';SYNC.msg='เชื่อมต่อ Google Sheet ไม่ได้ กำลังใช้ข้อมูลในเบราว์เซอร์นี้';chip()}
-    let on=false;try{on=localStorage.getItem('m3_hub')==='1'}catch(e){}if(on)loadHub(true)}
+    if(settings().hubAuto!==false&&hubSet().id)loadHub(true)}
 }
 
 /* ==========================================================================
  * MODULE 07  VIEW CORE
  * แท็บ ตัวกรอง และฟังก์ชัน render หลัก
- * ฟังก์ชัน: render, vendors, projects, months, mLabel, filt, tools
+ * ฟังก์ชัน: render, numTables, poRowsF, vendors, projects, months, mLabel, filt, tools
  * ========================================================================== */
 /* ---------- view state ---------- */
-const TABS=[['overview','ภาพรวม','สถานะทุก PO'],['promo','① PO เทียบโปรโมชั่น','รหัส · รายละเอียด · ราคา'],['delivery','② PO เทียบใบส่งสินค้า','จำนวนสั่ง · ส่งมอบ · ค้างส่ง'],['invoice','③ เทียบใบกำกับภาษี','จำนวน · ราคา · ภาษี'],['promos','คลังโปรโมชั่น','รายการ · ส่วนลด · ช่วงเวลา'],['docs','เอกสารและนำเข้า','PO · โปรโมชั่น · เอกสาร'],['settings','ตั้งค่า','เกณฑ์และข้อเสนอ']];
+const TABS=[['overview','ภาพรวม','ตัวเลขสรุป'],['postatus','สถานะใบสั่งซื้อ','ทุก PO · ค้างส่ง'],['promo','① PO เทียบโปรโมชั่น','รหัส · รายละเอียด · ราคา'],['delivery','② PO เทียบใบส่งสินค้า','จำนวนสั่ง · ส่งมอบ · ค้างส่ง'],['invoice','③ เทียบใบกำกับภาษี','จำนวน · ราคา · ภาษี'],['promos','คลังโปรโมชั่น','รายการ · ส่วนลด · ช่วงเวลา'],['docs','เอกสารและนำเข้า','PO · โปรโมชั่น · เอกสาร'],['settings','ตั้งค่า','เกณฑ์และข้อเสนอ']];
 let tab=(location.hash||'').slice(1);if(!TABS.some(t=>t[0]===tab))tab='overview';
-const F={q:'',only:false,re:'',brand:'',vendor:'',set:'',project:'',month:'',ptype:''};
+const F={q:'',only:false,re:'',st:'',brand:'',vendor:'',set:'',project:'',month:'',ptype:''};
 let isAdmin=false,PE=null,DT_TYPES=[];
 let IMP=null,ED=null,BUSY=null,EXC=null,abortCtl=null;
 
@@ -881,42 +894,62 @@ function render(){
   $('#banner').innerHTML=(D.demo?`<div class="banner">กำลังแสดง<b>ข้อมูลตัวอย่าง</b> ไม่ใช่ข้อมูลของบริษัท เริ่มใช้งานจริงที่แท็บ “เอกสารและนำเข้า” ข้อมูลตัวอย่างจะหายไปเมื่อนำเข้ารายการแรก</div>`:'')+(HUBST.s==='err'?`<div class="banner">${esc(HUBST.msg)}</div>`:'')+(readOnly?`<div class="banner">คุณมีสิทธิ์ดูอย่างเดียว ขอสิทธิ์ Contributor จากเจ้าของหน้าเพื่อบันทึกเอกสาร</div>`:'');
   const m=$('#main');
   
-  m.innerHTML=({overview:vOverview,promos:vPromos,promo:vPromo,delivery:vDelivery,invoice:vInvoice,docs:vDocs,settings:vSettings})[tab](D,R);
+  m.innerHTML=({overview:vOverview,postatus:vPOStatus,promos:vPromos,promo:vPromo,delivery:vDelivery,invoice:vInvoice,docs:vDocs,settings:vSettings})[tab](D,R);
   const q=$('#q');if(q&&document.activeElement!==q)q.value=F.q;
   const g=$('#gasCode');if(g)g.value=document.getElementById('gas').textContent.trim();
+  numTables(m);if(POP)drawPop(D,R);
 }
+/* เพิ่มช่อง No. ให้ทุกตาราง (ยกเว้นตารางที่มีลำดับอยู่แล้ว) แถวที่เป็นข้อความเต็มแถวขยายให้กว้างเท่าเดิม */
+function numTables(root){for(const t of root.querySelectorAll('table')){if(t.dataset.num||t.closest('#ed')||!t.tHead||!t.tBodies.length)continue;const hr=t.tHead.rows[0];if(!hr)continue;
+  const h0=(hr.cells[0]&&hr.cells[0].textContent.trim())||'';t.dataset.num='1';if(h0==='#'||h0==='No.')continue;
+  let w=0;for(const c of hr.cells)w+=c.colSpan||1;const th=document.createElement('th');th.className='no';th.textContent='No.';hr.insertBefore(th,hr.cells[0]);
+  for(const ex of[...t.tHead.rows].slice(1))ex.insertBefore(document.createElement('th'),ex.cells[0]);
+  let n=0;for(const tb of t.tBodies)for(const tr of tb.rows){const cs=[...tr.cells];let cw=0;for(const c of cs)cw+=c.colSpan||1;
+    if(cs.length===1&&cs[0].colSpan>1){cs[0].colSpan++;continue}
+    if(cw<w)continue;
+    const td=document.createElement('td');td.className='no';if(cs[0]&&cs[0].rowSpan>1)td.rowSpan=cs[0].rowSpan;td.textContent=++n;tr.insertBefore(td,cs[0])}}}
 const CAP=400,capNote=n=>n>CAP?`<p class="hint">แสดง ${CAP} แถวแรกจาก ${n.toLocaleString('th-TH')} แถว ใช้ช่องค้นหา ผู้จำหน่าย โครงการ หรือเดือน เพื่อจำกัดรายการ ไฟล์ส่งออก Excel มีครบทุกแถว</p>`:'';
 const vendors=D=>[...new Set(D.pos.map(p=>p.vendor).filter(Boolean))].sort();
 const projects=D=>[...new Set(D.pos.flatMap(p=>[p.project,...(p.lines||[]).map(l=>l.project)]).filter(Boolean))].sort();
 const months=D=>[...new Set(D.pos.map(p=>String(p.date||'').slice(0,7)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
 const mLabel=m=>new Date(m+'-01T00:00:00').toLocaleDateString('th-TH',{month:'long',year:'numeric'});
 const filt=rows=>rows.filter(r=>(!F.vendor||r.vendor===F.vendor)&&(!F.month||String(r.date||'').startsWith(F.month))&&(!F.project||r.project===F.project)&&(!F.only||['bad','warn'].includes(r.lv))&&(!F.q||nk(r.poNo+r.code+r.name+(r.vendor||'')).includes(nk(F.q))));
-const tools=(n,D)=>`<div class="row"><input id="q" placeholder="ค้นหา PO / รหัส / ชื่อสินค้า" style="flex:1 1 220px" aria-label="ค้นหา"><select id="vend" aria-label="ผู้จำหน่าย" style="max-width:260px"><option value="">ผู้จำหน่ายทั้งหมด</option>${vendors(D).map(v=>`<option ${F.vendor===v?'selected':''}>${esc(v)}</option>`).join('')}</select><select id="proj" aria-label="โครงการ" style="max-width:200px"><option value="">โครงการทั้งหมด</option>${projects(D).map(v=>`<option ${F.project===v?'selected':''}>${esc(v)}</option>`).join('')}</select><select id="mon" aria-label="เดือนของ PO" style="max-width:180px"><option value="">ทุกเดือน</option>${months(D).map(v=>`<option value="${v}" ${F.month===v?'selected':''}>${esc(mLabel(v))}</option>`).join('')}</select><label class="row" style="gap:4px"><input type="checkbox" id="only" ${F.only?'checked':''}> เฉพาะที่มีปัญหา</label><span class="sub">${n} รายการ</span></div>`;
+const tools=(n,D)=>`<div class="row"><input id="q" placeholder="ค้นหา PO / รหัส / ชื่อสินค้า" style="flex:1 1 220px" aria-label="ค้นหา"><select id="vend" aria-label="ผู้จำหน่าย" style="max-width:260px"><option value="">ผู้จำหน่ายทั้งหมด</option>${vendors(D).map(v=>`<option value="${esc(v)}" ${F.vendor===v?'selected':''}>${esc(vN(D,v))}</option>`).join('')}</select><select id="proj" aria-label="โครงการ" style="max-width:200px"><option value="">โครงการทั้งหมด</option>${projects(D).map(v=>`<option ${F.project===v?'selected':''}>${esc(v)}</option>`).join('')}</select><select id="mon" aria-label="เดือนของ PO" style="max-width:180px"><option value="">ทุกเดือน</option>${months(D).map(v=>`<option value="${v}" ${F.month===v?'selected':''}>${esc(mLabel(v))}</option>`).join('')}</select><label class="row" style="gap:4px"><input type="checkbox" id="only" ${F.only?'checked':''}> เฉพาะที่มีปัญหา</label><span class="sub">${n} รายการ</span></div>`;
+
+function poRowsF(D,P){return P.filter(p=>(!F.vendor||p.po.vendor===F.vendor)&&(!F.month||String(p.po.date||'').startsWith(F.month))&&(!F.project||p.po.project===F.project||(p.po.lines||[]).some(l=>l.project===F.project))&&(!F.only||['bad','warn'].includes(p.all))&&(!F.q||nk(p.po.poNo+p.po.vendor).includes(nk(F.q)))&&(!F.st||(F.st==='ready'?p.all==='ok':F.st==='out'?p.nOut>0:F.st==='wait'?p.d2==='wait':F.st==='bad'?p.all==='bad':true)))}
 
 /* ==========================================================================
  * MODULE 08  VIEW: ภาพรวม
  * ตารางสถานะทุก PO และการอนุมัติ
- * ฟังก์ชัน: vOverview
+ * ฟังก์ชัน: vOverview, vPOStatus
  * ========================================================================== */
 function vOverview(D,R){
   const P=R.pos,c=f=>P.filter(f).length;
-  const leak=R.r1.reduce((s,r)=>s+r.leak,0);
-  const ids=Object.values(D.appr||{}).map(a=>a.by);names(ids);
-  const rows=P.filter(p=>(!F.vendor||p.po.vendor===F.vendor)&&(!F.month||String(p.po.date||'').startsWith(F.month))&&(!F.project||p.po.project===F.project||(p.po.lines||[]).some(l=>l.project===F.project))&&(!F.only||['bad','warn'].includes(p.all))&&(!F.q||nk(p.po.poNo+p.po.vendor).includes(nk(F.q))));
+  const leak=R.r1.reduce((s,r)=>s+r.leak,0),k=(st,cls,n,t)=>`<button class="kpi ${cls}" data-act="kpi" data-v="${st}" style="text-align:left;font-weight:400" title="ดูรายการในแท็บสถานะใบสั่งซื้อ"><b>${n}</b><span>${t}</span></button>`;
   return `<div class="kpis">
-    <div class="kpi"><b>${P.length}</b><span>ใบสั่งซื้อทั้งหมด</span></div>
-    <div class="kpi ok"><b>${c(p=>p.all==='ok')}</b><span>ผ่านครบ 3 ขั้น พร้อมจ่าย</span></div>
-    <div class="kpi warn"><b>${c(p=>p.s2==='warn')}</b><span>ค้างส่ง</span></div>
-    <div class="kpi bad"><b>${c(p=>p.all==='bad')}</b><span>ต้องแก้ไข</span></div>
+    ${k('','',P.length,'ใบสั่งซื้อทั้งหมด')}
+    ${k('ready','ok',c(p=>p.all==='ok'),'ผ่านครบ 3 ขั้น พร้อมจ่าย')}
+    ${k('wait','warn',c(p=>p.d2==='wait'),'รอส่ง (ยังไม่มีของเข้า)')}
+    ${k('out','bad',c(p=>p.nOut>0&&p.d2!=='wait'),'ค้างส่ง (ส่งมาแล้วบางรายการ)')}
+    ${k('bad','bad',c(p=>p.all==='bad'),'ต้องแก้ไข')}
     <div class="kpi ${leak>0?'bad':''}"><b>${fm(leak)}</b><span>มูลค่าที่จ่ายเกินราคาโปร (บาท)</span></div>
     <div class="kpi ${P.reduce((a,x)=>a+x.comp.out,0)>0?'warn':''}"><b>${fm(P.reduce((a,x)=>a+x.comp.out,0))}</b><span>ส่วนลดชดเชยยังไม่ครบ (บาท)</span></div></div>
-  <section class="card"><h2>สถานะใบสั่งซื้อ</h2><p>กดที่แถวเพื่อดูรายการสินค้าของ PO นั้นในขั้นที่ 3</p>${tools(rows.length,D)}
-  <div class="tw"><table><thead><tr><th>เลขที่ PO</th><th>ผู้จำหน่าย</th><th>วันที่</th><th class="n">มูลค่า</th><th>① โปรโมชั่น</th><th>② ส่งมอบ</th><th>③ ใบกำกับ</th><th>สรุป</th><th>การอนุมัติ</th></tr></thead><tbody>
-  ${rows.slice(0,CAP).map(p=>{const id=p.po._id||idOf(p.po.poNo),a=(D.appr||{})[id];
+  <section class="card"><h2>ภาพรวม</h2><p>กดที่ตัวเลขเพื่อเปิดรายการ PO ในแท็บ “สถานะใบสั่งซื้อ” PO ที่ยังส่งของไม่ครบทุกรายการแสดงสถานะ ค้างส่ง ที่แท็บนั้น ส่วนแท็บ ② เทียบเฉพาะรายการที่ส่งมาแล้วกับ PO แบบ 1:1</p>
+  <div class="tw"><table><thead><tr><th>ขั้นตอน</th><th class="n">ผ่าน</th><th class="n">รอเอกสาร</th><th class="n">ยังไม่ครบ / ค้างส่ง</th><th class="n">ไม่ตรง / ต้องแก้ไข</th></tr></thead><tbody>
+  ${[['① PO เทียบโปรโมชั่น',p=>p.na?'wait':p.s1],['② ส่งมอบ (ทั้ง PO)',p=>p.s2],['③ ใบกำกับภาษี',p=>p.s3],['สรุป',p=>p.all]].map(([t,f])=>`<tr><td>${t}</td><td class="n">${c(p=>f(p)==='ok')}</td><td class="n">${c(p=>f(p)==='wait')}</td><td class="n">${c(p=>f(p)==='warn')}</td><td class="n">${c(p=>f(p)==='bad')}</td></tr>`).join('')}
+  </tbody></table></div></section>`}
+
+function vPOStatus(D,R){
+  const ids=Object.values(D.appr||{}).map(a=>a.by);names(ids);
+  const rows=poRowsF(D,R.pos),stl={'':'ทุกสถานะ',ready:'พร้อมจ่าย',wait:'รอส่ง',out:'ค้างส่ง',bad:'ต้องแก้ไข'};
+  return `<section class="card"><h2>สถานะใบสั่งซื้อ</h2><p>สถานะส่งมอบของทั้ง PO: รอส่ง = ยังไม่มีของเข้าเลย · ค้างส่ง = ส่งมาแล้วแต่ยังไม่ครบทุกรายการตาม PO · ส่งครบ = ครบทุกรายการ กดที่ป้ายสถานะหรือแถวเพื่อดูรายละเอียดของ PO นั้น</p>${tools(rows.length,D)}
+  <div class="row"><span class="sub">สถานะ:</span>${Object.entries(stl).map(([k,t])=>`<button class="sm${F.st===k?' pri':''}" data-act="stF" data-v="${k}">${t}</button>`).join('')}</div>
+  <div class="tw"><table><thead><tr><th>เลขที่ PO</th><th>ผู้จำหน่าย</th><th>วันที่</th><th class="n">มูลค่า</th><th>① โปรโมชั่น</th><th>② ส่งมอบ (ทั้ง PO)</th><th class="n">รายการ ส่งครบ / ทั้งหมด</th><th>③ ใบกำกับ</th><th>สรุป</th><th>การอนุมัติ</th></tr></thead><tbody>
+  ${rows.slice(0,CAP).map(p=>{const id=p.po._id||idOf(p.po.poNo),a=(D.appr||{})[id],no=p.po.poNo;
     const ap=a?`<span class="pill ${a.kind==='ready'?'ok':'info'}">${a.kind==='ready'?'อนุมัติจ่ายแล้ว':'อนุมัติข้อยกเว้น'}</span><div class="sub">${esc(NAMES[a.by]||'')} ${esc((a.at||'').slice(0,10))}${a.note?' · '+esc(a.note):''}</div><button class="sm" data-w data-act="unappr" data-id="${esc(id)}">ยกเลิก</button>`
       :EXC===id?`<div class="row"><input id="excNote" placeholder="เหตุผลที่อนุมัติ" style="width:150px"><button class="sm pri" data-act="excSave" data-id="${esc(id)}">บันทึก</button><button class="sm" data-act="excCancel">เลิก</button></div>`
       :p.all==='ok'?`<button class="sm pri" data-w data-act="appr" data-id="${esc(id)}">อนุมัติจ่าย</button>`:`<button class="sm" data-w data-act="exc" data-id="${esc(id)}">อนุมัติข้อยกเว้น</button>`;
-    return `<tr class="clk" data-act="openPO" data-v="${esc(p.po.poNo)}"><td><span class="code">${esc(p.po.poNo)}</span></td><td class="d">${p.po.vendor?esc(p.po.vendor):'<span class="sub">ไม่มีชื่อในไฟล์ที่นำเข้า</span>'}</td><td class="c">${esc(p.po.date||'')}</td><td class="n">${fm(p.total)}</td><td>${pill(p.na?'wait':p.s1,p.l1)}</td><td>${pill(p.s2,p.l2)}</td><td>${pill(p.s3,p.l3)}</td><td>${pill(p.all,p.label)}</td><td data-stop>${ap}</td></tr>`}).join('')||'<tr><td colspan="9" class="sub">ไม่มีรายการ</td></tr>'}
+    return `<tr class="clk" data-act="pop" data-v="${esc('po|'+no+'|0')}"><td><span class="code">${esc(no)}</span></td><td class="d">${p.po.vendor?esc(vN(D,p.po.vendor)):'<span class="sub">ไม่มีชื่อในไฟล์ที่นำเข้า</span>'}</td><td class="c">${esc(p.po.date||'')}</td><td class="n">${fm(p.total)}</td><td>${pz('po|'+no+'|1',pill(p.na?'wait':p.s1,p.l1))}</td><td>${pz('po|'+no+'|2',pill(p.s2,p.l2))}${p.nOut&&p.s2!=='wait'?`<div class="sub">ค้าง ${p.nOut} รายการ</div>`:''}</td><td class="n">${p.nDone} / ${p.nLine}</td><td>${pz('po|'+no+'|3',pill(p.s3,p.l3))}</td><td>${pz('po|'+no+'|0',pill(p.all,p.label))}</td><td data-stop>${ap}</td></tr>`}).join('')||'<tr><td colspan="10" class="sub">ไม่มีรายการ</td></tr>'}
   </tbody></table></div>${capNote(rows.length)}</section>`}
 
 /* ==========================================================================
@@ -928,7 +961,7 @@ function vPromo(D,R){const rows=filt(R.r1).sort((a,b)=>String(b.date||'').locale
   return `<section class="card"><h2>① ใบสั่งซื้อเทียบโปรโมชั่น</h2><p>เทียบราคาต่อหน่วยหลังหักส่วนลดจากใบสั่งซื้อกับ NP_Promotion ว่าตรงกันหรือไม่ โดยใช้โปรโมชั่นที่ดีที่สุด คือโปรที่ราคาสุทธิต่ำที่สุดในบรรดาโปรที่มีผล ณ วันที่เปิดใบสั่งซื้อ ไม่ใช้วันที่ใบส่งสินค้าหรือใบกำกับภาษี ถ้า PO ไม่มีวันที่ ระบบใช้ปีและเดือนจากเลขที่ PO เช่น PO26080001 คือ ส.ค. 2026 ตอนนี้มี ${D.sets.length} โปรโมชั่น ${D.promos.length} รายการ</p>
   <p class="hint">คอลัมน์โครงการมาจากรายงานสถานะการซื้อของ ECOUNT เทียบทุกบรรทัดของโครงการ “${esc(D.set.promoProject||'ทุกโครงการ')}”${D.set.promoVendor?' เฉพาะผู้ขายที่ชื่อมีคำว่า “'+esc(D.set.promoVendor)+'”':' ทุกผู้ขาย'} กับโปรโมชั่นทั้งหมดในคลัง ตารางแสดงทุก PO รายการอื่นอีก ${out} บรรทัดแสดงสถานะ “ไม่ต้องเทียบโปรโมชั่น”${noProj?' <b>ไฟล์ที่นำเข้าไม่มีข้อมูลโครงการ จึงไม่มีรายการเข้าเงื่อนไข นำเข้าใหม่โดยเลือกคอลัมน์โครงการ</b>':''}</p>${STEPHINT}${tools(rows.length,D)}
   <div class="tw"><table><thead><tr><th>โครงการ</th><th>PO / ผู้จำหน่าย</th><th>รหัสและรายละเอียดสินค้า</th><th>โปรโมชั่นที่แนะนำ</th><th class="n">จำนวน</th><th class="n">ราคาต่อหน่วยหลังหักส่วนลด</th><th class="n">MO</th><th class="n">ส่วนลดโปร</th><th class="n">NP_Promotion / ราคาโปรก่อน VAT</th><th class="n">ส่วนต่าง/หน่วย</th><th class="n">จ่ายเกินรวม</th><th>ผลตรวจ</th></tr></thead><tbody>
-  ${rows.slice(0,CAP).map(r=>`<tr><td>${esc(r.project)}</td><td class="d"><span class="code">${esc(r.poNo)}</span><div class="sub">${esc(r.date)} · ${esc(r.vendor)}</div>${poSteps(R,r.poNo)}</td><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="d">${esc(r.promoSet)}${r.nAlt>1?`<div class="sub">ดีที่สุดจาก ${r.nAlt} โปรที่มีผล</div>`:''}</td><td class="n">${fq(r.qty)}</td><td class="n"><b>${fm(r.poPrice)}</b>${r.listPrice!=null&&r.poPrice!=null&&Math.abs(r.listPrice-r.poPrice)>0.005&&!D.set.poIncVat?`<div class="sub">ราคาตั้ง ${fm(r.listPrice)}</div>`:''}</td><td class="n">${fm(r.mo)}</td><td class="n">${fdisc(r.disc,r.promo)}${r.dc?`<div class="sub">${fp(r.discBase)} + เพิ่ม ${fp(r.dc)}</div>`:''}</td><td class="n">${fm(r.promo)}</td><td class="n">${r.diff==null?'–':(r.diff>0?'+':'')+fm(r.diff)}</td><td class="n">${r.leak?fm(r.leak):'–'}</td><td>${pill(r.lv,r.label)}${r.note?`<div class="sub">${esc(r.note)}</div>`:''}</td></tr>`).join('')||'<tr><td colspan="12" class="sub">ไม่มีรายการ</td></tr>'}
+  ${rows.slice(0,CAP).map(r=>`<tr><td>${esc(r.project)}</td><td class="d"><span class="code">${esc(r.poNo)}</span><div class="sub">${esc(r.date)} · ${esc(vN(D,r.vendor))}</div>${poSteps(R,r.poNo)}</td><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="d">${esc(r.promoSet)}${r.nAlt>1?`<div class="sub">ดีที่สุดจาก ${r.nAlt} โปรที่มีผล</div>`:''}</td><td class="n">${fq(r.qty)}</td><td class="n"><b>${fm(r.poPrice)}</b>${r.listPrice!=null&&r.poPrice!=null&&Math.abs(r.listPrice-r.poPrice)>0.005&&!D.set.poIncVat?`<div class="sub">ราคาตั้ง ${fm(r.listPrice)}</div>`:''}</td><td class="n">${fm(r.mo)}</td><td class="n">${fdisc(r.disc,r.promo)}${r.dc?`<div class="sub">${fp(r.discBase)} + เพิ่ม ${fp(r.dc)}</div>`:''}</td><td class="n">${fm(r.promo)}</td><td class="n">${r.diff==null?'–':(r.diff>0?'+':'')+fm(r.diff)}</td><td class="n">${r.leak?fm(r.leak):'–'}</td><td>${pz('ln|'+r.poNo+'|'+r.code,pill(r.lv,r.label))}${r.note?`<div class="sub">${esc(r.note)}</div>`:''}</td></tr>`).join('')||'<tr><td colspan="12" class="sub">ไม่มีรายการ</td></tr>'}
   </tbody></table></div>${capNote(rows.length)}</section>`}
 
 /* ==========================================================================
@@ -995,13 +1028,13 @@ function verdictHtml(v,compact){if(compact)return `<div style="white-space:nowra
 /* ป้ายสถานะ 3 ขั้นของ PO: ① โปรโมชั่น ② ส่งมอบ ③ ใบกำกับ */
 const SYM={ok:'✓',bad:'✕',warn:'!',wait:'–'};
 function poSteps(R,no){const sm=R&&(R._m||(R._m=new Map(R.pos.map(x=>[x.po.poNo,x])))).get(no);if(!sm)return'';
-  return `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px" title="① โปรโมชั่น: ${esc(sm.l1)} · ② ส่งมอบ: ${esc(sm.l2)} · ③ ใบกำกับ: ${esc(sm.l3)}">${sm.all==='ok'?pill('ok','✓ ผ่านครบ 3 ขั้น'):[[sm.na?'wait':sm.s1,'โปร',sm.l1],[sm.s2,'ส่งมอบ',sm.l2],[sm.s3,'ใบกำกับ',sm.l3]].map(x=>pill(x[0],x[1]+' '+(x[0]==='ok'?'✓':x[2]))).join(' ')}</div>`}
-const STEPHINT='<p class="hint">ป้ายใต้เลขที่ PO บอกผล 3 ขั้น: โปร (เทียบโปรโมชั่น) · ส่งมอบ (เทียบใบส่งสินค้า / RE) · ใบกำกับ (เทียบใบกำกับภาษี) ✓ คือผ่าน ถ้ายังไม่ผ่านจะบอกสถานะเป็นคำ เช่น “ส่งมอบ ค้างส่ง” ใบกำกับที่สินค้า จำนวน ราคา ตรงกับ PO และของที่รับแล้ว ถือว่าผ่าน แม้ยังมีของค้างส่ง</p>';
+  return `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px" title="① โปรโมชั่น: ${esc(sm.l1)} · ② ส่งมอบ (เทียบรายการที่ส่งแล้ว): ${esc(sm.ld2)} · ③ ใบกำกับ: ${esc(sm.l3)}">${sm.all==='ok'?pz('po|'+no+'|0',pill('ok','✓ ผ่านครบ 3 ขั้น')):[[sm.na?'wait':sm.s1,'โปร',sm.l1,1],[sm.d2,'ส่งมอบ',sm.ld2,2],[sm.s3,'ใบกำกับ',sm.l3,3]].map(x=>pz('po|'+no+'|'+x[3],pill(x[0],x[1]+' '+(x[0]==='ok'?'✓':x[2])))).join(' ')}</div>`}
+const STEPHINT='<p class="hint">ป้ายใต้เลขที่ PO บอกผล 3 ขั้น กดที่ป้ายเพื่อดูรายละเอียด: โปร (เทียบโปรโมชั่น) · ส่งมอบ (เทียบเฉพาะรายการที่ส่งมาแล้วกับ PO แบบ 1:1 รายการที่ยังไม่ได้ส่งดูที่แท็บสถานะใบสั่งซื้อ) · ใบกำกับ (เทียบใบกำกับภาษี) ✓ คือผ่าน ถ้ายังไม่ผ่านจะบอกสถานะเป็นคำ เช่น “ส่งมอบ ค้างส่ง” ใบกำกับที่สินค้า จำนวน ราคา ตรงกับ PO และของที่รับแล้ว ถือว่าผ่าน แม้ยังมีของค้างส่ง</p>';
 
 /* ==========================================================================
  * MODULE 11  VIEW: ② PO เทียบใบส่งสินค้า
  * ปุ่มนำเข้าไฟล์ ตารางใบส่งสินค้า และผลเทียบรายบรรทัด
- * ฟังก์ชัน: upPanel, docTable, reBar, vDelivery, reState, reSection, sendRE, priceDetail, reDocs, reCan, drvErr, reBad
+ * ฟังก์ชัน: upPanel, docTable, reBar, vDelivery, reState, reSection, sendRE, popOpen, popClose, drawPop, popDO, reBox, popRE, popPO, popLine, priceDetail, reFsel, reDocs, reCan, drvErr, popPOs, reBad
  * ========================================================================== */
 function upPanel(kind){const t=kind==='del'?'ใบส่งสินค้า / Packing attached sheet':'ใบกำกับภาษี';
   return `<div class="row">
@@ -1010,18 +1043,19 @@ function upPanel(kind){const t=kind==='del'?'ใบส่งสินค้า /
     <button data-act="manual" data-v="${kind}">กรอก${t}เอง</button>
     ${BUSY?`<span class="chip">${esc(BUSY)}</span><button class="sm" data-act="stop">หยุด</button>`:''}
   </div><p class="hint">เลือกได้หลายไฟล์พร้อมกัน และไฟล์ PDF หนึ่งไฟล์มีได้หลายใบ ระบบแยกตามเลขที่เอกสารแล้วเปิดให้ตรวจและ match ทีละใบ ${CFG.aiKey?'ใช้ Claude API อ่านเอกสาร รองรับ PDF ที่พิมพ์จากระบบ PDF สแกน และรูปถ่าย':'ใช้ตัวอ่านในเครื่อง: PDF ที่พิมพ์จากระบบอ่านจากข้อความในไฟล์ ส่วนไฟล์สแกนและรูปถ่ายใช้ OCR ซึ่งแม่นยำน้อยกว่า ใส่ Claude API key ที่แท็บ “ตั้งค่า” เพื่อความแม่นยำสูงขึ้น'} ระบบหา PO ที่ตรงกันให้ แล้วเปิดให้ตรวจทานก่อนบันทึกทุกครั้ง</p>`}
-function docTable(D,docs,kind,R){return `<div class="tw"><table><thead><tr><th>เลขที่เอกสาร</th><th>วันที่</th><th>ผู้ขาย (จากเอกสาร)</th><th>เลขที่อ้างอิง (Customer P/O No.)</th><th>PO ที่จับคู่ได้</th><th class="n">รายการที่ตรงกับ PO</th><th>ผลการจับคู่</th><th></th></tr></thead><tbody>
+function docTable(D,docs,kind,R){return `<div class="tw"><table><thead><tr><th>เลขที่เอกสาร</th><th>วันที่</th><th>ผู้ขาย (จากเอกสาร)</th><th>เลขที่อ้างอิง (Customer P/O No.)</th><th>PO ที่จับคู่ได้</th><th class="n">รายการที่ตรงกับ PO</th><th>ผลการจับคู่</th>${kind==='dels'?'<th>RE (1 ใบส่งสินค้า : 1 RE)</th>':''}<th></th></tr></thead><tbody>
   ${docs.map(d=>{const m=docMatch(D,d),n=(d.lines||[]).length,refs=[...new Set([...String(d.refNo||'').split(/[,;]/),...(d.lines||[]).map(l=>l.ref)].map(x=>String(x||'').trim()).filter(Boolean))];
-    return `<tr><td><span class="code">${esc(d.docNo)}</span>${kind==='dels'?`<div class="sub">${isRE(d)?'รับสินค้า RE (Excel)':'ใบส่งสินค้า / Packing list'}</div>`:''}</td><td class="c">${esc(d.date||'')}</td><td class="d">${esc(d.vendor||(m?m.po.vendor:'')||'–')}</td><td class="d">${refs.map(x=>`<span class="code">${esc(x)}</span>`).join('<br>')||esc(d.poNo||'–')}</td><td class="d">${m?m.pos.map(q=>`<span class="code">${esc(q.poNo)}</span>${poSteps(R,q.poNo)}`).join(''):pill('bad','ไม่พบ')}</td><td class="n">${m?m.hit+' / '+n:'0 / '+n}</td><td>${!m?pill('bad','ไม่พบ PO'):m.hit===n?pill('ok','ตรงทุกรายการ'):pill('warn','ตรงบางรายการ')}</td><td style="white-space:nowrap">${m?`<button class="sm" data-act="openPO2" data-v="${esc(m.pos.length===1?m.po.poNo:'')}">ดูผลเทียบ</button> `:''}${D.demo||d._hub?'':`<button class="sm" data-w data-act="edit" data-v="${kind}" data-id="${esc(d._id)}">แก้ไข</button>`}</td></tr>`}).join('')||'<tr><td colspan="8" class="sub">ยังไม่มีเอกสาร</td></tr>'}
+    return `<tr><td><span class="code">${esc(d.docNo)}</span>${kind==='dels'?`<div class="sub">${isRE(d)?'รับสินค้า RE (Excel)':'ใบส่งสินค้า / Packing list'}</div>`:''}</td><td class="c">${esc(d.date||'')}</td><td class="d">${esc(vN(D,d.vendor||(m?m.po.vendor:''))||'–')}</td><td class="d">${refs.map(x=>`<span class="code">${esc(x)}</span>`).join('<br>')||esc(d.poNo||'–')}</td><td class="d">${m?m.pos.map(q=>`<span class="code">${esc(q.poNo)}</span>${poSteps(R,q.poNo)}`).join(''):pill('bad','ไม่พบ')}</td><td class="n">${m?m.hit+' / '+n:'0 / '+n}</td><td>${(h=>kind==='dels'?pz('do|'+d._id,h):h)(!m?pill('bad','ไม่พบ PO'):m.hit===n?pill('ok','ตรงทุกรายการ'):pill('warn','ตรงบางรายการ'))}</td>${kind==='dels'?`<td class="d">${isRE(d)?'<span class="sub">เป็นเอกสาร RE</span>':(st=>st.k?pz('re|'+d._id,pill(st.lv,st.t)):'<span class="sub">ยังไม่ได้ออก</span>')(reState(d))}</td>`:''}<td style="white-space:nowrap">${kind==='dels'?`<button class="sm" data-act="pop" data-v="${esc('do|'+d._id)}">ดูผลเทียบ</button> `:m?`<button class="sm" data-act="openPO2" data-v="${esc(m.pos.length===1?m.po.poNo:'')}">ดูผลเทียบ</button> `:''}${D.demo||d._hub?'':`<button class="sm" data-w data-act="edit" data-v="${kind}" data-id="${esc(d._id)}">แก้ไข</button>`}${kind==='dels'&&!D.demo&&!d._hub&&!isRE(d)?(st=>` <button class="sm${st.k?'':' pri'}" data-w data-act="reBtn" data-id="${esc(d._id)}" title="${st.k==='done'||st.k==='manual'?'ใบนี้มี RE แล้ว':'บันทึก RE เข้า ECOUNT'}">${st.k==='done'||st.k==='manual'?'ออก RE แล้ว':st.k==='queued'?'ส่งคำสั่ง RE แล้ว':'ออก RE'}</button>`)(reState(d)):''}</td></tr>`}).join('')||`<tr><td colspan="${kind==='dels'?9:8}" class="sub">ยังไม่มีเอกสาร</td></tr>`}
   </tbody></table></div>`}
 
-function reBar(D,all){if(!hubOn())return'';const rl=all.filter(r=>r.re>EPS),q=rl.reduce((a,r)=>a+r.re,0);
+function reBar(D,all){if(!hubOn())return`<div class="row" style="margin:6px 0 8px"><span class="hint" style="margin:0;flex:1">ยังไม่ได้โหลด RE จาก Data Hub${mcpCap?' ระบบกำลังโหลดให้อัตโนมัติ หรือกด “โหลดจาก Data Hub” ที่มุมบน':''}</span>${reFsel()}</div>`;const rl=all.filter(r=>r.re>EPS),q=rl.reduce((a,r)=>a+r.re,0);
   return `<div class="row" style="align-items:center;gap:10px;margin:6px 0 8px"><span class="hint" style="margin:0;flex:1">จำนวนรับสินค้าตาม RE ดึงจาก Data Hub แท็บ <b>${esc(HUB.reTab||'PURCHASE_LINES')}</b> · RE ${HUB.dels.length.toLocaleString('th-TH')} ใบ · ${(HUB.nr||0).toLocaleString('th-TH')} บรรทัด · รายการ PO ที่รับแล้ว ${rl.length.toLocaleString('th-TH')} รายการ (รวม ${fq(q)} หน่วย)${HUB.skip?' · ข้าม '+HUB.skip.toLocaleString('th-TH')+' บรรทัดที่อ้าง PO ก่อนวันที่เริ่มหรือนอกเงื่อนไข':''}${HUB.noPo?' · '+HUB.noPo.toLocaleString('th-TH')+' บรรทัดไม่มีเลข PO':''}</span>
-  <select id="reF" style="width:auto"><option value="">ทุกรายการ</option><option value="has"${F.re==='has'?' selected':''}>เฉพาะที่มีรับเข้า RE</option><option value="none"${F.re==='none'?' selected':''}>ยังไม่มี RE</option></select></div>`}
-function vDelivery(D,R){const all=filt(R.r2),rows=!F.re?all:all.filter(r=>F.re==='has'?r.re>EPS:!(r.re>EPS)),rdt=new Map(D.dels.filter(isRE).map(d=>[d.docNo,d.date]));
-  return `<section class="card"><h2>② ใบสั่งซื้อเทียบใบส่งสินค้า</h2><p>รวมจำนวนส่งมอบจากทุกใบส่งของ PO เดียวกัน จำนวนที่ยังไม่ครบแสดงสถานะ “ค้างส่ง” พร้อมจำนวนคงค้าง นำเข้ารายงานรับสินค้า (RE) จาก Excel ซ้ำได้ เอกสารและรายการที่มีอยู่แล้วจะไม่ถูกแตะ ระบบเพิ่มและจับคู่เฉพาะรายการใหม่ ถ้ารายการเดียวกันมีทั้งใบส่งสินค้าและ RE ระบบใช้จำนวนจากใบส่งสินค้าและเตือนเมื่อสองเอกสารไม่เท่ากัน</p>${upPanel('del')}<h2>ใบส่งสินค้าที่นำเข้าแล้ว และ PO ที่จับคู่ได้</h2>${hubOn()?`<p class="hint">เอกสารรับสินค้า (RE) ${HUB.dels.length.toLocaleString('th-TH')} ใบจาก Data Hub ถูกนำไปเทียบในตารางผลเทียบรายบรรทัดแล้ว และไม่แสดงซ้ำในตารางนี้</p>`:''}${docTable(D,D.dels.filter(d=>{if(d._hub)return false;const os=docPOs(D,d);return(!F.vendor&&!F.month&&!F.project)||os.some(o=>(!F.vendor||o.vendor===F.vendor)&&(!F.month||String(o.date||'').startsWith(F.month))&&(!F.project||o.project===F.project))}),'dels',R)}${reSection(D)}<h2>ผลเทียบรายบรรทัด</h2>${STEPHINT}${tools(rows.length,D)}${reBar(D,all)}
-  <div class="tw"><table><thead><tr><th style="min-width:200px">PO</th><th>รหัสและรายละเอียดสินค้า</th><th class="n">สั่งซื้อ</th><th class="n">ใบส่งสินค้า / Packing list</th><th class="n">รับสินค้าตาม RE</th><th class="n">ค้างส่ง</th><th class="n">ราคา PO หลังหักส่วนลด</th><th class="n">ราคาใบส่ง</th><th style="min-width:96px">สถานะ</th></tr></thead><tbody>
-  ${rows.slice(0,CAP).map(r=>`<tr><td><span class="code">${esc(r.poNo)}</span>${poSteps(R,r.poNo)}</td><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${r.ord?fq(r.ord):'–'}</td><td class="n">${r.pk?fq(r.pk):r.ord?'–':fq(r.del)}${(r.pkDocs||(r.ord?[]:r.docs)).length?`<div class="sub">${esc((r.pkDocs||r.docs).join(', '))}</div>`:''}</td><td class="n">${r.re?'<b>'+fq(r.re)+'</b>':'–'}${(r.reDocs||[]).map(n=>`<div class="sub" style="white-space:nowrap">${esc(n)}${rdt.get(n)?' · '+fd(rdt.get(n)):''}</div>`).join('')}</td><td class="n">${r.out?fq(r.out):'–'}</td><td class="n">${fm(r.poPrice)}${r.priceOk==='ok'?'<div class="sub">ตรงโปรแล้ว</div>':r.priceOk==='no'?'<div>'+pill('warn','ยังไม่ตรงโปร')+'</div>':''}</td><td class="n">${fm(r.docPrice)}</td><td style="white-space:nowrap">${pill(r.lv,r.label)}</td></tr>`).join('')||'<tr><td colspan="9" class="sub">ไม่มีรายการ</td></tr>'}
+  ${reFsel()}</div>`}
+const reFsel=()=>`<select id="reF" style="width:auto" aria-label="รายการที่แสดง">${[['','เฉพาะรายการที่ส่งมาแล้ว (1:1)'],['has','มีรับเข้า RE'],['none','ส่งแล้ว ยังไม่มี RE'],['wait','รายการที่ยังไม่ส่ง (รอส่ง)'],['all','ทุกรายการของ PO']].map(([v,t])=>`<option value="${v}"${F.re===v?' selected':''}>${t}</option>`).join('')}</select>`;
+function vDelivery(D,R){const all=filt(R.r2),rows=F.re==='all'?all:F.re==='has'?all.filter(r=>r.re>EPS):F.re==='none'?all.filter(r=>r.del>EPS&&!(r.re>EPS)):F.re==='wait'?all.filter(r=>!(r.del>EPS)):all.filter(r=>r.del>EPS),rdt=new Map(D.dels.filter(isRE).map(d=>[d.docNo,d.date])),iv=new Map(R.r3.filter(r=>r.inv>EPS).map(r=>[m1key(r.poNo,r.code),r]));
+  return `<section class="card"><h2>② ใบสั่งซื้อเทียบใบส่งสินค้า</h2><p>เทียบรายการที่ส่งมาแล้วกับรายการใน PO แบบ 1:1 รายการที่ส่งมาไม่ครบจำนวนแสดง “ค้างส่ง” (สีแดง) พร้อมจำนวนคงค้าง รายการของ PO ที่ยังไม่ได้ส่งไม่แสดงในตารางนี้ ดูได้ที่แท็บสถานะใบสั่งซื้อ นำเข้ารายงานรับสินค้า (RE) จาก Excel ซ้ำได้ เอกสารและรายการที่มีอยู่แล้วจะไม่ถูกแตะ ระบบเพิ่มและจับคู่เฉพาะรายการใหม่ ถ้ารายการเดียวกันมีทั้งใบส่งสินค้าและ RE ระบบใช้จำนวนจากใบส่งสินค้าและเตือนเมื่อสองเอกสารไม่เท่ากัน</p>${upPanel('del')}<h2>ใบส่งสินค้าที่นำเข้าแล้ว และ PO ที่จับคู่ได้</h2><p class="hint">กด “ดูผลเทียบ” เพื่อเทียบรายการในใบส่งสินค้ากับ PO แบบ 1:1 (แสดงเฉพาะรายการที่อยู่ในใบส่งสินค้า) และกด “ออก RE” เพื่อบันทึกใบซื้อเข้า ECOUNT</p>${hubOn()?`<p class="hint">เอกสารรับสินค้า (RE) ${HUB.dels.length.toLocaleString('th-TH')} ใบจาก Data Hub ถูกนำไปเทียบในตารางผลเทียบรายบรรทัดแล้ว และไม่แสดงซ้ำในตารางนี้</p>`:''}${docTable(D,D.dels.filter(d=>{if(d._hub)return false;const os=docPOs(D,d);return(!F.vendor&&!F.month&&!F.project)||os.some(o=>(!F.vendor||o.vendor===F.vendor)&&(!F.month||String(o.date||'').startsWith(F.month))&&(!F.project||o.project===F.project))}),'dels',R)}${reSection(D)}<h2>ผลเทียบรายบรรทัด</h2>${STEPHINT}${tools(rows.length,D)}${reBar(D,all)}
+  <div class="tw"><table><thead><tr><th style="min-width:200px">PO</th><th>รหัสและรายละเอียดสินค้า</th><th class="n">สั่งซื้อ</th><th class="n">ใบส่งสินค้า / Packing list</th><th class="n">รับสินค้าตาม RE</th><th class="n">ค้างส่ง</th><th class="n">ราคา PO หลังหักส่วนลด</th><th class="n">ราคา_Inv</th><th style="min-width:96px">สถานะ</th></tr></thead><tbody>
+  ${rows.slice(0,CAP).map(r=>`<tr><td><span class="code">${esc(r.poNo)}</span>${poSteps(R,r.poNo)}</td><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${r.ord?fq(r.ord):'–'}</td><td class="n">${r.pk?fq(r.pk):r.ord?'–':fq(r.del)}${(r.pkDocs||(r.ord?[]:r.docs)).length?`<div class="sub">${esc((r.pkDocs||r.docs).join(', '))}</div>`:''}</td><td class="n">${r.re?'<b>'+fq(r.re)+'</b>':'–'}${(r.reDocs||[]).map(n=>`<div class="sub" style="white-space:nowrap">${esc(n)}${rdt.get(n)?' · '+fd(rdt.get(n)):''}</div>`).join('')}</td><td class="n">${r.out?fq(r.out):'–'}</td><td class="n">${fm(r.poPrice)}${r.priceOk==='ok'?'<div class="sub">ตรงโปรแล้ว</div>':r.priceOk==='no'?'<div>'+pill('warn','ยังไม่ตรงโปร')+'</div>':''}</td><td class="n">${(c=>c?fm(c.effPrice)+`<div class="sub">${esc(c.docs.join(', '))}</div>`:'–')(iv.get(m1key(r.poNo,r.code)))}</td><td style="white-space:nowrap">${pz('ln|'+r.poNo+'|'+r.code,pill(r.lv,r.label))}</td></tr>`).join('')||'<tr><td colspan="9" class="sub">ไม่มีรายการ</td></tr>'}
   </tbody></table></div>${capNote(rows.length)}</section>`}
 
 /* ---------- ออก RE เข้า ECOUNT ----------
@@ -1030,7 +1064,8 @@ function vDelivery(D,R){const all=filt(R.r2),rows=!F.re?all:all.filter(r=>F.re==
 let RES=null;
 const reDocs=D=>D.dels.filter(d=>!isRE(d)&&!d._hub);
 function reState(d){const s=S.res[d._id],lg=HUB&&HUB.log&&HUB.log[kc(d.docNo)];
-  if(lg&&lg.st==='บันทึกแล้ว')return{k:'done',lv:'ok',t:'ออก RE แล้ว '+lg.re};
+  if(lg&&lg.st==='บันทึกแล้ว')return{k:'done',lv:'ok',t:'ออก RE แล้ว '+lg.re,re:lg.re};
+  const hb=HUB&&HUB.byDoc&&HUB.byDoc[kc(d.docNo)];if(hb)return{k:'done',lv:'ok',t:'ออก RE แล้ว '+hb.re.join(', '),re:hb.re.join(', '),date:hb.date,ecount:true};
   if(s&&s.status==='manual')return{k:'manual',lv:'wait',t:'มี RE แล้ว (ระบุเอง)'};
   if(lg&&(lg.st==='ECOUNT ไม่รับ'||lg.st==='ต้องแก้ไข'))return{k:'fail',lv:'bad',t:lg.st+(lg.note?' · '+lg.note:'')+' (แก้ในชีต “รออนุมัติ” ของ Data Hub)'};
   if(lg&&lg.st==='ทดสอบแล้ว')return{k:'queued',lv:'info',t:'ทดสอบแล้ว ยังไม่เข้า ECOUNT'};
@@ -1038,12 +1073,8 @@ function reState(d){const s=S.res[d._id],lg=HUB&&HUB.log&&HUB.log[kc(d.docNo)];
   if(s)return{k:'queued',lv:'info',t:'ส่งคำสั่งแล้ว รอระบบบันทึก'};
   return{k:'',lv:'',t:''}}
 const reCan=x=>x.c.ok&&(!x.s.k||x.s.k==='queued');
-function reSection(D){if(D.demo)return'';const docs=reDocs(D).map(d=>({d,c:reCheck(D,d),s:reState(d)})),n=docs.filter(x=>reCan(x)&&x.s.k!=='queued').length,on=mcpCap&&RES!=='busy';
-  return `<h2>ออก RE เข้า ECOUNT</h2><p class="hint">ใบส่งสินค้าที่ทุกรายการตรงกับ PO และไม่เกินจำนวนค้างรับ ถือว่าผ่าน และออก RE ได้ทันที หนึ่งใบส่งสินค้าเป็นหนึ่ง RE ราคาใช้ราคา PO หลังหักส่วนลด เมื่อกดออก RE หน้านี้ส่งคำสั่งไปที่ Google Drive แล้วสคริปต์ RE อัตโนมัติใน Data Hub บันทึกเข้า ECOUNT ในรอบถัดไป เลขที่ RE แสดงที่นี่หลังกด “โหลดจาก Data Hub” ใบที่บันทึกใน ECOUNT ด้วยมือไปแล้วให้กด “มี RE แล้ว” เพื่อไม่ให้ออกซ้ำ</p>
-  <div class="row" data-w><button class="pri" data-act="reAll" ${on&&n?'':'disabled'}>${RES==='busy'?'กำลังส่งคำสั่ง…':'ออก RE ทุกใบที่ผ่าน ('+n+' ใบ)'}</button>${mcpCap?'':'<span class="sub">ใช้ได้เมื่อเปิดหน้านี้ใน Claude ที่เชื่อมต่อ Google Drive แล้ว</span>'}</div>
-  <div class="tw"><table><thead><tr><th>ใบส่งสินค้า</th><th>วันที่</th><th>PO ที่อ้างอิง</th><th class="n">รายการ</th><th class="n">จำนวนรวม</th><th>ผลเทียบ PO</th><th>สถานะ RE</th><th></th></tr></thead><tbody>
-  ${docs.map(x=>{const id=esc(x.d._id);return `<tr><td><span class="code">${esc(x.d.docNo)}</span></td><td class="c">${esc(x.d.date||'')}</td><td class="d">${x.c.pos.map(p=>'<span class="code">'+esc(p.poNo)+'</span>').join(', ')||'–'}</td><td class="n">${(x.d.lines||[]).length}</td><td class="n">${fq(x.c.qty)}</td><td class="d">${x.c.ok?pill('ok','ผ่าน'):pill('bad','ไม่ผ่าน')+x.c.why.slice(0,4).map(w=>'<div class="sub">'+esc(w)+'</div>').join('')}</td><td class="d">${x.s.k?pill(x.s.lv,x.s.t):'<span class="sub">ยังไม่ได้ออก</span>'}</td><td style="white-space:nowrap" data-w>${reCan(x)?`<button class="sm pri" data-act="reOne" data-id="${id}" ${on?'':'disabled'}>${x.s.k?'ส่งอีกครั้ง':'ออก RE'}</button> `:''}${!x.s.k?`<button class="sm" data-act="reManual" data-id="${id}">มี RE แล้ว</button>`:x.s.k==='manual'?`<button class="sm" data-act="reClear" data-id="${id}">ยกเลิก</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="8" class="sub">ยังไม่มีใบส่งสินค้า</td></tr>'}
-  </tbody></table></div>`}
+function reSection(D){if(D.demo)return'';const docs=reDocs(D).map(d=>({d,c:reCheck(D,d),s:reState(d)})),n=docs.filter(x=>reCan(x)&&x.s.k!=='queued').length,on=mcpCap&&RES!=='busy',done=docs.filter(x=>x.s.k==='done'||x.s.k==='manual').length;
+  return `<div class="row" data-w><button class="pri" data-act="reAll" ${on&&n?'':'disabled'}>${RES==='busy'?'กำลังส่งคำสั่ง…':'ออก RE ทุกใบที่ผ่าน ('+n+' ใบ)'}</button><span class="sub">1 ใบส่งสินค้า : 1 RE · ออกแล้ว ${done} ใบ · ใบที่มี RE ใน ECOUNT แล้วระบบเตือนซ้ำและไม่ส่งคำสั่งให้ เมื่อกดออก RE ระบบส่งคำสั่งไปที่ Google Drive แล้วสคริปต์ RE อัตโนมัติใน Data Hub บันทึกเข้า ECOUNT${mcpCap?'':' · ใช้ได้เมื่อเปิดหน้านี้ใน Claude ที่เชื่อมต่อ Google Drive แล้ว'}</span></div>`}
 const drvErr=e=>{const c=e&&e.code;return c==='server_not_connected'||c==='server_not_found'?'ยังไม่ได้เชื่อมต่อ Google Drive ใน Claude เชื่อมต่อที่การตั้งค่า Connectors ก่อน':c==='needs_reauth'?'การเชื่อมต่อ Google Drive หมดอายุ เชื่อมต่อใหม่ใน Claude':c==='not_granted'||c==='consent_required'||c==='approval_required'?'ยังไม่ได้อนุญาตให้หน้านี้ใช้ Google Drive':c==='blocked_by_policy'?'องค์กรไม่อนุญาตให้ใช้ Google Drive จากหน้านี้':'ส่งคำสั่งออก RE ไม่สำเร็จ: '+((e&&e.message)||c||'')};
 async function sendRE(ids){if(!mcpCap||RES==='busy')return;const D=DATA(),pick=reDocs(D).filter(d=>ids.includes(d._id)).map(d=>({d,c:reCheck(D,d),s:reState(d)})).filter(reCan);
   if(!pick.length)return toast('ไม่มีใบส่งสินค้าที่ผ่านให้ออก RE');
@@ -1058,6 +1089,66 @@ async function sendRE(ids){if(!mcpCap||RES==='busy')return;const D=DATA(),pick=r
   catch(e){console.error(e);toast(drvErr(e))}
   RES=null;render()}
 
+/* ---------- หน้าต่างรายละเอียด (popup) ----------
+   POP = คีย์ของหน้าต่างที่เปิดอยู่ เช่น do|<id ใบส่งสินค้า>  po|<เลข PO>|<ขั้น 0-3>  ln|<เลข PO>|<รหัส>  re|<id ใบส่งสินค้า>
+   วาดใหม่ทุกครั้งที่ข้อมูลเปลี่ยน จึงเห็นสถานะล่าสุดเสมอ */
+let POP=null;
+function popOpen(k){POP=k;render()}
+function popClose(){POP=null;const p=$('#pop');p.hidden=true;p.innerHTML=''}
+function drawPop(D,R){const[kind,a,b]=String(POP).split('|');let o=null;
+  try{o=kind==='do'?popDO(D,R,a):kind==='po'?popPO(D,R,a,+b||0):kind==='ln'?popLine(D,R,a,b):kind==='re'?popRE(D,R,a):null}catch(e){console.error(e)}
+  const p=$('#pop');if(!o){popClose();return}
+  const y=p.scrollTop;p.innerHTML=`<section class="card" role="dialog" aria-modal="true" aria-label="${esc(o.t)}"><div class="ph"><div><h2>${o.t}</h2>${o.s?`<div class="sub">${o.s}</div>`:''}</div><button class="sm" data-act="popX" aria-label="ปิด">ปิด ✕</button></div>${o.b}</section>`;p.hidden=false;p.scrollTop=y;numTables(p)}
+const popPOs=(D,ps)=>ps.map(q=>`<button class="sm" data-act="pop" data-v="${esc('po|'+q.poNo+'|0')}"><span class="code">${esc(q.poNo)}</span></button>`).join(' ');
+/* ผลเทียบใบส่งสินค้าหนึ่งใบกับ PO แบบ 1:1: แสดงเฉพาะรายการที่อยู่ในใบส่งสินค้า
+   จำนวนครบ = ส่งก่อนหน้า + ใบนี้ เท่ากับจำนวนสั่งของรายการนั้น รายการอื่นของ PO ที่ยังไม่ได้ส่งไม่นับในหน้านี้ */
+function popDO(D,R,id){const d=D.dels.find(x=>x._id===id);if(!d)return null;const dp=docPO(D,d),re=isRE(d),ps=docPOs(D,d),rc=new Map(),agg=new Map();
+  const rows=(d.lines||[]).map(l=>{const po=linePO(D,l,dp);if(po&&!agg.has(po))agg.set(po,aggLines(po));const t=po&&resolveLine(agg.get(po),l);if(po&&!rc.has(po))rc.set(po,recv(D,po));
+    const e=t&&rc.get(po).m.get(t.k),me=l.qty||0,got=e?(re?e.re:(e.pk>EPS?e.pk:e.re)):0,prev=Math.max(0,got-(re||e&&e.pk>EPS?me:0)),tot=prev+me,ord=t?t.qty:null;
+    let lv='ok',lb='จำนวนครบ';
+    if(!po){lv='bad';lb='ยังไม่ได้จับคู่ PO'}else if(!t){lv='bad';lb='ไม่อยู่ใน PO'}
+    else if(tot-ord>EPS){lv='bad';lb='ส่งเกิน PO '+fq(tot-ord)}else if(ord-tot>EPS){lv='warn';lb='ค้างส่ง '+fq(ord-tot)}
+    const pr=l.price!=null&&t&&t.price!=null&&Math.abs(l.price-t.price)>Math.max(D.set.priceTol,0.01);if(pr&&lv==='ok'){lv='bad';lb='ราคาไม่ตรง PO'}
+    return{l,po,t,e,me,prev,tot,ord,lv,lb,pr}});
+  const nOk=rows.filter(r=>r.lv==='ok').length,nIn=rows.filter(r=>r.t).length,all=!rows.length?'wait':worst(rows.map(r=>r.lv));
+  const other=[...agg.entries()].map(([po,ls])=>{const mine=new Set(rows.filter(r=>r.po===po&&r.t).map(r=>r.t.k));return{po,n:ls.length,left:ls.filter(x=>!mine.has(x.k)).length}});
+  const st=reState(d),rk=re?null:reCheck(D,d);
+  return{t:'ผลเทียบใบส่งสินค้า '+esc(d.docNo)+' กับ PO',s:`${esc(fd(d.date))} · ${esc(vN(D,d.vendor||(ps[0]||{}).vendor||''))} · ${re?'รับสินค้า RE':'ใบส่งสินค้า / Packing list'}`,
+    b:`<div class="row">${ps.length?'PO ที่จับคู่: '+popPOs(D,ps):pill('bad','ยังไม่พบ PO')}<span style="flex:1"></span>${pill(all,all==='ok'?'จำนวนครบทุกรายการในใบนี้':all==='wait'?'ไม่มีรายการ':'มีรายการที่ต้องตรวจ')} <span class="chip">ตรงกับ PO ${nIn} / ${rows.length} · จำนวนครบ ${nOk} / ${rows.length}</span></div>
+  <div class="tw"><table class="cmp"><thead><tr><th>รหัสและรายละเอียด (ใบส่งสินค้า)</th><th>รายการใน PO</th><th class="n">จำนวนสั่ง (PO)</th><th class="n">ส่งก่อนหน้า</th><th class="n">ส่งตามใบนี้</th><th class="n">รวมส่งแล้ว</th><th class="n">รับสินค้าตาม RE</th><th class="n">ราคา PO หลังหักส่วนลด</th><th class="n">ราคาในใบส่ง</th><th>ผลเทียบ</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td class="d"><span class="code">${esc(r.l.code||'–')}</span><div>${esc(r.l.name||'')}</div></td><td class="d ${r.t?'hit':''}">${r.t?`<span class="code">${esc(r.po.poNo)} · ${esc(r.t.code)}</span><div>${esc(r.t.name||'')}</div>`:r.po?`<span class="code">${esc(r.po.poNo)}</span><div class="sub">ไม่พบรายการนี้</div>`:'–'}</td><td class="n"><b>${r.ord!=null?fq(r.ord):'–'}</b></td><td class="n">${r.t?fq(r.prev):'–'}</td><td class="n"><b>${fq(r.me)}</b></td><td class="n ${r.t&&Math.abs(r.tot-r.ord)>EPS?'dif':''}">${r.t?fq(r.tot):'–'}</td><td class="n">${r.e&&r.e.re?fq(r.e.re)+`<div class="sub">${esc((r.e.reDocs||[]).join(', '))}</div>`:'–'}</td><td class="n">${r.t?fm(r.t.price):'–'}</td><td class="n ${r.pr?'dif':''}">${fm(r.l.price)}</td><td>${pill(r.lv,r.lb)}</td></tr>`).join('')||'<tr><td colspan="10" class="sub">ใบนี้ยังไม่มีรายการสินค้า</td></tr>'}
+  </tbody></table></div>
+  ${other.filter(x=>x.left).map(x=>`<p class="hint">PO <span class="code">${esc(x.po.poNo)}</span> มีทั้งหมด ${x.n} รายการ ใบนี้ส่งมา ${x.n-x.left} รายการ อีก ${x.left} รายการยังไม่ได้ส่ง ซึ่งไม่นับเป็นปัญหาของใบส่งสินค้านี้ ดูสถานะค้างส่งของทั้ง PO ที่แท็บ <button class="sm" data-act="tab" data-v="postatus">สถานะใบสั่งซื้อ</button></p>`).join('')}
+  ${re?'':`<h2>RE ของใบส่งสินค้านี้</h2>${reBox(D,d,st,rk)}`}`}}
+/* ส่วน RE ในหน้าต่าง: 1 ใบส่งสินค้า : 1 RE */
+function reBox(D,d,st,rk){const id=esc(d._id),on=mcpCap&&RES!=='busy';
+  if(st.k==='done')return `<div class="banner" style="border-style:solid;border-color:var(--ok);background:var(--ok-bg);color:var(--ok)">ใบส่งสินค้า <b>${esc(d.docNo)}</b> ออก RE แล้ว: <b class="code">${esc(st.re||'')}</b>${st.date?' · รับเข้า '+esc(fd(st.date)):''}${st.ecount?' (พบใน ECOUNT ผ่าน Data Hub)':''} ห้ามออกซ้ำ 1 ใบส่งสินค้าออก RE ได้ 1 ใบเท่านั้น</div>`;
+  if(st.k==='manual')return `<div class="banner">ระบุไว้ว่าใบนี้มี RE แล้ว (บันทึกใน ECOUNT ด้วยมือ) จึงไม่ออกซ้ำ</div><div class="row" data-w><button class="sm" data-act="reClear" data-id="${id}">ยกเลิกการระบุ</button></div>`;
+  if(st.k==='queued')return `<div class="banner">ส่งคำสั่งออก RE ของใบนี้ไปแล้ว: ${esc(st.t)} ถ้ากดอีกครั้งอาจได้ RE ซ้ำ ให้รอผลจาก Data Hub ก่อน</div><div class="row" data-w><button class="sm" data-act="reOne" data-id="${id}" ${on?'':'disabled'}>ส่งคำสั่งซ้ำ (เฉพาะเมื่อแน่ใจว่าครั้งก่อนไม่สำเร็จ)</button></div>`;
+  if(st.k==='fail')return `<div class="banner" style="color:var(--bad);border-color:var(--bad);background:var(--bad-bg)">${esc(st.t)}</div>`;
+  if(!rk.ok)return `<div class="banner" style="color:var(--bad);border-color:var(--bad);background:var(--bad-bg)">ยังออก RE ไม่ได้<ul style="margin:4px 0 0;padding-left:18px">${rk.why.map(w=>'<li>'+esc(w)+'</li>').join('')}</ul></div><div class="row" data-w><button class="sm" data-act="reManual" data-id="${id}">ใบนี้มี RE ใน ECOUNT แล้ว</button></div>`;
+  return `<p class="hint">ยังไม่ได้ออก RE ทุกรายการตรงกับ PO และไม่เกินจำนวนค้างรับ กดออก RE แล้วระบบส่งคำสั่งไปบันทึกใบซื้อ (RE) ใน ECOUNT อัตโนมัติ ด้วยราคา PO หลังหักส่วนลด</p>
+  <div class="tw"><table><thead><tr><th>PO</th><th>รหัสสินค้า</th><th>รายละเอียด</th><th class="n">จำนวนรับ</th><th class="n">ราคา/หน่วย</th><th class="n">ยอด</th></tr></thead><tbody>${rk.lines.map(l=>`<tr><td class="code">${esc(l.po.poNo)}</td><td class="code">${esc(l.code)}</td><td>${esc(l.name)}</td><td class="n">${fq(l.qty)}</td><td class="n">${fm(l.price)}</td><td class="n">${fm(l.price!=null?l.price*l.qty:null)}</td></tr>`).join('')}</tbody></table></div>
+  <div class="row" data-w><button class="pri" data-act="reOne" data-id="${id}" ${on?'':'disabled'}>${RES==='busy'?'กำลังส่งคำสั่ง…':'ออก RE เข้า ECOUNT'}</button><button class="sm" data-act="reManual" data-id="${id}">ใบนี้มี RE ใน ECOUNT แล้ว</button>${mcpCap?'':'<span class="sub">ใช้ได้เมื่อเปิดหน้านี้ใน Claude ที่เชื่อมต่อ Google Drive แล้ว</span>'}</div>`}
+function popRE(D,R,id){const d=D.dels.find(x=>x._id===id);if(!d)return null;return{t:'ออก RE · ใบส่งสินค้า '+esc(d.docNo),s:esc(fd(d.date))+' · '+esc(vN(D,d.vendor||'')),b:reBox(D,d,reState(d),reCheck(D,d))+`<div class="row"><button class="sm" data-act="pop" data-v="${esc('do|'+id)}">ดูผลเทียบกับ PO</button></div>`}}
+/* รายละเอียด PO: step 0 = ทุกขั้น */
+function popPO(D,R,no,step){const sm=R.pos.find(x=>x.po.poNo===no);if(!sm)return null;const po=sm.po,f=rs=>rs.filter(r=>r.poNo===no),ix=poIdx(D).get(po)||NOIX,docs=[...ix.pk,...ix.re];
+  const h=(n,t,lv,lb,body)=>`<h2 style="margin-top:6px">${n} ${t} ${pill(lv,lb)}</h2>${body}`;
+  const s1=()=>h('①','PO เทียบโปรโมชั่น',sm.na?'wait':sm.s1,sm.l1,`<div class="tw"><table><thead><tr><th>รหัสและรายละเอียด</th><th class="n">จำนวน</th><th class="n">ราคา PO หลังหักส่วนลด</th><th class="n">NP_Promotion</th><th class="n">ส่วนต่าง/หน่วย</th><th>โปรโมชั่น</th><th>ผล</th></tr></thead><tbody>${f(R.r1).map(r=>`<tr><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${fq(r.qty)}</td><td class="n">${fm(r.poPrice)}</td><td class="n">${fm(r.promo)}</td><td class="n ${r.diff>D.set.priceTol?'dif':''}">${r.diff==null?'–':fm(r.diff)}</td><td class="d sub">${esc(r.promoSet||'')}</td><td>${pill(r.lv,r.label)}</td></tr>`).join('')}</tbody></table></div>`);
+  const s2=()=>h('②','ส่งมอบทั้ง PO',sm.s2,sm.l2+' · ส่งครบ '+sm.nDone+'/'+sm.nLine+' รายการ',`<div class="tw"><table><thead><tr><th>รหัสและรายละเอียด</th><th class="n">สั่งซื้อ</th><th class="n">ใบส่งสินค้า / Packing list</th><th class="n">รับสินค้าตาม RE</th><th class="n">ค้างส่ง</th><th>สถานะ</th></tr></thead><tbody>${f(R.r2).map(r=>`<tr><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${fq(r.ord)}</td><td class="n">${r.pk?fq(r.pk):'–'}<div class="sub">${esc((r.pkDocs||[]).join(', '))}</div></td><td class="n">${r.re?fq(r.re):'–'}<div class="sub">${esc((r.reDocs||[]).join(', '))}</div></td><td class="n">${r.out?fq(r.out):'–'}</td><td>${pill(r.lv,r.label)}</td></tr>`).join('')}</tbody></table></div>${docs.length?`<div class="row"><span class="sub">เอกสารส่งมอบ:</span>${docs.map(d=>`<button class="sm" data-act="pop" data-v="${esc('do|'+d._id)}">${esc(d.docNo)}${isRE(d)?' (RE)':''}</button>`).join('')}</div>`:''}`);
+  const s3=()=>h('③','ใบกำกับภาษี',sm.s3,sm.l3,`<div class="tw"><table><thead><tr><th>รหัสและรายละเอียด</th><th class="n">สั่งซื้อ</th><th class="n">รับแล้ว</th><th class="n">วางบิล</th><th class="n">ราคา PO</th><th class="n">ราคา_Inv สุทธิ</th><th>ใบกำกับ</th><th>สถานะ</th></tr></thead><tbody>${f(R.r3).map(r=>`<tr><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${fq(r.ord)}</td><td class="n">${fq(r.del)}</td><td class="n">${fq(r.inv)}</td><td class="n">${fm(r.poPrice)}</td><td class="n">${fm(r.effPrice)}</td><td class="sub">${esc((r.docs||[]).join(', '))}</td><td>${pill(r.lv,r.label)}</td></tr>`).join('')}</tbody></table></div>`);
+  return{t:'ใบสั่งซื้อ '+esc(no),s:`${esc(vN(D,po.vendor))} · ${esc(fd(po.date))}${po.project?' · โครงการ '+esc(po.project):''} · มูลค่า ${fm(sm.total)} · สรุป: ${esc(sm.label)}`,
+    b:`<div class="row">${[[1,'① โปร'],[2,'② ส่งมอบ'],[3,'③ ใบกำกับ'],[0,'ทุกขั้น']].map(([k,t])=>`<button class="sm${step===k?' pri':''}" data-act="pop" data-v="${esc('po|'+no+'|'+k)}">${t}</button>`).join('')}</div>${step===1?s1():step===2?s2():step===3?s3():s1()+s2()+s3()}`}}
+/* รายการเดียวของ PO เทียบทุกเอกสาร */
+function popLine(D,R,no,code){const k=m1key(no,code),g=rs=>rs.find(r=>m1key(r.poNo,r.code)===k),a=g(R.r1),b=g(R.r2),c=g(R.r3);if(!a&&!b&&!c)return null;const x=b||c||a;
+  const row=(t,q,pr,docs,lv,lb)=>`<tr><td><b>${t}</b></td><td class="n">${q==null?'–':fq(q)}</td><td class="n">${pr==null?'–':fm(pr)}</td><td class="sub">${esc(docs||'')}</td><td>${lv?pill(lv,lb):''}</td></tr>`;
+  return{t:esc(no)+' · '+esc(code),s:esc(x.name||''),b:`<div class="tw"><table><thead><tr><th>เอกสาร</th><th class="n">จำนวน</th><th class="n">ราคา/หน่วย</th><th>เลขที่เอกสาร</th><th>ผล</th></tr></thead><tbody>
+    ${row('ใบสั่งซื้อ (PO)',x.ord??(a&&a.qty),x.poPrice,no)}
+    ${a?row('โปรโมชั่น (NP_Promotion)',null,a.promo,a.promoSet,a.scope?a.lv:'',a.scope?a.label:''):''}
+    ${b?row('ใบส่งสินค้า / Packing list',b.pk||null,b.docPrice,(b.pkDocs||[]).join(', '),b.lv,b.label):''}
+    ${b?row('รับสินค้าตาม RE (ECOUNT)',b.re||null,b.rePrice,(b.reDocs||[]).join(', ')):''}
+    ${c?row('ใบกำกับภาษี (ราคา_Inv สุทธิ)',c.inv||null,c.effPrice,(c.docs||[]).join(', '),c.lv,c.label):''}
+  </tbody></table></div>${b?priceDetail(D,no,b):''}<div class="row"><button class="sm" data-act="pop" data-v="${esc('po|'+no+'|0')}">ดูทั้ง PO</button></div>`}}
 let SELINV=null,PRD=null;
 const reBad=(r,D)=>r.rePrice!=null&&r.poPrice!=null&&Math.abs(r.rePrice-r.poPrice)>Math.max(D.set.priceTol,0.01);
 /* รายละเอียดราคาของรายการหนึ่ง: PO เทียบ โปรโมชั่น เทียบ ราคา_RE (สถานะการซื้อ) */
@@ -1085,7 +1176,7 @@ function vInvoice(D,R){const sel=SELINV&&D.invs.find(x=>x._id===SELINV)||null,se
   const invs=D.invs.filter(i=>{const o=docPO(D,i)||{};return(!F.q||nk([i.poNo,i.refNo,i.docNo,i.vendor,o.poNo].join(' ')).includes(nk(F.q)))&&(!F.vendor||o.vendor===F.vendor)&&(!F.project||o.project===F.project)&&(!F.month||String(o.date||'').startsWith(F.month))});
   const invT=`<div class="tw"><table><thead><tr><th>เลขที่ใบกำกับ</th><th>วันที่</th><th>ผู้ขาย / เลขผู้เสียภาษี</th><th>เลขที่อ้างอิง / เอกสารอ้างอิง</th><th>PO ที่จับคู่ได้</th><th class="n">ส่วนลด (บาท) / % / ที่มา</th><th class="n">ก่อนภาษี / ภาษี</th><th class="n">ยอดรวม</th><th class="n">เครดิต (วัน)</th><th>วันครบกำหนด</th><th>ผลตรวจ</th><th></th></tr></thead><tbody>
   ${invs.map(i=>{const rf=docRef(D,i),ck=invChecks(D,i),vd=invVerdict(D,i),ok=ck.every(k=>k.ok)&&vd.ok,due=dueOf(i,D.set),paid=rf&&(D.appr||{})[rf.po._id||''];
-    return `<tr${sel===i?' style="background:var(--sel,rgba(120,150,255,.14))"':''}><td><button class="sm" data-act="selInv" data-id="${esc(i._id)}" aria-pressed="${sel===i}" title="ดูผลการ match ของใบกำกับนี้"><span class="code">${esc(i.docNo)}</span></button>${sel===i?'<div class="sub">กำลังดู</div>':''}</td><td class="c">${esc(i.date||'–')}</td><td class="d">${esc(i.vendor||'–')}<div class="sub">${esc(i.vendorTaxId||'')}</div></td><td class="d">${[i.poNo,i.refNo].filter(Boolean).map(x=>`<span class="code">${esc(x)}</span>`).join('<br>')||'–'}</td><td>${rf?`<span class="code">${esc(rf.po.poNo)}</span><div class="sub">${rf.via==='po'?'จากเลขที่ PO':'จาก D/O No. '+esc(rf.ref)}</div>${poSteps(R,rf.po.poNo)}`:pill('bad','ไม่พบ')}</td><td class="n">${(b=>b.disc>0.005?`<b>${fm(b.disc)}</b><div><b>${fp(b.pct)}</b></div>${b.odd?`<div>${pill('warn','% ไม่ลงตัว')}</div>`:''}${b.parts.map(x=>`<div class="sub" style="white-space:nowrap">${esc(x.label.replace(' (รายการนอกโปร)',''))} ${fp(x.pct)}</div>`).join('')}`:'–')(invBreak(D,i))}</td><td class="n">${fm(i.subtotal)}<div class="sub">${fm(i.vat)}</div></td><td class="n"><b>${fm(i.total)}</b></td><td class="n">${i.creditDays??'–'}</td><td><span class="code">${esc(due||'–')}</span>${!due?'':paid?'':due<today?'<div>'+pill('bad','เกินกำหนด')+'</div>':due<=soon?'<div>'+pill('warn','ครบใน 7 วัน')+'</div>':''}</td><td>${pill(ok?'ok':'bad',ok?'ผ่าน':'ไม่ผ่าน')}${verdictHtml(vd,true)}</td><td style="white-space:nowrap">${D.demo?'':`<button class="sm" data-w data-act="edit" data-v="invs" data-id="${esc(i._id)}">แก้ไข</button>`}</td></tr>`}).join('')||'<tr><td colspan="12" class="sub">ยังไม่มีใบกำกับภาษี</td></tr>'}
+    return `<tr${sel===i?' style="background:var(--sel,rgba(120,150,255,.14))"':''}><td><button class="sm" data-act="selInv" data-id="${esc(i._id)}" aria-pressed="${sel===i}" title="ดูผลการ match ของใบกำกับนี้"><span class="code">${esc(i.docNo)}</span></button>${sel===i?'<div class="sub">กำลังดู</div>':''}</td><td class="c">${esc(i.date||'–')}</td><td class="d">${esc(vN(D,i.vendor||'')||'–')}<div class="sub">${esc(i.vendorTaxId||'')}</div></td><td class="d">${[i.poNo,i.refNo].filter(Boolean).map(x=>`<span class="code">${esc(x)}</span>`).join('<br>')||'–'}</td><td>${rf?`<span class="code">${esc(rf.po.poNo)}</span><div class="sub">${rf.via==='po'?'จากเลขที่ PO':'จาก D/O No. '+esc(rf.ref)}</div>${poSteps(R,rf.po.poNo)}`:pill('bad','ไม่พบ')}</td><td class="n">${(b=>b.disc>0.005?`<b>${fm(b.disc)}</b><div><b>${fp(b.pct)}</b></div>${b.odd?`<div>${pill('warn','% ไม่ลงตัว')}</div>`:''}${b.parts.map(x=>`<div class="sub" style="white-space:nowrap">${esc(x.label.replace(' (รายการนอกโปร)',''))} ${fp(x.pct)}</div>`).join('')}`:'–')(invBreak(D,i))}</td><td class="n">${fm(i.subtotal)}<div class="sub">${fm(i.vat)}</div></td><td class="n"><b>${fm(i.total)}</b></td><td class="n">${i.creditDays??'–'}</td><td><span class="code">${esc(due||'–')}</span>${!due?'':paid?'':due<today?'<div>'+pill('bad','เกินกำหนด')+'</div>':due<=soon?'<div>'+pill('warn','ครบใน 7 วัน')+'</div>':''}</td><td>${pill(ok?'ok':'bad',ok?'ผ่าน':'ไม่ผ่าน')}${verdictHtml(vd,true)}</td><td style="white-space:nowrap">${D.demo?'':`<button class="sm" data-w data-act="edit" data-v="invs" data-id="${esc(i._id)}">แก้ไข</button>`}</td></tr>`}).join('')||'<tr><td colspan="12" class="sub">ยังไม่มีใบกำกับภาษี</td></tr>'}
   </tbody></table></div>`;
   return `<section class="card"><h2>③ ใบสั่งซื้อ เทียบใบส่งสินค้า เทียบใบกำกับภาษี</h2><p><b>วัตถุประสงค์: ตรวจความถูกต้องของใบกำกับภาษี ว่าสินค้า จำนวน ราคา และยอดเงิน ถูกต้องครบถ้วนก่อนจ่าย</b> ทุกใบกำกับมีผลตรวจ 4 ข้อนี้ ชี้ที่ป้ายเพื่อดูรายละเอียด </p><p>จำนวนในใบกำกับต้องไม่เกินจำนวนที่รับจริง ราคาต้องตรงกับราคา PO หลังหักส่วนลด ซึ่งเป็นราคาเดียวกับที่เทียบโปรโมชั่นในขั้น ① และภาษีต้องเท่ากับ ${D.set.vatRate}% ของยอดก่อนภาษี</p>${upPanel('inv')}<h2>ใบกำกับภาษีที่นำเข้าแล้ว</h2><p class="hint">จับคู่จากเลขที่เอกสารอ้างอิงในใบกำกับ กับ D/O No. ของใบส่งสินค้า / Packing list เป็นอันดับแรก ถ้าไม่มีจึงใช้เลขที่ใบสั่งซื้อ / PO No. เครดิตและวันครบกำหนดแสดงตามที่อ่านได้จากใบกำกับภาษี ระบบไม่คำนวณให้ ถ้าเอกสารไม่ได้พิมพ์ไว้ช่องจะว่าง</p>${invT}</section>
   
@@ -1094,10 +1185,10 @@ function vInvoice(D,R){const sel=SELINV&&D.invs.find(x=>x._id===SELINV)||null,se
     const sub=iv.reduce((a,x)=>a+(x.subtotal!=null?x.subtotal:(x.lines||[]).reduce((b,l)=>b+(l.amount!=null?l.amount:(l.qty||0)*(l.price||0)),0)),0),vat=iv.reduce((a,x)=>a+(x.vat||0),0),tot=iv.reduce((a,x)=>a+(x.total!=null?x.total:0),0),exp=Math.round(sub*D.set.vatRate)/100,vok=Math.abs(vat-exp)<=D.set.vatTol*Math.max(1,iv.length);
     const tids=[...new Set(iv.map(x=>String(x.vendorTaxId||'').replace(/\D/g,'')).filter(Boolean))],tok=tids.length>0&&tids.every(t=>t.length===13),mine=String(D.set.buyerTaxId||'').replace(/\D/g,''),bids=[...new Set(iv.map(x=>String(x.buyerTaxId||'').replace(/\D/g,'')).filter(Boolean))];
     const sumAmt=rs.reduce((a,r)=>a+(r.invAmt||0),0);
-    return `<div class="deep"><div class="deep-h"><div><b class="code" style="font-size:13px">${esc(no)}</b> <span class="sub">${esc(po.date||'')} · ${esc(po.vendor||'')}${po.project?' · โครงการ '+esc(po.project):''}</span><div class="sub">Packing list / ใบส่งสินค้า: ${dl.filter(x=>!isRE(x)).map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'} · รับสินค้า RE: ${dl.filter(isRE).map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'} · ใบกำกับภาษี: ${iv.map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'}</div>${poSteps(R,no)}</div><div class="row"><span class="chip">${rs.length} รายการ</span>${pill(sm.s3||'wait',sm.l3||'รอใบกำกับ')}</div></div>
+    return `<div class="deep"><div class="deep-h"><div><b class="code" style="font-size:13px">${esc(no)}</b> <span class="sub">${esc(po.date||'')} · ${esc(vN(D,po.vendor||'')||'')}${po.project?' · โครงการ '+esc(po.project):''}</span><div class="sub">Packing list / ใบส่งสินค้า: ${dl.filter(x=>!isRE(x)).map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'} · รับสินค้า RE: ${dl.filter(isRE).map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'} · ใบกำกับภาษี: ${iv.map(x=>esc(x.docNo)).join(', ')||'ยังไม่มี'}</div>${poSteps(R,no)}</div><div class="row"><span class="chip">${rs.length} รายการ</span>${pz('po|'+no+'|3',pill(sm.s3||'wait',sm.l3||'รอใบกำกับ'))}</div></div>
     <div class="tw" style="border:0;border-radius:0"><table><thead><tr><th>รหัส / รายการสินค้า</th><th class="n">PO จำนวน</th><th class="n">Packing list / ใบส่งสินค้า</th><th class="n">รับเข้า (RE)</th><th class="n">ใบกำกับ เรียกเก็บ</th><th class="n">ราคา PO / หน่วย</th><th class="n">ราคา_RE / หน่วย</th><th class="n">ราคาใบกำกับ / หน่วย</th><th class="n">ส่วนลดในใบกำกับ</th><th class="n">ยอดหลังหักส่วนลด (ก่อนภาษี)</th><th>สถานะการจับคู่</th></tr></thead><tbody>
     ${rs.map(r=>{const qd=r.del!==r.ord,qi=r.inv!==r.del,pd=r.effPrice!=null&&r.poPrice!=null?r.effPrice-r.poPrice:null,pb=pd!=null&&(pd>Math.max(D.set.priceTol,0.01)||(pd<-Math.max(D.set.priceTol,0.01)&&!r.byDisc)),dA=(r.invAmt||0)-(r.invNet||0);
-      return `<tr><td class="d"><span class="code"><b>${esc(r.code)}</b></span><div>${esc(r.name)}</div></td><td class="n"><b>${fq(r.ord)}</b></td><td class="n ${r.pk>0&&r.pk!==r.ord?'dif':''}"><b>${r.pk?fq(r.pk):'–'}</b>${(r.pkDocs||[]).length?`<div class="sub">${esc(r.pkDocs.join(', '))}</div>`:''}</td><td class="n ${r.re>0&&(r.pk>0?r.re!==r.pk:r.re!==r.ord)?'dif':''}"><b>${r.re?fq(r.re):'–'}</b>${(r.reDocs||[]).length?`<div class="sub">${esc(r.reDocs.join(', '))}</div>`:''}</td><td class="n ${qi&&r.inv>0?'dif':''}"><b>${fq(r.inv)}</b>${r.docs.length?`<div class="sub">${esc(r.docs.join(', '))}</div>`:''}</td><td class="n">${fm(r.poPrice)}${r.priceOk==='ok'?'<div class="sub">ตรงโปรแล้ว</div>':r.priceOk==='no'?(sm.comp&&sm.comp.due>0&&sm.comp.out<=ctol?'<div class="sub">ชดเชยครบแล้ว</div>':`<div><button class="sm" data-act="prd" data-v="${esc(no+'|'+r.code)}" style="color:var(--warn);border-color:var(--warn)">ราคาไม่ตรงโปร ${PRD===no+'|'+r.code?'▴':'▾'}</button></div>`):''}</td><td class="n ${reBad(r,D)?'dif':''}">${r.rePrice!=null?fm(r.rePrice):'–'}${reBad(r,D)?`<div><button class="sm" data-act="prd" data-v="${esc(no+'|'+r.code)}" style="color:var(--bad);border-color:var(--bad)">≠ PO ${PRD===no+'|'+r.code?'▴':'▾'}</button></div>`:''}</td><td class="n ${pb?'dif':''}">${fm(r.invPrice)}${r.inv&&r.effPrice!=null&&dA>0.005?`<div class="sub">สุทธิ ${fm(r.effPrice)}</div>`:''}</td><td class="n">${r.inv&&dA>0.005?fm(dA)+`<div class="sub">${fp(dA/r.invAmt*100)}</div>`:'–'}</td><td class="n"><b>${r.inv?fm(r.invNet):'–'}</b></td><td>${pill(r.lv,r.lv==='ok'?'ผ่าน (Match)':r.label)}</td></tr>${PRD===no+'|'+r.code?`<tr><td colspan="11" style="background:var(--soft)">${priceDetail(D,no,r)}</td></tr>`:''}`}).join('')}
+      return `<tr><td class="d"><span class="code"><b>${esc(r.code)}</b></span><div>${esc(r.name)}</div></td><td class="n"><b>${fq(r.ord)}</b></td><td class="n ${r.pk>0&&r.pk!==r.ord?'dif':''}"><b>${r.pk?fq(r.pk):'–'}</b>${(r.pkDocs||[]).length?`<div class="sub">${esc(r.pkDocs.join(', '))}</div>`:''}</td><td class="n ${r.re>0&&(r.pk>0?r.re!==r.pk:r.re!==r.ord)?'dif':''}"><b>${r.re?fq(r.re):'–'}</b>${(r.reDocs||[]).length?`<div class="sub">${esc(r.reDocs.join(', '))}</div>`:''}</td><td class="n ${qi&&r.inv>0?'dif':''}"><b>${fq(r.inv)}</b>${r.docs.length?`<div class="sub">${esc(r.docs.join(', '))}</div>`:''}</td><td class="n">${fm(r.poPrice)}${r.priceOk==='ok'?'<div class="sub">ตรงโปรแล้ว</div>':r.priceOk==='no'?(sm.comp&&sm.comp.due>0&&sm.comp.out<=ctol?'<div class="sub">ชดเชยครบแล้ว</div>':`<div><button class="sm" data-act="prd" data-v="${esc(no+'|'+r.code)}" style="color:var(--warn);border-color:var(--warn)">ราคาไม่ตรงโปร ${PRD===no+'|'+r.code?'▴':'▾'}</button></div>`):''}</td><td class="n ${reBad(r,D)?'dif':''}">${r.rePrice!=null?fm(r.rePrice):'–'}${reBad(r,D)?`<div><button class="sm" data-act="prd" data-v="${esc(no+'|'+r.code)}" style="color:var(--bad);border-color:var(--bad)">≠ PO ${PRD===no+'|'+r.code?'▴':'▾'}</button></div>`:''}</td><td class="n ${pb?'dif':''}">${fm(r.invPrice)}${r.inv&&r.effPrice!=null&&dA>0.005?`<div class="sub">สุทธิ ${fm(r.effPrice)}</div>`:''}</td><td class="n">${r.inv&&dA>0.005?fm(dA)+`<div class="sub">${fp(dA/r.invAmt*100)}</div>`:'–'}</td><td class="n"><b>${r.inv?fm(r.invNet):'–'}</b></td><td>${pz('ln|'+no+'|'+r.code,pill(r.lv,r.lv==='ok'?'ผ่าน (Match)':r.label))}</td></tr>${PRD===no+'|'+r.code?`<tr><td colspan="11" style="background:var(--soft)">${priceDetail(D,no,r)}</td></tr>`:''}`}).join('')}
     </tbody></table></div>
     <div class="deep-f"><div><div class="sub">การคำนวณภาษีมูลค่าเพิ่ม (VAT ${D.set.vatRate}%)</div>${iv.length?`<div class="code">มูลค่าก่อนภาษี ${fm(sub)} × ${D.set.vatRate}% = ${fm(exp)}</div><div>${vok?pill('ok','ภาษีในใบกำกับตรงกัน'):pill('bad','ใบกำกับระบุ '+fm(vat)+' ต่าง '+fm(vat-exp))}</div>${(dsum=>Math.abs(sumAmt-dsum-sub)>Math.max(D.set.vatTol,0.05)?`<div>${pill('warn','ผลรวมรายการ '+fm(sumAmt)+(dsum?' หักส่วนลด '+fm(dsum):'')+' ไม่เท่ายอดก่อนภาษี')}</div>`:dsum?`<div class="sub">ผลรวมรายการ ${fm(sumAmt)} หักส่วนลดท้ายใบกำกับ ${fm(dsum)}</div>`:'')(iv.reduce((a,x)=>a+invDisc(x),0))}`:'<div class="sub">รอใบกำกับภาษี</div>'}</div>
       <div><div class="sub">เลขประจำตัวผู้เสียภาษี 13 หลัก</div>${iv.length?`<div>${tok?pill('ok','เลขผู้ขายครบ 13 หลัก'):pill('bad',tids.length?'เลขผู้ขายไม่ครบ 13 หลัก':'ไม่มีเลขผู้ขาย')} <span class="code">${esc(tids.join(', '))}</span></div>${mine?`<div>${bids.length&&bids.every(t=>t===mine)?pill('ok','เลขผู้ซื้อตรงกับบริษัท'):pill('bad',bids.length?'เลขผู้ซื้อไม่ตรงกับบริษัท':'ไม่มีเลขผู้ซื้อ')} <span class="code">${esc(bids.join(', '))}</span></div>`:''}`:'<div class="sub">รอใบกำกับภาษี</div>'}</div>
@@ -1105,7 +1196,7 @@ function vInvoice(D,R){const sel=SELINV&&D.invs.find(x=>x._id===SELINV)||null,se
       <div class="deep-t"><div><span>ยอดรวมก่อนภาษี (Subtotal)</span><b class="code">${iv.length?fm(sub):'–'}</b></div><div><span>ภาษีมูลค่าเพิ่ม ${D.set.vatRate}% (VAT)</span><b class="code">${iv.length?fm(vat):'–'}</b></div><div class="gt"><span>ยอดรวมสุทธิ (Grand Total)</span><b class="code">${iv.length?fm(tot||sub+vat):'–'}</b></div></div></div></div>`}).join('')||'<p class="hint">ไม่มีรายการ</p>'}
   ${grp.length>shown.length?`<p class="hint">แสดง ${shown.length} PO แรกจาก ${grp.length} ใช้ช่องค้นหา ผู้จำหน่าย โครงการ หรือเดือน เพื่อจำกัดรายการ</p>`:''}</section>
   <section class="card"><h2>ผลตรวจหัวเอกสารและภาษี รายใบกำกับ</h2>
-  <div class="grid2">${invs.filter(i=>!sel||i===sel).map(i=>{const ck=invChecks(D,i);return `<div class="inv"><h3>${esc(i.docNo)} ${pill(ck.every(k=>k.ok)?'ok':'bad',ck.every(k=>k.ok)?'ผ่าน':'ไม่ผ่าน')}</h3><div class="sub">${esc(i.vendor)} · ${esc(i.date||'')} · อ้างอิง ${esc([i.poNo,i.refNo].filter(Boolean).join(', ')||'–')} · ก่อนภาษี ${fm(i.subtotal)} · ภาษี ${fm(i.vat)} · รวม ${fm(i.total)} · เครดิต ${i.creditDays??'–'} วัน · ครบกำหนด ${esc(i.dueDate||'–')}</div>${verdictHtml(invVerdict(D,i))}<div style="font-size:12.5px">${brkHtml(invBreak(D,i),true)}</div><ul class="chk">${ck.map(k=>`<li class="${k.ok?'':'x'}">${esc(k.label)}</li>`).join('')}</ul></div>`}).join('')||'<p class="hint">ยังไม่มีใบกำกับภาษี</p>'}</div></section>`}
+  <div class="grid2">${invs.filter(i=>!sel||i===sel).map(i=>{const ck=invChecks(D,i);return `<div class="inv"><h3>${esc(i.docNo)} ${pill(ck.every(k=>k.ok)?'ok':'bad',ck.every(k=>k.ok)?'ผ่าน':'ไม่ผ่าน')}</h3><div class="sub">${esc(vN(D,i.vendor))} · ${esc(i.date||'')} · อ้างอิง ${esc([i.poNo,i.refNo].filter(Boolean).join(', ')||'–')} · ก่อนภาษี ${fm(i.subtotal)} · ภาษี ${fm(i.vat)} · รวม ${fm(i.total)} · เครดิต ${i.creditDays??'–'} วัน · ครบกำหนด ${esc(i.dueDate||'–')}</div>${verdictHtml(invVerdict(D,i))}<div style="font-size:12.5px">${brkHtml(invBreak(D,i),true)}</div><ul class="chk">${ck.map(k=>`<li class="${k.ok?'':'x'}">${esc(k.label)}</li>`).join('')}</ul></div>`}).join('')||'<p class="hint">ยังไม่มีใบกำกับภาษี</p>'}</div></section>`}
 
 /* ==========================================================================
  * MODULE 13  VIEW: เอกสารและนำเข้า
@@ -1123,7 +1214,7 @@ function vDocs(D){
   return `${imp}<div class="grid2">
   <section class="card"><h2>ใบสั่งซื้อจาก ECOUNT</h2><p>กด “โหลดจาก Data Hub” ที่มุมบนเพื่อดึงใบสั่งซื้อและเอกสารรับสินค้าจาก Google Sheet กลาง หรือส่งออกรายงานสถานะการซื้อจาก ECOUNT เป็น Excel แบบแสดงรายการสินค้า ให้มีคอลัมน์โครงการและชื่อผู้จำหน่าย แล้วนำเข้าที่นี่ PO เลขเดิมจะถูกแทนที่ด้วยข้อมูลใหม่</p>${hubP}
     <div class="row" data-w><button class="pri" data-act="impX" data-v="po">นำเข้ารายงานสถานะการซื้อ (.xlsx)</button><span class="chip">${D.pos.length} ใบ</span></div>
-    <div class="tw" style="max-height:260px;overflow-y:auto"><table><thead><tr><th>เลขที่ PO</th><th>ผู้จำหน่าย</th><th class="n">รายการ</th><th></th></tr></thead><tbody>${D.pos.slice(0,CAP).map(p=>`<tr><td class="c">${esc(p.poNo)}</td><td>${esc(p.vendor)}</td><td class="n">${(p.lines||[]).length}</td><td>${p._hub?'<span class="sub">Data Hub</span>':D.demo?'':`<button class="sm" data-w data-act="delDoc" data-v="pos" data-id="${esc(p._id)}">ลบ</button>`}</td></tr>`).join('')}</tbody></table></div>${capNote(D.pos.length)}</section>
+    <div class="tw" style="max-height:260px;overflow-y:auto"><table><thead><tr><th>เลขที่ PO</th><th>ผู้จำหน่าย</th><th class="n">รายการ</th><th></th></tr></thead><tbody>${D.pos.slice(0,CAP).map(p=>`<tr><td class="c">${esc(p.poNo)}</td><td>${esc(vN(D,p.vendor))}</td><td class="n">${(p.lines||[]).length}</td><td>${p._hub?'<span class="sub">Data Hub</span>':D.demo?'':`<button class="sm" data-w data-act="delDoc" data-v="pos" data-id="${esc(p._id)}">ลบ</button>`}</td></tr>`).join('')}</tbody></table></div>${capNote(D.pos.length)}</section>
   <section class="card"><h2>โปรโมชั่น</h2><p>มี ${D.sets.length} โปรโมชั่น รวม ${D.promos.length} รายการ นำเข้าเพิ่ม กำหนดช่วงเวลา และลบทั้งโปรได้ที่แท็บ “คลังโปรโมชั่น”</p>
     <div class="row"><button class="pri" data-w data-act="impX" data-v="promo">นำเข้าโปรโมชั่นใหม่ (.xlsx)</button><button data-act="tab" data-v="promos">เปิดคลังโปรโมชั่น</button></div>
     <div class="tw"><table><thead><tr><th>ชื่อโปรโมชั่น</th><th>ช่วงเวลา</th><th class="n">รายการ</th></tr></thead><tbody>${D.sets.map(x=>`<tr><td>${esc(x.name)}</td><td class="sub">${fd(x.start)} – ${fd(x.end)}</td><td class="n">${x.count}</td></tr>`).join('')||'<tr><td colspan="3" class="sub">ยังไม่มี</td></tr>'}</tbody></table></div></section>
@@ -1197,7 +1288,7 @@ const FIELDS={po:[['poNo','เลขที่ใบสั่งซื้อ',['�
 const hn=s=>String(s??'').toLowerCase().replace(/\s+/g,' ').trim();
 function autoMap(headers,fields){const H=headers.map(hn),map={},used=new Set();
   for(const pass of[0,1])for(const[f,,syn]of fields){if(map[f]!=null)continue;
-    for(const s of syn){const i=H.findIndex((h,ix)=>!used.has(ix)&&(pass===0?h===s:h.includes(s)));if(i>=0){map[f]=i;used.add(i);break}}}
+    for(const s of syn){const i=H.findIndex((h,ix)=>!used.has(ix)&&(pass===0?h===s:h.includes(s))&&!(f==='vendor'&&/รหัส|code/.test(h)));if(i>=0){map[f]=i;used.add(i);break}}}
   return map}
 async function readXlsx(file,kind){
   const wb=XLSX.read(await file.arrayBuffer(),{cellDates:true});
@@ -1461,7 +1552,7 @@ function edPreview(){const inv=ED.kind==='inv',D=DATA(),cur={...edDoc(),_id:ED.i
   const ps=docPOs(D2,cur);if(!ps.length)return'';const R=summary(D2);
   return (inv?verdictHtml(invVerdict(D2,cur)):'')+ps.map(po=>{const ag0=aggLines(po),have=new Set(ED.lines.map(l=>{const t=resolveLine(ag0,l);return t?kc(t.code):kc(l.code)})),miss=r=>!have.has(kc(r.code)),addB=r=>miss(r)?`<div><button class="sm" data-act="edAddPo" data-v="${esc(r.code)}" data-id="${esc(po.poNo)}">เพิ่มรายการนี้</button></div>`:'';
     const sm=R.pos.find(x=>x.po===po)||{},rows=(inv?R.r3:R.r2).filter(r=>r.poNo===po.poNo),dl=D2.dels.filter(x=>docPOs(D2,x).includes(po)),iv=D2.invs.filter(x=>docPOs(D2,x).includes(po)),me=x=>x===cur?' (ใบนี้)':'';
-    return `<div class="deep"><div class="deep-h"><div><b>${inv?'ผลการ matching 3 ทางของเอกสารชุดนี้':'ผลการ matching กับใบสั่งซื้อ'}</b><div class="sub">PO <span class="code">${esc(po.poNo)}</span> ${esc(po.date||'')} · ${esc(po.vendor||'')} → Packing list / ใบส่งสินค้า: ${dl.filter(x=>!isRE(x)).map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)+(x.date?' '+esc(x.date):'')).join(', ')||'ยังไม่มี'} → รับสินค้า RE: ${dl.filter(isRE).map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)).join(', ')||'ยังไม่มี'}${inv?' → ใบกำกับภาษี: '+iv.map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)).join(', '):''}</div></div>
+    return `<div class="deep"><div class="deep-h"><div><b>${inv?'ผลการ matching 3 ทางของเอกสารชุดนี้':'ผลการ matching กับใบสั่งซื้อ'}</b><div class="sub">PO <span class="code">${esc(po.poNo)}</span> ${esc(po.date||'')} · ${esc(vN(D,po.vendor||'')||'')} → Packing list / ใบส่งสินค้า: ${dl.filter(x=>!isRE(x)).map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)+(x.date?' '+esc(x.date):'')).join(', ')||'ยังไม่มี'} → รับสินค้า RE: ${dl.filter(isRE).map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)).join(', ')||'ยังไม่มี'}${inv?' → ใบกำกับภาษี: '+iv.map(x=>'<span class="code">'+esc(x.docNo)+'</span>'+me(x)).join(', '):''}</div></div>
       <div class="row">① ${pill(sm.na?'wait':sm.s1,sm.l1)} ② ${pill(sm.s2,sm.l2)}${inv?' ③ '+pill(sm.s3,sm.l3)+' '+pill(sm.all,sm.label):''}</div></div>
     <div class="tw" style="border:0;border-radius:0"><table><thead><tr><th>รหัส / รายการสินค้า</th><th class="n">PO จำนวน</th><th class="n">Packing list / ใบส่งสินค้า</th><th class="n">รับเข้า (RE)</th>${inv?'<th class="n">ใบกำกับ เรียกเก็บ</th><th class="n">ราคา PO / หน่วย</th><th class="n">ราคาใบกำกับ / หน่วย</th><th class="n">ส่วนลด</th><th class="n">ยอดหลังหักส่วนลด</th>':'<th class="n">ค้างส่ง</th>'}<th>สถานะ</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td class="d"><span class="code">${esc(r.code)}</span><div>${esc(r.name)}</div></td><td class="n">${fq(r.ord)}</td><td class="n">${r.pk?fq(r.pk):'–'}${(r.pkDocs||[]).length?`<div class="sub">${esc(r.pkDocs.join(', '))}</div>`:''}</td><td class="n">${r.re?fq(r.re):'–'}${(r.reDocs||[]).length?`<div class="sub">${esc(r.reDocs.join(', '))}</div>`:''}</td>${inv?`<td class="n">${fq(r.inv)}</td><td class="n">${fm(r.poPrice)}</td><td class="n">${fm(r.invPrice)}${r.byDisc&&r.effPrice!=null?`<div class="sub">สุทธิ ${fm(r.effPrice)}</div>`:''}</td><td class="n">${r.inv&&r.invAmt-r.invNet>0.005?fm(r.invAmt-r.invNet):'–'}</td><td class="n"><b>${r.inv?fm(r.invNet):'–'}</b>${r.inv&&r.docs&&r.docs.length?`<div class="sub" style="font-size:11px">${esc(r.docs.join(', '))}</div>`:''}</td>`:`<td class="n">${r.out?fq(r.out):'–'}</td>`}<td>${pill(r.lv,r.lv==='ok'&&inv?'ผ่าน (Match)':r.label)}${addB(r)}</td></tr>`).join('')}
@@ -1514,13 +1605,20 @@ async function report(){if(!CFG.gsUrl)return toast('เชื่อมต่อ 
 let pendKind=null;
 document.addEventListener('click',async ev=>{
   const b=ev.target.closest('[data-act]');if(!b)return;
-  if(b.dataset.act==='openPO'&&ev.target.closest('[data-stop]'))return;
+  if((b.dataset.act==='openPO'||(b.dataset.act==='pop'&&b.tagName==='TR'))&&ev.target.closest('[data-stop]'))return;
   const a=b.dataset.act,v=b.dataset.v,id=b.dataset.id,demo=isDemo();
   const need=()=>{if(demo){toast('นี่คือข้อมูลตัวอย่าง นำเข้าข้อมูลจริงก่อน');return true}return false};
   try{switch(a){
-    case'tab':tab=v;F.q='';try{history.replaceState(null,'','#'+v)}catch(e){}render();window.scrollTo(0,0);break;
+    case'tab':popClose();tab=v;F.q='';try{history.replaceState(null,'','#'+v)}catch(e){}render();window.scrollTo(0,0);break;
     case'openPO':tab='invoice';F.q=v;F.only=false;render();break;
     case'prd':PRD=PRD===v?null:v;render();break;
+    case'pop':popOpen(v);break;
+    case'popX':popClose();break;
+    case'kpi':F.st=v;F.only=false;tab='postatus';try{history.replaceState(null,'','#postatus')}catch(e){}render();window.scrollTo(0,0);break;
+    case'stF':F.st=v;render();break;
+    case'reBtn':{if(need())break;const D=DATA(),d=D.dels.find(x=>x._id===id);if(!d)break;const st=reState(d),c=reCheck(D,d);
+      if(st.k||!c.ok){popOpen('re|'+id);if(st.k==='done'||st.k==='manual')toast('ใบส่งสินค้า '+d.docNo+' ออก RE แล้ว ไม่สามารถออกซ้ำได้')}
+      else if(!mcpCap)popOpen('re|'+id);else sendRE([id]);break}
     case'selInv':SELINV=id&&id!==SELINV?id:null;render();if(SELINV){const e=$('#deepSec');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})}break;
     case'openPO2':F.q=v;F.only=false;render();break;
     case'export':exportX();break;
@@ -1587,6 +1685,8 @@ document.addEventListener('click',async ev=>{
       if(S.promosets[id])await rm('promosets',id);if(F.set===id)F.set='';toast('ลบโปรโมชั่นทั้งชุดแล้ว');render();break;
     case'saveSet':{const s={...settings(),priceTol:num($('#s_priceTol').value)??DEF.priceTol,vatRate:num($('#s_vatRate').value)??DEF.vatRate,vatTol:num($('#s_vatTol').value)??DEF.vatTol,vendorAlias:$('#s_vendorAlias').value,buyerNames:$('#s_buyerNames').value,buyerTaxId:$('#s_buyerTaxId').value.trim(),poIncVat:$('#s_poIncVat').value==='1',promoVendor:$('#s_promoVendor').value.trim(),promoProject:$('#s_promoProject').value.trim()};await put('meta','settings',s);toast('บันทึกเกณฑ์แล้ว');render();break}
   }}catch(e){wErr(e)}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&POP){popClose();return}const t=ev.target;if((ev.key==='Enter'||ev.key===' ')&&t.classList&&t.classList.contains('pbtn')){ev.preventDefault();t.click()}});
+document.getElementById('pop').addEventListener('click',ev=>{if(ev.target.id==='pop')popClose()});
 document.addEventListener('input',ev=>{const t=ev.target;
   if(t.id==='q'){F.q=t.value;clearTimeout(rT);rT=setTimeout(()=>{render();const q=$('#q');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length)}},250)}
   else if(t.id==='only'){F.only=t.checked;render()}
