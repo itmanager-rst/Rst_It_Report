@@ -1,52 +1,57 @@
 # RST 3-Way Matching
 
-ระบบตรวจความถูกต้องของใบกำกับภาษีก่อนจ่าย สำหรับ RST GROUP โดยเทียบเอกสาร 3 ทาง
-
-1. **ใบสั่งซื้อ (PO) เทียบโปรโมชั่น** ราคาหลังหักส่วนลดใน PO ต้องตรงกับ NP_Promotion
-2. **PO เทียบใบส่งสินค้า / Packing list / รับสินค้า (RE)** จำนวนที่ส่งมอบ และยอดค้างส่ง
-3. **PO เทียบใบกำกับภาษี** ตรวจ 4 ข้อ: สินค้า จำนวน ราคา และยอดเงิน (ส่วนลด ภาษี ยอดรวม)
-
-ทำงานในเบราว์เซอร์ทั้งหมด ไม่มีเซิร์ฟเวอร์ ข้อมูลเก็บในเบราว์เซอร์ และซิงก์กับ Google Sheet ผ่าน Apps Script ได้
+ระบบตรวจใบสั่งซื้อเทียบโปรโมชั่น ใบส่งสินค้า และใบกำกับภาษี สำหรับ RST GROUP
 
 ## โครงสร้างไฟล์
 
-| ไฟล์ / โฟลเดอร์ | ใช้ทำอะไร |
-|---|---|
-| `index.html` | โปรแกรมทั้งหมดในไฟล์เดียว เปิดใช้งานได้ทันที |
-| `modular/` | โค้ดชุดเดียวกัน แยกเป็นโมดูล (`css/`, `js/01`–`19`) สำหรับแก้ไขและดูแล อ่านรายละเอียดใน `modular/README.md` |
-| `gas/Code.gs` | โค้ด Google Apps Script สำหรับเก็บข้อมูลลง Google Sheet และอ่าน RST GROUP Data Hub |
+```
+index.html            หน้าเว็บหลัก โหลดโมดูลตามลำดับ
+css/style.css         รูปแบบการแสดงผล
+js/                   โมดูลของระบบ (19 ไฟล์)
+gas/Code.gs           Google Apps Script สำหรับฐานข้อมูลบน Google Sheet
+```
 
-`index.html` และ `modular/index.html` ทำงานเหมือนกัน เลือกใช้อย่างใดอย่างหนึ่ง
+## โมดูลและฟังก์ชัน
 
-## เริ่มใช้งาน
+| ไฟล์ | หน้าที่ | ฟังก์ชันหลัก |
+|---|---|---|
+| `js/01-core.js` | ค่าคงที่ ค่าเริ่มต้นของเกณฑ์ และฟังก์ชันพื้นฐาน (แปลงตัวเลข เทียบรหัส เทียบชื่อ) | `sim`, `num`, `kc`, `nk`, `isHalf`, `snap5`, `projOK`, `worst`, `memOf` |
+| `js/02-matching.js` | ตรรกะการจับคู่ทั้งหมด: อ้างอิงเอกสาร โปรโมชั่นและส่วนลด ขั้น ① ② ③ ตรวจใบกำกับ และสรุปราย PO | `aggLines`, `resolveLine`, `findDO`, `docRef`, `docRef0`, `inheritRefs`, `poIdx`, `vendorName`, `poDateFix`, `applyDC`, `step1`, `matchPO`, `docMatch`, `invLines`, `dateIn`, `tally`, `recv`, `m1of`, `step2`, `step3`, `invComp`, `invBreak`, `invChecks`, `summary`, `hubDocs`, `reCheck`, `poRefs`, `findPO`, `isInvDoc`, `refTok`, `doNoPO`, `docPO`, `linePO`, `docPOs0`, `docPOs`, `addDays`, `dueOf`, `inRange`, `invDisc`, `MONTHS`, `isRE`, `m1key`, `r1map` |
+| `js/03-doc-parser.js` | แยกข้อมูลจากข้อความของ PDF/OCR เป็นหัวเอกสารและรายการสินค้า (ตัวอ่านในเครื่อง) | `parseDocText`, `lastNum` |
+| `js/04-sample-data.js` | ข้อมูลตัวอย่างที่แสดงเมื่อยังไม่มีข้อมูลจริง | `SAMPLE` |
+| `js/05-ui-helpers.js` | ฟังก์ชันจัดรูปแบบตัวเลข วันที่ ป้ายสถานะ และข้อความแจ้งเตือน | `$`, `esc`, `fm`, `fq`, `idOf`, `fd`, `fp`, `fdisc`, `pill`, `brkHtml` |
+| `js/06-store.js` | ฐานข้อมูลในเบราว์เซอร์ การตั้งค่า สิทธิ์ผู้ดูแล และการซิงก์กับ Google Sheet | `refreshAdmin`, `settings`, `DATA`, `hubSet`, `pickRE`, `loadHub`, `saveLocal`, `enqueue`, `put`, `rm`, `gsPost`, `flush`, `gsLoad`, `pushAll`, `chip`, `wErr`, `init`, `saveCfg`, `hubOn`, `realEmpty`, `isDemo`, `wait` |
+| `js/07-view-core.js` | แท็บ ตัวกรอง และฟังก์ชัน render หลัก | `render`, `vendors`, `projects`, `months`, `mLabel`, `filt`, `tools` |
+| `js/08-view-overview.js` | ตารางสถานะทุก PO และการอนุมัติ | `vOverview` |
+| `js/09-view-po-promo.js` | ตารางเทียบราคาหลังหักส่วนลดกับ NP_Promotion | `vPromo` |
+| `js/10-view-promo-library.js` | รายการโปรโมชั่น ส่วนลด DC / ส่วนลดพิเศษ ตาม Part Type และตารางรายการสินค้า | `vPromos`, `invVerdict`, `verdictHtml`, `poSteps` |
+| `js/11-view-delivery.js` | ปุ่มนำเข้าไฟล์ ตารางใบส่งสินค้า และผลเทียบรายบรรทัด | `upPanel`, `docTable`, `reBar`, `vDelivery`, `reState`, `reSection`, `sendRE`, `priceDetail`, `reDocs`, `reCan`, `drvErr`, `reBad` |
+| `js/12-view-invoice.js` | ตารางใบกำกับภาษี ตารางเทียบแบบเจาะลึกราย PO และผลตรวจหัวเอกสาร | `vInvoice` |
+| `js/13-view-docs.js` | หน้านำเข้า PO / โปรโมชั่น และรายการเอกสาร | `vDocs` |
+| `js/14-view-settings.js` | เกณฑ์การตรวจ Google Sheet ผู้ดูแลระบบ และการอ่านเอกสาร | `vSettings` |
+| `js/15-import-excel.js` | จับคู่คอลัมน์และนำเข้ารายงานสถานะการซื้อ / ไฟล์โปรโมชั่น | `autoMap`, `readXlsx`, `netPrice`, `promoPrice`, `importGo`, `hn`, `dstr` |
+| `js/16-doc-reader.js` | อ่าน PDF และไฟล์สแกนด้วยข้อความในไฟล์ OCR หรือ Claude API | `loadScript`, `pdfLib`, `filePages`, `ocr`, `aiRead`, `scan`, `isPdf`, `b64`, `PROMPT` |
+| `js/17-doc-editor.js` | หน้าตรวจทานใบส่งสินค้า / ใบกำกับภาษีก่อนบันทึก | `splitDocs`, `scanOpen`, `scanPick`, `scanNext`, `sqAfter`, `sqStop`, `finDoc`, `fillDiscount`, `openEditor`, `edDelVal`, `edHints`, `edMatch`, `edWarns`, `renderEd`, `edRefresh`, `edDoc`, `edTotals`, `edPreview`, `edSave`, `sqPdf`, `sqName`, `sqMore`, `sqBar`, `edDelCell` |
+| `js/18-export.js` | ส่งออก Excel และส่งรายงานไป Google Sheet | `buildWB`, `exportX`, `report`, `stamp` |
+| `js/19-app.js` | ตัวจัดการปุ่มและช่องกรอกทั้งหมด และการเริ่มทำงานของระบบ | - |
 
-1. เปิด `index.html` ในเบราว์เซอร์ (Chrome หรือ Edge) หรือเปิดผ่าน GitHub Pages
-2. แท็บ **เอกสารและนำเข้า**: นำเข้ารายงานสถานะการซื้อจาก ECOUNT (.xlsx) และตารางโปรโมชั่น
-3. แท็บ **② เทียบใบส่งสินค้า**: นำเข้า PDF / รูปสแกนใบส่งสินค้า หรือ Excel รายงานรับสินค้า (RE)
-4. แท็บ **③ เทียบใบกำกับภาษี**: นำเข้า PDF ใบกำกับภาษี (เลือกหลายไฟล์ได้ ไฟล์เดียวหลายใบได้) ระบบเปิดให้ตรวจและ match ทีละใบ
+## ลำดับการทำงานของข้อมูล
 
-## การอ่าน PDF / ไฟล์สแกน
+1. `15-import-excel.js` นำเข้า PO และโปรโมชั่น แล้วเก็บผ่าน `06-store.js`
+2. `16-doc-reader.js` อ่าน PDF / ไฟล์สแกน ส่งต่อให้ `17-doc-editor.js` ตรวจทานและบันทึก
+3. `06-store.js` เก็บข้อมูลในเบราว์เซอร์ และซิงก์กับ Google Sheet ผ่าน `gas/Code.gs`
+4. `02-matching.js` คำนวณผลการจับคู่ทั้ง 3 ขั้นจากข้อมูลใน store ทุกครั้งที่แสดงผล
+5. `07`–`14` แสดงผลแต่ละแท็บ และ `19-app.js` รับคำสั่งจากปุ่มและช่องกรอก
+6. `18-export.js` ส่งออก Excel และส่งรายงานไป Google Sheet
 
-- ไม่ใส่ API key: อ่านข้อความใน PDF ที่พิมพ์จากระบบ และใช้ OCR ในเครื่องกับไฟล์สแกน
-- ใส่ Claude API key ที่แท็บ **ตั้งค่า**: อ่านเอกสารได้แม่นยำกว่า key เก็บในเบราว์เซอร์ของผู้ใช้เท่านั้น **ห้ามใส่ key ลงในโค้ดที่ขึ้น GitHub**
+## การแก้ไข
 
-## เชื่อมต่อ Google Sheet และ Data Hub
+- แก้กฎการจับคู่หรือการคำนวณส่วนลด: `js/02-matching.js`
+- แก้หน้าจอของแท็บใด: ไฟล์ `js/08` ถึง `js/14` ของแท็บนั้น
+- แก้การอ่านเอกสาร: `js/03-doc-parser.js` และ `js/16-doc-reader.js`
+- แก้ฐานข้อมูลฝั่ง Google Sheet: `gas/Code.gs` แล้ว Deploy เวอร์ชันใหม่
+- ไฟล์ทั้งหมดใช้ตัวแปรร่วมกันแบบ global และต้องโหลดตามลำดับเลข ห้ามสลับลำดับใน `index.html`
 
-1. สร้าง Google Sheet ไปที่ ส่วนขยาย → Apps Script วางโค้ดจาก `gas/Code.gs` แล้วรันฟังก์ชัน `setup` หนึ่งครั้ง
-2. Deploy เป็น Web app (Execute as: Me, Who has access: Anyone) แล้วคัดลอก URL ที่ลงท้ายด้วย `/exec`
-3. วาง URL ที่แท็บ **ตั้งค่า** ของหน้าเว็บ
-4. ใส่ลิงก์ไฟล์ RST GROUP Data Hub ในการ์ด **RST GROUP Data Hub** ที่แท็บตั้งค่า แล้วกด “บันทึกเงื่อนไขและโหลด”
-   บัญชีที่ Deploy Apps Script ต้องเปิดไฟล์ Data Hub ได้
+## การติดตั้ง Google Sheet
 
-หลังแก้ `Code.gs` ต้อง Deploy เวอร์ชันใหม่ทุกครั้ง (Manage deployments → New version) URL เดิมใช้ต่อได้
-
-## เปิดผ่าน GitHub Pages
-
-Settings → Pages → Source: Deploy from a branch → เลือก branch `main` โฟลเดอร์ `/ (root)`
-หน้าเว็บจะอยู่ที่ `https://<ชื่อผู้ใช้>.github.io/<ชื่อ repo>/`
-
-## ข้อควรระวัง
-
-- ถ้า repo เป็น **Public** ทุกคนเปิดหน้าเว็บได้ แต่ข้อมูลของบริษัทไม่ได้อยู่ใน repo ข้อมูลอยู่ในเบราว์เซอร์ของผู้ใช้และใน Google Sheet ของบริษัทเท่านั้น
-- อย่า commit ไฟล์ข้อมูลจริง (Excel, PDF ใบกำกับ ใบส่งสินค้า) `.gitignore` กันไฟล์เหล่านี้ไว้แล้ว
-- URL ของ Apps Script และลิงก์ Data Hub ไม่ได้อยู่ในโค้ด ผู้ใช้ใส่เองที่แท็บตั้งค่า
+ดูขั้นตอนที่หัวไฟล์ `gas/Code.gs` หรือแท็บ "ตั้งค่า" ในหน้าเว็บ
