@@ -1,40 +1,3 @@
-<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RST 3-Way Matching</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-<div class="wrap" id="app">
-  <header class="top">
-    <div class="brand">
-      <small>RST GROUP · PROCUREMENT CONTROL</small>
-      <h1>ระบบ 3-Way Matching</h1>
-      <p>ตรวจใบสั่งซื้อเทียบโปรโมชั่น ใบส่งสินค้า และใบกำกับภาษี ในหน้าเดียว</p>
-    </div>
-    <div class="row">
-      <span class="chip" id="storeChip">กำลังเชื่อมต่อ…</span>
-      <span class="chip" id="hubChip" hidden></span>
-      <button id="btnHub" data-act="hub" hidden>โหลดจาก Data Hub</button>
-      <button id="btnSheet" data-act="sheet">ส่งรายงานไป Google Sheet</button>
-      <button id="btnExport" data-act="export">ส่งออก Excel</button>
-    </div>
-  </header>
-  <nav class="rail" id="rail" aria-label="ขั้นตอนการตรวจ"></nav>
-  <div id="banner"></div>
-  <main id="main" style="display:flex;flex-direction:column;gap:16px;min-width:0"></main>
-</div>
-<div id="ed" hidden></div>
-<div id="pop" hidden></div>
-<div id="toast" hidden></div>
-<input type="file" id="fileX" accept=".xlsx,.xls,.csv" hidden>
-<input type="file" id="fileS" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden>
-
-<!-- สำเนาโค้ด Apps Script สำหรับปุ่ม "คัดลอกโค้ด" ในแท็บตั้งค่า (ต้นฉบับอยู่ที่ gas/Code.gs) -->
-<script type="text/plain" id="gas">
 /**
  * RST 3-Way Matching — Google Apps Script (Code.gs)
  * ฐานข้อมูลและรายงานของระบบ 3-Way Matching บน Google Sheet
@@ -282,30 +245,3 @@ function dbStats() {
   Logger.log(JSON.stringify(count));
   return count;
 }
-</script>
-
-<!-- ไลบรารีภายนอก -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-<!-- โมดูลของระบบ โหลดตามลำดับเลข -->
-<script src="js/01-core.js"></script>
-<script src="js/02-matching.js"></script>
-<script src="js/03-doc-parser.js"></script>
-<script src="js/04-sample-data.js"></script>
-<script src="js/05-ui-helpers.js"></script>
-<script src="js/06-store.js"></script>
-<script src="js/07-view-core.js"></script>
-<script src="js/08-view-overview.js"></script>
-<script src="js/09-view-po-promo.js"></script>
-<script src="js/10-view-promo-library.js"></script>
-<script src="js/11-view-delivery.js"></script>
-<script src="js/12-view-invoice.js"></script>
-<script src="js/13-view-docs.js"></script>
-<script src="js/14-view-settings.js"></script>
-<script src="js/15-import-excel.js"></script>
-<script src="js/16-doc-reader.js"></script>
-<script src="js/17-doc-editor.js"></script>
-<script src="js/18-export.js"></script>
-<script src="js/19-app.js"></script>
-</body>
-</html>
