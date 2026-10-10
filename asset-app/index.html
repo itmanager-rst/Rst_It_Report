@@ -436,7 +436,7 @@ tbody tr:hover td{background:rgba(255,255,255,.02);cursor:pointer;}
         </div>
         <div style="overflow-x:auto;">
           <table>
-            <thead><tr><th>เลขที่</th><th>ประเภท</th><th>ทรัพย์สิน</th><th>จาก</th><th>ไป</th><th>ผู้รับ</th><th>วันที่</th><th>สถานะ</th><th></th></tr></thead>
+            <thead><tr><th>เลขที่</th><th>ประเภท</th><th>ทรัพย์สิน</th><th>จาก</th><th>ไป</th><th>ผู้รับ</th><th>วันที่</th><th>วันที่ส่งคืน</th><th>สถานะ</th><th></th></tr></thead>
             <tbody id="trTbl"></tbody>
           </table>
         </div>
@@ -760,7 +760,7 @@ if (action === 'sendLine') {
             <option value="branch">🏢 โอนข้ามสาขา</option>
             <option value="return">📥 คืนทรัพย์สิน</option>
           </select></div>
-        <div class="fi"><label class="fl" for="tr-asset-search">ค้นหาทรัพย์สิน *</label>
+        <div class="fi full"><label class="fl" for="tr-asset-search">ค้นหาทรัพย์สิน *</label>
           <div class="asset-picker" id="tr-asset-picker">
             <input type="hidden" id="tr-asset">
             <div class="asset-search-wrap">
@@ -770,7 +770,8 @@ if (action === 'sendLine') {
             <div class="asset-results" id="tr-asset-results" role="listbox"></div>
             <div class="asset-selected" id="tr-asset-selected"></div>
           </div></div>
-        <div class="fi"><label class="fl">วันที่</label><input class="fn" type="date" id="tr-date"></div>
+        <div class="fi"><label class="fl" for="tr-date">วันที่เบิก/โอน</label><input class="fn" type="date" id="tr-date" onchange="syncReturnMin()"></div>
+        <div class="fi"><label class="fl" for="tr-return" id="tr-return-lbl">วันที่ส่งคืน</label><input class="fn" type="date" id="tr-return"></div>
         <div class="fi"><label class="fl">จากสาขา/แผนก</label>
           <select class="fs" id="tr-from"><option value="">เลือก</option><option>สาขาศรีเมืองใหม่</option><option>สาขาตระการ</option><option>สาขาเดชอุดม</option><option>สาขาขุขันธ์</option><option>สาขากุฉินารายณ์</option><option>สำนักงานใหญ่</option><option>สาขาเบญจลักษณ์</option><option>สาขาบางนา</option><option>คลังกลาง</option></select></div>
         <div class="fi"><label class="fl">ไปสาขา/แผนก</label>
@@ -1321,6 +1322,7 @@ async function loadFromSheets(){
               asset:String(r[3]||''),from:String(r[4]||''),  to:String(r[5]||''),
               receiver:String(r[6]||''),approver:String(r[7]||''),
               note:String(r[8]||''),   date:String(r[9]||''), status:finalStatus,
+              returnDate:normYMD(r[12]) || ((localTransfers.find(lt => lt._k === String(r[0]))||{}).returnDate || ''),
               synced:true,
             };
           });
@@ -1409,7 +1411,7 @@ async function syncAll(){
     }
     for(const tr of transfers.filter(x => !x.synced)){
       const r = await pushRow(SHEET_NAMES.transfers,
-        [tr._k,tr.id,tr.type,tr.asset,tr.from,tr.to,tr.receiver,tr.approver,tr.note,tr.date,tr.status,new Date().toLocaleDateString('th-TH')],
+        trRow(tr),
         tr._k, 'add');
       if(r){ tr.synced = true; ok++; }
     }
@@ -1658,6 +1660,7 @@ function renderTransfers(){
       <td>${tr.to||'—'}</td>
       <td>${tr.receiver||'—'}</td>
       <td class="mono" style="font-size:11px;color:var(--text3);">${tr.date||'—'}</td>
+      <td class="mono" style="font-size:11px;${trOverdue(tr)?'color:var(--red,#f87171);font-weight:600;':'color:var(--text3);'}">${tr.returnDate||'—'}${trOverdue(tr)?' <span title="เกินกำหนดส่งคืน">⚠</span>':''}</td>
       <td><span class="badge ${tr.status==='approved'?'b-ok':'b-pend'}">${tr.status==='approved'?'อนุมัติ':'รออนุมัติ'}</span></td>
       <td><div class="acts">
         <button class="ib grn" onclick="approveTransfer('${tr._k}')" title="อนุมัติ" ${tr.status==='approved'?'style="opacity:.3;pointer-events:none;"':''}><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-5"/></svg></button>
@@ -1667,9 +1670,36 @@ function renderTransfers(){
   setTimeout(applyRBAC, 0);
 }
 
+// เกินกำหนดส่งคืน = เป็นการเบิก, มีวันที่ส่งคืน, วันนั้นผ่านไปแล้ว และยังไม่มีใบคืนของทรัพย์สินชิ้นเดียวกันหลังจากนั้น
+function trOverdue(tr){
+  if(!tr || tr.type !== 'borrow' || !tr.returnDate) return false;
+  const today = new Date().toISOString().split('T')[0];
+  if(tr.returnDate >= today) return false;
+  return !transfers.some(x => x.type === 'return' && x.asset === tr.asset && (x.date||'') >= (tr.date||''));
+}
+// แปลงค่าวันที่จาก Sheets (อาจเป็น "2026-10-20" หรือ ISO "2026-10-19T17:00:00.000Z") ให้เป็น YYYY-MM-DD ตามเวลาท้องถิ่น
+function normYMD(v){
+  const s = String(v == null ? '' : v).trim();
+  if(!s) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if(isNaN(d)) return (s.match(/^\d{4}-\d{2}-\d{2}/)||[''])[0];
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function syncReturnMin(){
+  const d = g('tr-date'), r = document.getElementById('tr-return');
+  if(r) r.min = d || '';
+}
+// แถวสำหรับ Sheets (คอลัมน์ที่ 13 = วันที่ส่งคืน ต่อท้ายคอลัมน์เดิม จึงไม่กระทบข้อมูลเก่า)
+function trRow(tr){
+  return [tr._k,tr.id,tr.type,tr.asset,tr.from,tr.to,tr.receiver,tr.approver,tr.note,tr.date,tr.status,new Date().toLocaleDateString('th-TH'),tr.returnDate||''];
+}
+
 function openTransferAdd(){
   clearTransferAsset(false);
   document.getElementById('tr-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('tr-return').value = '';
+  syncReturnMin();
   document.getElementById('tr-type').value = 'borrow';
   ['tr-from','tr-to','tr-receiver','tr-approver','tr-note'].forEach(i => document.getElementById(i).value='');
   updateTRForm();
@@ -1684,6 +1714,7 @@ function updateTRForm(){
   };
   document.getElementById('tr-docs-list').innerHTML = docs[type] || '';
   document.getElementById('tr-recv-lbl').textContent = type==='borrow'?'ผู้รับ / พนักงาน':type==='branch'?'ผู้รับที่สาขาปลายทาง':'ผู้คืนทรัพย์สิน';
+  document.getElementById('tr-return-lbl').textContent = type==='borrow'?'วันที่ส่งคืน (กำหนดคืน)':type==='branch'?'วันที่ส่งคืน (ถ้ามี)':'วันที่ส่งคืน';
 }
 
 // ═══ แก้ไข saveTransfer — real-time sync ═══
@@ -1691,8 +1722,9 @@ async function saveTransfer(){
   if(!requireTransferPerm()) return;
   const asset = g('tr-asset');
   if(!asset){ toast('⚠ เลือกทรัพย์สินก่อน','warn'); return; }
+  if(g('tr-return') && g('tr-date') && g('tr-return') < g('tr-date')){ toast('⚠ วันที่ส่งคืนต้องไม่ก่อนวันที่เบิก/โอน','warn'); return; }
   const id = 'TR-'+String(transfers.length+1).padStart(3,'0')+'-'+Date.now().toString().slice(-4);
-  const obj = {_k:id, id, type:g('tr-type'), asset, from:g('tr-from'), to:g('tr-to'), receiver:g('tr-receiver'), approver:g('tr-approver'), note:g('tr-note'), date:g('tr-date'), status:'pending', synced:false};
+  const obj = {_k:id, id, type:g('tr-type'), asset, from:g('tr-from'), to:g('tr-to'), receiver:g('tr-receiver'), approver:g('tr-approver'), note:g('tr-note'), date:g('tr-date'), returnDate:g('tr-return'), status:'pending', synced:false};
   // Update asset data
   if(obj.type === 'borrow'){
     const a = assets.find(x => x.id === asset);
@@ -1707,7 +1739,7 @@ async function saveTransfer(){
   // Transfers อยู่ใน IT Assets spreadsheet → ใช้ scriptUrl
   if(scriptUrl){
     toast('⟳ กำลัง Sync...');
-    const row = [obj._k,obj.id,obj.type,obj.asset,obj.from,obj.to,obj.receiver,obj.approver,obj.note,obj.date,obj.status,new Date().toLocaleDateString('th-TH')];
+    const row = trRow(obj);
     const ok = await pushRow(SHEET_NAMES.transfers, row, obj._k, 'add');
     if(ok){
       const i = transfers.findIndex(t => t._k === obj._k);
@@ -1728,6 +1760,7 @@ async function saveTransfer(){
       `🖥️ ทรัพย์สิน: ${obj.asset}\n` +
       `📍 จาก: ${obj.from||'-'}  →  ไป: ${obj.to||'-'}\n` +
       `👤 ผู้รับ: ${obj.receiver||'-'}\n` +
+      (obj.returnDate ? `↩️ ส่งคืน: ${new Date(obj.returnDate+'T00:00:00').toLocaleDateString('th-TH')}\n` : '') +
       `🕐 ${new Date().toLocaleString('th-TH')}`
     );
   }
@@ -1745,12 +1778,7 @@ async function approveTransfer(key){
   // Sync สถานะ approved ขึ้น IT Transfers sheet ทันที
   if(scriptUrl){
     try{
-      const row = [
-        tr._k, tr.id, tr.type, tr.asset,
-        tr.from, tr.to, tr.receiver, tr.approver,
-        tr.note, tr.date, 'approved',
-        new Date().toLocaleDateString('th-TH')
-      ];
+      const row = trRow(tr);
       // ลอง update ก่อน ถ้าไม่มีให้ add แทน
       let ok = await pushRow(SHEET_NAMES.transfers, row, tr._k, 'update');
       if(!ok) ok = await pushRow(SHEET_NAMES.transfers, row, tr._k, 'add');
@@ -2118,6 +2146,9 @@ function printTransfer(){
   const d = dateVal ? new Date(dateVal + 'T00:00:00') : new Date();
   const dateTH = d.toLocaleDateString('th-TH', {day:'numeric', month:'long', year:'numeric'});
   const printedAt = new Date().toLocaleString('th-TH');
+  const retVal = g('tr-return');
+  const retTH = retVal ? new Date(retVal + 'T00:00:00').toLocaleDateString('th-TH', {day:'numeric', month:'long', year:'numeric'}) : '';
+  const retLabel = type === 'borrow' ? 'กำหนดส่งคืน' : 'วันที่ส่งคืน';
 
   const assetId = g('tr-asset');
   const a = assets.find(x => x.id === assetId) || {};
@@ -2217,6 +2248,7 @@ function printTransfer(){
     <table class="t">
       <tr><th>จากสาขา / แผนก</th><td>${val(g('tr-from'))}</td><th>ไปสาขา / แผนก</th><td>${val(g('tr-to'))}</td></tr>
       <tr><th>${esc(recvLabel)}</th><td>${val(g('tr-receiver'))}</td><th>ผู้อนุมัติ</th><td>${val(g('tr-approver'))}</td></tr>
+      <tr><th>วันที่ส่งมอบ</th><td>${val(dateTH)}</td><th>${esc(retLabel)}</th><td>${retTH ? esc(retTH) : '<span class="ln" style="min-width:42mm;">&nbsp;</span>'}</td></tr>
     </table>
   </div>
 
