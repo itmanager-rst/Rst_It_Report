@@ -1,6 +1,15 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r08-2026-10-02-excavator
+ * CODE_VERSION: r10-2026-10-10-used-category
+ *
+ * r10: ใช้หมวดสินค้าใน Ecount เป็นตัวตัดสิน: แถวที่อยู่ "หมวดรถมือสอง" นำเข้าทั้งหมด (รถตู้ ฯลฯ)
+ *      แม้ชื่อสินค้าไม่มีคำว่า มือสอง ส่วนมือสองในหมวดอื่นไม่นำเข้า
+ *      หน้าเว็บส่ง r.usedCat มา: '1' = อยู่หมวดรถมือสอง, '0' = ไฟล์มีหมวดแต่ไม่ใช่, '' = ไฟล์ไม่มีคอลัมน์หมวด
+ *      รถสาธิตนอกหมวดรถมือสอง และไฟล์ที่ไม่มีคอลัมน์หมวด → ใช้กฎตามชื่อแบบเดิม (เฉพาะประเภทรถที่รู้จัก)
+ *
+ * r09: ดึงทรัพย์สิน มือสอง / รถสาธิต "ทุกรายการ" ที่มี Serial เข้ามา ไม่จำกัดแค่ 3 ประเภทแล้ว
+ *      เพิ่มประเภท รถตู้ (ชื่อมี รถตู้ หรือ Van) และ อื่นๆ (มือสองที่ไม่ใช่ แทรกเตอร์/เกี่ยวข้าว/ขุด/ตู้)
+ *      รถใหม่/รถเช่า ยังไม่นำเข้าเหมือนเดิม
  *
  * r08: เพิ่มประเภท รถขุด: ชื่อสินค้าต้อง "ขึ้นต้น" ด้วย รถขุด / รถแบคโฮ / Excavator (ยอมให้มี (รถสาธิต) นำหน้า)
  *      อะไหล่ที่มีคำว่า รถขุด อยู่กลางชื่อ เช่น กรองน้ำมันไฮโดรลิก (รถขุด) จะไม่ถูกนับเป็นรถ
@@ -26,7 +35,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r08b-2026-10-02-excavator';
+var CODE_VERSION = 'r10-2026-10-10-used-category';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
@@ -43,7 +52,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('RST รูปรถแทรกเตอร์ · รถเกี่ยวข้าว · รถขุด มือสอง · รถสาธิต')
+    .setTitle('RST รูปรถและทรัพย์สิน มือสอง · รถสาธิต')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
@@ -182,14 +191,18 @@ function seriesOf_(name) {
   x = (m ? m[1] : x).replace(/\((?:รถ)?(มือสอง|เช่า|สาธิต)\)/g, '').replace(/(?:รถ)?สาธิต/g, '').replace(/VIN.*$/i, '').replace(/^Yanmar\s*/i, '').trim();
   return x.replace(/\s*-\s*45th$/i, ' 45th').replace(/^(\d{3}[A-Z]?)$/, 'YM$1');
 }
-/** ประเภทรถ: เก็บเฉพาะ 3 ประเภทนี้ (ตรงกับ carType ใน index.html)
- *  ตรวจรถแทรกเตอร์ก่อนรถขุด: รถแทรกเตอร์ที่ติดชุดแบคโฮยังนับเป็นรถแทรกเตอร์ ส่วนอุปกรณ์อย่าง "ชุดแบคโฮ" ไม่ถูกนำเข้า */
+/** ประเภทรถ (ตรงกับ carType ใน index.html)
+ *  ตรวจรถแทรกเตอร์ก่อนรถขุด: รถแทรกเตอร์ที่ติดชุดแบคโฮยังนับเป็นรถแทรกเตอร์
+ *  r09: ไม่ตรงประเภทไหนเลย → 'อื่นๆ' (ทรัพย์สินมือสองทุกอย่างถูกนำเข้า ตัวกรองมือสอง/สาธิต อยู่ที่ isKept_) */
+var VAN_RE = /รถตู้|\bvan\b/i;
 function typeOf_(name) {
   var n = String(name || '');
+  if (!n.trim()) return '';
   if (/รถเกี่ยว/.test(n)) return 'รถเกี่ยวข้าว';
   if (/รถแทรกเตอร์/.test(n)) return 'รถแทรกเตอร์';
   if (EXC_RE.test(n)) return 'รถขุด';
-  return '';
+  if (VAN_RE.test(n)) return 'รถตู้';
+  return 'อื่นๆ';
 }
 function kindOf_(name) {
   var n = String(name || '');
@@ -202,6 +215,20 @@ function kindOf_(name) {
 var KEEP_KINDS = { 'มือสอง': 1, 'รถสาธิต': 1 };
 function isKeptKind_(kind) { return KEEP_KINDS.hasOwnProperty(kind); }
 function isKept_(name) { return isKeptKind_(kindOf_(name)); }
+/** r10: ประเภทการเก็บของแถวนำเข้า: อยู่หมวดรถมือสอง = มือสอง (หรือ รถสาธิต ถ้าชื่อบอก) */
+function rowKind_(r) {
+  var k = kindOf_(r.name);
+  if (String(r.usedCat || '') === '1') return k === 'รถสาธิต' ? k : 'มือสอง';
+  return k;
+}
+/** r10: นำเข้าแถวนี้ไหม (ตรงกับ keepRow ใน index.html) */
+function keepRow_(r) {
+  var t = typeOf_(r.name), c = String(r.usedCat || '');
+  if (!t) return false;
+  if (c === '1') return true;
+  if (t === 'อื่นๆ' || !isKept_(r.name)) return false;
+  return c === '' || kindOf_(r.name) === 'รถสาธิต';
+}
 function num_(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isNaN(n) ? 0 : n; }
 function numStr_(v) { var t = String(v == null ? '' : v).replace(/,/g, '').trim(); return t === '' || isNaN(parseFloat(t)) ? '' : String(parseFloat(t)); }
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'); }
@@ -268,7 +295,7 @@ function getBoot() {
 }
 
 /**
- * rows: [{branch,spot,code,name,serial,gps,qty,price,cond,hours}] ทั้งไฟล์ในครั้งเดียว (เฉพาะรถแทรกเตอร์/รถเกี่ยวข้าว)
+ * rows: [{branch,spot,code,name,serial,gps,qty,price,cond,hours}] ทั้งไฟล์ในครั้งเดียว (ทุกรายการ มือสอง / รถสาธิต)
  * แทนยอดคงเหลือทั้งหมดด้วยไฟล์นี้ รถเดิมที่ไม่มีในไฟล์ → status out
  * Serial เดียวกันหลายแถว (เช่น โอนย้ายสาขา +1/-1) → รวมจำนวน ใช้ข้อมูลแถวบวกล่าสุด เติมช่องว่างจากแถวอื่น
  */
@@ -280,7 +307,7 @@ function importStock(rows, meta) {
 
     var groups = {}, order = [], matched = 0;
     (rows || []).forEach(function (r) {
-      if (!r || !r.serial || !typeOf_(r.name) || !isKept_(r.name)) return;
+      if (!r || !r.serial || !keepRow_(r)) return;
       var key = keyOf_(r.serial); if (!key) return;
       matched++;
       if (!groups[key]) { groups[key] = []; order.push(key); }
@@ -302,7 +329,7 @@ function importStock(rows, meta) {
       out.push(normCar_({
         key: key, serial: r.serial, chassis: sp.ch, engine: sp.en,
         tag: (sp.tag || /gps/i.test(String(r.gps || ''))) ? 'GPS' : '',
-        code: r.code, name: r.name, series: seriesOf_(r.name), type: typeOf_(r.name), kind: kindOf_(r.name),
+        code: r.code, name: r.name, series: seriesOf_(r.name), type: typeOf_(r.name), kind: rowKind_(r),
         branch: r.branch, spot: r.spot, qty: String(qty), price: numStr_(r.price), cond: String(r.cond || '').trim(),
         hours: numStr_(r.hours), status: inStock ? 'stock' : 'out',
         firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
