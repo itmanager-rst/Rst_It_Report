@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ใบจัดอะไหล่</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family:'Sarabun',sans-serif; background:#f4f6f8; }
+    .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+    .card-form { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:16px; }
+    .lbl { font-weight:700; font-size:1.15rem; }
+    .sel-type { background:#ff9800; border-color:#ff9800; font-weight:700; font-size:1.2rem; }
+    .sel-topic { background:#ffff00; border-color:#e0d600; font-weight:600; font-size:1.2rem; }
+    .sel-type:focus, .sel-topic:focus { box-shadow:0 0 0 .25rem rgba(255,152,0,.35); }
+    .sel-topic:disabled { background:#f1f1f1; border-color:#ddd; }
+    .hint { color:#dc3545; font-weight:600; }
+    table.list { font-size:1.05rem; }
+    table.list thead th { font-weight:700; text-align:center; background:#f8f9fa; white-space:nowrap; }
+    table.list td.code { font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
+    table.list td.place { font-weight:700; text-align:center; white-space:nowrap; }
+    .pcard { border-bottom:1px solid #eee; padding:10px 2px; display:flex; gap:10px; align-items:flex-start; }
+    .pcard .no { color:#999; width:22px; }
+    .pcard .nm { font-weight:600; }
+    .pcard .cd { font-family:ui-monospace,Consolas,monospace; font-size:.9rem; color:#555; }
+    .pcard .qt { text-align:right; min-width:64px; }
+    .pcard .qt b { font-size:1.3rem; }
+    .empty { text-align:center; color:#6c757d; padding:40px 0; }
+    .loading { position:fixed; inset:0; background:rgba(255,255,255,.7); display:none; align-items:center; justify-content:center; z-index:99; }
+    .loading.show { display:flex; }
+    #printArea { display:none; }
+    .conn { border-radius:2rem; font-weight:600; font-size:.85rem; display:inline-flex; align-items:center; gap:.4rem; }
+    .conn .dot { width:10px; height:10px; border-radius:50%; background:currentColor; display:inline-block; }
+    .conn.online { background:#d1e7dd; color:#0f5132; border-color:#a3cfbb; }
+    .conn.offline { background:#f8d7da; color:#842029; border-color:#f1aeb5; }
+    .conn.demo { background:#fff3cd; color:#664d03; border-color:#ffe69c; }
+    .conn.checking { background:#e9ecef; color:#495057; }
+    .conn.checking .dot, .conn.online .dot { animation:pulse 1.6s infinite; }
+    @keyframes pulse { 0%{opacity:1} 50%{opacity:.35} 100%{opacity:1} }
+    .conn-info dt { font-weight:400; color:#6c757d; font-size:.8rem; }
+    .conn-info dd { font-weight:600; margin-bottom:.45rem; }
+    .drop { border:2px dashed #adb5bd; border-radius:.75rem; padding:1.4rem; text-align:center; cursor:pointer; background:#fafafa; }
+    .drop.over { border-color:#198754; background:#e8f5ee; }
+    .prev-table { font-size:.85rem; }
+
+    /* ---------- ใบพิมพ์ ---------- */
+    .sheet { color:#000; font-size:12pt; }
+    .sheet.a5 { font-size:9.5pt; }
+    .sheet .lh { display:flex; align-items:flex-start; gap:12px; }
+    .sheet .lh .logo { width:28mm; flex:0 0 auto; }
+    .sheet .lh .logo img { width:100%; display:block; }
+    .sheet .lh .co { flex:1; text-align:center; line-height:1.35; }
+    .sheet .lh .co .nm { font-size:1.35em; font-weight:700; }
+    .sheet .lh .co .ad { font-size:.82em; white-space:nowrap; }
+    .sheet .lh .pg { flex:0 0 auto; text-align:right; font-size:.8em; white-space:nowrap; }
+    .sheet .ttl { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #000; padding:2px 0 4px; margin:4px 0 6px; }
+    .sheet .ttl h2 { flex:1; text-align:center; }
+    .sheet .ttl .side { min-width:30mm; font-size:.9em; }
+    .sheet.a5 .lh .logo { width:17mm; }
+    .sheet.a5 .lh { gap:6px; }
+    .sheet.a5 .lh .co .nm { font-size:1.1em; }
+    .sheet.a5 .lh .co .ad { font-size:.72em; }
+    .sheet.a5 .lh .pg { font-size:.72em; }
+    .sheet td.nw { white-space:nowrap; }
+    .sheet .head { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:6px; }
+    .sheet h2 { font-size:1.6em; font-weight:700; margin:0; }
+    .sheet .set { font-size:1.15em; font-weight:700; border:1.5px solid #000; padding:4px 8px; margin-bottom:8px; }
+    .sheet table { width:100%; border-collapse:collapse; }
+    .sheet th, .sheet td { border:1px solid #000; padding:3px 6px; }
+    .sheet th { background:#e9e9e9; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .sheet .c { text-align:center; } .sheet .r { text-align:right; } .sheet .b { font-weight:700; }
+    .sheet .box { display:inline-block; width:14px; height:14px; border:1.5px solid #000; }
+    .sheet tr { page-break-inside:avoid; }
+    .sheet .sign { display:flex; gap:16px; margin-top:26px; }
+    .sheet .sign div { flex:1; text-align:center; }
+    .sheet .sign .line { border-bottom:1px dotted #000; height:26px; margin-bottom:3px; }
+    @media print {
+      body { background:#fff; }
+      body > *:not(#printArea) { display:none !important; }
+      #printArea { display:block !important; }
+    }
+  </style>
+  <style id="pageSize">@page { size:A4; margin:10mm; }</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="m-0 fw-bold"><i class="bi bi-box-seam me-2 text-success"></i>ใบจัดอะไหล่</h4>
+    <div class="d-flex align-items-center gap-2">
+      <div class="dropdown">
+        <button class="btn btn-sm border conn checking" id="connBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+          <span class="dot"></span><span id="connText">กำลังเชื่อมต่อ…</span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-3 shadow" style="min-width:290px">
+          <div class="fw-bold mb-2"><i class="bi bi-database me-1"></i>สถานะฐานข้อมูล</div>
+          <dl class="conn-info mb-2" id="connInfo"></dl>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary flex-fill" id="btnPing"><i class="bi bi-wifi"></i> ทดสอบ</button>
+            <button class="btn btn-sm btn-outline-success flex-fill" id="btnRefresh"><i class="bi bi-arrow-clockwise"></i> โหลดข้อมูลใหม่</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline-dark" id="btnBackup" title="สำรอง / กู้คืนข้อมูล"><i class="bi bi-shield-check"></i><span class="d-none d-sm-inline ms-1">สำรองข้อมูล</span></button>
+      <button class="btn btn-sm btn-primary" id="btnUpload" title="อัปโหลดฐานข้อมูล"><i class="bi bi-cloud-arrow-up"></i><span class="d-none d-sm-inline ms-1">อัปโหลดฐานข้อมูล</span></button>
+    </div>
+  </div>
+
+  <div class="alert alert-danger d-none" id="mockAlert">
+    <b><i class="bi bi-exclamation-triangle-fill me-1"></i>ตอนนี้เป็นข้อมูลตัวอย่าง (ไม่ใช่ข้อมูลจริง)</b> — ประเภทและหัวข้อจึงมีไม่ครบ<br>
+    <span class="small">ยังไม่ได้เชื่อม Google Sheet: ใส่ลิงก์ Web App (ลงท้าย <code>/exec</code>) ในบรรทัด <code>WEB_APP_URL</code> ของไฟล์นี้ แล้วรีเฟรชหน้า
+    หรือเปิดใช้งานผ่านลิงก์ <code>/exec</code> ของ Apps Script โดยตรง</span>
+  </div>
+
+  <!-- เหมือนแถวบนสุดของชีต File: ประเภท | เลือกหัวข้อ -->
+  <div class="card-form mb-3">
+    <div class="row g-3 align-items-center">
+      <div class="col-12 col-md-5">
+        <div class="d-flex align-items-center gap-2">
+          <span class="lbl text-nowrap">ประเภท</span>
+          <select id="selType" class="form-select form-select-lg sel-type"></select>
+        </div>
+      </div>
+      <div class="col-12 col-md-7">
+        <div class="d-flex align-items-center gap-2">
+          <span class="lbl text-nowrap">เลือกหัวข้อ</span>
+          <select id="selTopic" class="form-select form-select-lg sel-topic" disabled></select>
+        </div>
+      </div>
+    </div>
+    <div class="hint mt-2" id="hint">เลือกประเภทก่อน</div>
+  </div>
+
+  <!-- รายการอะไหล่ (ขึ้นเองเมื่อเลือกหัวข้อ) -->
+  <div class="card-form">
+    <div id="cards" class="d-md-none"></div>
+    <div class="table-responsive d-none d-md-block">
+      <table class="table table-hover align-middle list mb-0">
+        <thead><tr>
+          <th style="width:50px">#</th><th>รหัส</th><th>รายชื่อ</th><th class="text-end">ราคา</th><th>จำนวน</th><th>Place</th><th class="text-center" style="width:96px">จัดการ</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="7" class="empty">เลือกประเภท และหัวข้อ เพื่อแสดงรายการอะไหล่</td></tr></tbody>
+        <tfoot id="tfoot"></tfoot>
+      </table>
+    </div>
+    <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3">
+      <button class="btn btn-warning fw-semibold me-auto" id="btnAdd" disabled><i class="bi bi-plus-lg me-1"></i>เพิ่มอะไหล่</button>
+      <select id="paper" class="form-select form-select-sm" style="width:auto">
+        <option value="a4">กระดาษ A4</option>
+        <option value="a5">กระดาษ A5</option>
+      </select>
+      <button class="btn btn-success btn-lg fw-semibold" id="btnPrint" disabled><i class="bi bi-printer me-1"></i>พิมพ์ใบจัด</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal เพิ่ม/แก้ไขอะไหล่ -->
+<div class="modal fade" id="partModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+    <form class="modal-content" id="partForm" novalidate>
+      <div class="modal-header">
+        <h5 class="modal-title" id="partTitle">เพิ่มอะไหล่</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="fRow"><input type="hidden" id="fOrig">
+        <div class="mb-3">
+          <label class="form-label">หัวข้อ</label>
+          <select class="form-select" id="fTopic"></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">รหัส <span class="text-danger">*</span></label>
+          <input class="form-control" id="fCode" list="codeList" required autocomplete="off">
+          <datalist id="codeList"></datalist>
+          <div class="invalid-feedback">กรุณากรอกรหัส</div>
+          <div class="form-text text-success d-none" id="fFound"><i class="bi bi-check-circle"></i> พบรหัสนี้ในระบบ — ดึงชื่อ/ราคา/Place มาให้แล้ว</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">รายชื่อ <span class="text-danger">*</span></label>
+          <input class="form-control" id="fName" required>
+          <div class="invalid-feedback">กรุณากรอกชื่ออะไหล่</div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-4"><label class="form-label">ราคา</label><input type="number" min="0" step="0.01" class="form-control" id="fPrice" inputmode="decimal"></div>
+          <div class="col-4"><label class="form-label">จำนวน</label><input type="number" min="0" step="1" class="form-control" id="fQty" inputmode="numeric" value="1"></div>
+          <div class="col-4"><label class="form-label">Place</label><input class="form-control" id="fPlace" placeholder="เช่น C7-1"></div>
+        </div>
+        <div class="alert alert-info py-2 mb-0 d-none" id="allBox">
+          <div class="form-check m-0">
+            <input class="form-check-input" type="checkbox" id="fAll" checked>
+            <label class="form-check-label" for="fAll">ใช้ รหัส / ชื่อ / ราคา / Place นี้กับ<b>ทุกหัวข้อ</b>ที่ใช้รหัสนี้</label>
+          </div>
+          <div class="small text-muted mt-1" id="allList"></div>
+          <div class="small text-muted">* จำนวน และ หัวข้อ จะเปลี่ยนเฉพาะรายการนี้</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-success" id="btnSave"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal ยืนยันลบ -->
+<div class="modal fade" id="delModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center p-4">
+        <i class="bi bi-trash3 text-danger" style="font-size:2.4rem"></i>
+        <h5 class="mt-2">ลบรายการนี้?</h5>
+        <p class="text-muted mb-0" id="delText"></p>
+      </div>
+      <div class="modal-footer justify-content-center border-0 pt-0">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button class="btn btn-danger" id="btnDel">ลบ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:3000">
+  <div id="toast" class="toast border-0"><div class="d-flex"><div class="toast-body" id="toastMsg"></div>
+    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>
+</div>
+
+<!-- Modal สำรอง / กู้คืนข้อมูล -->
+<div class="modal fade" id="bkModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-fullscreen-sm-down modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-shield-check me-1"></i>สำรอง / กู้คืนข้อมูล</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="card-form border mb-3 p-3">
+          <div class="fw-semibold mb-2">สร้างจุดสำรองตอนนี้</div>
+          <div class="input-group">
+            <input class="form-control" id="bkNote" placeholder="หมายเหตุ (ไม่บังคับ) เช่น ก่อนปรับราคาประจำเดือน">
+            <button class="btn btn-success" id="btnBkCreate"><i class="bi bi-plus-circle me-1"></i>สำรองข้อมูล</button>
+          </div>
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+            <div class="small text-muted">ระบบสำรองให้อัตโนมัติวันละครั้งก่อนการแก้ไขครั้งแรก และทุกครั้งก่อนกู้คืน</div>
+            <button class="btn btn-link btn-sm p-0" id="btnBkExport"><i class="bi bi-download"></i> ดาวน์โหลดข้อมูลปัจจุบันเป็น Excel</button>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="fw-semibold">จุดสำรองที่มี <span class="text-muted fw-normal" id="bkCount"></span></div>
+          <button class="btn btn-sm btn-outline-secondary" id="btnBkReload"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>วันเวลา</th><th class="text-end">รายการ</th><th>ชนิด / หมายเหตุ</th><th class="text-end" style="width:150px">จัดการ</th></tr></thead>
+            <tbody id="bkRows"><tr><td colspan="4" class="text-center text-muted py-3">กำลังโหลด…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal อัปโหลดฐานข้อมูล -->
+<div class="modal fade" id="upModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-fullscreen-sm-down modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cloud-arrow-up me-1"></i>อัปโหลดฐานข้อมูลรายการอะไหล่</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="drop d-block" id="drop">
+          <input type="file" id="upFile" accept=".xlsx,.xls,.csv" hidden>
+          <i class="bi bi-file-earmark-spreadsheet fs-1 text-success"></i>
+          <div class="fw-semibold">เลือกไฟล์ Excel / CSV หรือลากไฟล์มาวางที่นี่</div>
+          <div class="small text-muted">คอลัมน์: รหัส | ชื่อ | ราคา | จำนวน | Place | promotion (หัวข้อ) — ถ้ามีชีต "ชีต2" หรือ "Topics" จะนำเข้าหัวข้อ/ประเภทด้วย</div>
+        </label>
+        <div class="text-end mt-2">
+          <button class="btn btn-link btn-sm p-0" id="btnExport"><i class="bi bi-download"></i> ดาวน์โหลดฐานข้อมูลปัจจุบัน (.xlsx) ไว้แก้ไขแล้วอัปโหลดกลับ</button>
+        </div>
+
+        <div id="upPreview" class="d-none mt-3">
+          <div class="alert alert-light border py-2 mb-2" id="upSummary"></div>
+          <div class="table-responsive mb-3" style="max-height:220px">
+            <table class="table table-sm table-bordered prev-table mb-0"><thead class="table-light"><tr><th>รหัส</th><th>ชื่อ</th><th>ราคา</th><th>จำนวน</th><th>Place</th><th>หัวข้อ</th></tr></thead><tbody id="upRows"></tbody></table>
+          </div>
+          <div class="fw-semibold mb-1">วิธีนำเข้า</div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="upMode" id="mUpsert" value="upsert" checked>
+            <label class="form-check-label" for="mUpsert"><b>อัปเดต + เพิ่มใหม่</b> (แนะนำ) — รหัสและหัวข้อตรงกับที่มี จะอัปเดตราคา/Place/จำนวน ที่ไม่ตรงจะเพิ่มใหม่</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="upMode" id="mAppend" value="append">
+            <label class="form-check-label" for="mAppend"><b>เพิ่มต่อท้าย</b> — เพิ่มทุกแถวในไฟล์ต่อท้ายข้อมูลเดิม</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="upMode" id="mReplace" value="replace">
+            <label class="form-check-label text-danger" for="mReplace"><b>แทนที่ทั้งหมด</b> — ลบข้อมูลเดิมแล้วใช้ไฟล์นี้แทน (ระบบสำรองชีตเดิมไว้ให้อัตโนมัติ)</label></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button class="btn btn-primary" id="btnDoUpload" disabled><i class="bi bi-cloud-arrow-up me-1"></i>อัปโหลด</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading"><div class="spinner-border text-success" style="width:3rem;height:3rem"></div></div>
+<div id="printArea"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+/* ======================================================================
+   CONFIG — ถ้าเปิดจาก VS Code Live Server / GitHub ให้ใส่ URL Web App (ลงท้าย /exec)
+   ถ้าเปิดผ่านลิงก์ Apps Script โดยตรง ไม่ต้องแก้
+   ====================================================================== */
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwgOVqYhOX0hykI6AdgrJXMDfqXSoKD2exUgQvRJ04_5j0gbi1-fwtrARa7ieiN2mWdXQ/exec';
+
+/* ---------- หัวกระดาษใบจัด (แก้ไขข้อมูลบริษัทได้ที่นี่) ---------- */
+const COMPANY = {
+  name: 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย',
+  address: '190/2 หมู่ 7 ตำบลแจระแม อำเภอเมืองอุบลราชธานี จังหวัดอุบลราชธานี',
+  taxId: '0-3435-30000-12-1',
+  phone: '045311728',
+  logo: 'data:image/png;base64,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'   // เปลี่ยนเป็น URL รูปโลโก้ได้
+};
+
+const $ = id => document.getElementById(id);
+let PARTS = [], TOPICS = [];
+
+/* ---------- เชื่อมต่อ backend ---------- */
+const MODE = (window.google && google.script && google.script.run) ? 'gas'
+  : (/\/exec$/.test(WEB_APP_URL) && !WEB_APP_URL.includes('PASTE_') && !/[?&]mock=1/.test(location.search)) ? 'fetch' : 'mock';
+
+async function api(fn, ...args) {
+  try { const r = await api_(fn, ...args); if (fn !== 'ping' && MODE !== 'mock') setConn('online'); return r; }
+  catch (e) { if (isNetErr(e)) setConn('offline', e.message || String(e)); throw e; }
+}
+function isNetErr(e) { const m = String((e && e.message) || e); return /Failed to fetch|NetworkError|JSON|network|เครือข่าย|Load failed/i.test(m) || !navigator.onLine; }
+async function api_(fn, ...args) {
+  if (MODE === 'gas') return new Promise((ok, ng) => google.script.run.withSuccessHandler(ok).withFailureHandler(ng)[fn](...args));
+  if (MODE === 'fetch') {
+    const res = await fetch(WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: fn, args }) });
+    let j; try { j = JSON.parse(await res.text()); } catch (e) { throw new Error('เซิร์ฟเวอร์ไม่ได้ตอบเป็น JSON — ตรวจ WEB_APP_URL และตั้ง Who has access = Anyone'); }
+    if (!j.ok) throw new Error(j.error); return j.result;
+  }
+  return MOCK[fn](...args);
+}
+if (MODE === 'mock') $('mockAlert').classList.remove('d-none');
+
+async function load() {
+  $('loading').classList.add('show');
+  try {
+    const d = await api('getAppData');
+    PARTS = d.parts || []; TOPICS = d.topics || [];
+    fillTypes();
+    CONN.lastSync = new Date(); renderConn();
+  } catch (e) { alert('โหลดข้อมูลไม่สำเร็จ: ' + (e.message || e)); }
+  finally { $('loading').classList.remove('show'); }
+}
+
+/* ---------- Dropdown ประเภท -> หัวข้อ ---------- */
+function types() { return [...new Set(TOPICS.map(t => t.category))]; }
+function topicsOf(type) { return TOPICS.filter(t => t.category === type).map(t => t.topic); }
+function partsOf(topic) { return PARTS.filter(p => p.promotion === topic); }
+
+function fillTypes() {
+  const cur = $('selType').value || saved('pl_type');
+  $('selType').innerHTML = '<option value="">— เลือกประเภท —</option>' +
+    types().map(t => `<option>${esc(t)}</option>`).join('');
+  if (types().includes(cur)) $('selType').value = cur;
+  fillTopics(saved('pl_topic'));
+}
+
+function fillTopics(keep) {
+  const type = $('selType').value, sel = $('selTopic');
+  if (!type) {
+    sel.innerHTML = '<option value="">—</option>'; sel.disabled = true;
+    showList(''); hint('เลือกประเภทก่อน'); return;
+  }
+  const list = topicsOf(type);
+  sel.innerHTML = '<option value="">— เลือกหัวข้อ —</option>' + list.map(t => `<option>${esc(t)}</option>`).join('');
+  sel.disabled = false;
+  sel.value = list.includes(keep) ? keep : '';   // หัวข้อไม่ตรงประเภท -> ล้าง (ไม่ค้างแบบในชีต)
+  showList(sel.value);
+}
+
+$('selType').addEventListener('change', () => { save('pl_type', $('selType').value); save('pl_topic', ''); fillTopics(''); });
+$('selTopic').addEventListener('change', () => { save('pl_topic', $('selTopic').value); showList($('selTopic').value); });
+$('btnRefresh').addEventListener('click', load);
+
+/* ---------- ตารางรายการอะไหล่ ---------- */
+function showList(topic) {
+  const rows = topic ? partsOf(topic) : [];
+  $('btnPrint').disabled = !rows.length;
+  $('btnAdd').disabled = !topic;
+  if (!topic) {
+    $('tbody').innerHTML = '<tr><td colspan="7" class="empty">เลือกประเภท และหัวข้อ เพื่อแสดงรายการอะไหล่</td></tr>';
+    $('tfoot').innerHTML = ''; $('cards').innerHTML = '<div class="empty">เลือกประเภท และหัวข้อ เพื่อแสดงรายการอะไหล่</div>';
+    if ($('selType').value) hint('เลือกหัวข้อ');
+    return;
+  }
+  hint(rows.length ? '' : 'หัวข้อนี้ยังไม่มีรายการอะไหล่ในชีต Data');
+  $('tbody').innerHTML = rows.length ? rows.map((p, i) => `<tr>
+      <td class="text-center text-muted">${i + 1}</td>
+      <td class="code">${esc(p.partNumber)}</td>
+      <td>${esc(p.partName)}</td>
+      <td class="text-end">${num(p.price)}</td>
+      <td class="text-center fw-bold">${p.quantity === '' ? '-' : p.quantity}</td>
+      <td class="place">${esc(p.place) || '<span class="text-muted fw-normal">-</span>'}</td>
+      <td class="text-center text-nowrap">${actBtns(p.row)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty">ไม่มีรายการ</td></tr>';
+  const qty = rows.reduce((s, p) => s + (+p.quantity || 0), 0);
+  const amt = rows.reduce((s, p) => s + (+p.price || 0) * (+p.quantity || 0), 0);
+  $('cards').innerHTML = rows.map((p, i) => `<div class="pcard">
+      <div class="no">${i + 1}</div>
+      <div class="flex-grow-1"><div class="nm">${esc(p.partName)}</div>
+        <div class="cd">${esc(p.partNumber)}${num(p.price) ? ' · ' + num(p.price) + ' ฿' : ''}</div></div>
+      <div class="qt"><b>×${p.quantity === '' ? '-' : p.quantity}</b><br>${p.place ? `<span class="badge text-bg-primary">${esc(p.place)}</span>` : '<span class="text-muted small">ไม่มี Place</span>'}
+        <div class="mt-1 text-nowrap">${actBtns(p.row)}</div></div>
+    </div>`).join('') + (rows.length ? `<div class="text-end fw-bold pt-2">รวม ${rows.length} รายการ · ${qty} ชิ้น · ${num(amt) || 0} ฿</div>` : '');
+  $('tfoot').innerHTML = rows.length ? `<tr class="fw-bold"><td colspan="3" class="text-end">รวม ${rows.length} รายการ</td>
+      <td class="text-end">${num(amt)}</td><td class="text-center">${qty}</td><td></td><td></td></tr>` : '';
+}
+
+/* ---------- พิมพ์ ---------- */
+$('btnPrint').addEventListener('click', () => {
+  const type = $('selType').value, topic = $('selTopic').value, rows = partsOf(topic);
+  if (!rows.length) return;
+  const paper = $('paper').value;
+  $('pageSize').textContent = `@page { size:${paper.toUpperCase()}; margin:${paper === 'a5' ? '7mm' : '10mm'};
+    @bottom-right { content: "หน้าที่ " counter(page) " / " counter(pages); font-family: Sarabun, sans-serif; font-size: 9pt; } }`;
+  const now = new Date(), pad = n => String(n).padStart(2, '0');
+  const qty = rows.reduce((s, p) => s + (+p.quantity || 0), 0);
+  const amt = rows.reduce((s, p) => s + (+p.price || 0) * (+p.quantity || 0), 0);
+  const docNo = `PK${String(now.getFullYear() + 543).slice(2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const date = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ' น.';
+  $('printArea').innerHTML = `<div class="sheet ${paper}">
+    <div class="lh">
+      <div class="logo">${COMPANY.logo ? `<img src="${COMPANY.logo}" alt="logo">` : ''}</div>
+      <div class="co">
+        <div class="nm">${esc(COMPANY.name)}</div>
+        <div class="ad">${esc(COMPANY.address)}</div>
+        <div class="ad">เลขประจำตัวผู้เสียภาษี ${esc(COMPANY.taxId)}&nbsp; โทร. ${esc(COMPANY.phone)}</div>
+      </div>
+      <div class="pg">เลขที่ ${docNo}<br>วันที่ ${date}</div>
+    </div>
+    <div class="ttl"><div class="side">ประเภท: <b>${esc(type)}</b></div><h2>ใบจัดอะไหล่</h2><div class="side r">ต้นฉบับ</div></div>
+    <div class="set">หัวข้อ: ${esc(topic)}</div>
+    <table>
+      <thead><tr><th style="width:5%">#</th><th style="width:18%">รหัส</th><th>รายชื่อ</th><th style="width:10%">ราคา</th><th style="width:8%">จำนวน</th><th style="width:11%">Place</th><th style="width:6%">จัด</th></tr></thead>
+      <tbody>${rows.map((p, i) => `<tr><td class="c">${i + 1}</td><td class="nw">${esc(p.partNumber)}</td><td>${esc(p.partName)}</td>
+        <td class="r">${num(p.price) || '-'}</td><td class="c b">${p.quantity === '' ? '-' : p.quantity}</td>
+        <td class="c b">${esc(p.place) || '-'}</td><td class="c"><span class="box"></span></td></tr>`).join('')}
+        <tr><td colspan="3" class="r b">รวม ${rows.length} รายการ</td><td class="r b">${num(amt)}</td><td class="c b">${qty}</td><td colspan="2"></td></tr>
+      </tbody>
+    </table>
+    <div class="sign">
+      <div><div class="line"></div>ผู้จัดของ</div>
+      <div><div class="line"></div>ผู้รับของ</div>
+    </div>
+  </div>`;
+  window.print();
+});
+
+/* ---------- เพิ่ม / แก้ไข / ลบ อะไหล่ ---------- */
+const partModal = new bootstrap.Modal($('partModal'));
+const delModal = new bootstrap.Modal($('delModal'));
+const toast = new bootstrap.Toast($('toast'), { delay: 2500 });
+let pendingDel = null;
+
+function actBtns(row) {
+  return `<button class="btn btn-sm btn-outline-primary" data-edit="${row}" title="แก้ไข"><i class="bi bi-pencil"></i></button>
+    <button class="btn btn-sm btn-outline-danger" data-del="${row}" title="ลบ"><i class="bi bi-trash"></i></button>`;
+}
+function notify(msg, ok = true) {
+  $('toast').className = 'toast border-0 ' + (ok ? 'text-bg-success' : 'text-bg-danger');
+  $('toastMsg').textContent = msg; toast.show();
+}
+function fillTopicSelect(cur) {
+  const all = TOPICS.map(t => t.topic);
+  if (cur && !all.includes(cur)) all.unshift(cur);
+  $('fTopic').innerHTML = all.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('');
+}
+function openPart(p) {
+  $('partForm').classList.remove('was-validated'); $('fFound').classList.add('d-none');
+  $('fRow').value = p ? p.row : ''; $('fOrig').value = p ? p.partNumber : '';
+  $('partTitle').textContent = p ? 'แก้ไขอะไหล่' : 'เพิ่มอะไหล่';
+  fillTopicSelect(p ? p.promotion : $('selTopic').value);
+  $('fCode').value = p ? p.partNumber : ''; $('fName').value = p ? p.partName : '';
+  $('fPrice').value = p ? p.price : ''; $('fQty').value = p ? p.quantity : 1; $('fPlace').value = p ? p.place : '';
+  $('codeList').innerHTML = [...new Set(PARTS.map(x => x.partNumber))].map(c => `<option value="${esc(c)}">`).join('');
+  // อะไหล่รหัสเดียวกันในหัวข้ออื่น
+  const same = p ? PARTS.filter(x => x.partNumber === p.partNumber && x.row !== p.row) : [];
+  $('allBox').classList.toggle('d-none', !same.length);
+  $('fAll').checked = true;
+  $('allList').textContent = same.length ? `รหัสนี้อยู่ในอีก ${same.length} หัวข้อ: ` + same.map(x => x.promotion || '(ไม่มีหัวข้อ)').join(', ') : '';
+  partModal.show();
+  if (!p) setTimeout(() => $('fCode').focus(), 300);
+}
+// พิมพ์รหัสที่มีอยู่แล้ว -> ดึงข้อมูลมาให้ (ตอนเพิ่ม)
+$('fCode').addEventListener('input', () => {
+  if ($('fRow').value) return;
+  const p = PARTS.find(x => x.partNumber === $('fCode').value.trim());
+  $('fFound').classList.toggle('d-none', !p);
+  if (p) { $('fName').value = p.partName; $('fPrice').value = p.price; $('fPlace').value = p.place; }
+});
+$('btnAdd').addEventListener('click', () => openPart(null));
+document.addEventListener('click', e => {
+  const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+  if (ed) openPart(PARTS.find(x => x.row === +ed.dataset.edit));
+  if (dl) {
+    const p = PARTS.find(x => x.row === +dl.dataset.del); if (!p) return;
+    pendingDel = { row: p.row, partNumber: p.partNumber };
+    $('delText').innerHTML = `<b>${esc(p.partNumber)}</b><br>${esc(p.partName)}<br><small>หัวข้อ: ${esc(p.promotion)}</small>`;
+    delModal.show();
+  }
+});
+$('partForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!$('partForm').checkValidity()) { $('partForm').classList.add('was-validated'); return; }
+  const data = {
+    row: $('fRow').value ? +$('fRow').value : null, originalPartNumber: $('fOrig').value,
+    partNumber: $('fCode').value.trim(), partName: $('fName').value.trim(),
+    price: $('fPrice').value, quantity: $('fQty').value, place: $('fPlace').value.trim(), promotion: $('fTopic').value,
+    applyAll: !$('allBox').classList.contains('d-none') && $('fAll').checked
+  };
+  await save_(data.row ? 'updatePart' : 'addPart', data, () => partModal.hide());
+});
+$('btnDel').addEventListener('click', () => save_('deletePart', pendingDel, () => delModal.hide()));
+
+async function save_(fn, data, done) {
+  $('loading').classList.add('show');
+  try {
+    const res = await api(fn, data);
+    PARTS = res.parts || PARTS; done(); notify(res.message);
+    fillTopics($('selTopic').value);   // รีเฟรชตาราง
+  } catch (err) { notify(err.message || String(err), false); }
+  finally { $('loading').classList.remove('show'); }
+}
+
+/* ---------- สถานะการเชื่อมต่อฐานข้อมูล ---------- */
+const CONN = { state: 'checking', info: null, lastCheck: null, lastSync: null, error: '', rows: null };
+const MODE_TXT = { gas: 'Apps Script (เปิดผ่านลิงก์ /exec)', fetch: 'Web App API (Live Server / GitHub)', mock: 'ข้อมูลตัวอย่าง (ยังไม่เชื่อม)' };
+function setConn(state, err) { CONN.state = state; if (err !== undefined) CONN.error = err; renderConn(); }
+function renderConn() {
+  const t = { online: 'ออนไลน์', offline: 'ออฟไลน์', demo: 'โหมดตัวอย่าง', checking: 'กำลังเชื่อมต่อ…' }[CONN.state];
+  $('connBtn').className = 'btn btn-sm border conn ' + CONN.state;
+  $('connText').textContent = t + (CONN.state === 'online' && CONN.info ? ' · ' + Number(CONN.info.rows).toLocaleString() + ' รายการ' : '');
+  const tm = d => d ? d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
+  const i = CONN.info || {};
+  $('connInfo').innerHTML = `
+    <dt>สถานะ</dt><dd>${t}${CONN.state === 'offline' && CONN.error ? `<div class="small text-danger fw-normal">${esc(CONN.error)}</div>` : ''}</dd>
+    <dt>การเชื่อมต่อ</dt><dd>${MODE_TXT[MODE]}</dd>
+    <dt>ฐานข้อมูล (Google Sheet)</dt><dd>${esc(i.spreadsheet || '-')}</dd>
+    <dt>จำนวนรายการ / หัวข้อ</dt><dd>${i.rows != null ? Number(i.rows).toLocaleString() : PARTS.length.toLocaleString()} รายการ · ${i.topics != null ? i.topics : TOPICS.length} หัวข้อ</dd>
+    <dt>ตรวจสอบล่าสุด / โหลดข้อมูลล่าสุด</dt><dd>${tm(CONN.lastCheck)} / ${tm(CONN.lastSync)}</dd>
+    <dt>เวอร์ชัน backend</dt><dd class="small">${esc(i.codeVersion || '-')}</dd>`;
+}
+async function checkConn(manual) {
+  if (MODE === 'mock') { CONN.info = MOCK.ping(); CONN.lastCheck = new Date(); setConn('demo'); return; }
+  if (!navigator.onLine) { CONN.lastCheck = new Date(); setConn('offline', 'อุปกรณ์ไม่ได้ต่ออินเทอร์เน็ต'); return; }
+  const wasOffline = CONN.state === 'offline';
+  if (manual) setConn('checking');
+  try {
+    const info = await api('ping');
+    const changed = CONN.rows != null && info.rows !== CONN.rows;
+    CONN.info = info; CONN.rows = info.rows; CONN.lastCheck = new Date();
+    setConn('online', '');
+    if (wasOffline) notify('เชื่อมต่อฐานข้อมูลได้แล้ว');
+    if (changed || wasOffline) { await load(); if (changed) notify('มีการเปลี่ยนแปลงข้อมูล — โหลดข้อมูลล่าสุดแล้ว'); }
+    else if (manual) notify('เชื่อมต่อปกติ');
+  } catch (e) {
+    CONN.lastCheck = new Date();
+    if (isNetErr(e)) { setConn('offline', e.message || String(e)); return; }
+    // เซิร์ฟเวอร์ตอบได้ แต่ยังไม่มีฟังก์ชัน ping (Code.gs เวอร์ชันเก่า) -> ใช้ getAppData ตรวจแทน
+    try {
+      const d = await api('getAppData');
+      const rows = (d.parts || []).length, changed = CONN.rows != null && rows !== CONN.rows;
+      CONN.info = { rows, topics: (d.topics || []).length, codeVersion: 'เวอร์ชันเก่า — กรุณาวาง Code.gs ล่าสุดแล้ว Deploy New version', spreadsheet: '-' };
+      CONN.rows = rows; setConn('online', '');
+      if (changed) { PARTS = d.parts; TOPICS = d.topics; fillTypes(); CONN.lastSync = new Date(); renderConn(); }
+      if (manual || wasOffline) notify('เชื่อมต่อได้ (แต่ backend ยังเป็นเวอร์ชันเก่า)');
+    } catch (e2) { setConn('offline', e2.message || String(e2)); }
+  }
+}
+$('btnPing').addEventListener('click', () => checkConn(true));
+window.addEventListener('online', () => checkConn(true));
+window.addEventListener('offline', () => setConn('offline', 'อุปกรณ์ไม่ได้ต่ออินเทอร์เน็ต'));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkConn(); });
+setInterval(() => { if (!document.hidden) checkConn(); }, 60000);
+
+/* ---------- สำรอง / กู้คืนข้อมูล ---------- */
+const bkModal = new bootstrap.Modal($('bkModal'));
+function renderBackups(list) {
+  $('bkCount').textContent = `(${list.length})`;
+  $('bkRows').innerHTML = list.length ? list.map(b => `<tr>
+      <td class="text-nowrap">${esc(b.time)}</td>
+      <td class="text-end">${Number(b.rows).toLocaleString()}</td>
+      <td><span class="badge ${b.kind === 'อัตโนมัติ' ? 'text-bg-secondary' : 'text-bg-success'}">${esc(b.kind)}</span>
+        <div class="small text-muted">${esc(b.note)}</div></td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-warning" data-restore="${esc(b.name)}" title="กู้คืน"><i class="bi bi-arrow-counterclockwise"></i> กู้คืน</button>
+        <button class="btn btn-sm btn-outline-secondary" data-bkdl="${esc(b.name)}" title="ดาวน์โหลด Excel"><i class="bi bi-download"></i></button>
+        <button class="btn btn-sm btn-outline-danger" data-bkdel="${esc(b.name)}" title="ลบ"><i class="bi bi-trash"></i></button>
+      </td></tr>`).join('')
+    : '<tr><td colspan="4" class="text-center text-muted py-3">ยังไม่มีจุดสำรอง — กด "สำรองข้อมูล" เพื่อสร้างจุดแรก</td></tr>';
+}
+async function loadBackups() {
+  $('bkRows').innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">กำลังโหลด…</td></tr>';
+  try { renderBackups(await api('listBackups')); }
+  catch (e) { $('bkRows').innerHTML = `<tr><td colspan="4" class="text-danger py-3">โหลดรายการสำรองไม่สำเร็จ: ${esc(e.message || e)}<br><small>ถ้าเพิ่งอัปเดต ให้วาง Code.gs ล่าสุดแล้ว Deploy New version</small></td></tr>`; }
+}
+async function busy(fn) {
+  $('loading').classList.add('show');
+  try { return await fn(); } catch (e) { notify(e.message || String(e), false); } finally { $('loading').classList.remove('show'); }
+}
+$('btnBackup').addEventListener('click', () => { $('bkNote').value = ''; bkModal.show(); loadBackups(); });
+$('btnBkReload').addEventListener('click', loadBackups);
+$('btnBkCreate').addEventListener('click', () => busy(async () => {
+  const r = await api('createBackup', { note: $('bkNote').value.trim() });
+  $('bkNote').value = ''; renderBackups(r.backups); notify(r.message);
+}));
+$('btnBkExport').addEventListener('click', () => $('btnExport').click());
+$('bkRows').addEventListener('click', e => {
+  const rs = e.target.closest('[data-restore]'), dl = e.target.closest('[data-bkdl]'), del = e.target.closest('[data-bkdel]');
+  if (rs) {
+    const name = rs.dataset.restore;
+    if (!confirm(`กู้คืนข้อมูลทั้งหมดจากจุดสำรอง ${name}?\n\nข้อมูลปัจจุบันจะถูกแทนที่ (ระบบจะสำรองข้อมูลปัจจุบันไว้ให้ก่อนอัตโนมัติ)`)) return;
+    busy(async () => {
+      const r = await api('restoreBackup', { name });
+      PARTS = r.parts; TOPICS = r.topics; fillTypes(); renderBackups(r.backups);
+      CONN.lastSync = new Date(); renderConn(); notify(r.message); checkConn();
+    });
+  }
+  if (del) {
+    const name = del.dataset.bkdel;
+    if (!confirm(`ลบจุดสำรอง ${name}?`)) return;
+    busy(async () => { const r = await api('deleteBackup', { name }); renderBackups(r.backups); notify(r.message); });
+  }
+  if (dl) busy(async () => {
+    if (!window.XLSX) throw new Error('โหลดตัวสร้างไฟล์ Excel ไม่สำเร็จ');
+    const r = await api('getBackupData', { name: dl.dataset.bkdl });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(r.data);
+    for (let i = 1; i < r.data.length; i++) { const c = ws[XLSX.utils.encode_cell({ r: i, c: 0 })]; if (c) { c.t = 's'; c.v = String(c.v); } }
+    XLSX.utils.book_append_sheet(wb, ws, 'Data');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r.topics), 'Topics');
+    XLSX.writeFile(wb, r.name + '.xlsx');
+  });
+});
+
+/* ---------- อัปโหลดฐานข้อมูล ---------- */
+const upModal = new bootstrap.Modal($('upModal'));
+let UPLOAD = null;
+const COLS = {   // ชื่อหัวคอลัมน์ที่รองรับ
+  code: ['รหัส', 'รหัสสินค้า', 'รหัสอะไหล่', 'part number', 'partnumber', 'code'],
+  name: ['ชื่อ', 'รายชื่อ', 'ชื่ออะไหล่', 'ชื่อสินค้า', 'name', 'part name'],
+  price: ['ราคา', 'price'],
+  qty: ['จำนวน', 'qty', 'quantity'],
+  place: ['place', 'ตำแหน่ง', 'ที่เก็บ'],
+  topic: ['promotion', 'หัวข้อ', 'topic']
+};
+function codeText(v) {
+  if (typeof v === 'number') return Number.isInteger(v) ? BigInt(Math.round(v)).toString() : String(v);
+  return String(v ?? '').replace(/\s+/g, ' ').trim();
+}
+function findSheet(wb, names) {
+  return wb.SheetNames.find(n => names.includes(n.trim().toLowerCase()));
+}
+function parseWorkbook(wb) {
+  const dataName = findSheet(wb, ['data', 'ข้อมูล']) || wb.SheetNames.find(n => !['topics', 'ชีต2'].includes(n.trim().toLowerCase())) || wb.SheetNames[0];
+  const grid = XLSX.utils.sheet_to_json(wb.Sheets[dataName], { header: 1, raw: true, defval: '' });
+  // หาแถวหัวตาราง (มีคำว่า รหัส) ใน 10 แถวแรก
+  let h = grid.slice(0, 10).findIndex(r => r.some(c => COLS.code.includes(String(c).trim().toLowerCase())));
+  let map;
+  if (h >= 0) {
+    const hdr = grid[h].map(c => String(c).trim().toLowerCase());
+    map = {}; Object.keys(COLS).forEach(k => { map[k] = hdr.findIndex(c => COLS[k].includes(c)); });
+    if (map.name < 0) map.name = map.code + 1;
+  } else { h = -1; map = { code: 0, name: 1, price: 2, qty: 3, place: 4, topic: 5 }; }
+  const g = (r, k) => map[k] >= 0 ? r[map[k]] : '';
+  const rows = [], bad = [];
+  grid.slice(h + 1).forEach((r, i) => {
+    const row = [codeText(g(r, 'code')), String(g(r, 'name') ?? '').trim(), g(r, 'price'), g(r, 'qty'), String(g(r, 'place') ?? '').trim(), String(g(r, 'topic') ?? '').trim()];
+    if (!row[0] && !row[1]) return;                     // แถวว่าง
+    if (!row[0] || !row[1]) { bad.push(h + i + 2); return; }
+    rows.push(row);
+  });
+  // หัวข้อ/ประเภท
+  const tName = findSheet(wb, ['topics', 'ชีต2']);
+  let topics = [];
+  if (tName) {
+    topics = XLSX.utils.sheet_to_json(wb.Sheets[tName], { header: 1, raw: false, defval: '' })
+      .map(r => [String(r[0]).trim(), String(r[1]).trim()])
+      .filter(r => r[0] && r[1] && !(r[0] === 'หัวข้อ' && r[1] === 'ประเภท'));
+  }
+  return { dataName, tName, rows, bad, topics, missing: Object.keys(map).filter(k => map[k] < 0) };
+}
+async function readFile(file) {
+  if (!window.XLSX) { notify('โหลดตัวอ่านไฟล์ Excel ไม่สำเร็จ (ตรวจอินเทอร์เน็ต)', false); return; }
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    UPLOAD = parseWorkbook(wb); UPLOAD.file = file.name;
+    const u = UPLOAD;
+    const newTopics = u.topics.filter(t => !TOPICS.some(x => x.topic === t[0])).length;
+    $('upSummary').innerHTML = `<b>${esc(u.file)}</b> (ชีต ${esc(u.dataName)}) — พบ <b>${u.rows.length.toLocaleString()}</b> รายการที่ใช้ได้` +
+      (u.bad.length ? `<br><span class="text-danger">ข้าม ${u.bad.length} แถวที่ไม่มีรหัสหรือชื่อ (แถว ${u.bad.slice(0, 10).join(', ')}${u.bad.length > 10 ? ' …' : ''})</span>` : '') +
+      (u.tName ? `<br>ชีต ${esc(u.tName)}: หัวข้อ ${u.topics.length} รายการ (ใหม่ ${newTopics})` : '') +
+      (u.missing.length ? `<br><span class="text-warning-emphasis">ไม่พบคอลัมน์: ${u.missing.join(', ')} — จะเว้นว่างไว้</span>` : '');
+    $('upRows').innerHTML = u.rows.slice(0, 8).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') +
+      (u.rows.length > 8 ? `<tr><td colspan="6" class="text-center text-muted">… และอีก ${(u.rows.length - 8).toLocaleString()} รายการ</td></tr>` : '');
+    $('upPreview').classList.remove('d-none');
+    $('btnDoUpload').disabled = !u.rows.length;
+  } catch (e) { notify('อ่านไฟล์ไม่สำเร็จ: ' + (e.message || e), false); }
+}
+$('btnUpload').addEventListener('click', () => {
+  UPLOAD = null; $('upFile').value = ''; $('upPreview').classList.add('d-none'); $('btnDoUpload').disabled = true;
+  $('mUpsert').checked = true; upModal.show();
+});
+$('upFile').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); });
+['dragover', 'dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+$('btnDoUpload').addEventListener('click', async () => {
+  if (!UPLOAD) return;
+  const mode = document.querySelector('input[name=upMode]:checked').value;
+  if (mode === 'replace' && !confirm(`แทนที่ข้อมูลทั้งหมดในฐานข้อมูลด้วย ${UPLOAD.rows.length.toLocaleString()} รายการจากไฟล์นี้?\n(ระบบจะสำรองชีตเดิมไว้ให้)`)) return;
+  $('btnDoUpload').disabled = true; $('loading').classList.add('show');
+  try {
+    const res = await api('importParts', { mode, rows: UPLOAD.rows, topics: UPLOAD.topics });
+    PARTS = res.parts || PARTS; TOPICS = res.topics || TOPICS;
+    upModal.hide(); fillTypes(); CONN.lastSync = new Date();
+    notify(res.message); checkConn();
+  } catch (e) { notify('อัปโหลดไม่สำเร็จ: ' + (e.message || e), false); $('btnDoUpload').disabled = false; }
+  finally { $('loading').classList.remove('show'); }
+});
+$('btnExport').addEventListener('click', () => {
+  if (!window.XLSX) return;
+  const wb = XLSX.utils.book_new();
+  const data = [['รหัส', 'ชื่อ', 'ราคา', 'จำนวน', 'Place', 'promotion']].concat(PARTS.map(p => [p.partNumber, p.partName, p.price, p.quantity, p.place, p.promotion]));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  // รหัสเป็นข้อความ
+  for (let r = 1; r < data.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 0 })]; if (c) { c.t = 's'; c.v = String(c.v); } }
+  ws['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 9 }, { wch: 8 }, { wch: 10 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['หัวข้อ', 'ประเภท']].concat(TOPICS.map(t => [t.topic, t.category]))), 'Topics');
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  XLSX.writeFile(wb, `ฐานข้อมูลจัดอะไหล่_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
+});
+
+/* ---------- utils ---------- */
+function hint(t) { $('hint').textContent = t; }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function num(n) { return (n === '' || n == null || isNaN(+n) || +n === 0) ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function saved(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+
+/* ---------- ข้อมูลตัวอย่าง (ใช้เมื่อยังไม่ได้ต่อ backend) ---------- */
+const MOCK = {
+  _bk: [],
+  listBackups() { return this._bk.slice().reverse(); },
+  createBackup(d) { const D = this._rows(); const name = 'BK_' + Date.now(); this._bk.push({ name, time: new Date().toLocaleString('th-TH'), rows: D.parts.length, topics: D.topics.length, kind: 'สำรองเอง', note: d.note || 'สำรองด้วยตนเอง', snap: JSON.parse(JSON.stringify(D)) }); return { message: 'สำรองแล้ว (ตัวอย่าง)', backups: this.listBackups() }; },
+  restoreBackup(d) { const b = this._bk.find(x => x.name === d.name); this._d = JSON.parse(JSON.stringify(b.snap)); return { message: 'กู้คืนแล้ว (ตัวอย่าง)', parts: this._d.parts, topics: this._d.topics, backups: this.listBackups() }; },
+  deleteBackup(d) { this._bk = this._bk.filter(x => x.name !== d.name); return { message: 'ลบแล้ว (ตัวอย่าง)', backups: this.listBackups() }; },
+  getBackupData(d) { const b = this._bk.find(x => x.name === d.name); return { name: b.name, data: [['รหัส', 'ชื่อ', 'ราคา', 'จำนวน', 'Place', 'promotion']].concat(b.snap.parts.map(p => [p.partNumber, p.partName, p.price, p.quantity, p.place, p.promotion])), topics: b.snap.topics.map(t => [t.topic, t.category]) }; },
+  ping() { const D = this._rows(); return { codeVersion: 'mock', spreadsheet: '(ข้อมูลตัวอย่าง)', rows: D.parts.length, topics: D.topics.length }; },
+  importParts(p) {
+    const D = this._rows(); let n = Date.now();
+    if (p.mode === 'replace') D.parts = [];
+    p.rows.forEach(r => D.parts.push({ row: ++n, partNumber: r[0], partName: r[1], price: r[2], quantity: r[3], place: r[4], promotion: r[5] }));
+    (p.topics || []).forEach(t => { if (!D.topics.some(x => x.topic === t[0])) D.topics.push({ topic: t[0], category: t[1] }); });
+    return { message: 'อัปโหลดแล้ว ' + p.rows.length + ' แถว (ตัวอย่าง)', parts: D.parts, topics: D.topics };
+  },
+  _rows() { return this._d || (this._d = this.getAppData()); },
+  addPart(d) { const D = this._rows(); D.parts.push({ ...d, row: Date.now(), price: d.price === '' ? '' : +d.price, quantity: d.quantity === '' ? '' : +d.quantity }); return { message: 'เพิ่มแล้ว (ตัวอย่าง)', parts: D.parts }; },
+  updatePart(d) { const D = this._rows(), i = D.parts.findIndex(p => p.row === d.row); D.parts[i] = { ...d, price: d.price === '' ? '' : +d.price, quantity: d.quantity === '' ? '' : +d.quantity }; if (d.applyAll) D.parts.forEach(p => { if (p.partNumber === d.originalPartNumber && p.row !== d.row) Object.assign(p, { partNumber: d.partNumber, partName: d.partName, price: d.price === '' ? '' : +d.price, place: d.place }); }); return { message: 'บันทึกแล้ว (ตัวอย่าง)', parts: D.parts }; },
+  deletePart(d) { const D = this._rows(); D.parts = D.parts.filter(p => p.row !== d.row); return { message: 'ลบแล้ว (ตัวอย่าง)', parts: D.parts }; },
+  getAppData: () => MOCK._d || ({
+    topics: [
+      { topic: 'น้ำมัน 1000 ชม. EF35', category: 'แทรกเตอร์ EF น้ำมัน' },
+      { topic: 'น้ำมัน 1000 ชม. YM 51', category: 'แทรกเตอร์ YM น้ำมัน' }
+    ],
+    parts: [
+      { row: 2, partNumber: 'YES-5EOB', partName: 'น้ำมันเครื่อง SAE #40 ยันมาร์ 5 ลิตร', price: 660, quantity: 1, place: '', promotion: 'น้ำมัน 1000 ชม. EF35' },
+      { row: 3, partNumber: 'YES-5GOB', partName: 'น้ำมันเกียร์ยันม่าร์ # 90 5 ลิตร', price: 635, quantity: 1, place: '', promotion: 'น้ำมัน 1000 ชม. EF35' },
+      { row: 4, partNumber: '129004-55810', partName: 'กรองน้ำมันเชื้อเพลิง EF35-39', price: 372, quantity: 1, place: 'C5-3', promotion: 'น้ำมัน 1000 ชม. EF35' },
+      { row: 5, partNumber: 'YES-1EOB', partName: 'น้ำมันเครื่อง ยันมาร์ 1ลิตร', price: 170, quantity: 1, place: '', promotion: 'น้ำมัน 1000 ชม. YM 51' }
+    ]
+  })
+};
+
+load().then(() => checkConn());
+</script>
+</body>
+</html>
