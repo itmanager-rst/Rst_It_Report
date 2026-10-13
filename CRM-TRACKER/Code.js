@@ -82,7 +82,46 @@
 // BigQuery ทันที (จำนวนแถวเท่าเดิม ไม่ติด assertSafeRowCountForTruncateSync_) + เตะ session ของ user
 // ที่ถูกแก้สิทธิ์/ปิดใช้งาน/เปลี่ยนรหัส ให้ต้อง login ใหม่ + กันแอดมินลดสิทธิ์/ปิดบัญชีตัวเอง และกัน
 // ระบบเหลือ admin ที่ใช้งานได้ 0 คน — ใช้คู่กับ index.html ที่ EXPECTED_CODE_VERSION = r42
-var CODE_VERSION = 'r42-2026-09-29-edit-member';
+// หมายเหตุ (2026-09-30 — r43): แก้ปัญหา login ช้า / ผู้ใช้ที่ปิดจอไปแล้วยังขึ้นว่าออนไลน์ / เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว
+//  1) เก็บ session แยก 1 key ต่อ 1 token (crm_sess_<token>) แทนการยัดทุก session ลง Script Property ก้อนเดียว
+//     — เดิมทุก request (ping ทุก 20 วิ ของทุกคน รวมถึงแอป Salepromofinder) อ่าน-เขียนทับก้อนเดียวกันพร้อมกัน
+//     ทำให้เขียนทับกันเอง (session ที่เพิ่ง login หายได้) และก้อนนี้โตจนใกล้เพดาน 9KB ต่อ key ของ Script Properties
+//     (ย้ายของเดิมให้อัตโนมัติ ดู migrateLegacySessions_)
+//  2) getOnlineUsers / login ไม่ต่ออายุ token ที่แนบมาอีกแล้ว — เดิมหน้า login ส่ง token เก่าที่ค้างใน
+//     เครื่องมาทุก 20 วิ ทำให้คนที่ปิดจอไปแล้วถูกต่ออายุว่า "ออนไลน์" ไปเรื่อยๆ ตราบที่หน้า login เปิดอยู่
+//  3) action ใหม่ 'closeSession' — หน้าเว็บส่งมาตอนปิดแท็บ/ทิ้ง token เก่า ให้หายจากรายชื่อออนไลน์ทันที (ไม่บันทึก log)
+//  4) login อ่านรหัสผ่านจากแท็บ users ในชีตก่อน (เร็วกว่า query BigQuery 2 รอบ และเห็นการแก้ไขสมาชิกทันที)
+//     ถ้าไม่พบในชีตค่อยใช้ BigQuery แบบเดิม
+//  5) ต่ออายุ lastActive ลง Properties ทุก 60 วิ (เดิม 20 วิ) ลดการเขียน Properties ลง ~3 เท่า
+// หมายเหตุ (2026-09-30 — r44): เร่งความเร็วหลัง login — ลดจำนวนรอบ query BigQuery และแคชผลที่ไม่ต้องสดทุกวินาที
+//  - checkStatus ไม่ query BigQuery แล้ว (หน้าเว็บใช้แค่ codeVersion/lastCustomerSync) — ตรวจการเชื่อมต่อจริงใช้ action 'checkBigQuery'
+//  - getInitialData: 2 query → 1 query + แคช 5 นาที | getDashboardSummary: 3 query → 1 query + แคช 5 นาที
+//  - search: นับจำนวน (COUNT) รวมไว้ใน query เดียวกับดึงข้อมูล (COUNT(*) OVER()) + แคชผลซ้ำ 60 วินาที
+//    (ข้อมูลฝั่ง BigQuery ตามหลังชีตได้ ~5 นาทีอยู่แล้วจาก trigger sync จึงไม่ทำให้ข้อมูลเก่ากว่าเดิมอย่างมีนัย)
+//  - ทุกคำตอบมี _serverMs (เวลาที่เซิร์ฟเวอร์ใช้จริง) ให้หน้าเว็บแสดงในเมนู "ตรวจความเร็วระบบ" ว่าช้าที่ส่วนไหน
+//  - เปิดหน้าเว็บด้วย createHtmlOutputFromFile (ไม่ต้องประมวลผล template ทั้งไฟล์ เพราะ index ไม่มี scriptlet)
+// หมายเหตุ (2026-09-30 — r45): ตัวกรอง "ผู้อัปเดตล่าสุด" (filters.updatedBy → คอลัมน์ updated_by) + action ใหม่
+// 'getUpdaterOptions' (รายชื่อผู้อัปเดตที่มีในระบบ ไว้ทำ dropdown, แคช 10 นาที) + การบันทึกการติดตาม (addFollowUp)
+// ตั้ง updated_by เป็นคนที่บันทึกด้วย — "ผู้อัปเดตล่าสุด" จึงรวมทั้งคนที่แก้ข้อมูลและคนที่บันทึกการติดตามล่าสุด
+// หมายเหตุ (2026-10-01 — r46): แก้ "เบอร์จาก ManyChat ไม่เข้าระบบเลย" — สาเหตุ: ตั้งแต่มีระบบ login (r21) doPost ตอบ
+// "กรุณาเข้าสู่ระบบก่อนใช้งาน" กับทุกคำขอที่ไม่มี token ที่ยังใช้งานได้ รวมถึง External Request ของ ManyChat ที่ยิง
+// action:'add' เข้ามาตรงๆ (ManyChat ไม่ได้ login จึงไม่มี token) ลีดจึงถูกปฏิเสธเงียบๆ ทุกครั้ง
+// แก้: เพิ่ม "รหัสเชื่อมต่อ ManyChat" (Script Property MANYCHAT_API_KEY) — คำขอ action 'add' ที่แนบ apiKey ถูกต้อง
+// จะถูกบันทึกในชื่อ "ระบบ (Facebook/ManyChat)" ได้โดยไม่ต้อง login (ทำได้แค่เพิ่มลูกค้าเท่านั้น ทำอย่างอื่นไม่ได้)
+// วิธีตั้งค่า: รันฟังก์ชัน runSetup_ManyChatApiKey ครั้งเดียว → คัดลอกรหัสจาก Execution log ไปใส่ใน body ของ ManyChat
+// หมายเหตุ (2026-10-05 — r49): action ใหม่ 'getSalesDailyReport' (รายงานประจำวันแยกตามเซลล์, เฉพาะ admin)
+// + บันทึกการติดตามเก็บ nextFollowUpDate ไว้ใน follow_up_log ด้วย + trigger sync แบบ public (installCustomerSyncTrigger)
+// หมายเหตุ (2026-10-09 — r50): แก้ "Sync ชีต → BigQuery ล้มเหลว: bigquery.jobs.insert failed with error: Empty response"
+// ซึ่งทำให้แก้ไขชื่อ/ที่อยู่/ที่ทำกินแล้ว "บันทึกสำเร็จ" (เขียนลงชีตจริง) แต่เปิดดูใหม่ยังเห็นข้อมูลเก่า (หน้าเว็บอ่านจาก
+// BigQuery ที่ไม่ได้ถูก sync) — syncCustomerSheetToBigQuery_ บีบอัดไฟล์ CSV เป็น gzip ก่อนส่ง + ลองใหม่สูงสุด 3 ครั้ง
+// (bigQueryLoadInsertWithRetry_) + ฟังก์ชัน runManualCustomerSyncNow สำหรับกด sync เองทันทีจาก Apps Script editor
+// (CODE_VERSION คงไว้ที่ r49 ตั้งใจ — หน้าเว็บ index ไม่ต้องแก้/อัปโหลดใหม่)
+// หมายเหตุ (2026-10-09 — r51): ค้นหาด้วยเบอร์โทรได้แม้พิมพ์ไม่ครบ (เช่น 064) และเจอแม้เบอร์ในชีตไม่มี 0 นำหน้า/มีขีด
+// ดู PHONE_NORM_EXPR และ filters.exactPhone ใน buildWhereClause (CODE_VERSION ยังคงเป็น r49 — ไม่ต้องแก้หน้าเว็บ)
+// หมายเหตุ (2026-10-12 — r52): role 'sale' ได้สิทธิ์เท่า 'staff' (พนักงาน) ทุกอย่าง — เพิ่ม/แก้ไขลูกค้าได้ทุกฟิลด์,
+// บันทึกการติดตาม, นำเข้า Excel, เพิ่มสมาชิก (ตั้งได้แค่ staff/sale) | ยังห้าม: Export (exportAll) และลบลูกค้า = admin เท่านั้น
+// ใช้คู่กับ index.html / Mobile.html ที่ EXPECTED_CODE_VERSION = r52
+var CODE_VERSION = 'r52-2026-10-12-sale-as-staff';
 var GCP_PROJECT_ID = 'crm-tracker-503906';
 var DATASET_ID = 'crm_tracker';
 var TABLE_ID = 'customers';
@@ -197,8 +236,13 @@ var CUSTOMER_SHEET_COLUMNS = [
   // sync แบบ WRITE_TRUNCATE) ทำให้หน้าเว็บค้นหา/แสดงผลผ่าน BigQuery ไม่เห็นค่าเหล่านี้ แม้จะเขียน
   // ลง Sheet ไปแล้วจริงก็ตาม — ⚠️ ถ้าใครเผลอลบหัวคอลัมน์นี้ออกจากชีตในอนาคต ระบบทั้งระบบจะพัง
   // ทันที (getCustomerHeaderMap_ โยน error ถ้าขาดคอลัมน์ในลิสต์นี้แม้แต่ตัวเดียว)
-  'created_by', 'updated_by'
+  'created_by', 'updated_by',
+  // (r48) ประเภทลูกค้า (ผู้นำชุมชน/ลูกค้า ธกส/ข้าราชการ/พนักงานเอกชน) + ข้อมูลเพิ่มเติม (เกรด/ตำแหน่ง)
+  // ถ้าชีตยังไม่มีหัวคอลัมน์ 2 ตัวนี้ getCustomerHeaderMap_ จะเพิ่มต่อท้ายแถวที่ 1 ให้เองอัตโนมัติ
+  'customer_group', 'customer_group_detail'
 ];
+// คอลัมน์ที่ระบบเพิ่มหัวตารางให้เองได้ถ้ายังไม่มี (ไม่ต้องไปแก้ชีตด้วยมือ)
+var CUSTOMER_AUTO_ADD_COLUMNS = ['customer_group', 'customer_group_detail'];
 
 // เปิด Sheet object ของแท็บข้อมูลลูกค้า — โยน error ชัดเจนถ้ายังไม่ได้ตั้งค่า/หาไม่เจอ
 function getCustomerSheet_() {
@@ -231,6 +275,18 @@ function getCustomerHeaderMap_(sheet) {
     if (h) map[h] = i + 1;
   }
   var missing = CUSTOMER_SHEET_COLUMNS.filter(function(c) { return !map[c]; });
+  // (r48) เติมหัวคอลัมน์ที่ระบบรู้จัก (CUSTOMER_AUTO_ADD_COLUMNS) ต่อท้ายให้เอง — ไม่แตะข้อมูลเดิม
+  var autoAdd = missing.filter(function(c) { return CUSTOMER_AUTO_ADD_COLUMNS.indexOf(c) !== -1; });
+  if (autoAdd.length > 0) {
+    var usedCol = 0;
+    for (var j = 0; j < headerRow.length; j++) { if ((headerRow[j] || '').toString().trim()) usedCol = j + 1; }
+    if (sheet.getMaxColumns() < usedCol + autoAdd.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), usedCol + autoAdd.length - sheet.getMaxColumns());
+    }
+    sheet.getRange(1, usedCol + 1, 1, autoAdd.length).setValues([autoAdd]);
+    autoAdd.forEach(function(c, k) { map[c] = usedCol + 1 + k; });
+    missing = missing.filter(function(c) { return autoAdd.indexOf(c) === -1; });
+  }
   if (missing.length > 0) {
     throw new Error('แถวหัวตารางในชีต "' + CUSTOMER_SHEET_NAME + '" ขาดคอลัมน์: ' + missing.join(', ') +
                      ' — ต้องเพิ่มหัวคอลัมน์เหล่านี้ในแถวที่ 1 ให้ครบก่อนใช้งาน');
@@ -669,6 +725,34 @@ function installScheduledCustomerSync_() {
   Logger.log('ตั้ง trigger สำเร็จ: จะรัน scheduledSyncCustomersToBigQuery_ ทุก 5 นาที');
 }
 
+// =================================================================
+// (2026-10-05) ⏰ ตั้ง trigger sync ชีต → BigQuery แบบใหม่ — ใช้ฟังก์ชันนี้แทน installScheduledCustomerSync_
+// =================================================================
+// สาเหตุ: ฟังก์ชันที่ชื่อลงท้ายด้วย _ เป็น "private" ใน Apps Script จึงไม่ขึ้นใน dropdown ▶ Run และหน้า Triggers
+// ทำให้ trigger sync หายไป/ตั้งไม่ได้ (ตรวจพบ 2026-10-05: ไม่มี trigger เลย BigQuery จึงค้างข้อมูลเก่า)
+// วิธีใช้: เลือก installCustomerSyncTrigger ใน dropdown แล้วกด ▶ Run ครั้งเดียว (รันซ้ำได้ ไม่สร้างซ้ำ)
+// ตั้งทุก 15 นาที (ไม่ใช่ 5) เพราะ sync 1 รอบใช้ ~100 วินาที — ทุก 5 นาทีจะใช้เวลารันรวม ~8 ชม./วัน
+// เกินโควตา trigger ของ Google (บัญชี Workspace 6 ชม./วัน) ทุก 15 นาทีใช้ ~2.7 ชม./วัน
+var CUSTOMER_SYNC_EVERY_MINUTES = 15; // ค่าที่ใช้ได้: 5, 10, 15, 30
+function installCustomerSyncTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    var h = triggers[i].getHandlerFunction();
+    if (h === 'scheduledSyncCustomersToBigQuery_' || h === 'scheduledSyncCustomersToBigQuery') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('scheduledSyncCustomersToBigQuery')
+    .timeBased()
+    .everyMinutes(CUSTOMER_SYNC_EVERY_MINUTES)
+    .create();
+  Logger.log('✅ ตั้ง trigger สำเร็จ: sync ชีต → BigQuery ทุก ' + CUSTOMER_SYNC_EVERY_MINUTES + ' นาที');
+}
+// ตัวเรียกแบบ public สำหรับ trigger (เรียกฟังก์ชัน sync ตัวเดิมต่ออีกที)
+function scheduledSyncCustomersToBigQuery() {
+  scheduledSyncCustomersToBigQuery_();
+}
+
 function scheduledSyncCustomersToBigQuery_() {
   var t0 = Date.now();
   try {
@@ -739,9 +823,47 @@ function syncCustomerSheetToBigQuery_() {
   };
 
   // ถ้าไม่มีข้อมูลเลย (ชีตว่าง) csvText จะเป็น '' — ยังส่งได้ปกติ ได้ตารางเปล่า ไม่ error
-  var blob = Utilities.newBlob(csvText, 'text/csv', 'customers_sync.csv');
-  var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+  // (r50 2026-10-09) แก้ "API call to bigquery.jobs.insert failed with error: Empty response"
+  // ชีตลูกค้ามีแสนกว่าแถว + financial_info/follow_up_log เป็น JSON ยาว ทำให้ไฟล์ CSV ใหญ่มาก
+  // จน Apps Script ส่งขึ้น BigQuery ไม่ผ่าน (ได้ Empty response) → sync ไม่เข้า BigQuery เลย
+  // อาการที่ผู้ใช้เห็น: แก้ไขชื่อ/ที่อยู่/ที่ทำกินแล้ว "บันทึกสำเร็จ" (เขียนลงชีตจริง) แต่เปิดดูใหม่
+  // ข้อมูลยังเป็นของเก่า เพราะหน้าค้นหาอ่านจาก BigQuery ที่ไม่ได้อัปเดต
+  // แก้: บีบอัดไฟล์เป็น gzip ก่อนส่ง (เล็กลงหลายเท่า BigQuery รองรับ CSV แบบ gzip) + ลองใหม่สูงสุด 3 ครั้ง
+  var blob = Utilities.gzip(Utilities.newBlob(csvText, 'text/csv', 'customers_sync.csv'), 'customers_sync.csv.gz');
+  blob.setContentType('application/octet-stream');
+  var insertResult = bigQueryLoadInsertWithRetry_(job, blob);
   return waitForBigQueryLoadJob_(insertResult);
+}
+
+// (r50) ส่ง Load Job พร้อมลองใหม่เมื่อเจอ error ชั่วคราวจาก Google (Empty response / timeout / 5xx)
+// ส่งซ้ำได้ปลอดภัยเพราะเป็น WRITE_TRUNCATE (แทนที่ทั้งตาราง ไม่เกิดข้อมูลซ้ำ)
+function bigQueryLoadInsertWithRetry_(job, blob) {
+  var lastErr = null;
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
+    } catch (err) {
+      lastErr = err;
+      Logger.log('BigQuery.Jobs.insert ครั้งที่ ' + attempt + ' ล้มเหลว: ' + err);
+      if (attempt < 3) Utilities.sleep(5000 * attempt);
+    }
+  }
+  throw lastErr;
+}
+
+// (r50) รันเองจาก Apps Script editor (เลือกใน dropdown แล้วกด ▶ Run) เพื่อ sync ทันที
+// ไม่ต้องรอรอบ trigger 15 นาที — ดูผลใน Execution log
+function runManualCustomerSyncNow() {
+  var t0 = Date.now();
+  try {
+    syncCustomerSheetToBigQuery_();
+    var sec = Math.round((Date.now() - t0) / 1000);
+    saveCustomerSyncStatus_(true, 'ok manual (' + sec + 's)');
+    Logger.log('✅ sync สำเร็จ ใช้เวลา ' + sec + ' วินาที');
+  } catch (err) {
+    saveCustomerSyncStatus_(false, String(err).substring(0, 300));
+    Logger.log('❌ sync ล้มเหลว: ' + err);
+  }
 }
 
 // =================================================================
@@ -1359,6 +1481,30 @@ function getStaffDashboardStatsHTML(reqPayload, user) {
 /**
  * ฟังก์ชันเช็คการเชื่อมต่อ BigQuery
  */
+// (r44) สถานะแบบเร็ว — ไม่ query BigQuery (หน้าเว็บเรียกทุกครั้งหลัง login เพื่อเช็คเวอร์ชันเท่านั้น)
+function quickStatus_() {
+  return { success: true, connected: true, message: 'OK (quick)', codeVersion: CODE_VERSION, lastCustomerSync: getCustomerSyncStatus_() };
+}
+
+// (r44) แคชผลลัพธ์แบบย่อ — CacheService เก็บได้ไม่เกิน ~100KB ต่อ key ถ้าใหญ่เกินจะข้ามการแคชเงียบๆ
+function cacheGetJson_(key) {
+  try {
+    var raw = CacheService.getScriptCache().get(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function cachePutJson_(key, obj, seconds) {
+  try {
+    var s = JSON.stringify(obj);
+    if (s.length < 95000) CacheService.getScriptCache().put(key, s, seconds);
+  } catch (e) {}
+}
+function cacheKeyOf_(prefix, obj) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(obj || {}), Utilities.Charset.UTF_8);
+  var hex = digest.map(function(b) { return ('0' + ((b < 0 ? b + 256 : b).toString(16))).slice(-2); }).join('');
+  return prefix + hex;
+}
+
 function checkBigQueryStatus() {
   try {
     var sql = "SELECT 1 as status";
@@ -1485,10 +1631,58 @@ function getUsersStore() {
   try { return JSON.parse(stored); } catch (e) { return []; }
 }
 
+// (r43) session เก็บแยก key ละ 1 token: 'crm_sess_' + token → JSON { username, role, name, branch, createdAt, lastActive }
+var SESSION_KEY_PREFIX = 'crm_sess_';
+function sessionKey_(token) { return SESSION_KEY_PREFIX + token; }
+
+// ย้าย session รูปแบบเดิม (ก้อนเดียวใน CRM_LOGIN_SESSIONS_KEY) มาเป็นแบบแยก key — ทำครั้งเดียว ปลอดภัยถ้าเรียกซ้ำ
+function migrateLegacySessions_(props) {
+  props = props || PropertiesService.getScriptProperties();
+  var raw = props.getProperty(CRM_LOGIN_SESSIONS_KEY);
+  if (!raw) return;
+  var obj = {};
+  try { obj = JSON.parse(raw) || {}; } catch (e) { obj = {}; }
+  var now = Date.now();
+  var toSet = {};
+  for (var t in obj) {
+    var s = obj[t] || {};
+    var last = s.lastActive || Date.parse(s.createdAt || '') || 0;
+    if (now - last < SESSION_MAX_AGE_MS) toSet[sessionKey_(t)] = JSON.stringify(s);
+  }
+  if (Object.keys(toSet).length) props.setProperties(toSet, false);
+  props.deleteProperty(CRM_LOGIN_SESSIONS_KEY);
+}
+
+// คืนค่า session ทั้งหมดเป็น { token: session } (ใช้กับ getOnlineUsers / เก็บกวาด / เตะ session ของ user)
 function getSessionsStore() {
   var props = PropertiesService.getScriptProperties();
-  var stored = props.getProperty(CRM_LOGIN_SESSIONS_KEY);
-  try { return stored ? JSON.parse(stored) : {}; } catch (e) { return {}; }
+  migrateLegacySessions_(props);
+  var all = props.getProperties();
+  var out = {};
+  for (var k in all) {
+    if (k.indexOf(SESSION_KEY_PREFIX) !== 0) continue;
+    try { out[k.substring(SESSION_KEY_PREFIX.length)] = JSON.parse(all[k]); } catch (e) {}
+  }
+  return out;
+}
+
+function getSession_(token) {
+  if (!token) return null;
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty(sessionKey_(token));
+  if (!raw && props.getProperty(CRM_LOGIN_SESSIONS_KEY)) {
+    migrateLegacySessions_(props);
+    raw = props.getProperty(sessionKey_(token));
+  }
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+function putSession_(token, session) {
+  PropertiesService.getScriptProperties().setProperty(sessionKey_(token), JSON.stringify(session));
+}
+function deleteSession_(token) {
+  if (!token) return;
+  PropertiesService.getScriptProperties().deleteProperty(sessionKey_(token));
 }
 
 // =================================================================
@@ -1506,21 +1700,22 @@ var SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
 
 // ลบ session เก่าที่ไม่มีการใช้งานมานานเกิน SESSION_MAX_AGE_MS ออกจาก store
 // (เรียกตอน login ใหม่แต่ละครั้ง เป็นจังหวะทำความสะอาดที่เนียนที่สุด ไม่ต้องตั้ง trigger แยก)
-function pruneStaleSessions_(sessions) {
+// ลบ session เก่าที่ไม่มีการใช้งานมานานเกิน SESSION_MAX_AGE_MS ทิ้ง (เรียกตอน login ใหม่แต่ละครั้ง)
+// (r43) ลบตรงที่ Properties เลย ไม่ต้องคืนค่า object กลับไปเขียนทับทั้งก้อนแบบเดิม
+function pruneStaleSessions_() {
+  var sessions = getSessionsStore();
   var now = Date.now();
-  var pruned = {};
   for (var token in sessions) {
-    var s = sessions[token];
+    var s = sessions[token] || {};
     var lastSeen = s.lastActive || 0;
     if (!lastSeen && s.createdAt) {
       var parsed = Date.parse(s.createdAt);
       lastSeen = isNaN(parsed) ? 0 : parsed;
     }
-    if ((now - lastSeen) < SESSION_MAX_AGE_MS) {
-      pruned[token] = s;
+    if ((now - lastSeen) >= SESSION_MAX_AGE_MS) {
+      try { deleteSession_(token); } catch (e) {}
     }
   }
-  return pruned;
 }
 
 // ดึงรายชื่อผู้ใช้งานที่ "ออนไลน์อยู่ตอนนี้" (ไม่ซ้ำ username แม้ login ไว้หลาย session/token)
@@ -1554,6 +1749,44 @@ function sha256Hex_(value) {
     var unsigned = byte < 0 ? byte + 256 : byte;
     return ('0' + unsigned.toString(16)).slice(-2);
   }).join('');
+}
+
+// (r43) ตรวจรหัสผ่านจากแท็บ users ในชีต (ต้นทางจริงของข้อมูลสมาชิก — เพิ่ม/แก้ไขสมาชิกเขียนที่นี่ก่อนเสมอ)
+// คืนค่า { found:false } ถ้าไม่พบ username ในชีต (ให้ไปลอง BigQuery ต่อ), { found:true, user:null } ถ้ารหัสผิด/ปิดใช้งาน
+function getSheetLoginUser_(username, password) {
+  try {
+    var sheet = SpreadsheetApp.openById(CUSTOMER_SHEET_ID).getSheetByName(USERS_SHEET_NAME);
+    if (!sheet || sheet.getLastRow() < 2) return { found: false };
+    var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+    var head = values[0].map(function(h) { return cleanStr(h); });
+    var iU = head.indexOf('username'), iP = head.indexOf('password_hash'), iR = head.indexOf('role'),
+        iS = head.indexOf('status'), iN = head.indexOf('name'), iB = head.indexOf('branch');
+    if (iU === -1 || iP === -1) return { found: false };
+    var target = username.toLowerCase();
+    for (var r = 1; r < values.length; r++) {
+      var row = values[r];
+      var uname = cleanStr(row[iU]);
+      if (uname.toLowerCase() !== target) continue;
+      var storedPassword = cleanStr(row[iP]);
+      var passwordMatches = storedPassword === password || storedPassword.toLowerCase() === sha256Hex_(password).toLowerCase();
+      var status = iS !== -1 ? cleanStr(row[iS]).toLowerCase() : '';
+      if (!passwordMatches || (status && status !== 'active')) return { found: true, user: null };
+      return {
+        found: true,
+        user: {
+          username: uname,
+          password: password,
+          role: (iR !== -1 ? cleanStr(row[iR]) : 'user').toLowerCase() || 'user',
+          name: (iN !== -1 ? cleanStr(row[iN]) : '') || uname,
+          branch: iB !== -1 ? cleanStr(row[iB]) : ''
+        }
+      };
+    }
+    return { found: false };
+  } catch (e) {
+    Logger.log('getSheetLoginUser_ error (จะลอง BigQuery แทน): ' + e.toString());
+    return { found: false };
+  }
 }
 
 function getBigQueryLoginUser_(username, password) {
@@ -1603,8 +1836,9 @@ function getBigQueryUserExtraFields_(username) {
   }
 }
 
+// (r43) เก็บไว้เพื่อความเข้ากันได้กับโค้ดเก่าเท่านั้น — เขียนทีละ key (ไม่มีจุดไหนในไฟล์นี้เรียกใช้แล้ว)
 function saveSessionsStore(data) {
-  PropertiesService.getScriptProperties().setProperty(CRM_LOGIN_SESSIONS_KEY, JSON.stringify(data));
+  for (var t in (data || {})) putSession_(t, data[t]);
 }
 
 // ลบ session ทิ้งทันที (ใช้ตอนกดปุ่ม "ออกจากระบบ") — ต่างจากการปล่อยให้ session เงียบ
@@ -1613,11 +1847,7 @@ function saveSessionsStore(data) {
 function removeSession_(token) {
   if (!token) return;
   try {
-    var sessions = getSessionsStore();
-    if (sessions[token]) {
-      delete sessions[token];
-      saveSessionsStore(sessions);
-    }
+    deleteSession_(token);
   } catch (e) {
     Logger.log('removeSession_ error: ' + e.toString());
   }
@@ -1631,7 +1861,9 @@ function loginHTML(payload) {
     return { success: false, message: 'กรุณากรอก username และ password' };
   }
 
-  var databaseUser = getBigQueryLoginUser_(username, password);
+  // (r43) อ่านจากแท็บ users ในชีตก่อน (เร็วกว่า + เห็นการแก้ไขสมาชิกทันที) — ไม่พบค่อยใช้ BigQuery แบบเดิม
+  var databaseUser = getSheetLoginUser_(username, password);
+  if (!databaseUser.found) databaseUser = getBigQueryLoginUser_(username, password);
   var matched = databaseUser.found ? databaseUser.user : null;
   if (!databaseUser.found) {
     var users = getUsersStore();
@@ -1645,10 +1877,8 @@ function loginHTML(payload) {
   }
 
   var token = Utilities.base64EncodeWebSafe(Utilities.getUuid() + ':' + Date.now());
-  var sessions = getSessionsStore();
-  sessions = pruneStaleSessions_(sessions); // เก็บกวาด session เก่าทิ้งทุกครั้งที่มี login ใหม่
-  sessions[token] = { username: matched.username, role: matched.role, name: matched.name, branch: matched.branch || '', createdAt: new Date().toISOString(), lastActive: Date.now() };
-  saveSessionsStore(sessions);
+  putSession_(token, { username: matched.username, role: matched.role, name: matched.name, branch: matched.branch || '', createdAt: new Date().toISOString(), lastActive: Date.now() });
+  try { pruneStaleSessions_(); } catch (pruneErr) { Logger.log('pruneStaleSessions_ error: ' + pruneErr); } // เก็บกวาด session เก่า (ไม่ให้ login ล้มถ้าพลาด)
 
   return {
     success: true,
@@ -1660,21 +1890,16 @@ function loginHTML(payload) {
   };
 }
 
+// (r43) ต่ออายุ lastActive ลง Properties ทุก SESSION_TOUCH_INTERVAL_MS (เดิม 20 วิ) — อ่าน/เขียนแค่ key ของ token นี้
+var SESSION_TOUCH_INTERVAL_MS = 60 * 1000;
 function validateToken(token) {
   if (!token) return null;
-  var sessions = getSessionsStore();
-  var session = sessions[token];
+  var session = getSession_(token);
   if (!session) return null;
-
-  // อัปเดต "เวลาใช้งานล่าสุด" ทุกครั้งที่ token นี้ถูกใช้เรียก server (รวมถึง heartbeat
-  // 'ping' จากหน้าเว็บ) แต่เขียนกลับ Script Properties เฉพาะเมื่อห่างจากครั้งก่อนเกิน 20
-  // วินาที เพื่อไม่ให้เขียน Properties ถี่เกินไปทุก request จนช้าโดยไม่จำเป็น
   var now = Date.now();
-  var shouldPersist = !session.lastActive || (now - session.lastActive) > 20000;
-  session.lastActive = now;
-  if (shouldPersist) {
-    sessions[token] = session;
-    saveSessionsStore(sessions);
+  if (!session.lastActive || (now - session.lastActive) > SESSION_TOUCH_INTERVAL_MS) {
+    session.lastActive = now;
+    try { putSession_(token, session); } catch (e) { Logger.log('validateToken touch error: ' + e); }
   }
   return session;
 }
@@ -1717,7 +1942,7 @@ function requireAdminForAction(action) {
 //    'staff' (พนักงาน) หรือ 'sale' เท่านั้น ห้ามตั้งเป็น 'admin' เด็ดขาด (กันพนักงาน
 //    เผลอ/จงใจตั้งตัวเองหรือคนอื่นเป็นแอดมิน) — ถ้าคนกดเพิ่มเป็น 'admin' จะตั้ง role
 //    อะไรก็ได้ในบรรดา role ที่ระบบรู้จัก (ดู KNOWN_ROLES)
-var ADD_MEMBER_ALLOWED_ROLES = ['admin', 'staff']; // ใครมีสิทธิ์เข้าเมนู "เพิ่มสมาชิก" ได้บ้าง
+var ADD_MEMBER_ALLOWED_ROLES = ['admin', 'staff', 'sale']; // (r52) sale = staff // ใครมีสิทธิ์เข้าเมนู "เพิ่มสมาชิก" ได้บ้าง
 var STAFF_ALLOWED_NEW_ROLES = ['staff', 'sale'];    // role ที่ "พนักงาน" (staff) ตั้งให้สมาชิกใหม่ได้
 var KNOWN_ROLES = ['admin', 'staff', 'sale'];       // role ทั้งหมดที่ระบบรู้จัก (กัน role พิมพ์ผิด/ไม่รู้จัก)
 
@@ -1941,9 +2166,8 @@ function removeSessionsOfUser_(username, exceptToken) {
     var target = String(username || '').toLowerCase();
     for (var t in sessions) {
       if (t === exceptToken) continue;
-      if (String(sessions[t].username || '').toLowerCase() === target) { delete sessions[t]; removed++; }
+      if (String((sessions[t] || {}).username || '').toLowerCase() === target) { deleteSession_(t); removed++; }
     }
-    if (removed) saveSessionsStore(sessions);
     return removed;
   } catch (e) {
     Logger.log('removeSessionsOfUser_ error: ' + e.toString());
@@ -2038,12 +2262,15 @@ function updateUserHTML(payload, currentUser, currentToken) {
 }
 
 function doGet(e) {
+  __REQ_START_MS = Date.now();
   var action = e && e.parameter ? e.parameter.action : '';
   if (action === 'getInitialData') {
     return createJsonResponse(getInitialDataHTML());
   } else if (action === 'getDashboardSummary') {
     return createJsonResponse(getDashboardSummaryHTML());
   } else if (action === 'checkStatus') {
+    return createJsonResponse(quickStatus_());
+  } else if (action === 'checkBigQuery') {
     return createJsonResponse(checkBigQueryStatus());
   } else if (action === 'getDailyLeadReport') {
     return createJsonResponse(getDailyLeadReportHTML(e.parameter));
@@ -2060,18 +2287,37 @@ function doGet(e) {
     // รายงานลูกค้าที่ยังไม่ได้ติดตามนาน (ดู getStaleLeadsReportHTML) — ใช้ในหน้า "รายงาน"
     return createJsonResponse(getStaleLeadsReportHTML(e.parameter));
   }
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
+  // (r44) index ไม่มี scriptlet (<? ?>) — ใช้ createHtmlOutputFromFile เร็วกว่าประมวลผล template ทั้งไฟล์
+  return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('CRM-TRACKER ระบบจัดการข้อมูลลูกค้า')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 function doPost(e) {
+  __REQ_START_MS = Date.now();
   try {
     var contents = JSON.parse(e.postData.contents);
     var action = String(contents.action || '').trim();
     var token = contents.token || (contents.payload && contents.payload.token) || '';
-    var user = validateToken(token);
+
+    // (r43) ปิดแท็บ/ทิ้ง token เก่า — ลบ session ให้หายจากรายชื่อออนไลน์ทันที (ไม่บันทึก log เพราะไม่ใช่การกด "ออกจากระบบ")
+    if (action === 'closeSession') {
+      removeSession_(token);
+      return createJsonResponse({ success: true });
+    }
+    // (r43) 2 action นี้ไม่ใช้ token เลย — เดิม validateToken ด้านล่างถูกเรียกก่อน ทำให้ token เก่าที่ค้างในเครื่อง
+    // ถูกต่ออายุ "ออนไลน์" ทุกครั้งที่หน้า login ดึงรายชื่อผู้ใช้ออนไลน์ (ทุก 20 วิ)
+    if (action === 'getOnlineUsers') {
+      return createJsonResponse(getOnlineUsersHTML());
+    }
+    var user = (action === 'login') ? null : validateToken(token);
+    // (r46) ManyChat / ระบบภายนอก: ไม่มี token แต่แนบ apiKey ที่ถูกต้องมา → อนุญาตเฉพาะ "เพิ่มลูกค้า" เท่านั้น
+    if (!user && (action === 'add' || action === 'addCustomer')) {
+      user = getIntegrationUser_(e, contents);
+    }
+    if (user && user.isIntegration && action !== 'add' && action !== 'addCustomer') {
+      return createJsonResponse({ success: false, message: 'รหัสเชื่อมต่อ ManyChat ใช้ได้กับการเพิ่มลูกค้าเท่านั้น' });
+    }
 
     if (action === 'login') {
       var loginResult = loginHTML(contents.payload || contents);
@@ -2113,7 +2359,7 @@ function doPost(e) {
     //                     แต่ export และดู log ไม่ได้ (เช็คแยกจุดอื่น)
     //  - sale/user     : ดูข้อมูลได้อย่างเดียว (ปริ้นได้ แต่ปริ้นเป็นแค่การแสดงผลฝั่งหน้าเว็บ
     //                     ไม่ได้เรียก action นี้ จึงไม่ต้องเช็คตรงนี้)
-    var CUSTOMER_WRITE_ALLOWED_ROLES = ['admin', 'staff'];
+    var CUSTOMER_WRITE_ALLOWED_ROLES = ['admin', 'staff', 'sale']; // (r52) sale = staff
     // (2026-09-19) เพิ่ม role 'sale' ให้ "แก้ไข" ข้อมูลลูกค้าได้ ตามคำขอผู้บริหาร — แต่จำกัดแค่
     // "ชื่อ-นามสกุล" และ "ที่อยู่" เท่านั้น ฟิลด์อื่นที่ส่งมาด้วย (ถ้ามี) จะถูกตัดทิ้งเงียบๆ ใน
     // updateCustomerHTML (ดู SALE_EDITABLE_FIELDS_ ในฟังก์ชันนั้น) — ชั้นป้องกันที่ 2 ต่อจากหน้าเว็บ
@@ -2126,7 +2372,7 @@ function doPost(e) {
         return createJsonResponse({ success: false, message: 'เฉพาะ admin เท่านั้นที่ลบข้อมูลลูกค้าได้' });
       }
     } else if (action === 'add' || action === 'addCustomer' || action === 'addFollowUp') {
-      if (CUSTOMER_WRITE_ALLOWED_ROLES.indexOf(user.role) === -1) {
+      if (CUSTOMER_WRITE_ALLOWED_ROLES.indexOf(user.role) === -1 && !user.isIntegration) {
         return createJsonResponse({ success: false, message: 'สิทธิ์ของคุณดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่มข้อมูลลูกค้าหรือบันทึกการติดตามได้ (เฉพาะ admin และพนักงานเท่านั้นที่ทำได้)' });
       }
     } else if (action === 'update' || action === 'editCustomer') {
@@ -2148,7 +2394,9 @@ function doPost(e) {
 
     // ใส่ codeVersion + action ที่รับมาจริงไว้ใน error message เผื่อ deploy ไม่ติด
     var result = { success: false, message: 'Invalid Action: "' + action + '" (codeVersion=' + CODE_VERSION + ')' };
-    if (action === 'checkStatus' || action === 'checkBigQuery') {
+    if (action === 'checkStatus') {
+      result = quickStatus_();
+    } else if (action === 'checkBigQuery') {
       result = checkBigQueryStatus();
     } else if (action === 'search' || action === 'searchCustomers') {
       result = searchCustomersHTML(contents.payload || contents);
@@ -2189,6 +2437,8 @@ function doPost(e) {
       }
     } else if (action === 'getInitialData') {
       result = getInitialDataHTML();
+    } else if (action === 'getUpdaterOptions') {
+      result = getUpdaterOptionsHTML();
     } else if (action === 'getDashboardSummary') {
       result = getDashboardSummaryHTML(contents.payload || contents);
     } else if (action === 'checkDuplicatePhone') {
@@ -2234,6 +2484,9 @@ function doPost(e) {
       // เป็นรายงานอ่านอย่างเดียว ไม่ได้อยู่ใน CUSTOMER_WRITE_ALLOWED_ROLES/EXPORT ด้านบน
       // เหมือน getDashboardSummary/getDailyLeadReport — ทุก role ที่ login แล้วดูได้
       result = getStaleLeadsReportHTML(contents.payload || contents);
+    } else if (action === 'getSalesDailyReport') {
+      // (r49) รายงานประจำวันแยกตามเซลล์ — เฉพาะ admin (เช็คซ้ำในฟังก์ชันเองด้วย)
+      result = getSalesDailyReportHTML(contents.payload || contents, user);
     } else if (action === 'getStaffDashboardStats') {
       // (2026-09-25) Dashboard กราฟในหน้า "รายงาน" — เฉพาะ admin เท่านั้น (เหมือน getUserActivityLog)
       if (user.role !== 'admin') {
@@ -2261,7 +2514,12 @@ function doPost(e) {
     return createJsonResponse({ success: false, message: err.toString() });
   }
 }
+// (r44) เวลาเริ่มของ request ปัจจุบัน — ใช้คำนวณ _serverMs แนบไปกับทุกคำตอบ
+var __REQ_START_MS = 0;
 function createJsonResponse(data) {
+  if (__REQ_START_MS && data && typeof data === 'object' && !Array.isArray(data)) {
+    try { data._serverMs = Date.now() - __REQ_START_MS; } catch (e) {}
+  }
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -2348,20 +2606,27 @@ function runParamQuery(sql, params) {
 }
 function getInitialDataHTML() {
   try {
-    var countSQL = "SELECT COUNT(*) as total FROM " + TABLE_FULL_PATH;
-    var countRes = runParamQueryFetch(countSQL, []);
-    var totalCount = (countRes && countRes.length > 0) ? parseInt(countRes[0].total) : 0;
+    // (r44) รวม 2 query เป็น query เดียว + แคช 5 นาที (ตัวเลขหัวหน้าเว็บ ไม่ต้องสดทุกวินาที)
+    var cachedInit = cacheGetJson_('initData:v1');
+    if (cachedInit) { cachedInit.cached = true; return cachedInit; }
+    // จำนวนลูกค้าทั้งหมด + จำนวนที่มาจาก ManyChat/Facebook อัตโนมัติ — โชว์เป็นตัวเลขคงที่บนหัวหน้าเว็บ
+    var initSQL = "SELECT COUNT(*) AS total, COUNTIF(" + FB_LEAD_MATCH_COND + ") AS cnt FROM " + TABLE_FULL_PATH;
+    var initRes = runParamQueryFetch(initSQL, [FB_LEAD_MATCH_PARAM]);
+    var totalCount = (initRes && initRes.length > 0) ? parseInt(initRes[0].total) : 0;
+    var manyChatTotalCount = (initRes && initRes.length > 0) ? parseInt(initRes[0].cnt) : 0;
 
-    // จำนวนลูกค้าทั้งหมด (ไม่กรอง) ที่มาจาก ManyChat/Facebook อัตโนมัติ — โชว์เป็นตัวเลขคงที่บนหัวหน้าเว็บ
-    var fbSQL = "SELECT COUNT(*) as cnt FROM " + TABLE_FULL_PATH + " WHERE " + FB_LEAD_MATCH_COND;
-    var fbRes = runParamQueryFetch(fbSQL, [FB_LEAD_MATCH_PARAM]);
-    var manyChatTotalCount = (fbRes && fbRes.length > 0) ? parseInt(fbRes[0].cnt) : 0;
-
-    return { success: true, totalCount: totalCount, manyChatTotalCount: manyChatTotalCount };
+    var initOut = { success: true, totalCount: totalCount, manyChatTotalCount: manyChatTotalCount };
+    cachePutJson_('initData:v1', initOut, 300);
+    return initOut;
   } catch (err) {
     return { success: false, message: err.toString(), totalCount: 0, manyChatTotalCount: 0 };
   }
 }
+// (r51) เบอร์โทรแบบ "ตัวเลขล้วน 10 หลัก" สำหรับเทียบ — ตัดขีด/เว้นวรรค/อักขระอื่นออก และเติม 0 ให้เบอร์ 9 หลัก
+// (ข้อมูลเก่าในชีตส่วนใหญ่เก็บเบอร์เป็นตัวเลข 9 หลักที่ 0 นำหน้าหายไป เช่น 641234567)
+var PHONE_NORM_EXPR = "(CASE WHEN LENGTH(REGEXP_REPLACE(IFNULL(CAST(phone AS STRING), ''), r'\\D', '')) = 9 " +
+  "THEN CONCAT('0', REGEXP_REPLACE(IFNULL(CAST(phone AS STRING), ''), r'\\D', '')) " +
+  "ELSE REGEXP_REPLACE(IFNULL(CAST(phone AS STRING), ''), r'\\D', '') END)";
 function buildWhereClause(filters) {
   var whereClauses = [];
   var params = [];
@@ -2371,17 +2636,35 @@ function buildWhereClause(filters) {
                       "OR LOWER(IFNULL(first_name, '')) LIKE @kw " +
                       "OR LOWER(IFNULL(last_name, '')) LIKE @kw " +
                       "OR LOWER(CAST(phone AS STRING)) LIKE @kw " +
+                      // (r51) ค้นเบอร์จากช่องคำค้นได้แม้ในชีตเก็บเบอร์ไม่มี 0 นำหน้า/มีขีด/เว้นวรรค
+                      "OR (@kwDigits != '' AND " + PHONE_NORM_EXPR + " LIKE CONCAT('%', @kwDigits, '%')) " +
                       "OR LOWER(IFNULL(product, '')) LIKE @kw " +
                       "OR LOWER(IFNULL(village, '')) LIKE @kw " +
                       "OR LOWER(IFNULL(subdistrict, '')) LIKE @kw " +
                       "OR LOWER(IFNULL(district, '')) LIKE @kw " +
                       "OR LOWER(IFNULL(remark, '')) LIKE @kw)");
     params.push({ name: 'kw', value: '%' + cleanKw + '%' });
+    // ใช้ตัวเลขจากคำค้นเฉพาะกรณีที่คำค้นเป็นเบอร์ล้วนๆ (ตัวเลข/ขีด/เว้นวรรค) อย่างน้อย 3 หลัก
+    var kwDigits = /^[\d\s\-+()]+$/.test(cleanKw) ? cleanKw.replace(/\D/g, '') : '';
+    params.push({ name: 'kwDigits', value: kwDigits.length >= 3 ? kwDigits : '' });
   }
+  // (r51 2026-10-09) แก้ "ค้นหาด้วยเบอร์โทรไม่เจอใครเลย" — เดิมช่องเบอร์โทรต้องพิมพ์ครบ 10 หลักเป๊ะ
+  // (พิมพ์แค่ 064 จะไม่เจอใครเลย) และถ้าในชีตเก็บเบอร์แบบมีขีด/เว้นวรรค (เช่น 064-123-4567) ต่อให้พิมพ์ครบ
+  // ก็ไม่เจอ เพราะ SAFE_CAST เป็นตัวเลขไม่ได้ — ตอนนี้เทียบจาก "ตัวเลขล้วน" ทั้งสองฝั่ง (เติม 0 ให้เบอร์ 9 หลัก)
+  //   - พิมพ์ครบ 9-10 หลัก → หาเบอร์ที่ตรงกันเป๊ะ
+  //   - พิมพ์ไม่ครบ (อย่างน้อย 3 หลัก เช่น 064, 4567) → หาเบอร์ที่ "มีตัวเลขชุดนี้อยู่"
   if (filters.exactPhone) {
-    var cleanP = cleanStr(filters.exactPhone);
-    whereClauses.push("(CAST(phone AS STRING) = @exactPhone OR SAFE_CAST(phone AS INT64) = SAFE_CAST(REGEXP_REPLACE(@exactPhone, r'\\D', '') AS INT64))");
-    params.push({ name: 'exactPhone', value: cleanP });
+    var phoneDigits = cleanStr(filters.exactPhone).replace(/\D/g, '');
+    if (phoneDigits.length === 9 && phoneDigits.charAt(0) !== '0') phoneDigits = '0' + phoneDigits;
+    if (phoneDigits.length >= 9) {
+      whereClauses.push(PHONE_NORM_EXPR + " = @exactPhoneDigits");
+      params.push({ name: 'exactPhoneDigits', value: phoneDigits });
+    } else if (phoneDigits.length >= 3) {
+      whereClauses.push(PHONE_NORM_EXPR + " LIKE @phonePartial");
+      params.push({ name: 'phonePartial', value: '%' + phoneDigits + '%' });
+    } else if (phoneDigits.length > 0) {
+      whereClauses.push("FALSE"); // พิมพ์สั้นเกินไป (1-2 หลัก) — ไม่ดึงทั้งฐานข้อมูลมาโดยไม่ตั้งใจ
+    }
   }
   if (filters.types && Array.isArray(filters.types) && filters.types.length > 0) {
     var typeConditions = [];
@@ -2391,6 +2674,15 @@ function buildWhereClause(filters) {
       params.push({ name: paramName, value: cleanStr(filters.types[i]) });
     }
     whereClauses.push("(" + typeConditions.join(" OR ") + ")");
+  }
+  // (r48) ประเภทลูกค้า — '__none__' = ยังไม่ระบุ
+  if (filters.customerGroup) {
+    if (filters.customerGroup === '__none__') {
+      whereClauses.push("TRIM(IFNULL(customer_group, '')) = ''");
+    } else {
+      whereClauses.push("customer_group = @customerGroup");
+      params.push({ name: 'customerGroup', value: cleanStr(filters.customerGroup) });
+    }
   }
   if (filters.startDate) {
     whereClauses.push("CAST(created_date AS STRING) >= @startDate");
@@ -2429,6 +2721,15 @@ function buildWhereClause(filters) {
   if (filters.note) {
     whereClauses.push("LOWER(IFNULL(remark, '')) LIKE @note");
     params.push({ name: 'note', value: '%' + cleanStr(filters.note).toLowerCase() + '%' });
+  }
+  // (r45) ผู้อัปเดตล่าสุด (updated_by) — '__none__' = ยังไม่เคยมีใครแก้ไข/บันทึกการติดตาม
+  if (filters.updatedBy) {
+    if (filters.updatedBy === '__none__') {
+      whereClauses.push("TRIM(IFNULL(updated_by, '')) = ''");
+    } else {
+      whereClauses.push("LOWER(TRIM(IFNULL(updated_by, ''))) = @updatedBy");
+      params.push({ name: 'updatedBy', value: cleanStr(filters.updatedBy).toLowerCase() });
+    }
   }
   return {
     sql: whereClauses.length > 0 ? " WHERE " + whereClauses.join(" AND ") : "",
@@ -2530,9 +2831,11 @@ function searchCustomersHTML(reqPayload) {
     var pageSize = (reqPayload && reqPayload.pageSize) ? parseInt(reqPayload.pageSize) : 50;
     var offset = (page - 1) * pageSize;
     var whereObj = buildWhereClause(filters);
-    var countSQL = "SELECT COUNT(*) as total FROM " + TABLE_FULL_PATH + whereObj.sql;
-    var countRes = runParamQueryFetch(countSQL, whereObj.params);
-    var totalCount = (countRes && countRes.length > 0) ? parseInt(countRes[0].total) : 0;
+    // (r44) แคชผลการค้นหาที่เหมือนกันเป๊ะ 60 วินาที (เช่น เปิดหน้าแรกหลัง login หลายคนพร้อมกัน / กดกลับไปหน้าเดิม)
+    var searchCacheKey = cacheKeyOf_('search:v4:', { f: filters, p: page, s: pageSize, o: (reqPayload && reqPayload.sortBy) || '' });
+    var cachedSearch = cacheGetJson_(searchCacheKey);
+    if (cachedSearch) { cachedSearch.cached = true; return cachedSearch; }
+    var totalCount = null; // (r44) ได้มาจาก COUNT(*) OVER() ใน query ดึงข้อมูลด้านล่าง ไม่ต้องยิง query นับแยกอีกรอบ
     // เรียงตามฟิลด์วันที่ที่หน้าเว็บส่งมาได้ (sortBy) — หน้าเว็บจะเลือกส่งค่านี้เองอัตโนมัติ
     // ตามเงื่อนไขกรองที่กำลังใช้อยู่ (เช่นกรองช่วงวันติดตามล่าสุด ก็ส่ง sortBy เป็น
     // last_followup_date มาด้วย ไม่ต้องให้ผู้ใช้เลือกเอง) ไม่ส่งมา/ส่งค่าที่ไม่รู้จัก =
@@ -2554,11 +2857,22 @@ function searchCustomersHTML(reqPayload) {
                   "CAST(created_date AS STRING) AS created_date, " +
                   "CAST(booking_date AS STRING) AS booking_date, " +
                   "CAST(last_followup_date AS STRING) AS last_followup_date, " +
-                  FINGERPRINT_EXPR + " as row_key " +
-                  "FROM " + TABLE_FULL_PATH + whereObj.sql + " " +
-                  "ORDER BY " + buildRobustDateOrderExpr_(orderByField) + " DESC, created_at_ts DESC " +
+                  FINGERPRINT_EXPR + " as row_key, " +
+                  "COUNT(*) OVER() AS crm_total_rows " +
+                  "FROM " + TABLE_FULL_PATH + " AS crm_t" + whereObj.sql + " " +
+                  // (r47) ตัวเรียงสุดท้ายแบบตายตัว (row_key + ทั้งแถว) — เดิมแถววันเดียวกันที่ไม่มี created_at_ts
+                  // ลำดับไม่แน่นอนระหว่างแต่ละหน้า ทำให้เปลี่ยนหน้า/Export ทุกหน้าแล้วได้แถวซ้ำและแถวหายไป
+                  "ORDER BY " + buildRobustDateOrderExpr_(orderByField) + " DESC, created_at_ts DESC, row_key, FARM_FINGERPRINT(TO_JSON_STRING(crm_t)) " +
                   "LIMIT " + pageSize + " OFFSET " + offset;
     var rows = runParamQueryFetch(dataSQL, whereObj.params);
+    if (rows && rows.length) {
+      totalCount = parseInt(rows[0].crm_total_rows, 10) || 0;
+    } else {
+      // หน้าที่ขอเกินจำนวนผลลัพธ์ (หรือไม่มีผลเลย) — COUNT(*) OVER() ไม่มีแถวให้อ่าน จึงนับแยกเฉพาะกรณีนี้
+      var countSQL = "SELECT COUNT(*) as total FROM " + TABLE_FULL_PATH + whereObj.sql;
+      var countRes = runParamQueryFetch(countSQL, whereObj.params);
+      totalCount = (countRes && countRes.length > 0) ? parseInt(countRes[0].total) : 0;
+    }
     var formattedData = rows.map(function(r) {
       var recDate = formatDateStr(r.created_date || r.date || '');
       var bookDate = formatDateStr(r.booking_date || '');
@@ -2611,10 +2925,14 @@ function searchCustomersHTML(reqPayload) {
         created_by: cleanStr(r.created_by),
         createdBy: cleanStr(r.created_by),
         updated_by: cleanStr(r.updated_by),
-        updatedBy: cleanStr(r.updated_by)
+        updatedBy: cleanStr(r.updated_by),
+        customerGroup: cleanStr(r.customer_group),
+        customerGroupDetail: cleanStr(r.customer_group_detail)
       };
     });
-    return { success: true, totalCount: totalCount, data: formattedData };
+    var searchOut = { success: true, totalCount: totalCount, data: formattedData };
+    cachePutJson_(searchCacheKey, searchOut, 60);
+    return searchOut;
   } catch (err) {
     return { success: false, message: err.toString() };
   }
@@ -2684,7 +3002,9 @@ function getFollowupCalendarHTML(reqPayload) {
         created_by: cleanStr(r.created_by),
         createdBy: cleanStr(r.created_by),
         updated_by: cleanStr(r.updated_by),
-        updatedBy: cleanStr(r.updated_by)
+        updatedBy: cleanStr(r.updated_by),
+        customerGroup: cleanStr(r.customer_group),
+        customerGroupDetail: cleanStr(r.customer_group_detail)
       };
     });
     return { success: true, data: data, totalCount: data.length, startDate: startDate, endDate: endDate };
@@ -2701,22 +3021,52 @@ function appendWhereCondition(baseWhereSql, extraCondition) {
   return baseWhereSql ? (baseWhereSql + " AND " + extraCondition) : (" WHERE " + extraCondition);
 }
 
+// (r45) รายชื่อ "ผู้อัปเดตล่าสุด" ที่มีอยู่จริงในข้อมูล (ไว้ทำ dropdown ตัวกรอง) พร้อมจำนวนลูกค้า — แคช 10 นาที
+function getUpdaterOptionsHTML() {
+  try {
+    var cached = cacheGetJson_('updaterOpts:v1');
+    if (cached) { cached.cached = true; return cached; }
+    var sql = "SELECT TRIM(updated_by) AS name, COUNT(*) AS c FROM " + TABLE_FULL_PATH +
+              " WHERE TRIM(IFNULL(updated_by, '')) != '' GROUP BY name ORDER BY c DESC LIMIT 300";
+    var rows = runParamQueryFetch(sql, []) || [];
+    var out = { success: true, data: rows.map(function(r) { return { name: cleanStr(r.name), count: parseInt(r.c, 10) || 0 }; }) };
+    cachePutJson_('updaterOpts:v1', out, 600);
+    return out;
+  } catch (err) {
+    return { success: false, message: err.toString(), data: [] };
+  }
+}
+
 function getDashboardSummaryHTML(reqPayload) {
   try {
     var filters = (reqPayload && reqPayload.filters) ? reqPayload.filters : {};
     var whereObj = buildWhereClause(filters);
+    // (r44) แคช 5 นาทีต่อชุดตัวกรอง + รวม 3 query (สรุปประเภท / สินค้า / ยอด ManyChat) เป็น query เดียว
+    var dashCacheKey = cacheKeyOf_('dash:v2:', filters);
+    var cachedDash = cacheGetJson_(dashCacheKey);
+    if (cachedDash) { cachedDash.cached = true; return cachedDash; }
     var sql1 = "SELECT type, COUNT(*) as count FROM " + TABLE_FULL_PATH +
                appendWhereCondition(whereObj.sql,
                  "type IS NOT NULL AND TRIM(type) != '' " +
-                 "AND type IN ('จอง', 'เป้าหมาย', 'ติดตาม', 'ลงทะเบียน', 'ส่งมอบ', 'ปิดการขาย', 'ลูกค้าเก่าดีเลอร์', 'ทำสัญญา', 'สนใจ')") +
-               " GROUP BY type ORDER BY count DESC";
-    var res1 = runParamQueryFetch(sql1, whereObj.params);
+                 "AND type IN ('จอง', 'เป้าหมาย', 'ติดตาม', 'รอปิดการขาย', 'ลงทะเบียน', 'ส่งมอบ', 'ปิดการขาย', 'ลูกค้าเก่าดีเลอร์', 'ทำสัญญา', 'สนใจ')") +
+               " GROUP BY type";
     var sql2 = "SELECT product, COUNT(*) as count FROM " + TABLE_FULL_PATH +
                appendWhereCondition(whereObj.sql,
                  "product IS NOT NULL AND TRIM(product) != '' AND product != '-' " +
                  "AND NOT REGEXP_CONTAINS(TRIM(product), r'^\\d+$')") +
                " GROUP BY product";
-    var rawProd = runParamQueryFetch(sql2, whereObj.params);
+    var sql3 = "SELECT COUNT(*) as cnt FROM " + TABLE_FULL_PATH + appendWhereCondition(whereObj.sql, FB_LEAD_MATCH_COND);
+    var comboSQL = "SELECT 'type' AS k, type AS name, count AS c FROM (" + sql1 + ")" +
+                   " UNION ALL SELECT 'product' AS k, product AS name, count AS c FROM (" + sql2 + ")" +
+                   " UNION ALL SELECT 'fb' AS k, CAST(NULL AS STRING) AS name, cnt AS c FROM (" + sql3 + ")";
+    var comboRows = runParamQueryFetch(comboSQL, whereObj.params.concat([FB_LEAD_MATCH_PARAM])) || [];
+    var res1 = [], rawProd = [], manyChatLeadCount = 0;
+    comboRows.forEach(function(r) {
+      if (r.k === 'type') res1.push({ type: r.name, count: r.c });
+      else if (r.k === 'product') rawProd.push({ product: r.name, count: r.c });
+      else if (r.k === 'fb') manyChatLeadCount = parseInt(r.c) || 0;
+    });
+    res1.sort(function(a, b) { return (parseInt(b.count) || 0) - (parseInt(a.count) || 0); });
     var prodGroup = {};
     (rawProd || []).forEach(function(item) {
       var name = (item.product || '').toString().trim();
@@ -2744,13 +3094,9 @@ function getDashboardSummaryHTML(reqPayload) {
     topProducts.sort(function(a, b) { return b.count - a.count; });
     topProducts = topProducts.slice(0, 5);
 
-    // ---- จำนวนลูกค้าที่มาจาก ManyChat/Facebook อัตโนมัติ ภายใต้ตัวกรองปัจจุบัน ----
-    var sql3 = "SELECT COUNT(*) as cnt FROM " + TABLE_FULL_PATH + appendWhereCondition(whereObj.sql, FB_LEAD_MATCH_COND);
-    var fbParams = whereObj.params.concat([FB_LEAD_MATCH_PARAM]);
-    var res3 = runParamQueryFetch(sql3, fbParams);
-    var manyChatLeadCount = (res3 && res3.length > 0) ? parseInt(res3[0].cnt) : 0;
-
-    return { success: true, typeSummary: res1, topProducts: topProducts, manyChatLeadCount: manyChatLeadCount };
+    var dashOut = { success: true, typeSummary: res1, topProducts: topProducts, manyChatLeadCount: manyChatLeadCount };
+    cachePutJson_(dashCacheKey, dashOut, 300);
+    return dashOut;
   } catch (err) {
     return { success: false, message: err.toString() };
   }
@@ -2801,7 +3147,9 @@ function getCustomerByPhone(phoneKey) {
         created_by: cleanStr(r.created_by),
         createdBy: cleanStr(r.created_by),
         updated_by: cleanStr(r.updated_by),
-        updatedBy: cleanStr(r.updated_by)
+        updatedBy: cleanStr(r.updated_by),
+        customerGroup: cleanStr(r.customer_group),
+        customerGroupDetail: cleanStr(r.customer_group_detail)
       }
     };
   } catch (err) {
@@ -2900,6 +3248,49 @@ function buildCustomerRowArray_(headerMap, fields) {
 // (2026-09-24) ชื่อผู้ใช้ที่ใช้บันทึกลงช่อง created_by / updated_by / follow_up_log[].by
 // รูปแบบ "ชื่อจริง (username)" เพื่อให้แยกคนที่ชื่อซ้ำกันได้ — ถ้า user ยังไม่มีชื่อจริง ใช้ username
 // อย่างเดียว ถ้าไม่มี user เลย (เช่น lead ที่ส่งเข้ามาอัตโนมัติจาก Facebook/ManyChat) ใช้ fallbackLabel
+// =================================================================
+// (r46) 🔑 รหัสเชื่อมต่อสำหรับ ManyChat (External Request) — ให้ส่งลีดเข้าระบบได้โดยไม่ต้อง login
+// =================================================================
+// ManyChat แนบรหัสมาได้ 2 แบบ (เลือกแบบใดแบบหนึ่ง):
+//   1) ใน JSON body: { "action": "add", "apiKey": "<รหัส>", "payload": { ... } }
+//   2) ต่อท้าย URL: .../exec?key=<รหัส>
+var MANYCHAT_API_KEY_PROP = '1059681434108659:2c841300446a38dce17f203f56f20657';
+var MANYCHAT_INTEGRATION_USER = { username: 'manychat', name: 'ระบบ (Facebook/ManyChat)', role: 'integration', isIntegration: true };
+
+function getIntegrationUser_(e, contents) {
+  try {
+    var expected = cleanStr(PropertiesService.getScriptProperties().getProperty(MANYCHAT_API_KEY_PROP));
+    if (!expected) return null;
+    var given = cleanStr((contents && (contents.apiKey || contents.key)) ||
+                         (contents && contents.payload && (contents.payload.apiKey || contents.payload.key)) ||
+                         (e && e.parameter && e.parameter.key) || '');
+    if (!given || given !== expected) return null;
+    if (contents && contents.payload) { delete contents.payload.apiKey; delete contents.payload.key; }
+    return MANYCHAT_INTEGRATION_USER;
+  } catch (err) {
+    return null;
+  }
+}
+
+// ⚙️ รันครั้งเดียวใน Apps Script editor (เลือกฟังก์ชันนี้แล้วกด ▶ Run) → ดูรหัสใน Execution log
+// รันซ้ำได้ — ถ้ามีรหัสอยู่แล้วจะแสดงรหัสเดิม (ไม่เปลี่ยน) | อยากเปลี่ยนรหัสใหม่ ให้รัน runReset_ManyChatApiKey
+function runSetup_ManyChatApiKey() {
+  var props = PropertiesService.getScriptProperties();
+  var key = cleanStr(props.getProperty(MANYCHAT_API_KEY_PROP));
+  if (!key) {
+    key = Utilities.getUuid().replace(/-/g, '');
+    props.setProperty(MANYCHAT_API_KEY_PROP, key);
+    Logger.log('สร้างรหัสเชื่อมต่อ ManyChat ใหม่แล้ว');
+  }
+  Logger.log('รหัสเชื่อมต่อ ManyChat (apiKey): ' + key);
+  Logger.log('ใส่ใน ManyChat External Request > Body (JSON) เพิ่มบรรทัด  "apiKey": "' + key + '",  ไว้ระดับเดียวกับ "action"');
+}
+function runReset_ManyChatApiKey() {
+  PropertiesService.getScriptProperties().deleteProperty(MANYCHAT_API_KEY_PROP);
+  runSetup_ManyChatApiKey();
+  Logger.log('⚠️ รหัสเดิมใช้ไม่ได้แล้ว ต้องอัปเดตรหัสใหม่ในทุกโฟลว์ ManyChat');
+}
+
 function userDisplayLabel_(user, fallbackLabel) {
   if (!user) return fallbackLabel || '';
   var uname = cleanStr(user.username);
@@ -3117,8 +3508,8 @@ function runDiagnostic_AuditColumns() {
   } catch (e) {
     Logger.log('BigQuery: query คอลัมน์ created_by/updated_by ไม่ได้ → ตารางใน BigQuery ยังไม่มีคอลัมน์นี้ (sync ไม่สำเร็จเลยตั้งแต่เพิ่มคอลัมน์) — ' + e);
   }
-  var trig = ScriptApp.getProjectTriggers().filter(function(t) { return t.getHandlerFunction() === 'scheduledSyncCustomersToBigQuery_'; });
-  Logger.log('trigger sync customers: ' + (trig.length ? 'มี ' + trig.length + ' ตัว' : '❌ ไม่มี (ต้องตั้ง trigger ก่อน)'));
+  var trig = ScriptApp.getProjectTriggers().filter(function(t) { var h = t.getHandlerFunction(); return h === 'scheduledSyncCustomersToBigQuery_' || h === 'scheduledSyncCustomersToBigQuery'; });
+  Logger.log('trigger sync customers: ' + (trig.length ? 'มี ' + trig.length + ' ตัว' : '❌ ไม่มี (รัน installCustomerSyncTrigger 1 ครั้ง)'));
   try {
     var t0 = Date.now();
     syncCustomerSheetToBigQuery_();
@@ -3297,6 +3688,8 @@ function addCustomerHTML(cust, user) {
       remark: cleanStr(cust.remark || cust.note),
       line: cleanStr(cust.line),
       facebook: cleanStr(cust.facebook),
+      customer_group: cleanStr(cust.customerGroup || cust.customer_group),
+      customer_group_detail: cleanStr(cust.customerGroupDetail || cust.customer_group_detail),
       follow_up_log: '[]',
       financial_info: cleanStr(cust.financialInfo || cust.financial_info) || '{}',
       created_at_ts: new Date(),
@@ -3333,7 +3726,7 @@ function addCustomerHTML(cust, user) {
 // ป้ายชื่อฟิลด์ภาษาไทย ใช้ทำ diff แสดงใน "ประวัติการใช้งาน" (admin ดูได้) ทุกครั้งที่มีการแก้ไข
 var FIELD_LABELS_TH_ = {
   first_name: 'ชื่อ', last_name: 'นามสกุล', phone: 'เบอร์โทร', booking_date: 'วันนัด',
-  type: 'ประเภท', product: 'สินค้า', address_no: 'บ้านเลขที่', moo: 'หมู่ที่',
+  type: 'กลุ่มลูกค้า', product: 'สินค้า', customer_group: 'ประเภทลูกค้า', customer_group_detail: 'ข้อมูลเพิ่มเติม (เกรด/ตำแหน่ง)', address_no: 'บ้านเลขที่', moo: 'หมู่ที่',
   village: 'หมู่บ้าน', subdistrict: 'ตำบล', district: 'อำเภอ', province: 'จังหวัด',
   zipcode: 'รหัสไปรษณีย์', remark: 'หมายเหตุ', line: 'LINE', facebook: 'Facebook',
   created_date: 'วันที่บันทึก'
@@ -3375,11 +3768,13 @@ function updateCustomerHTML(rowIndex, cust, phoneHint, user) {
       remark: cleanStr(cust.remark || cust.note),
       line: cleanStr(cust.line),
       facebook: cleanStr(cust.facebook),
+      customer_group: cleanStr(cust.customerGroup || cust.customer_group),
+      customer_group_detail: cleanStr(cust.customerGroupDetail || cust.customer_group_detail),
       financial_info: cleanStr(cust.financialInfo || cust.financial_info) || '{}'
     };
 
     // จำกัดฟิลด์ที่แก้ได้จริงถ้าเป็น role 'sale' — ตัดฟิลด์อื่นทิ้งทั้งหมดก่อนเขียน
-    if (user && user.role === 'sale') {
+    if (false && user && user.role === 'sale') { // (r52) ปิด: sale แก้ได้ทุกฟิลด์เท่าพนักงาน
       var restrictedFields = {};
       SALE_EDITABLE_FIELDS_.forEach(function (k) { restrictedFields[k] = fields[k]; });
       fields = restrictedFields;
@@ -3580,7 +3975,9 @@ function formatCustomerRowForList_(r) {
     created_by: cleanStr(r.created_by),
     createdBy: cleanStr(r.created_by),
     updated_by: cleanStr(r.updated_by),
-    updatedBy: cleanStr(r.updated_by)
+    updatedBy: cleanStr(r.updated_by),
+    customerGroup: cleanStr(r.customer_group),
+    customerGroupDetail: cleanStr(r.customer_group_detail)
   };
 }
 
@@ -3741,8 +4138,10 @@ function getLeadIntakeLogDetailHTML(reqPayload) {
         holders.push('@rp' + i);
         custParams.push({ name: 'rp' + i, value: k });
       });
-      var customerSql = "SELECT first_name, last_name, phone, product, address_no, moo, village, " +
-                        "subdistrict, district, province, zipcode, remark, line, facebook, financial_info, created_by, updated_by " +
+      // (2026-10-05) ใช้ SELECT * แทนการระบุชื่อคอลัมน์ — เดิมระบุ created_by/updated_by ตรงๆ ทำให้ error
+      // "Unrecognized name: created_by" เมื่อตาราง BigQuery ยังไม่มีคอลัมน์นี้ (sync ชีต → BigQuery ยังไม่ผ่าน)
+      // คอลัมน์ไหนไม่มี จะได้ค่าว่างเฉยๆ ไม่ error
+      var customerSql = "SELECT * " +
                         "FROM " + TABLE_FULL_PATH +
                         " WHERE CAST(SAFE_CAST(REGEXP_REPLACE(CAST(phone AS STRING), r'\\D', '') AS INT64) AS STRING) " +
                         "IN (" + holders.join(',') + ")";
@@ -3850,7 +4249,8 @@ function addFollowUpLogHTML(rawKeyInput, entry, phoneHint, user) {
       // (2026-09-19) ชื่อผู้บันทึกการติดตามรอบนี้ — แต่ละรอบอาจคนละคนกัน จึงเก็บแยกทีละ entry
       // ในนี้เลย (ไม่ใช่คอลัมน์ระดับลูกค้า) ไม่ต้องเพิ่มหัวคอลัมน์ใดๆ ในชีต เพราะ follow_up_log
       // เก็บเป็น JSON array อยู่แล้วในคอลัมน์เดิม
-      by: userDisplayLabel_(user)
+      by: userDisplayLabel_(user),
+      nextFollowUpDate: nextFollowUpDate // (r49) วันนัดครั้งต่อไปที่ตั้งในรอบนี้
     });
 
     // 2) เขียนกลับทั้ง array ที่อัปเดตแล้ว พร้อมอัปเดต last_followup_date (วันที่ของ
@@ -3859,6 +4259,10 @@ function addFollowUpLogHTML(rawKeyInput, entry, phoneHint, user) {
     sheet.getRange(rowNum, followLogCol).setValue(JSON.stringify(logArr));
     sheet.getRange(rowNum, headerMap['last_followup_date']).setValue(dateVal);
     sheet.getRange(rowNum, headerMap['booking_date']).setValue(nextFollowUpDate);
+    // (r45) คนที่บันทึกการติดตามถือเป็น "ผู้อัปเดตล่าสุด" ของลูกค้ารายนี้ด้วย (ใช้กับตัวกรองผู้อัปเดตล่าสุด)
+    if (headerMap['updated_by'] && user) {
+      sheet.getRange(rowNum, headerMap['updated_by']).setValue(userDisplayLabel_(user));
+    }
     // แก้ไข (2026-09-17 รอบที่ 4): เอาการ sync แบบ synchronous (รอผลระหว่างเก็บฟอร์ม) ออก
       // เพราะชีตข้อมูลลูกค้าจริงมี 116,000+ แถว การโหลดทั้งตารางใหม่ทุกครั้งที่มีคน
       // เพิ่ม/แก้ไข/ลบ 1 รายการ จะช้ามาก (หลายสิบวินาทีขึ้นไป) จนหน้าเว็บดูเหมือนค้าง
@@ -4292,7 +4696,7 @@ function testDailyLeadReportDirect() {
 //   ทั้งหมดด้วย setValues ครั้งเดียว — เร็วกว่าเรียก addCustomerHTML ทีละแถวมาก (ที่ต้องค้นชีตทุกแถว)
 // - ข้อมูลเข้า Google Sheet ทันที ส่วน BigQuery (หน้าค้นหา) เห็นหลัง trigger sync รอบถัดไป
 // - ไม่ตั้ง province เริ่มต้นเป็น 'อุบลราชธานี' ให้ (ต่างจาก addCustomerHTML) — ไฟล์ไม่มีจังหวัดก็เว้นว่าง
-var BULK_IMPORT_ALLOWED_ROLES = ['admin', 'staff'];
+var BULK_IMPORT_ALLOWED_ROLES = ['admin', 'staff', 'sale']; // (r52) sale = staff
 var BULK_IMPORT_MAX_ROWS_PER_REQUEST = 500; // หน้าเว็บส่งทีละ 300 — กันไว้ไม่ให้ request เดียวใหญ่จนหมดเวลา 6 นาที
 
 // อ่านคอลัมน์เบอร์/ชื่อ ของทั้งชีต "ครั้งเดียว" → { เบอร์ปกติ: { rowNum, name } }
@@ -4527,4 +4931,137 @@ function appendRowsToBigQueryTableBatch_(rowsInColumnOrder, columns, typeMap, ta
   var blob = Utilities.newBlob(csvText, 'text/csv', tableId + '_bulk_append.csv');
   var insertResult = BigQuery.Jobs.insert(job, GCP_PROJECT_ID, blob);
   return waitForBigQueryLoadJob_(insertResult);
+}
+
+// =================================================================
+// 👥 (2026-10-05 r49) รายงานประจำวันแยกตามเซลล์ (หน้า "📈 รายงาน") — เฉพาะ admin
+// =================================================================
+// action: 'getSalesDailyReport'  payload: { startDate: 'yyyy-MM-dd', endDate: 'yyyy-MM-dd' }
+// ตัวเลขต่อ "วัน × เซลล์":
+//   added        = ลูกค้าที่เซลล์กรอกเอง — นับจาก created_by + วันที่สร้างจริง (created_at_ts เวลาไทย,
+//                  ถ้าไม่มีใช้ created_date) ไม่นับลีดจาก ManyChat และไม่นับแถวที่มาจาก "นำเข้า Excel"
+//                  (ดูจากหมายเหตุที่มีคำว่า "นำเข้า Excel" — ข้อความนำหน้าค่าเริ่มต้นของหน้านำเข้า)
+//   followups    = จำนวนครั้งที่บันทึกการติดตาม (follow_up_log[].by ตามวันที่ติดต่อ follow_up_log[].date)
+//   appointments = เฉพาะบันทึกติดตามที่ประเภทอยู่ใน SALES_REPORT_APPOINTMENT_TYPES (เข้าพบ/นัดทดลองรถ)
+//   booked / closing = ลูกค้าที่สถานะปัจจุบันเป็น "จอง" / "รอปิดการขาย" (รวมค่าเดิม "ติดตาม")
+//                  นับเป็นผลงานของ "ผู้อัปเดตล่าสุด" (updated_by — ถ้าว่างใช้ผู้บันทึก created_by)
+//                  ลงวันที่ของการติดตามล่าสุด (last_followup_date — ถ้าว่างใช้วันที่สร้าง)
+//                  ⚠️ เป็นภาพ "สถานะตอนนี้" ไม่ใช่ประวัติ — ระบบไม่ได้เก็บว่าเปลี่ยนสถานะวันไหน
+//   + pipelineBookedNow / pipelineClosingNow = จอง/รอปิดการขาย "ทั้งหมดตอนนี้" ต่อคน (ไม่จำกัดวันที่)
+// อ่านจาก BigQuery (ตามหลังชีตได้ ~15 นาทีตามรอบ sync) และแคช 5 นาที
+var SALES_REPORT_ALLOWED_ROLES = ['admin'];
+var SALES_REPORT_MAX_RANGE_DAYS = 92;
+var SALES_REPORT_APPOINTMENT_TYPES = ['เข้าพบลูกค้า', 'นัดทดลองรถ / ดูสินค้า'];
+var SALES_REPORT_CACHE_PREFIX = 'salesDaily:v1:';
+
+function isIntegrationLabel_(label) {
+  var s = cleanStr(label).toLowerCase();
+  return !s || s.indexOf('manychat') !== -1;
+}
+
+function getSalesDailyReportHTML(reqPayload, user) {
+  try {
+    if (!user || SALES_REPORT_ALLOWED_ROLES.indexOf(user.role) === -1) {
+      return { success: false, message: 'เฉพาะ admin เท่านั้นที่ดูรายงานแยกตามเซลล์ได้' };
+    }
+    var payload = reqPayload || {};
+    var todayStr = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
+    var endDate = isIsoDateStr_(cleanStr(payload.endDate)) ? cleanStr(payload.endDate) : todayStr;
+    var startDate = cleanStr(payload.startDate);
+    if (!isIsoDateStr_(startDate)) {
+      var sd = new Date(endDate + 'T00:00:00Z'); sd.setUTCDate(sd.getUTCDate() - 6);
+      startDate = Utilities.formatDate(sd, 'UTC', 'yyyy-MM-dd');
+    }
+    if (startDate > endDate) { var tmp = startDate; startDate = endDate; endDate = tmp; }
+    var span = Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000) + 1;
+    if (span > SALES_REPORT_MAX_RANGE_DAYS) {
+      var s2 = new Date(endDate + 'T00:00:00Z'); s2.setUTCDate(s2.getUTCDate() - (SALES_REPORT_MAX_RANGE_DAYS - 1));
+      startDate = Utilities.formatDate(s2, 'UTC', 'yyyy-MM-dd');
+    }
+
+    var cacheKey = SALES_REPORT_CACHE_PREFIX + startDate + ':' + endDate;
+    var cached = cacheGetJson_(cacheKey);
+    if (cached) { cached.cached = true; return cached; }
+
+    var params = [{ name: 'sd', value: startDate }, { name: 'ed', value: endDate }];
+    var inRange = " BETWEEN SAFE_CAST(@sd AS DATE) AND SAFE_CAST(@ed AS DATE)";
+    var notIntegration = function(col) { return "NOT REGEXP_CONTAINS(LOWER(" + col + "), r'manychat')"; };
+    var pipeTypes = "('จอง', 'รอปิดการขาย', 'ติดตาม')";
+    var personExpr = "COALESCE(NULLIF(TRIM(updated_by), ''), NULLIF(TRIM(created_by), ''))";
+
+    var sqlAdded =
+      "SELECT 'added' AS k, CAST(d AS STRING) AS day, person, COUNT(*) AS a, 0 AS b FROM (" +
+      "  SELECT COALESCE(DATE(created_at_ts, 'Asia/Bangkok'), created_date) AS d, TRIM(created_by) AS person, remark FROM " + TABLE_FULL_PATH +
+      "  WHERE TRIM(IFNULL(created_by, '')) != ''" +
+      ") WHERE d" + inRange + " AND " + notIntegration('person') +
+      " AND NOT REGEXP_CONTAINS(IFNULL(remark, ''), r'นำเข้า Excel') GROUP BY day, person";
+    var sqlPipe =
+      "SELECT 'pipe' AS k, CAST(d AS STRING) AS day, person, COUNTIF(type = 'จอง') AS a, COUNTIF(type IN ('รอปิดการขาย', 'ติดตาม')) AS b FROM (" +
+      "  SELECT COALESCE(last_followup_date, DATE(created_at_ts, 'Asia/Bangkok'), created_date) AS d, " + personExpr + " AS person, type FROM " + TABLE_FULL_PATH +
+      "  WHERE type IN " + pipeTypes +
+      ") WHERE person IS NOT NULL AND d" + inRange + " AND " + notIntegration('person') + " GROUP BY day, person";
+    var sqlNow =
+      "SELECT 'now' AS k, CAST(NULL AS STRING) AS day, person, COUNTIF(type = 'จอง') AS a, COUNTIF(type IN ('รอปิดการขาย', 'ติดตาม')) AS b FROM (" +
+      "  SELECT " + personExpr + " AS person, type FROM " + TABLE_FULL_PATH + " WHERE type IN " + pipeTypes +
+      ") WHERE person IS NOT NULL AND " + notIntegration('person') + " GROUP BY person";
+    var rows = runParamQueryFetch(sqlAdded + " UNION ALL " + sqlPipe + " UNION ALL " + sqlNow, params) || [];
+
+    // บันทึกการติดตาม: ดึงเฉพาะลูกค้าที่ติดตามล่าสุดตั้งแต่วันเริ่ม แล้วแยก JSON ใน Apps Script
+    // (เลี่ยง UNNEST JSON ใน BigQuery ที่เคย error กับข้อมูลจริง — ดูหมายเหตุ r37)
+    var logRows = runParamQueryFetch(
+      "SELECT follow_up_log FROM " + TABLE_FULL_PATH +
+      " WHERE last_followup_date >= SAFE_CAST(@sd AS DATE) AND follow_up_log IS NOT NULL AND follow_up_log NOT IN ('', '[]') LIMIT 50000",
+      [{ name: 'sd', value: startDate }]) || [];
+
+    var daily = {};   // key: day|person
+    var people = {};  // key: person
+    var cell = function(day, person) {
+      var k = day + '|' + person;
+      if (!daily[k]) daily[k] = { date: day, person: person, added: 0, appointments: 0, followups: 0, booked: 0, closing: 0 };
+      return daily[k];
+    };
+    var who = function(person) {
+      if (!people[person]) people[person] = { person: person, added: 0, appointments: 0, followups: 0, booked: 0, closing: 0, pipelineBookedNow: 0, pipelineClosingNow: 0 };
+      return people[person];
+    };
+    rows.forEach(function(r) {
+      var person = cleanStr(r.person);
+      if (!person) return;
+      var a = parseInt(r.a, 10) || 0, b = parseInt(r.b, 10) || 0;
+      if (r.k === 'added') { cell(r.day, person).added += a; who(person).added += a; }
+      else if (r.k === 'pipe') { var c = cell(r.day, person); c.booked += a; c.closing += b; who(person).booked += a; who(person).closing += b; }
+      else if (r.k === 'now') { who(person).pipelineBookedNow += a; who(person).pipelineClosingNow += b; }
+    });
+    logRows.forEach(function(r) {
+      parseFollowUpLog(r.follow_up_log).forEach(function(e) {
+        if (!e) return;
+        var day = formatDateStr(e.date);
+        var person = cleanStr(e.by);
+        if (!day || day < startDate || day > endDate || isIntegrationLabel_(person)) return;
+        var isAppt = SALES_REPORT_APPOINTMENT_TYPES.indexOf(cleanStr(e.followupType)) !== -1;
+        var c = cell(day, person), p = who(person);
+        c.followups++; p.followups++;
+        if (isAppt) { c.appointments++; p.appointments++; }
+      });
+    });
+
+    var dailyList = Object.keys(daily).map(function(k) { return daily[k]; })
+      .filter(function(d) { return d.added + d.appointments + d.followups + d.booked + d.closing > 0; })
+      .sort(function(x, y) { return y.date.localeCompare(x.date) || x.person.localeCompare(y.person); });
+    var peopleList = Object.keys(people).map(function(k) { return people[k]; })
+      .sort(function(x, y) { return (y.added + y.appointments + y.followups) - (x.added + x.appointments + x.followups) || x.person.localeCompare(y.person); });
+
+    var out = {
+      success: true,
+      range: { startDate: startDate, endDate: endDate },
+      appointmentTypes: SALES_REPORT_APPOINTMENT_TYPES,
+      daily: dailyList,
+      people: peopleList,
+      generatedAt: Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd HH:mm')
+    };
+    cachePutJson_(cacheKey, out, 300);
+    return out;
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
 }

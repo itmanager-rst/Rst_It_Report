@@ -1500,7 +1500,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r49-2026-10-05-sales-daily-report'; // คู่กับ Code_r49_sales_daily_report.gs
+        const EXPECTED_CODE_VERSION = 'r52-2026-10-12-sale-as-staff'; // (r52) sale ได้สิทธิ์เท่าพนักงาน (export/ลบ ยังเฉพาะ admin) — คู่กับ Code.js r52
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -1660,7 +1660,7 @@
                     document.getElementById('current-user-badge').style.display = '';
                     document.getElementById('logout-btn').style.display = '';
                     // เมนู "เพิ่มสมาชิก" โชว์เฉพาะ role admin และ staff (พนักงาน) เท่านั้น
-                    const canManageMembers = currentRole === 'admin' || currentRole === 'staff';
+                    const canManageMembers = currentRole === 'admin' || currentRole === 'staff' || currentRole === 'sale'; // (r52) sale = staff
                     document.getElementById('nav-btn-members').style.display = canManageMembers ? '' : 'none';
                     if (canManageMembers) populateMemberRoleOptions();
                     // (r42) admin เห็นเมนูเป็น "จัดการสมาชิก" (เพิ่ม + แก้ไข) ส่วน staff ยังเป็น "เพิ่มสมาชิก" อย่างเดียว
@@ -1847,7 +1847,7 @@
         const MEMBER_ROLE_INFO = {
             admin: { name: 'ผู้ดูแลระบบ (admin)', desc: 'ทำได้ทุกอย่าง รวมถึงลบ/Export ข้อมูล และจัดการสมาชิก' },
             staff: { name: 'พนักงาน', desc: 'เพิ่ม แก้ไข และบันทึกการติดตามลูกค้าได้ ลบและ Export ไม่ได้' },
-            sale:  { name: 'Sale', desc: 'ดูข้อมูลลูกค้าได้ แก้ไขได้เฉพาะชื่อ-นามสกุลและที่อยู่' }
+            sale:  { name: 'Sale', desc: 'สิทธิ์เท่าพนักงาน: เพิ่ม แก้ไข และบันทึกการติดตามลูกค้าได้ ลบและ Export ไม่ได้' }
         };
         function populateMemberRoleOptions() {
             const box = document.getElementById('member-role-options');
@@ -2306,7 +2306,7 @@
             document.getElementById('nav-btn-members').classList.toggle('active', name === 'members');
             document.getElementById('nav-btn-activitylog').classList.toggle('active', name === 'activitylog');
             document.getElementById('btn-settings-menu').classList.toggle('active', name === 'members' || name === 'activitylog');
-            document.getElementById('fab-container').style.display = (name === 'history') ? 'block' : 'none';
+            document.getElementById('fab-container').style.display = (name === 'history' && currentRole === 'admin') ? 'block' : 'none'; // (r52) ปุ่ม Export ฐานข้อมูล เฉพาะ admin
             const csvExportBtn = document.getElementById('btn-export-csv');
             if (csvExportBtn) csvExportBtn.style.display = (currentRole === 'admin') ? '' : 'none';
             if (name === 'calendar' && !calendarLoadedOnce) {
@@ -3986,7 +3986,7 @@
                 // ชื่อ-นามสกุล/ที่อยู่เท่านั้น (ดู editCustomerByIndex ที่ปิดช่องอื่นไว้ให้ role นี้)
                 // สิทธิ์ลบยังจำกัดเฉพาะ admin เหมือนเดิม ไม่เปลี่ยน
                 const adminEditDelete = (currentRole === 'admin' || currentRole === 'staff' || currentRole === 'sale')
-                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="${currentRole === 'sale' ? 'แก้ไขชื่อและที่อยู่' : 'แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า'}">✏️</button>`
+                    ? `<button class="btn btn-accent btn-row-icon" onclick="editCustomerByIndex(${idx})" title="แก้ไขชื่อ ที่อยู่ และข้อมูลลูกค้า">✏️</button>`
                         + (currentRole === 'admin' ? `<button class="btn btn-danger btn-row-icon" onclick="deleteCustomerByIndex(${idx})" title="ลบข้อมูลลูกค้า">🗑️</button>` : '')
                     : '';
                 const cells = visibleColumns.map(col => {
@@ -4326,11 +4326,9 @@
 
             // (2026-09-19) role 'sale' แก้ได้แค่ชื่อ-นามสกุล/ที่อยู่เท่านั้น — ปิดช่องอื่นทั้งหมด
             // ไว้ก่อนเปิดฟอร์ม (เซิร์ฟเวอร์ก็ตัดฟิลด์อื่นทิ้งอยู่แล้วเป็นชั้นป้องกันที่ 2)
-            applySaleEditFieldRestriction_(currentRole === 'sale');
+            applySaleEditFieldRestriction_(false); // (r52) sale แก้ได้ทุกช่องเท่าพนักงานแล้ว
 
-            document.getElementById('form-title').innerText = currentRole === 'sale'
-                ? '✏️ แก้ไขชื่อ/ที่อยู่ลูกค้า (สิทธิ์ของคุณแก้ได้เฉพาะ 2 ส่วนนี้)'
-                : '✏️ แก้ไขข้อมูลลูกค้า';
+            document.getElementById('form-title').innerText = '✏️ แก้ไขข้อมูลลูกค้า';
             document.getElementById('btn-submit').innerText = '💾 บันทึกการแก้ไข';
             switchPage('add');
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4586,7 +4584,7 @@
         //          → 4) ส่งเข้าระบบทีละชุด (action 'bulkImport' ใน Code.gs) + ดาวน์โหลดผลลัพธ์
         // ใช้ชื่อขึ้นต้นด้วย bi/BI_ ทั้งหมด เพื่อไม่ชนกับตัวแปรอื่นในไฟล์
         // =====================================================================
-        const BI_ALLOWED_ROLES = ['admin', 'staff'];   // ต้องตรงกับ BULK_IMPORT_ALLOWED_ROLES ใน Code.gs
+        const BI_ALLOWED_ROLES = ['admin', 'staff', 'sale'];   // ต้องตรงกับ BULK_IMPORT_ALLOWED_ROLES ใน Code.gs
         const BI_GEO_URL = 'https://raw.githubusercontent.com/itmanager-rst/Rst_It_Report/main/CRM-TRACKER/thailand-geo.js';
         const BI_CHUNK_SIZE = 300;
         const BI_PAGE_SIZE = 50;
@@ -5636,7 +5634,7 @@
         }
         async function exportFilteredCSV() {
             if (currentRole !== 'admin') {
-                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export CSV ได้');
+                alert('เฉพาะ admin เท่านั้นที่ Export CSV ได้');
                 return;
             }
             if (_exportCsvRunning) return;
@@ -5710,7 +5708,7 @@
         }
         function exportFullExcel() {
             if (currentRole !== 'admin') {
-                alert('สิทธิ์ user ดูได้อย่างเดียว ไม่สามารถ export Excel ได้');
+                alert('เฉพาะ admin เท่านั้นที่ Export ฐานข้อมูล (Excel) ได้');
                 return;
             }
             const exportNotifyId = crmNotify.loading('กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
@@ -5904,7 +5902,7 @@
          (กดตัวเลขในตาราง "รายงานจำนวนลีดที่เข้ามาต่อวัน" แล้วหน้าต่างนี้เปิดขึ้น)
          - ติ๊กเลือกคอลัมน์ที่จะแสดง / ลาก ⠿ เพื่อเรียงลำดับก่อนหลัง / คืนค่าเริ่มต้น
          - จำค่าไว้ในเบราว์เซอร์เครื่องนี้ (localStorage) เปิดครั้งหน้ายังเป็นแบบเดิม
-         - วางบล็อกนี้ไว้ "ก่อน </body>" (หลังสคริปต์ตัวสุดท้าย) — ฟังก์ชัน openIntakeDetailModal
+         - วางบล็อกนี้ไว้ "ก่อนแท็กปิด body" (หลังสคริปต์ตัวสุดท้าย) — ฟังก์ชัน openIntakeDetailModal
            ในนี้จะใช้แทนตัวเดิมโดยอัตโนมัติ ไม่ต้องลบโค้ดเดิม ไม่ต้องแก้ Code.gs
          ===================================================================== -->
     <script>
