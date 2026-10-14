@@ -226,8 +226,10 @@ section.view{display:none}section.view.on{display:block}
 .chip.demo{background:#EFE8FA;border-color:#D3C2F0;color:#5B2E9E}
 .chip.gps{background:var(--field-soft);border-color:#F4B8BC;color:var(--red)}
 .chip.year{background:#F6F1E4;border-color:#E3D3A8;color:#6E5212}
-.fact .v .yrbtn{margin-left:8px;background:none;border:1px solid var(--line);border-radius:var(--radius-s);padding:1px 8px;font:inherit;font-size:12px;font-weight:500;color:var(--ink-2);cursor:pointer}
-.fact .v .yrbtn:hover{border-color:var(--red);color:var(--red)}
+.fact .v .yrbtn{margin-left:8px;background:var(--red);border:1px solid var(--red);border-radius:var(--radius-s);padding:2px 10px;font:inherit;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer}
+.fact .v .yrbtn:hover{background:var(--red-dark);border-color:var(--red-dark)}
+.fact .v .yrbtn.ed{background:#fff;color:var(--red)}
+.fact.yrfact{background:#FFFBF2}
 .fact .yred{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .fact .yred input{width:96px;height:32px;border:1px solid var(--line);border-radius:var(--radius-s);padding:0 8px;font:inherit;font-size:14px}
 .fact .yred input:focus{outline:none;border-color:var(--red)}
@@ -660,7 +662,7 @@ function paintMe(){ $("#whoBtn").textContent=ME||"ตั้งชื่อผู
 function askName(){ var n=prompt("ชื่อผู้ถ่ายรูป (แสดงในข้อมูลรูป)",ME); if(n==null)return false; ME=n.trim(); store("rst_photo_user",ME); paintMe(); return !!ME; }
 $("#whoBtn").onclick=askName; paintMe();
 
-var NEED_SERVER="r11"; // หน้าเว็บนี้ต้องใช้กับ code.js r11 ขึ้นไป (เครื่องอัดฟาง + ปีรถ)
+var NEED_SERVER="r12"; // หน้าเว็บนี้ต้องใช้กับ code.js r12 ขึ้นไป (เครื่องอัดฟางทุกหมวด + ปีรถ)
 function load(){
   dbStatus("busy");
   return api("getBoot").then(function(b){
@@ -864,7 +866,7 @@ function openCar(k){
   $("#plate").innerHTML='<div class="brand">RST RUAMSINTHAIGROUP · '+esc(c.type)+' · '+esc(c.kind)+'</div><div class="model">'+esc(c.series)+(c.tag?' <span class="chip gps">'+esc(c.tag)+'</span>':'')+'</div><dl><dt>หมายเลข Serial/Lot</dt><dd>'+esc(c.serial)+'</dd><dt>รหัสสินค้า</dt><dd>'+esc(c.code||"-")+'</dd></dl>';
   var f=[["ชื่อสถานที่",c.branch||"-"],["จุดจอด",c.spot||"-"],["จำนวนคงเหลือ",c.qty===""?"-":c.qty],["ราคาขาย",money(c.price)||"-"],["สภาพรถ",c.cond||"-"],["ชั่วโมงการทำงาน",hrs(c.hours)||"-"],
     ["สถานะ",c.status==="stock"?"ในสต็อก":"ไม่อยู่ในสต็อก"+(c.outDate?" ตั้งแต่ "+thDate(c.outDate):"")],["ชื่อสินค้า",c.name]];
-  $("#facts").innerHTML=f.map(function(x){return'<div class="fact"><div class="l">'+esc(x[0])+'</div><div class="v">'+esc(x[1])+'</div></div>'}).join("")+'<div class="fact" id="yearFact"></div>';
+  $("#facts").innerHTML='<div class="fact yrfact" id="yearFact"></div>'+f.map(function(x){return'<div class="fact"><div class="l">'+esc(x[0])+'</div><div class="v">'+esc(x[1])+'</div></div>'}).join("");
   paintYear();
   $("#sheet").classList.add("on"); document.body.style.overflow="hidden";
   setupLegacy(k);
@@ -873,7 +875,7 @@ function openCar(k){
 /* ---------- ปีรถ: ใส่เอง / ใช้จากระบบเก่า ---------- */
 function paintYear(){
   var el=$("#yearFact"); if(!el||!cur)return; var c=cur;
-  el.innerHTML='<div class="l">ปีรถ</div><div class="v">'+esc(yearTxt(c.year)||"-")+'<button type="button" class="yrbtn" id="yearEdit">'+(c.year?"แก้ไข":"ใส่ปี")+'</button></div>'+
+  el.innerHTML='<div class="l">ปีรถ</div><div class="v">'+esc(yearTxt(c.year)||"ยังไม่ระบุ")+'<button type="button" class="yrbtn'+(c.year?' ed':'')+'" id="yearEdit">'+(c.year?"แก้ไขปี":"+ ใส่ปีรถ")+'</button></div>'+
     (c.yearSrc==="legacy"?'<div class="src">จากระบบเก่า (กดแก้ไขเพื่อยืนยันหรือเปลี่ยน)</div>':c.yearBy?'<div class="src">ใส่โดย '+esc(c.yearBy)+(c.yearAt?' '+esc(thDate(c.yearAt)):'')+'</div>':'');
   $("#yearEdit").onclick=editYear;
 }
@@ -1033,7 +1035,7 @@ var KEEP_KINDS=["มือสอง","รถสาธิต"]; // ตรงก�
 function isKept(name){ return KEEP_KINDS.indexOf(kindOf(name))>=0; }
 var USED_CAT=/หมวดรถมือสอง/; // r10: หมวดสินค้าใน Ecount ที่ต้องนำเข้าทั้งหมด
 function rowKind(name,usedCat){ var k=kindOf(name); return usedCat==="1"?(k==="รถสาธิต"?k:"มือสอง"):k; } // ตรงกับ rowKind_ ใน code.js
-function keepRow(name,usedCat){ var t=carType(name); if(!t)return false; if(usedCat==="1")return true; if(t==="อื่นๆ"||!isKept(name))return false; return usedCat===""||kindOf(name)==="รถสาธิต"; } // ตรงกับ keepRow_ ใน code.js
+function keepRow(name,usedCat){ var t=carType(name); if(!t)return false; if(usedCat==="1")return true; if(t==="อื่นๆ"||!isKept(name))return false; if(t==="เครื่องอัดฟาง")return true; return usedCat===""||kindOf(name)==="รถสาธิต"; } // ตรงกับ keepRow_ ใน code.js
 function carType(name){ name=String(name||""); if(!name.trim())return""; return /รถเกี่ยว/.test(name)?"รถเกี่ยวข้าว":/รถแทรกเตอร์/.test(name)?"รถแทรกเตอร์":/อัดฟาง|\bbaler\b/i.test(name)?"เครื่องอัดฟาง":/^\s*(?:\([^)]*\)\s*)?(?:รถขุด|รถแบ็?คโฮ|excavator)/i.test(name)?"รถขุด":/รถตู้|\bvan\b/i.test(name)?"รถตู้":"อื่นๆ"; } // ตรงกับ typeOf_ / BALER_RE / EXC_RE / VAN_RE ใน code.js
 function num(v){ var n=parseFloat(String(v==null?"":v).replace(/,/g,"")); return isNaN(n)?0:n; }
 function chassisKey(serial){ return String(serial).replace(/\(\s*GPS\s*\)/i,"").split("/")[0].trim().toUpperCase().replace(/\s+/g,""); }
@@ -1052,13 +1054,15 @@ function parseEcount(wb){
   var catIdx=-1;
   for(var ri=hi+1;ri<aoa.length&&catIdx<0;ri++){ for(var ci=0;ci<aoa[ri].length;ci++){ if(USED_CAT.test(String(aoa[ri][ci]||""))){catIdx=ci;break;} } }
   var catCol=catIdx>=0?(head[catIdx]||"คอลัมน์ที่ "+(catIdx+1)):"";
-  var rows=[],read=0,keys={},byType={"รถแทรกเตอร์":0,"รถเกี่ยวข้าว":0,"เครื่องอัดฟาง":0,"รถขุด":0,"รถตู้":0,"อื่นๆ":0},byKind={"มือสอง":0,"รถสาธิต":0},nonPos=0,notUsed=0;
+  var rows=[],read=0,keys={},byType={"รถแทรกเตอร์":0,"รถเกี่ยวข้าว":0,"เครื่องอัดฟาง":0,"รถขุด":0,"รถตู้":0,"อื่นๆ":0},byKind={"มือสอง":0,"รถสาธิต":0},nonPos=0,notUsed=0,blSeen=0,blSkip=[],blNoSerial=0;
   for(var r=hi+1;r<aoa.length;r++){
     var a=aoa[r], g=function(k){return idx[k]<0?"":String(a[idx[k]]==null?"":a[idx[k]]).trim()};
-    var name=g("name"), serial=g("serial");
+    var name=g("name"), serial=g("serial"), isBl=/อัดฟาง|\bbaler\b/i.test(name);
+    if(isBl&&!serial&&name)blNoSerial++;
     if(!name||!serial)continue; read++;
+    if(isBl)blSeen++;
     var usedCat=catIdx<0?"":(USED_CAT.test(String(a[catIdx]||""))?"1":"0");
-    if(!keepRow(name,usedCat)){ notUsed++; continue; }
+    if(!keepRow(name,usedCat)){ notUsed++; if(isBl&&blSkip.length<200)blSkip.push(name+" · "+serial); continue; }
     var o={}; Object.keys(COLS).forEach(function(k){ o[k]=g(k); }); o.usedCat=usedCat;
     rows.push(o); byType[carType(name)]++; byKind[rowKind(name,usedCat)]++;
     var k=chassisKey(serial); keys[k]=(keys[k]||0)+num(o.qty);
@@ -1066,7 +1070,7 @@ function parseEcount(wb){
   var known=0,fresh=0,dupKeys=0,cars=0; Object.keys(keys).forEach(function(k){ cars++; if(BYKEY[k])known++; else fresh++; if(keys[k]<=0)nonPos++; });
   dupKeys=rows.length-cars;
   var gone=CARS.filter(function(c){return c.status==="stock"&&!(c.key in keys)}).length;
-  return {rows:rows,read:read,cars:cars,byType:byType,byKind:byKind,known:known,fresh:fresh,gone:gone,dupKeys:dupKeys,nonPos:nonPos,notUsed:notUsed,soft:soft,title:title,catCol:catCol};
+  return {rows:rows,read:read,cars:cars,byType:byType,byKind:byKind,known:known,fresh:fresh,gone:gone,dupKeys:dupKeys,nonPos:nonPos,notUsed:notUsed,soft:soft,title:title,catCol:catCol,blSeen:blSeen,blSkip:blSkip,blNoSerial:blNoSerial};
 }
 var pending=null, pendingName="";
 function handleFile(file){
@@ -1086,6 +1090,9 @@ function showPreview(p){
     '<div class="small muted">'+esc(p.title)+'</div>';
   h+=p.catCol?'<div class="small muted">ใช้หมวดสินค้าจากคอลัมน์ "'+esc(p.catCol)+'" นำเข้าทุกรายการใน หมวดรถมือสอง</div>'
     :'<div class="warnbox">ไฟล์นี้ไม่มีหมวดสินค้า "หมวดรถมือสอง" ระบบจะเลือกตามชื่อสินค้าแทน (เฉพาะ รถแทรกเตอร์ รถเกี่ยวข้าว เครื่องอัดฟาง รถขุด รถตู้ ที่ชื่อมีคำว่า มือสอง/สาธิต) ถ้าต้องการให้ครบ ตอนส่งออกจาก Ecount ให้เปิดคอลัมน์หมวดสินค้าด้วย</div>';
+  if(p.blSkip.length) h+='<div class="warnbox">พบเครื่องอัดฟางในไฟล์ '+p.blSeen+' รายการ ข้าม '+p.blSkip.length+' รายการ เพราะชื่อสินค้าไม่มีคำว่า มือสอง หรือ สาธิต (ระบบถือเป็นเครื่องใหม่) ถ้าเป็นมือสอง ให้แก้ชื่อสินค้าใน Ecount แล้วส่งออกใหม่ หรือย้ายเข้า หมวดรถมือสอง:<br>'+p.blSkip.slice(0,10).map(esc).join("<br>")+(p.blSkip.length>10?'<br>และอีก '+(p.blSkip.length-10)+' รายการ':'')+'</div>';
+  if(p.blNoSerial) h+='<div class="warnbox">มีเครื่องอัดฟาง '+p.blNoSerial+' แถวที่ไม่มีหมายเลข Serial/Lot ระบบนำเข้าไม่ได้ ต้องใส่ Serial ใน Ecount ก่อน</div>';
+  if(!p.blSeen&&!p.blNoSerial) h+='<div class="small muted">ไม่พบสินค้าที่ชื่อมีคำว่า อัดฟาง หรือ Baler ในไฟล์นี้ ถ้ามีเครื่องอัดฟางในสต็อก ตรวจว่ารายงานที่ส่งออกครอบคลุมหมวด/คลังของเครื่องอัดฟางด้วย</div>';
   if(p.soft.length) h+='<div class="warnbox">ไฟล์ไม่มีคอลัมน์ '+esc(p.soft.join(", "))+' นำเข้าได้ แต่ช่องนี้จะว่างในหน้าแอป</div>';
   if(p.dupKeys) h+='<div class="warnbox">มี '+p.dupKeys+' แถวที่ Serial ซ้ำกับแถวอื่น (เช่น โอนย้ายสาขา) ระบบจะรวมจำนวนคงเหลือเป็นรถคันเดียว ใช้ข้อมูลจากแถวที่ยอดเป็นบวกล่าสุด</div>';
   if(p.nonPos) h+='<div class="warnbox">'+p.nonPos+' คันมีจำนวนคงเหลือรวม 0 หรือติดลบ จะแสดงเป็น ไม่อยู่ในสต็อก</div>';

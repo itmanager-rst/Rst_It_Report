@@ -1,6 +1,9 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r11-2026-10-14-baler-year
+ * CODE_VERSION: r12-2026-10-14-baler-any-category
+ *
+ * r12: เครื่องอัดฟางมือสอง / สาธิต นำเข้าได้แม้ไม่ได้อยู่ใน หมวดรถมือสอง (ใน Ecount เครื่องอัดฟางอยู่หมวดอื่น)
+ *      เงื่อนไข: ชื่อมีคำว่า อัดฟาง หรือ Baler และ มือสอง หรือ สาธิต  เครื่องใหม่/เช่า ยังไม่นำเข้า
  *
  * r11: เพิ่มประเภท เครื่องอัดฟาง (ชื่อสินค้ามี เครื่องอัดฟาง / อัดฟาง / Baler)
  *      รถที่เคยถูกจัดเป็น อื่นๆ จะถูกจัดประเภทใหม่ทันทีตอนโหลด (ไม่ต้องนำเข้าไฟล์ใหม่)
@@ -41,7 +44,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r11-2026-10-14-baler-year';
+var CODE_VERSION = 'r12-2026-10-14-baler-any-category';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
@@ -241,6 +244,7 @@ function keepRow_(r) {
   if (!t) return false;
   if (c === '1') return true;
   if (t === 'อื่นๆ' || !isKept_(r.name)) return false;
+  if (t === 'เครื่องอัดฟาง') return true; // r12: เครื่องอัดฟางมือสอง/สาธิต ทุกหมวด
   return c === '' || kindOf_(r.name) === 'รถสาธิต';
 }
 function num_(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isNaN(n) ? 0 : n; }
