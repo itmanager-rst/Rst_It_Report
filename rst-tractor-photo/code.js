@@ -1,6 +1,12 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r10-2026-10-10-used-category
+ * CODE_VERSION: r11-2026-10-14-baler-year
+ *
+ * r11: เพิ่มประเภท เครื่องอัดฟาง (ชื่อสินค้ามี เครื่องอัดฟาง / อัดฟาง / Baler)
+ *      รถที่เคยถูกจัดเป็น อื่นๆ จะถูกจัดประเภทใหม่ทันทีตอนโหลด (ไม่ต้องนำเข้าไฟล์ใหม่)
+ *      เพิ่ม ปีรถ (year, yearBy, yearAt ต่อท้ายชีต Tractors) ใส่เองได้จากหน้ารายละเอียดรถ (setYear ต้องใช้ PIN)
+ *      ถ้ายังไม่ได้ใส่เอง และชีต Legacy_Data มีคอลัมน์ปี (ปีรถ / ปีผลิต / ปี / Year ฯลฯ) จะใช้ปีจากระบบเก่าให้อัตโนมัติ
+ *      เก็บปีเป็น ค.ศ. ถ้าใส่ พ.ศ. มา (มากกว่า 2400) จะแปลงให้ การนำเข้าไฟล์ใหม่ไม่ลบปีที่ใส่ไว้
  *
  * r10: ใช้หมวดสินค้าใน Ecount เป็นตัวตัดสิน: แถวที่อยู่ "หมวดรถมือสอง" นำเข้าทั้งหมด (รถตู้ ฯลฯ)
  *      แม้ชื่อสินค้าไม่มีคำว่า มือสอง ส่วนมือสองในหมวดอื่นไม่นำเข้า
@@ -35,11 +41,11 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r10-2026-10-10-used-category';
+var CODE_VERSION = 'r11-2026-10-14-baler-year';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
-  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt'],
+  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt'],
   Photos: ['photoId', 'key', 'fileId', 'thumbId', 'label', 'cover', 'uploadedAt', 'uploadedBy'],
   ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format']
 };
@@ -65,9 +71,9 @@ function doGet(e) {
 var API = {
   getBoot: getBoot, getPhotos: getPhotos, getCovers: getCovers, getPhotoFull: getPhotoFull,
   importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto,
-  getLegacy: getLegacy
+  getLegacy: getLegacy, setYear: setYear
 };
-var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
+var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1, setYear: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
 
 function call(fn, args, pin) {
   if (!Object.prototype.hasOwnProperty.call(API, fn)) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
@@ -186,6 +192,11 @@ function excSeries_(name) {
 }
 function seriesOf_(name) {
   if (EXC_RE.test(String(name || ''))) return excSeries_(name);
+  if (BALER_RE.test(String(name || '')) && !/รถเกี่ยว|รถแทรกเตอร์/.test(String(name))) { // r11: รุ่นเครื่องอัดฟาง ตัดคำนำหน้าออก
+    var b = String(name).replace(/^\s*\([^)]*\)\s*/, '').replace(/(?:เครื่อง)?อัดฟาง|\bbaler\b/ig, '')
+      .replace(/\((?:รถ)?(มือสอง|เช่า|สาธิต)\)/g, '').replace(/(?:รถ)?สาธิต|มือสอง/g, '').replace(/Yanmar/i, '').replace(/รุ่น\s*/g, '').replace(/\s+/g, ' ').trim();
+    return b || 'เครื่องอัดฟาง';
+  }
   var x = String(name).replace(/^\(.*?\)\s*/, '');
   var m = x.match(/รุ่น\s*(.+)$/);
   x = (m ? m[1] : x).replace(/\((?:รถ)?(มือสอง|เช่า|สาธิต)\)/g, '').replace(/(?:รถ)?สาธิต/g, '').replace(/VIN.*$/i, '').replace(/^Yanmar\s*/i, '').trim();
@@ -195,11 +206,14 @@ function seriesOf_(name) {
  *  ตรวจรถแทรกเตอร์ก่อนรถขุด: รถแทรกเตอร์ที่ติดชุดแบคโฮยังนับเป็นรถแทรกเตอร์
  *  r09: ไม่ตรงประเภทไหนเลย → 'อื่นๆ' (ทรัพย์สินมือสองทุกอย่างถูกนำเข้า ตัวกรองมือสอง/สาธิต อยู่ที่ isKept_) */
 var VAN_RE = /รถตู้|\bvan\b/i;
+/** r11: เครื่องอัดฟาง ตรวจหลังรถแทรกเตอร์ (ชื่อรถแทรกเตอร์ที่พ่วงเครื่องอัดฟางยังนับเป็นรถแทรกเตอร์) */
+var BALER_RE = /อัดฟาง|\bbaler\b/i;
 function typeOf_(name) {
   var n = String(name || '');
   if (!n.trim()) return '';
   if (/รถเกี่ยว/.test(n)) return 'รถเกี่ยวข้าว';
   if (/รถแทรกเตอร์/.test(n)) return 'รถแทรกเตอร์';
+  if (BALER_RE.test(n)) return 'เครื่องอัดฟาง';
   if (EXC_RE.test(n)) return 'รถขุด';
   if (VAN_RE.test(n)) return 'รถตู้';
   return 'อื่นๆ';
@@ -231,6 +245,17 @@ function keepRow_(r) {
 }
 function num_(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isNaN(n) ? 0 : n; }
 function numStr_(v) { var t = String(v == null ? '' : v).replace(/,/g, '').trim(); return t === '' || isNaN(parseFloat(t)) ? '' : String(parseFloat(t)); }
+/** r11: ปีรถเป็น ค.ศ. 4 หลัก รับ พ.ศ. ได้ (แปลงให้) ค่าว่าง = ล้างปี คืน null ถ้าใช้ไม่ได้ */
+function yearOf_(v) {
+  var t = String(v == null ? '' : v).trim();
+  if (!t) return '';
+  var m = t.match(/(\d{4})/);
+  if (!m) return null;
+  var y = +m[1];
+  if (y > 2400) y -= 543;
+  var max = new Date().getFullYear() + 1;
+  return y >= 1950 && y <= max ? String(y) : null;
+}
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'); }
 
 /** แปลงแถว Tractors (รวมรูปแบบเก่า r03) ให้มีฟิลด์ครบตาม HEAD.Tractors */
@@ -240,7 +265,11 @@ function normCar_(o) {
     o.firstSeen = o.receivedDate || ''; o.outDate = o.soldDate || '';
     o.status = o.status === 'stock' ? 'stock' : 'out';
   }
-  if (!o.type) o.type = typeOf_(o.name);
+  if (!o.type || o.type === 'อื่นๆ') { // r11: อื่นๆ เดิมอาจเป็นเครื่องอัดฟาง จัดประเภทและรุ่นใหม่
+    var t = typeOf_(o.name);
+    if (o.type && t !== o.type) o.series = seriesOf_(o.name);
+    o.type = t;
+  }
   if (!o.kind) o.kind = kindOf_(o.name);
   if (!o.series) o.series = seriesOf_(o.name);
   var c = {}; HEAD.Tractors.forEach(function (k) { c[k] = o[k] == null ? '' : String(o[k]); });
@@ -259,13 +288,24 @@ function legacyRead_() {
   if (ki < 0) return { h: [], ki: -1, rows: [] };
   return { h: h, ki: ki, rows: s.getRange(2, 1, s.getLastRow() - 1, h.length).getDisplayValues() };
 }
-/** {key: จำนวนระเบียนเก่า} ส่งไปกับ getBoot เพื่อซ่อนแผงในรถที่ไม่มีข้อมูลเก่า (cache 10 นาที) */
+/** r11: คอลัมน์ปีรถใน Legacy_Data ชื่อตรงก่อน (ปีรถ ปีผลิต ปี Year ...) ถ้าไม่มี ใช้คอลัมน์แรกที่ขึ้นต้นด้วย ปี */
+var LEGACY_YEAR_EXACT = /^(ปีรถ|ปีผลิต|ปีที่ผลิต|ปีรุ่น|รุ่นปี|ปี|year|model\s*year|ปีรถ\s*\(.*\))$/i;
+function legacyYearCol_(h) {
+  for (var i = 0; i < h.length; i++) if (LEGACY_YEAR_EXACT.test(h[i])) return i;
+  for (var j = 0; j < h.length; j++) if (/^ปี/.test(h[j]) && !/ที่ขาย|ที่ซื้อ|ภาษี/.test(h[j])) return j;
+  return -1;
+}
+/** {n:{key: จำนวนระเบียนเก่า}, y:{key: ปีรถจากระบบเก่า}} ส่งไปกับ getBoot (cache 10 นาที) */
 function legacyCount_() {
-  var cache = CacheService.getScriptCache(), hit = cache.get('legacy_count');
+  var cache = CacheService.getScriptCache(), hit = cache.get('legacy_count2');
   if (hit) return JSON.parse(hit);
-  var d = legacyRead_(), out = {};
-  d.rows.forEach(function (r) { var k = legacyNorm_(r[d.ki]); if (k) out[k] = (out[k] || 0) + 1; });
-  try { cache.put('legacy_count', JSON.stringify(out), 600); } catch (e) { }
+  var d = legacyRead_(), out = { n: {}, y: {} }, yi = legacyYearCol_(d.h);
+  d.rows.forEach(function (r) {
+    var k = legacyNorm_(r[d.ki]); if (!k) return;
+    out.n[k] = (out.n[k] || 0) + 1;
+    if (yi >= 0 && !out.y[k]) { var y = yearOf_(r[yi]); if (y) out.y[k] = y; }
+  });
+  try { cache.put('legacy_count2', JSON.stringify(out), 600); } catch (e) { }
   return out;
 }
 /** ระเบียนจากระบบเก่าของรถคันนี้ เป็น [[ชื่อช่อง, ค่า], ...] ต่อระเบียน (รถ 1 คันอาจมีหลายระเบียน) */
@@ -290,7 +330,15 @@ function getBoot() {
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
   var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); });
   var legacy = {};
-  try { var lc = legacyCount_(); cars.forEach(function (c) { var n = lc[legacyNorm_(c.key)]; if (n) legacy[c.key] = n; }); } catch (e) { }
+  cars.forEach(function (c) { c.yearSrc = c.year ? 'manual' : ''; });
+  try {
+    var lc = legacyCount_();
+    cars.forEach(function (c) {
+      var lk = legacyNorm_(c.key), n = lc.n[lk], y = lc.y[lk];
+      if (n) legacy[c.key] = n;
+      if (!c.year && y) { c.year = y; c.yearSrc = 'legacy'; } // r11: ปีจากระบบเก่า (ยังไม่ได้บันทึกลงชีต)
+    });
+  } catch (e) { }
   return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, legacy: legacy, lastImport: logs.length ? logs[logs.length - 1] : null };
 }
 
@@ -333,7 +381,8 @@ function importStock(rows, meta) {
         branch: r.branch, spot: r.spot, qty: String(qty), price: numStr_(r.price), cond: String(r.cond || '').trim(),
         hours: numStr_(r.hours), status: inStock ? 'stock' : 'out',
         firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
-        outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now
+        outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now,
+        year: prev ? prev.year : '', yearBy: prev ? prev.yearBy : '', yearAt: prev ? prev.yearAt : ''
       }));
       delete old[key];
     });
@@ -357,6 +406,28 @@ function importStock(rows, meta) {
       newCars: fresh, dupRows: dupRows, tractors: inStock, goneCars: gone, format: 'stock-snapshot'
     })]);
     return { tractors: inStock, total: out.length, fresh: fresh, gone: gone, dupRows: dupRows };
+  });
+}
+
+/* ================= ปีรถ (r11) ================= */
+/** ใส่/แก้/ล้าง ปีรถ ของรถ 1 คัน year ว่าง = ล้าง (กลับไปใช้ปีจากระบบเก่าถ้ามี) */
+function setYear(key, year, by) {
+  var y = yearOf_(year);
+  if (y === null) throw new Error('ปีรถไม่ถูกต้อง ใส่เป็นตัวเลข 4 หลัก ค.ศ. หรือ พ.ศ. เช่น 2018 หรือ 2561');
+  return withLock_(function () {
+    var s = sheet_(SH.TRACTORS), row = findRow_(s, key);
+    if (!row) throw new Error('ไม่พบรถคันนี้ในชีต Tractors');
+    var h = headerOf_(s);
+    ['year', 'yearBy', 'yearAt'].forEach(function (k) { // ชีตจากก่อน r11 ยังไม่มีคอลัมน์ปี: เติมหัวตารางต่อท้าย
+      if (h.indexOf(k) < 0) { ensureCols_(s, h.length + 1); h.push(k); s.getRange(1, h.length).setNumberFormat('@').setValue(k).setFontWeight('bold'); }
+    });
+    var at = new Date().toISOString(), who = y ? who_(by) : '';
+    [['year', y], ['yearBy', who], ['yearAt', y ? at : '']].forEach(function (x) {
+      s.getRange(row, h.indexOf(x[0]) + 1).setNumberFormat('@').setValue(x[1]);
+    });
+    var out = { key: key, year: y, yearBy: who, yearAt: y ? at : '', yearSrc: y ? 'manual' : '' };
+    if (!y) { try { var ly = legacyCount_().y[legacyNorm_(key)]; if (ly) { out.year = ly; out.yearSrc = 'legacy'; } } catch (e) { } }
+    return out;
   });
 }
 
