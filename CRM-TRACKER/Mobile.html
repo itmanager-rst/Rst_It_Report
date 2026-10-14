@@ -6,12 +6,13 @@
 <meta name="theme-color" content="#0f172a">
 <title>RST CRM Mobile</title>
 <!--
-  (r52) RST CRM Mobile — ไฟล์นี้ "ไม่มีโค้ดระบบในตัว" แต่จะโหลด index.html (เวอร์ชันคอม) ที่อยู่โฟลเดอร์เดียวกัน
+  (r53) RST CRM Mobile — ไฟล์นี้ "ไม่มีโค้ดระบบในตัว" แต่จะโหลด index.html (เวอร์ชันคอม) ที่อยู่โฟลเดอร์เดียวกัน
   มาใหม่ทุกครั้งที่เปิด แล้วเสริมหน้าตาสำหรับมือถือ (แถบเมนูล่าง, ผลค้นหาเป็นการ์ด, ปฏิทินพอดีจอ)
   => ฟีเจอร์และสิทธิ์ตรงกับเวอร์ชันคอมเสมอ อีกทีมแก้/อัป index.html เมื่อไหร่ มือถือได้ของใหม่ทันที ไม่ต้องแก้ไฟล์นี้
   ข้อตกลงกับทีมที่แก้ index.html: อย่าเปลี่ยน id ของปุ่มเมนู (nav-btn-*), หน้า (page-*), ฟังก์ชัน switchPage /
   renderTableRows / editCustomerByIndex / openHistoryModal / printRowByIndex — ถ้าเปลี่ยน ให้แจ้งเพื่อแก้ mobile layer
   ต้องวางไว้โฟลเดอร์เดียวกับ index.html บน GitHub Pages (เปิดจากไฟล์ในเครื่องตรงๆ จะโหลดไม่ได้)
+  (r53) ใบติดตามที่พิมพ์ แสดงประวัติการติดตามทุกครั้ง (ฟังก์ชัน renderPrintForm / id pf-note ห้ามเปลี่ยน)
 -->
 <style>
   html,body{margin:0;height:100%;background:#0f172a;font-family:'Prompt',system-ui,sans-serif}
@@ -128,6 +129,12 @@
             .fab-container { right: calc(50vw - 226px) !important; }
         }
         @media print { .page-nav, .m-cards, .header { display: none !important; } }
+        /* (r53) ใบติดตามที่พิมพ์: แสดงประวัติการติดตาม "ทุกครั้ง" ไม่ใช่แค่ล่าสุด */
+        .pf-fu-table { width: 100%; border-collapse: collapse; margin: 2px 0 4px; font-size: 10.5px; line-height: 1.45; display: table !important; overflow: visible !important; }
+        .pf-fu-table th, .pf-fu-table td { border: 1px solid #94a3b8; padding: 2px 5px; vertical-align: top; text-align: left; color: #000; }
+        .pf-fu-table th { background: #f1f5f9; font-weight: 600; }
+        .pf-fu-table td.pf-fu-note { white-space: pre-line; word-break: break-word; }
+        .pf-fu-table tr { page-break-inside: avoid; break-inside: avoid; }
     </script>
 <script type="text/plain" id="m-layer-js">
 /* (r52) MOBILE LAYER — ตกแต่งหน้าจอมือถือเท่านั้น ไม่เปลี่ยน logic/สิทธิ์ของเวอร์ชันคอม
@@ -211,6 +218,105 @@
         };
     }
 
+    // 4) (r53) ใบติดตามที่พิมพ์ — ผู้บริหารแจ้ง: "รายละเอียดที่ใส่มาในใบติดตาม มีแค่ที่ติดตามไว้ล่าสุด
+    //    แต่ก่อนหน้ายังไม่โผล่มาในใบที่พิมพ์" => เพิ่มตาราง "ประวัติการติดตาม" ทุกครั้ง (เก่า → ใหม่) ต่อจากแถว "ข้อมูลเดิม"
+    //    ใช้ followUpLog ชุดเดียวกับหน้าต่างไทม์ไลน์ (🕓 ติดตาม) — ไม่แก้ logic/สิทธิ์ของเวอร์ชันคอม
+    //    ถ้า index.html มีส่วนนี้เองแล้ว (มี #pf-followup-history อยู่ก่อน) จะไม่ทำซ้ำ
+    if (typeof window.renderPrintForm === 'function' && !document.getElementById('pf-followup-history')) {
+        const noteRow = document.getElementById('pf-note') && document.getElementById('pf-note').closest('.pf-row');
+        const fuBox = document.createElement('div');
+        fuBox.id = 'pf-followup-history';
+        fuBox.setAttribute('data-mobile-layer', '1');
+        if (noteRow && noteRow.parentNode) noteRow.parentNode.insertBefore(fuBox, noteRow.nextSibling);
+
+        function fuTs_(e) { return Date.parse(e.loggedAt || '') || Date.parse((e.date || '') + 'T00:00:00') || 0; }
+        function fuDate_(d) {
+            if (!d) return '-';
+            try {
+                const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
+                if (!isNaN(dt)) return dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+            } catch (e) {}
+            return String(d);
+        }
+        function renderPrintFollowups_(data) {
+            if (!fuBox.parentNode) return;
+            const logs = (Array.isArray(data && data.followUpLog) ? data.followUpLog : []).filter(function (e) { return e && (e.note || e.date); });
+            if (!logs.length) { fuBox.innerHTML = ''; return; }
+            const sorted = logs.slice().sort(function (a, b) { return fuTs_(a) - fuTs_(b); }); // เก่า → ใหม่
+            fuBox.innerHTML = '<div class="pf-row" style="margin-top:4px;"><span class="pf-section-label">ประวัติการติดตาม (ทั้งหมด ' + sorted.length + ' ครั้ง)</span></div>'
+                + '<table class="pf-fu-table"><thead><tr>'
+                + '<th style="width:26px;">#</th><th style="width:72px;">วันที่</th><th style="width:90px;">ประเภท</th><th>รายละเอียด</th><th style="width:72px;">นัดครั้งต่อไป</th><th style="width:90px;">ผู้ติดตาม</th>'
+                + '</tr></thead><tbody>'
+                + sorted.map(function (e, i) {
+                    return '<tr><td>' + (i + 1) + '</td><td>' + esc(fuDate_(e.date)) + '</td><td>' + esc(e.followupType || '-') + '</td>'
+                        + '<td class="pf-fu-note">' + esc(e.note || '-') + '</td><td>' + esc(e.nextFollowUpDate ? fuDate_(e.nextFollowUpDate) : '-') + '</td>'
+                        + '<td>' + esc(e.by || '-') + '</td></tr>';
+                }).join('')
+                + '</tbody></table>';
+        }
+        const origPrintForm = window.renderPrintForm;
+        window.renderPrintForm = function (data) {
+            try { renderPrintFollowups_(data); } catch (e) { console.error('print follow-ups:', e); }
+            return origPrintForm.apply(this, arguments);
+        };
+
+        // 4.1) (r53.1) ปุ่ม "🖨️ พิมพ์แบบฟอร์มรายล่าสุด" (หน้าเพิ่ม/แก้ไขลูกค้า) — ข้อมูลที่พิมพ์มาจากค่าในฟอร์ม
+        //      ตอนกดบันทึก (lastSavedCustomer) ซึ่ง "ไม่มี" ประวัติการติดตามเลย => ได้แค่หมายเหตุล่าสุด
+        //      แก้: ก่อนพิมพ์ ดึงประวัติการติดตามทั้งหมดของเบอร์นี้ตรงจาก Google Sheet (action getCustomerAudit —
+        //      read-only ทุก role เรียกได้, ตัวเดียวกับที่หน้าต่างไทม์ไลน์ใช้) แล้วค่อยพิมพ์
+        //      สำรอง: ถ้าดึงไม่ได้/ช้าเกิน 8 วิ ใช้ประวัติจากแถวที่เปิดแก้ไข (ถ้าเป็นเบอร์เดียวกัน) แล้วพิมพ์ต่อ
+        const digits_ = function (v) { return String(v || '').replace(/\D/g, '').replace(/^0+/, ''); };
+        let editRowLog_ = null; // { phone, log } ของลูกค้าที่เปิดแก้ไขล่าสุด
+        if (typeof window.editCustomerByIndex === 'function') {
+            const origEdit = window.editCustomerByIndex;
+            window.editCustomerByIndex = function (idx) {
+                try {
+                    const row = currentRenderedData[idx];
+                    editRowLog_ = row ? { phone: digits_(row.phone || row.phone1), log: Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [] } : null;
+                } catch (e) { editRowLog_ = null; }
+                return origEdit.apply(this, arguments);
+            };
+        }
+        if (typeof window.printLastSavedCustomer === 'function') {
+            const origPrintLast = window.printLastSavedCustomer;
+            window.printLastSavedCustomer = function () {
+                let cust = null;
+                try { cust = lastSavedCustomer; } catch (e) {}
+                if (!cust || typeof WEB_APP_URL === 'undefined') return origPrintLast.apply(this, arguments);
+                const phone = String(cust.phone || '').trim();
+                const pk = digits_(phone);
+                const data = Object.assign({}, cust);
+                if (editRowLog_ && pk && editRowLog_.phone === pk) data.followUpLog = editRowLog_.log.slice();
+                if (!pk) { renderPrintForm(data); return; }
+                const nid = (window.crmNotify && crmNotify.loading) ? crmNotify.loading('กำลังดึงประวัติการติดตามทั้งหมด...') : null;
+                let done = false;
+                const finish = function (log) {
+                    if (done) return; done = true;
+                    if (Array.isArray(log) && log.length >= (data.followUpLog || []).length) data.followUpLog = log;
+                    try { if (nid && crmNotify.success) crmNotify.success(nid, 'ดึงประวัติการติดตามแล้ว (' + ((data.followUpLog || []).length) + ' ครั้ง)', { duration: 1500 }); } catch (e) {}
+                    renderPrintForm(data);
+                };
+                const timer = setTimeout(function () { finish(null); }, 8000);
+                fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'getCustomerAudit', payload: { items: [{ key: '', phone: phone }], includeLogs: true } })
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    clearTimeout(timer);
+                    let rec = null;
+                    if (res && res.success && res.data) {
+                        rec = res.data[phone] || null;
+                        if (!rec) Object.keys(res.data).forEach(function (k) { if (!rec && digits_(k) === pk) rec = res.data[k]; });
+                    }
+                    finish(rec && rec.follow_up_log);
+                })
+                .catch(function () { clearTimeout(timer); finish(null); });
+            };
+        }
+    }
+
 })();
 </script>
 <script>
@@ -235,7 +341,10 @@ window.__mBootTimer = setTimeout(function () {
             if (html.indexOf('id="page-add"') === -1) throw new Error('ไฟล์ index.html ไม่ใช่หน้า CRM');
             // VS Code Live Server แทรกสคริปต์ live-reload ไว้ที่ "แท็กปิด body ตัวแรก" ซึ่งใน index.html อาจอยู่ในคอมเมนต์
             // ทำให้คอมเมนต์แตก ข้อความ ===== ยาวๆ หลุดออกมาดันหน้าจอให้กว้างเกินจอมือถือ — ตัดทิ้งก่อน (บน GitHub Pages ไม่มีผล)
-            html = html.replace(/<!-- Code injected by live-server -->\s*<script[\s\S]*?<\/script>/gi, '');
+            // (r53.2) ห้ามพิมพ์แท็กเปิดคอมเมนต์ HTML หรือแท็กเปิด script ตรงๆ ในสคริปต์นี้ — parser HTML จะนึกว่าเปิดคอมเมนต์/สคริปต์ซ้อน
+            // (VS Code ขึ้น error "Argument expression expected") จึงต่อสตริงด้วย '<' + '...' แทน
+            var CMT_OPEN = '<' + '!--', CMT_CLOSE = '--' + '>', SCR_OPEN = '<' + 'script', SCR_CLOSE = '<' + '/script>';
+            html = html.replace(new RegExp(CMT_OPEN + ' Code injected by live-server ' + CMT_CLOSE + '\\s*' + SCR_OPEN + '[\\s\\S]*?' + SCR_CLOSE, 'gi'), '');
             var css = document.getElementById('m-layer-css').textContent;
             var js = document.getElementById('m-layer-js').textContent;
             html = html.replace(/<meta\s+name=["']viewport["'][^>]*>/i,
@@ -243,9 +352,9 @@ window.__mBootTimer = setTimeout(function () {
             html = html.replace(/<title>[\s\S]*?<\/title>/i, '<title>RST CRM Mobile</title>');
             // ต่อ CSS/JS ของมือถือไว้ "ท้ายสุด" ของเอกสาร (ไม่อิงตำแหน่งแท็กปิด body ซึ่งอาจหายถ้าไฟล์ถูกตัดท้าย)
             // ถ้าท้ายไฟล์มีคอมเมนต์ที่เปิดค้างไว้ ให้ตัดทิ้งก่อน ไม่งั้นโค้ดที่ต่อท้ายจะกลายเป็นคอมเมนต์ไปด้วย
-            var lo = html.lastIndexOf('<!--'), lc = html.lastIndexOf('-->');
+            var lo = html.lastIndexOf(CMT_OPEN), lc = html.lastIndexOf(CMT_CLOSE);
             if (lo > lc) html = html.slice(0, lo);
-            html += '\n<style id="mobile-layer">' + css + '<\/style>\n<script id="mobile-layer-js">' + js + '<\/script>\n';
+            html += '\n<style id="mobile-layer">' + css + '<\/style>\n' + SCR_OPEN + ' id="mobile-layer-js">' + js + SCR_CLOSE + '\n';
             clearTimeout(window.__mBootTimer);
             document.open();
             document.write(html);

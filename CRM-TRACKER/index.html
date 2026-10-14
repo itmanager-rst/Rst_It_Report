@@ -234,6 +234,12 @@
         .pf-blank-line { border-bottom: 1px dotted #000; display: block; height: 17px; }
         .pf-footer { text-align: right; margin-top: 8px; }
         .pf-hr { border: none; border-top: 1px solid #94a3b8; margin: 6px 0; }
+        /* (r53) ตารางประวัติการติดตามในใบที่พิมพ์ — แสดงทุกครั้ง ไม่ใช่แค่ล่าสุด */
+        .pf-fu-table { width: 100%; border-collapse: collapse; margin: 2px 0 4px; font-size: 10.5px; line-height: 1.45; }
+        .pf-fu-table th, .pf-fu-table td { border: 1px solid #94a3b8; padding: 2px 5px; vertical-align: top; text-align: left; color: #000; }
+        .pf-fu-table th { background: #f1f5f9; font-weight: 600; }
+        .pf-fu-table td.pf-fu-note { white-space: pre-line; word-break: break-word; }
+        .pf-fu-table tr { page-break-inside: avoid; break-inside: avoid; }
         @media print {
             body * { visibility: hidden; }
             #print-form-area, #print-form-area * { visibility: visible; }
@@ -1441,6 +1447,8 @@
                 จังหวัด<span class="pf-fill" id="pf-province"></span>
             </div>
             <div class="pf-row">ข้อมูลเดิม<span class="pf-fill full" id="pf-note"></span></div>
+            <!-- (r53) ประวัติการติดตามทั้งหมด (เติมโดย renderPrintFollowups_) — Mobile.html เห็น id นี้แล้วจะไม่สร้างซ้ำ -->
+            <div id="pf-followup-history"></div>
             <hr class="pf-hr">
             <div class="pf-row"><span class="pf-section-label">สื่อการขาย</span></div>
             <div class="pf-check-list">
@@ -4286,6 +4294,7 @@
             resetFormState();
             document.getElementById('form-row-index').value = row.raw_key || row.sheetRowIndex || row.phone || '';
             editOriginalPhone = row.phone || row.phone1 || '';
+            editRowFollowUpLog_ = { phone: phoneDigits_(row.phone || row.phone1), log: Array.isArray(row.followUpLog) ? row.followUpLog.slice() : [] }; // (r53)
             document.getElementById('cust-date').value = row.date || '';
             document.getElementById('cust-appdate').value = row.booking_date || row.appdate || '';
             document.getElementById('cust-fname').value = row.firstname || '';
@@ -4503,6 +4512,7 @@
                 fillPrintField('pf-product-other', productLabel);
             }
             renderPrintFinancialSummary(data);
+            renderPrintFollowups_(data); // (r53) ประวัติการติดตามทุกครั้ง
             // (r40) แจ้ง "กำลังเตรียมแบบฟอร์ม" ให้เห็นก่อนหน้าต่างพิมพ์เปิด (window.print() หยุดหน้าเว็บจนกว่าจะปิด
             // หน้าต่างพิมพ์ จึงหน่วงสั้นๆ ให้แถบแจ้งวาดขึ้นก่อน) — แถบนี้ถูกซ่อนในงานพิมพ์ด้วย @media print
             const printNotifyId = crmNotify.loading('กำลังเตรียมแบบฟอร์มสำหรับพิมพ์...');
@@ -4514,6 +4524,31 @@
                     crmNotify.error(printNotifyId, 'เปิดหน้าต่างพิมพ์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
                 }
             }, 80);
+        }
+        // (r53) ผู้บริหารแจ้ง: "รายละเอียดที่ใส่มาในใบติดตาม มีแค่ที่ติดตามไว้ล่าสุด แต่ก่อนหน้ายังไม่โผล่มาในใบที่พิมพ์"
+        // => พิมพ์ตาราง "ประวัติการติดตาม" ทุกครั้ง (เก่า → ใหม่) จาก followUpLog ชุดเดียวกับหน้าต่างไทม์ไลน์
+        function printFollowupDate_(d) {
+            if (!d) return '-';
+            try {
+                const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
+                if (!isNaN(dt)) return dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+            } catch (e) {}
+            return String(d);
+        }
+        function renderPrintFollowups_(data) {
+            const box = document.getElementById('pf-followup-history');
+            if (!box) return;
+            const logs = (Array.isArray(data && data.followUpLog) ? data.followUpLog : []).filter(e => e && (e.note || e.date));
+            if (!logs.length) { box.innerHTML = ''; return; }
+            const ts = e => Date.parse(e.loggedAt || '') || Date.parse((e.date || '') + 'T00:00:00') || 0;
+            const sorted = logs.slice().sort((a, b) => ts(a) - ts(b));
+            box.innerHTML = `<div class="pf-row" style="margin-top:4px;"><span class="pf-section-label">ประวัติการติดตาม (ทั้งหมด ${sorted.length} ครั้ง)</span></div>` +
+                `<table class="pf-fu-table"><thead><tr><th style="width:26px;">#</th><th style="width:72px;">วันที่</th><th style="width:90px;">ประเภท</th>` +
+                `<th>รายละเอียด</th><th style="width:72px;">นัดครั้งต่อไป</th><th style="width:90px;">ผู้ติดตาม</th></tr></thead><tbody>` +
+                sorted.map((e, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(printFollowupDate_(e.date))}</td><td>${escapeHtml(e.followupType || '-')}</td>` +
+                    `<td class="pf-fu-note">${escapeHtml(e.note || '-')}</td><td>${escapeHtml(e.nextFollowUpDate ? printFollowupDate_(e.nextFollowUpDate) : '-')}</td>` +
+                    `<td>${escapeHtml(e.by || '-')}</td></tr>`).join('') +
+                `</tbody></table>`;
         }
         function renderPrintFinancialSummary(data) {
             let fin = data.financial;
@@ -4553,12 +4588,46 @@
             if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
             renderPrintForm(row);
         }
+        // (r53) ปุ่ม "พิมพ์แบบฟอร์มรายล่าสุด" — lastSavedCustomer มาจากค่าในฟอร์มตอนกดบันทึก ซึ่งไม่มีประวัติการติดตาม
+        // (กรณีแก้ไขลูกค้าเดิม / บันทึกเบอร์ซ้ำ) จึงดึงประวัติทั้งหมดของเบอร์นี้ตรงจาก Google Sheet (getCustomerAudit)
+        // ก่อนพิมพ์ — ถ้าดึงไม่ได้/เกิน 8 วิ ใช้ประวัติของแถวที่เปิดแก้ไข (editRowFollowUpLog_) แล้วพิมพ์ต่อ
+        let editRowFollowUpLog_ = null; // { phone, log } — เซ็ตใน editCustomerByIndex
+        function phoneDigits_(v) { return String(v || '').replace(/\D/g, '').replace(/^0+/, ''); }
         function printLastSavedCustomer() {
             if (!lastSavedCustomer) {
                 alert('ยังไม่มีข้อมูลลูกค้าที่บันทึกในหน้านี้ กรุณากรอกและบันทึกข้อมูลลูกค้าก่อน');
                 return;
             }
-            renderPrintForm(lastSavedCustomer);
+            const data = Object.assign({}, lastSavedCustomer);
+            const phone = String(data.phone || '').trim();
+            const pk = phoneDigits_(phone);
+            if (editRowFollowUpLog_ && pk && editRowFollowUpLog_.phone === pk) data.followUpLog = editRowFollowUpLog_.log.slice();
+            if (!pk) { renderPrintForm(data); return; }
+            const nid = crmNotify.loading('กำลังดึงประวัติการติดตามทั้งหมด...');
+            let done = false;
+            const finish = (log) => {
+                if (done) return; done = true;
+                if (Array.isArray(log) && log.length >= (data.followUpLog || []).length) data.followUpLog = log;
+                crmNotify.success(nid, `ดึงประวัติการติดตามแล้ว (${(data.followUpLog || []).length} ครั้ง)`, { duration: 1500 });
+                renderPrintForm(data);
+            };
+            const timer = setTimeout(() => finish(null), 8000);
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getCustomerAudit', payload: { items: [{ key: '', phone: phone }], includeLogs: true } })
+            })
+            .then(res => res.json())
+            .then(res => {
+                clearTimeout(timer);
+                let rec = null;
+                if (res && res.success && res.data) {
+                    rec = res.data[phone] || null;
+                    if (!rec) Object.keys(res.data).forEach(k => { if (!rec && phoneDigits_(k) === pk) rec = res.data[k]; });
+                }
+                finish(rec && rec.follow_up_log);
+            })
+            .catch(() => { clearTimeout(timer); finish(null); });
         }
         /* ===== ไทม์ไลน์การติดตามลูกค้า ===== */
         let historyModalRowIdx = null;
