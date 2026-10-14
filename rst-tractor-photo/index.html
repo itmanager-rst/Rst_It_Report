@@ -662,7 +662,7 @@ function paintMe(){ $("#whoBtn").textContent=ME||"ตั้งชื่อผู
 function askName(){ var n=prompt("ชื่อผู้ถ่ายรูป (แสดงในข้อมูลรูป)",ME); if(n==null)return false; ME=n.trim(); store("rst_photo_user",ME); paintMe(); return !!ME; }
 $("#whoBtn").onclick=askName; paintMe();
 
-var NEED_SERVER="r12"; // หน้าเว็บนี้ต้องใช้กับ code.js r12 ขึ้นไป (เครื่องอัดฟางทุกหมวด + ปีรถ)
+var NEED_SERVER="r13"; // หน้าเว็บนี้ต้องใช้กับ code.js r13 ขึ้นไป (เครื่องอัดฟางทุกหมวด + ปีรถ + เล่มทะเบียน)
 function load(){
   dbStatus("busy");
   return api("getBoot").then(function(b){
@@ -679,7 +679,7 @@ function load(){
     $("#lastImport").textContent=b.lastImport?"นำเข้าล่าสุด "+thDate(b.lastImport.at)+" ไฟล์ "+b.lastImport.fileName+" โดย "+b.lastImport.by+" มีรถในสต็อก "+b.lastImport.tractors+" คัน":"ยังไม่เคยนำเข้าไฟล์";
     $("#loading").hidden=true; banner("");
     $("#dbStat").title="เวอร์ชันเซิร์ฟเวอร์ (code.js): "+(b.version||"ไม่ทราบ");
-    if(String(b.version||"").indexOf(NEED_SERVER)!==0) banner("เซิร์ฟเวอร์ (code.js) ยังเป็นเวอร์ชัน "+(b.version||"เก่า")+" แต่หน้าเว็บต้องการ "+NEED_SERVER+" ขึ้นไป ให้วาง code.js ใหม่ใน Apps Script แล้ว Deploy เป็นเวอร์ชันใหม่ ก่อนนำเข้าไฟล์ ไม่อย่างนั้นเครื่องอัดฟางจะไม่แยกประเภท และบันทึกปีรถไม่ได้");
+    if(String(b.version||"").indexOf(NEED_SERVER)!==0) banner("เซิร์ฟเวอร์ (code.js) ยังเป็นเวอร์ชัน "+(b.version||"เก่า")+" แต่หน้าเว็บต้องการ "+NEED_SERVER+" ขึ้นไป ให้วาง code.js ใหม่ใน Apps Script แล้ว Deploy เป็นเวอร์ชันใหม่ ก่อนนำเข้าไฟล์ ไม่อย่างนั้นเครื่องอัดฟางจะไม่แยกประเภท บันทึกปีรถไม่ได้ และเล่มทะเบียนจะไม่ถูกบันทึก");
     if(!CARS.length){ go("import"); banner("ยังไม่มีข้อมูลรถ เริ่มจากนำเข้าไฟล์ สถานะสินค้าคงคลังตามหมายเลข Serial/Lot จาก Ecount"); }
     else if(!$("section.view.on")) go("cars");
     else if($("#v-dash").classList.contains("on")) renderDash();
@@ -864,7 +864,7 @@ var cur=null, PHOTOS=[];
 function openCar(k){
   var c=BYKEY[k]; if(!c)return; cur=c;
   $("#plate").innerHTML='<div class="brand">RST RUAMSINTHAIGROUP · '+esc(c.type)+' · '+esc(c.kind)+'</div><div class="model">'+esc(c.series)+(c.tag?' <span class="chip gps">'+esc(c.tag)+'</span>':'')+'</div><dl><dt>หมายเลข Serial/Lot</dt><dd>'+esc(c.serial)+'</dd><dt>รหัสสินค้า</dt><dd>'+esc(c.code||"-")+'</dd></dl>';
-  var f=[["ชื่อสถานที่",c.branch||"-"],["จุดจอด",c.spot||"-"],["จำนวนคงเหลือ",c.qty===""?"-":c.qty],["ราคาขาย",money(c.price)||"-"],["สภาพรถ",c.cond||"-"],["ชั่วโมงการทำงาน",hrs(c.hours)||"-"],
+  var f=[["ชื่อสถานที่",c.branch||"-"],["จุดจอด",c.spot||"-"],["จำนวนคงเหลือ",c.qty===""?"-":c.qty],["ราคาขาย",money(c.price)||"-"],["สภาพรถ",c.cond||"-"],["ชั่วโมงการทำงาน",hrs(c.hours)||"-"],["เล่มทะเบียน",c.reg||"-"],
     ["สถานะ",c.status==="stock"?"ในสต็อก":"ไม่อยู่ในสต็อก"+(c.outDate?" ตั้งแต่ "+thDate(c.outDate):"")],["ชื่อสินค้า",c.name]];
   $("#facts").innerHTML='<div class="fact yrfact" id="yearFact"></div>'+f.map(function(x){return'<div class="fact"><div class="l">'+esc(x[0])+'</div><div class="v">'+esc(x[1])+'</div></div>'}).join("");
   paintYear();
@@ -977,7 +977,7 @@ function openViewer(i,present){
   if(!PHOTOS.length||!cur)return;
   presenting=present; $("#viewer").classList.toggle("present",present);
   $("#vTitle").textContent=String(cur.name||cur.series).replace(/^\(.*?\)\s*/,"");
-  $("#vSub").textContent=present?[cur.kind,cur.year?"ปี "+cur.year:"",cur.tag?"มี "+cur.tag:"",hrs(cur.hours),money(cur.price)].filter(Boolean).join(" · "):cur.serial+" · "+cur.branch+(cur.spot?" · "+cur.spot:"");
+  $("#vSub").textContent=present?[cur.kind,cur.year?"ปี "+cur.year:"",cur.tag?"มี "+cur.tag:"",hrs(cur.hours),cur.reg?"เล่มทะเบียน "+cur.reg:"",money(cur.price)].filter(Boolean).join(" · "):cur.serial+" · "+cur.branch+(cur.spot?" · "+cur.spot:"");
   $("#strip").innerHTML=PHOTOS.map(function(p,j){return'<button data-j="'+j+'" aria-label="'+esc(p.label)+'"><img src="'+esc(p.thumb)+'" alt=""></button>'}).join("");
   $("#viewer").classList.add("on");
   if(present&&document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen().catch(function(){}); }
@@ -1026,9 +1026,9 @@ $("#vDel").onclick=function(){
 };
 
 /* ---------- import from Ecount (สถานะสินค้าคงคลังตามหมายเลข Serial/Lot) ---------- */
-var COLS={branch:"ชื่อสถานที่",spot:"จุดจอด",code:"รหัสสินค้า",name:"ชื่อสินค้า",serial:"หมายเลข Serial/Lot",gps:"GPS",qty:"จำนวนคงเหลือ",price:"ราคาขาย",cond:"สภาพรถ",hours:"ชั่วโมงการทำงาน"};
+var COLS={branch:"ชื่อสถานที่",spot:"จุดจอด",code:"รหัสสินค้า",name:"ชื่อสินค้า",serial:"หมายเลข Serial/Lot",gps:"GPS",qty:"จำนวนคงเหลือ",price:"ราคาขาย",cond:"สภาพรถ",hours:"ชั่วโมงการทำงาน",reg:"เล่มทะเบียน"};
 var REQUIRED=["branch","code","name","serial","qty"];
-var SHOWN=["spot","price","cond","hours"];
+var SHOWN=["spot","price","cond","hours","reg"];
 var CAR_TYPES=["รถแทรกเตอร์","รถเกี่ยวข้าว","เครื่องอัดฟาง","รถขุด","รถตู้","อื่นๆ"], TYPE_CLS={"รถแทรกเตอร์":"c-tr","รถเกี่ยวข้าว":"c-hv","เครื่องอัดฟาง":"c-bl","รถขุด":"c-ex","รถตู้":"c-vn","อื่นๆ":"c-ot"};
 function kindOf(name){ name=String(name||""); return /สาธิต/.test(name)?"รถสาธิต":/เช่า/.test(name)?"รถเช่า":/มือสอง/.test(name)?"มือสอง":"รถใหม่"; } // ตรงกับ kindOf_ ใน code.js
 var KEEP_KINDS=["มือสอง","รถสาธิต"]; // ตรงกับ KEEP_KINDS ใน code.js

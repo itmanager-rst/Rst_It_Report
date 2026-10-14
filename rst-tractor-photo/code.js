@@ -1,6 +1,9 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r12-2026-10-14-baler-any-category
+ * CODE_VERSION: r13-2026-10-14-reg-book
+ *
+ * r13: เพิ่มช่อง เล่มทะเบียน (reg) จากคอลัมน์ "เล่มทะเบียน" ในรายงาน Ecount ต่อท้ายชีต Tractors
+ *      นำเข้าไฟล์ใหม่ครั้งถัดไปจะเติมค่าให้ ไฟล์เก่าที่ไม่มีคอลัมน์นี้ยังนำเข้าได้ (ช่องจะว่าง)
  *
  * r12: เครื่องอัดฟางมือสอง / สาธิต นำเข้าได้แม้ไม่ได้อยู่ใน หมวดรถมือสอง (ใน Ecount เครื่องอัดฟางอยู่หมวดอื่น)
  *      เงื่อนไข: ชื่อมีคำว่า อัดฟาง หรือ Baler และ มือสอง หรือ สาธิต  เครื่องใหม่/เช่า ยังไม่นำเข้า
@@ -44,11 +47,11 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r12-2026-10-14-baler-any-category';
+var CODE_VERSION = 'r13-2026-10-14-reg-book';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
-  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt'],
+  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt', 'reg'],
   Photos: ['photoId', 'key', 'fileId', 'thumbId', 'label', 'cover', 'uploadedAt', 'uploadedBy'],
   ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format']
 };
@@ -347,7 +350,7 @@ function getBoot() {
 }
 
 /**
- * rows: [{branch,spot,code,name,serial,gps,qty,price,cond,hours}] ทั้งไฟล์ในครั้งเดียว (ทุกรายการ มือสอง / รถสาธิต)
+ * rows: [{branch,spot,code,name,serial,gps,qty,price,cond,hours,reg}] ทั้งไฟล์ในครั้งเดียว (ทุกรายการ มือสอง / รถสาธิต)
  * แทนยอดคงเหลือทั้งหมดด้วยไฟล์นี้ รถเดิมที่ไม่มีในไฟล์ → status out
  * Serial เดียวกันหลายแถว (เช่น โอนย้ายสาขา +1/-1) → รวมจำนวน ใช้ข้อมูลแถวบวกล่าสุด เติมช่องว่างจากแถวอื่น
  */
@@ -366,7 +369,7 @@ function importStock(rows, meta) {
       groups[key].push(r);
     });
 
-    var out = [], fresh = 0, dupRows = 0, gone = 0, FILL = ['branch', 'spot', 'code', 'price', 'cond', 'hours', 'gps'];
+    var out = [], fresh = 0, dupRows = 0, gone = 0, FILL = ['branch', 'spot', 'code', 'price', 'cond', 'hours', 'gps', 'reg'];
     order.forEach(function (key) {
       var g = groups[key], qty = 0, pick = null;
       dupRows += g.length - 1;
@@ -383,7 +386,7 @@ function importStock(rows, meta) {
         tag: (sp.tag || /gps/i.test(String(r.gps || ''))) ? 'GPS' : '',
         code: r.code, name: r.name, series: seriesOf_(r.name), type: typeOf_(r.name), kind: rowKind_(r),
         branch: r.branch, spot: r.spot, qty: String(qty), price: numStr_(r.price), cond: String(r.cond || '').trim(),
-        hours: numStr_(r.hours), status: inStock ? 'stock' : 'out',
+        hours: numStr_(r.hours), reg: String(r.reg || '').trim(), status: inStock ? 'stock' : 'out',
         firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
         outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now,
         year: prev ? prev.year : '', yearBy: prev ? prev.yearBy : '', yearAt: prev ? prev.yearAt : ''
