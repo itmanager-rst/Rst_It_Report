@@ -1,57 +1,82 @@
-# RST 3-Way Matching
+# แผนนำเข้าเพื่อลดต้นทุน — RST GROUP
 
-ระบบตรวจใบสั่งซื้อเทียบโปรโมชั่น ใบส่งสินค้า และใบกำกับภาษี สำหรับ RST GROUP
+ระบบวางแผนสั่งซื้อจากต่างประเทศเพื่อลดต้นทุนของ RST GROUP (RST ASIA PACIFIC, RUAMSINTHAI, RST ROBOTICS)
+ฐานข้อมูลเก็บใน Google Sheet และเข้าถึงผ่าน Google Apps Script Web App
 
-## โครงสร้างไฟล์
+## โครงสร้าง
 
 ```
-index.html            หน้าเว็บหลัก โหลดโมดูลตามลำดับ
-css/style.css         รูปแบบการแสดงผล
-js/                   โมดูลของระบบ (19 ไฟล์)
-gas/Code.gs           Google Apps Script สำหรับฐานข้อมูลบน Google Sheet
+apps-script/
+  Code.gs               API อ่าน/เขียน Google Sheet + เมนู RST GROUP
+  appsscript.json       ค่าโปรเจกต์ (เขตเวลา Asia/Bangkok, Web App)
+  .clasp.json.example   ตัวอย่างสำหรับ clasp (คัดลอกเป็น .clasp.json)
+dashboard/
+  index.html            หน้าแดชบอร์ด (แท็บภาพรวม รายการสินค้า ประวัติราคา สินค้านำเข้า ประวัติ RFQ แผนสั่งซื้อ ตั้งค่า)
+data/
+  (ไฟล์ข้อมูล .xlsx/.csv ไม่ขึ้น GitHub — ดู .gitignore)
 ```
 
-## โมดูลและฟังก์ชัน
+## แท็บใน Google Sheet
 
-| ไฟล์ | หน้าที่ | ฟังก์ชันหลัก |
-|---|---|---|
-| `js/01-core.js` | ค่าคงที่ ค่าเริ่มต้นของเกณฑ์ และฟังก์ชันพื้นฐาน (แปลงตัวเลข เทียบรหัส เทียบชื่อ) | `sim`, `num`, `kc`, `nk`, `isHalf`, `snap5`, `projOK`, `worst`, `memOf` |
-| `js/02-matching.js` | ตรรกะการจับคู่ทั้งหมด: อ้างอิงเอกสาร โปรโมชั่นและส่วนลด ขั้น ① ② ③ ตรวจใบกำกับ และสรุปราย PO | `aggLines`, `resolveLine`, `findDO`, `docRef`, `docRef0`, `inheritRefs`, `poIdx`, `vendorName`, `poDateFix`, `applyDC`, `step1`, `matchPO`, `docMatch`, `invLines`, `dateIn`, `tally`, `recv`, `m1of`, `step2`, `step3`, `invComp`, `invBreak`, `invChecks`, `summary`, `hubDocs`, `reCheck`, `poRefs`, `findPO`, `isInvDoc`, `refTok`, `doNoPO`, `docPO`, `linePO`, `docPOs0`, `docPOs`, `addDays`, `dueOf`, `inRange`, `invDisc`, `MONTHS`, `isRE`, `m1key`, `r1map` |
-| `js/03-doc-parser.js` | แยกข้อมูลจากข้อความของ PDF/OCR เป็นหัวเอกสารและรายการสินค้า (ตัวอ่านในเครื่อง) | `parseDocText`, `lastNum` |
-| `js/04-sample-data.js` | ข้อมูลตัวอย่างที่แสดงเมื่อยังไม่มีข้อมูลจริง | `SAMPLE` |
-| `js/05-ui-helpers.js` | ฟังก์ชันจัดรูปแบบตัวเลข วันที่ ป้ายสถานะ และข้อความแจ้งเตือน | `vN`, `$`, `esc`, `fm`, `fq`, `idOf`, `fd`, `fp`, `fdisc`, `pill`, `pz`, `brkHtml` |
-| `js/06-store.js` | ฐานข้อมูลในเบราว์เซอร์ การตั้งค่า สิทธิ์ผู้ดูแล และการซิงก์กับ Google Sheet | `refreshAdmin`, `settings`, `DATA`, `hubSet`, `pickRE`, `loadHub`, `saveLocal`, `enqueue`, `put`, `rm`, `gsPost`, `flush`, `gsLoad`, `pushAll`, `chip`, `wErr`, `init`, `saveCfg`, `hubOn`, `realEmpty`, `isDemo`, `wait` |
-| `js/07-view-core.js` | แท็บ ตัวกรอง และฟังก์ชัน render หลัก | `render`, `numTables`, `poRowsF`, `vendors`, `projects`, `months`, `mLabel`, `filt`, `tools` |
-| `js/08-view-overview.js` | ตารางสถานะทุก PO และการอนุมัติ | `vOverview`, `vPOStatus` |
-| `js/09-view-po-promo.js` | ตารางเทียบราคาหลังหักส่วนลดกับ NP_Promotion | `vPromo` |
-| `js/10-view-promo-library.js` | รายการโปรโมชั่น ส่วนลด DC / ส่วนลดพิเศษ ตาม Part Type และตารางรายการสินค้า | `vPromos`, `invVerdict`, `verdictHtml`, `poSteps` |
-| `js/11-view-delivery.js` | ปุ่มนำเข้าไฟล์ ตารางใบส่งสินค้า และผลเทียบรายบรรทัด | `upPanel`, `docTable`, `reBar`, `vDelivery`, `reState`, `reSection`, `sendRE`, `popOpen`, `popClose`, `drawPop`, `popDO`, `reBox`, `popRE`, `popPO`, `popLine`, `priceDetail`, `reFsel`, `reDocs`, `reCan`, `drvErr`, `popPOs`, `reBad` |
-| `js/12-view-invoice.js` | ตารางใบกำกับภาษี ตารางเทียบแบบเจาะลึกราย PO และผลตรวจหัวเอกสาร | `vInvoice` |
-| `js/13-view-docs.js` | หน้านำเข้า PO / โปรโมชั่น และรายการเอกสาร | `vDocs` |
-| `js/14-view-settings.js` | เกณฑ์การตรวจ Google Sheet ผู้ดูแลระบบ และการอ่านเอกสาร | `vSettings` |
-| `js/15-import-excel.js` | จับคู่คอลัมน์และนำเข้ารายงานสถานะการซื้อ / ไฟล์โปรโมชั่น | `autoMap`, `readXlsx`, `netPrice`, `promoPrice`, `importGo`, `hn`, `dstr` |
-| `js/16-doc-reader.js` | อ่าน PDF และไฟล์สแกนด้วยข้อความในไฟล์ OCR หรือ Claude API | `loadScript`, `pdfLib`, `filePages`, `ocr`, `aiRead`, `scan`, `isPdf`, `b64`, `PROMPT` |
-| `js/17-doc-editor.js` | หน้าตรวจทานใบส่งสินค้า / ใบกำกับภาษีก่อนบันทึก | `splitDocs`, `scanOpen`, `scanPick`, `scanNext`, `sqAfter`, `sqStop`, `finDoc`, `fillDiscount`, `openEditor`, `edDelVal`, `edHints`, `edMatch`, `edWarns`, `renderEd`, `edRefresh`, `edDoc`, `edTotals`, `edPreview`, `edSave`, `sqPdf`, `sqName`, `sqMore`, `sqBar`, `edDelCell` |
-| `js/18-export.js` | ส่งออก Excel และส่งรายงานไป Google Sheet | `buildWB`, `exportX`, `report`, `stamp` |
-| `js/19-app.js` | ตัวจัดการปุ่มและช่องกรอกทั้งหมด และการเริ่มทำงานของระบบ | - |
+| แท็บ | เก็บอะไร |
+|---|---|
+| PO_HISTORY | บรรทัดใบสั่งซื้อ RST ASIA PACIFIC จากไฟล์ ECOUNT |
+| ITEM_TR | ชื่อสินค้าภาษาอังกฤษ/จีน สำหรับ RFQ |
+| CATS | กลุ่มวัสดุสิ้นเปลือง ระดับความเหมาะสมนำเข้า ข้อพิจารณา |
+| IMPORTED | บรรทัดสินค้านำเข้า พร้อมราคาในประเทศที่ใช้เทียบ |
+| IMPORT_COSTS | ค่าใช้จ่ายนำเข้า (Shipping / ภาษีอากร / D/O) |
+| COST_SUMMARY | สรุปค่าใช้จ่ายนำเข้า รวม / ภาษี / ค่าบริการ (สูตร) |
+| SETTINGS | รายละเอียดบริษัทและผู้ติดต่อบนใบ RFQ |
+| PLAN | รายการในแผนสั่งซื้อต่างประเทศ + ค่าตั้งต้น (I2 เดือน, I3 ส่วนลด %, I4 ภาษา) |
+| RFQ_LOG / RFQ_ITEMS | ประวัติการขอใบเสนอราคา (หัวเอกสาร / รายการ) |
 
-## ลำดับการทำงานของข้อมูล
+ข้อมูล RUAMSINTHAI และ RST ROBOTICS อยู่ใน **RST GROUP Data Hub** (แท็บ PO_LINES) ไม่ได้ทำสำเนาไว้ใน Sheet นี้
 
-1. `15-import-excel.js` นำเข้า PO และโปรโมชั่น แล้วเก็บผ่าน `06-store.js`
-2. `16-doc-reader.js` อ่าน PDF / ไฟล์สแกน ส่งต่อให้ `17-doc-editor.js` ตรวจทานและบันทึก
-3. `06-store.js` เก็บข้อมูลในเบราว์เซอร์ และซิงก์กับ Google Sheet ผ่าน `gas/Code.gs`
-4. `02-matching.js` คำนวณผลการจับคู่ทั้ง 3 ขั้นจากข้อมูลใน store ทุกครั้งที่แสดงผล
-5. `07`–`14` แสดงผลแต่ละแท็บ และ `19-app.js` รับคำสั่งจากปุ่มและช่องกรอก
-6. `18-export.js` ส่งออก Excel และส่งรายงานไป Google Sheet
+## ติดตั้ง
 
-## การแก้ไข
+1. อัปโหลด `RST_GROUP_Import_Plan_DB.xlsx` เข้า Google Drive → เปิดไฟล์ → **ไฟล์ → บันทึกเป็น Google ชีต**
+2. ในชีตที่ได้: **ส่วนขยาย → Apps Script** → ลบโค้ดเดิม วางโค้ดจาก `apps-script/Code.gs` → บันทึก
+3. เลือกฟังก์ชัน `setup` → **เรียกใช้** → อนุญาตสิทธิ์ (ครั้งแรกครั้งเดียว)
+4. กลับไปที่ชีต รีเฟรช จะมีเมนู **RST GROUP** → **ดู API token** (เก็บไว้ อย่าแชร์)
+5. Apps Script → **การทำให้ใช้งานได้ → การทำให้ใช้งานได้รายการใหม่ → เว็บแอป**
+   - เรียกใช้ในฐานะ: ฉัน · ผู้ที่มีสิทธิ์เข้าถึง: ทุกคน
+   - คัดลอก URL ของเว็บแอป (ลงท้ายด้วย `/exec`)
 
-- แก้กฎการจับคู่หรือการคำนวณส่วนลด: `js/02-matching.js`
-- แก้หน้าจอของแท็บใด: ไฟล์ `js/08` ถึง `js/14` ของแท็บนั้น
-- แก้การอ่านเอกสาร: `js/03-doc-parser.js` และ `js/16-doc-reader.js`
-- แก้ฐานข้อมูลฝั่ง Google Sheet: `gas/Code.gs` แล้ว Deploy เวอร์ชันใหม่
-- ไฟล์ทั้งหมดใช้ตัวแปรร่วมกันแบบ global และต้องโหลดตามลำดับเลข ห้ามสลับลำดับใน `index.html`
+## ใช้งาน API
 
-## การติดตั้ง Google Sheet
+อ่าน
+```
+GET  <WEB_APP_URL>?token=<API_TOKEN>&table=PLAN
+GET  <WEB_APP_URL>?token=<API_TOKEN>&table=ALL
+```
 
-ดูขั้นตอนที่หัวไฟล์ `gas/Code.gs` หรือแท็บ "ตั้งค่า" ในหน้าเว็บ
+เขียน (POST, body เป็น JSON)
+```json
+{ "token": "<API_TOKEN>", "action": "saveRfq",
+  "rfq": { "rfq_no": "RFQ-20261015-1216", "created": "2026-10-15T05:19:38Z", "lang": "zh", "currency": "CNY",
+           "status": "ส่งแล้ว", "files": ["pdf"], "items": [{ "code": "RM00141", "name": "สกรูมิลดำ M12 x 40", "qty": 1000 }] } }
+```
+action อื่น: `append`, `upsert`, `replace`, `deleteWhere`, `setSettings`, `setPlan` (รายละเอียดในหัวไฟล์ `Code.gs`)
+
+## นำขึ้น GitHub
+
+```bash
+git init
+git add .
+git commit -m "RST GROUP import plan: Apps Script API + dashboard"
+git branch -M main
+git remote add origin https://github.com/<owner>/<repo>.git
+git push -u origin main
+```
+
+ใช้ [clasp](https://github.com/google/clasp) เพื่อส่งโค้ดจาก repo ขึ้น Apps Script:
+```bash
+npm i -g @google/clasp && clasp login
+cd apps-script && cp .clasp.json.example .clasp.json   # ใส่ scriptId
+clasp push
+```
+
+## ความปลอดภัย
+- ไม่มี token หรือข้อมูลธุรกิจใน repo — token อยู่ใน Script Properties ของ Apps Script เท่านั้น
+- ถ้า token หลุด: เมนู **RST GROUP → สร้าง API token ใหม่**
+- ตั้ง repo เป็น **Private** เพราะมีชื่อผู้ขายและโครงสร้างข้อมูลจัดซื้อ

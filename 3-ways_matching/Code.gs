@@ -1,247 +1,218 @@
 /**
- * RST 3-Way Matching — Google Apps Script (Code.gs)
- * ฐานข้อมูลและรายงานของระบบ 3-Way Matching บน Google Sheet
+ * RST GROUP — แผนนำเข้าเพื่อลดต้นทุน · Database API
  *
- * วิธีติดตั้ง
- *   1. เปิด Google Sheet > Extensions > Apps Script
- *   2. ลบโค้ดเดิม วางไฟล์นี้ทั้งหมด แล้วกด Save
- *   3. Deploy > New deployment > Web app
- *      Execute as: Me   |   Who has access: Anyone
- *   4. นำ URL ที่ลงท้ายด้วย /exec ไปวางในแท็บ "ตั้งค่า" ของหน้าเว็บ
+ * ผูกกับ Google Sheet "RST GROUP – Import Plan DB" (Extensions → Apps Script)
+ * - setup()        สร้าง/ตรวจแท็บและหัวคอลัมน์ จัดรูปแบบ และสร้าง API_TOKEN
+ * - doGet(e)       อ่านข้อมูล  ?token=...&table=PO_HISTORY  (table=ALL ได้ทุกแท็บ)
+ * - doPost(e)      เขียนข้อมูล JSON {token, action, table, rows, key, ...}
  *
- * โครงสร้างไฟล์
- *   1. CONFIG          ค่าคงที่ของระบบ
- *   2. ENTRY POINTS    doGet / doPost ที่หน้าเว็บเรียก
- *   3. DATABASE        อ่าน เขียน ลบ ข้อมูลในแท็บ DB
- *   4. REPORT          เขียนแท็บรายงานที่อ่านได้
- *   5. UTILITIES       ฟังก์ชันช่วย
- *   6. MANUAL TOOLS    ฟังก์ชันที่กด Run เองจากหน้า Apps Script
+ * action ที่รองรับ
+ *   append        เพิ่มแถวต่อท้าย                      {table, rows:[{...}]}
+ *   upsert        เพิ่ม/แก้แถวตามคอลัมน์ key            {table, key:'rfq_no', rows:[{...}]}
+ *   replace       ลบข้อมูลเดิมทั้งแท็บแล้วเขียนใหม่        {table, rows:[{...}]}
+ *   deleteWhere   ลบแถวที่ค่าในคอลัมน์ key ตรงกัน         {table, key:'rfq_no', values:['RFQ-...']}
+ *   setSettings   บันทึกค่าตั้งค่า (key/value)           {settings:{company_th:'...', ...}}
+ *   setPlan       บันทึกรายการในแผน + ค่าตั้งต้น           {codes:['RM00141',...], months:12, disc_pct:30, lang:'th', company:''}
+ *   saveRfq       บันทึก RFQ 1 ใบ (หัว + รายการ)          {rfq:{rfq_no,..., items:[{code,qty,...}]}}
  *
- * รูปแบบแท็บ DB (ห้ามแก้ด้วยมือ)
- *   คอลัมน์ A = ชุดข้อมูล (pos, dels, invs, appr, promos, promosets, meta)
- *   คอลัมน์ B = รหัสเอกสาร
- *   คอลัมน์ C = เวลาที่บันทึกล่าสุด
- *   คอลัมน์ D เป็นต้นไป = ข้อมูล JSON ตัดเป็นท่อนละไม่เกิน 45,000 ตัวอักษร
+ * หมายเหตุความปลอดภัย: ทุกคำขอต้องมี token ตรงกับ Script Property API_TOKEN
+ * อย่าเผยแพร่ token ใน GitHub (โค้ดนี้ไม่มี token ฝังไว้)
  */
 
-/* ============================================================
- * 1. CONFIG
- * ============================================================ */
-var CONFIG = {
-  DB_SHEET: 'DB',     // ชื่อแท็บฐานข้อมูล
-  CHUNK: 45000,       // ความยาวสูงสุดต่อเซลล์ (Google Sheet จำกัด 50,000)
-  META_COLS: 3,       // จำนวนคอลัมน์ก่อนถึงข้อมูล JSON
-  LOCK_MS: 25000      // เวลารอคิวเมื่อมีหลายคนบันทึกพร้อมกัน
+const TABLES = {
+  PO_HISTORY:   ['ln', 'date', 'po', 'code', 'name', 'cat', 'scope', 'qty', 'price', 'amount', 'vendor', 'project', 'company'],
+  ITEM_TR:      ['code', 'name_th', 'name_en', 'name_zh'],
+  CATS:         ['cat', 'level', 'note'],
+  IMPORTED:     ['ln', 'date', 'po', 'code', 'name', 'qty', 'price', 'amount', 'project', 'dom_price', 'dom_date', 'dom_vendor', 'diff_pct', 'saving', 'company'],
+  IMPORT_COSTS: ['ln', 'date', 'po', 'name', 'amount', 'vendor', 'type', 'group', 'company'],
+  SETTINGS:     ['key', 'value'],
+  PLAN:         ['seq', 'code', 'company', 'name', 'cat', 'added_at'],
+  RFQ_LOG:      ['rfq_no', 'created', 'lang', 'currency', 'items', 'files', 'status', 'supplier', 'note'],
+  RFQ_ITEMS:    ['rfq_no', 'line', 'code', 'name_th', 'name_doc', 'sub', 'qty', 'remark'],
 };
+const READ_ONLY_FOR_API = ['COST_SUMMARY', 'README'];
+const HEADER_BG = '#1F3A5F';
+const TZ = 'Asia/Bangkok';
 
-/* ============================================================
- * DATA HUB (อ่านอย่างเดียว)
- * อ่านแท็บ PO_LINES และ PURCHASE_LINES (ถ้าไม่มี ใช้ ECOUNT_PURCHASE) จากไฟล์ RST GROUP Data Hub เฉพาะแถวตั้งแต่วันที่เริ่ม
- * ครั้งแรกหลังเพิ่มส่วนนี้ ต้อง Deploy เวอร์ชันใหม่และอนุญาตสิทธิ์อ่าน Google Sheet อีกครั้ง
- * ============================================================ */
-function hubRead_(id, from, company) {
-  // ไม่ได้ส่งรหัสไฟล์มา: หาไฟล์ชื่อ "RST GROUP Data Hub" ใน Google Drive ของบัญชีที่ติดตั้งสคริปต์
-  if (!id) {
-    var it = DriveApp.getFilesByName('RST GROUP Data Hub');
-    if (it.hasNext()) id = it.next().getId();
-    else return { ok: false, error: 'hub: missing file id — ใส่รหัสไฟล์ Data Hub ที่แท็บตั้งค่า' };
-  }
-  var ss = SpreadsheetApp.openById(id), tz = ss.getSpreadsheetTimeZone(), tabs = {}, names = [];
-  var sheets = ss.getSheets(), hasLines = sheets.some(function (sh) { return sh.getName() === 'PURCHASE_LINES' && sh.getLastRow() > 1; });
-  sheets.forEach(function (sh) {
-    var n = sh.getName(); names.push(n);
-    // PO_LINES และ PURCHASE_LINES เป็นหลัก ECOUNT_PURCHASE อ่านเฉพาะเมื่อไม่มี PURCHASE_LINES
-    if (!(/_LINES$/i.test(n) || (n === 'ECOUNT_PURCHASE' && !hasLines)) || sh.getLastRow() < 1) return;
-    var v = sh.getDataRange().getValues(), h = v[0].map(function (x) { return String(x).trim(); });
-    var ci = h.indexOf('COMPANY'), di = ['PO_DATE', 'RECEIVE_DATE', 'DOC_DATE'].map(function (k) { return h.indexOf(k); }).filter(function (k) { return k >= 0; })[0];
-    var rows = [];
-    for (var r = 1; r < v.length; r++) {
-      var row = v[r];
-      for (var c = 0; c < row.length; c++) if (row[c] instanceof Date) row[c] = Utilities.formatDate(row[c], tz, 'yyyy-MM-dd');
-      if (row.join('') === '') continue;
-      if (company && ci >= 0 && String(row[ci]).trim() !== company) continue;
-      // ส่งเฉพาะแถวตั้งแต่วันที่เริ่ม (ลดขนาดข้อมูล) รับเข้าย้อนหลัง 3 เดือนเผื่อ PO ข้ามเดือน
-      if (from && di != null && di >= 0) { var d = String(row[di]).slice(0, 10); if (d && d < (n === 'PO_LINES' ? from : shift_(from, -92))) continue; }
-      rows.push(row);
-    }
-    tabs[n] = { headers: v[0], rows: rows };
-  });
-  return { ok: true, id: id, names: names, tabs: tabs };
+/* ---------------- menu ---------------- */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('RST GROUP')
+    .addItem('ตั้งค่าฐานข้อมูล (setup)', 'setup')
+    .addItem('จัดประเภทค่าใช้จ่ายนำเข้าใหม่', 'classifyImportCosts')
+    .addItem('ดู API token', 'showToken')
+    .addItem('สร้าง API token ใหม่', 'rotateToken')
+    .addToUi();
 }
-function shift_(iso, days) { var t = new Date(iso + 'T00:00:00Z'); if (isNaN(t)) return iso; t.setUTCDate(t.getUTCDate() + days); return t.toISOString().slice(0, 10); }
 
-/* ============================================================
- * 2. ENTRY POINTS
- * ============================================================ */
+/* ---------------- setup ---------------- */
+function setup() {
+  const ss = SpreadsheetApp.getActive();
+  Object.keys(TABLES).forEach((name) => {
+    let sh = ss.getSheetByName(name);
+    if (!sh) sh = ss.insertSheet(name);
+    const head = TABLES[name];
+    const cur = sh.getLastColumn() ? sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), head.length)).getValues()[0] : [];
+    head.forEach((h, i) => { if (cur[i] !== h) sh.getRange(1, i + 1).setValue(h); });
+    sh.getRange(1, 1, 1, head.length).setFontWeight('bold').setFontColor('#FFFFFF').setBackground(HEADER_BG);
+    sh.setFrozenRows(1);
+  });
+  classifyImportCosts();
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('API_TOKEN')) props.setProperty('API_TOKEN', Utilities.getUuid());
+  ss.toast('ตั้งค่าเสร็จแล้ว · ดู API token ที่เมนู RST GROUP → ดู API token', 'RST GROUP', 8);
+}
 
-/** GET  ?action=hub&id=<รหัสไฟล์ Data Hub>  อ่านแท็บ *_LINES ของ RST GROUP Data Hub
- *  GET  ?action=load  ส่งข้อมูลทั้งหมดกลับไปให้หน้าเว็บ
- *  GET  ?action=ping  ใช้ทดสอบว่าเชื่อมต่อได้ */
+function showToken() {
+  SpreadsheetApp.getUi().alert('API_TOKEN', PropertiesService.getScriptProperties().getProperty('API_TOKEN') || '(ยังไม่มี — รัน setup ก่อน)', SpreadsheetApp.getUi().ButtonSet.OK);
+}
+function rotateToken() {
+  PropertiesService.getScriptProperties().setProperty('API_TOKEN', Utilities.getUuid());
+  showToken();
+}
+
+/** ใส่ประเภท (type) และกลุ่ม (group) ให้แถวค่าใช้จ่ายนำเข้าจากชื่อรายการ */
+function classifyImportCosts() {
+  const sh = SpreadsheetApp.getActive().getSheetByName('IMPORT_COSTS');
+  if (!sh || sh.getLastRow() < 2) return;
+  const n = sh.getLastRow() - 1;
+  const names = sh.getRange(2, 4, n, 1).getValues();
+  const out = names.map(([nm]) => { const t = costType_(String(nm)); return [t, t === 'ภาษีอากรนำเข้า' ? 'ภาษี' : 'ค่าบริการ']; });
+  sh.getRange(2, 7, n, 2).setValues(out);
+}
+function costType_(n) {
+  if (/ภาษีอากร|อากรขาเข้า|duty/i.test(n)) return 'ภาษีอากรนำเข้า';
+  if (/D\/O|ADVAN/i.test(n)) return 'ค่า D/O';
+  if (/shipping|ชิปปิ้ง|ขนส่ง|freight/i.test(n)) return 'ค่า Shipping';
+  return 'ค่าบริการอื่น';
+}
+
+/* ---------------- web API ---------------- */
 function doGet(e) {
   try {
-    var action = (e && e.parameter && e.parameter.action) || 'load';
-    if (action === 'ping') return json_({ ok: true, time: new Date().toISOString() });
-    if (action === 'hub') return json_(hubRead_(e.parameter.id, e.parameter.from, e.parameter.company));
-    return json_({ ok: true, rows: dbReadAll_() });
+    auth_(e.parameter.token);
+    const t = String(e.parameter.table || 'ALL').toUpperCase();
+    if (t === 'ALL') {
+      const out = {};
+      Object.keys(TABLES).forEach((k) => (out[k] = readTable_(k)));
+      out.COST_SUMMARY = readSummary_();
+      return json_({ ok: true, data: out });
+    }
+    if (t === 'COST_SUMMARY') return json_({ ok: true, data: readSummary_() });
+    if (!TABLES[t]) throw new Error('unknown table: ' + t);
+    return json_({ ok: true, table: t, rows: readTable_(t) });
   } catch (err) {
-    return json_({ ok: false, error: String(err) });
+    return json_({ ok: false, error: String(err.message || err) });
   }
 }
 
-/** POST {action:'save',   rows:[{coll,id,json}], deletes:[{coll,id}]}
- *  POST {action:'report', sheets:{ชื่อแท็บ: [[แถว]]}} */
 function doPost(e) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(CONFIG.LOCK_MS);
+  const lock = LockService.getScriptLock();
   try {
-    var body = JSON.parse(e.postData.contents);
-    if (body.action === 'save') {
-      dbSave_(body.rows || [], body.deletes || []);
-      return json_({ ok: true });
-    }
-    if (body.action === 'report') {
-      reportWrite_(body.sheets || {});
-      return json_({ ok: true });
-    }
-    return json_({ ok: false, error: 'unknown action' });
+    const body = JSON.parse(e.postData && e.postData.contents || '{}');
+    auth_(body.token);
+    lock.waitLock(20000);
+    const a = body.action;
+    let res;
+    if (a === 'append') res = appendRows_(tbl_(body.table), body.rows || []);
+    else if (a === 'upsert') res = upsertRows_(tbl_(body.table), body.key, body.rows || []);
+    else if (a === 'replace') res = replaceRows_(tbl_(body.table), body.rows || []);
+    else if (a === 'deleteWhere') res = deleteWhere_(tbl_(body.table), body.key, body.values || []);
+    else if (a === 'setSettings') res = setSettings_(body.settings || {});
+    else if (a === 'setPlan') res = setPlan_(body);
+    else if (a === 'saveRfq') res = saveRfq_(body.rfq);
+    else throw new Error('unknown action: ' + a);
+    return json_({ ok: true, result: res });
   } catch (err) {
-    return json_({ ok: false, error: String(err) });
+    return json_({ ok: false, error: String(err.message || err) });
   } finally {
-    lock.releaseLock();
+    try { lock.releaseLock(); } catch (x) { /* not held */ }
   }
 }
 
-/* ============================================================
- * 3. DATABASE
- * ============================================================ */
-
-/** คืนแท็บ DB ถ้ายังไม่มีให้สร้างและตั้งรูปแบบเป็นข้อความ */
-function dbSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG.DB_SHEET);
-  if (!sheet) {
-    sheet = ss.insertSheet(CONFIG.DB_SHEET);
-    sheet.getRange('A:Z').setNumberFormat('@');
-  }
-  return sheet;
+/* ---------------- table helpers ---------------- */
+function auth_(token) {
+  const want = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+  if (!want || token !== want) throw new Error('unauthorized');
 }
-
-/** อ่านทุกแถวเป็น [{coll, id, json}] */
-function dbReadAll_() {
-  var values = dbSheet_().getDataRange().getValues();
-  var rows = [];
-  for (var i = 0; i < values.length; i++) {
-    if (!values[i][0]) continue;
-    rows.push({
-      coll: String(values[i][0]),
-      id: String(values[i][1]),
-      json: values[i].slice(CONFIG.META_COLS).join('')
-    });
-  }
-  return rows;
+function tbl_(name) {
+  const t = String(name || '').toUpperCase();
+  if (!TABLES[t] || READ_ONLY_FOR_API.includes(t)) throw new Error('table not writable: ' + name);
+  return t;
 }
-
-/** สร้างดัชนี "ชุดข้อมูล/รหัส" -> เลขแถว */
-function dbIndex_(sheet) {
-  var values = sheet.getDataRange().getValues();
-  var index = {};
-  for (var i = 0; i < values.length; i++) {
-    if (values[i][0]) index[values[i][0] + '/' + values[i][1]] = i + 1;
-  }
-  return index;
+function sheet_(name) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(name);
+  if (!sh) throw new Error('missing sheet ' + name + ' — run setup()');
+  return sh;
 }
-
-/** แปลงเอกสารหนึ่งรายการเป็นหนึ่งแถว โดยตัด JSON เป็นท่อน */
-function dbToRow_(doc) {
-  var row = [doc.coll, doc.id, new Date().toISOString()];
-  var json = String(doc.json || '');
-  for (var p = 0; p < json.length; p += CONFIG.CHUNK) row.push(json.slice(p, p + CONFIG.CHUNK));
-  return row;
+function readTable_(name) {
+  const sh = sheet_(name), head = TABLES[name], n = sh.getLastRow() - 1;
+  if (n < 1) return [];
+  return sh.getRange(2, 1, n, head.length).getValues()
+    .filter((r) => r.some((v) => v !== '' && v !== null))
+    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] instanceof Date ? Utilities.formatDate(r[i], TZ, 'yyyy-MM-dd') : r[i]])));
 }
-
-/** เขียนหนึ่งแถวลงตำแหน่งที่กำหนด */
-function dbWriteRow_(sheet, rowNumber, row) {
-  ensureColumns_(sheet, row.length);
-  sheet.getRange(rowNumber, 1, 1, row.length).setNumberFormat('@').setValues([row]);
+function toRow_(name, obj) { return TABLES[name].map((h) => (obj[h] === undefined || obj[h] === null ? '' : obj[h])); }
+function appendRows_(name, rows) {
+  if (!rows.length) return { appended: 0 };
+  const sh = sheet_(name);
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, TABLES[name].length).setValues(rows.map((r) => toRow_(name, r)));
+  return { appended: rows.length };
 }
-
-/** บันทึกและลบเอกสาร: แก้แถวเดิม > ลบแถว > ต่อท้ายแถวใหม่ */
-function dbSave_(rows, deletes) {
-  var sheet = dbSheet_();
-  var index = dbIndex_(sheet);
-  var toAppend = [];
-  var toDelete = [];
-
-  rows.forEach(function (doc) {
-    var row = dbToRow_(doc);
-    var at = index[doc.coll + '/' + doc.id];
-    if (at) {
-      sheet.getRange(at, 1, 1, sheet.getMaxColumns()).clearContent();
-      dbWriteRow_(sheet, at, row);
-    } else {
-      toAppend.push(row);
-    }
+function replaceRows_(name, rows) {
+  const sh = sheet_(name), w = TABLES[name].length;
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, w).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, w).setValues(rows.map((r) => toRow_(name, r)));
+  return { rows: rows.length };
+}
+function upsertRows_(name, key, rows) {
+  const head = TABLES[name], ki = head.indexOf(key);
+  if (ki < 0) throw new Error('bad key ' + key);
+  const sh = sheet_(name), n = Math.max(0, sh.getLastRow() - 1);
+  const keys = n ? sh.getRange(2, ki + 1, n, 1).getValues().map((r) => String(r[0])) : [];
+  let upd = 0, add = 0; const fresh = [];
+  rows.forEach((r) => {
+    const i = keys.indexOf(String(r[key]));
+    if (i >= 0) { sh.getRange(i + 2, 1, 1, head.length).setValues([toRow_(name, r)]); upd++; } else { fresh.push(r); add++; }
   });
-
-  deletes.forEach(function (doc) {
-    var at = index[doc.coll + '/' + doc.id];
-    if (at) toDelete.push(at);
-  });
-  toDelete.sort(function (a, b) { return b - a; }).forEach(function (at) { sheet.deleteRow(at); });
-
-  toAppend.forEach(function (row) { dbWriteRow_(sheet, sheet.getLastRow() + 1, row); });
+  appendRows_(name, fresh);
+  return { updated: upd, added: add };
 }
-
-/* ============================================================
- * 4. REPORT
- * ============================================================ */
-
-/** เขียนทับแท็บรายงานตามชื่อที่หน้าเว็บส่งมา (ไม่แตะแท็บ DB) */
-function reportWrite_(sheets) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  Object.keys(sheets).forEach(function (name) {
-    if (name === CONFIG.DB_SHEET) return;
-    var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
-    var rows = sheets[name] || [];
-    sheet.clearContents();
-    if (!rows.length) return;
-    var width = 1;
-    rows.forEach(function (r) { if (r.length > width) width = r.length; });
-    rows.forEach(function (r) { while (r.length < width) r.push(''); });
-    ensureColumns_(sheet, width);
-    sheet.getRange(1, 1, rows.length, width).setValues(rows);
-  });
+function deleteWhere_(name, key, values) {
+  const head = TABLES[name], ki = head.indexOf(key), sh = sheet_(name), n = sh.getLastRow() - 1;
+  if (ki < 0 || n < 1) return { deleted: 0 };
+  const set = new Set(values.map(String));
+  const col = sh.getRange(2, ki + 1, n, 1).getValues();
+  let del = 0;
+  for (let i = col.length - 1; i >= 0; i--) if (set.has(String(col[i][0]))) { sh.deleteRow(i + 2); del++; }
+  return { deleted: del };
 }
-
-/* ============================================================
- * 5. UTILITIES
- * ============================================================ */
-
-/** ตอบกลับเป็น JSON */
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+function setSettings_(obj) {
+  const cur = Object.fromEntries(readTable_('SETTINGS').map((r) => [r.key, r.value]));
+  Object.assign(cur, obj);
+  return replaceRows_('SETTINGS', Object.keys(cur).map((k) => ({ key: k, value: cur[k] })));
 }
-
-/** เพิ่มคอลัมน์ให้พอสำหรับข้อมูล */
-function ensureColumns_(sheet, needed) {
-  var have = sheet.getMaxColumns();
-  if (have < needed) sheet.insertColumnsAfter(have, needed - have);
+function setPlan_(b) {
+  const sh = sheet_('PLAN');
+  const items = Object.fromEntries(readTable_('PLAN').map((r) => [r.code, r]));
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const rows = (b.codes || []).map((c, i) => ({ seq: i + 1, code: c, company: (items[c] && items[c].company) || b.company || '', name: (items[c] && items[c].name) || '', cat: (items[c] && items[c].cat) || '', added_at: (items[c] && items[c].added_at) || today }));
+  replaceRows_('PLAN', rows);
+  if (b.months) sh.getRange('I2').setValue(b.months);
+  if (b.disc_pct) sh.getRange('I3').setValue(b.disc_pct);
+  if (b.lang) sh.getRange('I4').setValue(b.lang);
+  return { rows: rows.length };
 }
-
-/* ============================================================
- * 6. MANUAL TOOLS  (เลือกชื่อฟังก์ชันแล้วกด Run ในหน้า Apps Script)
- * ============================================================ */
-
-/** สร้างแท็บ DB ล่วงหน้า และขอสิทธิ์ครั้งแรก */
-function setup() {
-  dbSheet_();
-  Logger.log('พร้อมใช้งาน แท็บ ' + CONFIG.DB_SHEET + ' ถูกสร้างแล้ว');
+function saveRfq_(r) {
+  if (!r || !r.rfq_no) throw new Error('rfq_no required');
+  const items = r.items || [];
+  upsertRows_('RFQ_LOG', 'rfq_no', [{ ...r, items: items.length, files: Array.isArray(r.files) ? r.files.join(',') : r.files }]);
+  deleteWhere_('RFQ_ITEMS', 'rfq_no', [r.rfq_no]);
+  appendRows_('RFQ_ITEMS', items.map((it, i) => ({ rfq_no: r.rfq_no, line: i + 1, code: it.code, name_th: it.name || it.name_th, name_doc: it.name_doc, sub: it.sub, qty: it.qty, remark: it.remark })));
+  return { rfq_no: r.rfq_no, items: items.length };
 }
-
-/** นับจำนวนเอกสารในแต่ละชุดข้อมูล ดูผลที่ Execution log */
-function dbStats() {
-  var count = {};
-  dbReadAll_().forEach(function (r) { count[r.coll] = (count[r.coll] || 0) + 1; });
-  Logger.log(JSON.stringify(count));
-  return count;
+function readSummary_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName('COST_SUMMARY');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().filter((r) => r[0]).map((r) => ({ item: String(r[0]).trim(), value: r[1] }));
 }
+function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
