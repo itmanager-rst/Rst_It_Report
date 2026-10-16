@@ -18,6 +18,11 @@
     .sel-type:focus, .sel-topic:focus { box-shadow:0 0 0 .25rem rgba(255,152,0,.35); }
     .sel-topic:disabled { background:#f1f1f1; border-color:#ddd; }
     .hint { color:#dc3545; font-weight:600; }
+    .sel-wrap .btn { font-size:1.1rem; }
+    .sel-wrap .btn-type { background:#fff3e0; border-color:#ff9800; color:#b26a00; }
+    .sel-wrap .btn-type:hover { background:#ff9800; color:#fff; }
+    .sel-wrap .btn-topic { background:#fffde0; border-color:#e0d600; color:#7a7400; }
+    .sel-wrap .btn-topic:hover { background:#e0d600; color:#000; }
     table.list { font-size:1.05rem; }
     table.list thead th { font-weight:700; text-align:center; background:#f8f9fa; white-space:nowrap; }
     table.list td.code { font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
@@ -121,13 +126,21 @@
       <div class="col-12 col-md-5">
         <div class="d-flex align-items-center gap-2">
           <span class="lbl text-nowrap">ประเภท</span>
-          <select id="selType" class="form-select form-select-lg sel-type"></select>
+          <div class="input-group input-group-lg sel-wrap">
+            <select id="selType" class="form-select sel-type"></select>
+            <button class="btn btn-type d-none" id="btnDelType" title="ลบประเภทนี้ (ประเภทที่ไม่มีหัวข้อ)"><i class="bi bi-trash"></i></button>
+            <button class="btn btn-type" id="btnAddType" title="เพิ่มประเภทใหม่"><i class="bi bi-plus-lg"></i></button>
+          </div>
         </div>
       </div>
       <div class="col-12 col-md-7">
         <div class="d-flex align-items-center gap-2">
           <span class="lbl text-nowrap">เลือกหัวข้อ</span>
-          <select id="selTopic" class="form-select form-select-lg sel-topic" disabled></select>
+          <div class="input-group input-group-lg sel-wrap">
+            <select id="selTopic" class="form-select sel-topic" disabled></select>
+            <button class="btn btn-topic d-none" id="btnDelTopic" title="ลบหัวข้อนี้"><i class="bi bi-trash"></i></button>
+            <button class="btn btn-topic" id="btnAddTopic" title="เพิ่มหัวข้อในประเภทนี้" disabled><i class="bi bi-plus-lg"></i></button>
+          </div>
         </div>
       </div>
     </div>
@@ -167,9 +180,10 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="fRow"><input type="hidden" id="fOrig">
-        <div class="mb-3">
-          <label class="form-label">หัวข้อ</label>
-          <select class="form-select" id="fTopic"></select>
+        <div class="row g-2 mb-3">
+          <div class="col-12 col-sm-5"><label class="form-label">ประเภท</label><select class="form-select" id="fType"></select></div>
+          <div class="col-12 col-sm-7"><label class="form-label">หัวข้อ <span class="text-danger">*</span></label><select class="form-select" id="fTopic" required></select>
+            <div class="invalid-feedback">ประเภทนี้ยังไม่มีหัวข้อ — กด + ข้างช่อง "เลือกหัวข้อ" เพื่อเพิ่มก่อน</div></div>
         </div>
         <div class="mb-3">
           <label class="form-label">รหัส <span class="text-danger">*</span></label>
@@ -200,6 +214,41 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
         <button type="submit" class="btn btn-success" id="btnSave"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal เพิ่มประเภท / หัวข้อ -->
+<div class="modal fade" id="tpModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+    <form class="modal-content" id="tpForm" novalidate>
+      <div class="modal-header">
+        <h5 class="modal-title" id="tpTitle">เพิ่มประเภทใหม่</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="tpMode">
+        <div class="mb-3">
+          <label class="form-label">ประเภท <span class="text-danger">*</span></label>
+          <input class="form-control" id="tpType" list="typeList" required autocomplete="off" placeholder="เช่น แทรกเตอร์ KB น้ำมัน">
+          <datalist id="typeList"></datalist>
+          <div class="invalid-feedback" id="tpTypeErr">กรุณากรอกชื่อประเภท</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" id="tpTopicLbl">หัวข้อ</label>
+          <input class="form-control" id="tpTopic" autocomplete="off" placeholder="เช่น น้ำมัน 500 ชม. KB25">
+          <div class="invalid-feedback" id="tpTopicErr">กรุณากรอกชื่อหัวข้อ</div>
+          <div class="form-text" id="tpTopicHelp"></div>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="tpThenPart" checked>
+          <label class="form-check-label" for="tpThenPart">เปิดฟอร์มเพิ่มอะไหล่ในหัวข้อนี้ต่อทันที</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-success"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
       </div>
     </form>
   </div>
@@ -325,7 +374,7 @@ const COMPANY = {
 };
 
 const $ = id => document.getElementById(id);
-let PARTS = [], TOPICS = [];
+let PARTS = [], TOPICS = [], CATS = [];
 
 /* ---------- เชื่อมต่อ backend ---------- */
 const MODE = (window.google && google.script && google.script.run) ? 'gas'
@@ -351,7 +400,7 @@ async function load() {
   $('loading').classList.add('show');
   try {
     const d = await api('getAppData');
-    PARTS = d.parts || []; TOPICS = d.topics || [];
+    PARTS = d.parts || []; TOPICS = d.topics || []; CATS = d.categories || [];
     fillTypes();
     CONN.lastSync = new Date(); renderConn();
   } catch (e) { alert('โหลดข้อมูลไม่สำเร็จ: ' + (e.message || e)); }
@@ -359,7 +408,7 @@ async function load() {
 }
 
 /* ---------- Dropdown ประเภท -> หัวข้อ ---------- */
-function types() { return [...new Set(TOPICS.map(t => t.category))]; }
+function types() { return [...new Set(CATS.concat(TOPICS.map(t => t.category)))]; }
 function topicsOf(type) { return TOPICS.filter(t => t.category === type).map(t => t.topic); }
 function partsOf(topic) { return PARTS.filter(p => p.promotion === topic); }
 
@@ -373,15 +422,24 @@ function fillTypes() {
 
 function fillTopics(keep) {
   const type = $('selType').value, sel = $('selTopic');
+  $('btnAddTopic').disabled = !type;
   if (!type) {
     sel.innerHTML = '<option value="">—</option>'; sel.disabled = true;
+    $('btnDelType').classList.add('d-none');
     showList(''); hint('เลือกประเภทก่อน'); return;
   }
   const list = topicsOf(type);
-  sel.innerHTML = '<option value="">— เลือกหัวข้อ —</option>' + list.map(t => `<option>${esc(t)}</option>`).join('');
-  sel.disabled = false;
+  $('btnDelType').classList.toggle('d-none', list.length > 0);   // ลบได้เฉพาะประเภทว่าง
+  sel.innerHTML = (list.length ? '<option value="">— เลือกหัวข้อ —</option>' : '<option value="">(ยังไม่มีหัวข้อ)</option>') +
+    list.map(t => `<option>${esc(t)}</option>`).join('');
+  sel.disabled = !list.length;
   sel.value = list.includes(keep) ? keep : '';   // หัวข้อไม่ตรงประเภท -> ล้าง (ไม่ค้างแบบในชีต)
   showList(sel.value);
+  if (!list.length) hint('ประเภทนี้ยังไม่มีหัวข้อ — กดปุ่ม + ข้างช่อง "เลือกหัวข้อ" เพื่อเพิ่มหัวข้อ แล้วเพิ่มอะไหล่ได้เลย');
+}
+function selectTopic(type, topic) {
+  save('pl_type', type); save('pl_topic', topic || '');
+  fillTypes(); $('selType').value = type; fillTopics(topic || '');
 }
 
 $('selType').addEventListener('change', () => { save('pl_type', $('selType').value); save('pl_topic', ''); fillTopics(''); });
@@ -393,6 +451,7 @@ function showList(topic) {
   const rows = topic ? partsOf(topic) : [];
   $('btnPrint').disabled = !rows.length;
   $('btnAdd').disabled = !topic;
+  $('btnDelTopic').classList.toggle('d-none', !topic);
   if (!topic) {
     $('tbody').innerHTML = '<tr><td colspan="7" class="empty">เลือกประเภท และหัวข้อ เพื่อแสดงรายการอะไหล่</td></tr>';
     $('tfoot').innerHTML = ''; $('cards').innerHTML = '<div class="empty">เลือกประเภท และหัวข้อ เพื่อแสดงรายการอะไหล่</div>';
@@ -476,11 +535,19 @@ function notify(msg, ok = true) {
   $('toast').className = 'toast border-0 ' + (ok ? 'text-bg-success' : 'text-bg-danger');
   $('toastMsg').textContent = msg; toast.show();
 }
+function typeOf(topic) { const t = TOPICS.find(x => x.topic === topic); return t ? t.category : ''; }
 function fillTopicSelect(cur) {
-  const all = TOPICS.map(t => t.topic);
-  if (cur && !all.includes(cur)) all.unshift(cur);
-  $('fTopic').innerHTML = all.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  const type = typeOf(cur) || $('selType').value || types()[0] || '';
+  $('fType').innerHTML = types().map(t => `<option ${t === type ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  fillFormTopics(cur);
 }
+function fillFormTopics(cur) {
+  const list = topicsOf($('fType').value);
+  if (cur && !list.includes(cur) && !typeOf(cur)) list.unshift(cur);   // หัวข้อที่ไม่มีในชีต Topics
+  $('fTopic').innerHTML = list.length ? list.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('')
+    : '<option value="">(ประเภทนี้ยังไม่มีหัวข้อ)</option>';
+}
+$('fType').addEventListener('change', () => fillFormTopics(''));
 function openPart(p) {
   $('partForm').classList.remove('was-validated'); $('fFound').classList.add('d-none');
   $('fRow').value = p ? p.row : ''; $('fOrig').value = p ? p.partNumber : '';
@@ -533,10 +600,78 @@ async function save_(fn, data, done) {
   try {
     const res = await api(fn, data);
     PARTS = res.parts || PARTS; done(); notify(res.message);
-    fillTopics($('selTopic').value);   // รีเฟรชตาราง
+    // เพิ่ม/ย้ายอะไหล่ไปหัวข้ออื่น -> สลับไปแสดงหัวข้อนั้น
+    const t = data && data.promotion;
+    if (fn !== 'deletePart' && t && t !== $('selTopic').value && typeOf(t)) selectTopic(typeOf(t), t);
+    else fillTopics($('selTopic').value);   // รีเฟรชตาราง
   } catch (err) { notify(err.message || String(err), false); }
   finally { $('loading').classList.remove('show'); }
 }
+
+/* ---------- เพิ่ม / ลบ ประเภท และ หัวข้อ ---------- */
+const tpModal = new bootstrap.Modal($('tpModal'));
+function applyTopics(res) {
+  if (res.topics) TOPICS = res.topics;
+  if (res.categories) CATS = res.categories;
+  if (res.parts) PARTS = res.parts;
+}
+function openTp(mode) {
+  const isCat = mode === 'cat';
+  $('tpForm').classList.remove('was-validated');
+  $('tpMode').value = mode;
+  $('tpTitle').textContent = isCat ? 'เพิ่มประเภทใหม่' : 'เพิ่มหัวข้อในประเภท';
+  $('typeList').innerHTML = types().map(t => `<option value="${esc(t)}">`).join('');
+  $('tpType').value = isCat ? '' : $('selType').value;
+  $('tpType').readOnly = !isCat;
+  $('tpTopic').value = '';
+  $('tpTopic').required = !isCat;
+  $('tpTopicLbl').innerHTML = isCat ? 'หัวข้อแรก <span class="text-muted small">(ไม่บังคับ)</span>' : 'ชื่อหัวข้อ <span class="text-danger">*</span>';
+  $('tpTopicHelp').textContent = isCat ? 'ใส่หัวข้อแรกไว้เลยเพื่อเพิ่มอะไหล่ต่อได้ทันที หรือเว้นว่างแล้วเพิ่มทีหลัง' : 'ชื่อหัวข้อต้องไม่ซ้ำกับหัวข้อที่มีอยู่แล้ว';
+  tpModal.show();
+  setTimeout(() => (isCat ? $('tpType') : $('tpTopic')).focus(), 300);
+}
+$('btnAddType').addEventListener('click', () => openTp('cat'));
+$('btnAddTopic').addEventListener('click', () => { if ($('selType').value) openTp('topic'); });
+$('tpForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const isCat = $('tpMode').value === 'cat';
+  const category = $('tpType').value.trim().replace(/\s+/g, ' '), topic = $('tpTopic').value.trim().replace(/\s+/g, ' ');
+  $('tpType').setCustomValidity(isCat && types().includes(category) ? 'dup' : '');
+  $('tpTypeErr').textContent = category ? `มีประเภท "${category}" อยู่แล้ว` : 'กรุณากรอกชื่อประเภท';
+  $('tpTopic').setCustomValidity(topic && TOPICS.some(t => t.topic === topic) ? 'dup' : '');
+  $('tpTopicErr').textContent = topic ? `มีหัวข้อ "${topic}" อยู่แล้ว` : 'กรุณากรอกชื่อหัวข้อ';
+  if (!$('tpForm').checkValidity()) { $('tpForm').classList.add('was-validated'); return; }
+  const thenPart = $('tpThenPart').checked && !!topic;
+  await busy(async () => {
+    const res = topic ? await api('addTopic', { topic, category }) : await api('addCategory', { category });
+    applyTopics(res); tpModal.hide(); notify(res.message);
+    selectTopic(category, topic);
+    if (thenPart) setTimeout(() => openPart(null), 400);
+  });
+});
+$('btnDelTopic').addEventListener('click', () => {
+  const topic = $('selTopic').value, t = TOPICS.find(x => x.topic === topic);
+  if (!t) return;
+  const n = partsOf(topic).length;
+  let deleteParts = false;
+  if (n) {
+    if (!confirm(`ลบหัวข้อ "${topic}"?\n\nหัวข้อนี้มีอะไหล่ ${n} รายการ — จะถูกลบออกจากชีต Data ด้วย\n(ระบบสำรองข้อมูลอัตโนมัติวันละครั้ง กู้คืนได้จากเมนู สำรองข้อมูล)`)) return;
+    deleteParts = true;
+  } else if (!confirm(`ลบหัวข้อ "${topic}"?`)) return;
+  busy(async () => {
+    const res = await api('deleteTopic', { row: t.row, topic, deleteParts });
+    applyTopics(res); notify(res.message); selectTopic(t.category, '');
+  });
+});
+$('btnDelType').addEventListener('click', () => {
+  const category = $('selType').value;
+  if (!category || !confirm(`ลบประเภท "${category}"?`)) return;
+  busy(async () => {
+    const res = await api('deleteCategory', { category });
+    applyTopics(res); notify(res.message); save('pl_type', ''); save('pl_topic', '');
+    $('selType').value = ''; fillTypes();
+  });
+});
 
 /* ---------- สถานะการเชื่อมต่อฐานข้อมูล ---------- */
 const CONN = { state: 'checking', info: null, lastCheck: null, lastSync: null, error: '', rows: null };
@@ -628,7 +763,7 @@ $('bkRows').addEventListener('click', e => {
     if (!confirm(`กู้คืนข้อมูลทั้งหมดจากจุดสำรอง ${name}?\n\nข้อมูลปัจจุบันจะถูกแทนที่ (ระบบจะสำรองข้อมูลปัจจุบันไว้ให้ก่อนอัตโนมัติ)`)) return;
     busy(async () => {
       const r = await api('restoreBackup', { name });
-      PARTS = r.parts; TOPICS = r.topics; fillTypes(); renderBackups(r.backups);
+      PARTS = r.parts; TOPICS = r.topics; CATS = r.categories || []; fillTypes(); renderBackups(r.backups);
       CONN.lastSync = new Date(); renderConn(); notify(r.message); checkConn();
     });
   }
@@ -729,7 +864,7 @@ $('btnDoUpload').addEventListener('click', async () => {
   $('btnDoUpload').disabled = true; $('loading').classList.add('show');
   try {
     const res = await api('importParts', { mode, rows: UPLOAD.rows, topics: UPLOAD.topics });
-    PARTS = res.parts || PARTS; TOPICS = res.topics || TOPICS;
+    PARTS = res.parts || PARTS; TOPICS = res.topics || TOPICS; CATS = res.categories || CATS;
     upModal.hide(); fillTypes(); CONN.lastSync = new Date();
     notify(res.message); checkConn();
   } catch (e) { notify('อัปโหลดไม่สำเร็จ: ' + (e.message || e), false); $('btnDoUpload').disabled = false; }
@@ -744,7 +879,7 @@ $('btnExport').addEventListener('click', () => {
   for (let r = 1; r < data.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 0 })]; if (c) { c.t = 's'; c.v = String(c.v); } }
   ws['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 9 }, { wch: 8 }, { wch: 10 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Data');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['หัวข้อ', 'ประเภท']].concat(TOPICS.map(t => [t.topic, t.category]))), 'Topics');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['หัวข้อ', 'ประเภท']].concat(TOPICS.map(t => [t.topic, t.category]), CATS.filter(c => !TOPICS.some(t => t.category === c)).map(c => ['', c]))), 'Topics');
   const d = new Date(), pad = n => String(n).padStart(2, '0');
   XLSX.writeFile(wb, `ฐานข้อมูลจัดอะไหล่_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
 });
@@ -775,11 +910,17 @@ const MOCK = {
   _rows() { return this._d || (this._d = this.getAppData()); },
   addPart(d) { const D = this._rows(); D.parts.push({ ...d, row: Date.now(), price: d.price === '' ? '' : +d.price, quantity: d.quantity === '' ? '' : +d.quantity }); return { message: 'เพิ่มแล้ว (ตัวอย่าง)', parts: D.parts }; },
   updatePart(d) { const D = this._rows(), i = D.parts.findIndex(p => p.row === d.row); D.parts[i] = { ...d, price: d.price === '' ? '' : +d.price, quantity: d.quantity === '' ? '' : +d.quantity }; if (d.applyAll) D.parts.forEach(p => { if (p.partNumber === d.originalPartNumber && p.row !== d.row) Object.assign(p, { partNumber: d.partNumber, partName: d.partName, price: d.price === '' ? '' : +d.price, place: d.place }); }); return { message: 'บันทึกแล้ว (ตัวอย่าง)', parts: D.parts }; },
+  addCategory(d) { const D = this._rows(); D.categories = D.categories || []; if (D.categories.includes(d.category) || D.topics.some(t => t.category === d.category)) throw new Error('มีประเภทนี้อยู่แล้ว'); D.categories.push(d.category); return { message: 'เพิ่มประเภทแล้ว (ตัวอย่าง)', topics: D.topics, categories: this._cats() }; },
+  deleteCategory(d) { const D = this._rows(); D.categories = (D.categories || []).filter(c => c !== d.category); return { message: 'ลบประเภทแล้ว (ตัวอย่าง)', topics: D.topics, categories: this._cats() }; },
+  addTopic(d) { const D = this._rows(); if (D.topics.some(t => t.topic === d.topic)) throw new Error('มีหัวข้อนี้อยู่แล้ว'); D.topics.push({ row: Date.now(), topic: d.topic, category: d.category }); D.categories = D.categories || []; if (!D.categories.includes(d.category)) D.categories.push(d.category); return { message: 'เพิ่มหัวข้อแล้ว (ตัวอย่าง)', topics: D.topics, categories: this._cats() }; },
+  deleteTopic(d) { const D = this._rows(); D.topics = D.topics.filter(t => t.topic !== d.topic); if (d.deleteParts) D.parts = D.parts.filter(p => p.promotion !== d.topic); return { message: 'ลบหัวข้อแล้ว (ตัวอย่าง)', topics: D.topics, categories: this._cats(), parts: D.parts }; },
+  _cats() { const D = this._rows(); return [...new Set(D.topics.map(t => t.category).concat(D.categories || []))]; },
   deletePart(d) { const D = this._rows(); D.parts = D.parts.filter(p => p.row !== d.row); return { message: 'ลบแล้ว (ตัวอย่าง)', parts: D.parts }; },
   getAppData: () => MOCK._d || ({
+    categories: [],
     topics: [
-      { topic: 'น้ำมัน 1000 ชม. EF35', category: 'แทรกเตอร์ EF น้ำมัน' },
-      { topic: 'น้ำมัน 1000 ชม. YM 51', category: 'แทรกเตอร์ YM น้ำมัน' }
+      { row: 2, topic: 'น้ำมัน 1000 ชม. EF35', category: 'แทรกเตอร์ EF น้ำมัน' },
+      { row: 3, topic: 'น้ำมัน 1000 ชม. YM 51', category: 'แทรกเตอร์ YM น้ำมัน' }
     ],
     parts: [
       { row: 2, partNumber: 'YES-5EOB', partName: 'น้ำมันเครื่อง SAE #40 ยันมาร์ 5 ลิตร', price: 660, quantity: 1, place: '', promotion: 'น้ำมัน 1000 ชม. EF35' },

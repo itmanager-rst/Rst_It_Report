@@ -26,7 +26,7 @@ const UNCATEGORIZED = 'ยังไม่จัดประเภท';
 
 /* ================= Web App ================= */
 
-const CODE_VERSION = 'r08-2026-10-12-backup'; // เปลี่ยนทุกครั้งที่ Deploy เวอร์ชันใหม่
+const CODE_VERSION = 'r09-2026-10-16-category'; // เปลี่ยนทุกครั้งที่ Deploy เวอร์ชันใหม่
 
 // ฟังก์ชันที่เรียกจากหน้าเว็บภายนอก (VS Code Live Server / GitHub Pages) ได้
 const API_ACTIONS = {
@@ -37,6 +37,9 @@ const API_ACTIONS = {
   deletePart: deletePart,
   addTopic: addTopic,
   deleteTopic: deleteTopic,
+  addCategory: addCategory,
+  deleteCategory: deleteCategory,
+  getCategories: getCategories,
   ping: ping,
   importParts: importParts,
   listBackups: listBackups,
@@ -209,9 +212,27 @@ function getTopics() {
   return out;
 }
 
+/**
+ * รายชื่อประเภททั้งหมด (เรียงตามลำดับในชีต)
+ * รวมประเภทที่ยังไม่มีหัวข้อ — เก็บเป็นแถว "A ว่าง, B = ประเภท" ในชีต Topics
+ */
+function getCategories() {
+  const sh = topicSheet_();
+  const lastRow = sh.getLastRow();
+  if (lastRow < 1) return [];
+  const out = [], seen = new Set();
+  sh.getRange(1, 1, lastRow, 2).getDisplayValues().forEach(r => {
+    const t = norm_(r[0]), c = norm_(r[1]);
+    if (!c || seen.has(c)) return;
+    if (t === TOPIC_HEADERS[0] && c === TOPIC_HEADERS[1]) return; // หัวตาราง
+    seen.add(c); out.push(c);
+  });
+  return out;
+}
+
 /** ข้อมูลทั้งหมดที่หน้าเว็บต้องใช้ (เรียกครั้งเดียวตอนเปิด) */
 function getAppData() {
-  return { parts: getData(), topics: getTopics() };
+  return { parts: getData(), topics: getTopics(), categories: getCategories() };
 }
 
 /* ================= CRUD อะไหล่ (ชีต Data) ================= */
@@ -282,29 +303,100 @@ function deletePart(partId) {
 
 /* ================= จัดการหัวข้อ/ประเภท (ชีต Topics) ================= */
 
+/** ผลลัพธ์มาตรฐานหลังแก้ไขประเภท/หัวข้อ */
+function topicResult_(message, extra) {
+  return Object.assign({ ok: true, message: message, topics: getTopics(), categories: getCategories() }, extra || {});
+}
+
+/** เพิ่มประเภทใหม่ (ยังไม่มีหัวข้อ) — data = { category } */
+function addCategory(data) {
+  return withLock_(() => {
+    const category = norm_(data && data.category);
+    if (!category) throw new Error('กรุณากรอกชื่อประเภท');
+    if (getCategories().indexOf(category) >= 0) throw new Error('มีประเภท "' + category + '" อยู่แล้ว');
+    autoBackup_();
+    const sh = topicSheet_();
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 2).setValues([['', category]]);
+    SpreadsheetApp.flush();
+    return topicResult_('เพิ่มประเภท "' + category + '" เรียบร้อย');
+  });
+}
+
+/** ลบประเภท — ทำได้เฉพาะประเภทที่ไม่มีหัวข้อแล้ว — data = { category } */
+function deleteCategory(data) {
+  return withLock_(() => {
+    const category = norm_(data && data.category);
+    if (!category) throw new Error('ไม่ได้ระบุประเภท');
+    const n = getTopics().filter(t => t.category === category).length;
+    if (n) throw new Error('ประเภท "' + category + '" ยังมี ' + n + ' หัวข้อ — กรุณาลบหัวข้อออกก่อน');
+    autoBackup_();
+    const sh = topicSheet_();
+    const vals = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), 2).getDisplayValues();
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (!norm_(vals[i][0]) && norm_(vals[i][1]) === category) sh.deleteRow(i + 1);
+    }
+    SpreadsheetApp.flush();
+    return topicResult_('ลบประเภท "' + category + '" เรียบร้อย');
+  });
+}
+
+/**
+ * เพิ่มหัวข้อในประเภท — data = { topic, category }
+ * ถ้าประเภทยังไม่มี จะถูกสร้างให้อัตโนมัติ
+ * ถ้าประเภทมีแถวว่าง (สร้างจาก addCategory) จะเติมหัวข้อลงแถวนั้นแทนการเพิ่มแถวใหม่
+ */
 function addTopic(data) {
   return withLock_(() => {
     const topic = norm_(data && data.topic), category = norm_(data && data.category);
     if (!topic || !category) throw new Error('กรุณากรอกทั้งหัวข้อและประเภท');
-    if (getTopics().some(t => t.topic === topic)) throw new Error('มีหัวข้อ "' + topic + '" อยู่แล้ว');
+    if (getTopics().some(t => t.topic === topic)) throw new Error('มีหัวข้อ "' + topic + '" อยู่แล้ว (ชื่อหัวข้อต้องไม่ซ้ำกัน)');
+    autoBackup_();
     const sh = topicSheet_();
-    sh.getRange(sh.getLastRow() + 1, 1, 1, 2).setValues([[topic, category]]);
+    const last = sh.getLastRow();
+    let target = 0;
+    if (last >= 1) {
+      const vals = sh.getRange(1, 1, last, 2).getDisplayValues();
+      for (let i = 0; i < vals.length; i++) {
+        if (!norm_(vals[i][0]) && norm_(vals[i][1]) === category) { target = i + 1; break; }
+      }
+    }
+    if (target) sh.getRange(target, 1).setValue(topic);
+    else sh.getRange(last + 1, 1, 1, 2).setValues([[topic, category]]);
     SpreadsheetApp.flush();
-    return { ok: true, message: 'เพิ่มหัวข้อ "' + topic + '" เรียบร้อย', topics: getTopics() };
+    return topicResult_('เพิ่มหัวข้อ "' + topic + '" ในประเภท "' + category + '" เรียบร้อย');
   });
 }
 
-/** ลบหัวข้อออกจากชีต Topics (ไม่ลบรายการอะไหล่ในชีต Data) */
+/**
+ * ลบหัวข้อ — data = { row, topic, deleteParts }
+ * deleteParts = true -> ลบรายการอะไหล่ของหัวข้อนี้ในชีต Data ด้วย
+ * ถ้าเป็นหัวข้อสุดท้ายของประเภท จะเก็บประเภทไว้ (เป็นประเภทว่าง) ไม่ให้หายไป
+ */
 function deleteTopic(data) {
   return withLock_(() => {
     const sh = topicSheet_();
     const row = Number(data && data.row);
-    if (!row || norm_(sh.getRange(row, 1).getDisplayValue()) !== norm_(data.topic)) {
+    const topic = norm_(data && data.topic);
+    if (!row || norm_(sh.getRange(row, 1).getDisplayValue()) !== topic) {
       throw new Error('ข้อมูลหัวข้อมีการเปลี่ยนแปลง กรุณารีเฟรชแล้วลองใหม่');
     }
-    sh.deleteRow(row);
+    autoBackup_();
+    const category = norm_(sh.getRange(row, 2).getDisplayValue());
+
+    let removed = 0;
+    if (data.deleteParts) {
+      const dsh = sheet_(DATA_SHEET);
+      const rows = getData().filter(p => p.promotion === topic).map(p => p.row).sort((a, b) => b - a);
+      rows.forEach(r => dsh.deleteRow(r));
+      removed = rows.length;
+    }
+
+    const othersInCat = getTopics().some(t => t.category === category && t.row !== row);
+    if (othersInCat) sh.deleteRow(row);
+    else sh.getRange(row, 1).setValue('');   // เก็บประเภทไว้
     SpreadsheetApp.flush();
-    return { ok: true, message: 'ลบหัวข้อ "' + data.topic + '" เรียบร้อย', topics: getTopics() };
+    return topicResult_('ลบหัวข้อ "' + topic + '" เรียบร้อย' + (removed ? ' (ลบอะไหล่ ' + removed + ' รายการ)' : ''),
+      { parts: getData() });
   });
 }
 
@@ -533,7 +625,7 @@ function importParts(payload) {
     SpreadsheetApp.flush();
     const msg = 'อัปโหลดเรียบร้อย: เพิ่ม ' + added + ' แถว' + (updated ? ', อัปเดต ' + updated + ' แถว' : '') +
       (topicsAdded ? ', หัวข้อใหม่ ' + topicsAdded : '') + (backup ? ' (สำรองข้อมูลเดิมไว้แล้ว: ' + backup + ')' : '');
-    return { ok: true, message: msg, parts: getData(), topics: getTopics() };
+    return { ok: true, message: msg, parts: getData(), topics: getTopics(), categories: getCategories() };
   });
 }
 
@@ -669,7 +761,7 @@ function restoreBackup(data) {
     return {
       ok: true,
       message: 'กู้คืนจาก ' + name + ' เรียบร้อย (' + dVals.length + ' รายการ) — ข้อมูลก่อนกู้คืนสำรองไว้ที่ ' + safety.name,
-      parts: getData(), topics: getTopics(), backups: listBackups()
+      parts: getData(), topics: getTopics(), categories: getCategories(), backups: listBackups()
     };
   });
 }
