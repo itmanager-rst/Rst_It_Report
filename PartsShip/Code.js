@@ -4,6 +4,7 @@
  * ฐานข้อมูลใหม่ (Google Sheet ไฟล์ใหม่ที่สคริปต์นี้ผูกอยู่) — สร้างอัตโนมัติด้วย setupDatabase()
  *  - ชีต Data   : A=รหัส | B=ชื่อ | C=ราคา | D=จำนวน (ต่อชุด) | E=Place | F=หัวข้อ (promotion)
  *  - ชีต Topics (หรือ ชีต2 เดิม) : A=หัวข้อ/ระยะเช็ก/อาการเสีย | B=ประเภทรถ/งาน
+ *  - ชีต Catalog : A=รหัสอะไหล่ | B=ชื่ออะไหล่ (นำเข้าจาก data.xlsx — ใช้ค้นตอนเพิ่มอะไหล่ที่ไม่มีใน Data)
  *
  * ขั้นตอนใช้งาน: เลือกประเภท -> เลือกหัวข้อ -> ระบบดึงรายการอะไหล่ที่หัวข้อตรงกัน -> พิมพ์ใบจัด
  */
@@ -26,7 +27,7 @@ const UNCATEGORIZED = 'ยังไม่จัดประเภท';
 
 /* ================= Web App ================= */
 
-const CODE_VERSION = 'r09-2026-10-16-category'; // เปลี่ยนทุกครั้งที่ Deploy เวอร์ชันใหม่
+const CODE_VERSION = 'r11-2026-10-17-search'; // เปลี่ยนทุกครั้งที่ Deploy เวอร์ชันใหม่
 
 // ฟังก์ชันที่เรียกจากหน้าเว็บภายนอก (VS Code Live Server / GitHub Pages) ได้
 const API_ACTIONS = {
@@ -46,7 +47,12 @@ const API_ACTIONS = {
   createBackup: createBackup,
   restoreBackup: restoreBackup,
   deleteBackup: deleteBackup,
-  getBackupData: getBackupData
+  getBackupData: getBackupData,
+  searchCatalog: searchCatalog,
+  importCatalog: importCatalog,
+  addCatalog: addCatalog,
+  updateCatalog: updateCatalog,
+  deleteCatalog: deleteCatalog
 };
 
 function json_(obj) {
@@ -537,6 +543,7 @@ function ping() {
     spreadsheet: ss.getName(),
     rows: Math.max(0, sh.getLastRow() - 1),
     topics: getTopics().length,
+    catalog: catalogCount_(),
     serverTime: new Date().toISOString()
   };
 }
@@ -796,4 +803,187 @@ function getBackupData(data) {
   const d = bk.getRange(1, 1, last, NUM_COLS).getDisplayValues().filter(r => r.some(c => c !== ''));
   const t = bk.getRange(1, 8, last, 2).getDisplayValues().filter(r => r[0] || r[1]);
   return { name: name, data: d, topics: t };
+}
+
+/* ======================================================================
+   ฐานข้อมูลรหัส/ชื่ออะไหล่ทั้งหมด (Catalog) — นำเข้าจากไฟล์ data.xlsx
+   - ชีต "Catalog" : A=รหัสอะไหล่ | B=ชื่ออะไหล่ (~26,000 รายการ)
+   - ใช้ตอน "เพิ่มอะไหล่" แล้วรหัส/ชื่อที่พิมพ์ไม่มีในชีต Data
+     -> ค้นจาก Catalog แล้วดึงรหัส + ชื่อมาเติมให้
+   - นำเข้าได้ 2 ทาง:
+       1) หน้าเว็บ > อัปโหลดฐานข้อมูล > เลือกไฟล์ data.xlsx (ระบบตรวจจับให้อัตโนมัติ)
+       2) คัดลอกคอลัมน์ รหัสอะไหล่ | ชื่ออะไหล่ ไปวางในชีต Catalog เอง (แถว 1 = หัวตาราง)
+   ====================================================================== */
+const CATALOG_SHEET = 'Catalog';
+const CATALOG_HEADERS = ['รหัสอะไหล่', 'ชื่ออะไหล่'];
+const CATALOG_LIMIT = 30;   // จำนวนผลค้นหาสูงสุดที่ส่งกลับ
+
+function catalogSheet_(create) {
+  const ss = ss_();
+  let sh = ss.getSheetByName(CATALOG_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(CATALOG_SHEET);
+    sh.getRange(1, 1, 1, 2).setValues([CATALOG_HEADERS])
+      .setFontWeight('bold').setBackground('#6f42c1').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    sh.getRange('A:A').setNumberFormat('@');
+    sh.setColumnWidth(1, 170); sh.setColumnWidth(2, 380);
+  }
+  return sh;
+}
+
+function catalogCount_() {
+  const sh = catalogSheet_(false);
+  return sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+}
+
+/** ตัด - . / ช่องว่าง ออกจากรหัส เพื่อให้พิมพ์ "12900455810" เจอ "129004-55810" */
+function codeKey_(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/[\s\-\.\/_]/g, '');
+}
+
+/**
+ * ค้นหาใน Catalog จาก รหัส หรือ ชื่อ (พิมพ์หลายคำคั่นด้วยช่องว่างได้ — ต้องเจอครบทุกคำ)
+ * คืนค่า { total, items:[{partNumber, partName}], catalog }
+ */
+function searchCatalog(query, limit) {
+  const q = norm_(query).toLowerCase();
+  const total = catalogCount_();
+  if (!q || !total) return { total: 0, items: [], catalog: total };
+  const sh = catalogSheet_(false);
+  const vals = sh.getRange(2, 1, total, 2).getDisplayValues();
+  const qKey = codeKey_(q);
+  const words = q.split(' ').filter(Boolean);
+  const hits = [];
+  for (let i = 0; i < vals.length; i++) {
+    const code = norm_(vals[i][0]), name = norm_(vals[i][1]);
+    if (!code && !name) continue;
+    const cl = code.toLowerCase(), ck = codeKey_(code);
+    let rank = -1;
+    if (cl === q || (qKey && ck === qKey)) rank = 0;                      // รหัสตรงทุกตัว
+    else if (qKey && ck.indexOf(qKey) === 0) rank = 1;                    // รหัสขึ้นต้นด้วย
+    else if (qKey && qKey.length >= 3 && ck.indexOf(qKey) > 0) rank = 2;  // รหัสมีคำนี้
+    else {
+      const hay = (cl + ' ' + name.toLowerCase());
+      if (words.every(w => hay.indexOf(w) >= 0)) rank = 3;               // ชื่อมีครบทุกคำ
+    }
+    if (rank >= 0) hits.push({ rank: rank, row: i + 2, partNumber: code, partName: name });
+  }
+  hits.sort((a, b) => a.rank - b.rank || a.partNumber.length - b.partNumber.length);
+  return {
+    total: hits.length,
+    items: hits.slice(0, Math.min(Number(limit) || CATALOG_LIMIT, 300)).map(h => ({ row: h.row, partNumber: h.partNumber, partName: h.partName })),
+    catalog: total
+  };
+}
+
+/**
+ * นำเข้า Catalog (หน้าเว็บส่งมาเป็นชุด ๆ ละไม่เกิน ~5,000 แถว)
+ * payload = { rows:[[รหัส, ชื่อ], ...], mode:'replace'|'merge', first:true/false }
+ *  replace : ชุดแรก (first=true) ล้างชีตก่อน แล้วเขียนต่อท้าย
+ *  merge   : รหัสที่มีแล้ว -> อัปเดตชื่อ, รหัสใหม่ -> เพิ่มต่อท้าย
+ */
+function importCatalog(payload) {
+  return withLock_(() => {
+    const mode = payload && payload.mode;
+    if (['replace', 'merge'].indexOf(mode) < 0) throw new Error('โหมดนำเข้า Catalog ไม่ถูกต้อง');
+    // ทำความสะอาด + ตัดรหัสซ้ำในชุดเดียวกัน (ใช้แถวล่าสุด)
+    const map = {};
+    ((payload && payload.rows) || []).forEach(r => {
+      const code = norm_(r && r[0]), name = norm_(r && r[1]);
+      if (code && name) map[code] = name;
+    });
+    const rows = Object.keys(map).map(k => [k, map[k]]);
+
+    const sh = catalogSheet_(true);
+    if (mode === 'replace' && payload.first) {
+      const last = sh.getLastRow();
+      if (last > 1) sh.getRange(2, 1, last - 1, 2).clearContent();
+    }
+    let added = 0, updated = 0;
+    let toAppend = rows;
+    if (mode === 'merge') {
+      const last = sh.getLastRow();
+      if (last > 1) {
+        const rng = sh.getRange(2, 1, last - 1, 2);
+        const cur = rng.getDisplayValues();
+        const idx = {};
+        cur.forEach((r, i) => { idx[norm_(r[0])] = i; });
+        toAppend = [];
+        rows.forEach(r => {
+          if (r[0] in idx) { if (cur[idx[r[0]]][1] !== r[1]) { cur[idx[r[0]]][1] = r[1]; updated++; } }
+          else toAppend.push(r);
+        });
+        if (updated) sh.getRange(2, 2, cur.length, 1).setValues(cur.map(r => [r[1]]));
+      }
+    }
+    if (toAppend.length) {
+      const start = sh.getLastRow() + 1;
+      sh.getRange(start, 1, toAppend.length, 1).setNumberFormat('@');
+      sh.getRange(start, 1, toAppend.length, 2).setValues(toAppend);
+      added = toAppend.length;
+    }
+    SpreadsheetApp.flush();
+    return { ok: true, added: added, updated: updated, catalog: catalogCount_() };
+  });
+}
+
+
+/* ---------- เพิ่ม / แก้ไข / ลบ รหัสใน Catalog (จากหน้าค้นหา) ---------- */
+function cleanCatalog_(data) {
+  const code = norm_(data && data.partNumber), name = norm_(data && data.partName);
+  if (!code) throw new Error('กรุณากรอกรหัสอะไหล่');
+  if (!name) throw new Error('กรุณากรอกชื่ออะไหล่');
+  return [code, name];
+}
+/** หาแถวใน Catalog ที่มีรหัสนี้ (ยกเว้นแถว exceptRow) — คืน 0 ถ้าไม่พบ */
+function findCatalogRow_(sh, code, exceptRow) {
+  const last = sh.getLastRow();
+  if (last < 2) return 0;
+  const ids = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+  for (let i = 0; i < ids.length; i++) if (i + 2 !== exceptRow && norm_(ids[i][0]) === code) return i + 2;
+  return 0;
+}
+
+/** data = { partNumber, partName } */
+function addCatalog(data) {
+  return withLock_(() => {
+    const row = cleanCatalog_(data);
+    const sh = catalogSheet_(true);
+    const dup = findCatalogRow_(sh, row[0], 0);
+    if (dup) throw new Error('มีรหัส "' + row[0] + '" อยู่แล้ว (' + sh.getRange(dup, 2).getDisplayValue() + ')');
+    const r = sh.getLastRow() + 1;
+    sh.getRange(r, 1).setNumberFormat('@');
+    sh.getRange(r, 1, 1, 2).setValues([row]);
+    SpreadsheetApp.flush();
+    return { ok: true, message: 'เพิ่มรหัส "' + row[0] + '" ใน data.xlsx เรียบร้อย', catalog: catalogCount_() };
+  });
+}
+
+/** data = { row, originalPartNumber, partNumber, partName } */
+function updateCatalog(data) {
+  return withLock_(() => {
+    const sh = catalogSheet_(false);
+    if (!sh) throw new Error('ยังไม่มีชีต Catalog');
+    const row = resolveRow_(sh, data && data.row, norm_(data && data.originalPartNumber));
+    const vals = cleanCatalog_(data);
+    if (findCatalogRow_(sh, vals[0], row)) throw new Error('มีรหัส "' + vals[0] + '" อยู่แล้วในแถวอื่น');
+    sh.getRange(row, 1).setNumberFormat('@');
+    sh.getRange(row, 1, 1, 2).setValues([vals]);
+    SpreadsheetApp.flush();
+    return { ok: true, message: 'บันทึกรหัส "' + vals[0] + '" เรียบร้อย', catalog: catalogCount_() };
+  });
+}
+
+/** data = { row, partNumber } */
+function deleteCatalog(data) {
+  return withLock_(() => {
+    const sh = catalogSheet_(false);
+    if (!sh) throw new Error('ยังไม่มีชีต Catalog');
+    const row = resolveRow_(sh, data && data.row, norm_(data && data.partNumber));
+    const code = sh.getRange(row, 1).getDisplayValue();
+    sh.deleteRow(row);
+    SpreadsheetApp.flush();
+    return { ok: true, message: 'ลบรหัส "' + code + '" ออกจาก data.xlsx แล้ว', catalog: catalogCount_() };
+  });
 }

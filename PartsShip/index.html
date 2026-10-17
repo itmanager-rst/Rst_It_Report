@@ -50,6 +50,20 @@
     .drop { border:2px dashed #adb5bd; border-radius:.75rem; padding:1.4rem; text-align:center; cursor:pointer; background:#fafafa; }
     .drop.over { border-color:#198754; background:#e8f5ee; }
     .prev-table { font-size:.85rem; }
+    /* รายการแนะนำตอนพิมพ์รหัส/ชื่อ (ค้นจากชีต Data + Catalog/data.xlsx) */
+    .sugg-wrap { position:relative; }
+    .sugg { position:absolute; left:0; right:0; top:100%; z-index:1060; max-height:280px; overflow-y:auto; box-shadow:0 6px 18px rgba(0,0,0,.15); border-radius:.5rem; }
+    .sugg .list-group-item { cursor:pointer; padding:.45rem .7rem; }
+    .sugg .list-group-item.active, .sugg .list-group-item:hover { background:#e8f5ee; color:inherit; border-color:rgba(0,0,0,.125); }
+    .sugg .sc { font-family:ui-monospace,Consolas,monospace; font-size:.85rem; color:#555; }
+    .sugg mark { padding:0; background:#fff3a0; }
+    .srch-tbl { font-size:.95rem; }
+    .srch-tbl td.code { font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
+    .srch-tbl mark { padding:0; background:#fff3a0; }
+    .srch-card { border-bottom:1px solid #eee; padding:8px 2px; }
+    .srch-card .cd { font-family:ui-monospace,Consolas,monospace; font-size:.85rem; color:#555; }
+    #srchTabs .nav-link { font-weight:600; }
+    #loadingText { margin-top:.8rem; font-weight:600; color:#198754; }
 
     /* ---------- ใบพิมพ์ ---------- */
     .sheet { color:#000; font-size:12pt; }
@@ -109,6 +123,7 @@
           </div>
         </div>
       </div>
+      <button class="btn btn-sm btn-success" id="btnSearch" title="ค้นหา / แก้ไข / เพิ่ม / ลบ อะไหล่"><i class="bi bi-search"></i><span class="d-none d-sm-inline ms-1">ค้นหา</span></button>
       <button class="btn btn-sm btn-outline-dark" id="btnBackup" title="สำรอง / กู้คืนข้อมูล"><i class="bi bi-shield-check"></i><span class="d-none d-sm-inline ms-1">สำรองข้อมูล</span></button>
       <button class="btn btn-sm btn-primary" id="btnUpload" title="อัปโหลดฐานข้อมูล"><i class="bi bi-cloud-arrow-up"></i><span class="d-none d-sm-inline ms-1">อัปโหลดฐานข้อมูล</span></button>
     </div>
@@ -185,17 +200,20 @@
           <div class="col-12 col-sm-7"><label class="form-label">หัวข้อ <span class="text-danger">*</span></label><select class="form-select" id="fTopic" required></select>
             <div class="invalid-feedback">ประเภทนี้ยังไม่มีหัวข้อ — กด + ข้างช่อง "เลือกหัวข้อ" เพื่อเพิ่มก่อน</div></div>
         </div>
-        <div class="mb-3">
-          <label class="form-label">รหัส <span class="text-danger">*</span></label>
-          <input class="form-control" id="fCode" list="codeList" required autocomplete="off">
-          <datalist id="codeList"></datalist>
+        <div class="mb-3 sugg-wrap">
+          <label class="form-label">รหัส <span class="text-danger">*</span>
+            <span class="small text-muted fw-normal">(พิมพ์รหัสหรือชื่อเพื่อค้นหา)</span></label>
+          <input class="form-control" id="fCode" required autocomplete="off" placeholder="เช่น 129004-55810 หรือ กรองน้ำมัน">
           <div class="invalid-feedback">กรุณากรอกรหัส</div>
-          <div class="form-text text-success d-none" id="fFound"><i class="bi bi-check-circle"></i> พบรหัสนี้ในระบบ — ดึงชื่อ/ราคา/Place มาให้แล้ว</div>
+          <div class="list-group sugg d-none" id="suggCode"></div>
+          <div class="form-text text-success d-none" id="fFound"><i class="bi bi-check-circle"></i> <span id="fFoundText">พบรหัสนี้ในระบบ — ดึงชื่อ/ราคา/Place มาให้แล้ว</span></div>
+          <div class="form-text d-none" id="fSearchMsg"></div>
         </div>
-        <div class="mb-3">
+        <div class="mb-3 sugg-wrap">
           <label class="form-label">รายชื่อ <span class="text-danger">*</span></label>
-          <input class="form-control" id="fName" required>
+          <input class="form-control" id="fName" required autocomplete="off">
           <div class="invalid-feedback">กรุณากรอกชื่ออะไหล่</div>
+          <div class="list-group sugg d-none" id="suggName"></div>
         </div>
         <div class="row g-2 mb-3">
           <div class="col-4"><label class="form-label">ราคา</label><input type="number" min="0" step="0.01" class="form-control" id="fPrice" inputmode="decimal"></div>
@@ -255,6 +273,64 @@
 </div>
 
 <!-- Modal ยืนยันลบ -->
+<!-- Modal ค้นหา (Data + data.xlsx) -->
+<div class="modal fade" id="srchModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-fullscreen-md-down modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header flex-wrap gap-2">
+        <h5 class="modal-title"><i class="bi bi-search me-1"></i>ค้นหาอะไหล่</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <form class="input-group w-100" id="srchForm">
+          <input class="form-control form-control-lg" id="srchQ" autocomplete="off" placeholder="พิมพ์รหัส ชื่ออะไหล่ Place หรือหัวข้อ">
+          <button type="button" class="btn btn-outline-secondary d-none" id="srchClear" title="ล้าง"><i class="bi bi-x-lg"></i></button>
+          <button type="submit" class="btn btn-success px-3"><i class="bi bi-search"></i><span class="ms-1">ค้นหา</span></button>
+        </form>
+        <div class="d-flex flex-wrap w-100 align-items-center gap-2">
+          <ul class="nav nav-pills" id="srchTabs">
+            <li class="nav-item"><button type="button" class="nav-link active" data-tab="data">อะไหล่ในใบจัด <span class="badge text-bg-light" id="cntData">0</span></button></li>
+            <li class="nav-item"><button type="button" class="nav-link" data-tab="catalog">รหัสอะไหล่ (data.xlsx) <span class="badge text-bg-light" id="cntCat">-</span></button></li>
+          </ul>
+          <button type="button" class="btn btn-warning btn-sm fw-semibold ms-auto" id="srchAdd"><i class="bi bi-plus-lg me-1"></i><span id="srchAddText">เพิ่มอะไหล่</span></button>
+        </div>
+      </div>
+      <div class="modal-body pt-2">
+        <div id="srchInfo" class="small text-muted mb-2"></div>
+        <div id="srchResult"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal เพิ่ม/แก้ไข รหัสใน data.xlsx (Catalog) -->
+<div class="modal fade" id="catModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+    <form class="modal-content" id="catForm" novalidate>
+      <div class="modal-header">
+        <h5 class="modal-title" id="catTitle">เพิ่มรหัสอะไหล่</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cRow"><input type="hidden" id="cOrig">
+        <div class="mb-3">
+          <label class="form-label">รหัสอะไหล่ <span class="text-danger">*</span></label>
+          <input class="form-control" id="cCode" required autocomplete="off">
+          <div class="invalid-feedback">กรุณากรอกรหัส</div>
+        </div>
+        <div class="mb-1">
+          <label class="form-label">ชื่ออะไหล่ <span class="text-danger">*</span></label>
+          <input class="form-control" id="cName" required autocomplete="off">
+          <div class="invalid-feedback">กรุณากรอกชื่ออะไหล่</div>
+        </div>
+        <div class="small text-muted">* แก้ไขที่นี่มีผลกับชีต Catalog (ใช้ค้นตอนเพิ่มอะไหล่) — ไม่เปลี่ยนรายการในใบจัด</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-success"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="modal fade" id="delModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-sm">
     <div class="modal-content">
@@ -325,16 +401,33 @@
           <i class="bi bi-file-earmark-spreadsheet fs-1 text-success"></i>
           <div class="fw-semibold">เลือกไฟล์ Excel / CSV หรือลากไฟล์มาวางที่นี่</div>
           <div class="small text-muted">คอลัมน์: รหัส | ชื่อ | ราคา | จำนวน | Place | promotion (หัวข้อ) — ถ้ามีชีต "ชีต2" หรือ "Topics" จะนำเข้าหัวข้อ/ประเภทด้วย</div>
+          <div class="small text-muted mt-1"><i class="bi bi-journal-text"></i> หรือไฟล์ <b>data.xlsx</b> (รหัสอะไหล่ | ชื่ออะไหล่) — นำเข้าเป็น <b>ฐานข้อมูลรหัสอะไหล่ (Catalog)</b> ไว้ค้นตอนเพิ่มอะไหล่</div>
         </label>
         <div class="text-end mt-2">
           <button class="btn btn-link btn-sm p-0" id="btnExport"><i class="bi bi-download"></i> ดาวน์โหลดฐานข้อมูลปัจจุบัน (.xlsx) ไว้แก้ไขแล้วอัปโหลดกลับ</button>
         </div>
 
         <div id="upPreview" class="d-none mt-3">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span class="fw-semibold">นำเข้าเป็น</span>
+            <select class="form-select form-select-sm" id="upKind" style="width:auto">
+              <option value="parts">รายการอะไหล่ตามหัวข้อ (ชีต Data)</option>
+              <option value="catalog">ฐานข้อมูลรหัสอะไหล่ทั้งหมด (Catalog / data.xlsx)</option>
+            </select>
+          </div>
           <div class="alert alert-light border py-2 mb-2" id="upSummary"></div>
           <div class="table-responsive mb-3" style="max-height:220px">
-            <table class="table table-sm table-bordered prev-table mb-0"><thead class="table-light"><tr><th>รหัส</th><th>ชื่อ</th><th>ราคา</th><th>จำนวน</th><th>Place</th><th>หัวข้อ</th></tr></thead><tbody id="upRows"></tbody></table>
+            <table class="table table-sm table-bordered prev-table mb-0"><thead class="table-light" id="upHead"></thead><tbody id="upRows"></tbody></table>
           </div>
+          <div id="upCatModes" class="d-none">
+            <div class="fw-semibold mb-1">วิธีนำเข้า Catalog</div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="catMode" id="cMerge" value="merge" checked>
+              <label class="form-check-label" for="cMerge"><b>เพิ่ม + อัปเดตชื่อ</b> (แนะนำ) — รหัสที่มีแล้วจะอัปเดตชื่อ รหัสใหม่จะเพิ่มต่อท้าย</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="catMode" id="cReplace" value="replace">
+              <label class="form-check-label text-danger" for="cReplace"><b>แทนที่ทั้งหมด</b> — ล้างชีต Catalog แล้วใช้ไฟล์นี้แทน</label></div>
+            <div class="small text-muted mt-1">* Catalog ใช้สำหรับค้นหารหัส/ชื่อตอนเพิ่มอะไหล่เท่านั้น ไม่กระทบรายการในใบจัด</div>
+          </div>
+          <div id="upPartModes">
           <div class="fw-semibold mb-1">วิธีนำเข้า</div>
           <div class="form-check"><input class="form-check-input" type="radio" name="upMode" id="mUpsert" value="upsert" checked>
             <label class="form-check-label" for="mUpsert"><b>อัปเดต + เพิ่มใหม่</b> (แนะนำ) — รหัสและหัวข้อตรงกับที่มี จะอัปเดตราคา/Place/จำนวน ที่ไม่ตรงจะเพิ่มใหม่</label></div>
@@ -342,6 +435,7 @@
             <label class="form-check-label" for="mAppend"><b>เพิ่มต่อท้าย</b> — เพิ่มทุกแถวในไฟล์ต่อท้ายข้อมูลเดิม</label></div>
           <div class="form-check"><input class="form-check-input" type="radio" name="upMode" id="mReplace" value="replace">
             <label class="form-check-label text-danger" for="mReplace"><b>แทนที่ทั้งหมด</b> — ลบข้อมูลเดิมแล้วใช้ไฟล์นี้แทน (ระบบสำรองชีตเดิมไว้ให้อัตโนมัติ)</label></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -352,7 +446,7 @@
   </div>
 </div>
 
-<div class="loading" id="loading"><div class="spinner-border text-success" style="width:3rem;height:3rem"></div></div>
+<div class="loading flex-column" id="loading"><div class="spinner-border text-success" style="width:3rem;height:3rem"></div><div id="loadingText"></div></div>
 <div id="printArea"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -555,7 +649,7 @@ function openPart(p) {
   fillTopicSelect(p ? p.promotion : $('selTopic').value);
   $('fCode').value = p ? p.partNumber : ''; $('fName').value = p ? p.partName : '';
   $('fPrice').value = p ? p.price : ''; $('fQty').value = p ? p.quantity : 1; $('fPlace').value = p ? p.place : '';
-  $('codeList').innerHTML = [...new Set(PARTS.map(x => x.partNumber))].map(c => `<option value="${esc(c)}">`).join('');
+  hideSugg(); $('fSearchMsg').classList.add('d-none');
   // อะไหล่รหัสเดียวกันในหัวข้ออื่น
   const same = p ? PARTS.filter(x => x.partNumber === p.partNumber && x.row !== p.row) : [];
   $('allBox').classList.toggle('d-none', !same.length);
@@ -564,13 +658,121 @@ function openPart(p) {
   partModal.show();
   if (!p) setTimeout(() => $('fCode').focus(), 300);
 }
-// พิมพ์รหัสที่มีอยู่แล้ว -> ดึงข้อมูลมาให้ (ตอนเพิ่ม)
-$('fCode').addEventListener('input', () => {
-  if ($('fRow').value) return;
-  const p = PARTS.find(x => x.partNumber === $('fCode').value.trim());
-  $('fFound').classList.toggle('d-none', !p);
-  if (p) { $('fName').value = p.partName; $('fPrice').value = p.price; $('fPlace').value = p.place; }
+/* ---------- ค้นหารหัส/ชื่อตอนเพิ่มอะไหล่ ----------
+   1) ค้นในชีต Data ก่อน (ข้อมูลในเครื่อง — มีราคา/Place)
+   2) ถ้าไม่เจอ/เจอน้อย -> ค้นต่อใน Catalog (data.xlsx ~26,000 รายการ) ที่ฝั่งเซิร์ฟเวอร์ */
+const SUGG = { box: null, items: [], idx: -1, seq: 0, timer: 0, cache: {} };
+const ckey = s => String(s ?? '').toLowerCase().replace(/[\s\-\.\/_]/g, '');
+function hideSugg() {
+  ['suggCode', 'suggName'].forEach(id => $(id).classList.add('d-none'));
+  SUGG.box = null; SUGG.items = []; SUGG.idx = -1;
+}
+function hl(text, q) {
+  const t = esc(text); if (!q) return t;
+  const words = q.toLowerCase().split(/\s+/).filter(w => w.length > 0).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return words.length ? t.replace(new RegExp('(' + words.join('|') + ')', 'gi'), '<mark>$1</mark>') : t;
+}
+function localMatches(q) {
+  const ql = q.toLowerCase(), qk = ckey(q), words = ql.split(/\s+/).filter(Boolean), seen = new Set(), out = [];
+  for (const p of PARTS) {
+    if (seen.has(p.partNumber)) continue;
+    const hay = (p.partNumber + ' ' + p.partName).toLowerCase();
+    if ((qk && ckey(p.partNumber).includes(qk)) || words.every(w => hay.includes(w))) {
+      seen.add(p.partNumber); out.push({ ...p, src: 'data' });
+      if (out.length >= 8) break;
+    }
+  }
+  return out;
+}
+function renderSugg(boxId, q, local, cat, loadingCat) {
+  const items = local.concat((cat ? cat.items : []).filter(c => !local.some(l => l.partNumber === c.partNumber)).map(c => ({ ...c, src: 'catalog' })));
+  SUGG.box = boxId; SUGG.items = items; SUGG.idx = -1;
+  const box = $(boxId);
+  let html = items.map((p, i) => `<button type="button" class="list-group-item list-group-item-action" data-sugg="${i}">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="sc">${hl(p.partNumber, q)}</span>
+        ${p.src === 'data' ? `<span class="badge text-bg-success">ในระบบ${p.place ? ' · ' + esc(p.place) : ''}</span>` : '<span class="badge text-bg-secondary">data.xlsx</span>'}
+      </div>
+      <div>${hl(p.partName, q)}${p.src === 'data' && num(p.price) ? ` <span class="text-muted small">· ${num(p.price)} ฿</span>` : ''}</div>
+    </button>`).join('');
+  if (loadingCat) html += '<div class="list-group-item text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังค้นใน data.xlsx…</div>';
+  else if (cat && cat.total > cat.items.length) html += `<div class="list-group-item text-muted small">แสดง ${cat.items.length} จาก ${cat.total.toLocaleString()} รายการ — พิมพ์เพิ่มให้แคบลง</div>`;
+  box.innerHTML = html;
+  box.classList.toggle('d-none', !html);
+  ['suggCode', 'suggName'].filter(id => id !== boxId).forEach(id => $(id).classList.add('d-none'));
+}
+function setSearchMsg(html, cls) {
+  const m = $('fSearchMsg');
+  m.className = 'form-text ' + (cls || 'text-muted'); m.innerHTML = html; m.classList.toggle('d-none', !html);
+}
+function lookup(boxId, raw) {
+  const q = raw.trim().replace(/\s+/g, ' ');
+  clearTimeout(SUGG.timer);
+  const my = ++SUGG.seq;                         // คำตอบเก่าที่มาช้าจะถูกทิ้ง
+  if (q.length < 2) { hideSugg(); setSearchMsg(''); return; }
+  const local = localMatches(q);
+  const key = q.toLowerCase();
+  if (SUGG.cache[key]) { renderSugg(boxId, q, local, SUGG.cache[key]); afterSearch(q, local, SUGG.cache[key]); return; }
+  renderSugg(boxId, q, local, null, true);
+  SUGG.timer = setTimeout(async () => {
+    try {
+      const cat = await api('searchCatalog', q);
+      SUGG.cache[key] = cat;
+      if (my !== SUGG.seq) return;              // มีการพิมพ์ใหม่แล้ว
+      renderSugg(boxId, q, local, cat); afterSearch(q, local, cat);
+    } catch (e) {
+      if (my !== SUGG.seq) return;
+      renderSugg(boxId, q, local, null);
+      setSearchMsg('<i class="bi bi-exclamation-triangle"></i> ค้นใน data.xlsx ไม่สำเร็จ: ' + esc(e.message || e) +
+        ' <span class="text-muted">(วาง Code.gs ล่าสุดแล้ว Deploy New version)</span>', 'text-danger');
+    }
+  }, 350);
+}
+function afterSearch(q, local, cat) {
+  if (cat && cat.catalog === 0) { setSearchMsg('<i class="bi bi-info-circle"></i> ยังไม่ได้นำเข้า data.xlsx — กด "อัปโหลดฐานข้อมูล" แล้วเลือกไฟล์ data.xlsx', 'text-warning-emphasis'); return; }
+  if (!local.length && cat && cat.total) setSearchMsg(`<i class="bi bi-search"></i> ไม่พบในรายการอะไหล่ — พบใน data.xlsx ${cat.total.toLocaleString()} รายการ เลือกจากรายการด้านบนได้เลย`, 'text-primary');
+  else if (!local.length && cat && !cat.total) setSearchMsg('<i class="bi bi-x-circle"></i> ไม่พบทั้งในระบบและ data.xlsx — กรอกรหัสและชื่อเองได้เลย', 'text-danger');
+  else setSearchMsg('');
+}
+function pickSugg(i) {
+  const p = SUGG.items[i]; if (!p) return;
+  $('fCode').value = p.partNumber; $('fName').value = p.partName;
+  if (p.src === 'data') { $('fPrice').value = p.price; $('fPlace').value = p.place; }
+  $('fFoundText').textContent = p.src === 'data' ? 'พบรหัสนี้ในระบบ — ดึงชื่อ/ราคา/Place มาให้แล้ว'
+    : 'ดึงรหัส/ชื่อจาก data.xlsx แล้ว — กรอกราคา จำนวน และ Place เพิ่มได้';
+  $('fFound').classList.remove('d-none'); setSearchMsg('');
+  hideSugg();
+  (p.src === 'data' ? $('fQty') : $('fPrice')).focus();
+}
+function moveSugg(d) {
+  const box = SUGG.box && $(SUGG.box); if (!box || !SUGG.items.length) return;
+  SUGG.idx = (SUGG.idx + d + SUGG.items.length) % SUGG.items.length;
+  box.querySelectorAll('[data-sugg]').forEach((b, i) => b.classList.toggle('active', i === SUGG.idx));
+  const el = box.querySelector(`[data-sugg="${SUGG.idx}"]`); if (el) el.scrollIntoView({ block: 'nearest' });
+}
+[['fCode', 'suggCode'], ['fName', 'suggName']].forEach(([inp, box]) => {
+  $(inp).addEventListener('input', () => {
+    if ($('fRow').value) return;                // แก้ไขรายการเดิม -> ไม่ต้องค้น
+    $('fFound').classList.add('d-none');
+    if (inp === 'fCode') {                      // รหัสตรงกับในระบบ -> เติมให้ทันที
+      const p = PARTS.find(x => x.partNumber === $('fCode').value.trim());
+      if (p) { $('fName').value = p.partName; $('fPrice').value = p.price; $('fPlace').value = p.place; $('fFoundText').textContent = 'พบรหัสนี้ในระบบ — ดึงชื่อ/ราคา/Place มาให้แล้ว'; $('fFound').classList.remove('d-none'); }
+    }
+    lookup(box, $(inp).value);
+  });
+  $(inp).addEventListener('keydown', e => {
+    if ($(box).classList.contains('d-none')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSugg(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSugg(-1); }
+    else if (e.key === 'Enter' && SUGG.idx >= 0) { e.preventDefault(); pickSugg(SUGG.idx); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); hideSugg(); }
+  });
+  $(inp).addEventListener('blur', () => setTimeout(() => { if (SUGG.box === box) hideSugg(); }, 200));
+  $(box).addEventListener('mousedown', e => {   // mousedown: ทำงานก่อน blur
+    const b = e.target.closest('[data-sugg]'); if (b) { e.preventDefault(); pickSugg(+b.dataset.sugg); }
+  });
 });
+$('partModal').addEventListener('hidden.bs.modal', hideSugg);
 $('btnAdd').addEventListener('click', () => openPart(null));
 document.addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
@@ -593,7 +795,10 @@ $('partForm').addEventListener('submit', async e => {
   };
   await save_(data.row ? 'updatePart' : 'addPart', data, () => partModal.hide());
 });
-$('btnDel').addEventListener('click', () => save_('deletePart', pendingDel, () => delModal.hide()));
+$('btnDel').addEventListener('click', () => {
+  if (pendingDel && pendingDel.kind === 'catalog') catSave_('deleteCatalog', pendingDel, () => delModal.hide());
+  else save_('deletePart', pendingDel, () => delModal.hide());
+});
 
 async function save_(fn, data, done) {
   $('loading').classList.add('show');
@@ -673,6 +878,194 @@ $('btnDelType').addEventListener('click', () => {
   });
 });
 
+/* ======================================================================
+   ค้นหา (ปุ่ม "ค้นหา" มุมขวาบน)
+   - แท็บ "อะไหล่ในใบจัด"  : ค้นในชีต Data ทุกหัวข้อ -> แก้ไข / ลบ / ไปที่หัวข้อ / เพิ่ม
+   - แท็บ "รหัสอะไหล่ (data.xlsx)" : ค้นในชีต Catalog -> แก้ไข / ลบ / เพิ่ม / ใช้เพิ่มในใบจัด
+   ====================================================================== */
+const srchModal = new bootstrap.Modal($('srchModal'));
+const catModal = new bootstrap.Modal($('catModal'));
+const SR = { tab: 'data', cat: null, catQ: null, seq: 0, timer: 0, cache: {}, back: false };
+const SR_MAX = 200;
+
+function matchPart(p, q) {
+  const qk = ckey(q), words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = [p.partNumber, p.partName, p.place, p.promotion, typeOf(p.promotion)].join(' ').toLowerCase();
+  if (qk && ckey(p.partNumber) === qk) return 0;
+  if (qk && ckey(p.partNumber).startsWith(qk)) return 1;
+  if (qk && qk.length >= 3 && ckey(p.partNumber).includes(qk)) return 2;
+  return words.every(w => hay.includes(w)) ? 3 : -1;
+}
+function searchData(q) {
+  if (!q) return PARTS.slice();
+  return PARTS.map(p => [matchPart(p, q), p]).filter(x => x[0] >= 0).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+}
+function srBtn(attr, val, cls, icon, title) {
+  return `<button type="button" class="btn btn-sm ${cls}" ${attr}="${esc(val)}" title="${title}"><i class="bi ${icon}"></i></button>`;
+}
+
+function renderData(q) {
+  const all = searchData(q), rows = all.slice(0, SR_MAX);
+  $('cntData').textContent = all.length.toLocaleString();
+  if (SR.tab !== 'data') return;
+  $('srchInfo').innerHTML = !PARTS.length ? 'ยังไม่มีรายการอะไหล่'
+    : (q ? `พบ <b>${all.length.toLocaleString()}</b> รายการ` : `ทั้งหมด ${all.length.toLocaleString()} รายการ — พิมพ์คำค้นเพื่อกรอง`) +
+      (all.length > SR_MAX ? ` (แสดง ${SR_MAX} รายการแรก)` : '');
+  if (!rows.length) { $('srchResult').innerHTML = `<div class="empty">ไม่พบ "${esc(q)}" ในรายการอะไหล่<br><button class="btn btn-link" data-gotab="catalog">ลองค้นใน data.xlsx</button></div>`; return; }
+  const act = p => srBtn('data-sgo', p.row, 'btn-outline-success', 'bi-box-arrow-in-right', 'ไปที่หัวข้อนี้') + ' ' +
+    srBtn('data-sedit', p.row, 'btn-outline-primary', 'bi-pencil', 'แก้ไข') + ' ' +
+    srBtn('data-sdel', p.row, 'btn-outline-danger', 'bi-trash', 'ลบ');
+  $('srchResult').innerHTML = `<div class="table-responsive d-none d-md-block"><table class="table table-sm table-hover align-middle srch-tbl mb-0">
+    <thead class="table-light"><tr><th>รหัส</th><th>รายชื่อ</th><th class="text-end">ราคา</th><th class="text-center">จำนวน</th><th class="text-center">Place</th><th>หัวข้อ</th><th class="text-end" style="width:130px">จัดการ</th></tr></thead>
+    <tbody>${rows.map(p => `<tr>
+      <td class="code">${hl(p.partNumber, q)}</td><td>${hl(p.partName, q)}</td>
+      <td class="text-end">${num(p.price) || '-'}</td><td class="text-center fw-bold">${p.quantity === '' ? '-' : p.quantity}</td>
+      <td class="text-center fw-bold">${hl(p.place, q) || '-'}</td>
+      <td>${hl(p.promotion, q) || '<span class="text-muted">-</span>'}<div class="small text-muted">${esc(typeOf(p.promotion))}</div></td>
+      <td class="text-end text-nowrap">${act(p)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="d-md-none">${rows.map(p => `<div class="srch-card d-flex gap-2">
+      <div class="flex-grow-1"><div class="fw-semibold">${hl(p.partName, q)}</div>
+        <div class="cd">${hl(p.partNumber, q)}${num(p.price) ? ' · ' + num(p.price) + ' ฿' : ''} · ×${p.quantity === '' ? '-' : p.quantity}${p.place ? ' · <b>' + hl(p.place, q) + '</b>' : ''}</div>
+        <div class="small text-muted">${hl(p.promotion, q)}</div></div>
+      <div class="text-nowrap">${act(p)}</div></div>`).join('')}</div>`;
+}
+
+function renderCat(q) {
+  const c = SR.catQ === q ? SR.cat : null;
+  $('cntCat').textContent = c ? c.total.toLocaleString() : (q.length < 2 ? '-' : '…');
+  if (SR.tab !== 'catalog') return;
+  if (q.length < 2) { $('srchInfo').textContent = ''; $('srchResult').innerHTML = '<div class="empty">พิมพ์รหัสหรือชื่ออย่างน้อย 2 ตัวอักษร แล้วกด ค้นหา</div>'; return; }
+  if (!c) { $('srchInfo').textContent = ''; $('srchResult').innerHTML = '<div class="empty"><span class="spinner-border spinner-border-sm me-2"></span>กำลังค้นใน data.xlsx…</div>'; return; }
+  if (c.error) { $('srchResult').innerHTML = `<div class="empty text-danger">ค้นไม่สำเร็จ: ${esc(c.error)}<br><small>วาง Code.gs ล่าสุดแล้ว Deploy New version</small></div>`; return; }
+  if (c.catalog === 0) { $('srchInfo').textContent = ''; $('srchResult').innerHTML = '<div class="empty">ยังไม่ได้นำเข้า data.xlsx — กด "อัปโหลดฐานข้อมูล" แล้วเลือกไฟล์ data.xlsx<br>หรือกด "เพิ่มรหัส" เพื่อเพิ่มทีละรายการ</div>'; return; }
+  $('srchInfo').innerHTML = `พบ <b>${c.total.toLocaleString()}</b> รหัส จากทั้งหมด ${c.catalog.toLocaleString()}` + (c.total > c.items.length ? ` (แสดง ${c.items.length} รายการแรก — พิมพ์เพิ่มให้แคบลง)` : '');
+  if (!c.items.length) { $('srchResult').innerHTML = `<div class="empty">ไม่พบ "${esc(q)}" ใน data.xlsx<br><button class="btn btn-link" id="srchAddHere">+ เพิ่มรหัสนี้</button></div>`; return; }
+  const inData = new Set(PARTS.map(p => p.partNumber));
+  const act = (it, i) => srBtn('data-cuse', i, 'btn-outline-success', 'bi-plus-square', 'ใช้รหัสนี้เพิ่มอะไหล่ในใบจัด') + ' ' +
+    srBtn('data-cedit', i, 'btn-outline-primary', 'bi-pencil', 'แก้ไข') + ' ' +
+    srBtn('data-cdel', i, 'btn-outline-danger', 'bi-trash', 'ลบ');
+  const badge = it => inData.has(it.partNumber) ? ' <span class="badge text-bg-success">อยู่ในใบจัดแล้ว</span>' : '';
+  $('srchResult').innerHTML = `<div class="table-responsive d-none d-md-block"><table class="table table-sm table-hover align-middle srch-tbl mb-0">
+    <thead class="table-light"><tr><th style="width:200px">รหัสอะไหล่</th><th>ชื่ออะไหล่</th><th class="text-end" style="width:130px">จัดการ</th></tr></thead>
+    <tbody>${c.items.map((it, i) => `<tr><td class="code">${hl(it.partNumber, q)}</td><td>${hl(it.partName, q)}${badge(it)}</td>
+      <td class="text-end text-nowrap">${act(it, i)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="d-md-none">${c.items.map((it, i) => `<div class="srch-card d-flex gap-2">
+      <div class="flex-grow-1"><div class="fw-semibold">${hl(it.partName, q)}${badge(it)}</div><div class="cd">${hl(it.partNumber, q)}</div></div>
+      <div class="text-nowrap">${act(it, i)}</div></div>`).join('')}</div>`;
+}
+
+function srchQ() { return $('srchQ').value.trim().replace(/\s+/g, ' '); }
+function runSearch(now) {
+  const q = srchQ();
+  $('srchClear').classList.toggle('d-none', !q);
+  renderData(q);
+  clearTimeout(SR.timer);
+  const my = ++SR.seq;
+  if (q.length < 2) { SR.catQ = q; SR.cat = null; renderCat(q); return; }
+  if (SR.cache[q.toLowerCase()]) { SR.catQ = q; SR.cat = SR.cache[q.toLowerCase()]; renderCat(q); return; }
+  if (SR.catQ !== q) { SR.cat = null; SR.catQ = null; }
+  renderCat(q);
+  SR.timer = setTimeout(async () => {
+    let c;
+    try { c = await api('searchCatalog', q, SR_MAX); SR.cache[q.toLowerCase()] = c; }
+    catch (e) { c = { error: e.message || String(e), items: [], total: 0 }; }
+    if (my !== SR.seq) return;
+    SR.catQ = q; SR.cat = c; renderCat(q);
+  }, now ? 0 : 400);
+}
+function setTab(tab) {
+  SR.tab = tab;
+  document.querySelectorAll('#srchTabs [data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $('srchAddText').textContent = tab === 'data' ? 'เพิ่มอะไหล่' : 'เพิ่มรหัส';
+  const q = srchQ(); renderData(q); renderCat(q);
+}
+
+/** ปิดหน้าค้นหาชั่วคราว -> เปิดฟอร์ม -> ปิดฟอร์มแล้วกลับมาหน้าค้นหา */
+function fromSearch(fn) {
+  SR.back = true;
+  $('srchModal').addEventListener('hidden.bs.modal', fn, { once: true });
+  srchModal.hide();
+}
+['partModal', 'delModal', 'catModal'].forEach(id => $(id).addEventListener('hidden.bs.modal', () => {
+  if (!SR.back) return;
+  SR.back = false; srchModal.show(); runSearch(true);
+}));
+
+$('btnSearch').addEventListener('click', () => { srchModal.show(); runSearch(true); });
+$('srchModal').addEventListener('shown.bs.modal', () => $('srchQ').focus());
+$('srchQ').addEventListener('input', () => runSearch(false));
+$('srchForm').addEventListener('submit', e => { e.preventDefault(); runSearch(true); });
+$('srchClear').addEventListener('click', () => { $('srchQ').value = ''; runSearch(true); $('srchQ').focus(); });
+$('srchTabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+
+function openCat(it) {
+  $('catForm').classList.remove('was-validated');
+  $('catTitle').textContent = it && it.row ? 'แก้ไขรหัสอะไหล่ (data.xlsx)' : 'เพิ่มรหัสอะไหล่ (data.xlsx)';
+  $('cRow').value = it && it.row ? it.row : ''; $('cOrig').value = it && it.row ? it.partNumber : '';
+  $('cCode').value = (it && it.partNumber) || ''; $('cName').value = (it && it.partName) || '';
+  catModal.show();
+  setTimeout(() => (it && it.partNumber && !it.row ? $('cName') : $('cCode')).focus(), 300);
+}
+function addFromSearch() {
+  const q = srchQ();
+  if (SR.tab === 'data') fromSearch(() => openPart(null));
+  else fromSearch(() => openCat({ partNumber: /\s/.test(q) ? '' : q, partName: /\s/.test(q) ? q : '' }));
+}
+$('srchAdd').addEventListener('click', addFromSearch);
+
+$('srchResult').addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  const d = t.dataset;
+  if (d.gotab) return setTab(d.gotab);
+  if (t.id === 'srchAddHere') return addFromSearch();
+  const part = r => PARTS.find(x => x.row === +r);
+  if (d.sgo) {
+    const p = part(d.sgo); if (!p) return;
+    srchModal.hide();
+    if (typeOf(p.promotion)) selectTopic(typeOf(p.promotion), p.promotion);
+    else notify('รายการนี้ไม่มีหัวข้อในชีต Topics — แก้ไขเพื่อเลือกหัวข้อ', false);
+  }
+  if (d.sedit) { const p = part(d.sedit); if (p) fromSearch(() => openPart(p)); }
+  if (d.sdel) {
+    const p = part(d.sdel); if (!p) return;
+    pendingDel = { kind: 'part', row: p.row, partNumber: p.partNumber };
+    $('delText').innerHTML = `<b>${esc(p.partNumber)}</b><br>${esc(p.partName)}<br><small>หัวข้อ: ${esc(p.promotion)}</small>`;
+    fromSearch(() => delModal.show());
+  }
+  const it = (d.cuse || d.cedit || d.cdel) !== undefined && SR.cat ? SR.cat.items[+(d.cuse || d.cedit || d.cdel)] : null;
+  if (!it) return;
+  if (d.cedit) fromSearch(() => openCat(it));
+  if (d.cdel) {
+    pendingDel = { kind: 'catalog', row: it.row, partNumber: it.partNumber };
+    $('delText').innerHTML = `<b>${esc(it.partNumber)}</b><br>${esc(it.partName)}<br><small>ลบจาก data.xlsx (Catalog) — ไม่กระทบใบจัด</small>`;
+    fromSearch(() => delModal.show());
+  }
+  if (d.cuse) fromSearch(() => {
+    openPart(null);
+    $('fCode').value = it.partNumber; $('fName').value = it.partName;
+    $('fFoundText').textContent = 'ดึงรหัส/ชื่อจาก data.xlsx แล้ว — เลือกหัวข้อ แล้วกรอกราคา จำนวน และ Place';
+    $('fFound').classList.remove('d-none');
+  });
+});
+
+async function catSave_(fn, data, done) {
+  $('loading').classList.add('show');
+  try {
+    const res = await api(fn, data);
+    SR.cache = {}; SUGG.cache = {}; SR.cat = null; SR.catQ = null;
+    if (CONN.info && res.catalog != null) { CONN.info.catalog = res.catalog; renderConn(); }
+    done(); notify(res.message);
+  } catch (err) { notify(err.message || String(err), false); }
+  finally { $('loading').classList.remove('show'); }
+}
+$('catForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!$('catForm').checkValidity()) { $('catForm').classList.add('was-validated'); return; }
+  const data = { row: $('cRow').value ? +$('cRow').value : null, originalPartNumber: $('cOrig').value,
+    partNumber: $('cCode').value.trim(), partName: $('cName').value.trim() };
+  catSave_(data.row ? 'updateCatalog' : 'addCatalog', data, () => catModal.hide());
+});
+
 /* ---------- สถานะการเชื่อมต่อฐานข้อมูล ---------- */
 const CONN = { state: 'checking', info: null, lastCheck: null, lastSync: null, error: '', rows: null };
 const MODE_TXT = { gas: 'Apps Script (เปิดผ่านลิงก์ /exec)', fetch: 'Web App API (Live Server / GitHub)', mock: 'ข้อมูลตัวอย่าง (ยังไม่เชื่อม)' };
@@ -688,6 +1081,7 @@ function renderConn() {
     <dt>การเชื่อมต่อ</dt><dd>${MODE_TXT[MODE]}</dd>
     <dt>ฐานข้อมูล (Google Sheet)</dt><dd>${esc(i.spreadsheet || '-')}</dd>
     <dt>จำนวนรายการ / หัวข้อ</dt><dd>${i.rows != null ? Number(i.rows).toLocaleString() : PARTS.length.toLocaleString()} รายการ · ${i.topics != null ? i.topics : TOPICS.length} หัวข้อ</dd>
+    <dt>ฐานข้อมูลรหัสอะไหล่ (data.xlsx)</dt><dd>${i.catalog != null ? (i.catalog ? Number(i.catalog).toLocaleString() + ' รหัส' : '<span class="text-warning-emphasis">ยังไม่ได้นำเข้า</span>') : '-'}</dd>
     <dt>ตรวจสอบล่าสุด / โหลดข้อมูลล่าสุด</dt><dd>${tm(CONN.lastCheck)} / ${tm(CONN.lastSync)}</dd>
     <dt>เวอร์ชัน backend</dt><dd class="small">${esc(i.codeVersion || '-')}</dd>`;
 }
@@ -831,26 +1225,86 @@ function parseWorkbook(wb) {
   }
   return { dataName, tName, rows, bad, topics, missing: Object.keys(map).filter(k => map[k] < 0) };
 }
+/* ---------- Catalog (data.xlsx: รหัสอะไหล่ | ชื่ออะไหล่) ---------- */
+let UPWB = null, UPFILE = '';
+function headerInfo(grid) {
+  const h = grid.slice(0, 10).findIndex(r => r.some(c => COLS.code.includes(String(c).trim().toLowerCase())));
+  if (h < 0) return { h: -1, map: null };
+  const hdr = grid[h].map(c => String(c).trim().toLowerCase());
+  const map = {}; Object.keys(COLS).forEach(k => { map[k] = hdr.findIndex(c => COLS[k].includes(c)); });
+  return { h, map };
+}
+/** ไฟล์มีแค่ รหัส + ชื่อ (ไม่มี ราคา/จำนวน/Place/หัวข้อ) หรือชีตชื่อ database/catalog -> ถือว่าเป็น Catalog */
+function looksLikeCatalog(wb) {
+  if (findSheet(wb, ['database', 'catalog'])) return true;
+  const grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  const { map } = headerInfo(grid);
+  return !!map && map.code >= 0 && map.price < 0 && map.qty < 0 && map.place < 0 && map.topic < 0;
+}
+function parseCatalog(wb) {
+  const dataName = findSheet(wb, ['database', 'catalog']) || wb.SheetNames[0];
+  const grid = XLSX.utils.sheet_to_json(wb.Sheets[dataName], { header: 1, raw: true, defval: '' });
+  let { h, map } = headerInfo(grid);
+  if (!map) map = { code: 0, name: 1 };
+  if (map.name < 0) map.name = map.code + 1;
+  const rows = [], bad = [];
+  grid.slice(h + 1).forEach((r, i) => {
+    const code = codeText(r[map.code]), name = String(r[map.name] ?? '').replace(/\s+/g, ' ').trim();
+    if (!code && !name) return;
+    if (!code || !name) { bad.push(h + i + 2); return; }
+    rows.push([code, name]);
+  });
+  return { dataName, rows, bad, topics: [], missing: [] };
+}
+function showUpload() {
+  if (!UPWB) return;
+  const kind = $('upKind').value, isCat = kind === 'catalog';
+  UPLOAD = isCat ? parseCatalog(UPWB) : parseWorkbook(UPWB);
+  UPLOAD.kind = kind; UPLOAD.file = UPFILE;
+  const u = UPLOAD;
+  $('upCatModes').classList.toggle('d-none', !isCat);
+  $('upPartModes').classList.toggle('d-none', isCat);
+  const cols = isCat ? ['รหัสอะไหล่', 'ชื่ออะไหล่'] : ['รหัส', 'ชื่อ', 'ราคา', 'จำนวน', 'Place', 'หัวข้อ'];
+  $('upHead').innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  const newTopics = u.topics.filter(t => !TOPICS.some(x => x.topic === t[0])).length;
+  const dupCodes = isCat ? u.rows.length - new Set(u.rows.map(r => r[0])).size : 0;
+  $('upSummary').innerHTML = `<b>${esc(u.file)}</b> (ชีต ${esc(u.dataName)}) — พบ <b>${u.rows.length.toLocaleString()}</b> รายการที่ใช้ได้` +
+    (isCat ? ` <span class="badge text-bg-secondary">Catalog</span>` + (dupCodes ? `<br><span class="text-muted">รหัสซ้ำ ${dupCodes} รายการ — ใช้ชื่อจากแถวล่าสุด</span>` : '') : '') +
+    (u.bad.length ? `<br><span class="text-danger">ข้าม ${u.bad.length} แถวที่ไม่มีรหัสหรือชื่อ (แถว ${u.bad.slice(0, 10).join(', ')}${u.bad.length > 10 ? ' …' : ''})</span>` : '') +
+    (u.tName ? `<br>ชีต ${esc(u.tName)}: หัวข้อ ${u.topics.length} รายการ (ใหม่ ${newTopics})` : '') +
+    (u.missing.length ? `<br><span class="text-warning-emphasis">ไม่พบคอลัมน์: ${u.missing.join(', ')} — จะเว้นว่างไว้</span>` : '');
+  $('upRows').innerHTML = u.rows.slice(0, 8).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') +
+    (u.rows.length > 8 ? `<tr><td colspan="${cols.length}" class="text-center text-muted">… และอีก ${(u.rows.length - 8).toLocaleString()} รายการ</td></tr>` : '');
+  $('upPreview').classList.remove('d-none');
+  $('btnDoUpload').disabled = !u.rows.length;
+}
+$('upKind').addEventListener('change', showUpload);
+
 async function readFile(file) {
   if (!window.XLSX) { notify('โหลดตัวอ่านไฟล์ Excel ไม่สำเร็จ (ตรวจอินเทอร์เน็ต)', false); return; }
   try {
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
-    UPLOAD = parseWorkbook(wb); UPLOAD.file = file.name;
-    const u = UPLOAD;
-    const newTopics = u.topics.filter(t => !TOPICS.some(x => x.topic === t[0])).length;
-    $('upSummary').innerHTML = `<b>${esc(u.file)}</b> (ชีต ${esc(u.dataName)}) — พบ <b>${u.rows.length.toLocaleString()}</b> รายการที่ใช้ได้` +
-      (u.bad.length ? `<br><span class="text-danger">ข้าม ${u.bad.length} แถวที่ไม่มีรหัสหรือชื่อ (แถว ${u.bad.slice(0, 10).join(', ')}${u.bad.length > 10 ? ' …' : ''})</span>` : '') +
-      (u.tName ? `<br>ชีต ${esc(u.tName)}: หัวข้อ ${u.topics.length} รายการ (ใหม่ ${newTopics})` : '') +
-      (u.missing.length ? `<br><span class="text-warning-emphasis">ไม่พบคอลัมน์: ${u.missing.join(', ')} — จะเว้นว่างไว้</span>` : '');
-    $('upRows').innerHTML = u.rows.slice(0, 8).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') +
-      (u.rows.length > 8 ? `<tr><td colspan="6" class="text-center text-muted">… และอีก ${(u.rows.length - 8).toLocaleString()} รายการ</td></tr>` : '');
-    $('upPreview').classList.remove('d-none');
-    $('btnDoUpload').disabled = !u.rows.length;
+    UPWB = XLSX.read(buf, { type: 'array' }); UPFILE = file.name;
+    $('upKind').value = looksLikeCatalog(UPWB) ? 'catalog' : 'parts';
+    showUpload();
   } catch (e) { notify('อ่านไฟล์ไม่สำเร็จ: ' + (e.message || e), false); }
 }
+
+/** ส่ง Catalog ขึ้นเซิร์ฟเวอร์ทีละชุด (กันข้อมูลใหญ่เกินต่อครั้ง) */
+async function uploadCatalog(rows, mode) {
+  const CHUNK = 4000;
+  let added = 0, updated = 0, total = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    $('loadingText').textContent = `กำลังนำเข้า data.xlsx ${Math.min(i + CHUNK, rows.length).toLocaleString()} / ${rows.length.toLocaleString()}`;
+    const r = await api('importCatalog', { mode, first: i === 0, rows: rows.slice(i, i + CHUNK) });
+    added += r.added; updated += r.updated; total = r.catalog;
+  }
+  SUGG.cache = {};
+  return `นำเข้า data.xlsx เรียบร้อย: เพิ่ม ${added.toLocaleString()}` + (updated ? `, อัปเดตชื่อ ${updated.toLocaleString()}` : '') + ` (รวม ${total.toLocaleString()} รหัส)`;
+}
 $('btnUpload').addEventListener('click', () => {
-  UPLOAD = null; $('upFile').value = ''; $('upPreview').classList.add('d-none'); $('btnDoUpload').disabled = true;
+  UPLOAD = null; UPWB = null; $('upFile').value = ''; $('upPreview').classList.add('d-none'); $('btnDoUpload').disabled = true;
+  $('cMerge').checked = true;
   $('mUpsert').checked = true; upModal.show();
 });
 $('upFile').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); });
@@ -859,6 +1313,15 @@ $('upFile').addEventListener('change', e => { if (e.target.files[0]) readFile(e.
 $('drop').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
 $('btnDoUpload').addEventListener('click', async () => {
   if (!UPLOAD) return;
+  if (UPLOAD.kind === 'catalog') {
+    const cmode = document.querySelector('input[name=catMode]:checked').value;
+    if (cmode === 'replace' && !confirm(`ล้างชีต Catalog แล้วนำเข้า ${UPLOAD.rows.length.toLocaleString()} รหัสจากไฟล์นี้?`)) return;
+    $('btnDoUpload').disabled = true; $('loading').classList.add('show');
+    try { const msg = await uploadCatalog(UPLOAD.rows, cmode); upModal.hide(); notify(msg); checkConn(); }
+    catch (e) { notify('นำเข้า data.xlsx ไม่สำเร็จ: ' + (e.message || e), false); $('btnDoUpload').disabled = false; }
+    finally { $('loading').classList.remove('show'); $('loadingText').textContent = ''; }
+    return;
+  }
   const mode = document.querySelector('input[name=upMode]:checked').value;
   if (mode === 'replace' && !confirm(`แทนที่ข้อมูลทั้งหมดในฐานข้อมูลด้วย ${UPLOAD.rows.length.toLocaleString()} รายการจากไฟล์นี้?\n(ระบบจะสำรองชีตเดิมไว้ให้)`)) return;
   $('btnDoUpload').disabled = true; $('loading').classList.add('show');
@@ -899,7 +1362,18 @@ const MOCK = {
   restoreBackup(d) { const b = this._bk.find(x => x.name === d.name); this._d = JSON.parse(JSON.stringify(b.snap)); return { message: 'กู้คืนแล้ว (ตัวอย่าง)', parts: this._d.parts, topics: this._d.topics, backups: this.listBackups() }; },
   deleteBackup(d) { this._bk = this._bk.filter(x => x.name !== d.name); return { message: 'ลบแล้ว (ตัวอย่าง)', backups: this.listBackups() }; },
   getBackupData(d) { const b = this._bk.find(x => x.name === d.name); return { name: b.name, data: [['รหัส', 'ชื่อ', 'ราคา', 'จำนวน', 'Place', 'promotion']].concat(b.snap.parts.map(p => [p.partNumber, p.partName, p.price, p.quantity, p.place, p.promotion])), topics: b.snap.topics.map(t => [t.topic, t.category]) }; },
-  ping() { const D = this._rows(); return { codeVersion: 'mock', spreadsheet: '(ข้อมูลตัวอย่าง)', rows: D.parts.length, topics: D.topics.length }; },
+  ping() { const D = this._rows(); return { codeVersion: 'mock', spreadsheet: '(ข้อมูลตัวอย่าง)', rows: D.parts.length, topics: D.topics.length, catalog: this._cat.length }; },
+  _cat: [['000-000-000-007', 'กาวทาประเก็น(อีพ็อกซี่/แห้งเร็ว) ขนาด 32g'], ['000-000-000-008', 'กาวดำ Shime'], ['15600412', 'SCREW'], ['4000115032', 'BALL BEARING 62']],
+  searchCatalog(q) {
+    const ql = String(q).toLowerCase(), qk = ckey(q), w = ql.split(/\s+/).filter(Boolean);
+    const hits = this._cat.filter(([c, n]) => ckey(c).includes(qk) || w.every(x => (c + ' ' + n).toLowerCase().includes(x)));
+    return { total: hits.length, items: hits.slice(0, 200).map(([c, n]) => ({ row: this._cat.findIndex(x => x[0] === c) + 2, partNumber: c, partName: n })), catalog: this._cat.length };
+  },
+  _catRows() { return this._cat.map(([c, n], i) => ({ row: i + 2, partNumber: c, partName: n })); },
+  addCatalog(d) { if (this._cat.some(x => x[0] === d.partNumber)) throw new Error('มีรหัสนี้อยู่แล้ว'); this._cat.push([d.partNumber, d.partName]); return { message: 'เพิ่มรหัสแล้ว (ตัวอย่าง)', catalog: this._cat.length }; },
+  updateCatalog(d) { this._cat[d.row - 2] = [d.partNumber, d.partName]; return { message: 'บันทึกรหัสแล้ว (ตัวอย่าง)', catalog: this._cat.length }; },
+  deleteCatalog(d) { this._cat.splice(d.row - 2, 1); return { message: 'ลบรหัสแล้ว (ตัวอย่าง)', catalog: this._cat.length }; },
+  importCatalog(p) { if (p.mode === 'replace' && p.first) this._cat = []; const m = new Map(this._cat); let a = 0, u = 0; p.rows.forEach(([c, n]) => { if (m.has(c)) u++; else a++; m.set(c, n); }); this._cat = [...m]; return { added: a, updated: u, catalog: this._cat.length }; },
   importParts(p) {
     const D = this._rows(); let n = Date.now();
     if (p.mode === 'replace') D.parts = [];
