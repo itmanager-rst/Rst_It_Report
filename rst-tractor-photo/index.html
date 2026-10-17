@@ -229,7 +229,8 @@ section.view{display:none}section.view.on{display:block}
 .fact .v .yrbtn{margin-left:8px;background:var(--red);border:1px solid var(--red);border-radius:var(--radius-s);padding:2px 10px;font:inherit;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer}
 .fact .v .yrbtn:hover{background:var(--red-dark);border-color:var(--red-dark)}
 .fact .v .yrbtn.ed{background:#fff;color:var(--red)}
-.fact.yrfact{background:#FFFBF2}
+.fact.yrfact,.fact.prfact{background:#FFFBF2}
+.fact .yred input#priceIn{width:130px}
 .fact .yred{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .fact .yred input{width:96px;height:32px;border:1px solid var(--line);border-radius:var(--radius-s);padding:0 8px;font:inherit;font-size:14px}
 .fact .yred input:focus{outline:none;border-color:var(--red)}
@@ -470,6 +471,7 @@ section.view{display:none}section.view.on{display:block}
         <div class="seg" id="fStatus">
           <label><input type="radio" name="st" value="stock" checked>ในสต็อก</label>
           <label><input type="radio" name="st" value="nophoto">ยังไม่มีรูป</label>
+          <label><input type="radio" name="st" value="noprice">ยังไม่มีราคา</label>
           <label><input type="radio" name="st" value="all">ทั้งหมด</label>
         </div>
       </div>
@@ -662,7 +664,7 @@ function paintMe(){ $("#whoBtn").textContent=ME||"ตั้งชื่อผู
 function askName(){ var n=prompt("ชื่อผู้ถ่ายรูป (แสดงในข้อมูลรูป)",ME); if(n==null)return false; ME=n.trim(); store("rst_photo_user",ME); paintMe(); return !!ME; }
 $("#whoBtn").onclick=askName; paintMe();
 
-var NEED_SERVER="r13"; // หน้าเว็บนี้ต้องใช้กับ code.js r13 ขึ้นไป (เครื่องอัดฟางทุกหมวด + ปีรถ + เล่มทะเบียน)
+var NEED_SERVER="r14"; // หน้าเว็บนี้ต้องใช้กับ code.js r14 ขึ้นไป (เครื่องอัดฟางทุกหมวด + ปีรถ + เล่มทะเบียน + ราคาขายครบ)
 function load(){
   dbStatus("busy");
   return api("getBoot").then(function(b){
@@ -679,7 +681,7 @@ function load(){
     $("#lastImport").textContent=b.lastImport?"นำเข้าล่าสุด "+thDate(b.lastImport.at)+" ไฟล์ "+b.lastImport.fileName+" โดย "+b.lastImport.by+" มีรถในสต็อก "+b.lastImport.tractors+" คัน":"ยังไม่เคยนำเข้าไฟล์";
     $("#loading").hidden=true; banner("");
     $("#dbStat").title="เวอร์ชันเซิร์ฟเวอร์ (code.js): "+(b.version||"ไม่ทราบ");
-    if(String(b.version||"").indexOf(NEED_SERVER)!==0) banner("เซิร์ฟเวอร์ (code.js) ยังเป็นเวอร์ชัน "+(b.version||"เก่า")+" แต่หน้าเว็บต้องการ "+NEED_SERVER+" ขึ้นไป ให้วาง code.js ใหม่ใน Apps Script แล้ว Deploy เป็นเวอร์ชันใหม่ ก่อนนำเข้าไฟล์ ไม่อย่างนั้นเครื่องอัดฟางจะไม่แยกประเภท บันทึกปีรถไม่ได้ และเล่มทะเบียนจะไม่ถูกบันทึก");
+    if(String(b.version||"").indexOf(NEED_SERVER)!==0) banner("เซิร์ฟเวอร์ (code.js) ยังเป็นเวอร์ชัน "+(b.version||"เก่า")+" แต่หน้าเว็บต้องการ "+NEED_SERVER+" ขึ้นไป ให้วาง code.js ใหม่ใน Apps Script แล้ว Deploy เป็นเวอร์ชันใหม่ ก่อนนำเข้าไฟล์ ไม่อย่างนั้นราคาขายจะไม่ถูกเติมจาก Ecount ครั้งก่อน/ระบบเก่า และใส่ราคาเองไม่ได้");
     if(!CARS.length){ go("import"); banner("ยังไม่มีข้อมูลรถ เริ่มจากนำเข้าไฟล์ สถานะสินค้าคงคลังตามหมายเลข Serial/Lot จาก Ecount"); }
     else if(!$("section.view.on")) go("cars");
     else if($("#v-dash").classList.contains("on")) renderDash();
@@ -793,7 +795,7 @@ function renderDash(){
   }
   $("#dTodo").innerHTML='<div class="todo">'+
     item(noPh.length,"คันยังไม่มีรูป","ดูรายการ","nophoto")+
-    item(noPr.length,"คันยังไม่ระบุราคาขาย","",null,noPr,function(c){return c.branch||""})+
+    item(noPr.length,"คันยังไม่ระบุราคาขาย","ดูรายการ","noprice",noPr,function(c){return c.branch||""})+
     item(noCd.length,"คันยังไม่ระบุสภาพรถ","ดูรายการ","nocond")+
     item(noYr.length,"คันยังไม่ระบุปีรถ","ดูรายการ","noyear")+
     item(old.length,"คันอยู่ในสต็อกเกิน 1 ปี","",null,old,function(c){return Math.floor(daysIn(c)/30)+" เดือน"})+
@@ -814,7 +816,7 @@ $("#v-dash").addEventListener("click",function(e){
   if((b=t.closest("[data-car]"))) return openCar(b.dataset.car);
   if((b=t.closest(".dsh-br .row"))) return drill({fType:ty,fBranch:b.dataset.br});
   if((b=t.closest("[data-f]"))){ var o={fType:ty}; o[b.dataset.f]=b.dataset.v; return drill(o); }
-  if((b=t.closest("[data-act]"))){ if(b.dataset.act==="nophoto") return drill({fType:ty,st:"nophoto"}); if(b.dataset.act==="nocond") return drill({fType:ty,fCond:NOCOND}); if(b.dataset.act==="noyear") return drill({fType:ty,fYear:NOYEAR}); }
+  if((b=t.closest("[data-act]"))){ if(b.dataset.act==="nophoto") return drill({fType:ty,st:"nophoto"}); if(b.dataset.act==="noprice") return drill({fType:ty,st:"noprice"}); if(b.dataset.act==="nocond") return drill({fType:ty,fCond:NOCOND}); if(b.dataset.act==="noyear") return drill({fType:ty,fYear:NOYEAR}); }
 });
 $("#v-dash").addEventListener("keydown",function(e){ var r=e.target.closest&&e.target.closest(".dsh-br .row"); if(r&&(e.key==="Enter"||e.key===" ")){ e.preventDefault(); drill({fType:dType(),fBranch:r.dataset.br}); } });
 
@@ -826,6 +828,7 @@ function filtered(){
   return CARS.filter(function(c){
     if(st==="stock"&&c.status!=="stock")return false;
     if(st==="nophoto"&&(c.status!=="stock"||PCOUNT[c.key]))return false;
+    if(st==="noprice"&&(c.status!=="stock"||priceOf(c)))return false;
     if(ty&&c.type!==ty)return false; if(kd&&c.kind!==kd)return false; if(m&&c.series!==m)return false; if(yr&&yearKey(c)!==yr)return false; if(br&&c.branch!==br)return false; if(cd&&condOf(c)!==cd)return false;
     if(q&&c.nk.indexOf(q)<0)return false;
     return true;
@@ -864,10 +867,10 @@ var cur=null, PHOTOS=[];
 function openCar(k){
   var c=BYKEY[k]; if(!c)return; cur=c;
   $("#plate").innerHTML='<div class="brand">RST RUAMSINTHAIGROUP · '+esc(c.type)+' · '+esc(c.kind)+'</div><div class="model">'+esc(c.series)+(c.tag?' <span class="chip gps">'+esc(c.tag)+'</span>':'')+'</div><dl><dt>หมายเลข Serial/Lot</dt><dd>'+esc(c.serial)+'</dd><dt>รหัสสินค้า</dt><dd>'+esc(c.code||"-")+'</dd></dl>';
-  var f=[["ชื่อสถานที่",c.branch||"-"],["จุดจอด",c.spot||"-"],["จำนวนคงเหลือ",c.qty===""?"-":c.qty],["ราคาขาย",money(c.price)||"-"],["สภาพรถ",c.cond||"-"],["ชั่วโมงการทำงาน",hrs(c.hours)||"-"],["เล่มทะเบียน",c.reg||"-"],
+  var f=[["ชื่อสถานที่",c.branch||"-"],["จุดจอด",c.spot||"-"],["จำนวนคงเหลือ",c.qty===""?"-":c.qty],["สภาพรถ",c.cond||"-"],["ชั่วโมงการทำงาน",hrs(c.hours)||"-"],["เล่มทะเบียน",c.reg||"-"],
     ["สถานะ",c.status==="stock"?"ในสต็อก":"ไม่อยู่ในสต็อก"+(c.outDate?" ตั้งแต่ "+thDate(c.outDate):"")],["ชื่อสินค้า",c.name]];
-  $("#facts").innerHTML='<div class="fact yrfact" id="yearFact"></div>'+f.map(function(x){return'<div class="fact"><div class="l">'+esc(x[0])+'</div><div class="v">'+esc(x[1])+'</div></div>'}).join("");
-  paintYear();
+  $("#facts").innerHTML='<div class="fact prfact" id="priceFact"></div><div class="fact yrfact" id="yearFact"></div>'+f.map(function(x){return'<div class="fact"><div class="l">'+esc(x[0])+'</div><div class="v">'+esc(x[1])+'</div></div>'}).join("");
+  paintYear(); paintPrice();
   $("#sheet").classList.add("on"); document.body.style.overflow="hidden";
   setupLegacy(k);
   loadPhotos(k);
@@ -895,6 +898,38 @@ function saveYear(){
     fillFilters(); if(cur&&cur.key===key) paintYear(); paintCard(key);
     toast(r.year?"บันทึกปีรถ "+r.year+" แล้ว":"ล้างปีรถแล้ว");
   }).catch(function(e){ if($("#yearSave"))$("#yearSave").disabled=false; toast("บันทึกปีรถไม่สำเร็จ: "+e.message); });
+}
+/* ---------- ราคาขาย (r14): Ecount ล่าสุด > ใส่เอง > Ecount ครั้งก่อน > ระบบเก่า ---------- */
+function priceSrcTxt(c){
+  if(c.priceSrc==="manual") return "ใส่เองโดย "+(c.priceBy||"-")+(c.priceAt?" "+thDate(c.priceAt):"")+(c.priceEc?" · ราคา Ecount เดิม "+money(c.priceEc):"");
+  if(c.priceSrc==="ecount-old") return "จาก Ecount ครั้งก่อน"+(c.priceDate?" ("+thDate(c.priceDate)+")":"")+" ไฟล์ล่าสุดไม่มีราคา";
+  if(c.priceSrc==="legacy") return "จากระบบเก่า (กดแก้ไขเพื่อยืนยันหรือเปลี่ยน)";
+  if(c.priceSrc==="ecount") return "จาก Ecount";
+  return "";
+}
+function paintPrice(){
+  var el=$("#priceFact"); if(!el||!cur)return; var c=cur, has=!!priceOf(c);
+  el.innerHTML='<div class="l">ราคาขาย</div><div class="v">'+esc(money(c.price)||"ยังไม่ระบุ")+'<button type="button" class="yrbtn'+(has?' ed':'')+'" id="priceEdit">'+(has?"แก้ไขราคา":"+ ใส่ราคา")+'</button></div>'+
+    (priceSrcTxt(c)?'<div class="src">'+esc(priceSrcTxt(c))+'</div>':'');
+  $("#priceEdit").onclick=editPrice;
+}
+function editPrice(){
+  var el=$("#priceFact"), c=cur; if(!el||!c)return;
+  var v=c.priceM||(priceOf(c)?String(priceOf(c)):"");
+  el.innerHTML='<div class="l">ราคาขาย (บาท)</div><div class="yred"><input id="priceIn" inputmode="decimal" placeholder="เช่น 450000" value="'+esc(v)+'"><button type="button" class="btn primary" id="priceSave">บันทึก</button><button type="button" class="btn" id="priceCancel">ยกเลิก</button></div><div class="src">เว้นว่างแล้วบันทึก = ล้างราคาที่ใส่เอง (ถ้า Ecount ไฟล์ใหม่มีราคา ระบบจะใช้ราคา Ecount)</div>';
+  var inp=$("#priceIn"); inp.focus(); inp.select();
+  inp.addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); savePrice(); } else if(e.key==="Escape"){ e.stopPropagation(); paintPrice(); } });
+  $("#priceSave").onclick=savePrice; $("#priceCancel").onclick=paintPrice;
+}
+function savePrice(){
+  var c=cur, key=c&&c.key, v=(($("#priceIn")||{}).value||"").replace(/[,\s฿]|บาท/g,""); if(!key)return;
+  if(v&&!(parseFloat(v)>0&&/^\d+(\.\d+)?$/.test(v))){ toast("ใส่ราคาเป็นตัวเลขมากกว่า 0 เช่น 450000"); return; }
+  $("#priceSave").disabled=true;
+  api("setPrice",key,v,ME).then(function(r){
+    var t=BYKEY[key]; if(t){ ["price","priceSrc","priceEc","priceLegacy","priceDate","priceM","priceBy","priceAt"].forEach(function(k){ t[k]=r[k]||""; }); }
+    if(cur&&cur.key===key) paintPrice(); paintCard(key);
+    toast(v?"บันทึกราคา "+money(v)+" แล้ว":"ล้างราคาที่ใส่เองแล้ว");
+  }).catch(function(e){ if($("#priceSave"))$("#priceSave").disabled=false; toast("บันทึกราคาไม่สำเร็จ: "+e.message); });
 }
 /* ---------- ข้อมูลจากระบบเก่า (Legacy_Data) ---------- */
 var LEG_MONEY={"ราคาขาย":1,"ค่าใช้จ่าย":1};
@@ -1038,6 +1073,7 @@ function rowKind(name,usedCat){ var k=kindOf(name); return usedCat==="1"?(k==="�
 function keepRow(name,usedCat){ var t=carType(name); if(!t)return false; if(usedCat==="1")return true; if(t==="อื่นๆ"||!isKept(name))return false; if(t==="เครื่องอัดฟาง")return true; return usedCat===""||kindOf(name)==="รถสาธิต"; } // ตรงกับ keepRow_ ใน code.js
 function carType(name){ name=String(name||""); if(!name.trim())return""; return /รถเกี่ยว/.test(name)?"รถเกี่ยวข้าว":/รถแทรกเตอร์/.test(name)?"รถแทรกเตอร์":/อัดฟาง|\bbaler\b/i.test(name)?"เครื่องอัดฟาง":/^\s*(?:\([^)]*\)\s*)?(?:รถขุด|รถแบ็?คโฮ|excavator)/i.test(name)?"รถขุด":/รถตู้|\bvan\b/i.test(name)?"รถตู้":"อื่นๆ"; } // ตรงกับ typeOf_ / BALER_RE / EXC_RE / VAN_RE ใน code.js
 function num(v){ var n=parseFloat(String(v==null?"":v).replace(/,/g,"")); return isNaN(n)?0:n; }
+function priceNum(v){ var t=String(v==null?"":v).replace(/[,\s฿]|บาท|THB/gi,""); if(/^\(/.test(t))return 0; var n=parseFloat(t); return isNaN(n)||n<=0?0:n; } // ตรงกับ priceStr_ ใน code.js
 function chassisKey(serial){ return String(serial).replace(/\(\s*GPS\s*\)/i,"").split("/")[0].trim().toUpperCase().replace(/\s+/g,""); }
 function parseEcount(wb){
   var ws=wb.Sheets[wb.SheetNames[0]], aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""}), hi=-1;
@@ -1045,6 +1081,10 @@ function parseEcount(wb){
   if(hi<0) return {error:"ไม่พบคอลัมน์ \""+COLS.serial+"\" ตรวจว่าเป็นรายงาน สถานะสินค้าคงคลังตามหมายเลข Serial/Lot จาก Ecount"};
   var head=aoa[hi].map(function(v){return String(v).trim()}), idx={};
   Object.keys(COLS).forEach(function(k){ idx[k]=head.indexOf(COLS[k]); });
+  // r14: ชื่อคอลัมน์ราคาใน Ecount อาจไม่ตรง "ราคาขาย" เป๊ะ (เช่น ราคาขาย(รวม VAT), ราคาขายมาตรฐาน, ราคา)
+  if(idx.price<0){ for(var pj=0;pj<head.length;pj++){ if(/ราคาขาย/.test(head[pj])&&!/ทุน|ซื้อ/.test(head[pj])){idx.price=pj;break;} } }
+  if(idx.price<0){ for(var pk=0;pk<head.length;pk++){ if(/^(ราคา|price|unit\s*price|sale\s*price)/i.test(head[pk])&&!/ทุน|ซื้อ|cost/i.test(head[pk])){idx.price=pk;break;} } }
+  var priceCol=idx.price>=0?head[idx.price]:"";
   if(idx.qty<0&&head.indexOf("ประเภทเอกสาร")>=0) return {error:"ไฟล์นี้เป็นรูปแบบเก่า (สมุดสินค้าหมายเลข Serial/Lot) ตอนนี้ระบบใช้รายงาน สถานะสินค้าคงคลังตามหมายเลข Serial/Lot"};
   var missing=REQUIRED.filter(function(k){return idx[k]<0}).map(function(k){return COLS[k]});
   if(missing.length) return {error:"ไฟล์ขาดคอลัมน์: "+missing.join(", ")+" ตอนส่งออกจาก Ecount ให้เปิดแสดงคอลัมน์เหล่านี้ด้วย"};
@@ -1054,7 +1094,7 @@ function parseEcount(wb){
   var catIdx=-1;
   for(var ri=hi+1;ri<aoa.length&&catIdx<0;ri++){ for(var ci=0;ci<aoa[ri].length;ci++){ if(USED_CAT.test(String(aoa[ri][ci]||""))){catIdx=ci;break;} } }
   var catCol=catIdx>=0?(head[catIdx]||"คอลัมน์ที่ "+(catIdx+1)):"";
-  var rows=[],read=0,keys={},byType={"รถแทรกเตอร์":0,"รถเกี่ยวข้าว":0,"เครื่องอัดฟาง":0,"รถขุด":0,"รถตู้":0,"อื่นๆ":0},byKind={"มือสอง":0,"รถสาธิต":0},nonPos=0,notUsed=0,blSeen=0,blSkip=[],blNoSerial=0;
+  var rows=[],read=0,keys={},priced={},byType={"รถแทรกเตอร์":0,"รถเกี่ยวข้าว":0,"เครื่องอัดฟาง":0,"รถขุด":0,"รถตู้":0,"อื่นๆ":0},byKind={"มือสอง":0,"รถสาธิต":0},nonPos=0,notUsed=0,blSeen=0,blSkip=[],blNoSerial=0;
   for(var r=hi+1;r<aoa.length;r++){
     var a=aoa[r], g=function(k){return idx[k]<0?"":String(a[idx[k]]==null?"":a[idx[k]]).trim()};
     var name=g("name"), serial=g("serial"), isBl=/อัดฟาง|\bbaler\b/i.test(name);
@@ -1066,11 +1106,14 @@ function parseEcount(wb){
     var o={}; Object.keys(COLS).forEach(function(k){ o[k]=g(k); }); o.usedCat=usedCat;
     rows.push(o); byType[carType(name)]++; byKind[rowKind(name,usedCat)]++;
     var k=chassisKey(serial); keys[k]=(keys[k]||0)+num(o.qty);
+    if(priceNum(o.price)>0) priced[k]=1;
   }
+  var noPrice=Object.keys(keys).filter(function(k){return keys[k]>0&&!priced[k]});
+  var noPriceKeep=noPrice.filter(function(k){return BYKEY[k]&&priceOf(BYKEY[k])}).length; // ไม่มีในไฟล์ แต่มีราคาเดิม/ใส่เอง/ระบบเก่า
   var known=0,fresh=0,dupKeys=0,cars=0; Object.keys(keys).forEach(function(k){ cars++; if(BYKEY[k])known++; else fresh++; if(keys[k]<=0)nonPos++; });
   dupKeys=rows.length-cars;
   var gone=CARS.filter(function(c){return c.status==="stock"&&!(c.key in keys)}).length;
-  return {rows:rows,read:read,cars:cars,byType:byType,byKind:byKind,known:known,fresh:fresh,gone:gone,dupKeys:dupKeys,nonPos:nonPos,notUsed:notUsed,soft:soft,title:title,catCol:catCol,blSeen:blSeen,blSkip:blSkip,blNoSerial:blNoSerial};
+  return {rows:rows,read:read,cars:cars,byType:byType,byKind:byKind,known:known,fresh:fresh,gone:gone,dupKeys:dupKeys,nonPos:nonPos,notUsed:notUsed,soft:soft,title:title,catCol:catCol,blSeen:blSeen,blSkip:blSkip,blNoSerial:blNoSerial,priceCol:priceCol,priced:Object.keys(priced).length,noPrice:noPrice,noPriceKeep:noPriceKeep};
 }
 var pending=null, pendingName="";
 function handleFile(file){
@@ -1086,13 +1129,16 @@ function showPreview(p){
   if(p.error){ pending=null; $("#preview").innerHTML='<div class="warnbox">'+esc(p.error)+'</div>'; return; }
   pending=p;
   var h='<div class="stats">'+stat(p.read,"รายการที่มี Serial ทั้งไฟล์")+stat(p.byType["รถแทรกเตอร์"],"รถแทรกเตอร์")+stat(p.byType["รถเกี่ยวข้าว"],"รถเกี่ยวข้าว")+stat(p.byType["เครื่องอัดฟาง"],"เครื่องอัดฟาง")+stat(p.byType["รถขุด"],"รถขุด")+stat(p.byType["รถตู้"],"รถตู้")+stat(p.byType["อื่นๆ"],"มือสองอื่นๆ")+stat(p.byKind["มือสอง"],"มือสอง")+stat(p.byKind["รถสาธิต"],"รถสาธิต")+stat(p.notUsed,p.catCol?"ข้าม (ไม่อยู่หมวดรถมือสอง)":"ข้าม (รถใหม่/เช่า/อื่นๆ)")+
-    stat(p.fresh,"รถคันใหม่")+stat(p.known,"รถที่มีอยู่แล้ว (อัปเดต)")+stat(p.gone,"จะย้ายเป็น ไม่อยู่ในสต็อก")+'</div>'+
+    stat(p.priced,"คันที่มีราคาขายในไฟล์")+stat(p.noPrice.length,"ในสต็อกแต่ไม่มีราคาในไฟล์")+stat(p.fresh,"รถคันใหม่")+stat(p.known,"รถที่มีอยู่แล้ว (อัปเดต)")+stat(p.gone,"จะย้ายเป็น ไม่อยู่ในสต็อก")+'</div>'+
     '<div class="small muted">'+esc(p.title)+'</div>';
   h+=p.catCol?'<div class="small muted">ใช้หมวดสินค้าจากคอลัมน์ "'+esc(p.catCol)+'" นำเข้าทุกรายการใน หมวดรถมือสอง</div>'
     :'<div class="warnbox">ไฟล์นี้ไม่มีหมวดสินค้า "หมวดรถมือสอง" ระบบจะเลือกตามชื่อสินค้าแทน (เฉพาะ รถแทรกเตอร์ รถเกี่ยวข้าว เครื่องอัดฟาง รถขุด รถตู้ ที่ชื่อมีคำว่า มือสอง/สาธิต) ถ้าต้องการให้ครบ ตอนส่งออกจาก Ecount ให้เปิดคอลัมน์หมวดสินค้าด้วย</div>';
   if(p.blSkip.length) h+='<div class="warnbox">พบเครื่องอัดฟางในไฟล์ '+p.blSeen+' รายการ ข้าม '+p.blSkip.length+' รายการ เพราะชื่อสินค้าไม่มีคำว่า มือสอง หรือ สาธิต (ระบบถือเป็นเครื่องใหม่) ถ้าเป็นมือสอง ให้แก้ชื่อสินค้าใน Ecount แล้วส่งออกใหม่ หรือย้ายเข้า หมวดรถมือสอง:<br>'+p.blSkip.slice(0,10).map(esc).join("<br>")+(p.blSkip.length>10?'<br>และอีก '+(p.blSkip.length-10)+' รายการ':'')+'</div>';
   if(p.blNoSerial) h+='<div class="warnbox">มีเครื่องอัดฟาง '+p.blNoSerial+' แถวที่ไม่มีหมายเลข Serial/Lot ระบบนำเข้าไม่ได้ ต้องใส่ Serial ใน Ecount ก่อน</div>';
   if(!p.blSeen&&!p.blNoSerial) h+='<div class="small muted">ไม่พบสินค้าที่ชื่อมีคำว่า อัดฟาง หรือ Baler ในไฟล์นี้ ถ้ามีเครื่องอัดฟางในสต็อก ตรวจว่ารายงานที่ส่งออกครอบคลุมหมวด/คลังของเครื่องอัดฟางด้วย</div>';
+  if(p.priceCol&&p.priceCol!==COLS.price) h+='<div class="small muted">ใช้ราคาจากคอลัมน์ "'+esc(p.priceCol)+'"</div>';
+  if(p.priceCol&&p.noPrice.length) h+='<div class="warnbox">รถในสต็อก '+p.noPrice.length+' คันไม่มีราคาขายในไฟล์ (ว่าง หรือ 0)'+(p.noPriceKeep?' · '+p.noPriceKeep+' คันในนี้ระบบจะใช้ราคาเดิม/ที่ใส่เอง/จากระบบเก่าต่อให้':'')+' ที่เหลือใส่ราคาเองได้ในหน้ารายละเอียดรถ หรือแก้ราคาใน Ecount แล้วส่งออกใหม่:<br>'+p.noPrice.slice(0,10).map(function(k){return esc(k)}).join("<br>")+(p.noPrice.length>10?'<br>และอีก '+(p.noPrice.length-10)+' คัน':'')+'</div>';
+  if(!p.priceCol) h+='<div class="warnbox">ไฟล์นี้ไม่มีคอลัมน์ราคาขาย ระบบจะใช้ราคาจากการนำเข้าครั้งก่อน / ที่ใส่เอง / ระบบเก่า ต่อให้ (ไม่ลบราคาเดิม)</div>';
   if(p.soft.length) h+='<div class="warnbox">ไฟล์ไม่มีคอลัมน์ '+esc(p.soft.join(", "))+' นำเข้าได้ แต่ช่องนี้จะว่างในหน้าแอป</div>';
   if(p.dupKeys) h+='<div class="warnbox">มี '+p.dupKeys+' แถวที่ Serial ซ้ำกับแถวอื่น (เช่น โอนย้ายสาขา) ระบบจะรวมจำนวนคงเหลือเป็นรถคันเดียว ใช้ข้อมูลจากแถวที่ยอดเป็นบวกล่าสุด</div>';
   if(p.nonPos) h+='<div class="warnbox">'+p.nonPos+' คันมีจำนวนคงเหลือรวม 0 หรือติดลบ จะแสดงเป็น ไม่อยู่ในสต็อก</div>';

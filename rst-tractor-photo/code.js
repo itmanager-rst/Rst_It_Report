@@ -1,6 +1,14 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r13-2026-10-14-reg-book
+ * CODE_VERSION: r14-2026-10-17-price-fill
+ *
+ * r14: ราคาขายครบขึ้น
+ *      - อ่านราคาทนรูปแบบ: ฿ / บาท / ช่องว่าง / วงเล็บ ฯลฯ (เดิม "฿1,200,000" กลายเป็นว่าง)
+ *      - ราคา 0 ถือว่า "ไม่มีราคา" และ Serial ซ้ำหลายแถว (โอนย้ายสาขา) จะเอาราคาจากแถวอื่นมาเติม
+ *      - ไฟล์ใหม่ไม่มีราคา → ใช้ราคา Ecount ครั้งก่อนต่อ (ไม่ลบราคาเดิมทิ้ง) เก็บวันที่ของราคาไว้ใน priceDate
+ *      - ใส่ราคาเองได้จากหน้ารายละเอียดรถ (setPrice ต้องใช้ PIN) เก็บใน priceM / priceBy / priceAt
+ *      - ยังไม่มีราคาเลย → ใช้ ราคาขาย จากชีต Legacy_Data (ระบบเก่า) ให้อัตโนมัติ
+ *      ลำดับที่ใช้: Ecount ไฟล์ล่าสุด > ใส่เอง > Ecount ครั้งก่อน > ระบบเก่า  (ส่ง priceSrc ไปให้หน้าเว็บแสดงที่มา)
  *
  * r13: เพิ่มช่อง เล่มทะเบียน (reg) จากคอลัมน์ "เล่มทะเบียน" ในรายงาน Ecount ต่อท้ายชีต Tractors
  *      นำเข้าไฟล์ใหม่ครั้งถัดไปจะเติมค่าให้ ไฟล์เก่าที่ไม่มีคอลัมน์นี้ยังนำเข้าได้ (ช่องจะว่าง)
@@ -47,11 +55,11 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r13-2026-10-14-reg-book';
+var CODE_VERSION = 'r14-2026-10-17-price-fill';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
 var HEAD = {
-  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt', 'reg'],
+  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt', 'reg', 'priceDate', 'priceM', 'priceBy', 'priceAt'],
   Photos: ['photoId', 'key', 'fileId', 'thumbId', 'label', 'cover', 'uploadedAt', 'uploadedBy'],
   ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format']
 };
@@ -77,9 +85,9 @@ function doGet(e) {
 var API = {
   getBoot: getBoot, getPhotos: getPhotos, getCovers: getCovers, getPhotoFull: getPhotoFull,
   importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto,
-  getLegacy: getLegacy, setYear: setYear
+  getLegacy: getLegacy, setYear: setYear, setPrice: setPrice
 };
-var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1, setYear: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
+var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1, setYear: 1, setPrice: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
 
 function call(fn, args, pin) {
   if (!Object.prototype.hasOwnProperty.call(API, fn)) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
@@ -252,6 +260,15 @@ function keepRow_(r) {
 }
 function num_(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isNaN(n) ? 0 : n; }
 function numStr_(v) { var t = String(v == null ? '' : v).replace(/,/g, '').trim(); return t === '' || isNaN(parseFloat(t)) ? '' : String(parseFloat(t)); }
+/** r14: ราคา → ตัวเลขล้วน ตัด ฿ / บาท / ช่องว่าง / , ออก  ราคา 0 หรือติดลบ = ไม่มีราคา ('') */
+function priceStr_(v) {
+  var t = String(v == null ? '' : v).replace(/[,\s฿]|บาท|THB/gi, '').trim();
+  if (/^\(.*\)$/.test(t)) return ''; // (1,000) = ติดลบแบบบัญชี
+  var m = t.match(/^-?\d+(?:\.\d+)?/);
+  if (!m) return '';
+  var n = parseFloat(m[0]);
+  return isNaN(n) || n <= 0 ? '' : String(Math.round(n * 100) / 100);
+}
 /** r11: ปีรถเป็น ค.ศ. 4 หลัก รับ พ.ศ. ได้ (แปลงให้) ค่าว่าง = ล้างปี คืน null ถ้าใช้ไม่ได้ */
 function yearOf_(v) {
   var t = String(v == null ? '' : v).trim();
@@ -302,17 +319,24 @@ function legacyYearCol_(h) {
   for (var j = 0; j < h.length; j++) if (/^ปี/.test(h[j]) && !/ที่ขาย|ที่ซื้อ|ภาษี/.test(h[j])) return j;
   return -1;
 }
-/** {n:{key: จำนวนระเบียนเก่า}, y:{key: ปีรถจากระบบเก่า}} ส่งไปกับ getBoot (cache 10 นาที) */
+/** r14: คอลัมน์ราคาขายใน Legacy_Data (ราคาขาย / ราคา / Price) ไม่เอา ราคาทุน / ราคาซื้อ */
+function legacyPriceCol_(h) {
+  for (var i = 0; i < h.length; i++) if (/^(ราคาขาย|ราคา|price|sale\s*price)$/i.test(h[i])) return i;
+  for (var j = 0; j < h.length; j++) if (/ราคาขาย/.test(h[j])) return j;
+  return -1;
+}
+/** {n:{key: จำนวนระเบียนเก่า}, y:{key: ปีรถ}, p:{key: ราคาขาย}} จากระบบเก่า ส่งไปกับ getBoot (cache 10 นาที) */
 function legacyCount_() {
-  var cache = CacheService.getScriptCache(), hit = cache.get('legacy_count2');
+  var cache = CacheService.getScriptCache(), hit = cache.get('legacy_count3');
   if (hit) return JSON.parse(hit);
-  var d = legacyRead_(), out = { n: {}, y: {} }, yi = legacyYearCol_(d.h);
+  var d = legacyRead_(), out = { n: {}, y: {}, p: {} }, yi = legacyYearCol_(d.h), pi = legacyPriceCol_(d.h);
   d.rows.forEach(function (r) {
     var k = legacyNorm_(r[d.ki]); if (!k) return;
     out.n[k] = (out.n[k] || 0) + 1;
     if (yi >= 0 && !out.y[k]) { var y = yearOf_(r[yi]); if (y) out.y[k] = y; }
+    if (pi >= 0) { var p = priceStr_(r[pi]); if (p) out.p[k] = p; } // ระเบียนหลังสุดชนะ (ราคาล่าสุดในระบบเก่า)
   });
-  try { cache.put('legacy_count2', JSON.stringify(out), 600); } catch (e) { }
+  try { cache.put('legacy_count3', JSON.stringify(out), 600); } catch (e) { }
   return out;
 }
 /** ระเบียนจากระบบเก่าของรถคันนี้ เป็น [[ชื่อช่อง, ค่า], ...] ต่อระเบียน (รถ 1 คันอาจมีหลายระเบียน) */
@@ -336,16 +360,15 @@ function getBoot() {
   var logs = readAll_(SH.LOG), email = '';
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
   var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); });
-  var legacy = {};
+  var legacy = {}, lc = { n: {}, y: {}, p: {} };
   cars.forEach(function (c) { c.yearSrc = c.year ? 'manual' : ''; });
-  try {
-    var lc = legacyCount_();
-    cars.forEach(function (c) {
-      var lk = legacyNorm_(c.key), n = lc.n[lk], y = lc.y[lk];
-      if (n) legacy[c.key] = n;
-      if (!c.year && y) { c.year = y; c.yearSrc = 'legacy'; } // r11: ปีจากระบบเก่า (ยังไม่ได้บันทึกลงชีต)
-    });
-  } catch (e) { }
+  try { lc = legacyCount_(); } catch (e) { }
+  cars.forEach(function (c) {
+    var lk = legacyNorm_(c.key), n = lc.n[lk], y = lc.y[lk];
+    if (n) legacy[c.key] = n;
+    if (!c.year && y) { c.year = y; c.yearSrc = 'legacy'; } // r11: ปีจากระบบเก่า (ยังไม่ได้บันทึกลงชีต)
+    applyPrice_(c, lc.p[lk]);
+  });
   return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, legacy: legacy, lastImport: logs.length ? logs[logs.length - 1] : null };
 }
 
@@ -365,6 +388,7 @@ function importStock(rows, meta) {
       if (!r || !r.serial || !keepRow_(r)) return;
       var key = keyOf_(r.serial); if (!key) return;
       matched++;
+      r.price = priceStr_(r.price); // r14: 0 / ข้อความ = ว่าง เพื่อให้ FILL เติมจากแถวอื่นได้
       if (!groups[key]) { groups[key] = []; order.push(key); }
       groups[key].push(r);
     });
@@ -385,7 +409,11 @@ function importStock(rows, meta) {
         key: key, serial: r.serial, chassis: sp.ch, engine: sp.en,
         tag: (sp.tag || /gps/i.test(String(r.gps || ''))) ? 'GPS' : '',
         code: r.code, name: r.name, series: seriesOf_(r.name), type: typeOf_(r.name), kind: rowKind_(r),
-        branch: r.branch, spot: r.spot, qty: String(qty), price: numStr_(r.price), cond: String(r.cond || '').trim(),
+        branch: r.branch, spot: r.spot, qty: String(qty), cond: String(r.cond || '').trim(),
+        // r14: ไฟล์นี้ไม่มีราคา → ใช้ราคา Ecount ครั้งก่อนต่อ (priceDate = วันที่ของไฟล์ที่ให้ราคานั้น)
+        price: r.price || (prev ? priceStr_(prev.price) : ''),
+        priceDate: r.price ? today : (prev && priceStr_(prev.price) ? (prev.priceDate || prev.lastSeen || '') : ''),
+        priceM: prev ? prev.priceM : '', priceBy: prev ? prev.priceBy : '', priceAt: prev ? prev.priceAt : '',
         hours: numStr_(r.hours), reg: String(r.reg || '').trim(), status: inStock ? 'stock' : 'out',
         firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
         outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now,
@@ -435,6 +463,47 @@ function setYear(key, year, by) {
     var out = { key: key, year: y, yearBy: who, yearAt: y ? at : '', yearSrc: y ? 'manual' : '' };
     if (!y) { try { var ly = legacyCount_().y[legacyNorm_(key)]; if (ly) { out.year = ly; out.yearSrc = 'legacy'; } } catch (e) { } }
     return out;
+  });
+}
+
+/* ================= ราคาขาย (r14) ================= */
+/** เลือกราคาที่จะแสดง: Ecount ไฟล์ล่าสุด > ใส่เอง > Ecount ครั้งก่อน > ระบบเก่า
+ *  c.price = ราคาที่ใช้, c.priceEc = ราคาจาก Ecount (ถ้ามี), c.priceSrc = ecount | ecount-old | manual | legacy | '' */
+function applyPrice_(c, legacyPrice) {
+  var ec = priceStr_(c.price), man = priceStr_(c.priceM), fresh = ec && (!c.priceDate || c.priceDate === c.lastSeen);
+  c.priceEc = ec; c.priceLegacy = legacyPrice || '';
+  if (fresh) { c.price = ec; c.priceSrc = 'ecount'; }
+  else if (man) { c.price = man; c.priceSrc = 'manual'; }
+  else if (ec) { c.price = ec; c.priceSrc = 'ecount-old'; }
+  else if (legacyPrice) { c.price = legacyPrice; c.priceSrc = 'legacy'; }
+  else { c.price = ''; c.priceSrc = ''; }
+  return c;
+}
+/** เติมหัวคอลัมน์ที่ยังไม่มีในชีต Tractors (ชีตจากเวอร์ชันก่อน) คืนหัวตารางล่าสุด */
+function ensureHead_(s, keys) {
+  var h = headerOf_(s);
+  keys.forEach(function (k) {
+    if (h.indexOf(k) < 0) { ensureCols_(s, h.length + 1); h.push(k); s.getRange(1, h.length).setNumberFormat('@').setValue(k).setFontWeight('bold'); }
+  });
+  return h;
+}
+/** ใส่/แก้/ล้าง ราคาขายของรถ 1 คัน price ว่าง = ล้างราคาที่ใส่เอง (กลับไปใช้ Ecount / ระบบเก่า) */
+function setPrice(key, price, by) {
+  var raw = String(price == null ? '' : price).trim(), p = priceStr_(raw);
+  if (raw && !p) throw new Error('ราคาไม่ถูกต้อง ใส่เป็นตัวเลขมากกว่า 0 เช่น 450000');
+  return withLock_(function () {
+    var s = sheet_(SH.TRACTORS), row = findRow_(s, key);
+    if (!row) throw new Error('ไม่พบรถคันนี้ในชีต Tractors');
+    var h = ensureHead_(s, ['priceM', 'priceBy', 'priceAt']);
+    var at = new Date().toISOString(), who = p ? who_(by) : '';
+    [['priceM', p], ['priceBy', who], ['priceAt', p ? at : '']].forEach(function (x) {
+      s.getRange(row, h.indexOf(x[0]) + 1).setNumberFormat('@').setValue(x[1]);
+    });
+    var vals = s.getRange(row, 1, 1, h.length).getDisplayValues()[0], c = {};
+    h.forEach(function (k, i) { if (k) c[k] = vals[i]; });
+    var lp = ''; try { lp = legacyCount_().p[legacyNorm_(key)] || ''; } catch (e) { }
+    applyPrice_(c, lp);
+    return { key: key, price: c.price, priceSrc: c.priceSrc, priceEc: c.priceEc, priceLegacy: c.priceLegacy, priceDate: c.priceDate || '', priceM: p, priceBy: who, priceAt: p ? at : '' };
   });
 }
 
