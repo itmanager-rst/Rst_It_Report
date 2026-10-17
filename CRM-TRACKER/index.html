@@ -567,6 +567,20 @@
                                 <input type="text" id="cust-facebook" class="form-control">
                             </div>
                             <div class="form-group">
+                                <label style="color: var(--accent-color); font-weight: 600;">ลูกค้ามาจากช่องทางไหน <span style="color:#ef4444;">*</span></label>
+                                <select id="cust-lead-source" class="form-control" onchange="onCustLeadSourceChange()">
+                                    <option value="">-- เลือกช่องทาง --</option>
+                                    <option value="ลูกค้าหน้าร้าน">ลูกค้าหน้าร้าน</option>
+                                    <option value="นายหน้า">นายหน้า</option>
+                                    <option value="โทรเข้ามา">โทรเข้ามา</option>
+                                    <option value="Facebook">Facebook</option>
+                                    <option value="Line OA">Line OA</option>
+                                    <option value="Tiktok">Tiktok</option>
+                                    <option value="อื่นๆ">อื่นๆ (โปรดระบุ)</option>
+                                </select>
+                                <input type="text" id="cust-lead-source-detail" class="form-control" placeholder="โปรดระบุช่องทาง เช่น งานโมบาย, ป้ายประชาสัมพันธ์" style="display:none; margin-top:4px;">
+                            </div>
+                            <div class="form-group">
                                 <label>กลุ่มลูกค้า</label>
                                 <select id="cust-type" class="form-control" onchange="updateCustTypeHint_()">
                                     <option value="ลงทะเบียน">ลงทะเบียน (0-30%) COOL</option>
@@ -671,7 +685,7 @@
                             <input type="date" id="filter-appdate" class="form-control">
                         </div>
                 </div>
-                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ประเภทลูกค้า / ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▾</button>
+                <button type="button" class="btn-toggle-advanced" id="btn-toggle-advanced-filters" onclick="toggleAdvancedFilters()">🔧 ตัวกรองเพิ่มเติม (ประเภทลูกค้า / ช่องทาง / ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▾</button>
                 <div id="advanced-filters-section" style="display:none;">
                     <div class="search-grid filter-grid">
                         <div class="form-group">
@@ -682,6 +696,20 @@
                                 <option value="ลูกค้า ธกส">ลูกค้า ธกส</option>
                                 <option value="ข้าราชการ">ข้าราชการ</option>
                                 <option value="พนักงานเอกชน">พนักงานเอกชน</option>
+                                <option value="__none__">(ยังไม่ระบุ)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>ช่องทางที่มา</label>
+                            <select id="filter-lead-source" class="form-control">
+                                <option value="">-- ทุกช่องทาง --</option>
+                                <option value="ลูกค้าหน้าร้าน">ลูกค้าหน้าร้าน</option>
+                                <option value="นายหน้า">นายหน้า</option>
+                                <option value="โทรเข้ามา">โทรเข้ามา</option>
+                                <option value="Facebook">Facebook (รวม ManyChat)</option>
+                                <option value="Line OA">Line OA</option>
+                                <option value="Tiktok">Tiktok</option>
+                                <option value="อื่นๆ">อื่นๆ</option>
                                 <option value="__none__">(ยังไม่ระบุ)</option>
                             </select>
                         </div>
@@ -814,12 +842,12 @@
         </div>
         <!-- ===== หน้าที่ 4: รายงาน ===== -->
         <div id="page-report" class="page-view" style="display:none;">
-            <!-- (2026-09-25) Dashboard กราฟผลการทำงานพนักงาน + การติดตามลูกค้า (Chart.js) — เฉพาะ admin
-                 ซ่อนไว้ก่อนเสมอ แสดงเฉพาะเมื่อ currentRole === 'admin' (ดู switchPage) -->
-            <div class="card" id="staff-dash-card" style="display:none;">
+            <!-- (2026-09-25) Dashboard กราฟผลการทำงานพนักงาน + การติดตามลูกค้า (Chart.js)
+                 (r54) ทุก role เห็นเหมือนกัน + ใช้ช่วงวันที่กลางของหน้ารายงาน (ช่องวันที่ของการ์ดนี้ซ่อนไว้ ระบบตั้งค่าให้เอง) -->
+            <div class="card" id="staff-dash-card">
                 <div class="card-title" style="flex-wrap: wrap; row-gap: 6px;">
                     <span>📊 Dashboard ผลการทำงานพนักงาน & การติดตามลูกค้า</span>
-                    <div class="staff-dash-controls">
+                    <div class="staff-dash-controls" style="display:none;">
                         <input type="date" id="staff-dash-start-date" class="form-control" aria-label="วันที่เริ่ม">
                         <span class="staff-dash-sep">ถึง</span>
                         <input type="date" id="staff-dash-end-date" class="form-control" aria-label="วันที่สิ้นสุด">
@@ -846,7 +874,8 @@
                     </div>
                 </div>
             </div>
-            <div class="card">
+            <!-- (r54) ตัดออกจากหน้ารายงานตามคำขอ (ซ่อนไว้ ไม่โหลดข้อมูล) -->
+            <div class="card" id="stale-leads-card" style="display:none;">
                 <div class="card-title" style="flex-wrap: wrap; row-gap: 6px;">
                     <span>⏰ ลูกค้าที่ค้างนานไม่ได้ติดตาม</span>
                     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -892,15 +921,18 @@
                 </div>
             </div>
             <div class="card">
-                <div class="card-title">
-                    <span>🔻 Funnel การขาย (ภาพรวมทั้งหมด)</span>
-                    <button class="btn btn-primary" onclick="fetchSalesFunnel()">🔄 รีเฟรช</button>
+                <div class="card-title" style="flex-wrap: wrap; row-gap: 6px;">
+                    <span>🔻 Funnel การขาย <span id="funnel-scope-label" style="font-size:11.5px; font-weight:500; color:#64748b;"></span></span>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:#475569; white-space:nowrap;">
+                        <input type="checkbox" id="funnel-all-time" style="width:auto;" onchange="fetchSalesFunnel()"> ดูภาพรวมทั้งหมด (ไม่จำกัดวันที่)
+                    </label>
                 </div>
                 <div id="sales-funnel-container">
                     <div style="text-align:center; color:#94a3b8; padding:20px;">กำลังโหลด Funnel การขาย...</div>
                 </div>
             </div>
-            <div class="report-row">
+            <!-- (r54) สรุปสถิติ / Top 5 สินค้า / ManyChat (จากหน้าประวัติ) ตัดออกจากหน้ารายงาน — ตัวเลข ManyChat ย้ายไปการ์ด "สรุปภาพรวม" ตามช่วงวันที่ -->
+            <div class="report-row" style="display:none;">
                 <div class="dash-card">
                     <div class="dash-title">
                         <span>📊 สรุปสถิติ (จากผลลัพธ์การกรองล่าสุดในหน้าประวัติ)</span>
@@ -925,25 +957,13 @@
                 <div class="card-title">
                     <span>📅 รายงานจำนวนลีดที่เข้ามาต่อวัน (รวมเบอร์/ชื่อที่ส่งซ้ำด้วย)</span>
                 </div>
-                <div class="search-grid filter-grid" style="margin-bottom:10px;">
-                    <div class="form-group">
-                        <label>วันที่ (เริ่ม)</label>
-                        <input type="date" id="report-start-date" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>วันที่ (ถึง)</label>
-                        <input type="date" id="report-end-date" class="form-control">
-                    </div>
-                    <div class="form-group" style="justify-content:flex-end;">
-                        <label style="visibility:hidden;">.</label>
-                        <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; color:#475569; white-space:nowrap;">
-                            <input type="checkbox" id="report-only-manychat" style="width:auto;"> เฉพาะที่มาจาก ManyChat
-                        </label>
-                    </div>
-                    <div class="form-group" style="justify-content:flex-end;">
-                        <label style="visibility:hidden;">.</label>
-                        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="fetchDailyLeadReport()">🔄 ดึงรายงาน</button>
-                    </div>
+                <!-- (r54) ช่วงวันที่ใช้ "ช่วงวันที่รายงาน" ด้านบนสุดของหน้า (ช่องวันที่ของการ์ดนี้ซ่อนไว้ ระบบตั้งค่าให้เอง) -->
+                <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+                    <input type="date" id="report-start-date" class="form-control" style="display:none;">
+                    <input type="date" id="report-end-date" class="form-control" style="display:none;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; color:#475569; white-space:nowrap;">
+                        <input type="checkbox" id="report-only-manychat" style="width:auto;" onchange="fetchDailyLeadReport()"> เฉพาะที่มาจาก ManyChat
+                    </label>
                 </div>
                 <div class="table-responsive" style="max-height:50vh;">
                     <table id="daily-report-table">
@@ -1450,13 +1470,9 @@
             <!-- (r53) ประวัติการติดตามทั้งหมด (เติมโดย renderPrintFollowups_) — Mobile.html เห็น id นี้แล้วจะไม่สร้างซ้ำ -->
             <div id="pf-followup-history"></div>
             <hr class="pf-hr">
-            <div class="pf-row"><span class="pf-section-label">สื่อการขาย</span></div>
-            <div class="pf-check-list">
-                <span>☐ งานโมบาย</span><span>☐ Facebook</span><span>☐ Walk in</span><span>☐ ลูกค้าเก่า</span><span>☐ ลูกค้าใหม่</span>
-            </div>
-            <div class="pf-check-list">
-                <span>☐ เพื่อนบ้าน, นายหน้า</span><span>☐ ป้ายประชาสัมพันธ์</span><span>☐ Tiktok</span><span>☐ Line Official</span>
-            </div>
+            <div class="pf-row"><span class="pf-section-label">ช่องทางที่มา / สื่อการขาย</span></div>
+            <!-- (r54) ติ๊กให้อัตโนมัติตาม "ลูกค้ามาจากช่องทางไหน" (ดู renderPrintLeadSource_) -->
+            <div class="pf-check-list" id="pf-lead-source-list"></div>
             <div class="pf-row"><span class="pf-section-label">สินค้า</span>
                 <span style="margin-left:14px;"><span id="pf-check-tractor">☐</span> แทรกเตอร์รุ่น<span class="pf-fill" id="pf-product-tractor"></span></span>
                 <span style="margin-left:14px;"><span id="pf-check-harvester">☐</span> รถเกี่ยวข้าว<span class="pf-fill" id="pf-product-harvester"></span></span>
@@ -1508,7 +1524,7 @@
     </div>
     <script>
         // (2026-09-24) เวอร์ชัน Code.js ที่ไฟล์นี้ต้องใช้คู่กัน — ถ้า backend ที่ deploy อยู่ไม่ตรง จะขึ้นแถบเตือนสีเหลือง
-        const EXPECTED_CODE_VERSION = 'r52-2026-10-12-sale-as-staff'; // (r52) sale ได้สิทธิ์เท่าพนักงาน (export/ลบ ยังเฉพาะ admin) — คู่กับ Code.js r52
+        const EXPECTED_CODE_VERSION = 'r54-2026-10-17-lead-source-report'; // (r54) ช่องทางที่มาลูกค้า + รายงานใหม่ + ManyChat นัดวันนี้ — คู่กับ Code.js r54
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyJG7iZcsOYRUBjpWO9NkGZelBT4PvPaGIiGyXNEEpsu6KQITULI4RxT1xGb5vyyAzV/exec';
         const authTokenKey = 'crm_tracker_token';
         const nativeFetch = window.fetch.bind(window);
@@ -2291,6 +2307,23 @@
                 populateProductModelSelect('filter-product-model', category, '', '-- ทุกรุ่น --');
             }
         }
+        // (r54) ช่องทางที่มาของลูกค้า — ต้องตรงกับ LEAD_SOURCE_OPTIONS ใน Code.gs
+        const LEAD_SOURCE_OPTIONS = ['ลูกค้าหน้าร้าน', 'นายหน้า', 'โทรเข้ามา', 'Facebook', 'Line OA', 'Tiktok', 'อื่นๆ'];
+        function leadSourceText_(row) {
+            if (!row) return '';
+            const ls = String(row.leadSource || '').trim();
+            const det = String(row.leadSourceDetail || '').trim();
+            if (!ls) return '';
+            if (ls === 'อื่นๆ') return det ? `อื่นๆ: ${det}` : 'อื่นๆ';
+            return (det && ls === 'Facebook' && det === 'ManyChat') ? 'Facebook (ManyChat)' : ls;
+        }
+        function onCustLeadSourceChange() {
+            const sel = document.getElementById('cust-lead-source');
+            const det = document.getElementById('cust-lead-source-detail');
+            const isOther = sel.value === 'อื่นๆ';
+            det.style.display = isOther ? '' : 'none';
+            if (!isOther) det.value = '';
+        }
         function getRowProductParts(row) {
             if (row.productCategory || row.productModel) {
                 return { category: row.productCategory || '-', model: row.productModel || '-' };
@@ -2321,24 +2354,11 @@
                 calendarLoadedOnce = true;
                 goCalendarToday();
             }
-            if (name === 'report' && !dailyReportLoadedOnce) {
-                dailyReportLoadedOnce = true;
-                fetchDailyLeadReport();
-            }
-            if (name === 'report' && !staleLeadsLoadedOnce) {
-                staleLeadsLoadedOnce = true;
-                fetchStaleLeadsReport();
-            }
-            if (name === 'report' && !funnelLoadedOnce) {
-                funnelLoadedOnce = true;
-                fetchSalesFunnel();
-            }
-            // Dashboard พนักงาน: เฉพาะ admin (backend ก็บังคับซ้ำอีกชั้น) — role อื่นไม่เห็นการ์ดและไม่ยิงคำขอเลย
-            const staffDashCard = document.getElementById('staff-dash-card');
-            if (staffDashCard) staffDashCard.style.display = (currentRole === 'admin') ? '' : 'none';
-            if (name === 'report' && currentRole === 'admin' && !staffDashLoadedOnce) {
-                staffDashLoadedOnce = true;
-                renderStaffDashboardCharts();
+            // (r54) หน้ารายงาน: ทุก role เห็นการ์ดชุดเดียวกัน + ใช้ช่วงวันที่กลางชุดเดียว (ค่าเริ่มต้น = วันนี้)
+            // โหลดทุกการ์ดพร้อมกันครั้งแรกที่เปิดหน้า (ดู rpRefreshAll ท้ายไฟล์) — ตัด "ลูกค้าค้างติดตาม" ออกแล้ว
+            if (name === 'report' && !window.reportLoadedOnce_) {
+                window.reportLoadedOnce_ = true;
+                if (typeof rpOnReportOpen_ === 'function') rpOnReportOpen_();
             }
             if (name === 'members') {
                 populateMemberRoleOptions();
@@ -2480,7 +2500,7 @@
                 return `<button type="button" class="calendar-customer" onclick="openCalendarCustomer(${originalIndex})">
                     <div>
                     <div class="calendar-customer-name">${escapeHtml(row.name)}</div>
-                    <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}</div>
+                    <div class="calendar-customer-meta">📞 ${escapeHtml(row.phone || '-')} · ${escapeHtml(row.type || '-')}${leadSourceText_(row) ? ` · 📣 ${escapeHtml(leadSourceText_(row))}` : ''}</div>
                     <div class="calendar-customer-meta">🚜 ${escapeHtml([product.category, product.model].filter(v => v && v !== '-').join(' ') || '-')}</div>
                     <div class="calendar-customer-meta">แตะเพื่อดูประวัติและบันทึกการติดตาม ›</div>
                     </div>
@@ -2490,7 +2510,8 @@
             // (r45) ดึงบันทึกการติดตามล่าสุดตรงจากชีต (BigQuery ตามหลังได้ ~5 นาที) แล้ววาดการ์ดใหม่ครั้งเดียว
             if (!skipLiveRefresh) {
                 enrichRowsWithLiveAudit_(rows, () => {
-                    if (calendarSelectedDate === dateKey) selectCalendarDate(dateKey, false, true);
+                    // (r54) วาดตัวเลขบนปฏิทินใหม่ด้วย — นัดที่ถูกย้ายไปวันอื่นแล้วจะไม่ค้างอยู่วันเดิม
+                    if (calendarSelectedDate === dateKey) { renderFollowupCalendar(); selectCalendarDate(dateKey, false, true); }
                 });
             }
         }
@@ -2508,13 +2529,13 @@
             const open = (forceOpen === true) ? true : isHidden;
             sec.style.display = open ? 'block' : 'none';
             btn.innerHTML = open
-                ? '🔧 ตัวกรองเพิ่มเติม (ประเภทลูกค้า / ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▴'
-                : '🔧 ตัวกรองเพิ่มเติม (ประเภทลูกค้า / ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▾';
+                ? '🔧 ตัวกรองเพิ่มเติม (ประเภทลูกค้า / ช่องทาง / ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▴'
+                : '🔧 ตัวกรองเพิ่มเติม (ประเภทลูกค้า / ช่องทาง / ที่อยู่ / สินค้า / ติดตามล่าสุด / ผู้อัปเดต) ▾';
         }
         function getDateStrOffset(daysAgo) {
             const d = new Date();
             d.setDate(d.getDate() - daysAgo);
-            return d.toISOString().split('T')[0];
+            return localDateISO(d); // (r54) เดิม toISOString (UTC) ทำให้ก่อน 7 โมงเช้าได้วันที่ของเมื่อวาน
         }
         // เก็บช่วงวันที่ของรายงานรอบล่าสุดไว้ ใช้ตอนคลิกตัวเลขที่แถว "รวมทั้งหมด"
         // (แถวรวมไม่มีวันที่เดียวให้ระบุ ต้องส่งเป็นช่วงเริ่ม-ถึงแทน)
@@ -2594,16 +2615,25 @@
             { key: 'contract', label: '📄 ทำสัญญา', types: ['ทำสัญญา'], color: '#f59e0b' },
             { key: 'delivered', label: '🚚 ส่งมอบ / ปิดการขาย', types: ['ส่งมอบ', 'ปิดการขาย'], color: '#22c55e' }
         ];
-        function fetchSalesFunnel() {
+        let funnelSeq_ = 0;
+        function fetchSalesFunnel(opts) {
             const container = document.getElementById('sales-funnel-container');
             container.innerHTML = `<div style="text-align:center; color:#94a3b8; padding:20px;">⏳ กำลังโหลด...</div>`;
+            // (r54) ตามช่วงวันที่รายงาน (ลูกค้าที่บันทึกเข้ามาในช่วงนั้น แยกตามสถานะปัจจุบัน) — ติ๊ก "ภาพรวมทั้งหมด" = ไม่จำกัดวันที่
+            const allTime = !!(document.getElementById('funnel-all-time') || {}).checked;
+            const range = (typeof rpRange_ === 'function') ? rpRange_() : { start: '', end: '' };
+            const filters = allTime ? {} : { startDate: range.start, endDate: range.end };
+            const scopeEl = document.getElementById('funnel-scope-label');
+            if (scopeEl) scopeEl.textContent = allTime ? '(ภาพรวมลูกค้าทั้งหมด · สถานะปัจจุบัน)' : `(ลูกค้าที่บันทึก ${range.start === range.end ? range.start : range.start + ' ถึง ' + range.end} · สถานะปัจจุบัน)`;
+            const seq = ++funnelSeq_;
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'getDashboardSummary', payload: { filters: {} }, token: localStorage.getItem(authTokenKey) || '' })
+                body: JSON.stringify({ action: 'getDashboardSummary', payload: { filters: filters, noCache: !!(opts && opts.noCache === true) }, token: localStorage.getItem(authTokenKey) || '' })
             })
             .then(res => res.json())
             .then(resData => {
+                if (seq !== funnelSeq_) return; // มีคำขอใหม่กว่าแล้ว (เปลี่ยนวันที่เร็วๆ) — ทิ้งผลรอบเก่า
                 if (resData && resData.success) {
                     renderSalesFunnel(resData.typeSummary || []);
                 } else {
@@ -2611,6 +2641,7 @@
                 }
             })
             .catch(() => {
+                if (seq !== funnelSeq_) return;
                 container.innerHTML = `<div style="text-align:center; color:red; padding:20px;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</div>`;
             });
         }
@@ -2709,8 +2740,9 @@
             return m ? `${m[3]}/${m[2]}` : String(iso || '');
         }
 
-        function renderStaffDashboardCharts() {
-            if (currentRole !== 'admin') { destroyAllStaffDashCharts_(); return; } // เฉพาะ admin เท่านั้น
+        function renderStaffDashboardCharts(opts) {
+            // (r54) ทุก role ดูได้ (เดิมเฉพาะ admin)
+            const noCache = !!(opts && opts.noCache === true);
             initStaffDashDefaultRange_();
             const startEl = document.getElementById('staff-dash-start-date');
             const endEl = document.getElementById('staff-dash-end-date');
@@ -2725,7 +2757,7 @@
             if (typeof Chart === 'undefined') {
                 if (document.readyState !== 'complete') {
                     statusEl.textContent = '⏳ กำลังเตรียมไลบรารีกราฟ...';
-                    window.addEventListener('load', renderStaffDashboardCharts, { once: true });
+                    window.addEventListener('load', () => renderStaffDashboardCharts(opts), { once: true });
                 } else {
                     statusEl.textContent = '❌ โหลดไลบรารีกราฟ (Chart.js) ไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ตแล้วรีเฟรชหน้าเว็บ';
                 }
@@ -2738,7 +2770,7 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'getStaffDashboardStats', payload: { startDate: startEl.value, endDate: endEl.value } })
+                body: JSON.stringify({ action: 'getStaffDashboardStats', payload: { startDate: startEl.value, endDate: endEl.value, noCache: noCache } })
             })
             .then(res => res.json())
             .then(resData => {
@@ -2875,8 +2907,10 @@
                 }
             });
         }
+        let dailyLeadSeq_ = 0;
         function fetchDailyLeadReport() {
             const tbody = document.getElementById('daily-report-tbody');
+            const seq = ++dailyLeadSeq_; // (r54) กันผลรอบเก่าที่ตอบช้ามาทับรอบใหม่ตอนเปลี่ยนวันที่
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">🔄 กำลังโหลด...</td></tr>';
             const payload = {
                 startDate: document.getElementById('report-start-date').value,
@@ -2896,6 +2930,8 @@
             fetch(`${WEB_APP_URL}?${params.toString()}`)
             .then(res => res.json())
             .then(resData => {
+                if (seq !== dailyLeadSeq_) return;
+                if (typeof rpOnIntakeData_ === 'function') rpOnIntakeData_(resData && resData.success ? (resData.report || []) : null, payload.onlyManyChat);
                 if (!resData || !resData.success) {
                     const errorMessage = resData
                         ? (resData.message || resData.error || 'ไม่ทราบสาเหตุ')
@@ -2929,6 +2965,8 @@
                 tbody.innerHTML = html;
             })
             .catch(error => {
+                if (seq !== dailyLeadSeq_) return;
+                if (typeof rpOnIntakeData_ === 'function') rpOnIntakeData_(null);
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว: ' + escapeHtml(error.message || 'ลองใหม่อีกครั้ง') + '</td></tr>';
             });
         }
@@ -3030,6 +3068,8 @@
             { key: 'type', label: 'กลุ่มลูกค้า', width: 105, render: (row, ctx) => `<span class="badge ${ctx.badgeClass}">${escapeHtml(row.type || '-')}</span>` },
             // (r48) ประเภทลูกค้า (ผู้นำชุมชน/ธกส/ข้าราชการ/เอกชน) + ข้อมูลเพิ่มเติม (เกรด/ตำแหน่ง) ใต้ชื่อประเภท
             { key: 'customerGroup', label: 'ประเภทลูกค้า', width: 150, render: row => (row.customerGroup || row.customerGroupDetail) ? `${escapeHtml(row.customerGroup || '-')}${row.customerGroupDetail ? `<div style="font-size:11px; color:#64748b;">${escapeHtml(row.customerGroupDetail)}</div>` : ''}` : '-' },
+            // (r54) ช่องทางที่มาของลูกค้า
+            { key: 'leadSource', label: 'ช่องทางที่มา', width: 120, render: row => leadSourceText_(row) ? escapeHtml(leadSourceText_(row)) : '<span style="color:#cbd5e1;">-</span>' },
             { key: 'productCategory', label: 'ประเภทสินค้า', width: 120, render: (row, ctx) => ctx.prodParts.category },
             { key: 'productModel', label: 'รุ่นรถ', width: 120, render: (row, ctx) => ctx.prodParts.model },
             { key: 'moo', label: 'หมู่ที่', width: 55, render: row => row.moo || '-' },
@@ -3065,8 +3105,8 @@
         const ALL_COLUMN_KEYS = new Set(ALL_COLUMNS.map(c => c.key));
         // ลำดับ/คอลัมน์ที่โชว์เป็นค่าเริ่มต้น — ตรงกับตารางเดิมทุกคอลัมน์ บวก "รถ/เครื่องจักรที่ถือครอง" ที่เพิ่มใหม่
         // (เดิมข้อมูลนี้ถูกกรอกได้ในโมดัลการเงินอยู่แล้ว แต่ไม่เคยโชว์ในตารางเลย จึงเปิดโชว์เป็นค่าเริ่มต้นให้เห็นเลย)
-        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'customerGroup', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy', 'updatedBy', 'lastFollowupBy'];
-        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'customerGroup', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy', 'updatedBy', 'lastFollowupBy']);
+        const DEFAULT_COLUMN_ORDER = ['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'customerGroup', 'leadSource', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'debts', 'regularJob', 'addressno', 'zipcode', 'line', 'facebook', 'followUpCount', 'createdBy', 'updatedBy', 'lastFollowupBy'];
+        const DEFAULT_VISIBLE_KEYS = new Set(['date', 'booking_date', 'lastFollowupDate', 'name', 'phone', 'type', 'customerGroup', 'leadSource', 'productCategory', 'productModel', 'moo', 'village', 'subdistrict', 'district', 'province', 'rai', 'income', 'machinery', 'remark', 'createdBy', 'updatedBy', 'lastFollowupBy']);
 
         function getDefaultColumnConfig() {
             return DEFAULT_COLUMN_ORDER.map(key => {
@@ -3105,6 +3145,22 @@
                     const col = columnConfig.splice(i, 1)[0];
                     col.visible = true;
                     const t = columnConfig.findIndex(x => x.key === 'type');
+                    columnConfig.splice(t === -1 ? columnConfig.length : t + 1, 0, col);
+                    localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(columnConfig));
+                }
+                localStorage.setItem(FLAG, '1');
+            } catch (e) { /* ignore */ }
+        })();
+        // (r54) คอลัมน์ "ช่องทางที่มา" ใหม่ — เครื่องที่เคยตั้งค่าตารางไว้ ให้ย้ายมาต่อจาก "ประเภทลูกค้า" และเปิดโชว์ 1 ครั้ง
+        (function migrateLeadSourceColumn_() {
+            const FLAG = 'crm_tracker_lead_source_col_v1';
+            try {
+                if (localStorage.getItem(FLAG)) return;
+                const i = columnConfig.findIndex(x => x.key === 'leadSource');
+                if (i !== -1) {
+                    const col = columnConfig.splice(i, 1)[0];
+                    col.visible = true;
+                    const t = columnConfig.findIndex(x => x.key === 'customerGroup');
                     columnConfig.splice(t === -1 ? columnConfig.length : t + 1, 0, col);
                     localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(columnConfig));
                 }
@@ -3412,7 +3468,8 @@
             document.getElementById('filter-product-model').innerHTML = '<option value="ALL">-- ทุกรุ่น --</option>';
             // หมายเหตุ: ตัดการดึงตัวกรองเก่าจาก localStorage ออกแล้ว (2026-08-08) —
             // ทุกครั้งที่รีเฟรชหน้าเว็บ ตัวกรองจะเริ่มเป็นค่าว่างใหม่เสมอ ไม่ดึงเงื่อนไขค้นหารอบก่อนกลับมาแล้ว
-            document.getElementById('report-start-date').value = getDateStrOffset(6);
+            // (r54) รายงานเริ่มต้นเป็น "วันนี้" (ปรับช่วงวันที่ได้ที่แถบด้านบนของหน้ารายงาน)
+            document.getElementById('report-start-date').value = getDateStrOffset(0);
             document.getElementById('report-end-date').value = getDateStrOffset(0);
             // จำนวนแถวต่อหน้า/รูปแบบคอลัมน์ตาราง (ลำดับ/ซ่อน-โชว์/ความกว้าง) เป็นการตั้งค่าที่จำไว้ข้ามเซสชัน (localStorage)
             document.getElementById('filter-pagesize').value = getPreferredPageSize();
@@ -3439,7 +3496,7 @@
         });
         // คืนค่าวันที่ปัจจุบัน (YYYY-MM-DD) ใช้เป็นค่ามาตรฐานสำหรับทั้งค่าเริ่มต้นและเพดานวันที่ของ "วันที่บันทึก"
         function getTodayISO() {
-            return new Date().toISOString().split('T')[0];
+            return localDateISO(new Date()); // (r54) เวลาไทย ไม่ใช่ UTC
         }
         function setDefaultDate() {
             const todayStr = getTodayISO();
@@ -3464,7 +3521,7 @@
         function getTomorrowDateStr() {
             const d = new Date();
             d.setDate(d.getDate() + 1);
-            return d.toISOString().split('T')[0];
+            return localDateISO(d); // (r54) เวลาไทย ไม่ใช่ UTC
         }
         // เลือกฟิลด์ที่จะใช้เรียงตารางให้อัตโนมัติ ตามตัวกรองวันที่ที่กำลังใช้อยู่จริง —
         // ไม่ต้องให้พนักงานมาเลือกเรียงเอง: ถ้ากรองช่วง "ติดตามล่าสุด" อยู่ ก็เรียงจาก
@@ -3598,6 +3655,7 @@
                 detailCard('ชื่อ–นามสกุล', escapeHtml(name)) + detailCard('เบอร์โทร', escapeHtml(r.phone || '-')) +
                 detailCard('LINE / Facebook', escapeHtml([r.line, r.facebook].filter(Boolean).join(' / ') || '-')) + detailCard('สินค้าที่สนใจ', escapeHtml(r.product || '-')) +
                 detailCard('กลุ่มลูกค้า', escapeHtml(r.type || '-')) + detailCard('ประเภทลูกค้า', escapeHtml([r.customerGroup, r.customerGroupDetail].filter(Boolean).join(' — ') || '-')) +
+                detailCard('📣 ช่องทางที่มา', escapeHtml(leadSourceText_(r) || '-')) +
                 detailCard('ที่อยู่', escapeHtml(address || '-'), true) + detailCard('🌾 การเกษตร / พื้นที่ / รายได้', escapeHtml(farms || '-'), true) +
                 detailCard('📋 งานประจำ', escapeHtml(job)) + detailCard('💵 รายได้เสริม', escapeHtml(side)) +
                 detailCard('🚜 เครื่องจักรที่มี', escapeHtml(machines || '-'), true) + detailCard('📉 หนี้สิน', escapeHtml(debts || '-'), true) +
@@ -3739,6 +3797,7 @@
             document.getElementById('filter-note').value = '';
             document.getElementById('filter-updated-by').value = '';
             document.getElementById('filter-customer-group').value = '';
+            document.getElementById('filter-lead-source').value = '';
             document.getElementById('filter-pagesize').value = '20';
             fetchDataFromServer(1);
         }
@@ -3851,7 +3910,8 @@
                 district: document.getElementById('filter-district').value.trim(),
                 note: document.getElementById('filter-note').value.trim(),
                 updatedBy: document.getElementById('filter-updated-by').value,
-                customerGroup: document.getElementById('filter-customer-group').value
+                customerGroup: document.getElementById('filter-customer-group').value,
+                leadSource: document.getElementById('filter-lead-source').value
             };
         }
         let _dataLoadNotifyId = null; // (r40) แถบ "กำลังโหลดข้อมูล" ของตารางหลัก (มีได้ทีละอันเดียว)
@@ -3906,6 +3966,14 @@
             let changed = false;
             if (rec.created_by && rec.created_by !== row.created_by) { row.created_by = row.createdBy = rec.created_by; changed = true; }
             if (rec.updated_by && rec.updated_by !== row.updated_by) { row.updated_by = row.updatedBy = rec.updated_by; changed = true; }
+            // (r54) วันนัดติดตาม/ติดตามล่าสุด สดจากชีต — ถ้ามีคนบันทึกติดตามแล้ว (นัดถูกย้ายไปวันใหม่) ให้เห็นทันที
+            // ไม่ต้องรอ BigQuery sync (กันขึ้นให้ติดตามซ้ำคนเดิมในวันเก่า)
+            if (rec.booking_date && rec.booking_date !== (row.booking_date || row.appdate || '')) {
+                row.booking_date = row.appdate = rec.booking_date; changed = true;
+            }
+            if (rec.last_followup_date && rec.last_followup_date !== (row.lastFollowupDate || '')) {
+                row.lastFollowupDate = rec.last_followup_date; changed = true;
+            }
             if (Array.isArray(rec.follow_up_log) && rec.follow_up_log.length >= (Array.isArray(row.followUpLog) ? row.followUpLog.length : 0)) {
                 if (JSON.stringify(rec.follow_up_log) !== JSON.stringify(row.followUpLog || [])) {
                     row.followUpLog = rec.follow_up_log;
@@ -4239,8 +4307,15 @@
             })
             .catch(() => alert('🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว ลองใหม่อีกครั้ง'));
         }
+        // (r54) ค่าช่องทางเดิมตอนเปิดแก้ไข — เก็บรายละเอียดเดิม (เช่น ManyChat) ไว้ถ้าไม่ได้เปลี่ยนช่องทาง
+        var editOriginalLeadSource_ = { source: '', detail: '' };
+        function editOriginalLeadSourceDetail_(newSource) {
+            return (editOriginalLeadSource_ && editOriginalLeadSource_.source === newSource) ? (editOriginalLeadSource_.detail || '') : '';
+        }
         function resetFormState() {
             document.getElementById('customer-form').reset();
+            editOriginalLeadSource_ = { source: '', detail: '' };
+            onCustLeadSourceChange();
             applySaleEditFieldRestriction_(false); // เคลียร์การปิดฟิลด์จากรอบแก้ไขก่อนหน้า (ถ้ามี)
             editOriginalPhone = '';
             document.getElementById('form-row-index').value = '';
@@ -4306,6 +4381,11 @@
             updateCustTypeHint_();
             setSelectValueWithFallback('cust-customer-group', row.customerGroup || '');
             document.getElementById('cust-customer-group-detail').value = row.customerGroupDetail || '';
+            // (r54) ช่องทางที่มา
+            editOriginalLeadSource_ = { source: row.leadSource || '', detail: row.leadSourceDetail || '' };
+            setSelectValueWithFallback('cust-lead-source', row.leadSource || '');
+            onCustLeadSourceChange();
+            if ((row.leadSource || '') === 'อื่นๆ') document.getElementById('cust-lead-source-detail').value = row.leadSourceDetail || '';
 
             const product = getRowProductParts(row);
             setSelectValueWithFallback('cust-product-category', product.category === '-' ? '' : product.category);
@@ -4346,7 +4426,7 @@
         // และตอน resetFormState() (restricted=false เสมอ กันค้างจากการแก้ไขรอบก่อน)
         function applySaleEditFieldRestriction_(restricted) {
             const restrictedFieldIds = [
-                'cust-date', 'cust-appdate', 'cust-phone', 'cust-line', 'cust-facebook',
+                'cust-date', 'cust-appdate', 'cust-phone', 'cust-line', 'cust-facebook', 'cust-lead-source', 'cust-lead-source-detail',
                 'cust-type', 'cust-customer-group', 'cust-customer-group-detail', 'cust-product-category', 'cust-product-model', 'cust-product-model-text', 'cust-note'
             ];
             restrictedFieldIds.forEach(id => {
@@ -4385,6 +4465,19 @@
                     jumpToExistingCustomerTimeline(duplicatePhoneMatch.phone);
                     return;
                 }
+            }
+            // (r54) ช่องทางที่มาของลูกค้า — บังคับเลือกตอนเพิ่มลูกค้าใหม่ ("อื่นๆ" ต้องระบุ)
+            const leadSourceVal = document.getElementById('cust-lead-source').value;
+            const leadSourceDetailVal = document.getElementById('cust-lead-source-detail').value.trim();
+            if (!rid && !leadSourceVal) {
+                alert('⚠️ กรุณาเลือก "ลูกค้ามาจากช่องทางไหน" ก่อนบันทึก');
+                document.getElementById('cust-lead-source').focus();
+                return;
+            }
+            if (leadSourceVal === 'อื่นๆ' && !leadSourceDetailVal) {
+                alert('⚠️ เลือกช่องทาง "อื่นๆ" แล้ว กรุณาระบุช่องทางด้วย');
+                document.getElementById('cust-lead-source-detail').focus();
+                return;
             }
             const fname = document.getElementById('cust-fname').value.trim();
             const lname = document.getElementById('cust-lname').value.trim();
@@ -4426,6 +4519,8 @@
                 remark: document.getElementById('cust-note').value,
                 line: document.getElementById('cust-line').value,
                 facebook: document.getElementById('cust-facebook').value,
+                leadSource: leadSourceVal,
+                leadSourceDetail: leadSourceVal === 'อื่นๆ' ? leadSourceDetailVal : (rid ? editOriginalLeadSourceDetail_(leadSourceVal) : ''),
                 financialInfo: JSON.stringify(customerFinancial)
             };
             const actionType = rid ? 'update' : 'add';
@@ -4454,7 +4549,12 @@
                             ? 'บันทึกการแก้ไขข้อมูลลูกค้าสำเร็จ'
                             : 'บันทึกลูกค้าใหม่สำเร็จ' + (resData.createdBy ? ` | ผู้บันทึก: ${resData.createdBy}` : ''), { duration: 4000 });
                     }
-                    lastSavedCustomer = Object.assign({}, packData, { financial: JSON.parse(JSON.stringify(customerFinancial)) });
+                    // (r54) ใช้ข้อมูลแถวที่บันทึกจริงจากเซิร์ฟเวอร์ (รูปแบบเดียวกับแถวในตาราง) → แบบฟอร์มที่พิมพ์จากหน้านี้
+                    // ตรงกับที่พิมพ์จากหน้าตารางทุกช่อง รวม "ประวัติการติดตาม" ที่มีหมายเหตุตอนสร้างลูกค้าเป็นรายการแรก
+                    lastSavedCustomer = (resData.savedRow && typeof resData.savedRow === 'object')
+                        ? Object.assign({}, resData.savedRow)
+                        : Object.assign({}, packData, { financial: JSON.parse(JSON.stringify(customerFinancial)) });
+                    if (!lastSavedCustomer.leadSource) { lastSavedCustomer.leadSource = packData.leadSource; lastSavedCustomer.leadSourceDetail = packData.leadSourceDetail; }
                     const printBtn = document.getElementById('btn-print-last');
                     printBtn.disabled = false;
                     printBtn.title = 'พิมพ์แบบฟอร์มติดตามลูกค้าของ ' + fullName;
@@ -4490,7 +4590,11 @@
             fillPrintField('pf-subdistrict', data.subdistrict);
             fillPrintField('pf-district', data.district);
             fillPrintField('pf-province', data.province);
-            fillPrintField('pf-note', data.remark || data.note);
+            // (r54) หมายเหตุตอนสร้างลูกค้าถูกพิมพ์ในตาราง "ประวัติการติดตาม" แล้ว — ไม่พิมพ์ซ้ำในช่อง "ข้อมูลเดิม"
+            const remarkForPrint = String(data.remark || data.note || '').trim();
+            const remarkInLog = (Array.isArray(data.followUpLog) ? data.followUpLog : []).some(e => e && String(e.note || '').trim() === remarkForPrint);
+            fillPrintField('pf-note', remarkInLog ? '' : remarkForPrint);
+            renderPrintLeadSource_(data);
             document.getElementById('pf-check-tractor').textContent = '☐';
             document.getElementById('pf-check-harvester').textContent = '☐';
             document.getElementById('pf-check-other').textContent = '☐';
@@ -4549,6 +4653,17 @@
                     `<td class="pf-fu-note">${escapeHtml(e.note || '-')}</td><td>${escapeHtml(e.nextFollowUpDate ? printFollowupDate_(e.nextFollowUpDate) : '-')}</td>` +
                     `<td>${escapeHtml(e.by || '-')}</td></tr>`).join('') +
                 `</tbody></table>`;
+        }
+        // (r54) ช่องทางที่มา/สื่อการขายในใบพิมพ์ — ติ๊กช่องตามที่เลือกไว้ (อื่นๆ = เขียนรายละเอียดต่อท้าย)
+        function renderPrintLeadSource_(data) {
+            const box = document.getElementById('pf-lead-source-list');
+            if (!box) return;
+            const ls = String((data && data.leadSource) || '').trim();
+            const det = String((data && data.leadSourceDetail) || '').trim();
+            const known = LEAD_SOURCE_OPTIONS.filter(o => o !== 'อื่นๆ');
+            const isOther = ls && known.indexOf(ls) === -1;
+            box.innerHTML = known.map(o => `<span>${ls === o ? '☑' : '☐'} ${escapeHtml(o)}</span>`).join('') +
+                `<span>${isOther ? '☑' : '☐'} อื่นๆ<span class="pf-fill">${isOther ? escapeHtml(ls === 'อื่นๆ' ? det : ls) : ''}</span></span>`;
         }
         function renderPrintFinancialSummary(data) {
             let fin = data.financial;
@@ -5559,7 +5674,7 @@
                 renderHistoryCustomerInfo_(row);
                 renderHistoryTimeline();
             });
-            document.getElementById('history-new-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('history-new-date').value = localDateISO(new Date()); // (r54) เวลาไทย
             document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
             document.getElementById('history-new-note').value = '';
             resetFollowupType();
@@ -5590,7 +5705,7 @@
             const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
             container.innerHTML = sorted.map(e => `
                 <div class="timeline-item">
-                    <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type">${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span style="float:right; font-size:10.5px; color:#94a3b8; font-weight:normal;">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
+                    <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type"${e.initial ? ' style="background:#ecfdf5; color:#047857;"' : ''}>${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span style="float:right; font-size:10.5px; color:#94a3b8; font-weight:normal;">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
                     <div class="timeline-note">${escapeHtml(e.note || '')}</div>
                 </div>
             `).join('');
@@ -5730,11 +5845,11 @@
                 }
                 // (r47b) ส่งออกเป็น .xlsx ตั้งชื่อไฟล์มีเวลา+จำนวนแถว กันเปิดไฟล์เก่าชื่อซ้ำ และเก็บเลข 0 หน้าเบอร์โทร
                 const headers = ['วันที่บันทึก', 'วันที่นัดหมาย', 'ติดตามล่าสุด', 'ชื่อ-สกุล', 'เบอร์โทร', 'กลุ่มลูกค้า', 'ประเภทลูกค้า', 'ข้อมูลเพิ่มเติม (เกรด/ตำแหน่ง)',
-                    'ประเภทสินค้า', 'รุ่นรถ', 'ตำบล', 'อำเภอ', 'จังหวัด', 'หมายเหตุ'];
+                    'ช่องทางที่มา', 'ประเภทสินค้า', 'รุ่นรถ', 'ตำบล', 'อำเภอ', 'จังหวัด', 'หมายเหตุ'];
                 const aoa = [headers].concat(rows.map(r => {
                     const prodParts = getRowProductParts(r);
                     return [r.date, r.booking_date, r.lastFollowupDate, r.name, r.phone, r.type, r.customerGroup, r.customerGroupDetail,
-                        prodParts.category, prodParts.model, r.subdistrict, r.district, r.province, r.remark]
+                        leadSourceText_(r), prodParts.category, prodParts.model, r.subdistrict, r.district, r.province, r.remark]
                         .map(v => v == null ? '' : String(v));
                 }));
                 const now = new Date();
@@ -6241,6 +6356,29 @@
         .sdr-day-row td { background: #f1f5f9; font-weight: 600; color: #0f172a; }
         .sdr-note { font-size: 11.5px; color: #94a3b8; margin: 6px 0 10px; line-height: 1.5; }
         @media (max-width: 900px) { .report-grid { grid-template-columns: 1fr; } }
+        /* (r54) แถบช่วงวันที่กลาง + การ์ดสรุปภาพรวม + ช่องทางที่มา */
+        .rp-toolbar-card { padding: 10px 14px !important; }
+        .rp-range-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .rp-range-bar .form-control { width: auto; min-width: 140px; }
+        .rp-range-title { font-weight: 600; color: #0f172a; font-size: 13.5px; margin-right: 4px; }
+        .rp-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-right: auto; }
+        .rp-preset { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+        .rp-preset:hover { border-color: #0284c7; color: #0284c7; }
+        .rp-preset.active { background: #0284c7; border-color: #0284c7; color: #fff; }
+        .rp-toolbar-card .rp-toolbar { margin-top: 8px; }
+        .rp-range-status { font-size: 11.5px; color: #64748b; margin-right: auto; }
+        .rp-layout-note { font-size: 11.5px; color: #059669; }
+        .rp-kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+        .rp-kpi { border: 1px solid #e2e8f0; border-left: 4px solid var(--kpi-c, #0284c7); border-radius: 10px; padding: 9px 12px; background: #fff; min-width: 0; }
+        .rp-kpi-label { font-size: 12px; color: #475569; font-weight: 600; }
+        .rp-kpi-value { font-size: 24px; font-weight: 700; color: var(--kpi-c, #0f172a); line-height: 1.3; font-variant-numeric: tabular-nums; }
+        .rp-kpi-value .report-num-link { color: inherit; }
+        .rp-kpi-sub { font-size: 10.5px; color: #94a3b8; }
+        .rp-kpi-loading { color: #cbd5e1; }
+        .ls-table td { vertical-align: middle; }
+        .ls-table tr.ls-zero td { color: #94a3b8; }
+        .ls-bar-track { background: #f1f5f9; border-radius: 4px; height: 8px; overflow: hidden; }
+        .ls-bar { background: #0ea5e9; height: 100%; border-radius: 4px; }
     </style>
     <script>
         /* ---------- 2) การ์ดรายงานประจำวันแยกตามเซลล์ ---------- */
@@ -6256,11 +6394,10 @@
             const card = document.createElement('div');
             card.className = 'card';
             card.id = 'sales-daily-card';
-            card.style.display = 'none';
             card.innerHTML = `
                 <div class="card-title" style="flex-wrap:wrap; row-gap:6px;">
                     <span>👥 รายงานประจำวันแยกตามเซลล์</span>
-                    <div class="staff-dash-controls">
+                    <div class="staff-dash-controls" style="display:none;">
                         <input type="date" id="sdr-start-date" class="form-control" aria-label="วันที่เริ่ม">
                         <span class="staff-dash-sep">ถึง</span>
                         <input type="date" id="sdr-end-date" class="form-control" aria-label="วันที่สิ้นสุด">
@@ -6280,8 +6417,8 @@
             if (!e.value) e.value = localDateISO(new Date());
             if (!s.value) { const d = new Date(); d.setDate(d.getDate() - 6); s.value = localDateISO(d); }
         }
-        function fetchSalesDailyReport() {
-            if (currentRole !== 'admin') return;
+        function fetchSalesDailyReport(opts) {
+            // (r54) ทุก role ดูได้ (เดิมเฉพาะ admin)
             sdrInitRange_();
             const s = document.getElementById('sdr-start-date'), e = document.getElementById('sdr-end-date');
             const status = document.getElementById('sdr-status');
@@ -6292,16 +6429,17 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'getSalesDailyReport', payload: { startDate: s.value, endDate: e.value } })
+                body: JSON.stringify({ action: 'getSalesDailyReport', payload: { startDate: s.value, endDate: e.value, noCache: !!(opts && opts.noCache === true) } })
             })
             .then(res => res.json())
             .then(resData => {
                 if (seq !== sdrSeq) return;
                 if (!resData || !resData.success) {
                     const msg = (resData && resData.message) || 'ไม่ได้รับข้อมูล';
-                    throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs r49 ก่อน' : msg);
+                    throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs r54 ก่อน' : msg);
                 }
                 sdrData = resData;
+                if (typeof rpOnSalesData_ === 'function') rpOnSalesData_(resData);
                 if (resData.range) { s.value = resData.range.startDate; e.value = resData.range.endDate; }
                 status.textContent = `ช่วงวันที่ ${s.value} ถึง ${e.value} | อัปเดตเมื่อ ${resData.generatedAt || '-'}${resData.cached ? ' (แคช)' : ''} — ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 15 นาที`;
                 document.getElementById('sdr-note').innerHTML =
@@ -6312,6 +6450,7 @@
             })
             .catch(err => {
                 if (seq !== sdrSeq) return;
+                if (typeof rpOnSalesData_ === 'function') rpOnSalesData_(null);
                 status.textContent = '❌ โหลดรายงานไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
             })
             .finally(() => { if (seq === sdrSeq) btn.disabled = false; });
@@ -6362,36 +6501,96 @@
             dailyBox.innerHTML = html + '</tbody></table>';
         }
 
-        /* ---------- 1) จัดเรียงหน้ารายงาน ---------- */
-        const RP_LAYOUT_KEY = 'crm_tracker_report_layout_v1';
+        /* ---------- 1) จัดเรียงหน้ารายงาน ----------
+           (r54) ค่าเริ่มต้นของทุกคน = รูปแบบที่ admin จัดไว้ (เก็บที่เซิร์ฟเวอร์ ทุกครั้งที่ admin จัดหน้ารายงาน)
+           แต่ละคนยังจัดหน้าของตัวเองได้เหมือนเดิม (จำไว้ในเครื่องนี้) — กด "คืนค่าเริ่มต้น" = กลับไปใช้แบบของ admin */
+        const RP_LAYOUT_KEY = 'crm_tracker_report_layout_v2';        // v2: เริ่มจากแบบของ admin ใหม่ทุกคน
+        const RP_LEGACY_LAYOUT_KEY = 'crm_tracker_report_layout_v1'; // แบบเดิมที่ admin เคยจัดไว้ในเครื่อง (ย้ายมาให้ครั้งแรก)
         // id ของการ์ด → [ชื่อที่โชว์, ค่าเริ่มต้นเต็มแถวหรือไม่]
         const RP_PANELS = [
-            ['staff-dash', '📊 Dashboard พนักงาน', true],
+            ['kpi', '📌 สรุปภาพรวม', true],
+            ['lead-source', '📣 ลูกค้าแยกตามช่องทางที่มา', false],
+            ['funnel', '🔻 Funnel การขาย', false],
             ['sales-daily', '👥 รายงานแยกตามเซลล์', true],
-            ['stale', '⏰ ลูกค้าค้างติดตาม', true],
-            ['funnel', '🔻 Funnel การขาย', true],
-            ['dash-type', '📊 สรุปสถิติ', false],
-            ['dash-prod', '🏆 Top 5 สินค้า', false],
-            ['dash-manychat', '📱 Lead จาก ManyChat', false],
-            ['daily-lead', '📅 รายงานลีดรายวัน', true]
+            ['daily-lead', '📅 รายงานลีดรายวัน', true],
+            ['staff-dash', '📊 Dashboard พนักงาน', true]
         ];
-        let rpEditing = false, rpDragId = null;
-        function rpDefaultLayout_() { return RP_PANELS.map(p => ({ id: p[0], full: p[2] })); }
-        function rpLoadLayout_() {
-            let saved = null;
-            try { saved = JSON.parse(localStorage.getItem(RP_LAYOUT_KEY) || 'null'); } catch (e) { saved = null; }
-            if (!Array.isArray(saved)) return rpDefaultLayout_();
+        let rpEditing = false, rpDragId = null, rpServerDefault = null, rpPublishTimer = null;
+        function rpBuiltInLayout_() { return RP_PANELS.map(p => ({ id: p[0], full: p[2] })); }
+        function rpNormalize_(saved) {
+            if (!Array.isArray(saved) || !saved.length) return null;
             const known = RP_PANELS.map(p => p[0]), seen = new Set();
             const out = saved.filter(x => x && known.includes(x.id) && !seen.has(x.id)).map(x => { seen.add(x.id); return { id: x.id, full: !!x.full }; });
-            RP_PANELS.forEach(p => { if (!seen.has(p[0])) out.push({ id: p[0], full: p[2] }); });
+            if (!out.length) return null;
+            // การ์ดใหม่ที่ยังไม่อยู่ในแบบที่บันทึกไว้ → แทรกตามตำแหน่งเริ่มต้นของมัน
+            RP_PANELS.forEach((p, i) => { if (!seen.has(p[0])) out.splice(Math.min(i, out.length), 0, { id: p[0], full: p[2] }); });
             return out;
         }
+        function rpReadLocal_(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
+        function rpPersonalLayout_() { return rpNormalize_(rpReadLocal_(RP_LAYOUT_KEY)); }
+        function rpDefaultLayout_() { return rpNormalize_(rpServerDefault) || rpBuiltInLayout_(); }
+        function rpLoadLayout_() { return rpPersonalLayout_() || rpDefaultLayout_(); }
         let rpLayout = rpLoadLayout_();
-        function rpSave_() { try { localStorage.setItem(RP_LAYOUT_KEY, JSON.stringify(rpLayout)); } catch (e) {} }
+        function rpSave_() {
+            try { localStorage.setItem(RP_LAYOUT_KEY, JSON.stringify(rpLayout)); } catch (e) {}
+            if (currentRole === 'admin') rpPublishDefault_(false);
+        }
+        function rpSetLayoutNote_(msg) {
+            const el = document.getElementById('rp-layout-note');
+            if (el) el.textContent = msg || '';
+        }
+        // admin จัดหน้ารายงาน → บันทึกเป็นรูปแบบเริ่มต้นของทุกคน (หน่วงสั้นๆ รวมการกดหลายครั้งเป็นครั้งเดียว)
+        function rpPublishDefault_(immediate) {
+            clearTimeout(rpPublishTimer);
+            const send = () => {
+                const layout = rpLayout.map(x => ({ id: x.id, full: !!x.full }));
+                fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'saveReportLayoutDefault', payload: { layout: layout } })
+                })
+                .then(res => res.json())
+                .then(res => {
+                    if (res && res.success) {
+                        rpServerDefault = res.layout || layout;
+                        rpSetLayoutNote_('✓ บันทึกเป็นรูปแบบเริ่มต้นของทุกคนแล้ว (' + (res.updatedAt || '') + ')');
+                    } else {
+                        rpSetLayoutNote_('⚠️ บันทึกรูปแบบเริ่มต้นไม่สำเร็จ: ' + ((res && res.message) || 'ไม่ทราบสาเหตุ'));
+                    }
+                })
+                .catch(() => rpSetLayoutNote_('⚠️ บันทึกรูปแบบเริ่มต้นไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'));
+            };
+            if (immediate) send(); else rpPublishTimer = setTimeout(send, 800);
+        }
+        function rpFetchServerDefault_() {
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getReportLayoutDefault', payload: {} })
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (!res || !res.success) return;
+                rpServerDefault = res.layout || null;
+                const personal = rpPersonalLayout_();
+                if (currentRole === 'admin' && !rpServerDefault) {
+                    // ยังไม่เคยมีรูปแบบเริ่มต้น → ใช้แบบที่ admin จัดไว้ในเครื่องนี้ (รวมแบบเดิมรุ่นก่อน) เป็นค่าเริ่มต้นของทุกคน
+                    rpLayout = personal || rpNormalize_(rpReadLocal_(RP_LEGACY_LAYOUT_KEY)) || rpBuiltInLayout_();
+                    try { localStorage.setItem(RP_LAYOUT_KEY, JSON.stringify(rpLayout)); } catch (e) {}
+                    rpApply_();
+                    rpPublishDefault_(true);
+                    return;
+                }
+                if (!personal) { rpLayout = rpDefaultLayout_(); rpApply_(); }
+                if (currentRole === 'admin' && res.updatedAt) rpSetLayoutNote_('รูปแบบเริ่มต้นของทุกคนล่าสุด: ' + res.updatedAt + (res.updatedBy ? ' โดย ' + res.updatedBy : ''));
+            })
+            .catch(() => {});
+        }
         function rpGrid_() { return document.getElementById('report-grid'); }
         function rpPanel_(id) { return rpGrid_().querySelector(`.rp-panel[data-panel="${id}"]`); }
         function rpApply_() {
             const grid = rpGrid_();
+            if (!grid) return;
             rpLayout.forEach(item => {
                 const el = rpPanel_(item.id);
                 if (!el) return;
@@ -6420,11 +6619,22 @@
             rpGrid_().querySelectorAll('.rp-panel').forEach(el => { el.draggable = rpEditing; });
             document.getElementById('btn-rp-edit').textContent = rpEditing ? '✓ เสร็จสิ้นการจัดเรียง' : '🧩 จัดเรียงหน้ารายงาน';
             document.getElementById('btn-rp-reset').style.display = rpEditing ? '' : 'none';
-            document.getElementById('rp-hint').style.display = rpEditing ? '' : 'none';
+            const hint = document.getElementById('rp-hint');
+            hint.style.display = rpEditing ? '' : 'none';
+            hint.textContent = 'ลาก ⠿ การ์ดไปวางบนการ์ดอื่น หรือกด ▲ ▼ · "ครึ่งแถว" = วางคู่กันซ้าย-ขวา · ' +
+                (currentRole === 'admin'
+                    ? 'คุณเป็น admin: การจัดเรียงนี้จะเป็น "รูปแบบเริ่มต้น" ของทุกคนด้วย'
+                    : 'ระบบจำการจัดเรียงไว้ในเครื่องนี้ (ค่าเริ่มต้น = ตามที่ admin จัดไว้)');
         }
         function rpReset() {
-            if (!confirm('คืนค่าการจัดเรียงหน้ารายงานเป็นแบบเริ่มต้น?')) return;
-            rpLayout = rpDefaultLayout_(); rpSave_(); rpApply_();
+            if (currentRole === 'admin') {
+                if (!confirm('คืนค่าหน้ารายงานเป็นแบบมาตรฐานของระบบ และตั้งเป็นรูปแบบเริ่มต้นของทุกคน?')) return;
+                rpLayout = rpBuiltInLayout_(); rpSave_(); rpApply_();
+                return;
+            }
+            if (!confirm('คืนค่าการจัดเรียงหน้ารายงานเป็นแบบเริ่มต้น (ตามที่ admin จัดไว้)?')) return;
+            try { localStorage.removeItem(RP_LAYOUT_KEY); } catch (e) {}
+            rpLayout = rpDefaultLayout_(); rpApply_();
         }
         function rpWrapPanel_(el, id, name) {
             el.classList.add('rp-panel');
@@ -6457,52 +6667,285 @@
                 rpSave_(); rpApply_();
             });
         }
+
+        /* ---------- 3) (r54) ช่วงวันที่กลางของหน้ารายงาน — ทุกการ์ดใช้ช่วงเดียวกัน (ค่าเริ่มต้น = วันนี้) ----------
+           เดิมแต่ละการ์ดมีช่องวันที่ของตัวเอง + บางการ์ดอิงตัวกรองหน้าประวัติ ทำให้เปลี่ยนวันที่แล้วบางการ์ดไม่อัปเดต */
+        let rpRangeTimer = null;
+        function rpRange_() {
+            const sEl = document.getElementById('rp-start-date'), eEl = document.getElementById('rp-end-date');
+            const today = localDateISO(new Date());
+            let s = (sEl && sEl.value) || today, e = (eEl && eEl.value) || today;
+            if (s > e) { const t = s; s = e; e = t; if (sEl) sEl.value = s; if (eEl) eEl.value = e; }
+            return { start: s, end: e };
+        }
+        function rpThaiDate_(iso) {
+            try { return new Date(iso + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }); } catch (e) { return iso; }
+        }
+        function rpRangeLabel_() {
+            const r = rpRange_();
+            return r.start === r.end ? rpThaiDate_(r.start) : `${rpThaiDate_(r.start)} – ${rpThaiDate_(r.end)}`;
+        }
+        function rpSetPreset(kind) {
+            const d = new Date();
+            const iso = x => localDateISO(x);
+            let s = iso(d), e = iso(d);
+            if (kind === 'yesterday') { const y = new Date(); y.setDate(y.getDate() - 1); s = e = iso(y); }
+            else if (kind === '7d') { const a = new Date(); a.setDate(a.getDate() - 6); s = iso(a); }
+            else if (kind === 'month') { s = iso(new Date(d.getFullYear(), d.getMonth(), 1)); }
+            else if (kind === 'lastmonth') { s = iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)); e = iso(new Date(d.getFullYear(), d.getMonth(), 0)); }
+            document.getElementById('rp-start-date').value = s;
+            document.getElementById('rp-end-date').value = e;
+            rpRefreshAll(false);
+        }
+        function rpOnRangeInput_() {
+            clearTimeout(rpRangeTimer);
+            rpRangeTimer = setTimeout(() => rpRefreshAll(false), 450);
+        }
+        function rpMarkPreset_() {
+            const r = rpRange_();
+            const d = new Date(), iso = x => localDateISO(x);
+            const y = new Date(); y.setDate(y.getDate() - 1);
+            const a = new Date(); a.setDate(a.getDate() - 6);
+            const presets = {
+                today: [iso(d), iso(d)], yesterday: [iso(y), iso(y)], '7d': [iso(a), iso(d)],
+                month: [iso(new Date(d.getFullYear(), d.getMonth(), 1)), iso(d)],
+                lastmonth: [iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)), iso(new Date(d.getFullYear(), d.getMonth(), 0))]
+            };
+            document.querySelectorAll('.rp-preset').forEach(btn => {
+                const p = presets[btn.dataset.preset];
+                btn.classList.toggle('active', !!p && p[0] === r.start && p[1] === r.end);
+            });
+        }
+        // ดึงทุกการ์ดใหม่ตามช่วงวันที่ปัจจุบัน — noCache=true (กดปุ่ม "ดึงรายงานทั้งหมด") = ไม่ใช้แคชฝั่งเซิร์ฟเวอร์
+        function rpRefreshAll(noCache) {
+            const r = rpRange_();
+            ['staff-dash-start-date', 'sdr-start-date', 'report-start-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = r.start; });
+            ['staff-dash-end-date', 'sdr-end-date', 'report-end-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = r.end; });
+            rpMarkPreset_();
+            const label = rpRangeLabel_();
+            document.querySelectorAll('.rp-range-tag').forEach(el => { el.textContent = '· ' + label; });
+            const st = document.getElementById('rp-range-status');
+            if (st) st.textContent = 'แสดงข้อมูล: ' + label + ' — อัปเดต ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+            rpKpi = { intake: undefined, sales: undefined, onlyMc: false };
+            rpRenderKpi_();
+            const o = { noCache: !!noCache };
+            fetchDailyLeadReport();
+            fetchSalesDailyReport(o);
+            fetchSalesFunnel(o);
+            fetchLeadSourceReport(o);
+            renderStaffDashboardCharts(o);
+        }
+        function rpOnReportOpen_() {
+            rpFetchServerDefault_();
+            rpRefreshAll(false);
+        }
+
+        /* ---------- 4) (r54) การ์ด "📌 สรุปภาพรวม" — ตัวเลขหลักของช่วงวันที่ในที่เดียว ---------- */
+        let rpKpi = { intake: undefined, sales: undefined, onlyMc: false }; // undefined = กำลังโหลด, null = โหลดไม่สำเร็จ
+        function rpOnIntakeData_(report, onlyMc) {
+            if (!Array.isArray(report)) { rpKpi.intake = null; rpRenderKpi_(); return; }
+            const t = { total: 0, newCount: 0, duplicateCount: 0, manychatCount: 0 };
+            report.forEach(r => { Object.keys(t).forEach(k => { t[k] += Number(r[k]) || 0; }); });
+            rpKpi.intake = t; rpKpi.onlyMc = !!onlyMc;
+            rpRenderKpi_();
+        }
+        function rpOnSalesData_(res) {
+            if (!res) { rpKpi.sales = null; rpRenderKpi_(); return; }
+            const t = { added: 0, followups: 0, appointments: 0, booked: 0, closing: 0 };
+            (res.people || []).forEach(p => { Object.keys(t).forEach(k => { t[k] += Number(p[k]) || 0; }); });
+            t.clamped = !!(res.range && res.range.startDate !== rpRange_().start);
+            rpKpi.sales = t;
+            rpRenderKpi_();
+        }
+        function rpBuildKpiCard_() {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = 'rp-kpi-card';
+            card.innerHTML = `
+                <div class="card-title"><span>📌 สรุปภาพรวม <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
+                <div class="rp-kpi-grid" id="rp-kpi-grid"></div>
+                <div class="sdr-note" id="rp-kpi-note">• แถวบน = ลีดที่ส่งเข้ามา (นับจาก log รับลีด รวมที่ส่งซ้ำ) — กดตัวเลขเพื่อดูรายชื่อ · แถวล่าง = ผลงานของเซลล์ (จากรายงานแยกตามเซลล์)<br>• จอง / รอปิดการขาย = สถานะปัจจุบันของลูกค้า นับตามวันที่ติดตามล่าสุด</div>`;
+            return card;
+        }
+        function rpRenderKpi_() {
+            const box = document.getElementById('rp-kpi-grid');
+            if (!box) return;
+            const loading = '<span class="rp-kpi-loading">…</span>';
+            const num = (obj, k, linkFilter) => {
+                if (obj === undefined) return loading;
+                if (obj === null) return '<span style="color:#cbd5e1;">–</span>';
+                const n = Number(obj[k]) || 0;
+                return linkFilter ? renderIntakeNumLink(n, true, linkFilter) : n.toLocaleString();
+            };
+            const i = rpKpi.intake, s = rpKpi.sales;
+            const tiles = [
+                { label: 'ลีดเข้ามาทั้งหมด', sub: rpKpi.onlyMc ? 'เฉพาะ ManyChat' : 'รวมที่ส่งซ้ำ', v: num(i, 'total', 'total'), c: '#0f172a' },
+                { label: 'ลูกค้าใหม่', sub: 'ยังไม่เคยมีในระบบ', v: num(i, 'newCount', 'new'), c: '#059669' },
+                { label: 'ส่งซ้ำ', sub: 'มีในระบบแล้ว', v: num(i, 'duplicateCount', 'duplicate'), c: '#dc2626' },
+                { label: 'จาก Facebook/ManyChat', sub: 'ลีดอัตโนมัติ', v: num(i, 'manychatCount', 'manychat'), c: '#1877F2' },
+                { label: 'เซลล์เพิ่มลูกค้าเอง', sub: 'ไม่รวม ManyChat/Excel', v: num(s, 'added'), c: '#0f766e', row2: true },
+                { label: 'บันทึกติดตาม', sub: 'ครั้ง', v: num(s, 'followups'), c: '#ea580c' },
+                { label: 'นัดหมาย / เข้าพบ', sub: 'ครั้ง', v: num(s, 'appointments'), c: '#7c3aed' },
+                { label: 'จอง', sub: 'ราย (HOT)', v: num(s, 'booked'), c: '#0284c7' },
+                { label: 'รอปิดการขาย', sub: 'ราย (HOT)', v: num(s, 'closing'), c: '#6b21a8' }
+            ];
+            box.innerHTML = tiles.map(t => `<div class="rp-kpi${t.row2 ? ' rp-kpi-row2' : ''}" style="--kpi-c:${t.c};">
+                <div class="rp-kpi-label">${escapeHtml(t.label)}</div>
+                <div class="rp-kpi-value">${t.v}</div>
+                <div class="rp-kpi-sub">${escapeHtml(t.sub)}</div></div>`).join('');
+            const note = document.getElementById('rp-kpi-note');
+            if (note && s && s.clamped) note.dataset.clamped = '1';
+        }
+
+        /* ---------- 5) (r54) การ์ด "📣 ลูกค้าแยกตามช่องทางที่มา" — action 'getLeadSourceReport' ---------- */
+        let leadSourceSeq_ = 0, leadSourceData_ = null, leadSourceRows_ = [];
+        function rpBuildLeadSourceCard_() {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = 'lead-source-card';
+            card.innerHTML = `
+                <div class="card-title"><span>📣 ลูกค้าแยกตามช่องทางที่มา <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
+                <div id="lead-source-status" class="staff-dash-status"></div>
+                <div class="table-responsive" id="lead-source-body" style="max-height:60vh;"></div>
+                <div class="sdr-note">• นับลูกค้าตาม "วันที่บันทึก" ในช่วงที่เลือก (ไม่รวมรายการจาก "นำเข้า Excel") · คอลัมน์สถานะ = สถานะปัจจุบันของลูกค้า<br>
+                • ลีดจาก ManyChat ที่ยังไม่ได้ระบุช่องทาง นับเป็น Facebook · กดชื่อช่องทางเพื่อเปิดรายชื่อในหน้า "ประวัติ / ค้นหา"</div>`;
+            return card;
+        }
+        function fetchLeadSourceReport(opts) {
+            const body = document.getElementById('lead-source-body');
+            const status = document.getElementById('lead-source-status');
+            if (!body) return;
+            const r = rpRange_();
+            const seq = ++leadSourceSeq_;
+            body.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">⏳ กำลังโหลด...</div>';
+            status.textContent = '';
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getLeadSourceReport', payload: { startDate: r.start, endDate: r.end, noCache: !!(opts && opts.noCache === true) } })
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (seq !== leadSourceSeq_) return;
+                if (!res || !res.success) {
+                    const msg = (res && res.message) || 'ไม่ได้รับข้อมูล';
+                    throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs r54 ก่อน' : msg);
+                }
+                leadSourceData_ = res;
+                status.textContent = `อัปเดตเมื่อ ${res.generatedAt || '-'}${res.cached ? ' (แคช)' : ''}` +
+                    (res.hasLeadSourceColumn === false ? ' · ⚠️ ฐานข้อมูลรายงานยังไม่มีคอลัมน์ช่องทาง (รอ sync รอบถัดไปหลัง deploy) — ตอนนี้แยกได้แค่ Facebook/ไม่ระบุ' : '');
+                renderLeadSourceReport_();
+            })
+            .catch(err => {
+                if (seq !== leadSourceSeq_) return;
+                body.innerHTML = `<div style="text-align:center; color:#ef4444; padding:20px;">❌ โหลดรายงานไม่สำเร็จ: ${escapeHtml(err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')}</div>`;
+            });
+        }
+        function renderLeadSourceReport_() {
+            const body = document.getElementById('lead-source-body');
+            const res = leadSourceData_;
+            if (!body || !res) return;
+            const rows = (res.data || []).slice();
+            const present = new Set(rows.map(x => x.source));
+            LEAD_SOURCE_OPTIONS.forEach(o => { if (!present.has(o)) rows.push({ source: o, total: 0, closing: 0, booked: 0, won: 0, otherDetails: '' }); });
+            const total = rows.reduce((s, x) => s + (Number(x.total) || 0), 0);
+            const max = Math.max(1, ...rows.map(x => Number(x.total) || 0));
+            const pct = (a, b) => b ? (Math.round(a / b * 1000) / 10) + '%' : '-';
+            const zero = '<span style="color:#cbd5e1;">0</span>';
+            const n = v => (Number(v) || 0) ? Number(v).toLocaleString() : zero;
+            let html = `<table class="sdr-table ls-table"><thead><tr><th>ช่องทาง</th><th class="num">ลูกค้า</th><th style="min-width:110px;">สัดส่วน</th>` +
+                `<th class="num">รอปิดการขาย</th><th class="num">จอง</th><th class="num">ทำสัญญา/ส่งมอบ</th><th class="num" title="(รอปิด + จอง + ทำสัญญา/ส่งมอบ) ÷ ลูกค้า">เป็นลูกค้า HOT ขึ้นไป</th></tr></thead><tbody>`;
+            leadSourceRows_ = rows;
+            html += rows.map((x, idx) => {
+                const t = Number(x.total) || 0;
+                const hot = (Number(x.closing) || 0) + (Number(x.booked) || 0) + (Number(x.won) || 0);
+                const w = Math.max(t ? 3 : 0, Math.round(t / max * 100));
+                return `<tr${t ? '' : ' class="ls-zero"'}><td><span class="report-customer-link" onclick="rpOpenLeadSourceInHistory(leadSourceRows_[${idx}].source)">${escapeHtml(x.source)}</span>` +
+                    (x.otherDetails ? `<div style="font-size:10.5px; color:#94a3b8; white-space:normal; max-width:220px;">${escapeHtml(x.otherDetails)}</div>` : '') + `</td>` +
+                    `<td class="num"><b>${n(t)}</b></td>` +
+                    `<td><div class="ls-bar-track"><div class="ls-bar" style="width:${w}%;"></div></div><div style="font-size:10.5px; color:#64748b;">${pct(t, total)}</div></td>` +
+                    `<td class="num">${n(x.closing)}</td><td class="num">${n(x.booked)}</td><td class="num">${n(x.won)}</td>` +
+                    `<td class="num">${t ? pct(hot, t) : '-'}</td></tr>`;
+            }).join('');
+            const sum = k => rows.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+            const hotAll = sum('closing') + sum('booked') + sum('won');
+            html += `<tr class="sdr-day-row"><td>รวมทั้งหมด</td><td class="num">${total.toLocaleString()}</td><td></td>` +
+                `<td class="num">${sum('closing').toLocaleString()}</td><td class="num">${sum('booked').toLocaleString()}</td><td class="num">${sum('won').toLocaleString()}</td>` +
+                `<td class="num">${pct(hotAll, total)}</td></tr></tbody></table>`;
+            body.innerHTML = total ? html : '<div style="text-align:center; color:#94a3b8; padding:20px;">ไม่มีลูกค้าที่บันทึกในช่วงวันที่ที่เลือก</div>';
+        }
+        // กดชื่อช่องทาง → ไปหน้า "ประวัติ / ค้นหา" กรองช่องทางนี้ + วันที่บันทึกตามช่วงของรายงาน
+        function rpOpenLeadSourceInHistory(src) {
+            const r = rpRange_();
+            ['filter-keyword', 'filter-exact-phone', 'filter-appdate', 'filter-followup-start-date', 'filter-followup-end-date', 'filter-note'].forEach(id => {
+                const el = document.getElementById(id); if (el) el.value = '';
+            });
+            document.querySelectorAll('#type-dropdown input').forEach(cb => cb.checked = false);
+            updateTypeSelectLabel();
+            document.getElementById('filter-customer-group').value = '';
+            document.getElementById('filter-updated-by').value = '';
+            document.getElementById('filter-start-date').value = r.start;
+            document.getElementById('filter-end-date').value = r.end;
+            setSelectValueWithFallback('filter-lead-source', src === '(ไม่ระบุ)' ? '__none__' : src);
+            toggleAdvancedFilters(true);
+            switchPage('history');
+            fetchDataFromServer(1);
+        }
+
         (function rpInit_() {
             const page = document.getElementById('page-report');
             if (!page || document.getElementById('report-grid')) return;
             const byId = id => document.getElementById(id);
             const cardOf = id => { const el = byId(id); return el ? el.closest('.card, .dash-card') : null; };
             const found = {
+                'kpi': rpBuildKpiCard_(),
+                'lead-source': rpBuildLeadSourceCard_(),
                 'staff-dash': byId('staff-dash-card'),
-                'stale': cardOf('stale-leads-table'),
                 'funnel': cardOf('sales-funnel-container'),
-                'dash-type': cardOf('dash-type-list'),
-                'dash-prod': cardOf('dash-prod-list'),
-                'dash-manychat': cardOf('dash-manychat-count'),
                 'daily-lead': cardOf('daily-report-table'),
                 'sales-daily': sdrBuildCard_()
             };
-            const reportRow = page.querySelector('.report-row');
             const toolbar = document.createElement('div');
-            toolbar.className = 'rp-toolbar';
-            toolbar.innerHTML = '<span class="rp-hint" id="rp-hint" style="display:none;">ลาก ⠿ การ์ดไปวางบนการ์ดอื่น หรือกด ▲ ▼ · "ครึ่งแถว" = วางคู่กันซ้าย-ขวา · ระบบจำการจัดเรียงไว้ในเครื่องนี้</span>' +
-                '<button type="button" class="btn btn-secondary" id="btn-rp-reset" style="display:none;" onclick="rpReset()">↩️ คืนค่าเริ่มต้น</button>' +
-                '<button type="button" class="btn btn-secondary" id="btn-rp-edit" onclick="rpToggleEdit()">🧩 จัดเรียงหน้ารายงาน</button>';
+            toolbar.className = 'card rp-toolbar-card';
+            toolbar.innerHTML =
+                '<div class="rp-range-bar">' +
+                    '<span class="rp-range-title">📅 ช่วงวันที่รายงาน</span>' +
+                    '<input type="date" id="rp-start-date" class="form-control" aria-label="วันที่เริ่ม" onchange="rpOnRangeInput_()">' +
+                    '<span class="staff-dash-sep">ถึง</span>' +
+                    '<input type="date" id="rp-end-date" class="form-control" aria-label="วันที่สิ้นสุด" onchange="rpOnRangeInput_()">' +
+                    '<div class="rp-presets">' +
+                        '<button type="button" class="rp-preset" data-preset="today" onclick="rpSetPreset(\'today\')">วันนี้</button>' +
+                        '<button type="button" class="rp-preset" data-preset="yesterday" onclick="rpSetPreset(\'yesterday\')">เมื่อวาน</button>' +
+                        '<button type="button" class="rp-preset" data-preset="7d" onclick="rpSetPreset(\'7d\')">7 วันล่าสุด</button>' +
+                        '<button type="button" class="rp-preset" data-preset="month" onclick="rpSetPreset(\'month\')">เดือนนี้</button>' +
+                        '<button type="button" class="rp-preset" data-preset="lastmonth" onclick="rpSetPreset(\'lastmonth\')">เดือนที่แล้ว</button>' +
+                    '</div>' +
+                    '<button type="button" class="btn btn-primary" onclick="rpRefreshAll(true)" title="ดึงข้อมูลล่าสุดทุกการ์ด (ไม่ใช้แคช)">🔄 ดึงรายงานทั้งหมด</button>' +
+                '</div>' +
+                '<div class="rp-toolbar">' +
+                    '<span class="rp-range-status" id="rp-range-status"></span>' +
+                    '<span class="rp-hint" id="rp-hint" style="display:none;"></span>' +
+                    '<span class="rp-layout-note" id="rp-layout-note"></span>' +
+                    '<button type="button" class="btn btn-secondary" id="btn-rp-reset" style="display:none;" onclick="rpReset()">↩️ คืนค่าเริ่มต้น</button>' +
+                    '<button type="button" class="btn btn-secondary" id="btn-rp-edit" onclick="rpToggleEdit()">🧩 จัดเรียงหน้ารายงาน</button>' +
+                '</div>';
             const grid = document.createElement('div');
             grid.id = 'report-grid';
             grid.className = 'report-grid';
             page.insertBefore(toolbar, page.firstChild);
             page.insertBefore(grid, toolbar.nextSibling);
-            RP_PANELS.forEach(([id, name]) => { const el = found[id]; if (el) { rpWrapPanel_(el, id, name); grid.appendChild(el); } });
-            if (reportRow && !reportRow.children.length) reportRow.remove();
+            RP_PANELS.forEach(([id, name]) => { const el = found[id]; if (el) { el.style.display = ''; rpWrapPanel_(el, id, name); grid.appendChild(el); } });
+            const today = localDateISO(new Date());
+            byId('rp-start-date').value = today;
+            byId('rp-end-date').value = today;
+            rpMarkPreset_();
+            rpRenderKpi_();
             rpApply_();
         })();
 
-        // หลังเปิดหน้ารายงาน: โชว์การ์ดเซลล์เฉพาะ admin + โหลดครั้งแรก (switchPage เดิมยังทำงานครบเหมือนเดิม)
-        window.switchPage = (function(orig) {
-            return function(name) {
-                orig(name);
-                const card = document.getElementById('sales-daily-card');
-                if (card) card.style.display = (currentRole === 'admin') ? '' : 'none';
-                if (name === 'report' && currentRole === 'admin' && !sdrLoadedOnce) {
-                    sdrLoadedOnce = true;
-                    fetchSalesDailyReport();
-                }
-            };
-        })(window.switchPage);
-        // ออกจากระบบ → ล้างรายงานเซลล์ของคนเดิม ให้คนถัดไปโหลดใหม่ตามสิทธิ์ตัวเอง
+        // ออกจากระบบ → ให้คนถัดไปโหลดรายงาน/รูปแบบหน้ารายงานใหม่ตามสิทธิ์ตัวเอง
         window.logoutUser = (function(orig) {
-            return function() { orig(); sdrLoadedOnce = false; };
+            return function() { orig(); sdrLoadedOnce = false; window.reportLoadedOnce_ = false; };
         })(window.logoutUser);
     </script>
 </body>
