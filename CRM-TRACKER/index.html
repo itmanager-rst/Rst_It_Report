@@ -1340,6 +1340,19 @@
             </div>
         </div>
     </div>
+    <!-- (r54b) รายชื่อลูกค้าเบื้องหลังตัวเลขในการ์ด "📌 สรุปภาพรวม" (วางก่อน history/detail modal ให้หน้าต่างนั้นเปิดทับได้) -->
+    <div id="kpi-detail-modal-overlay" class="modal-overlay">
+        <div class="modal-box" style="width:1100px; max-width:100%;">
+            <div class="modal-header">
+                <span id="kpi-detail-title">🔎 รายละเอียด</span>
+                <button type="button" class="modal-close-btn" onclick="closeKpiDetailModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="kpi-detail-summary" style="font-size:12px; color:#64748b; margin-bottom:10px;"></div>
+                <div class="table-responsive" style="max-height:60vh;" id="kpi-detail-body"></div>
+            </div>
+        </div>
+    </div>
     <div id="history-modal-overlay" class="modal-overlay">
         <div class="modal-box" style="width:480px;">
             <div class="modal-header">
@@ -6368,7 +6381,21 @@
         .rp-toolbar-card .rp-toolbar { margin-top: 8px; }
         .rp-range-status { font-size: 11.5px; color: #64748b; margin-right: auto; }
         .rp-layout-note { font-size: 11.5px; color: #059669; }
-        .rp-kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+        .rp-kpi-grid { display: flex; flex-direction: column; gap: 10px; }
+        .rp-kpi-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+        .rp-kpi-span2 { grid-column: span 2; display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto; column-gap: 12px; }
+        .rp-kpi-span2 .rp-kpi-inner { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+        .rp-kpi[role="button"] { cursor: pointer; transition: box-shadow .15s, transform .15s; }
+        .rp-kpi[role="button"]:hover { box-shadow: 0 3px 10px rgba(15,23,42,.10); transform: translateY(-1px); }
+        .rp-kpi[role="button"] .rp-kpi-value { text-decoration: underline dotted; text-decoration-color: #cbd5e1; text-underline-offset: 3px; }
+        .rp-kpi-inner { border: 1px solid #fecaca; background: #fef2f2; border-radius: 8px; padding: 6px 12px; display: flex; flex-direction: column; align-items: flex-start; min-width: 120px; }
+        .rp-kpi-inner[role="button"] { cursor: pointer; }
+        .rp-kpi-inner[role="button"]:hover { background: #fee2e2; }
+        .rp-kpi-inner-label { font-size: 11.5px; color: #b91c1c; font-weight: 600; }
+        .rp-kpi-inner-value { font-size: 20px; font-weight: 700; color: #dc2626; line-height: 1.3; font-variant-numeric: tabular-nums; }
+        .kpi-detail-table td { vertical-align: top; }
+        .kpi-detail-table td.kpi-note { white-space: normal; min-width: 220px; max-width: 360px; }
+        @media (max-width: 900px) { .rp-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         .rp-kpi { border: 1px solid #e2e8f0; border-left: 4px solid var(--kpi-c, #0284c7); border-radius: 10px; padding: 9px 12px; background: #fff; min-width: 0; }
         .rp-kpi-label { font-size: 12px; color: #475569; font-weight: 600; }
         .rp-kpi-value { font-size: 24px; font-weight: 700; color: var(--kpi-c, #0f172a); line-height: 1.3; font-variant-numeric: tabular-nums; }
@@ -6764,7 +6791,7 @@
             card.innerHTML = `
                 <div class="card-title"><span>📌 สรุปภาพรวม <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
                 <div class="rp-kpi-grid" id="rp-kpi-grid"></div>
-                <div class="sdr-note" id="rp-kpi-note">• แถวบน = ลีดที่ส่งเข้ามา (นับจาก log รับลีด รวมที่ส่งซ้ำ) — กดตัวเลขเพื่อดูรายชื่อ · แถวล่าง = ผลงานของเซลล์ (จากรายงานแยกตามเซลล์)<br>• จอง / รอปิดการขาย = สถานะปัจจุบันของลูกค้า นับตามวันที่ติดตามล่าสุด</div>`;
+                <div class="sdr-note" id="rp-kpi-note">• กดที่กล่องเพื่อดูรายชื่อลูกค้าและรายละเอียด · ลูกค้าใหม่ / ลีดอัตโนมัติ / ส่งซ้ำ นับจาก log รับลีด · ติดตาม / นัดหมาย / จอง / รอปิด / เซลล์เพิ่มเอง นับแบบเดียวกับรายงานแยกตามเซลล์<br>• จอง / รอปิดการขาย = สถานะปัจจุบันของลูกค้า นับตามวันที่ติดตามล่าสุด</div>`;
             return card;
         }
         function rpRenderKpi_() {
@@ -6778,23 +6805,92 @@
                 return linkFilter ? renderIntakeNumLink(n, true, linkFilter) : n.toLocaleString();
             };
             const i = rpKpi.intake, s = rpKpi.sales;
-            const tiles = [
-                { label: 'ลีดเข้ามาทั้งหมด', sub: rpKpi.onlyMc ? 'เฉพาะ ManyChat' : 'รวมที่ส่งซ้ำ', v: num(i, 'total', 'total'), c: '#0f172a' },
-                { label: 'ลูกค้าใหม่', sub: 'ยังไม่เคยมีในระบบ', v: num(i, 'newCount', 'new'), c: '#059669' },
-                { label: 'ส่งซ้ำ', sub: 'มีในระบบแล้ว', v: num(i, 'duplicateCount', 'duplicate'), c: '#dc2626' },
-                { label: 'จาก Facebook/ManyChat', sub: 'ลีดอัตโนมัติ', v: num(i, 'manychatCount', 'manychat'), c: '#1877F2' },
-                { label: 'เซลล์เพิ่มลูกค้าเอง', sub: 'ไม่รวม ManyChat/Excel', v: num(s, 'added'), c: '#0f766e', row2: true },
-                { label: 'บันทึกติดตาม', sub: 'ครั้ง', v: num(s, 'followups'), c: '#ea580c' },
-                { label: 'นัดหมาย / เข้าพบ', sub: 'ครั้ง', v: num(s, 'appointments'), c: '#7c3aed' },
-                { label: 'จอง', sub: 'ราย (HOT)', v: num(s, 'booked'), c: '#0284c7' },
-                { label: 'รอปิดการขาย', sub: 'ราย (HOT)', v: num(s, 'closing'), c: '#6b21a8' }
-            ];
-            box.innerHTML = tiles.map(t => `<div class="rp-kpi${t.row2 ? ' rp-kpi-row2' : ''}" style="--kpi-c:${t.c};">
+            // (r54b) 2 แถว: แถวบน = ลูกค้าใหม่ + ผลงานติดตาม/ปิดการขาย | แถวล่าง = ลีดอัตโนมัติ (มี "ส่งซ้ำ" อยู่ในกล่อง) + เซลล์เพิ่มเอง
+            // ทุกกล่องกดดูรายชื่อลูกค้าได้ (ลีด = log รับลีด, ตัวเลขเซลล์ = getSalesMetricDetail)
+            const intakeClick = f => `openIntakeDetailModal(_lastReportRange, '${f}', true)`;
+            const salesClick = m => `openKpiDetail('${m}')`;
+            const tile = (t) => `<div class="rp-kpi${t.span ? ' rp-kpi-span' + t.span : ''}" style="--kpi-c:${t.c};" ${t.click ? `onclick="${t.click}" role="button" tabindex="0" title="กดเพื่อดูรายชื่อลูกค้า"` : ''}>
                 <div class="rp-kpi-label">${escapeHtml(t.label)}</div>
                 <div class="rp-kpi-value">${t.v}</div>
-                <div class="rp-kpi-sub">${escapeHtml(t.sub)}</div></div>`).join('');
+                <div class="rp-kpi-sub">${escapeHtml(t.sub)}</div>${t.extra || ''}</div>`;
+            const plain = (obj, k) => obj === undefined ? loading : (obj === null ? '<span style="color:#cbd5e1;">–</span>' : (Number(obj[k]) || 0).toLocaleString());
+            const can = obj => obj && typeof obj === 'object';
+            const dupBox = `<div class="rp-kpi-inner" style="--kpi-c:#dc2626;" ${can(i) ? `onclick="event.stopPropagation(); ${intakeClick('duplicate')}" role="button" title="กดเพื่อดูรายชื่อที่ส่งซ้ำ"` : ''}>
+                    <span class="rp-kpi-inner-label">ส่งซ้ำ (มีในระบบแล้ว)</span><span class="rp-kpi-inner-value">${plain(i, 'duplicateCount')}</span></div>`;
+            const row1 = [
+                { label: 'ลูกค้าใหม่', sub: 'ยังไม่เคยมีในระบบ', v: plain(i, 'newCount'), c: '#059669', click: can(i) ? intakeClick('new') : '' },
+                { label: 'บันทึกติดตาม', sub: 'ครั้ง', v: plain(s, 'followups'), c: '#ea580c', click: can(s) ? salesClick('followups') : '' },
+                { label: 'นัดหมาย / เข้าพบ', sub: 'ครั้ง', v: plain(s, 'appointments'), c: '#7c3aed', click: can(s) ? salesClick('appointments') : '' },
+                { label: 'จอง', sub: 'ราย (HOT)', v: plain(s, 'booked'), c: '#0284c7', click: can(s) ? salesClick('booked') : '' },
+                { label: 'รอปิดการขาย', sub: 'ราย (HOT)', v: plain(s, 'closing'), c: '#6b21a8', click: can(s) ? salesClick('closing') : '' }
+            ];
+            const row2 = [
+                { label: 'จาก Facebook/ManyChat', sub: rpKpi.onlyMc ? 'ลีดอัตโนมัติ (เฉพาะ ManyChat)' : 'ลีดอัตโนมัติ', v: plain(i, 'manychatCount'), c: '#1877F2', span: 2,
+                  click: can(i) ? intakeClick('manychat') : '', extra: dupBox },
+                { label: 'เซลล์เพิ่มลูกค้าเอง', sub: 'ไม่รวม ManyChat/Excel', v: plain(s, 'added'), c: '#0f766e', click: can(s) ? salesClick('added') : '' }
+            ];
+            box.innerHTML = `<div class="rp-kpi-row">${row1.map(tile).join('')}</div><div class="rp-kpi-row">${row2.map(tile).join('')}</div>`;
             const note = document.getElementById('rp-kpi-note');
             if (note && s && s.clamped) note.dataset.clamped = '1';
+        }
+
+        /* ---------- 4b) (r54b) กดกล่องตัวเลขของเซลล์ → รายชื่อลูกค้า (action 'getSalesMetricDetail') ---------- */
+        const KPI_METRIC_LABELS = { followups: 'บันทึกติดตาม', appointments: 'นัดหมาย / เข้าพบ', booked: 'จอง', closing: 'รอปิดการขาย', added: 'เซลล์เพิ่มลูกค้าเอง' };
+        let kpiDetailRows_ = [], kpiDetailSeq_ = 0;
+        function closeKpiDetailModal() { document.getElementById('kpi-detail-modal-overlay').classList.remove('show'); }
+        function openKpiDetail(metric) {
+            const r = rpRange_();
+            const label = KPI_METRIC_LABELS[metric] || metric;
+            document.getElementById('kpi-detail-title').textContent = `🔎 รายละเอียด: ${label} (${r.start === r.end ? r.start : r.start + ' ถึง ' + r.end})`;
+            document.getElementById('kpi-detail-summary').textContent = '';
+            const body = document.getElementById('kpi-detail-body');
+            body.innerHTML = '<div style="text-align:center; padding:24px; color:#94a3b8;">🔄 กำลังโหลด...</div>';
+            document.getElementById('kpi-detail-modal-overlay').classList.add('show');
+            const seq = ++kpiDetailSeq_;
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'getSalesMetricDetail', payload: { startDate: r.start, endDate: r.end, metric: metric } })
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (seq !== kpiDetailSeq_) return;
+                if (!res || !res.success) {
+                    const msg = (res && res.message) || 'ไม่ได้รับข้อมูล';
+                    throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs รุ่นล่าสุดก่อน' : msg);
+                }
+                kpiDetailRows_ = res.rows || [];
+                const isLog = metric === 'followups' || metric === 'appointments';
+                document.getElementById('kpi-detail-summary').textContent = `พบทั้งหมด ${kpiDetailRows_.length.toLocaleString()} ${isLog ? 'ครั้ง' : 'ราย'}` +
+                    (res.truncated ? ' (แสดงสูงสุด 500 รายการล่าสุด — ย่อช่วงวันที่ถ้าต้องการดูครบ)' : '') +
+                    ' · ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 15 นาที';
+                if (!kpiDetailRows_.length) { body.innerHTML = '<div style="text-align:center; padding:24px; color:#94a3b8;">ไม่พบข้อมูล</div>'; return; }
+                const dateHead = metric === 'added' ? 'วันที่เพิ่ม' : (isLog ? 'วันที่ติดตาม' : 'ติดตามล่าสุด');
+                const noteHead = metric === 'added' ? 'หมายเหตุ' : (isLog ? 'ประเภท / รายละเอียดการติดตาม' : 'สถานะ / บันทึกล่าสุด');
+                body.innerHTML = `<table class="sdr-table kpi-detail-table"><thead><tr><th>#</th><th>${dateHead}</th><th>ชื่อ</th><th>เบอร์โทร</th><th>กลุ่มลูกค้า</th><th>ช่องทาง</th><th>สินค้า</th><th>เซลล์</th><th>${noteHead}</th><th></th></tr></thead><tbody>` +
+                    kpiDetailRows_.map((x, idx) => {
+                        const prod = getRowProductParts(x);
+                        const prodTxt = [prod.category, prod.model].filter(v => v && v !== '-').join(' ') || '-';
+                        return `<tr><td>${idx + 1}</td><td>${escapeHtml(x.metricDate || '-')}</td>` +
+                            `<td><span class="report-customer-link" onclick="openKpiCustomerDetail(${idx})">${escapeHtml(x.name || '-')}</span></td>` +
+                            `<td>${escapeHtml(x.phone || '-')}</td><td>${escapeHtml(x.type || '-')}</td><td>${escapeHtml(leadSourceText_(x) || '-')}</td>` +
+                            `<td>${escapeHtml(prodTxt)}</td><td>${escapeHtml(x.metricPerson || '-')}</td>` +
+                            `<td class="kpi-note">${x.metricType ? `<span class="timeline-type">${escapeHtml(x.metricType)}</span> ` : ''}${escapeHtml(x.metricNote || '')}</td>` +
+                            `<td style="white-space:nowrap;"><button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openKpiCustomerDetail(${idx})">👤 ดูข้อมูลครบ</button> ` +
+                            `<button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openKpiCustomerHistory(${idx})">📞 ประวัติติดตาม</button></td></tr>`;
+                    }).join('') + '</tbody></table>';
+            })
+            .catch(err => {
+                if (seq !== kpiDetailSeq_) return;
+                body.innerHTML = `<div style="text-align:center; padding:24px; color:#ef4444;">❌ โหลดรายละเอียดไม่สำเร็จ: ${escapeHtml(err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')}</div>`;
+            });
+        }
+        function openKpiCustomerDetail(idx) { showCustomerDetail(kpiDetailRows_[idx]); }
+        function openKpiCustomerHistory(idx) {
+            const row = kpiDetailRows_[idx];
+            if (!row) return;
+            currentRenderedData.push(row);
+            openHistoryModal(currentRenderedData.length - 1);
         }
 
         /* ---------- 5) (r54) การ์ด "📣 ลูกค้าแยกตามช่องทางที่มา" — action 'getLeadSourceReport' ---------- */
