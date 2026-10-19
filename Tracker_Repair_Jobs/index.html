@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ติดตามสถานะงานซ่อม / PM</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --ink: #111827;
+    --ink-2: #4b5563;
+    --ink-3: #9ca3af;
+    --line: #e5e7eb;
+    --line-2: #f1f3f5;
+    --accent: #c8102e;        /* แดงหลักของแบรนด์ (ใช้กับแถบ/โลโก้เท่านั้น) */
+    --s-progress: #2a78d6;    /* กำลังซ่อม */
+    --s-parts: #eb6834;       /* รออะไหล่ */
+    --s-paint: #1baf7a;       /* รอพ่นสี */
+    --s-done: #15803d;
+    --danger: #dc2626;
+    --radius: 12px;
+  }
+
+  body {
+    font-family: 'IBM Plex Sans Thai', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Top bar ---------- */
+  .topbar { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1020; }
+  .topbar::before { content: ''; display: block; height: 3px; background: var(--accent); }
+  .logo {
+    width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+    background: var(--accent); color: #fff; font-size: 1.15rem; flex: none;
+  }
+  .app-title { font-size: 1.05rem; font-weight: 700; margin: 0; line-height: 1.2; }
+  .app-sub { font-size: .8rem; color: var(--ink-3); }
+  .updated { font-size: .78rem; color: var(--ink-3); }
+  .btn-ghost { border: 1px solid var(--line); background: #fff; color: var(--ink-2); font-weight: 600; font-size: .82rem; border-radius: 8px; padding: 6px 12px; }
+  .btn-ghost:hover { background: var(--line-2); color: var(--ink); }
+
+  /* ---------- Department tabs ---------- */
+  .dept-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .dept-tabs::-webkit-scrollbar { display: none; }
+  .dept-tab {
+    border: 0; background: transparent; color: var(--ink-2); font-weight: 600; font-size: .88rem;
+    padding: 10px 14px; border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  .dept-tab .cnt { font-weight: 600; font-size: .72rem; color: var(--ink-3); background: var(--line-2); border-radius: 999px; padding: 1px 7px; margin-left: 4px; }
+  .dept-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+  .dept-tab.active .cnt { background: var(--ink); color: #fff; }
+
+  /* ---------- KPI ---------- */
+  .kpi {
+    width: 100%; height: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface);
+    border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .kpi:hover { border-color: #cfd4da; }
+  .kpi.selected { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink) inset; }
+  .kpi-label { font-size: .8rem; color: var(--ink-2); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .kpi-label .dot { width: 8px; height: 8px; border-radius: 2px; background: var(--kc, var(--ink-3)); }
+  .kpi-value { font-size: 1.9rem; font-weight: 700; line-height: 1.15; }
+  .kpi-sub { font-size: .75rem; color: var(--ink-3); }
+  .kpi-overdue.alert-on { background: #fef2f2; border-color: #fecaca; }
+  .kpi-overdue.alert-on .kpi-value { color: var(--danger); }
+
+  /* ---------- Panels ---------- */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .panel-hd { padding: 14px 16px 6px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .panel-title { font-size: .92rem; font-weight: 700; margin: 0; }
+  .panel-sub { font-size: .75rem; color: var(--ink-3); }
+  .panel-bd { padding: 6px 16px 14px; }
+  .chart-box { position: relative; height: 230px; }
+  .empty { text-align: center; color: var(--ink-3); padding: 48px 12px; font-size: .85rem; }
+  .empty .bi { font-size: 1.6rem; display: block; margin-bottom: 4px; }
+
+  /* ---------- Toolbar ---------- */
+  .toolbar { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .toolbar .form-control, .toolbar .form-select { font-size: .85rem; border-color: var(--line); border-radius: 8px; }
+  .search { position: relative; flex: 1 1 240px; min-width: 200px; }
+  .search .bi { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ink-3); }
+  .search input { padding-left: 32px; }
+  .toolbar .form-select { width: auto; flex: 0 1 170px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+  .seg button { border: 0; background: #fff; color: var(--ink-2); font-size: .8rem; font-weight: 600; padding: 6px 11px; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.active { background: var(--ink); color: #fff; }
+
+  /* ---------- Table ---------- */
+  .job-table { margin: 0; }
+  .job-table thead th {
+    background: #fafbfc; color: var(--ink-2); font-size: .74rem; font-weight: 600; white-space: nowrap;
+    border-bottom: 1px solid var(--line); padding: 9px 12px; user-select: none;
+  }
+  .job-table thead th.sortable { cursor: pointer; }
+  .job-table thead th.sortable:hover { color: var(--ink); }
+  .job-table thead th .bi { font-size: .7rem; opacity: .6; }
+  .job-table td { padding: 11px 12px; border-color: var(--line-2); vertical-align: top; }
+  .job-table tbody tr:hover { background: #fafbfc; }
+  .job-table tr.is-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+
+  .t-id { font-weight: 700; }
+  .t-meta { font-size: .76rem; color: var(--ink-3); }
+  .t-product { font-weight: 600; }
+  .muted { color: var(--ink-3); font-size: .78rem; }
+
+  .badge-st { display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+  .badge-st .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .st-progress { background: #eaf2fc; color: #1c5cab; }
+  .st-parts { background: #fdefe8; color: #a5401a; }
+  .st-paint { background: #e6f6ef; color: #0f6e4c; }
+  .st-done { background: #ecfdf3; color: #166534; }
+  .st-cancel { background: #f3f4f6; color: #4b5563; }
+  .st-other { background: #f3f4f6; color: #374151; }
+
+  .badge-sla { display: inline-block; margin-top: 5px; font-size: .72rem; font-weight: 600; padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+  .sla-overdue { background: var(--danger); color: #fff; }
+  .sla-today { background: #fff1e6; color: #9a3412; }
+  .sla-soon { background: #fef9c3; color: #854d0e; }
+  .sla-ok { background: #f3f4f6; color: #4b5563; }
+  .sla-late { background: #fee2e2; color: #991b1b; }
+
+  .age { font-weight: 700; }
+  .age-hi { color: var(--danger); }
+  .type-pill { display: inline-block; font-size: .74rem; padding: 2px 8px; border-radius: 6px; background: var(--line-2); color: var(--ink-2); white-space: nowrap; }
+  .delay-cat { display: inline-block; font-size: .72rem; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: #fff7ed; color: #9a3412; margin-bottom: 3px; }
+  .remark { font-size: .82rem; color: var(--ink-2); max-width: 340px; }
+
+  .tech { font-weight: 600; white-space: nowrap; }
+  .btn-call { margin-top: 5px; font-size: .75rem; font-weight: 600; padding: 2px 9px; border-radius: 6px; white-space: nowrap; }
+
+  .tbl-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .pager .btn { font-size: .78rem; padding: 3px 10px; border-color: var(--line); }
+
+  .loading { position: fixed; inset: 0; background: rgba(245,246,248,.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
+  .loading.hide { display: none; }
+
+  /* ---------- Mobile ---------- */
+  @media (max-width: 767.98px) {
+    .kpi-value { font-size: 1.5rem; }
+    .toolbar .form-select { flex: 1 1 45%; }
+    .job-table thead { display: none; }
+    .job-table, .job-table tbody, .job-table tr, .job-table td { display: block; width: 100%; }
+    .job-table tr { margin: 10px 12px; width: auto; border: 1px solid var(--line); border-radius: 10px; padding: 6px 0; background: #fff; }
+    .job-table tr.is-overdue { border-left: 4px solid var(--danger); }
+    .job-table tr.is-overdue td:first-child { box-shadow: none; }
+    .job-table td { border: 0; padding: 5px 14px; display: flex; gap: 10px; }
+    .job-table td::before { content: attr(data-label); flex: 0 0 88px; color: var(--ink-3); font-size: .74rem; font-weight: 600; padding-top: 2px; }
+    .job-table td > .cell { flex: 1; min-width: 0; }
+    .remark { max-width: none; }
+    .job-table td.text-end { text-align: left !important; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ================= TOP BAR ================= -->
+  <header class="topbar">
+    <div class="container-xxl">
+      <div class="d-flex align-items-center gap-3 py-2">
+        <div class="logo"><i class="bi bi-wrench-adjustable"></i></div>
+        <div class="me-auto">
+          <h1 class="app-title">ติดตามสถานะงานซ่อม / PM</h1>
+          <div class="app-sub" id="todayLabel">-</div>
+        </div>
+        <div class="updated d-none d-md-block">อัปเดต <span id="lastUpdated" class="num">-</span></div>
+        <button id="btnRefresh" class="btn-ghost" type="button"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-sm-inline"> รีเฟรช</span></button>
+      </div>
+      <nav class="dept-tabs" id="deptTabs"></nav>
+    </div>
+  </header>
+
+  <main class="container-xxl py-3">
+
+    <!-- ================= KPI ================= -->
+    <section class="row g-2 g-md-3 mb-3" id="kpiRow">
+      <div class="col-6 col-md-4 col-xl">
+        <button type="button" class="kpi" data-quick="active">
+          <span class="kpi-label"><span class="dot" style="--kc:#374151"></span>งานค้างทั้งหมด</span>
+          <span class="kpi-value num" id="kActive">–</span>
+          <span class="kpi-sub" id="kActiveSub">-</span>
+        </button>
+      </div>
+      <div class="col-6 col-md-4 col-xl">
+        <button type="button" class="kpi" data-quick="in_progress">
+          <span class="kpi-label"><span class="dot" style="--kc:var(--s-progress)"></span>กำลังซ่อม</span>
+          <span class="kpi-value num" id="kProgress">–</span>
+          <span class="kpi-sub">In Progress</span>
+        </button>
+      </div>
+      <div class="col-6 col-md-4 col-xl">
+        <button type="button" class="kpi" data-quick="pending">
+          <span class="kpi-label"><span class="dot" style="--kc:var(--s-parts)"></span>รออะไหล่ / ติดปัญหา</span>
+          <span class="kpi-value num" id="kPending">–</span>
+          <span class="kpi-sub">On Hold / Pending</span>
+        </button>
+      </div>
+      <div class="col-6 col-md-6 col-xl">
+        <button type="button" class="kpi kpi-overdue" data-quick="overdue">
+          <span class="kpi-label"><i class="bi bi-exclamation-triangle-fill text-danger"></i>เกินกำหนดเป้าหมาย</span>
+          <span class="kpi-value num" id="kOverdue">–</span>
+          <span class="kpi-sub" id="kOverdueSub">Overdue</span>
+        </button>
+      </div>
+      <div class="col-12 col-md-6 col-xl">
+        <button type="button" class="kpi" data-quick="done">
+          <span class="kpi-label"><span class="dot" style="--kc:var(--s-done)"></span>ซ่อมเสร็จแล้ว</span>
+          <span class="kpi-value num" id="kDone">–</span>
+          <span class="kpi-sub" id="kDoneSub">Completed</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ================= CHARTS ================= -->
+    <section class="row g-2 g-md-3 mb-3">
+      <div class="col-lg-5">
+        <div class="panel h-100">
+          <div class="panel-hd"><div><h2 class="panel-title">งานค้างตามช่าง</h2><div class="panel-sub">งานที่ยังไม่ปิด แยกตามสถานะ · คลิกแท่งเพื่อกรอง</div></div></div>
+          <div class="panel-bd"><div class="chart-box" id="techBox"><canvas id="techChart" role="img" aria-label="กราฟงานค้างตามช่าง"></canvas></div><div class="empty d-none" id="techEmpty"><i class="bi bi-check2-circle"></i>ไม่มีงานค้าง</div></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="panel h-100">
+          <div class="panel-hd"><div><h2 class="panel-title">อายุงานค้าง</h2><div class="panel-sub">จำนวนวันนับจากวันเปิดงาน</div></div></div>
+          <div class="panel-bd"><div class="chart-box"><canvas id="ageChart" role="img" aria-label="กราฟอายุงานค้าง"></canvas></div></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="panel h-100">
+          <div class="panel-hd"><div><h2 class="panel-title">สาเหตุงานล่าช้า</h2><div class="panel-sub">จำนวนเคสตาม Delay_Category · คลิกแท่งเพื่อกรอง</div></div></div>
+          <div class="panel-bd"><div class="chart-box" id="delayBox"><canvas id="delayChart" role="img" aria-label="กราฟสาเหตุงานล่าช้า"></canvas></div><div class="empty d-none" id="delayEmpty"><i class="bi bi-emoji-smile"></i>ยังไม่มีงานที่ระบุสาเหตุล่าช้า</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TABLE ================= -->
+    <section class="panel">
+      <div class="toolbar">
+        <div class="search"><i class="bi bi-search"></i><input id="searchInput" type="search" class="form-control" placeholder="ค้นหาเลขที่งาน / สินค้า / หมายเลขสินค้า / ลูกค้า"></div>
+        <select id="typeFilter" class="form-select"><option value="">ทุกประเภทงาน</option></select>
+        <select id="techFilter" class="form-select"><option value="">ช่างทุกคน</option></select>
+        <div class="seg" id="quickSeg">
+          <button type="button" data-quick="active" class="active">ยังไม่ปิด</button>
+          <button type="button" data-quick="overdue">⚠️ เกินกำหนด</button>
+          <button type="button" data-quick="pending">รออะไหล่/ติดปัญหา</button>
+          <button type="button" data-quick="done">เสร็จแล้ว</button>
+          <button type="button" data-quick="all">ทั้งหมด</button>
+        </div>
+      </div>
+
+      <div class="px-3 pt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="small text-secondary"><span id="resultCount" class="num">0</span> รายการ <span id="activeFilters"></span></div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-link btn-sm text-decoration-none d-none p-0" id="btnClear"><i class="bi bi-x-circle"></i> ล้างตัวกรอง</button>
+          <button type="button" class="btn-ghost" id="btnCsv"><i class="bi bi-download"></i> CSV</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table job-table align-middle">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="ticketId">เลขที่งาน <i class="bi bi-arrow-down-up"></i></th>
+              <th>สินค้า / หมายเลข</th>
+              <th>ประเภทงาน</th>
+              <th>สถานะ</th>
+              <th>ช่างผู้ดูแล</th>
+              <th class="sortable" data-sort="startDate">เปิดงาน → กำหนดเสร็จ <i class="bi bi-arrow-down-up"></i></th>
+              <th class="sortable text-end" data-sort="ageDays">อายุงาน <i class="bi bi-arrow-down-up"></i></th>
+              <th>สาเหตุ / หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty d-none" id="tableEmpty"><i class="bi bi-inbox"></i>ไม่พบงานที่ตรงกับเงื่อนไข</div>
+
+      <div class="tbl-foot">
+        <div class="muted" id="pageInfo">-</div>
+        <div class="pager btn-group" id="pager"></div>
+      </div>
+    </section>
+
+    <footer class="text-center muted mt-3 mb-2">ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที</footer>
+  </main>
+
+  <div id="loading" class="loading"><div class="spinner-border text-secondary" role="status"></div><div class="mt-2 small text-secondary">กำลังโหลดข้อมูล...</div></div>
+
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="appToast" class="toast text-bg-danger border-0" role="alert">
+      <div class="d-flex"><div class="toast-body" id="appToastBody"></div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script>
+/* =====================================================================
+ *  Frontend logic — ติดตามสถานะงานซ่อม / PM
+ * ===================================================================== */
+(function () {
+  'use strict';
+
+  // 🔗 URL Web App (ใช้ตอนเปิดจาก VS Code / Live Server)
+  //    ถ้าเปิดผ่าน URL Web App โดยตรง ระบบใช้ google.script.run อัตโนมัติ
+  var API_URL = 'https://script.google.com/macros/s/AKfycbw83JmRgOSKD4xrgMPTgzW9w9R6Tn7ggeEDV7qvNBN1_ggr7tvTwfUvufpXpcGXUq6ZJA/exec';
+
+  var REFRESH_MS = 5 * 60 * 1000;
+  var PAGE_SIZE = 20;
+
+  var S = { IN_PROGRESS: 'กำลังซ่อม', PARTS: 'รออะไหล่', PAINT: 'รอพ่นสี', DONE: 'ซ่อมเสร็จแล้ว', CANCEL: 'ยกเลิก' };
+  var STATUS_UI = {
+    'กำลังซ่อม': 'st-progress', 'รออะไหล่': 'st-parts', 'รอพ่นสี': 'st-paint',
+    'ซ่อมเสร็จแล้ว': 'st-done', 'ยกเลิก': 'st-cancel',
+  };
+  var SERIES = [  // สีสถานะในกราฟ (ลำดับคงที่)
+    { status: S.IN_PROGRESS, color: '#2a78d6' },
+    { status: S.PARTS, color: '#eb6834' },
+    { status: S.PAINT, color: '#1baf7a' },
+  ];
+  var AGE_BUCKETS = [
+    { label: '0–7', max: 7, color: '#86b6ef' },
+    { label: '8–14', max: 14, color: '#5598e7' },
+    { label: '15–30', max: 30, color: '#2a78d6' },
+    { label: '31–60', max: 60, color: '#1c5cab' },
+    { label: '60+', max: Infinity, color: '#104281' },
+  ];
+
+  var ST = {
+    data: null, dept: '', quick: 'active', search: '', type: '', tech: '', delay: '',
+    sortKey: '', sortDir: 1, page: 1, charts: {},
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    bindEvents();
+    loadData(false);
+    setInterval(function () { loadData(true); }, REFRESH_MS);
+  });
+
+  // ------------------------------------------------------------------ events
+  function bindEvents() {
+    $('btnRefresh').addEventListener('click', function () { loadData(false); });
+    var t;
+    $('searchInput').addEventListener('input', function (e) {
+      clearTimeout(t);
+      t = setTimeout(function () { ST.search = e.target.value.trim().toLowerCase(); ST.page = 1; renderTable(); }, 180);
+    });
+    $('typeFilter').addEventListener('change', function (e) { ST.type = e.target.value; ST.page = 1; renderTable(); });
+    $('techFilter').addEventListener('change', function (e) { ST.tech = e.target.value; ST.page = 1; renderTable(); });
+
+    document.querySelectorAll('[data-quick]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        setQuick(el.getAttribute('data-quick'));
+        if (el.classList.contains('kpi')) document.querySelector('.toolbar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    document.querySelectorAll('th.sortable').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        if (ST.sortKey === k) ST.sortDir = -ST.sortDir; else { ST.sortKey = k; ST.sortDir = k === 'ageDays' ? -1 : 1; }
+        renderTable();
+      });
+    });
+    $('btnClear').addEventListener('click', clearFilters);
+    $('btnCsv').addEventListener('click', exportCsv);
+  }
+
+  function setQuick(q) {
+    ST.quick = q; ST.page = 1;
+    document.querySelectorAll('#quickSeg button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-quick') === q); });
+    document.querySelectorAll('#kpiRow .kpi').forEach(function (b) { b.classList.toggle('selected', b.getAttribute('data-quick') === q); });
+    renderTable();
+  }
+
+  function setDept(d) {
+    ST.dept = d; ST.page = 1; ST.delay = ''; ST.tech = ''; $('techFilter').value = '';
+    renderAll();
+  }
+
+  function clearFilters() {
+    ST.search = ''; ST.type = ''; ST.tech = ''; ST.delay = ''; ST.sortKey = '';
+    $('searchInput').value = ''; $('typeFilter').value = ''; $('techFilter').value = '';
+    setQuick('active');
+  }
+
+  // ------------------------------------------------------------------ data
+  function loadData(silent) {
+    if (!silent) showLoading(true);
+    if (typeof google === 'undefined' || !google.script) {
+      if (API_URL) {
+        return fetch(API_URL + (API_URL.indexOf('?') === -1 ? '?' : '&') + 'action=data&t=' + Date.now())
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+          .then(onData)
+          .catch(function (err) { onError({ message: 'เรียก API ไม่สำเร็จ (' + err.message + ') — ตรวจ API_URL และ Who has access = Anyone' }); });
+      }
+      if (window.MOCK_DATA) return setTimeout(function () { onData(JSON.stringify(window.MOCK_DATA)); }, 100);
+      return onError({ message: 'กรุณาใส่ API_URL ใน Index.html' });
+    }
+    google.script.run.withSuccessHandler(onData).withFailureHandler(onError).getRepairJobsData();
+  }
+
+  function onData(json) {
+    showLoading(false);
+    var data;
+    try { data = typeof json === 'string' ? JSON.parse(json) : json; }
+    catch (e) { return onError({ message: 'รูปแบบข้อมูลไม่ถูกต้อง' }); }
+    if (!data || !data.ok) return onError({ message: (data && data.message) || 'โหลดข้อมูลไม่สำเร็จ' });
+    ST.data = data;
+    $('lastUpdated').textContent = data.generatedAt;
+    $('todayLabel').textContent = 'Service Repair & PM Tracker · ' + fmtDate(data.today, true);
+    renderAll();
+  }
+
+  function onError(err) {
+    showLoading(false);
+    $('appToastBody').textContent = '⚠️ ' + (err && err.message ? err.message : err);
+    bootstrap.Toast.getOrCreateInstance($('appToast'), { delay: 7000 }).show();
+  }
+  function showLoading(on) { $('loading').classList.toggle('hide', !on); }
+
+  function deptJobs() {
+    if (!ST.data) return [];
+    return ST.data.jobs.filter(function (j) { return !ST.dept || j.department === ST.dept; });
+  }
+
+  function renderAll() {
+    renderTabs();
+    var jobs = deptJobs();
+    renderFilters(jobs);
+    renderKPIs(jobs);
+    renderTechChart(jobs);
+    renderAgeChart(jobs);
+    renderDelayChart(jobs);
+    renderTable();
+  }
+
+  // ------------------------------------------------------------------ tabs
+  function renderTabs() {
+    var jobs = ST.data.jobs;
+    var depts = (ST.data.departments || []).slice();
+    jobs.forEach(function (j) { if (depts.indexOf(j.department) === -1) depts.push(j.department); });
+    var activeCount = function (d) { return jobs.filter(function (j) { return j.isActive && (!d || j.department === d); }).length; };
+    var tabs = [{ key: '', label: 'ทุกแผนก' }].concat(depts.map(function (d) { return { key: d, label: d }; }));
+    $('deptTabs').innerHTML = tabs.map(function (t) {
+      return '<button type="button" class="dept-tab' + (ST.dept === t.key ? ' active' : '') + '" data-dept="' + esc(t.key) + '">' +
+        esc(t.label) + '<span class="cnt num" title="งานค้าง">' + activeCount(t.key) + '</span></button>';
+    }).join('');
+    $('deptTabs').querySelectorAll('.dept-tab').forEach(function (b) {
+      b.addEventListener('click', function () { setDept(b.getAttribute('data-dept')); });
+    });
+  }
+
+  function renderFilters(jobs) {
+    var fill = function (sel, first, values, keep) {
+      sel.innerHTML = '<option value="">' + first + '</option>' + values.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
+      sel.value = values.indexOf(keep) > -1 ? keep : '';
+    };
+    var uniq = function (arr) { return arr.filter(function (v, i) { return v && arr.indexOf(v) === i; }).sort(); };
+    fill($('typeFilter'), 'ทุกประเภทงาน', uniq(jobs.map(function (j) { return j.jobType; })), ST.type);
+    fill($('techFilter'), 'ช่างทุกคน', uniq(jobs.map(function (j) { return j.technicianName; })), ST.tech);
+    ST.type = $('typeFilter').value; ST.tech = $('techFilter').value;
+  }
+
+  // ------------------------------------------------------------------ KPI
+  function renderKPIs(jobs) {
+    var c = { active: 0, progress: 0, pending: 0, overdue: 0, done: 0, dueToday: 0, doneMonth: 0 };
+    var month = (ST.data.today || '').slice(0, 7);
+    jobs.forEach(function (j) {
+      if (j.isActive) c.active++;
+      if (j.status === S.IN_PROGRESS) c.progress++;
+      if (j.isPending) c.pending++;
+      if (j.isOverdue) c.overdue++;
+      if (j.status === S.DONE) { c.done++; if ((j.actualDate || '').slice(0, 7) === month) c.doneMonth++; }
+      if (j.slaState === 'due_today') c.dueToday++;
+    });
+    $('kActive').textContent = c.active;
+    $('kActiveSub').textContent = 'จากงานทั้งหมด ' + jobs.length + ' งาน';
+    $('kProgress').textContent = c.progress;
+    $('kPending').textContent = c.pending;
+    $('kOverdue').textContent = c.overdue;
+    $('kOverdueSub').textContent = c.active ? Math.round(c.overdue / c.active * 100) + '% ของงานค้าง' + (c.dueToday ? ' · ครบกำหนดวันนี้ ' + c.dueToday : '') : 'Overdue';
+    $('kDone').textContent = c.done;
+    $('kDoneSub').textContent = c.doneMonth ? 'เดือนนี้ ' + c.doneMonth + ' งาน' : 'Completed';
+    document.querySelector('.kpi-overdue').classList.toggle('alert-on', c.overdue > 0);
+  }
+
+  // ------------------------------------------------------------------ charts
+  function baseOpts(extra) {
+    Chart.defaults.font.family = "'IBM Plex Sans Thai', system-ui, sans-serif";
+    Chart.defaults.font.size = 12;
+    Chart.defaults.color = '#4b5563';
+    return Object.assign({
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#111827', padding: 10, cornerRadius: 8, titleFont: { weight: 600 } },
+      },
+    }, extra || {});
+  }
+  var BAR = { borderRadius: 4, borderSkipped: false, borderColor: '#ffffff', borderWidth: 1, maxBarThickness: 22 };
+
+  function upsert(key, canvasId, cfg) {
+    if (ST.charts[key]) ST.charts[key].destroy();
+    ST.charts[key] = new Chart($(canvasId), cfg);
+  }
+
+  function renderTechChart(jobs) {
+    var active = jobs.filter(function (j) { return j.isActive; });
+    var names = {};
+    active.forEach(function (j) { var n = j.technicianName || 'ยังไม่ระบุช่าง'; names[n] = (names[n] || 0) + 1; });
+    var labels = Object.keys(names).sort(function (a, b) { return names[b] - names[a]; });
+    var empty = !labels.length;
+    $('techBox').classList.toggle('d-none', empty); $('techEmpty').classList.toggle('d-none', !empty);
+    if (empty) return;
+    $('techBox').style.height = Math.max(180, labels.length * 34 + 60) + 'px';
+    var sets = SERIES.map(function (s) {
+      return Object.assign({ label: s.status, backgroundColor: s.color, data: labels.map(function (n) {
+        return active.filter(function (j) { return (j.technicianName || 'ยังไม่ระบุช่าง') === n && j.status === s.status; }).length;
+      }) }, BAR);
+    }).filter(function (d) { return d.data.some(Boolean); });
+    upsert('tech', 'techChart', {
+      type: 'bar', data: { labels: labels, datasets: sets },
+      options: baseOpts({
+        indexAxis: 'y',
+        scales: {
+          x: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#f1f3f5' }, border: { display: false } },
+          y: { stacked: true, grid: { display: false }, border: { display: false } },
+        },
+        plugins: Object.assign(baseOpts().plugins, { legend: { display: true, position: 'top', align: 'start', labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 2 } } }),
+        onClick: function (e, els) {
+          if (!els.length) return;
+          var n = labels[els[0].index]; if (n === 'ยังไม่ระบุช่าง') return;
+          ST.tech = ST.tech === n ? '' : n; $('techFilter').value = ST.tech; ST.page = 1; setQuick('active');
+        },
+      }),
+    });
+  }
+
+  function renderAgeChart(jobs) {
+    var active = jobs.filter(function (j) { return j.isActive && j.ageDays != null; });
+    var counts = AGE_BUCKETS.map(function () { return 0; });
+    active.forEach(function (j) {
+      for (var i = 0; i < AGE_BUCKETS.length; i++) if (j.ageDays <= AGE_BUCKETS[i].max) { counts[i]++; break; }
+    });
+    upsert('age', 'ageChart', {
+      type: 'bar',
+      data: { labels: AGE_BUCKETS.map(function (b) { return b.label; }),
+        datasets: [Object.assign({ label: 'งานค้าง', data: counts, backgroundColor: AGE_BUCKETS.map(function (b) { return b.color; }) }, BAR, { maxBarThickness: 34 })] },
+      options: baseOpts({
+        scales: {
+          x: { grid: { display: false }, border: { display: false }, title: { display: true, text: 'วัน', color: '#9ca3af' } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#f1f3f5' }, border: { display: false } },
+        },
+        plugins: Object.assign(baseOpts().plugins, { tooltip: Object.assign(baseOpts().plugins.tooltip, {
+          callbacks: { title: function (it) { return 'อายุงาน ' + it[0].label + ' วัน'; }, label: function (it) { return ' ' + it.parsed.y + ' งาน'; } } }) }),
+      }),
+    });
+  }
+
+  function renderDelayChart(jobs) {
+    var map = {};
+    jobs.forEach(function (j) {
+      if (!j.delayCategory || j.status === S.CANCEL) return;
+      map[j.delayCategory] = (map[j.delayCategory] || 0) + 1;
+    });
+    var labels = Object.keys(map).sort(function (a, b) { return map[b] - map[a]; });
+    var empty = !labels.length;
+    $('delayBox').classList.toggle('d-none', empty); $('delayEmpty').classList.toggle('d-none', !empty);
+    if (empty) { if (ST.charts.delay) { ST.charts.delay.destroy(); ST.charts.delay = null; } return; }
+    $('delayBox').style.height = Math.max(160, labels.length * 34 + 50) + 'px';
+    upsert('delay', 'delayChart', {
+      type: 'bar',
+      data: { labels: labels, datasets: [Object.assign({ label: 'จำนวนเคส', data: labels.map(function (l) { return map[l]; }), backgroundColor: '#2a78d6' }, BAR)] },
+      options: baseOpts({
+        indexAxis: 'y',
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#f1f3f5' }, border: { display: false } },
+          y: { grid: { display: false }, border: { display: false } },
+        },
+        onClick: function (e, els) {
+          if (!els.length) return;
+          var l = labels[els[0].index]; ST.delay = ST.delay === l ? '' : l; ST.page = 1; setQuick('all');
+        },
+      }),
+    });
+  }
+
+  // ------------------------------------------------------------------ table
+  function filtered() {
+    var q = ST.search;
+    return deptJobs().filter(function (j) {
+      if (q && (j.ticketId + ' ' + j.machineId + ' ' + j.product + ' ' + j.customerName + ' ' + j.technicianName).toLowerCase().indexOf(q) === -1) return false;
+      if (ST.type && j.jobType !== ST.type) return false;
+      if (ST.tech && j.technicianName !== ST.tech) return false;
+      if (ST.delay && j.delayCategory !== ST.delay) return false;
+      switch (ST.quick) {
+        case 'active': return j.isActive;
+        case 'overdue': return j.isOverdue;
+        case 'pending': return j.isPending;
+        case 'in_progress': return j.status === S.IN_PROGRESS;
+        case 'done': return j.status === S.DONE;
+        default: return true;
+      }
+    }).sort(sorter);
+  }
+
+  function sorter(a, b) {
+    if (ST.sortKey) {
+      var va = a[ST.sortKey], vb = b[ST.sortKey];
+      if (va == null || va === '') return 1; if (vb == null || vb === '') return -1;
+      return (typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb))) * ST.sortDir;
+    }
+    // ค่าเริ่มต้น: เกินกำหนดมากสุด -> งานค้าง (ใกล้กำหนดก่อน) -> เสร็จล่าสุด
+    var rank = function (j) { return j.isOverdue ? 0 : j.isActive ? 1 : j.status === S.DONE ? 2 : 3; };
+    var ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 0) return b.overdueDays - a.overdueDays;
+    if (ra === 1) return (a.targetDate || '9999').localeCompare(b.targetDate || '9999');
+    return (b.actualDate || b.startDate || '').localeCompare(a.actualDate || a.startDate || '');
+  }
+
+  function renderTable() {
+    if (!ST.data) return;
+    var rows = filtered();
+    var pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (ST.page > pages) ST.page = pages;
+    var from = (ST.page - 1) * PAGE_SIZE;
+    var view = rows.slice(from, from + PAGE_SIZE);
+
+    $('resultCount').textContent = rows.length;
+    var tags = [];
+    if (ST.dept) tags.push(ST.dept);
+    if (ST.tech) tags.push('ช่าง: ' + ST.tech);
+    if (ST.delay) tags.push('สาเหตุ: ' + ST.delay);
+    $('activeFilters').textContent = tags.length ? '· ' + tags.join(' · ') : '';
+    $('btnClear').classList.toggle('d-none', !(ST.search || ST.type || ST.tech || ST.delay || ST.quick !== 'active' || ST.sortKey));
+    $('tableEmpty').classList.toggle('d-none', rows.length > 0);
+    $('tbody').innerHTML = view.map(rowHtml).join('');
+    document.querySelectorAll('th.sortable').forEach(function (th) {
+      var k = th.getAttribute('data-sort'), i = th.querySelector('.bi');
+      i.className = 'bi ' + (ST.sortKey === k ? (ST.sortDir > 0 ? 'bi-sort-up' : 'bi-sort-down') : 'bi-arrow-down-up');
+    });
+
+    $('pageInfo').textContent = rows.length ? 'แสดง ' + (from + 1) + '–' + (from + view.length) + ' จาก ' + rows.length : '';
+    var btn = function (label, p, dis, act) {
+      return '<button type="button" class="btn btn-outline-secondary' + (act ? ' active' : '') + '" ' + (dis ? 'disabled' : '') + ' data-p="' + p + '">' + label + '</button>';
+    };
+    var html = btn('‹', ST.page - 1, ST.page === 1);
+    var start = Math.max(1, Math.min(ST.page - 2, pages - 4)), end = Math.min(pages, start + 4);
+    for (var p = start; p <= end; p++) html += btn(p, p, false, p === ST.page);
+    html += btn('›', ST.page + 1, ST.page === pages);
+    $('pager').innerHTML = pages > 1 ? html : '';
+    $('pager').querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () { ST.page = +b.getAttribute('data-p'); renderTable(); });
+    });
+  }
+
+  function rowHtml(j) {
+    var cls = j.isOverdue ? 'is-overdue' : '';
+    return '<tr class="' + cls + '">' +
+      td('เลขที่งาน', '<div class="t-id">' + esc(j.ticketId || '-') + '</div><div class="t-meta">' + esc(j.department) + '</div>') +
+      td('สินค้า', '<div class="t-product">' + esc(j.product || '-') + '</div><div class="t-meta">' + esc(j.machineId || '') +
+        (j.customerName && j.customerName.indexOf('สต็อก') !== 0 ? ' · ' + esc(j.customerName) : '') + '</div>') +
+      td('ประเภทงาน', '<span class="type-pill">' + esc(j.jobType) + '</span>') +
+      td('สถานะ', statusBadge(j.status) + '<div>' + slaBadge(j) + '</div>' + partsBadge(j)) +
+      td('ช่าง', '<div class="tech">' + esc(j.technicianName || '—') + '</div>' + callButton(j)) +
+      td('วันที่', dateCell(j)) +
+      td('อายุงาน', ageCell(j), 'text-end') +
+      td('หมายเหตุ', delayCell(j)) +
+      '</tr>';
+  }
+  function td(label, html, cls) { return '<td data-label="' + esc(label) + '"' + (cls ? ' class="' + cls + '"' : '') + '><div class="cell">' + html + '</div></td>'; }
+
+  function statusBadge(s) { return '<span class="badge-st ' + (STATUS_UI[s] || 'st-other') + '"><span class="dot"></span>' + esc(s) + '</span>'; }
+  function slaBadge(j) {
+    switch (j.slaState) {
+      case 'overdue': return '<span class="badge-sla sla-overdue">⚠️ เกินกำหนด ' + j.overdueDays + ' วัน</span>';
+      case 'due_today': return '<span class="badge-sla sla-today">⏰ ครบกำหนดวันนี้</span>';
+      case 'due_soon': return '<span class="badge-sla sla-soon">เหลือ ' + j.daysRemaining + ' วัน</span>';
+      case 'on_track': return '<span class="badge-sla sla-ok">เหลือ ' + j.daysRemaining + ' วัน</span>';
+      case 'done_late': return '<span class="badge-sla sla-late">เสร็จช้ากว่าเป้า ' + j.lateDays + ' วัน</span>';
+      case 'done_on_time': return '<span class="badge-sla sla-ok">✓ ตามเป้า</span>';
+      default: return '';
+    }
+  }
+  function partsBadge(j) { return j.partsStatus ? '<div class="muted mt-1"><i class="bi bi-box-seam"></i> ' + esc(j.partsStatus) + '</div>' : ''; }
+  function dateCell(j) {
+    var h = '<div class="num" style="white-space:nowrap">' + fmtDate(j.startDate) + ' <span class="muted">→</span> <strong>' + fmtDate(j.targetDate) + '</strong></div>' +
+      '<div class="muted">SLA ' + j.slaDays + ' วัน</div>';
+    if (j.actualDate) h += '<div class="muted text-success"><i class="bi bi-flag-fill"></i> เสร็จ ' + fmtDate(j.actualDate) + '</div>';
+    return h;
+  }
+  function ageCell(j) {
+    if (j.ageDays == null) return '<span class="muted">-</span>';
+    var hi = j.isActive && j.ageDays > j.slaDays;
+    return '<span class="age num' + (hi ? ' age-hi' : '') + '">' + j.ageDays + '</span> <span class="muted">วัน</span>';
+  }
+  function delayCell(j) {
+    if (!j.delayCategory && !j.delayRemark) return '<span class="muted">-</span>';
+    return (j.delayCategory ? '<span class="delay-cat">' + esc(j.delayCategory) + '</span>' : '') +
+      (j.delayRemark ? '<div class="remark">' + esc(j.delayRemark) + '</div>' : '');
+  }
+  function callButton(j) {
+    var tel = (j.technicianPhone || '').replace(/[^\d+]/g, '');
+    if (!tel) return '';
+    return '<div><a class="btn btn-sm btn-success btn-call" href="tel:' + tel + '" target="_top" title="' + esc(j.technicianPhone) + '">📞 โทรหาช่าง</a></div>';
+  }
+
+  // ------------------------------------------------------------------ CSV
+  function exportCsv() {
+    var rows = filtered();
+    var cols = [['ticketId', 'เลขที่งาน'], ['department', 'แผนก'], ['jobType', 'ประเภทงาน'], ['product', 'สินค้า'], ['machineId', 'หมายเลขสินค้า'],
+      ['customerName', 'ลูกค้า'], ['status', 'สถานะ'], ['technicianName', 'ช่าง'], ['startDate', 'วันที่เปิดงาน'], ['targetDate', 'กำหนดเสร็จ'],
+      ['actualDate', 'เสร็จจริง'], ['ageDays', 'อายุงาน(วัน)'], ['overdueDays', 'เกินกำหนด(วัน)'], ['delayCategory', 'สาเหตุล่าช้า'], ['delayRemark', 'หมายเหตุ']];
+    var q = function (v) { v = v == null ? '' : String(v); return '"' + v.replace(/"/g, '""') + '"'; };
+    var csv = '﻿' + cols.map(function (c) { return q(c[1]); }).join(',') + '\n' +
+      rows.map(function (r) { return cols.map(function (c) { return q(r[c[0]]); }).join(','); }).join('\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'repair-jobs-' + (ST.data ? ST.data.today : 'export') + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ------------------------------------------------------------------ util
+  function fmtDate(s, long) {
+    if (!s) return '-';
+    var p = s.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return d.toLocaleDateString('th-TH', long ? { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' } : { day: 'numeric', month: 'short', year: '2-digit' });
+  }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+})();
+</script>
+</body>
+</html>
