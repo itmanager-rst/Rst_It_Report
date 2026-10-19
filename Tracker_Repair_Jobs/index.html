@@ -7,7 +7,7 @@
   <title>ติดตามสถานะงานซ่อม / PM</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 
@@ -20,10 +20,11 @@
     --ink-3: #9ca3af;
     --line: #e5e7eb;
     --line-2: #f1f3f5;
-    --accent: #c8102e;        /* แดงหลักของแบรนด์ (ใช้กับแถบ/โลโก้เท่านั้น) */
-    --s-progress: #2a78d6;    /* กำลังซ่อม */
-    --s-parts: #eb6834;       /* รออะไหล่ */
-    --s-paint: #1baf7a;       /* รอพ่นสี */
+    --accent: #c8102e;        /* แดงหลักของแบรนด์รวมสินไทย */
+    --accent-d: #a00d25;
+    --s-progress: #2a78d6;
+    --s-parts: #eb6834;
+    --s-paint: #1baf7a;
     --s-done: #15803d;
     --danger: #dc2626;
     --radius: 12px;
@@ -40,14 +41,18 @@
   .topbar { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1020; }
   .topbar::before { content: ''; display: block; height: 3px; background: var(--accent); }
   .logo {
-    width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
-    background: var(--accent); color: #fff; font-size: 1.15rem; flex: none;
+    width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; overflow: hidden;
+    background: var(--accent); color: #fff; font-size: .8rem; font-weight: 700; letter-spacing: .5px; flex: none;
   }
+  .logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
   .app-title { font-size: 1.05rem; font-weight: 700; margin: 0; line-height: 1.2; }
   .app-sub { font-size: .8rem; color: var(--ink-3); }
   .updated { font-size: .78rem; color: var(--ink-3); }
   .btn-ghost { border: 1px solid var(--line); background: #fff; color: var(--ink-2); font-weight: 600; font-size: .82rem; border-radius: 8px; padding: 6px 12px; }
   .btn-ghost:hover { background: var(--line-2); color: var(--ink); }
+  .btn-brand { background: var(--accent); border: 1px solid var(--accent); color: #fff; font-weight: 600; font-size: .82rem; border-radius: 8px; padding: 6px 12px; }
+  .btn-brand:hover, .btn-brand:focus { background: var(--accent-d); border-color: var(--accent-d); color: #fff; }
+  .btn-brand:disabled { opacity: .6; }
 
   /* ---------- Department tabs ---------- */
   .dept-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
@@ -108,7 +113,15 @@
   .job-table thead th .bi { font-size: .7rem; opacity: .6; }
   .job-table td { padding: 11px 12px; border-color: var(--line-2); vertical-align: top; }
   .job-table tbody tr:hover { background: #fafbfc; }
+  .job-table tbody tr.is-selected { background: #fff5f6; }
   .job-table tr.is-overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+  .job-table .col-chk { width: 38px; padding-right: 0; }
+  .job-table .form-check-input { width: 1.1em; height: 1.1em; cursor: pointer; margin: 0; border-color: #c4c9d0; }
+  .job-table .form-check-input:checked, .job-table .form-check-input:indeterminate { background-color: var(--accent); border-color: var(--accent); }
+  .acts { display: flex; gap: 4px; justify-content: flex-end; }
+  .btn-icon { border: 1px solid var(--line); background: #fff; color: var(--ink-2); width: 30px; height: 30px; border-radius: 7px; display: inline-grid; place-items: center; padding: 0; font-size: .9rem; }
+  .btn-icon:hover { background: var(--line-2); color: var(--ink); }
+  .btn-icon.del:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
 
   .t-id { font-weight: 700; }
   .t-meta { font-size: .76rem; color: var(--ink-3); }
@@ -143,6 +156,35 @@
   .tbl-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
   .pager .btn { font-size: .78rem; padding: 3px 10px; border-color: var(--line); }
 
+  /* ---------- Selection bar ---------- */
+  .selbar {
+    position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 140%); z-index: 1040;
+    background: var(--ink); color: #fff; border-radius: 12px; padding: 8px 8px 8px 16px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+    box-shadow: 0 10px 30px rgba(17,24,39,.25); transition: transform .2s ease; max-width: calc(100vw - 24px);
+  }
+  .selbar.show { transform: translate(-50%, 0); }
+  .selbar .cnt { font-weight: 700; margin-right: 4px; white-space: nowrap; }
+  .selbar .btn { font-size: .8rem; font-weight: 600; border-radius: 8px; padding: 5px 11px; white-space: nowrap; }
+  .selbar .btn-link { color: #cbd5e1; text-decoration: none; padding: 5px 6px; }
+  .selbar .btn-link:hover { color: #fff; }
+
+  /* ---------- Modal form ---------- */
+  .modal-content { border: 0; border-radius: 14px; }
+  .modal-header { border-bottom: 1px solid var(--line); }
+  .modal-header::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--accent); border-radius: 14px 14px 0 0; }
+  .modal-title { font-size: 1rem; font-weight: 700; }
+  .fsec { font-size: .74rem; font-weight: 700; color: var(--ink-3); letter-spacing: .3px; margin: 6px 0 2px; text-transform: uppercase; }
+  .modal .form-label { font-size: .78rem; font-weight: 600; color: var(--ink-2); margin-bottom: 3px; }
+  .modal .form-control, .modal .form-select { font-size: .88rem; border-radius: 8px; }
+  .req::after { content: ' *'; color: var(--danger); }
+  .opt-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; height: 100%; }
+  .opt-card:has(input:checked) { border-color: var(--accent); background: #fff5f6; }
+  .opt-card input { margin-top: 3px; accent-color: var(--accent); }
+  .opt-card .t { font-weight: 600; font-size: .85rem; }
+  .opt-card .d { font-size: .75rem; color: var(--ink-3); }
+  .del-list { max-height: 160px; overflow: auto; font-size: .82rem; background: var(--line-2); border-radius: 8px; padding: 8px 12px; }
+
   .loading { position: fixed; inset: 0; background: rgba(245,246,248,.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
   .loading.hide { display: none; }
 
@@ -158,10 +200,74 @@
     .job-table td { border: 0; padding: 5px 14px; display: flex; gap: 10px; }
     .job-table td::before { content: attr(data-label); flex: 0 0 88px; color: var(--ink-3); font-size: .74rem; font-weight: 600; padding-top: 2px; }
     .job-table td > .cell { flex: 1; min-width: 0; }
+    .job-table .col-chk { width: 100%; }
     .remark { max-width: none; }
     .job-table td.text-end { text-align: left !important; }
+    .acts { justify-content: flex-start; }
+    .selbar { bottom: 10px; }
+  }
+
+  /* =====================================================================
+   *  PRINT : แบบฟอร์มรายงานรวมสินไทย
+   * ===================================================================== */
+  #printArea { display: none; }
+  .rp { font-family: 'Sarabun', 'IBM Plex Sans Thai', sans-serif; color: #000; font-size: 10.5pt; line-height: 1.35;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .rp-head { display: flex; align-items: center; gap: 12px; padding-bottom: 8px; border-bottom: 3px solid #c8102e; }
+  .rp-logo { width: 60px; height: 60px; flex: none; display: grid; place-items: center; }
+  .rp-logo img { max-width: 60px; max-height: 60px; }
+  .rp-logo .txt { width: 60px; height: 60px; border-radius: 8px; background: #c8102e; color: #fff; font-weight: 700; font-size: 15pt; display: grid; place-items: center; letter-spacing: 1px; }
+  .rp-co { flex: 1; min-width: 0; }
+  .rp-co .th { font-size: 15pt; font-weight: 700; line-height: 1.2; }
+  .rp-co .en { font-size: 9.5pt; font-weight: 600; color: #c8102e; letter-spacing: 1.5px; }
+  .rp-co .ad { font-size: 8.5pt; color: #333; }
+  .rp-doc { border: 1px solid #000; border-collapse: collapse; font-size: 9pt; flex: none; }
+  .rp-doc td { border: 1px solid #000; padding: 2px 8px; white-space: nowrap; }
+  .rp-doc td:first-child { background: #f2f2f2; font-weight: 600; }
+  .rp-title { text-align: center; margin: 10px 0 2px; }
+  .rp-title .t { display: inline-block; font-size: 14pt; font-weight: 700; border-bottom: 2px solid #000; padding: 0 16px 2px; }
+  .rp-title .s { font-size: 9.5pt; color: #333; margin-top: 3px; }
+  .rp-sum { display: flex; border: 1px solid #000; margin: 8px 0; }
+  .rp-sum div { flex: 1; text-align: center; padding: 4px 2px; border-right: 1px solid #000; font-size: 9pt; }
+  .rp-sum div:last-child { border-right: 0; }
+  .rp-sum b { display: block; font-size: 13pt; }
+  .rp-sum .red b { color: #c8102e; }
+  .rp-tbl { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .rp-tbl th, .rp-tbl td { border: 1px solid #000; padding: 3px 4px; vertical-align: top; }
+  .rp-tbl th { background: #e9e9e9; font-weight: 700; text-align: center; white-space: nowrap; }
+  .rp-tbl thead { display: table-header-group; }
+  .rp-tbl tr { page-break-inside: avoid; break-inside: avoid; }
+  .rp-tbl .c { text-align: center; white-space: nowrap; }
+  .rp-tbl .nw { white-space: nowrap; }
+  .rp-tbl tr.od td { background: #fff1f2; }
+  .rp-red { color: #c8102e; font-weight: 700; }
+  .rp-small { font-size: 8pt; color: #333; }
+  .rp-note { border: 1px solid #000; padding: 5px 8px; margin-top: 8px; font-size: 9.5pt; min-height: 28px; }
+  .rp-sign { display: flex; justify-content: space-around; gap: 16px; margin-top: 26px; page-break-inside: avoid; break-inside: avoid; }
+  .rp-sign > div { flex: 1; text-align: center; font-size: 9.5pt; }
+  .rp-sign .line { margin: 26px auto 4px; border-bottom: 1px dotted #000; width: 80%; }
+  .rp-foot { display: flex; justify-content: space-between; border-top: 1px solid #999; margin-top: 14px; padding-top: 3px; font-size: 8pt; color: #555; }
+  /* ใบงานรายคัน */
+  .rp-card { page-break-after: always; break-after: page; }
+  .rp-card:last-child { page-break-after: auto; break-after: auto; }
+  .rp-info { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
+  .rp-info td { border: 1px solid #000; padding: 4px 8px; vertical-align: top; }
+  .rp-info td.k { background: #f2f2f2; font-weight: 600; width: 17%; white-space: nowrap; }
+  .rp-info td.v { width: 33%; }
+  .rp-box { border: 1px solid #000; margin-top: 10px; }
+  .rp-box .h { background: #e9e9e9; font-weight: 700; padding: 3px 8px; border-bottom: 1px solid #000; font-size: 10pt; }
+  .rp-box .b { padding: 6px 8px; min-height: 36px; font-size: 10pt; }
+  .rp-lines div { border-bottom: 1px dotted #777; height: 26px; }
+  .rp-chk { display: inline-block; width: 11px; height: 11px; border: 1px solid #000; margin: 0 4px -1px 10px; }
+  .rp-chk.on { background: #000; }
+
+  @media print {
+    html, body { background: #fff !important; }
+    body > *:not(#printArea) { display: none !important; }
+    #printArea { display: block !important; }
   }
 </style>
+<style id="pageStyle">@page { size: A4 landscape; margin: 10mm; }</style>
 </head>
 <body>
 
@@ -169,10 +275,10 @@
   <header class="topbar">
     <div class="container-xxl">
       <div class="d-flex align-items-center gap-3 py-2">
-        <div class="logo"><i class="bi bi-wrench-adjustable"></i></div>
-        <div class="me-auto">
+        <div class="logo" id="brandLogo">RST</div>
+        <div class="me-auto" style="min-width:0">
           <h1 class="app-title">ติดตามสถานะงานซ่อม / PM</h1>
-          <div class="app-sub" id="todayLabel">-</div>
+          <div class="app-sub text-truncate" id="todayLabel">-</div>
         </div>
         <div class="updated d-none d-md-block">อัปเดต <span id="lastUpdated" class="num">-</span></div>
         <button id="btnRefresh" class="btn-ghost" type="button"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-sm-inline"> รีเฟรช</span></button>
@@ -261,9 +367,11 @@
 
       <div class="px-3 pt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div class="small text-secondary"><span id="resultCount" class="num">0</span> รายการ <span id="activeFilters"></span></div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
           <button type="button" class="btn btn-link btn-sm text-decoration-none d-none p-0" id="btnClear"><i class="bi bi-x-circle"></i> ล้างตัวกรอง</button>
           <button type="button" class="btn-ghost" id="btnCsv"><i class="bi bi-download"></i> CSV</button>
+          <button type="button" class="btn-ghost" id="btnPrint"><i class="bi bi-printer"></i> พิมพ์รายงาน</button>
+          <button type="button" class="btn-brand" id="btnAdd"><i class="bi bi-plus-lg"></i> เพิ่มงานซ่อม</button>
         </div>
       </div>
 
@@ -271,6 +379,7 @@
         <table class="table job-table align-middle">
           <thead>
             <tr>
+              <th class="col-chk"><input type="checkbox" class="form-check-input" id="chkAll" title="เลือกทั้งหน้า"></th>
               <th class="sortable" data-sort="ticketId">เลขที่งาน <i class="bi bi-arrow-down-up"></i></th>
               <th>สินค้า / หมายเลข</th>
               <th>ประเภทงาน</th>
@@ -279,6 +388,7 @@
               <th class="sortable" data-sort="startDate">เปิดงาน → กำหนดเสร็จ <i class="bi bi-arrow-down-up"></i></th>
               <th class="sortable text-end" data-sort="ageDays">อายุงาน <i class="bi bi-arrow-down-up"></i></th>
               <th>สาเหตุ / หมายเหตุ</th>
+              <th class="text-end">จัดการ</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -292,39 +402,237 @@
       </div>
     </section>
 
-    <footer class="text-center muted mt-3 mb-2">ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที</footer>
+    <footer class="text-center muted mt-3 mb-5" id="footerLabel">ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที</footer>
   </main>
+
+  <!-- ================= SELECTION BAR ================= -->
+  <div class="selbar" id="selBar" aria-live="polite">
+    <span class="cnt">เลือกแล้ว <span id="selCount" class="num">0</span> รายการ</span>
+    <button type="button" class="btn btn-link" id="selAllFiltered">เลือกทั้งหมดตามตัวกรอง (<span id="selFilteredCnt" class="num">0</span>)</button>
+    <button type="button" class="btn btn-light" id="selPrint"><i class="bi bi-printer"></i> พิมพ์ที่เลือก</button>
+    <button type="button" class="btn btn-outline-light" id="selDelete"><i class="bi bi-trash3"></i> ลบ</button>
+    <button type="button" class="btn btn-link" id="selClear" title="ล้างการเลือก"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <!-- ================= MODAL : เพิ่ม/แก้ไขงาน ================= -->
+  <div class="modal fade" id="jobModal" tabindex="-1" aria-labelledby="jobModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+      <form class="modal-content" id="jobForm" novalidate autocomplete="off">
+        <div class="modal-header">
+          <h5 class="modal-title" id="jobModalTitle">เพิ่มงานซ่อม</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-danger py-2 small d-none" id="formErr"></div>
+
+          <div class="fsec">ข้อมูลงาน</div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <label class="form-label" for="fTicket">เลขที่งาน</label>
+              <input class="form-control" id="fTicket" placeholder="เว้นว่าง = ออกเลขอัตโนมัติ">
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label" for="fDept">แผนก</label>
+              <select class="form-select" id="fDept"></select>
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label" for="fType">ประเภทงาน</label>
+              <select class="form-select" id="fType"></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="fProduct">สินค้า / รุ่นรถ</label>
+              <input class="form-control" id="fProduct" placeholder="เช่น รถขุด KOBELCO SK200">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="fMachine">หมายเลขเครื่อง / รหัสรถ</label>
+              <input class="form-control" id="fMachine" placeholder="Machine_ID / Serial">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label" for="fCustomer">ชื่อลูกค้า</label>
+              <input class="form-control" id="fCustomer">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="fDelivery">เลขที่ใบส่งของ</label>
+              <input class="form-control" id="fDelivery">
+            </div>
+          </div>
+
+          <div class="fsec">สถานะ & กำหนดการ</div>
+          <div class="row g-2 mb-2">
+            <div class="col-6 col-md-4">
+              <label class="form-label req" for="fStatus">สถานะ</label>
+              <select class="form-select" id="fStatus" required></select>
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label" for="fTech">ช่างผู้ดูแล</label>
+              <input class="form-control" id="fTech" list="techList" placeholder="เลือก/พิมพ์ชื่อช่าง">
+              <datalist id="techList"></datalist>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="fParts">สถานะอะไหล่</label>
+              <select class="form-select" id="fParts"></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label req" for="fStart">วันที่เริ่มซ่อม</label>
+              <input type="date" class="form-control" id="fStart" required>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label" for="fSla">SLA (วัน)</label>
+              <input type="number" min="0" max="3650" step="1" class="form-control num" id="fSla">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label" for="fTarget">กำหนดเสร็จ</label>
+              <input class="form-control num bg-light" id="fTarget" readonly tabindex="-1">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label" for="fActual">วันที่เสร็จจริง</label>
+              <input type="date" class="form-control" id="fActual">
+            </div>
+          </div>
+
+          <div class="fsec">สาเหตุล่าช้า / หมายเหตุ</div>
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label" for="fDelay">หมวดสาเหตุ</label>
+              <select class="form-select" id="fDelay"></select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label" for="fRemark">รายละเอียด / หมายเหตุ</label>
+              <textarea class="form-control" id="fRemark" rows="2"></textarea>
+            </div>
+            <div class="col-md-4 d-none pinWrap">
+              <label class="form-label req" for="fPin">PIN ยืนยัน</label>
+              <input type="password" inputmode="numeric" class="form-control" id="fPin">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span class="muted me-auto" id="fUpdated"></span>
+          <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-brand" id="btnSave"><span class="spinner-border spinner-border-sm d-none me-1" id="saveSpin"></span><i class="bi bi-check2"></i> บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL : ยืนยันการลบ ================= -->
+  <div class="modal fade" id="delModal" tabindex="-1" aria-labelledby="delTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title text-danger" id="delTitle"><i class="bi bi-trash3"></i> ยืนยันการลบ</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">ต้องการลบงาน <strong id="delCount">0</strong> รายการนี้ออกจาก Google Sheet ใช่หรือไม่?<br><span class="muted">การลบไม่สามารถย้อนกลับได้จากหน้าเว็บ (กู้คืนได้จากประวัติเวอร์ชันของ Sheet)</span></p>
+          <div class="del-list" id="delList"></div>
+          <div class="mt-2 d-none pinWrap">
+            <label class="form-label small fw-semibold" for="dPin">PIN ยืนยัน</label>
+            <input type="password" inputmode="numeric" class="form-control" id="dPin">
+          </div>
+          <div class="alert alert-danger py-2 small mt-2 mb-0 d-none" id="delErr"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="button" class="btn btn-danger btn-sm fw-semibold" id="btnDelConfirm"><span class="spinner-border spinner-border-sm d-none me-1" id="delSpin"></span>ลบข้อมูล</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL : ตั้งค่าพิมพ์รายงาน ================= -->
+  <div class="modal fade" id="printModal" tabindex="-1" aria-labelledby="printTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="printTitle"><i class="bi bi-printer"></i> พิมพ์รายงาน (แบบฟอร์มรวมสินไทย)</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <div class="fsec">รายการที่จะพิมพ์</div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6"><label class="opt-card"><input type="radio" name="pScope" value="selected"><span><span class="t">เฉพาะที่ติ๊กเลือก</span><br><span class="d"><span id="pSelCnt">0</span> รายการ</span></span></label></div>
+            <div class="col-md-6"><label class="opt-card"><input type="radio" name="pScope" value="filtered"><span><span class="t">ทั้งหมดตามตัวกรองตอนนี้</span><br><span class="d"><span id="pFiltCnt">0</span> รายการ</span></span></label></div>
+          </div>
+
+          <div class="fsec">รูปแบบเอกสาร</div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6"><label class="opt-card"><input type="radio" name="pFormat" value="table" checked><span><span class="t">รายงานสรุปแบบตาราง</span><br><span class="d">หลายงานต่อหน้า · เหมาะกับประชุม/สรุปผู้บริหาร</span></span></label></div>
+            <div class="col-md-6"><label class="opt-card"><input type="radio" name="pFormat" value="card"><span><span class="t">ใบติดตามงานซ่อมรายคัน</span><br><span class="d">1 งาน / 1 หน้า · มีช่องบันทึกและลงชื่อ</span></span></label></div>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-md-8">
+              <label class="form-label" for="pTitleIn">หัวข้อรายงาน</label>
+              <input class="form-control" id="pTitleIn" value="รายงานติดตามสถานะงานซ่อม / PM">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="pOrient">แนวกระดาษ (A4)</label>
+              <select class="form-select" id="pOrient"><option value="landscape">แนวนอน</option><option value="portrait">แนวตั้ง</option></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="pBy">ผู้จัดทำรายงาน</label>
+              <input class="form-control" id="pBy" placeholder="ชื่อ-นามสกุล (ไม่บังคับ)">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="pNote">หมายเหตุท้ายรายงาน</label>
+              <input class="form-control" id="pNote" placeholder="(ไม่บังคับ)">
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-3 mt-2">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="pSum" checked><label class="form-check-label small" for="pSum">แสดงสรุปจำนวนด้านบน</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="pSign" checked><label class="form-check-label small" for="pSign">แสดงช่องลงชื่อ</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="pRemark" checked><label class="form-check-label small" for="pRemark">แสดงสาเหตุ/หมายเหตุ</label></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span class="muted me-auto">เคล็ดลับ: เลือกเครื่องพิมพ์ “บันทึกเป็น PDF” เพื่อเก็บเป็นไฟล์</span>
+          <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="button" class="btn btn-brand" id="btnDoPrint"><i class="bi bi-printer"></i> พิมพ์</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="loading" class="loading"><div class="spinner-border text-secondary" role="status"></div><div class="mt-2 small text-secondary">กำลังโหลดข้อมูล...</div></div>
 
-  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:2100">
     <div id="appToast" class="toast text-bg-danger border-0" role="alert">
       <div class="d-flex"><div class="toast-body" id="appToastBody"></div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
     </div>
   </div>
 
+  <!-- พื้นที่สำหรับพิมพ์ (ซ่อนบนหน้าจอ) -->
+  <div id="printArea" class="rp"></div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script>
 /* =====================================================================
- *  Frontend logic — ติดตามสถานะงานซ่อม / PM
+ *  Frontend logic — ติดตามสถานะงานซ่อม / PM  (CRUD + Print report)
  * ===================================================================== */
 (function () {
   'use strict';
 
-  // 🔗 URL Web App (ใช้ตอนเปิดจาก VS Code / Live Server)
+  // 🔗 URL Web App (ใช้ตอนเปิดจาก VS Code / Live Server / GitHub Pages)
   //    ถ้าเปิดผ่าน URL Web App โดยตรง ระบบใช้ google.script.run อัตโนมัติ
   var API_URL = 'https://script.google.com/macros/s/AKfycbw83JmRgOSKD4xrgMPTgzW9w9R6Tn7ggeEDV7qvNBN1_ggr7tvTwfUvufpXpcGXUq6ZJA/exec';
 
   var REFRESH_MS = 5 * 60 * 1000;
   var PAGE_SIZE = 20;
 
+  // ค่าเริ่มต้นหัวฟอร์ม (ถ้า Backend ส่ง company มา จะใช้ค่าจาก CONFIG.COMPANY แทน)
+  var COMPANY_DEFAULT = {
+    nameTh: 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย', nameEn: 'RUAMSINTHAI GROUP',
+    division: 'ฝ่ายบริการ / ศูนย์ซ่อม', address: '', phone: '', taxId: '', logoUrl: '',
+  };
+
   var S = { IN_PROGRESS: 'กำลังซ่อม', PARTS: 'รออะไหล่', PAINT: 'รอพ่นสี', DONE: 'ซ่อมเสร็จแล้ว', CANCEL: 'ยกเลิก' };
   var STATUS_UI = {
     'กำลังซ่อม': 'st-progress', 'รออะไหล่': 'st-parts', 'รอพ่นสี': 'st-paint',
     'ซ่อมเสร็จแล้ว': 'st-done', 'ยกเลิก': 'st-cancel',
   };
-  var SERIES = [  // สีสถานะในกราฟ (ลำดับคงที่)
+  var SERIES = [
     { status: S.IN_PROGRESS, color: '#2a78d6' },
     { status: S.PARTS, color: '#eb6834' },
     { status: S.PAINT, color: '#1baf7a' },
@@ -340,14 +648,17 @@
   var ST = {
     data: null, dept: '', quick: 'active', search: '', type: '', tech: '', delay: '',
     sortKey: '', sortDir: 1, page: 1, charts: {},
+    selected: {}, byKey: {}, view: [], pin: '',
+    form: { mode: 'add', job: null, slaTouched: false }, delItems: [],
   };
 
   var $ = function (id) { return document.getElementById(id); };
+  var modal = function (id) { return bootstrap.Modal.getOrCreateInstance($(id)); };
 
   document.addEventListener('DOMContentLoaded', function () {
     bindEvents();
     loadData(false);
-    setInterval(function () { loadData(true); }, REFRESH_MS);
+    setInterval(function () { if (!document.querySelector('.modal.show')) loadData(true); }, REFRESH_MS);
   });
 
   // ------------------------------------------------------------------ events
@@ -376,6 +687,64 @@
     });
     $('btnClear').addEventListener('click', clearFilters);
     $('btnCsv').addEventListener('click', exportCsv);
+
+    // ---- CRUD
+    $('btnAdd').addEventListener('click', function () { openForm(null); });
+    $('jobForm').addEventListener('submit', function (e) { e.preventDefault(); submitForm(); });
+    $('fType').addEventListener('change', function () {
+      if (!ST.form.slaTouched) $('fSla').value = slaFor($('fType').value);
+      updateTarget();
+    });
+    $('fSla').addEventListener('input', function () { ST.form.slaTouched = true; updateTarget(); });
+    $('fStart').addEventListener('change', updateTarget);
+    $('fStatus').addEventListener('change', function () {
+      if ($('fStatus').value === S.DONE && !$('fActual').value) $('fActual').value = ST.data.today;
+    });
+    $('btnDelConfirm').addEventListener('click', confirmDelete);
+
+    // ---- ตาราง : checkbox + ปุ่มจัดการ (event delegation)
+    $('tbody').addEventListener('change', function (e) {
+      if (!e.target.classList.contains('row-chk')) return;
+      var k = e.target.getAttribute('data-k');
+      if (e.target.checked) ST.selected[k] = true; else delete ST.selected[k];
+      e.target.closest('tr').classList.toggle('is-selected', e.target.checked);
+      updateSelectionUI();
+    });
+    $('tbody').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-act]');
+      if (!b) return;
+      var j = ST.byKey[b.getAttribute('data-k')];
+      if (!j) return;
+      var act = b.getAttribute('data-act');
+      if (act === 'edit') openForm(j);
+      else if (act === 'del') openDelete([j]);
+      else if (act === 'print') doPrint([j], Object.assign(printOptions(), { format: 'card', orientation: 'portrait' }));
+    });
+    $('chkAll').addEventListener('change', function (e) {
+      ST.view.forEach(function (j) { if (e.target.checked) ST.selected[keyOf(j)] = true; else delete ST.selected[keyOf(j)]; });
+      renderTable();
+    });
+
+    // ---- Selection bar
+    $('selClear').addEventListener('click', function () { ST.selected = {}; renderTable(); });
+    $('selAllFiltered').addEventListener('click', function () {
+      filtered().forEach(function (j) { ST.selected[keyOf(j)] = true; }); renderTable();
+    });
+    $('selDelete').addEventListener('click', function () { openDelete(selectedJobs()); });
+    $('selPrint').addEventListener('click', function () { openPrint('selected'); });
+    $('btnPrint').addEventListener('click', function () { openPrint(selectedJobs().length ? 'selected' : 'filtered'); });
+
+    // ---- Print
+    document.querySelectorAll('input[name=pFormat]').forEach(function (r) {
+      r.addEventListener('change', function () { $('pOrient').value = r.value === 'card' ? 'portrait' : 'landscape'; });
+    });
+    $('btnDoPrint').addEventListener('click', function () {
+      var opt = printOptions();
+      var jobs = opt.scope === 'selected' ? selectedJobs() : filtered();
+      if (!jobs.length) return toast('ไม่มีรายการให้พิมพ์', 'err');
+      modal('printModal').hide();
+      setTimeout(function () { doPrint(jobs, opt); }, 350);
+    });
   }
 
   function setQuick(q) {
@@ -396,10 +765,38 @@
     setQuick('active');
   }
 
+  // ------------------------------------------------------------------ server
+  function hasGas() { return typeof google !== 'undefined' && google.script && google.script.run; }
+
+  /** เรียก Backend : google.script.run (ใน Apps Script) หรือ fetch POST (นอก Apps Script) */
+  function callServer(fn, action, payload) {
+    return new Promise(function (resolve, reject) {
+      var done = function (res) {
+        var d;
+        try { d = typeof res === 'string' ? JSON.parse(res) : res; } catch (e) { return reject(new Error('รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง')); }
+        if (!d || !d.ok) return reject(new Error((d && d.message) || 'ทำรายการไม่สำเร็จ'));
+        resolve(d);
+      };
+      if (hasGas()) {
+        google.script.run.withSuccessHandler(done)
+          .withFailureHandler(function (err) { reject(new Error(err && err.message ? err.message : String(err))); })[fn](payload);
+      } else if (API_URL) {
+        fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // simple request — ไม่มี preflight
+          body: JSON.stringify(Object.assign({ action: action }, payload || {})),
+        }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+          .then(done).catch(function (err) { reject(new Error('เรียก API ไม่สำเร็จ: ' + err.message)); });
+      } else {
+        reject(new Error('ยังไม่ได้ตั้งค่า API_URL'));
+      }
+    });
+  }
+
   // ------------------------------------------------------------------ data
   function loadData(silent) {
     if (!silent) showLoading(true);
-    if (typeof google === 'undefined' || !google.script) {
+    if (!hasGas()) {
       if (API_URL) {
         return fetch(API_URL + (API_URL.indexOf('?') === -1 ? '?' : '&') + 'action=data&t=' + Date.now())
           .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
@@ -419,17 +816,37 @@
     catch (e) { return onError({ message: 'รูปแบบข้อมูลไม่ถูกต้อง' }); }
     if (!data || !data.ok) return onError({ message: (data && data.message) || 'โหลดข้อมูลไม่สำเร็จ' });
     ST.data = data;
+    ST.company = Object.assign({}, COMPANY_DEFAULT, data.company || {});
+    ST.byKey = {};
+    data.jobs.forEach(function (j) { ST.byKey[keyOf(j)] = j; });
+    Object.keys(ST.selected).forEach(function (k) { if (!ST.byKey[k]) delete ST.selected[k]; }); // ตัดรายการที่ถูกลบไปแล้ว
+    document.querySelectorAll('.pinWrap').forEach(function (el) { el.classList.toggle('d-none', !data.requirePin); });
+    renderBrand();
     $('lastUpdated').textContent = data.generatedAt;
-    $('todayLabel').textContent = 'Service Repair & PM Tracker · ' + fmtDate(data.today, true);
+    $('todayLabel').textContent = ST.company.nameTh + ' · ' + fmtDate(data.today, true);
     renderAll();
   }
 
   function onError(err) {
     showLoading(false);
-    $('appToastBody').textContent = '⚠️ ' + (err && err.message ? err.message : err);
-    bootstrap.Toast.getOrCreateInstance($('appToast'), { delay: 7000 }).show();
+    toast('⚠️ ' + (err && err.message ? err.message : err), 'err');
+  }
+  function toast(msg, type) {
+    var el = $('appToast');
+    el.classList.toggle('text-bg-danger', type === 'err');
+    el.classList.toggle('text-bg-success', type !== 'err');
+    $('appToastBody').textContent = msg;
+    bootstrap.Toast.getOrCreateInstance(el, { delay: type === 'err' ? 7000 : 3500 }).show();
   }
   function showLoading(on) { $('loading').classList.toggle('hide', !on); }
+
+  function renderBrand() {
+    var c = ST.company;
+    $('brandLogo').innerHTML = c.logoUrl ? '<img src="' + esc(c.logoUrl) + '" alt="logo">' : 'RST';
+    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที';
+  }
+
+  function keyOf(j) { return j.ticketId ? 't:' + j.ticketId : 'r:' + j.row; }
 
   function deptJobs() {
     if (!ST.data) return [];
@@ -468,15 +885,14 @@
       sel.innerHTML = '<option value="">' + first + '</option>' + values.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
       sel.value = values.indexOf(keep) > -1 ? keep : '';
     };
-    var uniq = function (arr) { return arr.filter(function (v, i) { return v && arr.indexOf(v) === i; }).sort(); };
     fill($('typeFilter'), 'ทุกประเภทงาน', uniq(jobs.map(function (j) { return j.jobType; })), ST.type);
     fill($('techFilter'), 'ช่างทุกคน', uniq(jobs.map(function (j) { return j.technicianName; })), ST.tech);
     ST.type = $('typeFilter').value; ST.tech = $('techFilter').value;
   }
 
   // ------------------------------------------------------------------ KPI
-  function renderKPIs(jobs) {
-    var c = { active: 0, progress: 0, pending: 0, overdue: 0, done: 0, dueToday: 0, doneMonth: 0 };
+  function countJobs(jobs) {
+    var c = { total: jobs.length, active: 0, progress: 0, pending: 0, overdue: 0, done: 0, cancel: 0, dueToday: 0, doneMonth: 0 };
     var month = (ST.data.today || '').slice(0, 7);
     jobs.forEach(function (j) {
       if (j.isActive) c.active++;
@@ -484,8 +900,14 @@
       if (j.isPending) c.pending++;
       if (j.isOverdue) c.overdue++;
       if (j.status === S.DONE) { c.done++; if ((j.actualDate || '').slice(0, 7) === month) c.doneMonth++; }
+      if (j.status === S.CANCEL) c.cancel++;
       if (j.slaState === 'due_today') c.dueToday++;
     });
+    return c;
+  }
+
+  function renderKPIs(jobs) {
+    var c = countJobs(jobs);
     $('kActive').textContent = c.active;
     $('kActiveSub').textContent = 'จากงานทั้งหมด ' + jobs.length + ' งาน';
     $('kProgress').textContent = c.progress;
@@ -524,7 +946,7 @@
     var labels = Object.keys(names).sort(function (a, b) { return names[b] - names[a]; });
     var empty = !labels.length;
     $('techBox').classList.toggle('d-none', empty); $('techEmpty').classList.toggle('d-none', !empty);
-    if (empty) return;
+    if (empty) { if (ST.charts.tech) { ST.charts.tech.destroy(); ST.charts.tech = null; } return; }
     $('techBox').style.height = Math.max(180, labels.length * 34 + 60) + 'px';
     var sets = SERIES.map(function (s) {
       return Object.assign({ label: s.status, backgroundColor: s.color, data: labels.map(function (n) {
@@ -617,13 +1039,17 @@
     }).sort(sorter);
   }
 
+  function selectedJobs() {
+    if (!ST.data) return [];
+    return ST.data.jobs.filter(function (j) { return ST.selected[keyOf(j)]; }).sort(sorter);
+  }
+
   function sorter(a, b) {
     if (ST.sortKey) {
       var va = a[ST.sortKey], vb = b[ST.sortKey];
       if (va == null || va === '') return 1; if (vb == null || vb === '') return -1;
       return (typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb))) * ST.sortDir;
     }
-    // ค่าเริ่มต้น: เกินกำหนดมากสุด -> งานค้าง (ใกล้กำหนดก่อน) -> เสร็จล่าสุด
     var rank = function (j) { return j.isOverdue ? 0 : j.isActive ? 1 : j.status === S.DONE ? 2 : 3; };
     var ra = rank(a), rb = rank(b);
     if (ra !== rb) return ra - rb;
@@ -639,6 +1065,7 @@
     if (ST.page > pages) ST.page = pages;
     var from = (ST.page - 1) * PAGE_SIZE;
     var view = rows.slice(from, from + PAGE_SIZE);
+    ST.view = view;
 
     $('resultCount').textContent = rows.length;
     var tags = [];
@@ -666,11 +1093,28 @@
     $('pager').querySelectorAll('button').forEach(function (b) {
       b.addEventListener('click', function () { ST.page = +b.getAttribute('data-p'); renderTable(); });
     });
+    updateSelectionUI();
+  }
+
+  function updateSelectionUI() {
+    var n = Object.keys(ST.selected).length;
+    var onPage = ST.view.filter(function (j) { return ST.selected[keyOf(j)]; }).length;
+    var all = $('chkAll');
+    all.checked = ST.view.length > 0 && onPage === ST.view.length;
+    all.indeterminate = onPage > 0 && onPage < ST.view.length;
+    $('selCount').textContent = n;
+    var fl = filtered();
+    $('selFilteredCnt').textContent = fl.length;
+    $('selAllFiltered').classList.toggle('d-none', fl.every(function (j) { return ST.selected[keyOf(j)]; }));
+    $('selBar').classList.toggle('show', n > 0);
   }
 
   function rowHtml(j) {
-    var cls = j.isOverdue ? 'is-overdue' : '';
+    var k = keyOf(j), sel = !!ST.selected[k];
+    var cls = (j.isOverdue ? 'is-overdue ' : '') + (sel ? 'is-selected' : '');
+    var ka = ' data-k="' + esc(k) + '"';
     return '<tr class="' + cls + '">' +
+      td('เลือก', '<input type="checkbox" class="form-check-input row-chk"' + ka + (sel ? ' checked' : '') + ' aria-label="เลือก ' + esc(j.ticketId) + '">', 'col-chk') +
       td('เลขที่งาน', '<div class="t-id">' + esc(j.ticketId || '-') + '</div><div class="t-meta">' + esc(j.department) + '</div>') +
       td('สินค้า', '<div class="t-product">' + esc(j.product || '-') + '</div><div class="t-meta">' + esc(j.machineId || '') +
         (j.customerName && j.customerName.indexOf('สต็อก') !== 0 ? ' · ' + esc(j.customerName) : '') + '</div>') +
@@ -680,6 +1124,10 @@
       td('วันที่', dateCell(j)) +
       td('อายุงาน', ageCell(j), 'text-end') +
       td('หมายเหตุ', delayCell(j)) +
+      td('จัดการ', '<div class="acts">' +
+        '<button type="button" class="btn-icon" data-act="print"' + ka + ' title="พิมพ์ใบงาน"><i class="bi bi-printer"></i></button>' +
+        '<button type="button" class="btn-icon" data-act="edit"' + ka + ' title="แก้ไข"><i class="bi bi-pencil-square"></i></button>' +
+        '<button type="button" class="btn-icon del" data-act="del"' + ka + ' title="ลบ"><i class="bi bi-trash3"></i></button></div>', 'text-end') +
       '</tr>';
   }
   function td(label, html, cls) { return '<td data-label="' + esc(label) + '"' + (cls ? ' class="' + cls + '"' : '') + '><div class="cell">' + html + '</div></td>'; }
@@ -694,6 +1142,16 @@
       case 'done_late': return '<span class="badge-sla sla-late">เสร็จช้ากว่าเป้า ' + j.lateDays + ' วัน</span>';
       case 'done_on_time': return '<span class="badge-sla sla-ok">✓ ตามเป้า</span>';
       default: return '';
+    }
+  }
+  function slaText(j) {
+    switch (j.slaState) {
+      case 'overdue': return 'เกินกำหนด ' + j.overdueDays + ' วัน';
+      case 'due_today': return 'ครบกำหนดวันนี้';
+      case 'due_soon': case 'on_track': return 'เหลือ ' + j.daysRemaining + ' วัน';
+      case 'done_late': return 'เสร็จช้ากว่าเป้า ' + j.lateDays + ' วัน';
+      case 'done_on_time': return 'เสร็จตามเป้า';
+      default: return '-';
     }
   }
   function partsBadge(j) { return j.partsStatus ? '<div class="muted mt-1"><i class="bi bi-box-seam"></i> ' + esc(j.partsStatus) + '</div>' : ''; }
@@ -719,9 +1177,270 @@
     return '<div><a class="btn btn-sm btn-success btn-call" href="tel:' + tel + '" target="_top" title="' + esc(j.technicianPhone) + '">📞 โทรหาช่าง</a></div>';
   }
 
+  // ================================================================== CRUD : FORM
+  function slaFor(type) {
+    var m = (ST.data && ST.data.slaByType) || {};
+    return m[type] != null ? m[type] : ((ST.data && ST.data.defaultSla) || 14);
+  }
+
+  function fillSelect(sel, values, current, emptyLabel) {
+    var list = values.slice();
+    if (current && list.indexOf(current) === -1) list.push(current);
+    sel.innerHTML = (emptyLabel != null ? '<option value="">' + esc(emptyLabel) + '</option>' : '') +
+      list.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
+    sel.value = current || (emptyLabel != null ? '' : list[0] || '');
+  }
+
+  function openForm(job) {
+    if (!ST.data) return;
+    var d = ST.data, isEdit = !!job;
+    ST.form = { mode: isEdit ? 'edit' : 'add', job: job, slaTouched: isEdit };
+    var j = job || {};
+    var deptVal = isEdit ? (j.department === 'ไม่ระบุแผนก' ? '' : j.department) : (ST.dept || (d.departments || [])[0] || '');
+    var typeVal = isEdit ? j.jobType : (d.jobTypes || [])[0] || 'อื่นๆ';
+
+    $('jobModalTitle').textContent = isEdit ? 'แก้ไขงาน ' + (j.ticketId || '') : 'เพิ่มงานซ่อมใหม่';
+    $('fTicket').value = j.ticketId || '';
+    $('fTicket').readOnly = isEdit && !!j.ticketId;
+    $('fTicket').classList.toggle('bg-light', $('fTicket').readOnly);
+    fillSelect($('fDept'), d.departments || [], deptVal, '— ไม่ระบุ —');
+    fillSelect($('fType'), d.jobTypes || [], typeVal);
+    fillSelect($('fStatus'), d.statuses || [], isEdit ? j.status : S.IN_PROGRESS);
+    fillSelect($('fParts'), d.partsStatuses || [], j.partsStatus || '', '— ไม่ระบุ —');
+    fillSelect($('fDelay'), d.delayReasons || [], j.delayCategory || '', '— ไม่มี —');
+    $('techList').innerHTML = (d.technicians || []).map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join('');
+    $('fProduct').value = j.product || '';
+    $('fMachine').value = j.machineId || '';
+    $('fCustomer').value = j.customerName || '';
+    $('fDelivery').value = j.deliveryNo || '';
+    $('fTech').value = j.technicianName || '';
+    $('fStart').value = j.startDate || d.today;
+    $('fSla').value = isEdit ? j.slaDays : slaFor(typeVal);
+    $('fActual').value = j.actualDate || '';
+    $('fRemark').value = j.delayRemark || '';
+    $('fPin').value = ST.pin;
+    $('fUpdated').textContent = isEdit && j.updatedAt ? 'แก้ไขล่าสุด ' + j.updatedAt : '';
+    $('formErr').classList.add('d-none');
+    updateTarget();
+    modal('jobModal').show();
+  }
+
+  function updateTarget() {
+    var s = $('fStart').value, n = parseInt($('fSla').value, 10);
+    $('fTarget').value = s && isFinite(n) ? fmtDate(addDays(s, n)) : '-';
+  }
+
+  function formError(msg) { $('formErr').textContent = msg; $('formErr').classList.remove('d-none'); $('formErr').scrollIntoView({ block: 'nearest' }); }
+
+  function submitForm() {
+    var job = {
+      ticketId: $('fTicket').value.trim(), department: $('fDept').value, jobType: $('fType').value,
+      product: $('fProduct').value.trim(), machineId: $('fMachine').value.trim(), customerName: $('fCustomer').value.trim(),
+      deliveryNo: $('fDelivery').value.trim(), status: $('fStatus').value, technicianName: $('fTech').value.trim(),
+      partsStatus: $('fParts').value, startDate: $('fStart').value, slaDays: $('fSla').value,
+      actualDate: $('fActual').value, delayCategory: $('fDelay').value, delayRemark: $('fRemark').value.trim(),
+    };
+    // validate ฝั่งหน้าเว็บ (Backend ตรวจซ้ำอีกครั้ง)
+    if (!job.startDate) return formError('กรุณาระบุวันที่เริ่มซ่อม');
+    if (!job.machineId && !job.product && !job.customerName) return formError('กรุณาระบุอย่างน้อย 1 ช่อง: สินค้า / หมายเลขเครื่อง / ชื่อลูกค้า');
+    if (job.slaDays !== '' && (+job.slaDays < 0 || !isFinite(+job.slaDays))) return formError('SLA ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
+    if (job.actualDate && job.actualDate < job.startDate) return formError('วันที่เสร็จจริงต้องไม่ก่อนวันที่เริ่มซ่อม');
+    if (job.status === S.DONE && !job.actualDate) job.actualDate = ST.data.today;
+    if (ST.data.requirePin && !$('fPin').value) return formError('กรุณาใส่ PIN');
+
+    var f = ST.form, o = f.job || {};
+    var payload = {
+      mode: f.mode, row: o.row, originalTicketId: o.ticketId || '', originalMachineId: o.machineId || '',
+      pin: $('fPin').value, job: job,
+    };
+    busy('btnSave', 'saveSpin', true);
+    callServer('saveJob', 'save', payload).then(function (res) {
+      ST.pin = payload.pin;
+      busy('btnSave', 'saveSpin', false);
+      modal('jobModal').hide();
+      toast('✅ ' + res.message, 'ok');
+      loadData(true);
+    }).catch(function (err) {
+      busy('btnSave', 'saveSpin', false);
+      formError(err.message);
+    });
+  }
+
+  function busy(btnId, spinId, on) { $(btnId).disabled = on; $(spinId).classList.toggle('d-none', !on); }
+
+  // ================================================================== CRUD : DELETE
+  function openDelete(jobs) {
+    if (!jobs.length) return;
+    ST.delItems = jobs;
+    $('delCount').textContent = jobs.length;
+    var shown = jobs.slice(0, 12).map(function (j) {
+      return '<div><strong>' + esc(j.ticketId || '(ไม่มีเลขที่)') + '</strong> · ' + esc(j.product || j.machineId || '-') + ' · <span class="text-secondary">' + esc(j.customerName || '') + '</span></div>';
+    }).join('');
+    $('delList').innerHTML = shown + (jobs.length > 12 ? '<div class="text-secondary">… และอีก ' + (jobs.length - 12) + ' รายการ</div>' : '');
+    $('dPin').value = ST.pin;
+    $('delErr').classList.add('d-none');
+    modal('delModal').show();
+  }
+
+  function confirmDelete() {
+    var pin = $('dPin').value;
+    if (ST.data.requirePin && !pin) { $('delErr').textContent = 'กรุณาใส่ PIN'; $('delErr').classList.remove('d-none'); return; }
+    var items = ST.delItems.map(function (j) { return { row: j.row, ticketId: j.ticketId, machineId: j.machineId }; });
+    busy('btnDelConfirm', 'delSpin', true);
+    callServer('deleteJobs', 'delete', { items: items, pin: pin }).then(function (res) {
+      ST.pin = pin;
+      busy('btnDelConfirm', 'delSpin', false);
+      ST.delItems.forEach(function (j) { delete ST.selected[keyOf(j)]; });
+      modal('delModal').hide();
+      toast('🗑️ ' + res.message, 'ok');
+      loadData(true);
+    }).catch(function (err) {
+      busy('btnDelConfirm', 'delSpin', false);
+      $('delErr').textContent = err.message; $('delErr').classList.remove('d-none');
+    });
+  }
+
+  // ================================================================== PRINT (แบบฟอร์มรวมสินไทย)
+  function openPrint(scope) {
+    if (!ST.data) return;
+    var nSel = selectedJobs().length, nFil = filtered().length;
+    $('pSelCnt').textContent = nSel; $('pFiltCnt').textContent = nFil;
+    var rSel = document.querySelector('input[name=pScope][value=selected]');
+    rSel.disabled = nSel === 0;
+    rSel.closest('.opt-card').style.opacity = nSel ? 1 : .5;
+    document.querySelector('input[name=pScope][value=' + (nSel && scope === 'selected' ? 'selected' : 'filtered') + ']').checked = true;
+    modal('printModal').show();
+  }
+
+  function printOptions() {
+    var r = function (name) { var el = document.querySelector('input[name=' + name + ']:checked'); return el ? el.value : ''; };
+    return {
+      scope: r('pScope'), format: r('pFormat') || 'table', orientation: $('pOrient').value,
+      title: $('pTitleIn').value.trim() || 'รายงานติดตามสถานะงานซ่อม / PM',
+      by: $('pBy').value.trim(), note: $('pNote').value.trim(),
+      sum: $('pSum').checked, sign: $('pSign').checked, remark: $('pRemark').checked,
+    };
+  }
+
+  function doPrint(jobs, opt) {
+    var now = new Date();
+    var meta = {
+      docNo: 'RPT-' + ST.data.today.replace(/-/g, '') + '-' + pad(now.getHours()) + pad(now.getMinutes()),
+      printed: fmtDate(ST.data.today) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ' น.',
+    };
+    $('printArea').innerHTML = opt.format === 'card'
+      ? jobs.map(function (j) { return cardHtml(j, opt, meta); }).join('')
+      : tableReportHtml(jobs, opt, meta);
+    $('pageStyle').textContent = '@page { size: A4 ' + (opt.orientation || 'landscape') + '; margin: 10mm 10mm 12mm; }';
+
+    var imgs = Array.prototype.slice.call($('printArea').querySelectorAll('img'));
+    var waits = imgs.map(function (im) {
+      return im.complete ? Promise.resolve() : new Promise(function (res) { im.onload = im.onerror = res; setTimeout(res, 2500); });
+    });
+    if (document.fonts && document.fonts.ready) waits.push(document.fonts.ready);
+    Promise.all(waits).then(function () { setTimeout(function () { window.print(); }, 150); });
+  }
+
+  function rpHeader(meta, right) {
+    var c = ST.company;
+    var logo = c.logoUrl ? '<img src="' + esc(c.logoUrl) + '" alt="">' : '<div class="txt">RST</div>';
+    var addr = [c.address, c.phone, c.taxId].filter(Boolean).join(' · ');
+    return '<div class="rp-head">' +
+      '<div class="rp-logo">' + logo + '</div>' +
+      '<div class="rp-co"><div class="th">' + esc(c.nameTh) + '</div><div class="en">' + esc(c.nameEn) + '</div>' +
+        '<div class="ad">' + esc(c.division || '') + (addr ? ' · ' + esc(addr) : '') + '</div></div>' +
+      '<table class="rp-doc">' + right.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>' +
+    '</div>';
+  }
+
+  function rpSign(labels, opt) {
+    if (!opt.sign) return '';
+    return '<div class="rp-sign">' + labels.map(function (l, i) {
+      var name = i === 0 && opt.by ? esc(opt.by) : '..................................................';
+      return '<div><div class="line"></div>( ' + name + ' )<br><b>' + l + '</b><br>วันที่ ......../......../............</div>';
+    }).join('') + '</div>';
+  }
+
+  function rpFoot(meta) {
+    return '<div class="rp-foot"><span>เอกสารพิมพ์จากระบบติดตามสถานะงานซ่อม / PM · ' + esc(ST.company.nameTh) + '</span><span>เลขที่ ' + meta.docNo + ' · พิมพ์ ' + meta.printed + '</span></div>';
+  }
+
+  function scopeText() {
+    var t = [];
+    t.push(ST.dept || 'ทุกแผนก');
+    if (ST.type) t.push('ประเภท: ' + ST.type);
+    if (ST.tech) t.push('ช่าง: ' + ST.tech);
+    if (ST.delay) t.push('สาเหตุ: ' + ST.delay);
+    return t.join(' · ');
+  }
+
+  function tableReportHtml(jobs, opt, meta) {
+    var c = countJobs(jobs);
+    var head = rpHeader(meta, [['เลขที่เอกสาร', meta.docNo], ['วันที่พิมพ์', meta.printed], ['จำนวน', jobs.length + ' รายการ']]);
+    var title = '<div class="rp-title"><div class="t">' + esc(opt.title) + '</div>' +
+      '<div class="s">' + (opt.scope === 'selected' ? 'รายการที่เลือก ' + jobs.length + ' งาน' : 'ขอบเขต: ' + esc(scopeText())) +
+      ' · ข้อมูล ณ วันที่ ' + fmtDate(ST.data.today, true) + '</div></div>';
+    var sum = opt.sum ? '<div class="rp-sum">' +
+      '<div>งานทั้งหมด<b>' + c.total + '</b></div><div>งานค้าง<b>' + c.active + '</b></div>' +
+      '<div>กำลังซ่อม<b>' + c.progress + '</b></div><div>รออะไหล่/ติดปัญหา<b>' + c.pending + '</b></div>' +
+      '<div class="red">เกินกำหนด<b>' + c.overdue + '</b></div><div>ซ่อมเสร็จ<b>' + c.done + '</b></div>' +
+      (c.cancel ? '<div>ยกเลิก<b>' + c.cancel + '</b></div>' : '') + '</div>' : '';
+
+    var th = ['ลำดับ', 'เลขที่งาน', 'สินค้า / หมายเลขเครื่อง', 'ลูกค้า', 'ประเภทงาน', 'สถานะ', 'ช่างผู้ดูแล', 'เปิดงาน', 'กำหนดเสร็จ', 'เสร็จจริง', 'อายุ (วัน)', 'SLA'];
+    if (opt.remark) th.push('สาเหตุ / หมายเหตุ');
+    var body = jobs.map(function (j, i) {
+      var cells = [
+        '<td class="c">' + (i + 1) + '</td>',
+        '<td class="nw"><b>' + esc(j.ticketId || '-') + '</b><div class="rp-small">' + esc(j.department) + '</div></td>',
+        '<td>' + esc(j.product || '-') + '<div class="rp-small">' + esc(j.machineId || '') + '</div></td>',
+        '<td>' + esc(j.customerName || '-') + '</td>',
+        '<td class="nw">' + esc(j.jobType) + '</td>',
+        '<td class="nw">' + esc(j.status) + (j.partsStatus ? '<div class="rp-small">' + esc(j.partsStatus) + '</div>' : '') + '</td>',
+        '<td class="nw">' + esc(j.technicianName || '-') + (j.technicianPhone ? '<div class="rp-small">' + esc(j.technicianPhone) + '</div>' : '') + '</td>',
+        '<td class="c">' + fmtDate(j.startDate) + '</td>',
+        '<td class="c">' + fmtDate(j.targetDate) + '</td>',
+        '<td class="c">' + (j.actualDate ? fmtDate(j.actualDate) : '-') + '</td>',
+        '<td class="c">' + (j.ageDays == null ? '-' : j.ageDays) + '</td>',
+        '<td class="c' + (j.isOverdue || j.slaState === 'done_late' ? ' rp-red' : '') + '">' + (j.isOverdue ? '⚠ ' : '') + slaText(j) + '</td>',
+      ];
+      if (opt.remark) cells.push('<td>' + (j.delayCategory ? '<b>' + esc(j.delayCategory) + '</b>' + (j.delayRemark ? ': ' : '') : '') + esc(j.delayRemark || (j.delayCategory ? '' : '-')) + '</td>');
+      return '<tr' + (j.isOverdue ? ' class="od"' : '') + '>' + cells.join('') + '</tr>';
+    }).join('');
+
+    var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
+    return '<div>' + head + title + sum +
+      '<table class="rp-tbl"><thead><tr>' + th.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>' + body + '</tbody></table>' +
+      note + rpSign(['ผู้จัดทำรายงาน', 'หัวหน้าช่าง / ผู้ตรวจสอบ', 'ผู้จัดการฝ่ายบริการ / ผู้อนุมัติ'], opt) + rpFoot(meta) + '</div>';
+  }
+
+  function cardHtml(j, opt, meta) {
+    var head = rpHeader(meta, [['เลขที่งาน', '<b>' + esc(j.ticketId || '-') + '</b>'], ['วันที่พิมพ์', meta.printed], ['แผนก', esc(j.department)]]);
+    var title = '<div class="rp-title"><div class="t">ใบติดตามงานซ่อม / PM</div></div>';
+    var row = function (k1, v1, k2, v2) { return '<tr><td class="k">' + k1 + '</td><td class="v">' + v1 + '</td><td class="k">' + k2 + '</td><td class="v">' + v2 + '</td></tr>'; };
+    var statuses = (ST.data.statuses || []).map(function (s) { return '<span class="rp-chk' + (s === j.status ? ' on' : '') + '"></span>' + esc(s); }).join(' ');
+    var info = '<table class="rp-info">' +
+      row('สินค้า / รุ่นรถ', esc(j.product || '-'), 'หมายเลขเครื่อง', esc(j.machineId || '-')) +
+      row('ชื่อลูกค้า', esc(j.customerName || '-'), 'เลขที่ใบส่งของ', esc(j.deliveryNo || '-')) +
+      row('ประเภทงาน', esc(j.jobType), 'สถานะอะไหล่', esc(j.partsStatus || '-')) +
+      row('ช่างผู้ดูแล', esc(j.technicianName || '-'), 'เบอร์โทรช่าง', esc(j.technicianPhone || '-')) +
+      row('วันที่เริ่มซ่อม', fmtDate(j.startDate, true), 'SLA เป้าหมาย', j.slaDays + ' วัน') +
+      row('กำหนดเสร็จ', '<b>' + fmtDate(j.targetDate, true) + '</b>', 'วันที่เสร็จจริง', j.actualDate ? fmtDate(j.actualDate, true) : '-') +
+      row('อายุงาน', (j.ageDays == null ? '-' : j.ageDays + ' วัน'), 'ผลเทียบ SLA', '<span class="' + (j.isOverdue || j.slaState === 'done_late' ? 'rp-red' : '') + '">' + slaText(j) + '</span>') +
+      '<tr><td class="k">สถานะงาน</td><td colspan="3">' + statuses + '</td></tr>' +
+      '</table>';
+    var delay = opt.remark ? '<div class="rp-box"><div class="h">สาเหตุงานล่าช้า / รายละเอียดการติดปัญหา</div><div class="b">' +
+      (j.delayCategory ? '<b>หมวด:</b> ' + esc(j.delayCategory) + '<br>' : '') + esc(j.delayRemark || (j.delayCategory ? '' : '-')) + '</div></div>' : '';
+    var lines = '<div class="rp-box"><div class="h">บันทึกการซ่อม / รายการอะไหล่ที่ใช้</div><div class="b rp-lines">' +
+      '<div></div><div></div><div></div><div></div><div></div></div></div>';
+    var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
+    return '<div class="rp-card">' + head + title + info + delay + lines + note +
+      rpSign(['ช่างผู้ซ่อม', 'หัวหน้าช่าง / ผู้ตรวจสอบ', 'ลูกค้า / ผู้รับรถ'], Object.assign({}, opt, { by: '' })) + rpFoot(meta) + '</div>';
+  }
+
   // ------------------------------------------------------------------ CSV
   function exportCsv() {
-    var rows = filtered();
+    var sel = selectedJobs();
+    var rows = sel.length ? sel : filtered();
     var cols = [['ticketId', 'เลขที่งาน'], ['department', 'แผนก'], ['jobType', 'ประเภทงาน'], ['product', 'สินค้า'], ['machineId', 'หมายเลขสินค้า'],
       ['customerName', 'ลูกค้า'], ['status', 'สถานะ'], ['technicianName', 'ช่าง'], ['startDate', 'วันที่เปิดงาน'], ['targetDate', 'กำหนดเสร็จ'],
       ['actualDate', 'เสร็จจริง'], ['ageDays', 'อายุงาน(วัน)'], ['overdueDays', 'เกินกำหนด(วัน)'], ['delayCategory', 'สาเหตุล่าช้า'], ['delayRemark', 'หมายเหตุ']];
@@ -732,13 +1451,20 @@
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     a.download = 'repair-jobs-' + (ST.data ? ST.data.today : 'export') + '.csv';
     document.body.appendChild(a); a.click(); a.remove();
+    if (sel.length) toast('ส่งออกเฉพาะที่เลือก ' + sel.length + ' รายการ', 'ok');
   }
 
   // ------------------------------------------------------------------ util
+  function uniq(arr) { return arr.filter(function (v, i) { return v && arr.indexOf(v) === i; }).sort(); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function addDays(s, n) {
+    var p = s.split('-');
+    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + n * 86400000).toISOString().slice(0, 10);
+  }
   function fmtDate(s, long) {
     if (!s) return '-';
     var p = s.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]);
-    return d.toLocaleDateString('th-TH', long ? { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' } : { day: 'numeric', month: 'short', year: '2-digit' });
+    return d.toLocaleDateString('th-TH', long ? { day: 'numeric', month: 'long', year: 'numeric' } : { day: 'numeric', month: 'short', year: '2-digit' });
   }
   function esc(v) {
     return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');

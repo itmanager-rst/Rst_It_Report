@@ -1,4 +1,5 @@
 /**
+ * CODE_VERSION: r02-2026-10-19-crud-print-report
  * =====================================================================
  *  ระบบติดตามสถานะงานซ่อม / PM  (Service Repair & PM Tracker)
  *  Backend : Google Apps Script  |  Database : Google Sheets
@@ -46,6 +47,24 @@ const CONFIG = {
 
   // ไฟล์ข้อมูลนำเข้า (ข้อมูลจริงจาก Excel) ใน Google Drive — ใช้กับ importRealData()
   IMPORT_FILE_ID: '1QmBu523L1lc-gQSSUN-d7tkJ_shnaf1C',
+
+  // รหัส PIN สำหรับ เพิ่ม/แก้ไข/ลบ (ว่าง '' = ไม่ต้องใส่ PIN)
+  EDIT_PIN: '',
+
+  // Prefix เลขที่งานอัตโนมัติ ตามแผนก (เช่น IN-0001)
+  TICKET_PREFIX: { 'งานภายใน': 'IN', 'พ่นสี': 'PT', 'มือสองสาขา': 'BR' },
+  DEFAULT_TICKET_PREFIX: 'JOB',
+
+  // ข้อมูลหัวฟอร์มรายงาน (แบบฟอร์มรวมสินไทย)
+  COMPANY: {
+    nameTh: 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย',
+    nameEn: 'RUAMSINTHAI GROUP',
+    division: 'ฝ่ายบริการ / ศูนย์ซ่อม',
+    address: '',   // เช่น '123 ถ.xxx ต.xxx อ.xxx จ.อุบลราชธานี 34000'
+    phone: '',     // เช่น 'โทร. 045-xxx-xxx'
+    taxId: '',     // เช่น 'เลขประจำตัวผู้เสียภาษี 0-0000-00000-00-0'
+    logoUrl: '',   // URL รูปโลโก้ เช่น https://lh3.googleusercontent.com/d/<FILE_ID>  (ว่าง = ใช้ตัวอักษร RST)
+  },
 };
 
 const HEADERS = {
@@ -78,6 +97,28 @@ function doGet(e) {
     .setTitle(CONFIG.APP_TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, shrink-to-fit=no')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * API สำหรับหน้าเว็บภายนอก (GitHub Pages / Live Server)
+ * ส่ง POST ด้วย Content-Type: text/plain;charset=utf-8  body = JSON { action, ... }
+ *   action: 'data' | 'save' | 'delete'
+ */
+function doPost(e) {
+  let out;
+  try {
+    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    switch (body.action) {
+      case 'data': out = getRepairJobsData(); break;
+      case 'save': out = saveJob(body); break;
+      case 'delete': out = deleteJobs(body); break;
+      case 'checkStatus': out = JSON.stringify({ ok: true, codeVersion: 'r02-2026-10-19-crud-print-report' }); break;
+      default: out = JSON.stringify({ ok: false, message: 'ไม่รู้จัก action: ' + body.action });
+    }
+  } catch (err) {
+    out = JSON.stringify({ ok: false, message: String(err && err.message ? err.message : err) });
+  }
+  return ContentService.createTextOutput(out).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ---------------------------------------------------------------------
@@ -282,7 +323,13 @@ function getRepairJobsData() {
       }),
       delayReasons: reasons,
       statuses: Object.keys(CONFIG.STATUS).map(function (k) { return CONFIG.STATUS[k]; }),
+      partsStatuses: Object.keys(CONFIG.PARTS).map(function (k) { return CONFIG.PARTS[k]; }),
       departments: CONFIG.DEPARTMENTS,
+      jobTypes: Object.keys(CONFIG.SLA_BY_TYPE),
+      slaByType: CONFIG.SLA_BY_TYPE,
+      defaultSla: CONFIG.DEFAULT_SLA_DAYS,
+      requirePin: !!CONFIG.EDIT_PIN,
+      company: CONFIG.COMPANY,
       jobs: jobs,
     });
   } catch (err) {
@@ -551,3 +598,217 @@ function importRealData() {
 function toast_(msg) {
   try { getSpreadsheet_().toast(msg, CONFIG.APP_TITLE, 5); } catch (e) { console.log(msg); }
 }
+// ---------------------------------------------------------------------
+// 10) CRUD : เพิ่ม / แก้ไข / ลบ งานซ่อม (เรียกจากหน้าเว็บ)
+//     ทุกฟังก์ชันคืนค่าเป็น JSON string { ok, message, ... }
+// ---------------------------------------------------------------------
+
+/**
+ * บันทึกงาน (เพิ่มใหม่ หรือ แก้ไข)
+ * payload = {
+ *   mode: 'add' | 'edit',
+ *   row, originalTicketId, originalMachineId,   // ใช้ตอน edit เพื่อหาแถวเดิม
+ *   pin,
+ *   job: { ticketId, machineId, product, customerName, department, jobType, deliveryNo,
+ *          status, technicianName, startDate, slaDays, actualDate, partsStatus,
+ *          delayCategory, delayRemark }
+ * }
+ */
+function saveJob(payload) {
+  return runWrite_(function () {
+    const p = parsePayload_(payload);
+    checkPin_(p.pin);
+    const j = p.job || {};
+    const S = CONFIG.STATUS;
+    const sh = jobsSheet_();
+    const col = headerIndex_(sh);
+    const width = sh.getLastColumn();
+    const isEdit = p.mode === 'edit';
+
+    // ---------- validate ----------
+    const status = clean_(j.status) || S.IN_PROGRESS;
+    if (objValues_(S).indexOf(status) === -1) throw new Error('สถานะไม่ถูกต้อง: ' + status);
+    const startStr = toDateStr_(j.startDate);
+    if (!startStr) throw new Error('กรุณาระบุวันที่เริ่มซ่อม');
+    if (!clean_(j.machineId) && !clean_(j.product) && !clean_(j.customerName)) {
+      throw new Error('กรุณาระบุอย่างน้อย 1 ช่อง: รหัสรถ / สินค้า / ชื่อลูกค้า');
+    }
+    const jobType = clean_(j.jobType) || 'อื่นๆ';
+    const slaRaw = j.slaDays === null || j.slaDays === undefined ? '' : String(j.slaDays).trim();
+    let sla = slaRaw === '' ? slaForType_(jobType) : Number(slaRaw);
+    if (!isFinite(sla) || sla < 0 || sla > 3650) throw new Error('SLA (วัน) ต้องเป็นตัวเลข 0–3650');
+    sla = Math.round(sla);
+    const target = calculateTargetFinishDate(startStr, sla);
+    let actual = toDateStr_(j.actualDate);
+    if (status === S.DONE && !actual) actual = todayStr_();
+    if (actual && actual < startStr) throw new Error('วันที่เสร็จจริงต้องไม่ก่อนวันที่เริ่มซ่อม');
+    const dept = clean_(j.department);
+
+    // ---------- หาแถว / เลขที่งาน ----------
+    const lastRow = sh.getLastRow();
+    const ids = lastRow > 1
+      ? sh.getRange(2, col['Ticket_ID'], lastRow - 1, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); })
+      : [];
+    let rowNum, ticket, rowValues;
+
+    if (isEdit) {
+      rowNum = locateRow_(sh, col, p.row, p.originalTicketId, p.originalMachineId);
+      if (!rowNum) throw new Error('ไม่พบงานที่ต้องการแก้ไข (อาจถูกลบหรือย้ายแถว) — กรุณารีเฟรชแล้วลองใหม่');
+      rowValues = sh.getRange(rowNum, 1, 1, width).getValues()[0];
+      ticket = clean_(p.originalTicketId) || clean_(j.ticketId);
+      // ถ้างานเดิมไม่มีเลขที่งาน อนุญาตให้ใส่ใหม่ได้ (ต้องไม่ซ้ำ)
+      if (!clean_(p.originalTicketId) && ticket && ids.indexOf(ticket) > -1) {
+        throw new Error('เลขที่งาน ' + ticket + ' มีอยู่แล้ว');
+      }
+    } else {
+      ticket = clean_(j.ticketId);
+      if (ticket) {
+        if (ids.indexOf(ticket) > -1) throw new Error('เลขที่งาน ' + ticket + ' มีอยู่แล้ว — กรุณาใช้เลขอื่น หรือเว้นว่างให้ระบบออกเลขให้');
+      } else {
+        ticket = nextTicketId_(ids, dept);
+      }
+      rowNum = lastRow + 1;
+      if (rowNum > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 1);
+      rowValues = new Array(width).fill('');
+    }
+
+    const rec = {
+      Ticket_ID: ticket,
+      Machine_ID: clean_(j.machineId),
+      Customer_Name: clean_(j.customerName),
+      Status: status,
+      Technician_Name: clean_(j.technicianName),
+      Start_Date: strToSheetDate_(startStr),
+      SLA_Target_Days: sla,
+      Target_Finish_Date: target ? strToSheetDate_(target) : '',
+      Actual_Finish_Date: actual ? strToSheetDate_(actual) : '',
+      Parts_Status: clean_(j.partsStatus),
+      Delay_Category: clean_(j.delayCategory),
+      Delay_Remark: clean_(j.delayRemark),
+      Updated_At: new Date(),
+      Department: dept,
+      Job_Type: jobType,
+      Product: clean_(j.product),
+      Delivery_No: clean_(j.deliveryNo),
+    };
+    Object.keys(rec).forEach(function (k) { if (col[k]) rowValues[col[k] - 1] = rec[k]; });
+
+    // กันเลข 0 นำหน้าหาย / กันถูกแปลงเป็นตัวเลข
+    ['Ticket_ID', 'Machine_ID', 'Delivery_No'].forEach(function (h) {
+      if (col[h]) sh.getRange(rowNum, col[h]).setNumberFormat('@');
+    });
+    sh.getRange(rowNum, 1, 1, width).setValues([rowValues]);
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true,
+      mode: isEdit ? 'edit' : 'add',
+      ticketId: ticket,
+      row: rowNum,
+      message: (isEdit ? 'แก้ไขงาน ' : 'เพิ่มงาน ') + ticket + ' เรียบร้อย',
+    };
+  });
+}
+
+/**
+ * ลบงาน (ได้ทั้งรายการเดียว และหลายรายการ)
+ * payload = { pin, items: [ { row, ticketId, machineId }, ... ] }
+ */
+function deleteJobs(payload) {
+  return runWrite_(function () {
+    const p = parsePayload_(payload);
+    checkPin_(p.pin);
+    const items = Array.isArray(p.items) ? p.items : [];
+    if (!items.length) throw new Error('ไม่มีรายการที่จะลบ');
+    if (items.length > 500) throw new Error('ลบได้ครั้งละไม่เกิน 500 รายการ');
+
+    const sh = jobsSheet_();
+    const col = headerIndex_(sh);
+    const rows = [];
+    const notFound = [];
+    items.forEach(function (it) {
+      const r = locateRow_(sh, col, it.row, it.ticketId, it.machineId);
+      if (r && rows.indexOf(r) === -1) rows.push(r);
+      else if (!r) notFound.push(it.ticketId || it.machineId || ('แถว ' + it.row));
+    });
+    // ลบจากแถวล่างขึ้นบน เพื่อไม่ให้เลขแถวเลื่อน
+    rows.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true,
+      deleted: rows.length,
+      notFound: notFound,
+      message: 'ลบแล้ว ' + rows.length + ' รายการ' + (notFound.length ? ' (ไม่พบ ' + notFound.length + ' รายการ)' : ''),
+    };
+  });
+}
+
+// ---------- CRUD helpers ----------
+function runWrite_(fn) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (e) {
+    return JSON.stringify({ ok: false, message: 'ระบบกำลังบันทึกข้อมูลของผู้ใช้อื่น กรุณาลองใหม่อีกครั้ง' });
+  }
+  try {
+    return JSON.stringify(fn());
+  } catch (err) {
+    console.error(err);
+    return JSON.stringify({ ok: false, message: String(err && err.message ? err.message : err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function parsePayload_(payload) {
+  if (typeof payload === 'string') return JSON.parse(payload);
+  return payload || {};
+}
+
+function checkPin_(pin) {
+  if (CONFIG.EDIT_PIN && String(pin || '') !== String(CONFIG.EDIT_PIN)) {
+    throw new Error('PIN ไม่ถูกต้อง');
+  }
+}
+
+function jobsSheet_() {
+  const sh = getSpreadsheet_().getSheetByName(CONFIG.SHEETS.JOBS);
+  if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.SHEETS.JOBS + ' — กรุณารัน setupDatabase ก่อน');
+  return sh;
+}
+
+/** หาเลขแถวของงาน : ตรวจแถวเดิมก่อน (เร็ว) ถ้าไม่ตรงค่อยค้นจาก Ticket_ID */
+function locateRow_(sh, col, row, ticketId, machineId) {
+  const last = sh.getLastRow();
+  const tid = clean_(ticketId);
+  const mid = clean_(machineId);
+  const r = Number(row);
+  const matches = function (rr) {
+    const t = String(sh.getRange(rr, col['Ticket_ID']).getDisplayValue()).trim();
+    if (tid) return t === tid;
+    const m = String(sh.getRange(rr, col['Machine_ID']).getDisplayValue()).trim();
+    return !t && m === mid;
+  };
+  if (r >= 2 && r <= last && matches(r)) return r;
+  if (!tid || last < 2) return 0;
+  const ids = sh.getRange(2, col['Ticket_ID'], last - 1, 1).getDisplayValues();
+  for (let i = 0; i < ids.length; i++) if (String(ids[i][0]).trim() === tid) return i + 2;
+  return 0;
+}
+
+/** ออกเลขที่งานถัดไปตาม Prefix ของแผนก เช่น IN-0001 → IN-0002 */
+function nextTicketId_(ids, dept) {
+  const prefix = CONFIG.TICKET_PREFIX[dept] || CONFIG.DEFAULT_TICKET_PREFIX;
+  const re = new RegExp('^' + prefix + '-(\\d+)$');
+  let max = 0;
+  ids.forEach(function (id) {
+    const m = String(id).match(re);
+    if (m) max = Math.max(max, Number(m[1]));
+  });
+  return prefix + '-' + ('0000' + (max + 1)).slice(-4);
+}
+
+function clean_(v) { return v === null || v === undefined ? '' : String(v).trim(); }
+function objValues_(o) { return Object.keys(o).map(function (k) { return o[k]; }); }
