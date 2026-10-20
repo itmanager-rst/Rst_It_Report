@@ -571,7 +571,7 @@
               <select class="form-select" id="pOrient"><option value="landscape">แนวนอน</option><option value="portrait">แนวตั้ง</option></select>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="pBy">ผู้จัดทำรายงาน</label>
+              <label class="form-label" for="pBy">ผู้บันทึกข้อมูล</label>
               <input class="form-control" id="pBy" placeholder="ชื่อ-นามสกุล (ไม่บังคับ)">
             </div>
             <div class="col-md-6">
@@ -1361,6 +1361,20 @@
     }).join('') + '</div>';
   }
 
+  /** ช่องลงชื่อมาตรฐาน (ใช้ทุกแบบฟอร์ม)
+   *  แถว 1: ช่างผู้ซ่อม | หัวหน้าช่าง / ผู้ตรวจสอบ | ผู้อนุมัติ
+   *  แถว 2: ผู้ส่งงาน | ผู้บันทึกข้อมูล (ใส่ชื่อจากช่อง "ผู้บันทึกข้อมูล" ได้) | วันที่ส่งงาน */
+  function rpSignStd(opt) {
+    if (!opt.sign) return '';
+    var dots = '..................................................';
+    var box = function (label, name) {
+      return '<div><div class="line"></div>( ' + (name ? esc(name) : dots) + ' )<br><b>' + label + '</b><br>วันที่ ......../......../............</div>';
+    };
+    return '<div class="rp-sign">' + box('ช่างผู้ซ่อม') + box('หัวหน้าช่าง / ผู้ตรวจสอบ') + box('ผู้อนุมัติ') + '</div>' +
+      '<div class="rp-sign">' + box('ผู้ส่งงาน') + box('ผู้บันทึกข้อมูล', opt.by) +
+      '<div><div class="line" style="border-bottom:0"></div><br><b>วันที่ส่งงาน</b><br>......../......../............</div></div>';
+  }
+
   function rpFoot(meta) {
     return '<div class="rp-foot"><span>เอกสารพิมพ์จากระบบติดตามสถานะงานซ่อม / PM · ' + esc(ST.company.nameTh) + '</span><span>เลขที่ ' + meta.docNo + ' · พิมพ์ ' + meta.printed + '</span></div>';
   }
@@ -1410,7 +1424,7 @@
     var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
     return '<div>' + head + title + sum +
       '<table class="rp-tbl"><thead><tr>' + th.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>' + body + '</tbody></table>' +
-      note + rpSign(['ผู้จัดทำรายงาน', 'หัวหน้าช่าง / ผู้ตรวจสอบ', 'ผู้จัดการฝ่ายบริการ / ผู้อนุมัติ'], opt) + rpFoot(meta) + '</div>';
+      note + rpSignStd(opt) + rpFoot(meta) + '</div>';
   }
 
   function cardHtml(j, opt, meta) {
@@ -1429,11 +1443,8 @@
     var lines = '<div class="rp-box"><div class="h">บันทึกการซ่อม / รายการอะไหล่ที่ใช้</div><div class="b rp-lines">' +
       '<div></div><div></div><div></div><div></div><div></div></div></div>';
     var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
-    var signOpt = Object.assign({}, opt, { by: '' });
-    var sendDate = '<div><div class="line" style="border-bottom:0"></div><br><b>วันที่ส่งงาน</b><br>......../......../............</div>';
-    var sign2 = opt.sign ? rpSign(['ผู้ส่งงาน', 'ผู้บันทึกข้อมูล'], signOpt).replace(/<\/div>$/, sendDate + '</div>') : '';
     return '<div class="rp-card">' + head + title + info + delay + lines + note +
-      rpSign(['ช่างผู้ซ่อม', 'หัวหน้าช่าง / ผู้ตรวจสอบ', 'ผู้อนุมัติ'], signOpt) + sign2 + rpFoot(meta) + '</div>';
+      rpSignStd(opt) + rpFoot(meta) + '</div>';
   }
 
   // ------------------------------------------------------------------ CSV
