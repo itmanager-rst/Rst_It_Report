@@ -1417,24 +1417,23 @@
     var head = rpHeader(meta, [['เลขที่งาน', '<b>' + esc(j.ticketId || '-') + '</b>'], ['วันที่พิมพ์', meta.printed], ['แผนก', esc(j.department)]]);
     var title = '<div class="rp-title"><div class="t">ใบติดตามงานซ่อม / PM</div></div>';
     var row = function (k1, v1, k2, v2) { return '<tr><td class="k">' + k1 + '</td><td class="v">' + v1 + '</td><td class="k">' + k2 + '</td><td class="v">' + v2 + '</td></tr>'; };
-    var statuses = (ST.data.statuses || []).map(function (s) { return '<span class="rp-chk' + (s === j.status ? ' on' : '') + '"></span>' + esc(s); }).join(' ');
+    // ฟอร์มรายคัน: ไม่แสดง เลขที่ใบส่งของ / สถานะอะไหล่ / เบอร์โทรช่าง / วันที่เสร็จจริง / อายุงาน / ผลเทียบ SLA / สถานะงาน
     var info = '<table class="rp-info">' +
       row('สินค้า / รุ่นรถ', esc(j.product || '-'), 'หมายเลขเครื่อง', esc(j.machineId || '-')) +
-      row('ชื่อลูกค้า', esc(j.customerName || '-'), 'เลขที่ใบส่งของ', esc(j.deliveryNo || '-')) +
-      row('ประเภทงาน', esc(j.jobType), 'สถานะอะไหล่', esc(j.partsStatus || '-')) +
-      row('ช่างผู้ดูแล', esc(j.technicianName || '-'), 'เบอร์โทรช่าง', esc(j.technicianPhone || '-')) +
-      row('วันที่เริ่มซ่อม', fmtDate(j.startDate, true), 'SLA เป้าหมาย', j.slaDays + ' วัน') +
-      row('กำหนดเสร็จ', '<b>' + fmtDate(j.targetDate, true) + '</b>', 'วันที่เสร็จจริง', j.actualDate ? fmtDate(j.actualDate, true) : '-') +
-      row('อายุงาน', (j.ageDays == null ? '-' : j.ageDays + ' วัน'), 'ผลเทียบ SLA', '<span class="' + (j.isOverdue || j.slaState === 'done_late' ? 'rp-red' : '') + '">' + slaText(j) + '</span>') +
-      '<tr><td class="k">สถานะงาน</td><td colspan="3">' + statuses + '</td></tr>' +
+      row('ชื่อลูกค้า', esc(j.customerName || '-'), 'ประเภทงาน', esc(j.jobType)) +
+      row('ช่างผู้ดูแล', esc(j.technicianName || '-'), 'วันที่เริ่มซ่อม', fmtDate(j.startDate, true)) +
+      row('SLA เป้าหมาย', j.slaDays + ' วัน', 'กำหนดเสร็จ', '<b>' + fmtDate(j.targetDate, true) + '</b>') +
       '</table>';
     var delay = opt.remark ? '<div class="rp-box"><div class="h">สาเหตุงานล่าช้า / รายละเอียดการติดปัญหา</div><div class="b">' +
       (j.delayCategory ? '<b>หมวด:</b> ' + esc(j.delayCategory) + '<br>' : '') + esc(j.delayRemark || (j.delayCategory ? '' : '-')) + '</div></div>' : '';
     var lines = '<div class="rp-box"><div class="h">บันทึกการซ่อม / รายการอะไหล่ที่ใช้</div><div class="b rp-lines">' +
       '<div></div><div></div><div></div><div></div><div></div></div></div>';
     var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
+    var signOpt = Object.assign({}, opt, { by: '' });
+    var sendDate = '<div><div class="line" style="border-bottom:0"></div><br><b>วันที่ส่งงาน</b><br>......../......../............</div>';
+    var sign2 = opt.sign ? rpSign(['ผู้ส่งงาน', 'ผู้บันทึกข้อมูล'], signOpt).replace(/<\/div>$/, sendDate + '</div>') : '';
     return '<div class="rp-card">' + head + title + info + delay + lines + note +
-      rpSign(['ช่างผู้ซ่อม', 'หัวหน้าช่าง / ผู้ตรวจสอบ', 'ลูกค้า / ผู้รับรถ'], Object.assign({}, opt, { by: '' })) + rpFoot(meta) + '</div>';
+      rpSign(['ช่างผู้ซ่อม', 'หัวหน้าช่าง / ผู้ตรวจสอบ', 'ผู้อนุมัติ'], signOpt) + sign2 + rpFoot(meta) + '</div>';
   }
 
   // ------------------------------------------------------------------ CSV
