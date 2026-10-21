@@ -587,6 +587,8 @@
                                     <option value="เป้าหมาย">เป้าหมาย (30-50%) WARM</option>
                                     <option value="จอง">จอง (&gt;80%) HOT</option>
                                     <option value="รอปิดการขาย">รอปิดการขาย (&gt;80%) HOT</option>
+                                    <option value="ทำสัญญา">ทำสัญญา</option>
+                                    <option value="ส่งมอบ">ส่งมอบ (ปิดการขายแล้ว)</option>
                                 </select>
                                 <div id="cust-type-hint" style="font-size:11px; color:#64748b; margin-top:3px;"></div>
                             </div>
@@ -1361,6 +1363,8 @@
             </div>
             <div class="modal-body">
                 <div class="timeline-cust-info" id="history-customer-info"></div>
+                <!-- (r55) ทางลัดไปฟอร์มแก้ไข — เติมที่อยู่ / รายได้ / ข้อมูลที่ยังไม่ครบ -->
+                <button type="button" class="btn btn-secondary" id="btn-history-edit-customer" style="width:100%; justify-content:center; margin:6px 0 4px;" onclick="editCustomerFromHistoryModal()">✏️ แก้ไขข้อมูลลูกค้า / เติมที่อยู่ / รายได้</button>
                 <div class="modal-section-title">📜 ไทม์ไลน์การติดตาม (ล่าสุดขึ้นก่อน)</div>
                 <div class="timeline-list" id="history-timeline-list"></div>
                 <div class="modal-section-title">➕ เพิ่มบันทึกการติดตามรอบใหม่</div>
@@ -1378,6 +1382,18 @@
                             <button type="button" class="followup-type-btn" data-value="นัดทดลองรถ / ดูสินค้า" onclick="selectFollowupType(this)">🚜 นัดทดลองรถ / ดูสินค้า</button>
                             <button type="button" class="followup-type-btn" data-value="อื่น ๆ" onclick="selectFollowupType(this)">🔁 อื่น ๆ</button>
                         </div>
+                    </div>
+                    <div class="full">
+                        <label>อัปเดตกลุ่มลูกค้า (สถานะ) <span style="font-weight:normal; color:#94a3b8;">— ไม่ต้องเปลี่ยนถ้าสถานะเดิม</span></label>
+                        <select id="history-new-type" class="form-control" onchange="updateHistoryTypeHint_()">
+                            <option value="ลงทะเบียน">ลงทะเบียน (0-30%) COOL</option>
+                            <option value="เป้าหมาย">เป้าหมาย (30-50%) WARM</option>
+                            <option value="จอง">จอง (&gt;80%) HOT</option>
+                            <option value="รอปิดการขาย">รอปิดการขาย (&gt;80%) HOT</option>
+                            <option value="ทำสัญญา">ทำสัญญา</option>
+                            <option value="ส่งมอบ">ส่งมอบ (ปิดการขายแล้ว)</option>
+                        </select>
+                        <div id="history-type-hint" style="font-size:11px; color:#64748b; margin-top:3px;"></div>
                     </div>
                     <div class="full"><label>หมายเหตุ (คุยเรื่องอะไร ผลเป็นอย่างไร)</label><textarea id="history-new-note" class="form-control" rows="2" placeholder="เช่น โทรเสนอโปรโมชั่น Solis30, ลูกค้าขอคิดดูก่อน 1 สัปดาห์"></textarea></div>
                 </div>
@@ -4369,7 +4385,9 @@
             'เป้าหมาย': '🟠 WARM · โอกาส 30-50% — ได้ที่อยู่ แต่รอดู ยังไม่ยอมนัด',
             'จอง': '🔴 HOT · โอกาส >80% — จองในงาน / รับโปร รอปิดการขาย',
             'รอปิดการขาย': '🔴 HOT · โอกาส >80%',
-            'ติดตาม': 'ค่าเดิม (ก่อนเปลี่ยนเป็น รอปิดการขาย)'
+            'ติดตาม': 'ค่าเดิม (ก่อนเปลี่ยนเป็น รอปิดการขาย)',
+            'ทำสัญญา': '📄 ทำสัญญาแล้ว รอส่งมอบรถ',
+            'ส่งมอบ': '🚚 ส่งมอบแล้ว / ปิดการขาย (จะไม่ขึ้นในรายงานค้างติดตาม)'
         };
         function updateCustTypeHint_() {
             const sel = document.getElementById('cust-type');
@@ -4378,7 +4396,17 @@
         }
         document.addEventListener('DOMContentLoaded', updateCustTypeHint_);
         function editCustomerByIndex(idx) {
-            const row = currentRenderedData[idx];
+            editCustomerRow_(currentRenderedData[idx]);
+        }
+        // (r55) เปิดฟอร์มแก้ไขจากหน้าต่างประวัติการติดตาม (ใช้ได้ทั้งจากตาราง / ปฏิทิน / รายงานค้างติดตาม / KPI)
+        function editCustomerFromHistoryModal() {
+            const sourceArray = historyModalSource === 'stale' ? staleLeadsData : currentRenderedData;
+            const row = sourceArray[historyModalRowIdx];
+            if (!row) { alert('ไม่พบข้อมูลลูกค้ารายนี้'); return; }
+            closeHistoryModal();
+            editCustomerRow_(row);
+        }
+        function editCustomerRow_(row) {
             if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
 
             resetFormState();
@@ -4665,7 +4693,7 @@
                 `<table class="pf-fu-table"><thead><tr><th style="width:26px;">#</th><th style="width:72px;">วันที่</th><th style="width:90px;">ประเภท</th>` +
                 `<th>รายละเอียด</th><th style="width:72px;">นัดครั้งต่อไป</th><th style="width:90px;">ผู้ติดตาม</th></tr></thead><tbody>` +
                 sorted.map((e, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(printFollowupDate_(e.date))}</td><td>${escapeHtml(e.followupType || '-')}</td>` +
-                    `<td class="pf-fu-note">${escapeHtml(e.note || '-')}</td><td>${escapeHtml(e.nextFollowUpDate ? printFollowupDate_(e.nextFollowUpDate) : '-')}</td>` +
+                    `<td class="pf-fu-note">${e.statusTo ? '[สถานะ: ' + escapeHtml(e.statusFrom || '-') + ' → ' + escapeHtml(e.statusTo) + '] ' : ''}${escapeHtml(e.note || '-')}</td><td>${escapeHtml(e.nextFollowUpDate ? printFollowupDate_(e.nextFollowUpDate) : '-')}</td>` +
                     `<td>${escapeHtml(e.by || '-')}</td></tr>`).join('') +
                 `</tbody></table>`;
         }
@@ -4767,6 +4795,15 @@
         // (ทางลัดนี้มีอยู่แล้วฝั่ง backend แต่ frontend ไม่เคยส่งมาให้เลย ทำให้พึ่งพา fallback
         // ที่เสี่ยง mismatch ระหว่างรูปแบบวันที่/เบอร์ของ BigQuery กับ Sheet เสมอมา)
         let historyModalEntries = [];
+        let historyModalOriginalType = ''; // (r55) กลุ่มลูกค้าตอนเปิดหน้าต่าง — ใช้เช็คว่าเปลี่ยนสถานะหรือไม่
+        function updateHistoryTypeHint_() {
+            const sel = document.getElementById('history-new-type');
+            const hint = document.getElementById('history-type-hint');
+            if (!sel || !hint) return;
+            const desc = CUSTOMER_TYPE_DESC_[sel.value] || '';
+            const changed = historyModalOriginalType && sel.value !== historyModalOriginalType;
+            hint.innerHTML = escapeHtml(desc) + (changed ? `<br><b style="color:#0284c7;">จะเปลี่ยนสถานะ: ${escapeHtml(historyModalOriginalType)} → ${escapeHtml(sel.value)}</b>` : '');
+        }
         let historyModalSource = 'main'; // 'main' = currentRenderedData (ตารางหลัก), 'stale' = staleLeadsData (รายงานลูกค้าค้างติดตาม)
         function selectFollowupType(button) {
             document.getElementById('history-followup-type').value = button.dataset.value || '';
@@ -5693,6 +5730,9 @@
             document.getElementById('history-next-followup-date').value = getTomorrowDateStr();
             document.getElementById('history-new-note').value = '';
             resetFollowupType();
+            historyModalOriginalType = row.type || '';
+            setSelectValueWithFallback('history-new-type', historyModalOriginalType || 'ลงทะเบียน');
+            updateHistoryTypeHint_();
             const followupBtn = document.getElementById('btn-submit-followup');
             followupBtn.disabled = false;
             followupBtn.innerHTML = '💾 บันทึกการติดตามนี้';
@@ -5721,6 +5761,7 @@
             container.innerHTML = sorted.map(e => `
                 <div class="timeline-item">
                     <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type"${e.initial ? ' style="background:#ecfdf5; color:#047857;"' : ''}>${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span style="float:right; font-size:10.5px; color:#94a3b8; font-weight:normal;">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
+                    ${e.statusTo ? `<div style="font-size:11px; color:#0369a1; margin:2px 0;">🔄 เปลี่ยนสถานะ: ${escapeHtml(e.statusFrom || '-')} → <b>${escapeHtml(e.statusTo)}</b></div>` : ''}
                     <div class="timeline-note">${escapeHtml(e.note || '')}</div>
                 </div>
             `).join('');
@@ -5738,7 +5779,9 @@
             submitBtn.disabled = true;
             submitBtn.innerHTML = '⏳ กำลังบันทึก...';
             const followNotifyId = crmNotify.loading('กำลังบันทึกการติดตามลูกค้า...');
+            const newTypeVal = document.getElementById('history-new-type').value;
             const newEntry = { date: dateVal, followupType: followupTypeVal, note: noteVal, nextFollowUpDate: nextFollowUpVal };
+            if (newTypeVal && newTypeVal !== historyModalOriginalType) newEntry.newType = newTypeVal; // (r55) เปลี่ยนสถานะพร้อมบันทึกการติดตาม
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -5763,6 +5806,11 @@
                         rowRef.lastFollowupDate = dateVal;
                         rowRef.booking_date = nextBookingDate;
                         rowRef.appdate = nextBookingDate;
+                        if (resData.type) rowRef.type = resData.type; // (r55)
+                    }
+                    if (resData.type) {
+                        historyModalOriginalType = resData.type;
+                        updateHistoryTypeHint_();
                     }
                     renderHistoryTimeline();
                     // (r45) ถ้าอยู่หน้าปฏิทิน ให้การ์ดโชว์บันทึกล่าสุดที่เพิ่งพิมพ์ทันที
