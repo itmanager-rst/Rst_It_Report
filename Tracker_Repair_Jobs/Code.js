@@ -1,5 +1,5 @@
 /**
- * CODE_VERSION: r02-2026-10-19-crud-print-report
+ * CODE_VERSION: r05-2026-10-21-types-branches
  * =====================================================================
  *  ระบบติดตามสถานะงานซ่อม / PM  (Service Repair & PM Tracker)
  *  Backend : Google Apps Script  |  Database : Google Sheets
@@ -31,10 +31,19 @@ const CONFIG = {
 
   PARTS: { COMPLETE: 'ส่งครบแล้ว', PENDING: 'ค้างส่งอะไหล่', PARTIAL: 'ส่งบางส่วน' },
 
-  DEPARTMENTS: ['งานภายใน', 'พ่นสี', 'มือสองสาขา'],
+  // สถานที่ (เดิมคือ "แผนก") — ใช้ใน dropdown หน้าเว็บ และหัวใบงานตอนพิมพ์
+  DEPARTMENTS: [
+    'สำนักงานใหญ่', 'สาขาศรีเมืองใหม่', 'สาขากุฉินารายณ์', 'สาขาตระการ',
+    'สาขาเดชอุดม', 'สาขาขุขันธ์', 'สาขาเบญจลักษณ์', 'สาขาอำนาจเจริญ',
+  ],
+
+  // ประเภทงาน (ตัวเลือกใน dropdown หน้าเว็บ)
+  JOB_TYPES: ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'อื่นๆ'],
 
   // SLA (วัน) เริ่มต้นตามประเภทงาน — ใช้เมื่อช่อง SLA_Target_Days ว่าง
+  //  (มีประเภทเก่าไว้ด้วย เพื่อให้งานเดิมคำนวณกำหนดเสร็จได้เหมือนเดิม)
   SLA_BY_TYPE: {
+    'ติดถังอุ้มรถเกี่ยว': 7,
     'ปรับสภาพมือสอง': 30,
     'ซ่อมมือสองสาขา': 30,
     'ติดตั้งใบมีด': 7,
@@ -52,7 +61,11 @@ const CONFIG = {
   EDIT_PIN: '',
 
   // Prefix เลขที่งานอัตโนมัติ ตามแผนก (เช่น IN-0001)
-  TICKET_PREFIX: { 'งานภายใน': 'IN', 'พ่นสี': 'PT', 'มือสองสาขา': 'BR' },
+  TICKET_PREFIX: {
+    'สำนักงานใหญ่': 'HQ', 'สาขาศรีเมืองใหม่': 'SM', 'สาขากุฉินารายณ์': 'KN', 'สาขาตระการ': 'TK',
+    'สาขาเดชอุดม': 'DU', 'สาขาขุขันธ์': 'KK', 'สาขาเบญจลักษณ์': 'BL', 'สาขาอำนาจเจริญ': 'AC',
+    'งานภายใน': 'IN', 'พ่นสี': 'PT', 'มือสองสาขา': 'BR', // ค่าเดิม (ข้อมูลเก่า)
+  },
   DEFAULT_TICKET_PREFIX: 'JOB',
 
   // ข้อมูลหัวฟอร์มรายงาน (แบบฟอร์มรวมสินไทย)
@@ -67,12 +80,14 @@ const CONFIG = {
   },
 };
 
+const CODE_VERSION = 'r05-2026-10-21-types-branches';
+
 const HEADERS = {
   Repair_Jobs: [
     'Ticket_ID', 'Machine_ID', 'Customer_Name', 'Status', 'Technician_Name',
     'Start_Date', 'SLA_Target_Days', 'Target_Finish_Date', 'Actual_Finish_Date',
     'Parts_Status', 'Delay_Category', 'Delay_Remark', 'Updated_At',
-    'Department', 'Job_Type', 'Product', 'Delivery_No',
+    'Department', 'Job_Type', 'Product', 'Delivery_No', 'Work_Detail',
   ],
   Technicians: ['Tech_ID', 'Tech_Name', 'Tech_Phone'],
   Delay_Reasons: ['Reason_Name'],
@@ -112,7 +127,7 @@ function doPost(e) {
       case 'data': out = getRepairJobsData(); break;
       case 'save': out = saveJob(body); break;
       case 'delete': out = deleteJobs(body); break;
-      case 'checkStatus': out = JSON.stringify({ ok: true, codeVersion: 'r02-2026-10-19-crud-print-report' }); break;
+      case 'checkStatus': out = JSON.stringify({ ok: true, codeVersion: CODE_VERSION }); break;
       default: out = JSON.stringify({ ok: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
   } catch (err) {
@@ -178,7 +193,7 @@ function setupDatabase() {
   body('Status').setDataValidation(listRule(values(CONFIG.STATUS)));
   body('Parts_Status').setDataValidation(listRule(values(CONFIG.PARTS), true));
   body('Department').setDataValidation(listRule(CONFIG.DEPARTMENTS, true));
-  body('Job_Type').setDataValidation(listRule(Object.keys(CONFIG.SLA_BY_TYPE), true));
+  body('Job_Type').setDataValidation(listRule(CONFIG.JOB_TYPES, true));
   body('Delay_Category').setDataValidation(rangeRule(reasonsSh.getRange('A2:A')));
   body('Technician_Name').setDataValidation(rangeRule(techSh.getRange('B2:B')));
   body('Start_Date').setDataValidation(dateRule);
@@ -201,6 +216,7 @@ function setupDatabase() {
   jobsSh.setColumnWidth(col['Customer_Name'], 200);
   jobsSh.setColumnWidth(col['Delay_Remark'], 320);
   jobsSh.setColumnWidth(col['Product'], 200);
+  if (col['Work_Detail']) jobsSh.setColumnWidth(col['Work_Detail'], 320);
 
   recalculateAllTargets(true);
   toast_('สร้าง/ตรวจสอบโครงสร้างฐานข้อมูลเรียบร้อย ✅');
@@ -314,6 +330,8 @@ function getRepairJobsData() {
 
     return JSON.stringify({
       ok: true,
+      codeVersion: CODE_VERSION,
+      features: { workDetail: true },
       appTitle: CONFIG.APP_TITLE,
       today: today,
       generatedAt: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'),
@@ -325,7 +343,7 @@ function getRepairJobsData() {
       statuses: Object.keys(CONFIG.STATUS).map(function (k) { return CONFIG.STATUS[k]; }),
       partsStatuses: Object.keys(CONFIG.PARTS).map(function (k) { return CONFIG.PARTS[k]; }),
       departments: CONFIG.DEPARTMENTS,
-      jobTypes: Object.keys(CONFIG.SLA_BY_TYPE),
+      jobTypes: CONFIG.JOB_TYPES,
       slaByType: CONFIG.SLA_BY_TYPE,
       defaultSla: CONFIG.DEFAULT_SLA_DAYS,
       requirePin: !!CONFIG.EDIT_PIN,
@@ -370,6 +388,7 @@ function enrichJob_(r, techMap, today) {
     delayCategory: String(r.Delay_Category || '').trim(),
     delayRemark: String(r.Delay_Remark || '').trim(),
     deliveryNo: String(r.Delivery_No || '').trim(),
+    workDetail: String(r.Work_Detail || '').trim(),
     updatedAt: toDateTimeStr_(r.Updated_At),
   };
 
@@ -621,6 +640,7 @@ function saveJob(payload) {
     const j = p.job || {};
     const S = CONFIG.STATUS;
     const sh = jobsSheet_();
+    ensureColumn_(sh, 'Work_Detail');
     const col = headerIndex_(sh);
     const width = sh.getLastColumn();
     const isEdit = p.mode === 'edit';
@@ -690,6 +710,7 @@ function saveJob(payload) {
       Job_Type: jobType,
       Product: clean_(j.product),
       Delivery_No: clean_(j.deliveryNo),
+      Work_Detail: clean_(j.workDetail),
     };
     Object.keys(rec).forEach(function (k) { if (col[k]) rowValues[col[k] - 1] = rec[k]; });
 
@@ -705,6 +726,8 @@ function saveJob(payload) {
       mode: isEdit ? 'edit' : 'add',
       ticketId: ticket,
       row: rowNum,
+      workDetailSaved: true,
+      codeVersion: CODE_VERSION,
       message: (isEdit ? 'แก้ไขงาน ' : 'เพิ่มงาน ') + ticket + ' เรียบร้อย',
     };
   });
@@ -777,6 +800,16 @@ function jobsSheet_() {
   const sh = getSpreadsheet_().getSheetByName(CONFIG.SHEETS.JOBS);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.SHEETS.JOBS + ' — กรุณารัน setupDatabase ก่อน');
   return sh;
+}
+
+/** เพิ่มคอลัมน์ท้ายตารางให้อัตโนมัติ ถ้ายังไม่มี (ไม่ต้องรัน setupDatabase ใหม่) */
+function ensureColumn_(sh, name) {
+  const lastCol = sh.getLastColumn();
+  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
+  if (headers.indexOf(name) > -1) return;
+  if (lastCol >= sh.getMaxColumns()) sh.insertColumnAfter(lastCol);
+  sh.getRange(1, lastCol + 1).setValue(name)
+    .setFontWeight('bold').setBackground('#0f172a').setFontColor('#ffffff').setHorizontalAlignment('center');
 }
 
 /** หาเลขแถวของงาน : ตรวจแถวเดิมก่อน (เร็ว) ถ้าไม่ตรงค่อยค้นจาก Ticket_ID */
