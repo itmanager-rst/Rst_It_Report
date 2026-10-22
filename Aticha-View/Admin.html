@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>หลังบ้าน ริชาวิลล์ | Admin</title>
+  <link rel="icon" type="image/png" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { navy: { DEFAULT: '#0a2540', 700: '#123a63', 900: '#061a2f' }, royal: { DEFAULT: '#0056b3', 700: '#00468f' }, gold: { DEFAULT: '#d4af37', 400: '#dfbf55', 600: '#b8952a' } },
+      fontFamily: { sans: ['Prompt', 'sans-serif'] },
+      boxShadow: { soft: '0 10px 40px -12px rgba(10,37,64,.18)' },
+    } } };
+  </script>
+  <style>
+    body { font-family: 'Prompt', sans-serif; -webkit-font-smoothing: antialiased; }
+    .toggle { position: relative; width: 44px; height: 24px; border-radius: 999px; background: #cbd5e1; transition: background .2s; flex-shrink: 0; }
+    .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+    .toggle[aria-checked="true"] { background: #10b981; }
+    .toggle[aria-checked="true"]::after { transform: translateX(20px); }
+    .skeleton { background: linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%); background-size: 200% 100%; animation: sk 1.2s infinite; }
+    @keyframes sk { to { background-position: -200% 0; } }
+    .fade-in { animation: fi .3s ease both; } @keyframes fi { from { opacity: 0; transform: translateY(6px); } }
+    input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(0,86,179,.25); border-color: #0056b3; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+  <!-- ======================= LOGIN ======================= -->
+  <section id="loginView" class="hidden min-h-screen grid place-items-center p-4 bg-gradient-to-br from-navy via-navy-700 to-royal">
+    <form id="loginForm" class="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-8 fade-in">
+      <img src="images/logo.png" alt="ริชาวิลล์" class="h-12 mx-auto mb-2">
+      <p class="text-center text-slate-500 text-sm mb-8">ระบบหลังบ้าน • จัดการโปรโมชั่นและลูกค้า</p>
+      <label for="password" class="block text-sm font-medium mb-1.5">รหัสผ่านผู้ดูแล</label>
+      <input id="password" type="password" required autocomplete="current-password" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 mb-4" placeholder="••••••••">
+      <button id="loginBtn" class="w-full bg-royal hover:bg-royal-700 text-white font-semibold py-3 rounded-2xl transition">เข้าสู่ระบบ</button>
+      <p id="loginError" class="hidden mt-4 text-sm text-red-600 text-center"></p>
+      <a href="index.html" class="block text-center text-xs text-slate-400 mt-6 hover:text-royal">← กลับหน้าเว็บไซต์</a>
+    </form>
+  </section>
+
+  <!-- ======================= APP ======================= -->
+  <div id="appView" class="hidden min-h-screen lg:flex">
+    <!-- Sidebar -->
+    <aside class="lg:w-64 lg:min-h-screen bg-navy text-white lg:fixed lg:inset-y-0 z-20">
+      <div class="flex items-center justify-between lg:block px-5 py-4 lg:py-6">
+        <div class="flex items-center gap-3">
+          <img src="images/logo-white.png" alt="ริชาวิลล์" class="h-8">
+          <span class="text-[10px] uppercase tracking-widest bg-gold text-navy font-bold px-2 py-0.5 rounded">Admin</span>
+        </div>
+        <button id="logoutBtnSm" class="lg:hidden text-sm text-white/70 hover:text-white">ออกจากระบบ</button>
+      </div>
+      <nav class="flex lg:flex-col gap-1 px-3 pb-3 lg:pb-0 overflow-x-auto text-sm" id="nav">
+        <button data-tab="overview" class="nav-btn whitespace-nowrap flex items-center gap-3 px-4 py-2.5 rounded-xl transition">📊 <span>ภาพรวม</span></button>
+        <button data-tab="promos" class="nav-btn whitespace-nowrap flex items-center gap-3 px-4 py-2.5 rounded-xl transition">🎁 <span>ป๊อปอัปโปรโมชั่น</span></button>
+        <button data-tab="leads" class="nav-btn whitespace-nowrap flex items-center gap-3 px-4 py-2.5 rounded-xl transition">👥 <span>รายชื่อลูกค้า</span> <span id="newLeadBadge" class="hidden ml-auto bg-gold text-navy text-[10px] font-bold px-1.5 rounded-full"></span></button>
+        <button data-tab="settings" class="nav-btn whitespace-nowrap flex items-center gap-3 px-4 py-2.5 rounded-xl transition">⚙️ <span>ตั้งค่า</span></button>
+      </nav>
+      <div class="hidden lg:block absolute bottom-0 inset-x-0 p-4 space-y-2 text-sm">
+        <a href="index.html" target="_blank" class="block px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-center">🌐 ดูหน้าเว็บไซต์</a>
+        <button id="logoutBtn" class="w-full px-4 py-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10">ออกจากระบบ</button>
+      </div>
+    </aside>
+
+    <main class="flex-1 lg:ml-64 p-4 sm:p-8 max-w-7xl w-full">
+      <!-- Header -->
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 id="pageTitle" class="text-2xl sm:text-3xl font-bold text-navy">ภาพรวม</h1>
+          <p id="lastSync" class="text-xs text-slate-400 mt-1"></p>
+        </div>
+        <button id="refreshBtn" class="inline-flex items-center gap-2 bg-white border border-slate-200 hover:border-royal text-sm px-4 py-2 rounded-xl shadow-sm transition">
+          <svg id="refreshIcon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5.6 15A7 7 0 0 0 18.4 15M18.4 9A7 7 0 0 0 5.6 9"/></svg>
+          รีเฟรช
+        </button>
+      </div>
+
+      <!-- ===== Overview ===== -->
+      <section data-panel="overview" class="panel space-y-6">
+        <div id="statCards" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        <div class="grid lg:grid-cols-3 gap-6">
+          <div class="bg-white rounded-2xl shadow-soft p-6">
+            <h3 class="font-semibold text-navy mb-4">แบบบ้านที่ลูกค้าสนใจ</h3>
+            <div id="modelBreakdown" class="space-y-4"></div>
+          </div>
+          <div class="bg-white rounded-2xl shadow-soft p-6">
+            <h3 class="font-semibold text-navy mb-4">สถานะลูกค้า</h3>
+            <div id="statusBreakdown" class="space-y-2.5"></div>
+          </div>
+          <div class="bg-white rounded-2xl shadow-soft p-6">
+            <div class="flex items-center justify-between mb-4"><h3 class="font-semibold text-navy">ลูกค้าล่าสุด</h3><button data-goto="leads" class="text-xs text-royal hover:underline">ดูทั้งหมด →</button></div>
+            <div id="recentLeads" class="divide-y divide-slate-100"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft p-6">
+          <div class="flex items-center justify-between mb-4"><h3 class="font-semibold text-navy">ลงทะเบียนย้อนหลัง 14 วัน</h3></div>
+          <div id="dailyChart" class="h-40 flex items-end gap-1.5"></div>
+        </div>
+      </section>
+
+      <!-- ===== Promotions ===== -->
+      <section data-panel="promos" class="panel hidden space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-white rounded-2xl shadow-soft p-4">
+          <p class="text-sm text-slate-500">ป๊อปอัปจะแสดงเมื่อลูกค้าเข้าเว็บ เรียงตามลำดับความสำคัญ (มาก → น้อย) • มีหลายโปรลูกค้าเลื่อนดูได้</p>
+          <button id="addPromoBtn" class="bg-royal hover:bg-royal-700 text-white font-semibold px-5 py-2.5 rounded-xl shadow transition">+ เพิ่มโปรโมชั่น</button>
+        </div>
+        <div id="promoList" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+      </section>
+
+      <!-- ===== Leads ===== -->
+      <section data-panel="leads" class="panel hidden space-y-4">
+        <div class="flex flex-wrap gap-3 bg-white rounded-2xl shadow-soft p-4">
+          <input id="leadSearch" type="search" placeholder="🔍 ค้นหาชื่อ / เบอร์โทร / หมายเหตุ" class="flex-1 min-w-[200px] px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm">
+          <select id="leadStatusFilter" class="px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm"><option value="">ทุกสถานะ</option></select>
+          <select id="leadModelFilter" class="px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm">
+            <option value="">ทุกแบบบ้าน</option><option value="Nordic">Modern Nordic</option><option value="Contemporary">Modern Contemporary</option>
+          </select>
+          <button id="exportBtn" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">⬇ Export CSV</button>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                <tr><th class="text-left px-4 py-3">วันที่</th><th class="text-left px-4 py-3">ชื่อ</th><th class="text-left px-4 py-3">เบอร์โทร</th><th class="text-left px-4 py-3">แบบบ้าน</th><th class="text-left px-4 py-3">สถานะ</th><th class="text-left px-4 py-3 min-w-[200px]">หมายเหตุ</th></tr>
+              </thead>
+              <tbody id="leadRows" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <div id="leadFooter" class="px-4 py-3 text-xs text-slate-400 border-t border-slate-100"></div>
+        </div>
+      </section>
+
+      <!-- ===== Settings ===== -->
+      <section data-panel="settings" class="panel hidden">
+        <form id="pwForm" class="bg-white rounded-2xl shadow-soft p-6 max-w-md space-y-4">
+          <h3 class="font-semibold text-navy">เปลี่ยนรหัสผ่านหลังบ้าน</h3>
+          <input id="oldPw" type="password" required placeholder="รหัสผ่านเดิม" autocomplete="current-password" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50">
+          <input id="newPw" type="password" required minlength="8" placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)" autocomplete="new-password" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50">
+          <button class="bg-navy hover:bg-navy-700 text-white font-semibold px-5 py-2.5 rounded-xl">บันทึกรหัสผ่าน</button>
+        </form>
+        <div class="bg-white rounded-2xl shadow-soft p-6 max-w-md mt-6 text-sm text-slate-600 space-y-2">
+          <h3 class="font-semibold text-navy">ข้อมูลระบบ</h3>
+          <p>API: <code id="apiUrl" class="text-xs break-all bg-slate-100 px-1.5 py-0.5 rounded"></code></p>
+          <p>ข้อมูลทั้งหมดเก็บใน Google Sheet (ชีต <b>Leads</b> และ <b>Promotions</b>) รูปที่อัปโหลดเก็บในโฟลเดอร์ Google Drive <b>RichaVille-Promotions</b></p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ======================= PROMO EDITOR ======================= -->
+  <div id="editor" class="fixed inset-0 z-40 hidden bg-navy/60 backdrop-blur-sm overflow-y-auto">
+    <div class="min-h-full flex items-start lg:items-center justify-center p-4">
+      <div class="w-full max-w-5xl bg-white rounded-3xl shadow-2xl grid lg:grid-cols-5 overflow-hidden fade-in">
+        <form id="promoForm" class="lg:col-span-3 p-6 sm:p-8 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 id="editorTitle" class="text-xl font-bold text-navy">เพิ่มโปรโมชั่น</h2>
+            <button type="button" data-close class="w-9 h-9 rounded-full hover:bg-slate-100 text-xl" aria-label="ปิด">✕</button>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1.5">รูปภาพป๊อปอัป <span class="text-red-500">*</span></label>
+            <label id="dropZone" class="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-slate-300 hover:border-royal rounded-2xl p-5 text-center cursor-pointer transition bg-slate-50">
+              <span class="text-3xl">🖼️</span>
+              <span class="text-sm font-medium">คลิกหรือลากไฟล์รูปมาวาง</span>
+              <span class="text-xs text-slate-400">JPG / PNG • ระบบย่อขนาดให้อัตโนมัติ • แนะนำแนวตั้งหรือสี่เหลี่ยมจัตุรัส</span>
+              <input id="fileInput" type="file" accept="image/*" class="hidden">
+            </label>
+            <div id="uploadStatus" class="hidden mt-2 text-xs"></div>
+            <input id="f_imageUrl" type="text" placeholder="หรือวางลิงก์รูป / images/ชื่อไฟล์.jpg" class="mt-2 w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm">
+          </div>
+
+          <div>
+            <label for="f_title" class="block text-sm font-medium mb-1.5">หัวข้อ <span class="text-red-500">*</span></label>
+            <input id="f_title" maxlength="120" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50" placeholder="เช่น ส่วนลด 100,000 บาท เฉพาะเดือนนี้">
+          </div>
+          <div>
+            <label for="f_description" class="block text-sm font-medium mb-1.5">รายละเอียด</label>
+            <textarea id="f_description" rows="3" maxlength="1000" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50" placeholder="ข้อความสั้นๆ ใต้รูป (ขึ้นบรรทัดใหม่ได้)"></textarea>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label for="f_ctaText" class="block text-sm font-medium mb-1.5">ข้อความปุ่ม</label>
+              <input id="f_ctaText" maxlength="60" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50" placeholder="ลงทะเบียนรับสิทธิ์">
+            </div>
+            <div>
+              <label for="f_ctaPreset" class="block text-sm font-medium mb-1.5">กดปุ่มแล้วไปที่</label>
+              <select id="f_ctaPreset" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50">
+                <option value="#register">ฟอร์มลงทะเบียน</option>
+                <option value="#ghb">คำนวณสินเชื่อ ธอส.</option>
+                <option value="#calculator">เครื่องคำนวณสินเชื่อ</option>
+                <option value="#models">แบบบ้าน</option>
+                <option value="#location">ทำเลที่ตั้ง</option>
+                <option value="tel:0803687398">โทร 080-368-7398</option>
+                <option value="custom">ลิงก์อื่น (กำหนดเอง)…</option>
+              </select>
+            </div>
+          </div>
+          <input id="f_ctaLink" type="text" class="hidden w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm" placeholder="https://...">
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div><label for="f_startDate" class="block text-sm font-medium mb-1.5">เริ่มแสดง</label><input id="f_startDate" type="date" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50"></div>
+            <div><label for="f_endDate" class="block text-sm font-medium mb-1.5">สิ้นสุด <span class="text-xs text-slate-400">(เว้นว่าง = ไม่มีกำหนด)</span></label><input id="f_endDate" type="date" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50"></div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label for="f_frequency" class="block text-sm font-medium mb-1.5">ความถี่การแสดง</label>
+              <select id="f_frequency" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50">
+                <option value="session">1 ครั้ง / การเข้าเว็บ (แนะนำ)</option>
+                <option value="daily">1 ครั้ง / วัน</option>
+                <option value="once">ครั้งเดียวต่อลูกค้า</option>
+                <option value="every">ทุกครั้งที่เปิดหน้า</option>
+              </select>
+            </div>
+            <div>
+              <label for="f_priority" class="block text-sm font-medium mb-1.5">ลำดับความสำคัญ <span class="text-xs text-slate-400">(มาก = แสดงก่อน)</span></label>
+              <input id="f_priority" type="number" min="0" max="999" value="10" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50">
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 pt-1">
+            <button type="button" id="f_active" role="switch" aria-checked="true" class="toggle"></button>
+            <span class="text-sm font-medium">เปิดใช้งานป๊อปอัปนี้</span>
+          </div>
+
+          <div class="flex gap-3 pt-3">
+            <button type="button" data-close class="flex-1 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 font-medium">ยกเลิก</button>
+            <button id="saveBtn" class="flex-[2] py-3 rounded-xl bg-royal hover:bg-royal-700 disabled:opacity-60 text-white font-semibold shadow">บันทึกโปรโมชั่น</button>
+          </div>
+        </form>
+
+        <!-- Live preview -->
+        <div class="lg:col-span-2 bg-gradient-to-br from-navy to-royal p-6 sm:p-8 flex flex-col">
+          <p class="text-white/70 text-xs uppercase tracking-widest mb-4">ตัวอย่างที่ลูกค้าจะเห็น</p>
+          <div class="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-xs mx-auto">
+            <div class="relative bg-slate-100 min-h-[160px] grid place-items-center">
+              <span class="absolute top-2 left-2 bg-gold text-navy text-[10px] font-bold px-2 py-1 rounded-full">🎁 โปรโมชั่นพิเศษ</span>
+              <img id="pv_img" src="" alt="" class="w-full max-h-80 object-contain hidden">
+              <span id="pv_noimg" class="text-slate-400 text-sm">ยังไม่มีรูป</span>
+            </div>
+            <div class="p-4">
+              <h4 id="pv_title" class="font-bold text-navy">หัวข้อโปรโมชั่น</h4>
+              <p id="pv_desc" class="text-xs text-slate-500 mt-1 whitespace-pre-line"></p>
+              <div id="pv_cta" class="mt-3 text-center bg-gold text-navy font-bold text-sm py-2.5 rounded-xl">ดูรายละเอียด</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm dialog -->
+  <div id="confirmBox" class="fixed inset-0 z-50 hidden bg-black/50 grid place-items-center p-4">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl fade-in">
+      <p id="confirmText" class="font-medium mb-5"></p>
+      <div class="flex gap-3"><button id="confirmNo" class="flex-1 py-2.5 rounded-xl border border-slate-200">ยกเลิก</button><button id="confirmYes" class="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-semibold">ยืนยัน</button></div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toasts" class="fixed bottom-4 right-4 z-[70] space-y-2 w-[calc(100%-2rem)] max-w-sm"></div>
+
+  <script>
+  (() => {
+    'use strict';
+    // =====================================================================
+    // ⚙️ ใช้ URL เดียวกับใน index.html
+    // =====================================================================
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw7K3NOCfERbNQMCbGB6jA2bvoqVCva0F-3zP0cT8eCM3-I3mEcPdoB-qaFQmxzsjsy/exec';
+
+    const $ = (s, el = document) => el.querySelector(s);
+    const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmt = n => Number(n || 0).toLocaleString('th-TH');
+    const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
+    const thDate = iso => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+    const thDay = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
+    const ss = { get: k => { try { return sessionStorage.getItem(k); } catch (_) { return null; } },
+                 set: (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (_) {} } };
+
+    const state = { token: ss.get('rv_admin_token'), promos: [], leads: [], statuses: [], tab: 'overview', editing: null };
+
+    // ---------------------------------------------------------------------
+    // API
+    // ---------------------------------------------------------------------
+    async function api(action, payload = {}) {
+      let res;
+      try {
+        res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action, token: state.token, ...payload }) });
+      } catch (_) { throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบอินเทอร์เน็ตหรือการ Deploy'); }
+      let j;
+      try { j = await res.json(); } catch (_) { throw new Error('เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (ตรวจสอบว่า Deploy Code.gs เวอร์ชันใหม่แล้ว)'); }
+      if (j.auth) { logout(true); throw new Error(j.message); }
+      if (j.result !== 'success') throw new Error(j.message || 'เกิดข้อผิดพลาด');
+      return j;
+    }
+
+    // ---------------------------------------------------------------------
+    // UI helpers
+    // ---------------------------------------------------------------------
+    function toast(msg, type = 'success') {
+      const c = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-navy' }[type];
+      const el = document.createElement('div');
+      el.className = `${c} text-white text-sm px-4 py-3 rounded-xl shadow-lg fade-in`;
+      el.textContent = msg;
+      $('#toasts').appendChild(el);
+      setTimeout(() => { el.style.opacity = 0; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, type === 'error' ? 5000 : 2800);
+    }
+    function confirmDialog(text) {
+      return new Promise(resolve => {
+        $('#confirmText').textContent = text;
+        $('#confirmBox').classList.remove('hidden');
+        const done = v => { $('#confirmBox').classList.add('hidden'); $('#confirmYes').onclick = $('#confirmNo').onclick = null; resolve(v); };
+        $('#confirmYes').onclick = () => done(true);
+        $('#confirmNo').onclick = () => done(false);
+      });
+    }
+    function setBusy(btn, busy, text) {
+      if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+      btn.disabled = busy;
+      btn.textContent = busy ? (text || 'กำลังบันทึก...') : btn.dataset.label;
+    }
+
+    // ---------------------------------------------------------------------
+    // Auth
+    // ---------------------------------------------------------------------
+    function showLogin() { $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); $('#password').focus(); }
+    function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
+
+    $('#loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = $('#loginBtn'); setBusy(btn, true, 'กำลังตรวจสอบ...');
+      $('#loginError').classList.add('hidden');
+      try {
+        const j = await api('login', { password: $('#password').value });
+        state.token = j.token; ss.set('rv_admin_token', j.token);
+        $('#password').value = '';
+        showApp(); await loadAll();
+      } catch (err) {
+        $('#loginError').textContent = err.message; $('#loginError').classList.remove('hidden');
+      } finally { setBusy(btn, false); }
+    });
+
+    async function logout(expired) {
+      if (!expired && state.token) api('logout').catch(() => {});
+      state.token = null; ss.set('rv_admin_token', null);
+      showLogin();
+      if (expired) { $('#loginError').textContent = 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่'; $('#loginError').classList.remove('hidden'); }
+    }
+    $('#logoutBtn').addEventListener('click', () => logout());
+    $('#logoutBtnSm').addEventListener('click', () => logout());
+
+    // ---------------------------------------------------------------------
+    // Navigation
+    // ---------------------------------------------------------------------
+    const TITLES = { overview: 'ภาพรวม', promos: 'ป๊อปอัปโปรโมชั่น', leads: 'รายชื่อลูกค้า', settings: 'ตั้งค่า' };
+    function goTab(tab) {
+      state.tab = tab;
+      $('#pageTitle').textContent = TITLES[tab];
+      $$('.panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab));
+      $$('.nav-btn').forEach(b => b.className = 'nav-btn whitespace-nowrap flex items-center gap-3 px-4 py-2.5 rounded-xl transition ' +
+        (b.dataset.tab === tab ? 'bg-white/15 text-white font-semibold' : 'text-white/70 hover:bg-white/10 hover:text-white'));
+      ss.set('rv_admin_tab', tab);
+    }
+    $$('.nav-btn').forEach(b => b.addEventListener('click', () => goTab(b.dataset.tab)));
+    document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) goTab(g.dataset.goto); });
+
+    // ---------------------------------------------------------------------
+    // Load data
+    // ---------------------------------------------------------------------
+    async function loadAll() {
+      $('#refreshIcon').classList.add('animate-spin');
+      if (!state.promos.length && !state.leads.length) renderSkeletons();
+      try {
+        const j = await api('dashboard');
+        state.promos = j.promos || []; state.leads = j.leads || []; state.statuses = j.statuses || [];
+        renderAll();
+        $('#lastSync').textContent = 'อัปเดตล่าสุด ' + new Date().toLocaleTimeString('th-TH');
+      } catch (err) { toast(err.message, 'error'); }
+      finally { $('#refreshIcon').classList.remove('animate-spin'); }
+    }
+    $('#refreshBtn').addEventListener('click', loadAll);
+
+    function renderSkeletons() {
+      $('#statCards').innerHTML = Array(4).fill('<div class="h-28 rounded-2xl skeleton"></div>').join('');
+      $('#promoList').innerHTML = Array(3).fill('<div class="h-80 rounded-2xl skeleton"></div>').join('');
+    }
+    function renderAll() { renderOverview(); renderPromos(); renderLeadFilters(); renderLeads(); }
+
+    // ---------------------------------------------------------------------
+    // Overview
+    // ---------------------------------------------------------------------
+    function promoStatus(p) {
+      const t = today();
+      if (!p.active) return ['ปิดอยู่', 'bg-slate-100 text-slate-600'];
+      if (p.startDate && p.startDate > t) return ['ตั้งเวลาไว้', 'bg-amber-100 text-amber-700'];
+      if (p.endDate && p.endDate < t) return ['หมดอายุ', 'bg-red-100 text-red-700'];
+      return ['● กำลังแสดง', 'bg-emerald-100 text-emerald-700'];
+    }
+    function renderOverview() {
+      const L = state.leads, t = today();
+      const dayOf = l => new Date(l.timestamp).toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
+      const todayCount = L.filter(l => dayOf(l) === t).length;
+      const weekAgo = new Date(Date.now() - 7 * 864e5);
+      const weekCount = L.filter(l => new Date(l.timestamp) >= weekAgo).length;
+      const newCount = L.filter(l => l.status === 'ใหม่').length;
+      const live = state.promos.filter(p => promoStatus(p)[0].includes('กำลังแสดง')).length;
+      const views = state.promos.reduce((a, p) => a + p.views, 0), clicks = state.promos.reduce((a, p) => a + p.clicks, 0);
+
+      const card = (icon, label, value, sub, color) => `
+        <div class="bg-white rounded-2xl shadow-soft p-5 fade-in">
+          <div class="flex items-center justify-between mb-2"><span class="text-sm text-slate-500">${label}</span><span class="w-9 h-9 rounded-xl ${color} grid place-items-center">${icon}</span></div>
+          <div class="text-3xl font-bold text-navy">${value}</div>
+          <div class="text-xs text-slate-400 mt-1">${sub}</div>
+        </div>`;
+      $('#statCards').innerHTML =
+        card('👥', 'ลูกค้าทั้งหมด', fmt(L.length), `รอติดต่อ ${fmt(newCount)} ราย`, 'bg-royal/10') +
+        card('📅', 'ลงทะเบียนวันนี้', fmt(todayCount), `7 วันล่าสุด ${fmt(weekCount)} ราย`, 'bg-gold/20') +
+        card('🎁', 'ป๊อปอัปที่กำลังแสดง', fmt(live), `จากทั้งหมด ${fmt(state.promos.length)} รายการ`, 'bg-emerald-100') +
+        card('👆', 'อัตราคลิกป๊อปอัป', views ? (clicks / views * 100).toFixed(1) + '%' : '–', `เห็น ${fmt(views)} • คลิก ${fmt(clicks)}`, 'bg-orange-100');
+
+      $('#newLeadBadge').textContent = newCount; $('#newLeadBadge').classList.toggle('hidden', !newCount);
+
+      const nordic = L.filter(l => /nordic/i.test(l.model)).length, modern = L.filter(l => /contemporary/i.test(l.model)).length;
+      const bar = (label, n, total, color) => `<div><div class="flex justify-between text-sm mb-1"><span>${label}</span><b>${fmt(n)}</b></div>
+        <div class="h-3 bg-slate-100 rounded-full overflow-hidden"><div class="h-full ${color} rounded-full" style="width:${total ? n / total * 100 : 0}%"></div></div></div>`;
+      $('#modelBreakdown').innerHTML = bar('Modern Nordic (3 นอน)', nordic, L.length, 'bg-royal') + bar('Modern Contemporary (2 นอน)', modern, L.length, 'bg-gold');
+
+      $('#statusBreakdown').innerHTML = state.statuses.map(s => {
+        const n = L.filter(l => l.status === s).length;
+        return `<div class="flex items-center justify-between text-sm"><span class="px-2.5 py-0.5 rounded-full text-xs ${statusColor(s)}">${esc(s)}</span><b>${fmt(n)}</b></div>`;
+      }).join('');
+
+      $('#recentLeads').innerHTML = L.slice(0, 6).map(l => `
+        <div class="py-2.5 flex items-center justify-between gap-2 text-sm">
+          <div class="min-w-0"><div class="font-medium truncate">${esc(l.name)}</div><div class="text-xs text-slate-400">${thDate(l.timestamp)}</div></div>
+          <a href="tel:${esc(l.phone)}" class="text-royal text-xs whitespace-nowrap">${esc(l.phone)}</a>
+        </div>`).join('') || '<p class="text-sm text-slate-400 py-4 text-center">ยังไม่มีลูกค้าลงทะเบียน</p>';
+
+      // กราฟรายวัน 14 วัน
+      const days = [...Array(14)].map((_, i) => new Date(Date.now() - (13 - i) * 864e5).toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }));
+      const counts = days.map(d => L.filter(l => dayOf(l) === d).length);
+      const max = Math.max(1, ...counts);
+      $('#dailyChart').innerHTML = days.map((d, i) => `
+        <div class="flex-1 flex flex-col items-center justify-end h-full group" title="${thDay(d)}: ${counts[i]} ราย">
+          <span class="text-[10px] text-slate-500 mb-1 ${counts[i] ? '' : 'invisible'}">${counts[i]}</span>
+          <div class="w-full rounded-t-md ${d === today() ? 'bg-gold' : 'bg-royal/70 group-hover:bg-royal'} transition" style="height:${Math.max(3, counts[i] / max * 100)}%"></div>
+          <span class="text-[10px] text-slate-400 mt-1">${new Date(d + 'T00:00:00').getDate()}</span>
+        </div>`).join('');
+    }
+
+    // ---------------------------------------------------------------------
+    // Promotions list
+    // ---------------------------------------------------------------------
+    const FREQ = { session: '1 ครั้ง/การเข้าเว็บ', daily: '1 ครั้ง/วัน', once: 'ครั้งเดียว', every: 'ทุกครั้ง' };
+    function renderPromos() {
+      if (!state.promos.length) {
+        $('#promoList').innerHTML = `<div class="sm:col-span-2 xl:col-span-3 bg-white rounded-2xl shadow-soft p-12 text-center">
+          <div class="text-5xl mb-3">🎁</div><p class="font-semibold text-navy mb-1">ยังไม่มีโปรโมชั่น</p>
+          <p class="text-sm text-slate-500 mb-5">สร้างป๊อปอัปแรกเพื่อแสดงให้ลูกค้าเห็นเมื่อเข้าเว็บ</p>
+          <button data-add class="bg-royal text-white font-semibold px-5 py-2.5 rounded-xl">+ เพิ่มโปรโมชั่น</button></div>`;
+        return;
+      }
+      $('#promoList').innerHTML = state.promos.map(p => {
+        const [label, cls] = promoStatus(p);
+        const ctr = p.views ? (p.clicks / p.views * 100).toFixed(1) + '%' : '–';
+        return `
+        <article class="bg-white rounded-2xl shadow-soft overflow-hidden flex flex-col fade-in ${p.active ? '' : 'opacity-75'}">
+          <div class="relative bg-slate-100 aspect-[4/3]">
+            <img src="${esc(p.imageUrl)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-contain">
+            <span class="absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full ${cls}">${label}</span>
+            <span class="absolute top-3 right-3 text-xs bg-white/90 px-2 py-1 rounded-full" title="ลำดับความสำคัญ">⭐ ${p.priority}</span>
+          </div>
+          <div class="p-4 flex-1 flex flex-col">
+            <h3 class="font-semibold text-navy leading-snug mb-1">${esc(p.title)}</h3>
+            <p class="text-xs text-slate-400 mb-3">${p.startDate || p.endDate ? `📅 ${thDay(p.startDate) || 'วันนี้'} – ${thDay(p.endDate) || 'ไม่มีกำหนด'}` : '📅 แสดงตลอด'} • ${FREQ[p.frequency] || ''}</p>
+            <div class="grid grid-cols-3 text-center bg-slate-50 rounded-xl py-2 mb-4 text-xs">
+              <div><b class="block text-base text-navy">${fmt(p.views)}</b>เห็น</div>
+              <div><b class="block text-base text-navy">${fmt(p.clicks)}</b>คลิก</div>
+              <div><b class="block text-base text-navy">${ctr}</b>CTR</div>
+            </div>
+            <div class="mt-auto flex items-center gap-2">
+              <button data-toggle="${esc(p.id)}" role="switch" aria-checked="${p.active}" class="toggle" title="เปิด/ปิด"></button>
+              <span class="text-xs text-slate-500 mr-auto">${p.active ? 'เปิดอยู่' : 'ปิดอยู่'}</span>
+              <button data-edit="${esc(p.id)}" class="px-3 py-1.5 rounded-lg bg-royal/10 text-royal text-sm font-medium hover:bg-royal/20">แก้ไข</button>
+              <button data-del="${esc(p.id)}" class="px-3 py-1.5 rounded-lg text-red-600 text-sm hover:bg-red-50" aria-label="ลบ">🗑</button>
+            </div>
+          </div>
+        </article>`;
+      }).join('');
+    }
+
+    $('#promoList').addEventListener('click', async e => {
+      const t = e.target.closest('[data-toggle],[data-edit],[data-del],[data-add]');
+      if (!t) return;
+      if (t.dataset.add !== undefined) return openEditor();
+      if (t.dataset.edit) return openEditor(state.promos.find(p => p.id === t.dataset.edit));
+      if (t.dataset.toggle) {
+        const p = state.promos.find(x => x.id === t.dataset.toggle);
+        p.active = !p.active; renderPromos(); renderOverview();
+        try { await api('savePromo', { promo: p }); toast(p.active ? 'เปิดแสดงป๊อปอัปแล้ว' : 'ปิดป๊อปอัปแล้ว'); }
+        catch (err) { p.active = !p.active; renderPromos(); toast(err.message, 'error'); }
+      }
+      if (t.dataset.del) {
+        const p = state.promos.find(x => x.id === t.dataset.del);
+        if (!(await confirmDialog(`ลบโปรโมชั่น "${p.title}" ?`))) return;
+        try { await api('deletePromo', { id: p.id }); state.promos = state.promos.filter(x => x !== p); renderPromos(); renderOverview(); toast('ลบแล้ว'); }
+        catch (err) { toast(err.message, 'error'); }
+      }
+    });
+    $('#addPromoBtn').addEventListener('click', () => openEditor());
+
+    // ---------------------------------------------------------------------
+    // Promo editor
+    // ---------------------------------------------------------------------
+    const F = id => $('#f_' + id);
+    const PRESETS = [...$('#f_ctaPreset').options].map(o => o.value);
+
+    function openEditor(p) {
+      state.editing = p || null;
+      $('#editorTitle').textContent = p ? 'แก้ไขโปรโมชั่น' : 'เพิ่มโปรโมชั่น';
+      F('title').value = p?.title || '';
+      F('description').value = p?.description || '';
+      F('imageUrl').value = p?.imageUrl || '';
+      F('ctaText').value = p?.ctaText || 'ลงทะเบียนรับสิทธิ์';
+      const link = p?.ctaLink || '#register';
+      F('ctaPreset').value = PRESETS.includes(link) ? link : 'custom';
+      F('ctaLink').value = PRESETS.includes(link) ? '' : link;
+      F('ctaLink').classList.toggle('hidden', F('ctaPreset').value !== 'custom');
+      F('startDate').value = p?.startDate || '';
+      F('endDate').value = p?.endDate || '';
+      F('frequency').value = p?.frequency || 'session';
+      F('priority').value = p?.priority ?? 10;
+      F('active').setAttribute('aria-checked', p ? String(p.active) : 'true');
+      $('#uploadStatus').classList.add('hidden');
+      $('#editor').classList.remove('hidden'); document.body.style.overflow = 'hidden';
+      updatePreview(); F('title').focus();
+    }
+    function closeEditor() { $('#editor').classList.add('hidden'); document.body.style.overflow = ''; }
+    $$('#editor [data-close]').forEach(b => b.addEventListener('click', closeEditor));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#editor').classList.contains('hidden')) closeEditor(); });
+
+    F('active').addEventListener('click', () => F('active').setAttribute('aria-checked', F('active').getAttribute('aria-checked') !== 'true'));
+    F('ctaPreset').addEventListener('change', () => { F('ctaLink').classList.toggle('hidden', F('ctaPreset').value !== 'custom'); if (F('ctaPreset').value === 'custom') F('ctaLink').focus(); });
+
+    function updatePreview() {
+      const url = F('imageUrl').value.trim();
+      $('#pv_img').classList.toggle('hidden', !url); $('#pv_noimg').classList.toggle('hidden', !!url);
+      if (url) $('#pv_img').src = url;
+      $('#pv_title').textContent = F('title').value || 'หัวข้อโปรโมชั่น';
+      $('#pv_desc').textContent = F('description').value;
+      $('#pv_cta').textContent = F('ctaText').value || 'ดูรายละเอียด';
+    }
+    ['title', 'description', 'imageUrl', 'ctaText'].forEach(k => F(k).addEventListener('input', updatePreview));
+
+    // อัปโหลดรูป: ย่อด้วย canvas ก่อนส่ง → ประหยัดเวลาและพื้นที่ Drive
+    function resizeImage(file, max = 1600, quality = 0.85) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(img.src);
+          resolve(c.toDataURL('image/jpeg', quality).split(',')[1]);
+        };
+        img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
+        img.src = URL.createObjectURL(file);
+      });
+    }
+    async function handleFile(file) {
+      if (!file || !file.type.startsWith('image/')) return toast('กรุณาเลือกไฟล์รูปภาพ', 'error');
+      const st = $('#uploadStatus');
+      st.className = 'mt-2 text-xs text-royal'; st.textContent = '⏳ กำลังย่อขนาดและอัปโหลด...';
+      $('#saveBtn').disabled = true;
+      // แสดงตัวอย่างทันที
+      $('#pv_img').src = URL.createObjectURL(file); $('#pv_img').classList.remove('hidden'); $('#pv_noimg').classList.add('hidden');
+      try {
+        const data = await resizeImage(file);
+        const j = await api('uploadImage', { data, mimeType: 'image/jpeg', name: file.name.replace(/\.\w+$/, '') + '.jpg' });
+        F('imageUrl').value = j.url; updatePreview();
+        st.className = 'mt-2 text-xs text-emerald-600'; st.textContent = '✅ อัปโหลดสำเร็จ';
+      } catch (err) {
+        st.className = 'mt-2 text-xs text-red-600'; st.textContent = '❌ ' + err.message;
+      } finally { $('#saveBtn').disabled = false; }
+    }
+    $('#fileInput').addEventListener('change', e => handleFile(e.target.files[0]));
+    const dz = $('#dropZone');
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('border-royal', 'bg-royal/5'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('border-royal', 'bg-royal/5'); }));
+    dz.addEventListener('drop', e => handleFile(e.dataTransfer.files[0]));
+
+    $('#promoForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const promo = {
+        id: state.editing?.id,
+        title: F('title').value.trim(),
+        description: F('description').value.trim(),
+        imageUrl: F('imageUrl').value.trim(),
+        ctaText: F('ctaText').value.trim(),
+        ctaLink: F('ctaPreset').value === 'custom' ? F('ctaLink').value.trim() : F('ctaPreset').value,
+        startDate: F('startDate').value, endDate: F('endDate').value,
+        frequency: F('frequency').value, priority: +F('priority').value || 0,
+        active: F('active').getAttribute('aria-checked') === 'true',
+      };
+      if (!promo.imageUrl) return toast('กรุณาอัปโหลดรูปหรือใส่ลิงก์รูป', 'error');
+      if (promo.startDate && promo.endDate && promo.endDate < promo.startDate) return toast('วันสิ้นสุดต้องอยู่หลังวันเริ่ม', 'error');
+      const btn = $('#saveBtn'); setBusy(btn, true);
+      try {
+        await api('savePromo', { promo });
+        toast(state.editing ? 'บันทึกการแก้ไขแล้ว' : 'เพิ่มโปรโมชั่นแล้ว');
+        closeEditor();
+        const j = await api('listPromos'); state.promos = j.promos; renderPromos(); renderOverview();
+      } catch (err) { toast(err.message, 'error'); }
+      finally { setBusy(btn, false); }
+    });
+
+    // ---------------------------------------------------------------------
+    // Leads
+    // ---------------------------------------------------------------------
+    function statusColor(s) {
+      return ({ 'ใหม่': 'bg-blue-100 text-blue-700', 'ติดต่อแล้ว': 'bg-amber-100 text-amber-700', 'นัดชมบ้าน': 'bg-purple-100 text-purple-700',
+                'ยื่นกู้': 'bg-cyan-100 text-cyan-700', 'ปิดการขาย': 'bg-emerald-100 text-emerald-700', 'ไม่สนใจ': 'bg-slate-100 text-slate-500' })[s] || 'bg-slate-100';
+    }
+    function renderLeadFilters() {
+      const sel = $('#leadStatusFilter'), cur = sel.value;
+      sel.innerHTML = '<option value="">ทุกสถานะ</option>' + state.statuses.map(s => `<option>${esc(s)}</option>`).join('');
+      sel.value = cur;
+    }
+    function filteredLeads() {
+      const q = $('#leadSearch').value.trim().toLowerCase(), st = $('#leadStatusFilter').value, md = $('#leadModelFilter').value;
+      return state.leads.filter(l =>
+        (!st || l.status === st) && (!md || l.model.includes(md)) &&
+        (!q || [l.name, l.phone, l.note].some(v => String(v).toLowerCase().includes(q))));
+    }
+    function renderLeads() {
+      const list = filteredLeads();
+      $('#leadRows').innerHTML = list.map(l => `
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-3 whitespace-nowrap text-slate-500">${thDate(l.timestamp)}</td>
+          <td class="px-4 py-3 font-medium">${esc(l.name)}</td>
+          <td class="px-4 py-3 whitespace-nowrap"><a href="tel:${esc(l.phone)}" class="text-royal hover:underline">${esc(l.phone)}</a></td>
+          <td class="px-4 py-3 text-slate-600">${esc(l.model.replace(/\s*\(.*\)/, ''))}</td>
+          <td class="px-4 py-3">
+            <select data-row="${l.row}" data-field="status" class="text-xs font-medium rounded-full px-2.5 py-1 border-0 cursor-pointer ${statusColor(l.status)}">
+              ${state.statuses.map(s => `<option ${s === l.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+            </select>
+          </td>
+          <td class="px-4 py-2"><input data-row="${l.row}" data-field="note" value="${esc(l.note)}" placeholder="เพิ่มหมายเหตุ..." class="w-full text-sm px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 bg-transparent"></td>
+        </tr>`).join('') || '<tr><td colspan="6" class="px-4 py-10 text-center text-slate-400">ไม่พบข้อมูล</td></tr>';
+      $('#leadFooter').textContent = `แสดง ${fmt(list.length)} จาก ${fmt(state.leads.length)} รายการ`;
+    }
+    ['input', 'change'].forEach(ev => ['#leadSearch', '#leadStatusFilter', '#leadModelFilter'].forEach(s => $(s).addEventListener(ev, renderLeads)));
+
+    async function saveLeadField(el) {
+      const row = +el.dataset.row, field = el.dataset.field, value = el.value;
+      const lead = state.leads.find(l => l.row === row);
+      if (!lead || lead[field] === value) return;
+      const prev = lead[field]; lead[field] = value;
+      if (field === 'status') { el.className = `text-xs font-medium rounded-full px-2.5 py-1 border-0 cursor-pointer ${statusColor(value)}`; renderOverview(); }
+      try { await api('updateLead', { row, [field]: value }); toast('บันทึกแล้ว'); }
+      catch (err) { lead[field] = prev; el.value = prev; toast(err.message, 'error'); }
+    }
+    $('#leadRows').addEventListener('change', e => { if (e.target.dataset.field) saveLeadField(e.target); });
+    $('#leadRows').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset.field === 'note') e.target.blur(); });
+
+    $('#exportBtn').addEventListener('click', () => {
+      const rows = [['วันที่', 'ชื่อ', 'เบอร์โทร', 'แบบบ้าน', 'สถานะ', 'หมายเหตุ'],
+        ...filteredLeads().map(l => [new Date(l.timestamp).toLocaleString('th-TH'), l.name, l.phone, l.model, l.status, l.note])];
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })); // BOM ให้ Excel อ่านภาษาไทยได้
+      a.download = `richaville-leads-${today()}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+
+    // ---------------------------------------------------------------------
+    // Settings
+    // ---------------------------------------------------------------------
+    $('#apiUrl').textContent = SCRIPT_URL;
+    $('#pwForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      try { await api('changePassword', { oldPassword: $('#oldPw').value, newPassword: $('#newPw').value }); toast('เปลี่ยนรหัสผ่านแล้ว'); e.target.reset(); }
+      catch (err) { toast(err.message, 'error'); }
+    });
+
+    // ---------------------------------------------------------------------
+    // Init
+    // ---------------------------------------------------------------------
+    goTab(ss.get('rv_admin_tab') || 'overview');
+    if (state.token) { showApp(); loadAll(); } else showLogin();
+    setInterval(() => { if (state.token && !document.hidden && $('#editor').classList.contains('hidden')) loadAll(); }, 120000); // รีเฟรชอัตโนมัติทุก 2 นาที
+  })();
+  </script>
+</body>
+</html>

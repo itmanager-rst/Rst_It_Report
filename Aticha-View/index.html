@@ -59,6 +59,9 @@
     #main-gallery-image.fading { opacity: 0; }
     .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { scrollbar-width: none; }
     /* Fallback เมื่อไม่พบรูป */
+    /* Promo popup animation */
+    @keyframes promoIn { from { opacity: 0; transform: translateY(20px) scale(.96); } to { opacity: 1; transform: none; } }
+    .promo-in { animation: promoIn .45s cubic-bezier(.2,.8,.2,1) both; }
     .img-fallback { background: linear-gradient(135deg,#0a2540,#0056b3); }
   </style>
 </head>
@@ -318,9 +321,9 @@
         </div>
 
         <!-- โปรสินเชื่อ ธอส. บ้านคนละหลัง PLUS -->
-        <div class="mt-8 bg-white rounded-3xl shadow-soft border border-orange-100 grid md:grid-cols-5 overflow-hidden reveal">
+        <div id="ghb" class="mt-8 scroll-mt-24 bg-white rounded-3xl shadow-soft border border-orange-100 grid md:grid-cols-5 overflow-hidden reveal">
           <button id="ghbCard" class="md:col-span-2 bg-orange-50 p-4 group" aria-label="ขยายเอกสารสินเชื่อ ธอส.">
-            <img src="images/ghb-promo.jpg" alt="สินเชื่อ ธอส. บ้านคนละหลัง PLUS" loading="lazy" decoding="async" width="1200" height="1600"
+            <img data-ver="images/ghb-promo.jpeg" alt="สินเชื่อ ธอส. บ้านคนละหลัง PLUS" loading="lazy" decoding="async" width="1200" height="1600"
                  class="w-full h-72 md:h-full object-cover object-top rounded-2xl transition group-hover:scale-[1.02]">
           </button>
           <div class="md:col-span-3 p-6 sm:p-8">
@@ -479,9 +482,35 @@
   </div>
 
   <!-- ===================================================================
+       PROMOTION POPUP (จัดการได้จากหน้าหลังบ้าน admin.html)
+       =================================================================== -->
+  <div id="promoModal" class="fixed inset-0 z-[55] hidden items-center justify-center p-4 bg-navy/75 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="promoTitle">
+    <div class="promo-in relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
+      <button id="promoClose" class="absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-black/55 hover:bg-black/75 text-white text-lg grid place-items-center" aria-label="ปิดป๊อปอัป">✕</button>
+      <span class="absolute top-3 left-3 z-10 bg-gold text-navy text-xs font-bold px-3 py-1.5 rounded-full shadow">🎁 โปรโมชั่นพิเศษ</span>
+      <div class="relative bg-slate-100">
+        <a id="promoImgLink" href="#" class="block">
+          <img id="promoImg" src="" alt="" class="w-full max-h-[56vh] object-contain mx-auto">
+        </a>
+        <button id="promoPrev" class="hidden absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 text-navy shadow grid place-items-center" aria-label="โปรก่อนหน้า">‹</button>
+        <button id="promoNext" class="hidden absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 text-navy shadow grid place-items-center" aria-label="โปรถัดไป">›</button>
+      </div>
+      <div class="p-5">
+        <h3 id="promoTitle" class="text-xl font-bold text-navy leading-snug"></h3>
+        <p id="promoDesc" class="text-sm text-slate-500 mt-1 whitespace-pre-line"></p>
+        <a id="promoCta" href="#register" class="mt-4 block text-center bg-gold hover:bg-gold-400 text-navy font-bold py-3.5 rounded-2xl transition shadow-glow"></a>
+        <div class="flex items-center justify-between mt-4 text-xs text-slate-500">
+          <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="promoHideToday" class="w-4 h-4 accent-royal"> ไม่ต้องแสดงอีกวันนี้</label>
+          <div id="promoDots" class="flex gap-1.5"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
        LIGHTBOX
        =================================================================== -->
-  <div id="lightbox" class="fixed inset-0 z-50 hidden bg-black/90 backdrop-blur-md flex-col items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="ภาพขยาย">
+  <div id="lightbox" class="fixed inset-0 z-[60] hidden bg-black/90 backdrop-blur-md flex-col items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="ภาพขยาย">
     <button id="lbClose" class="absolute top-4 right-4 w-12 h-12 rounded-full bg-white/15 hover:bg-white/30 text-white text-2xl grid place-items-center" aria-label="ปิด">✕</button>
     <button id="lbPrev" class="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 hover:bg-white/30 text-white text-2xl grid place-items-center" aria-label="รูปก่อนหน้า">‹</button>
     <img id="lbImg" src="" alt="" class="max-w-full max-h-[82vh] rounded-2xl object-contain shadow-2xl">
@@ -506,7 +535,14 @@
       LINE_URL: 'https://line.me/R/ti/p/@richaville',
       INTEREST_RATE_DEFAULT: 6,
       DSR: 0.4, // ธนาคารมักให้ค่างวดไม่เกิน ~40% ของรายได้
+      // 🔄 เปลี่ยนเลขนี้ทุกครั้งที่อัปรูปใหม่ "ชื่อไฟล์เดิม" ขึ้น GitHub
+      //    เพื่อบังคับให้เบราว์เซอร์ลูกค้าโหลดรูปใหม่ (ไม่ใช้รูปเก่าที่จำไว้)
+      ASSET_VERSION: '2026-10-22',
     };
+    // เติม ?v= ให้รูปในโฟลเดอร์ images/ ของเว็บเอง (ไม่ยุ่งกับลิงก์ภายนอก)
+    const withVer = url => /^https?:|^data:/i.test(url || '') ? url
+      : url + (url.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(CONFIG.ASSET_VERSION);
+    document.querySelectorAll('img[data-ver]').forEach(img => { img.src = withVer(img.dataset.ver); });
 
     const $ = (s, el = document) => el.querySelector(s);
     const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -798,7 +834,7 @@
     rateEl.addEventListener('input', calculateLoan);
     $$('.year-btn').forEach(b => b.addEventListener('click', () => { years = +b.dataset.year; calculateLoan(); }));
     $$('[data-rate]').forEach(b => b.addEventListener('click', () => { rateEl.value = b.dataset.rate; calculateLoan(); }));
-    $('#ghbCard').addEventListener('click', () => openLightbox([{ src: 'images/ghb-promo.jpg', label: 'สินเชื่อ ธอส. บ้านคนละหลัง PLUS' }]));
+    $('#ghbCard').addEventListener('click', () => openLightbox([{ src: withVer('images/ghb-promo.jpeg'), label: 'สินเชื่อ ธอส. บ้านคนละหลัง PLUS' }]));
     $('#ghbApply').addEventListener('click', () => {
       if (+priceEl.value > 3000000) priceEl.value = 3000000;
       rateEl.value = 2.6; years = 40; calculateLoan();
@@ -883,11 +919,134 @@
     $('#phone').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d-]/g, ''); });
 
     // ---------------------------------------------------------------------
+    // 🎁 Promotion Popup — ดึงรายการจาก Apps Script (?action=promos)
+    // ---------------------------------------------------------------------
+    // ใช้เมื่อเชื่อมต่อหลังบ้านไม่ได้ (เช่น ยังไม่ Deploy Code.gs เวอร์ชันใหม่)
+    const PROMO_FALLBACK = [{
+      id: 'ghb-default',
+      title: 'สินเชื่อ ธอส. บ้านคนละหลัง PLUS',
+      description: 'ดอกเบี้ยปีที่ 1-2 เพียง 2.60% ผ่อนนานสูงสุด 40 ปี\nสำหรับบ้านราคาไม่เกิน 3 ล้านบาท',
+      imageUrl: 'images/ghb-promo.jpeg',
+      ctaText: 'คำนวณค่างวดกับ ธอส.',
+      ctaLink: '#ghb',
+      frequency: 'session',
+    }];
+    const store = {
+      get: (t, k) => { try { return window[t].getItem(k); } catch (_) { return null; } },
+      set: (t, k, v) => { try { window[t].setItem(k, v); } catch (_) {} },
+    };
+    const todayStr = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
+    const safeLink = l => /^(https?:\/\/|tel:|mailto:|#)/i.test(l || '') ? l : '#register';
+
+    function shouldShow(p) {
+      const key = 'rv_promo_' + p.id;
+      switch (p.frequency) {
+        case 'every': return true;
+        case 'once':  return !store.get('localStorage', key);
+        case 'daily': return store.get('localStorage', key) !== todayStr();
+        default:      return !store.get('sessionStorage', key); // session
+      }
+    }
+    function markShown(p) {
+      const key = 'rv_promo_' + p.id;
+      if (p.frequency === 'once')  store.set('localStorage', key, '1');
+      if (p.frequency === 'daily') store.set('localStorage', key, todayStr());
+      if (p.frequency === 'session' || !p.frequency) store.set('sessionStorage', key, '1');
+    }
+    function track(id, type) {
+      if (!CONFIG.SCRIPT_URL || id === 'ghb-default') return;
+      try { fetch(CONFIG.SCRIPT_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: JSON.stringify({ action: 'track', id, type }) }); } catch (_) {}
+    }
+
+    const promoModal = $('#promoModal');
+    let promos = [], promoIdx = 0;
+
+    function renderPromo() {
+      const p = promos[promoIdx];
+      const pImg = $('#promoImg');
+      pImg.dataset.fallbackTried = '';
+      pImg.parentElement.classList.remove('hidden');
+      pImg.src = withVer(p.imageUrl);
+      $('#promoImg').alt = p.title;
+      $('#promoTitle').textContent = p.title;
+      $('#promoDesc').textContent = p.description || '';
+      $('#promoDesc').classList.toggle('hidden', !p.description);
+      const link = safeLink(p.ctaLink);
+      const cta = $('#promoCta');
+      cta.textContent = p.ctaText || 'ดูรายละเอียด';
+      cta.href = link; $('#promoImgLink').href = link;
+      [cta, $('#promoImgLink')].forEach(a => { a.target = /^https?:/i.test(link) ? '_blank' : ''; a.rel = 'noopener'; });
+      const multi = promos.length > 1;
+      $('#promoPrev').classList.toggle('hidden', !multi);
+      $('#promoNext').classList.toggle('hidden', !multi);
+      $('#promoDots').innerHTML = multi ? promos.map((_, i) =>
+        `<span class="w-2 h-2 rounded-full ${i === promoIdx ? 'bg-royal w-5' : 'bg-slate-300'} transition-all"></span>`).join('') : '';
+      markShown(p); track(p.id, 'view');
+    }
+    function openPromo() {
+      promoModal.classList.remove('hidden'); promoModal.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+      renderPromo();
+    }
+    function closePromo() {
+      if ($('#promoHideToday').checked) store.set('localStorage', 'rv_promo_hide', todayStr());
+      promoModal.classList.add('hidden'); promoModal.classList.remove('flex');
+      document.body.style.overflow = '';
+    }
+    function onPromoClick(e) {
+      const p = promos[promoIdx];
+      track(p.id, 'click');
+      const link = safeLink(p.ctaLink);
+      if (link.startsWith('#')) {
+        e.preventDefault(); closePromo();
+        if (link === '#ghb') { $('#ghbApply').click(); return; }
+        const el = document.querySelector(link);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      } else closePromo();
+    }
+    // รูปป๊อปอัปโหลดไม่ได้ → ลองรูป ธอส. สำรอง → ถ้ายังไม่ได้ ซ่อนช่องรูป (ไม่โชว์ไอคอนรูปเสีย)
+    $('#promoImg').addEventListener('error', e => {
+      const img = e.target, fb = withVer('images/ghb-promo.jpeg');
+      console.warn('[Promo] โหลดรูปไม่ได้:', img.src);
+      if (!img.dataset.fallbackTried && !img.src.endsWith(fb)) { img.dataset.fallbackTried = '1'; img.src = fb; }
+      else img.parentElement.classList.add('hidden');
+    });
+    $('#promoCta').addEventListener('click', onPromoClick);
+    $('#promoImgLink').addEventListener('click', onPromoClick);
+    $('#promoClose').addEventListener('click', closePromo);
+    promoModal.addEventListener('click', e => { if (e.target === promoModal) closePromo(); });
+    $('#promoPrev').addEventListener('click', () => { promoIdx = (promoIdx - 1 + promos.length) % promos.length; renderPromo(); });
+    $('#promoNext').addEventListener('click', () => { promoIdx = (promoIdx + 1) % promos.length; renderPromo(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !promoModal.classList.contains('hidden')) closePromo(); });
+
+    async function loadPromos() {
+      if (store.get('localStorage', 'rv_promo_hide') === todayStr()) return;
+      let list = null;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 7000);
+        const res = await fetch(CONFIG.SCRIPT_URL + '?action=promos', { signal: ctrl.signal });
+        clearTimeout(timer);
+        const j = await res.json();
+        if (j.result === 'success' && Array.isArray(j.promos)) list = j.promos;
+      } catch (_) { /* ใช้โปรสำรอง */ }
+      promos = (list || PROMO_FALLBACK).filter(shouldShow);
+      if (!promos.length) return;
+      promoIdx = 0;
+      // รอโหลดรูปก่อนค่อยแสดง เพื่อไม่ให้ป๊อปอัปกระพริบ
+      const pre = new Image();
+      pre.onload = pre.onerror = () => setTimeout(openPromo, 1200);
+      pre.src = withVer(promos[0].imageUrl);
+    }
+
+    // ---------------------------------------------------------------------
     // Init
     // ---------------------------------------------------------------------
     switchModel('nordic');
     calculateLoan();
     observeReveals();
+    if (document.readyState === 'complete') loadPromos();
+    else window.addEventListener('load', loadPromos, { once: true });
   })();
   </script>
 </body>
