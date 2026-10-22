@@ -21,9 +21,18 @@ const CFG = {
   DRIVE_FOLDER: 'RichaVille-Promotions',
   TZ: 'Asia/Bangkok',
   TOKEN_TTL: 6 * 60 * 60,      // อายุการล็อกอิน 6 ชั่วโมง
-  PUBLIC_CACHE_SEC: 60,        // แคชรายการโปรสำหรับหน้าเว็บ 60 วินาที
+  PUBLIC_CACHE_SEC: 600,       // แคชรายการโปรสำหรับหน้าเว็บ 10 นาที (บันทึก/ลบโปรในหลังบ้านจะล้างแคชทันที)
   MAX_UPLOAD_MB: 8,
+  // ฐานข้อมูลหลัก: Google Sheet "Aticha-View-db"
+  SPREADSHEET_ID: '1ZEaIqEnt6IChY5ZBFz0v52w1bkjStPK6-kwES1OfqM8',
 };
+
+/** เปิดชีตฐานข้อมูล (ใช้ได้ทั้งสคริปต์ที่ผูกกับชีต และสคริปต์แยก) */
+let _db = null;
+function getDb() {
+  if (_db) return _db;
+  return _db = CFG.SPREADSHEET_ID ? SpreadsheetApp.openById(CFG.SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+}
 
 const LEAD_HEADERS  = ['Timestamp', 'Name', 'Phone', 'Model', 'Source', 'Status', 'Note'];
 const PROMO_HEADERS = ['ID', 'Title', 'Description', 'ImageUrl', 'CtaText', 'CtaLink',
@@ -40,6 +49,7 @@ function setup() {
   getFolder();
 
   const props = PropertiesService.getScriptProperties();
+  // ตั้งรหัสผ่านเริ่มต้น (เปลี่ยนได้ในหน้า admin > ตั้งค่า)
   if (!props.getProperty('ADMIN_PASSWORD')) props.setProperty('ADMIN_PASSWORD', 'richa@2026');
 
   // โปรโมชั่นตัวอย่าง: โบรชัวร์ ธอส. (ใช้รูปในโฟลเดอร์ images/ ของเว็บ)
@@ -214,9 +224,10 @@ function deletePromo(id) {
 function trackPromo(d) {
   const col = d.type === 'click' ? 13 : d.type === 'view' ? 12 : 0;
   if (!col || !d.id) return { result: 'error', message: 'bad track' };
-  const p = readPromos().find(x => x.id === d.id);
-  if (!p) return { result: 'success' }; // เช่น โปรสำรองที่ไม่มีในชีต
-  const cell = ensureSheet(CFG.PROMO_SHEET, PROMO_HEADERS).getRange(p.row, col);
+  const sheet = ensureSheet(CFG.PROMO_SHEET, PROMO_HEADERS);
+  const hit = sheet.getRange('A:A').createTextFinder(String(d.id)).matchEntireCell(true).findNext();
+  if (!hit) return { result: 'success' }; // เช่น โปรสำรองที่ไม่มีในชีต
+  const cell = sheet.getRange(hit.getRow(), col);
   cell.setValue((Number(cell.getValue()) || 0) + 1);
   return { result: 'success' };
 }
@@ -268,9 +279,14 @@ function changePassword(d) {
 /* ========================================================================== */
 /*  HELPERS                                                                   */
 /* ========================================================================== */
+const _sheetMemo = {};
 function ensureSheet(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (_sheetMemo[name]) return _sheetMemo[name];
+  const ss = getDb();
   let sh = ss.getSheetByName(name);
+  // หัวตารางตรวจแล้วเมื่อไม่นาน → ข้ามการอ่านแถวหัว (เร็วขึ้นทุกคำขอ)
+  const okKey = 'hdr_ok_' + name;
+  if (sh && CacheService.getScriptCache().get(okKey)) return (_sheetMemo[name] = sh);
   // รองรับชีตเดิมที่ชื่อ Sheet1 / ชีตแรก สำหรับ Leads เวอร์ชันเก่า
   if (!sh) sh = ss.insertSheet(name);
   const width = headers.length;
@@ -282,15 +298,20 @@ function ensureSheet(name, headers) {
     if (name === CFG.LEADS_SHEET) sh.getRange('A:A').setNumberFormat('dd/MM/yyyy HH:mm:ss');
     if (name === CFG.PROMO_SHEET) sh.getRange('G:H').setNumberFormat('@'); // วันที่เก็บเป็นข้อความ yyyy-MM-dd
   }
-  return sh;
+  CacheService.getScriptCache().put(okKey, '1', 21600);
+  return (_sheetMemo[name] = sh);
 }
 
 function getFolder() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('DRIVE_FOLDER_ID');
   if (id) { try { return DriveApp.getFolderById(id); } catch (_) {} }
-  const it = DriveApp.getFoldersByName(CFG.DRIVE_FOLDER);
-  const folder = it.hasNext() ? it.next() : DriveApp.createFolder(CFG.DRIVE_FOLDER);
+  // สร้างโฟลเดอร์รูปไว้ "ข้างๆ" ไฟล์ชีตฐานข้อมูล (โฟลเดอร์เดียวกัน)
+  const dbFile = DriveApp.getFileById(getDb().getId());
+  const parents = dbFile.getParents();
+  const parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  const it = parent.getFoldersByName(CFG.DRIVE_FOLDER);
+  const folder = it.hasNext() ? it.next() : parent.createFolder(CFG.DRIVE_FOLDER);
   props.setProperty('DRIVE_FOLDER_ID', folder.getId());
   return folder;
 }
