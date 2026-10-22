@@ -482,6 +482,22 @@ body:not(.can-print) #dPrint{display:none!important}
  *  - หน้าดูรูป: ปัดซ้าย/ขวา แตะสองครั้งเพื่อซูม
  * ===================================================================== */
 .mnav,.fbtn,.macct,.mbar{display:none}
+/* r17: แถบเลื่อนช่วงราคา (ลากได้ 2 ฝั่ง) */
+#v-cars .bar>.prange{flex:1 1 280px;max-width:420px;gap:2px;align-self:end}
+.prange .prh{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.prange .prh b{color:var(--red);font-weight:700;font-size:13.5px}
+.prange .prh button{margin-left:auto;background:none;border:0;color:var(--ink-2);font:inherit;font-size:12.5px;text-decoration:underline;cursor:pointer;padding:0}
+.prange .dual{position:relative;height:30px}
+.prange .trk{position:absolute;left:11px;right:11px;top:13px;height:5px;border-radius:3px;background:#DADADA}
+.prange .trk span{position:absolute;top:0;bottom:0;background:var(--red);border-radius:3px}
+.prange input[type=range]{position:absolute;left:0;top:0;width:100%;height:30px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none;border:0;padding:0;min-width:0}
+.prange input[type=range]::-webkit-slider-runnable-track{background:none;height:30px}
+.prange input[type=range]::-moz-range-track{background:none}
+.prange input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:22px;height:22px;margin-top:4px;border-radius:50%;background:#FFFFFF;border:3px solid var(--red);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:grab}
+.prange input[type=range]::-moz-range-thumb{pointer-events:auto;width:16px;height:16px;border-radius:50%;background:#FFFFFF;border:3px solid var(--red);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:grab}
+.prange input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(215,0,15,.25)}
+.prange .prl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3);font-weight:500}
+select optgroup{font-weight:700;color:var(--ink-2)}
 /* r16: header คอมพิวเตอร์ไม่ให้ล้นเมื่อมีปุ่มผู้ใช้ */
 .mark{min-width:0;flex:0 1 auto}.mark b{flex:none}.mark span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 nav.tabs{flex:none}nav.tabs button{white-space:nowrap}
@@ -533,7 +549,12 @@ nav.tabs{flex:none}nav.tabs button{white-space:nowrap}
   .fbtn b:empty{display:none}
   #v-cars .bar>label:not(.grow){display:none;flex:1 1 calc(50% - 4px);min-width:0}
   #v-cars .bar.open>label:not(.grow){display:grid}
-  #v-cars .bar>div{flex:1 1 100%;font-size:0!important;gap:0!important}
+  #v-cars .bar>div:not(.prange){flex:1 1 100%;font-size:0!important;gap:0!important}
+  #v-cars .bar:not(.open)>.prange{display:none}
+  #v-cars .bar>.prange{flex:1 1 100%;max-width:none;padding:2px 4px 0}
+  .prange .dual,.prange input[type=range],.prange input[type=range]::-webkit-slider-runnable-track{height:36px}
+  .prange .trk{top:16px}
+  .prange input[type=range]::-webkit-slider-thumb{width:28px;height:28px;margin-top:4px}
   #v-cars .bar select,#v-cars .bar input{min-width:0}
   #v-cars .bar .seg{height:38px}
   #v-cars .bar .seg label{padding:0 12px;font-size:13px}
@@ -654,6 +675,13 @@ nav.tabs{flex:none}nav.tabs button{white-space:nowrap}
       <label>ปีรถ<select id="fYear"></select></label>
       <label>ชื่อสถานที่<select id="fBranch"></select></label>
       <label>สภาพรถ<select id="fCond"></select></label>
+      <div class="prange" id="prBox">
+        <span class="prh">ช่วงราคา <b id="prTxt">ทุกราคา</b><button type="button" id="prClr" hidden>ล้าง</button></span>
+        <div class="dual"><div class="trk"><span id="prFill"></span></div>
+          <input type="range" id="prMin" aria-label="ราคาต่ำสุด" step="10000">
+          <input type="range" id="prMax" aria-label="ราคาสูงสุด" step="10000"></div>
+        <span class="prl"><span id="prLo"></span><span id="prHi"></span></span>
+      </div>
       <div style="display:grid;gap:6px;font-size:12.5px;color:var(--ink-2);font-weight:500">แสดง
         <div class="seg" id="fStatus">
           <label><input type="radio" name="st" value="stock" checked>ในสต็อก</label>
@@ -951,12 +979,49 @@ function condOf(c){ return c.cond||NOCOND; }
 function fillFilters(){
   opts($("#fType"),"ทุกประเภท",CAR_TYPES.filter(function(t){return CARS.some(function(c){return c.type===t})}));
   opts($("#fKind"),"ทั้งมือสอง และ สาธิต",KEEP_KINDS.filter(function(k){return CARS.some(function(c){return c.kind===k})}));
-  opts($("#fModel"),"ทุกรุ่น",uniq(CARS.map(function(c){return c.series})).sort());
+  fillModels(); setupPrice(true);
   var ys=uniq(CARS.map(function(c){return c.year})).sort().reverse(), fy=$("#fYear"), keepY=fy.value;
   fy.innerHTML='<option value="">ทุกปี</option>'+ys.map(function(y){return'<option value="'+esc(y)+'">'+esc(yearTxt(y))+'</option>'}).join("")+(CARS.some(function(c){return !c.year})?'<option>'+NOYEAR+'</option>':'');
   fy.value=keepY;
   opts($("#fBranch"),"ทุกสถานที่",uniq(CARS.map(function(c){return c.branch})).sort(brCmp));
   opts($("#fCond"),"ทุกสภาพ",uniq(CARS.map(condOf)).sort(function(a,b){ if(a===NOCOND)return 1; if(b===NOCOND)return-1; return a.localeCompare(b,"th"); }));
+}
+/* r17: รุ่น กรองตามประเภทรถที่เลือก และเรียงรุ่นยันม่าร์ขึ้นก่อน (EF → Solis → YM → ยันม่าร์อื่น → ยี่ห้ออื่น) */
+var YANMAR_ORDER=[/^EF/i,/^SOLIS/i,/^YM/i];
+var YANMAR_OTHER=/^(YT|YH|AW|AG|CA|CE|VIO|SV|YB|YC|YR|YSR|YSG|YRB|YP|YK|YN|YANMAR)/i; // รุ่นยันม่าร์อื่นๆ (เกี่ยวข้าว AW/YH, รถขุด ViO/SV ฯลฯ)
+function modelRank(m){ m=String(m||"").trim(); for(var i=0;i<YANMAR_ORDER.length;i++) if(YANMAR_ORDER[i].test(m)) return i; return YANMAR_OTHER.test(m)?3:9; }
+function modelCmp(a,b){ return modelRank(a)-modelRank(b)||String(a).localeCompare(String(b),"en",{numeric:true,sensitivity:"base"}); }
+function fillModels(){
+  var sel=$("#fModel"), keep=sel.value, ty=$("#fType").value;
+  var ms=uniq(CARS.filter(function(c){return !ty||c.type===ty}).map(function(c){return c.series})).sort(modelCmp);
+  var yan=ms.filter(function(m){return modelRank(m)<9}), oth=ms.filter(function(m){return modelRank(m)>=9});
+  function o(v){ return '<option>'+esc(v)+'</option>'; }
+  sel.innerHTML='<option value="">'+(ty?"ทุกรุ่น ("+esc(ty)+")":"ทุกรุ่น")+'</option>'+
+    (yan.length&&oth.length?'<optgroup label="ยันม่าร์ (Yanmar)">'+yan.map(o).join("")+'</optgroup><optgroup label="รุ่นอื่นๆ">'+oth.map(o).join("")+'</optgroup>':ms.map(o).join(""));
+  sel.value=ms.indexOf(keep)>=0?keep:"";
+}
+/* r17: ช่วงราคา (แถบลาก 2 ฝั่ง) ขอบเขตคำนวณจากรถประเภทที่เลือก ปัดเป็นหลักหมื่น
+ * ลากแล้ว = ซ่อนรถที่ยังไม่มีราคา  ลากกลับสุดทั้งสองฝั่ง = ทุกราคา */
+var PR={lo:0,hi:0,on:false}, PRSTEP=10000;
+function setupPrice(keep){
+  var ty=$("#fType").value, ps=CARS.filter(function(c){return (!ty||c.type===ty)&&priceOf(c)>0}).map(priceOf);
+  var lo=ps.length?Math.floor(Math.min.apply(null,ps)/PRSTEP)*PRSTEP:0, hi=ps.length?Math.ceil(Math.max.apply(null,ps)/PRSTEP)*PRSTEP:0;
+  if(hi<=lo) hi=lo+PRSTEP;
+  var a=$("#prMin"), b=$("#prMax"), va=+a.value, vb=+b.value, was=PR.on;
+  [a,b].forEach(function(x){ x.min=lo; x.max=hi; x.step=PRSTEP; });
+  if(keep&&was){ a.value=Math.max(lo,Math.min(va,hi)); b.value=Math.min(hi,Math.max(vb,lo)); } else { a.value=lo; b.value=hi; }
+  $("#prBox").hidden=!ps.length;
+  paintPrice2();
+}
+function shortMoney(v){ return v>=1e6?"฿"+(v/1e6).toLocaleString("th-TH",{maximumFractionDigits:2})+" ล้าน":"฿"+Math.round(v).toLocaleString("th-TH"); }
+function paintPrice2(){
+  var a=$("#prMin"), b=$("#prMax"), lo=+a.min, hi=+a.max, va=+a.value, vb=+b.value;
+  PR={lo:va,hi:vb,on:va>lo||vb<hi};
+  var w=hi-lo||1; $("#prFill").style.left=((va-lo)/w*100)+"%"; $("#prFill").style.right=((hi-vb)/w*100)+"%";
+  $("#prTxt").textContent=PR.on?shortMoney(va)+" – "+shortMoney(vb):"ทุกราคา";
+  $("#prLo").textContent=shortMoney(lo); $("#prHi").textContent=shortMoney(hi);
+  $("#prClr").hidden=!PR.on;
+  if(window.fCountPaint) fCountPaint();
 }
 function money(v){ var n=parseFloat(v); return isNaN(n)||!n?"":"฿"+n.toLocaleString("th-TH"); }
 function hrs(v){ var n=parseFloat(v); return isNaN(n)?"":n.toLocaleString("th-TH")+" ชม."; }
@@ -975,7 +1040,9 @@ function pctOf(a,b){ return b?Math.round(a*100/b):0; }
 
 function drill(o){
   $("#q").value="";
-  ["fType","fKind","fModel","fYear","fBranch","fCond"].forEach(function(id){ $("#"+id).value=o[id]||""; });
+  $("#fType").value=o.fType||""; fillModels(); setupPrice(false); // r17: เติมรุ่นตามประเภทก่อน แล้วค่อยเลือกรุ่น
+  ["fKind","fModel","fYear","fBranch","fCond"].forEach(function(id){ $("#"+id).value=o[id]||""; });
+  if(window.fCountPaint) fCountPaint();
   var r=$('input[name=st][value="'+(o.st||"stock")+'"]'); if(r) r.checked=true;
   go("cars");
 }
@@ -1080,6 +1147,7 @@ function filtered(){
     if(st==="nophoto"&&(c.status!=="stock"||PCOUNT[c.key]))return false;
     if(st==="noprice"&&(c.status!=="stock"||priceOf(c)))return false;
     if(ty&&c.type!==ty)return false; if(kd&&c.kind!==kd)return false; if(m&&c.series!==m)return false; if(yr&&yearKey(c)!==yr)return false; if(br&&c.branch!==br)return false; if(cd&&condOf(c)!==cd)return false;
+    if(PR.on){ var pv=priceOf(c); if(!pv||pv<PR.lo||pv>PR.hi)return false; } // r17: ช่วงราคา
     if(q&&c.nk.indexOf(q)<0)return false;
     return true;
   });
@@ -1094,7 +1162,7 @@ function cardHtml(c){
 function renderCards(reset){
   if(reset){ list=filtered(); shown=0; $("#cards").innerHTML=""; }
   var st=stVal(), noPhoto=list.filter(function(c){return c.status==="stock"&&!PCOUNT[c.key]}).length;
-  $("#summary").textContent=list.length.toLocaleString("th-TH")+" คัน"+(st!=="all"?"":" (รวมที่ไม่อยู่ในสต็อก "+list.filter(function(c){return c.status!=="stock"}).length.toLocaleString("th-TH")+" คัน)")+(st!=="nophoto"&&noPhoto?" · ในสต็อกที่ยังไม่มีรูป "+noPhoto.toLocaleString("th-TH")+" คัน":"");
+  $("#summary").textContent=list.length.toLocaleString("th-TH")+" คัน"+(PR.on?" · ราคา "+$("#prTxt").textContent:"")+(st!=="all"?"":" (รวมที่ไม่อยู่ในสต็อก "+list.filter(function(c){return c.status!=="stock"}).length.toLocaleString("th-TH")+" คัน)")+(st!=="nophoto"&&noPhoto?" · ในสต็อกที่ยังไม่มีรูป "+noPhoto.toLocaleString("th-TH")+" คัน":"");
   if(!list.length){ $("#cards").innerHTML='<div class="empty">ไม่มีรถตามเงื่อนไขนี้ ลองล้างตัวกรอง หรือเลือก ทั้งหมด เพื่อรวมรถที่ไม่อยู่ในสต็อกแล้ว</div>'; $("#moreBtn").hidden=true; return; }
   var next=list.slice(shown,shown+PER); shown+=next.length;
   $("#cards").insertAdjacentHTML("beforeend",next.map(cardHtml).join(""));
@@ -1107,7 +1175,17 @@ function loadCovers(keys){
   api("getCovers",keys).then(function(m){ Object.keys(m).forEach(function(k){ COVER[k]=m[k]; paintCard(k); }); }).catch(function(){});
 }
 var qT; $("#q").addEventListener("input",function(){ clearTimeout(qT); qT=setTimeout(function(){renderCards(true)},180); });
+$("#fType").addEventListener("change",function(){ fillModels(); setupPrice(false); }); // r17: เปลี่ยนประเภท → รุ่นและช่วงราคาเปลี่ยนตาม (ต้องอยู่ก่อน renderCards)
 ["#fType","#fKind","#fModel","#fYear","#fBranch","#fCond"].forEach(function(s){ $(s).addEventListener("change",function(){renderCards(true)}); });
+/* r17: ลากแถบราคา: ฝั่งซ้ายห้ามเกินฝั่งขวา, กรองใหม่ทันทีที่ลาก (หน่วงนิดหน่อยให้ลื่น) */
+var prT;
+["#prMin","#prMax"].forEach(function(id){ $(id).addEventListener("input",function(){
+  var a=$("#prMin"), b=$("#prMax");
+  if(+a.value>+b.value){ if(this===a) a.value=b.value; else b.value=a.value; }
+  a.style.zIndex=(+a.value>=+a.max-PRSTEP)?3:""; // ฝั่งซ้ายลากไปสุดขวาแล้ว ยังจับได้
+  paintPrice2(); clearTimeout(prT); prT=setTimeout(function(){ renderCards(true); },120);
+}); });
+$("#prClr").onclick=function(){ $("#prMin").value=$("#prMin").min; $("#prMax").value=$("#prMax").max; paintPrice2(); renderCards(true); };
 $$('input[name=st]').forEach(function(r){ r.addEventListener("change",function(){renderCards(true)}); });
 $("#moreBtn").onclick=function(){renderCards(false)};
 $("#cards").addEventListener("click",function(e){ var b=e.target.closest(".card"); if(b)openCar(b.dataset.k); });
@@ -1456,7 +1534,8 @@ function closeAcct(){ var a=$("#mAcct"); if(a){ a.classList.remove("on"); $("#mA
   new MutationObserver(function(){ $("#mTitle").textContent=VIEW_TITLE[document.body.dataset.view]||""; }).observe(document.body,{attributes:true,attributeFilter:["data-view"]});
   /* ตัวกรอง พับ/กาง + นับตัวกรองที่เลือก */
   var FS=["#fType","#fKind","#fModel","#fYear","#fBranch","#fCond"];
-  function fCount(){ var n=FS.filter(function(s){return $(s).value}).length; $("#fCount").textContent=n?String(n):""; }
+  function fCount(){ var n=FS.filter(function(s){return $(s).value}).length+(PR.on?1:0); $("#fCount").textContent=n?String(n):""; }
+  window.fCountPaint=fCount;
   $("#fBtn").onclick=function(){ var bar=this.closest(".bar"), o=bar.classList.toggle("open"); this.setAttribute("aria-expanded",o?"true":"false"); };
   FS.forEach(function(s){ $(s).addEventListener("change",fCount); });
   $("#q").addEventListener("keydown",function(e){ if(e.key==="Enter") this.blur(); }); // ปิดคีย์บอร์ดเมื่อกดค้นหา
