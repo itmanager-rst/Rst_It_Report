@@ -1,6 +1,16 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r14-2026-10-17-price-fill
+ * CODE_VERSION: r15-2026-10-22-crm-login
+ *
+ * r15: ผู้บริหารให้เปิดลิงก์ให้สาขาใช้งาน
+ *      - ต้องล็อกอินก่อนใช้ ด้วย user / password เดียวกับ CRM-TRACKER Pro (เซลล์ร้านก็ใช้รหัส CRM ของตัวเอง)
+ *        เซิร์ฟเวอร์นี้ส่ง user/pass ไปตรวจที่ CRM (Script Property "CRM_LOGIN_URL" = ลิงก์ /exec ของ CRM)
+ *        ไม่เก็บรหัสผ่านไว้ที่แอปนี้ ผ่านแล้วออก token อายุ 12 ชม. (ลงลายเซ็น HMAC, Script Property "SESSION_SECRET")
+ *      - 1 user ใช้พร้อมกันหลายเครื่องได้ (user กลางของสาขา) ไม่เตะเครื่องอื่นออก
+ *      - role admin ใน CRM ไม่ต้องใส่ PIN ทีม  role อื่นยังใช้ PIN ทีมเมื่อแก้ข้อมูล (อัปโหลด/ลบรูป นำเข้าไฟล์ ฯลฯ) เหมือนเดิม
+ *      - ล็อกอินผิด 8 ครั้งใน 15 นาที → ล็อก user นั้น 15 นาที
+ *      - ชีต AccessLog บันทึก ล็อกอิน / ล็อกอินไม่ผ่าน / กด PrintScreen / บันทึกรูปทั้งคัน (หน้าเว็บส่ง logEvent มา)
+ *      - ทดสอบการเชื่อม CRM: รัน testCrmLogin() ใน editor (แก้ user/pass ในฟังก์ชันก่อน) ดู Logger
  *
  * r14: ราคาขายครบขึ้น
  *      - อ่านราคาทนรูปแบบ: ฿ / บาท / ช่องว่าง / วงเล็บ ฯลฯ (เดิม "฿1,200,000" กลายเป็นว่าง)
@@ -55,13 +65,14 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r14-2026-10-17-price-fill';
+var CODE_VERSION = 'r15-2026-10-22-crm-login';
 
-var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog' };
+var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
   Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt', 'reg', 'priceDate', 'priceM', 'priceBy', 'priceAt'],
   Photos: ['photoId', 'key', 'fileId', 'thumbId', 'label', 'cover', 'uploadedAt', 'uploadedBy'],
-  ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format']
+  ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format'],
+  AccessLog: ['at', 'user', 'name', 'branch', 'role', 'event', 'detail']
 };
 var PHOTO_FOLDER_NAME = 'RST Tractor Photos';
 
@@ -73,25 +84,33 @@ function doGet(e) {
   }
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('RST รูปรถและทรัพย์สิน มือสอง · รถสาธิต')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // r15: ฝังในหน้า SharePoint (Embed web part) ได้ ทุกคนยังต้องล็อกอิน
 }
 
 /* ================= API gateway =================
  * ทุกคำสั่งจากหน้าเว็บผ่าน call() ที่เดียว
- *   - เปิดจากลิงก์ Web App: google.script.run.call(fn, args, pin)
- *   - เปิดจาก Live Server:  POST ไปที่ /exec เป็น text/plain {"fn","args","pin"} (เข้า doPost)
- * คำสั่งที่แก้ข้อมูล (WRITE) ต้องมี PIN ทีม ตรงกับ Script Property "TEAM_PIN"
+ *   - เปิดจากลิงก์ Web App: google.script.run.call(fn, args, pin, tok)
+ *   - เปิดจาก Live Server:  POST ไปที่ /exec เป็น text/plain {"fn","args","pin","tok"} (เข้า doPost)
+ * r15: ทุกคำสั่ง (ยกเว้น login) ต้องมี token จากการล็อกอิน ผิด/หมดอายุ → error ขึ้นต้น "AUTH:" หน้าเว็บจะเด้งกลับหน้าล็อกอิน
+ * คำสั่งที่แก้ข้อมูล (WRITE) ต้องมี PIN ทีม ตรงกับ Script Property "TEAM_PIN" (ยกเว้น role admin)
  */
 var API = {
+  login: login, logEvent: logEvent,
   getBoot: getBoot, getPhotos: getPhotos, getCovers: getCovers, getPhotoFull: getPhotoFull,
   importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto,
   getLegacy: getLegacy, setYear: setYear, setPrice: setPrice
 };
+var PUBLIC = { login: 1 }; // ไม่ต้องล็อกอิน
 var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1, setYear: 1, setPrice: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
+var SESSION_ = null; // ผู้ใช้ของคำขอนี้ {u, n, b, r}
 
-function call(fn, args, pin) {
+function call(fn, args, pin, tok) {
   if (!Object.prototype.hasOwnProperty.call(API, fn)) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
-  if (WRITE[fn]) checkPin_(pin);
+  if (!PUBLIC[fn]) {
+    SESSION_ = verifyToken_(tok);
+    if (WRITE[fn] && SESSION_.r !== 'admin') checkPin_(pin);
+  }
   return API[fn].apply(null, args || []);
 }
 function checkPin_(pin) {
@@ -103,7 +122,7 @@ function doPost(e) {
   var out;
   try {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    out = { ok: true, result: call(req.fn, req.args, req.pin) };
+    out = { ok: true, result: call(req.fn, req.args, req.pin, req.tok) };
   } catch (err) {
     out = { ok: false, error: String(err && err.message || err) };
   }
@@ -121,7 +140,9 @@ function setup() {
   folder_();
   var props = PropertiesService.getScriptProperties(), pin = props.getProperty('TEAM_PIN');
   if (!pin) { pin = String(Math.floor(100000 + Math.random() * 900000)); props.setProperty('TEAM_PIN', pin); }
-  var msg = 'setup done ' + CODE_VERSION + ' | TEAM_PIN = ' + pin + ' (เปลี่ยนได้ที่ Project Settings > Script Properties)';
+  secret_();
+  var msg = 'setup done ' + CODE_VERSION + ' | TEAM_PIN = ' + pin + ' (เปลี่ยนได้ที่ Project Settings > Script Properties)' +
+    (props.getProperty('CRM_LOGIN_URL') ? '' : ' | ยังไม่ได้ตั้ง CRM_LOGIN_URL: ใส่ลิงก์ /exec ของ CRM-TRACKER Pro ใน Script Properties');
   Logger.log(msg);
   return msg;
 }
@@ -182,7 +203,105 @@ function withLock_(fn) {
 function who_(by) {
   var email = '';
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
-  return String(by || '').trim() || email || 'ไม่ระบุ';
+  var me = SESSION_ ? (SESSION_.n || SESSION_.u) : '';
+  var b = String(by || '').trim();
+  // r15: ต่อท้ายด้วย user ที่ล็อกอิน ถ้าชื่อที่พิมพ์ไม่ใช่ชื่อเดียวกัน (user กลางสาขาหลายคนใช้ร่วมกัน)
+  if (b && SESSION_ && b !== me && b !== SESSION_.u) return b + ' (' + SESSION_.u + ')';
+  return b || me || email || 'ไม่ระบุ';
+}
+
+/* ================= r15: ล็อกอินด้วยบัญชี CRM ================= */
+var TOKEN_HOURS = 12;
+function secret_() {
+  var p = PropertiesService.getScriptProperties(), s = p.getProperty('SESSION_SECRET');
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); p.setProperty('SESSION_SECRET', s); }
+  return s;
+}
+function b64_(s) { return Utilities.base64EncodeWebSafe(s, Utilities.Charset.UTF_8).replace(/=+$/, ''); }
+function sign_(body) { return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, secret_())).replace(/=+$/, ''); }
+function makeToken_(o) {
+  o.exp = Date.now() + TOKEN_HOURS * 3600e3;
+  var body = b64_(JSON.stringify(o));
+  return body + '.' + sign_(body);
+}
+function verifyToken_(tok) {
+  var t = String(tok || ''), i = t.lastIndexOf('.');
+  if (i < 1) throw new Error('AUTH: กรุณาเข้าสู่ระบบ');
+  var body = t.slice(0, i);
+  if (sign_(body) !== t.slice(i + 1)) throw new Error('AUTH: กรุณาเข้าสู่ระบบใหม่');
+  var o;
+  try { o = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(body)).getDataAsString('UTF-8')); } catch (e) { throw new Error('AUTH: กรุณาเข้าสู่ระบบใหม่'); }
+  if (!o || !o.exp || o.exp < Date.now()) throw new Error('AUTH: หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+  var blocked = PropertiesService.getScriptProperties().getProperty('BLOCKED_USERS') || ''; // ปิดสิทธิ์ทันที: ใส่ user คั่นด้วย ,
+  if (blocked && blocked.toLowerCase().split(/\s*,\s*/).indexOf(String(o.u).toLowerCase()) >= 0) throw new Error('AUTH: บัญชีนี้ถูกปิดการใช้งาน');
+  return o;
+}
+/** หา key แรกที่มีค่าใน obj (รองรับคำตอบ CRM หลายรูปแบบ: {role} / {user:{role}} / {data:{role}}) */
+function pick_(o, keys) {
+  var srcs = [o, o && o.user, o && o.data, o && o.data && o.data.user, o && o.result, o && o.profile];
+  for (var s = 0; s < srcs.length; s++) {
+    var x = srcs[s]; if (!x || typeof x !== 'object') continue;
+    for (var k = 0; k < keys.length; k++) if (x[keys[k]] != null && String(x[keys[k]]).trim() !== '' && typeof x[keys[k]] !== 'object') return String(x[keys[k]]).trim();
+  }
+  return '';
+}
+/** ส่ง user/pass ไปตรวจที่ CRM-TRACKER Pro คืน JSON ที่ CRM ตอบ */
+function crmLogin_(user, pass) {
+  var url = PropertiesService.getScriptProperties().getProperty('CRM_LOGIN_URL');
+  if (!url) throw new Error('ยังไม่ได้ตั้ง CRM_LOGIN_URL ใน Script Properties (ลิงก์ /exec ของ CRM-TRACKER Pro)');
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post', contentType: 'text/plain;charset=utf-8', muteHttpExceptions: true, followRedirects: true,
+    // ส่งชื่อช่องหลายแบบ ให้ตรงกับ action login ของ CRM ไม่ว่าจะใช้ username/user/email
+    payload: JSON.stringify({ action: 'login', username: user, user: user, email: user, password: pass, pass: pass })
+  });
+  var txt = res.getContentText();
+  try { return JSON.parse(txt); } catch (e) { throw new Error('เชื่อมต่อระบบ CRM ไม่ได้ (CRM ตอบกลับไม่ใช่ JSON) แจ้งผู้ดูแลระบบ'); }
+}
+function crmOk_(j) {
+  if (!j || typeof j !== 'object') return false;
+  if (j.success === false || j.ok === false || j.error) return false;
+  var st = String(j.status || j.result || '').toLowerCase();
+  return j.success === true || j.ok === true || st === 'ok' || st === 'success' || !!pick_(j, ['token']);
+}
+function login(user, pass) {
+  user = String(user || '').trim(); pass = String(pass || '');
+  if (!user || !pass) throw new Error('ใส่ชื่อผู้ใช้และรหัสผ่าน');
+  var cache = CacheService.getScriptCache(), ck = 'lf_' + user.toLowerCase(), fails = +(cache.get(ck) || 0);
+  if (fails >= 8) throw new Error('ใส่รหัสผิดหลายครั้ง บัญชีนี้ถูกพักไว้ 15 นาที');
+  var j = crmLogin_(user, pass);
+  if (!crmOk_(j)) {
+    cache.put(ck, String(fails + 1), 900);
+    accessLog_({ u: user }, 'login_fail', String(j && (j.message || j.error) || '').slice(0, 200));
+    throw new Error(String(j && (j.message || j.error) || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'));
+  }
+  cache.remove(ck);
+  var s = {
+    u: pick_(j, ['username', 'user', 'email', 'userId']) || user,
+    n: pick_(j, ['name', 'fullName', 'fullname', 'displayName', 'nickname']) || user,
+    b: pick_(j, ['branch', 'branchName', 'สาขา', 'shop', 'store']),
+    r: (pick_(j, ['role', 'Role', 'userRole']) || 'sale').toLowerCase()
+  };
+  accessLog_(s, 'login', '');
+  return { token: makeToken_(s), user: s.u, name: s.n, branch: s.b, role: s.r, hours: TOKEN_HOURS };
+}
+/** หน้าเว็บแจ้งเหตุการณ์ (capture = กด PrintScreen, savecar = บันทึก/แชร์รูปทั้งคัน, print = สั่งพิมพ์) */
+function logEvent(ev, detail) {
+  var ok = { capture: 1, savecar: 1, print: 1, logout: 1 };
+  if (!ok[ev]) return { ok: false };
+  accessLog_(SESSION_, ev, String(detail || '').slice(0, 300));
+  return { ok: true };
+}
+function accessLog_(s, ev, detail) {
+  try {
+    s = s || {};
+    appendRows_(sheet_(SH.ACCESS), [toRow_(SH.ACCESS, { at: new Date().toISOString(), user: s.u, name: s.n, branch: s.b, role: s.r, event: ev, detail: detail })]);
+  } catch (e) { }
+}
+/** รันใน editor เพื่อตรวจว่า CRM_LOGIN_URL ใช้ได้ และดูรูปแบบคำตอบของ CRM (แก้ user/pass ก่อนรัน อย่าบันทึกรหัสจริงทิ้งไว้) */
+function testCrmLogin() {
+  var j = crmLogin_('USER_HERE', 'PASS_HERE');
+  Logger.log(JSON.stringify(j));
+  Logger.log('ผ่าน = ' + crmOk_(j) + ' | name=' + pick_(j, ['name', 'fullName', 'displayName']) + ' | role=' + pick_(j, ['role']) + ' | branch=' + pick_(j, ['branch', 'branchName', 'สาขา']));
 }
 
 /* ================= tractor derivation ================= */
@@ -369,7 +488,7 @@ function getBoot() {
     if (!c.year && y) { c.year = y; c.yearSrc = 'legacy'; } // r11: ปีจากระบบเก่า (ยังไม่ได้บันทึกลงชีต)
     applyPrice_(c, lc.p[lk]);
   });
-  return { version: CODE_VERSION, email: email, tractors: cars, photos: photos, legacy: legacy, lastImport: logs.length ? logs[logs.length - 1] : null };
+  return { version: CODE_VERSION, email: email, me: SESSION_, tractors: cars, photos: photos, legacy: legacy, lastImport: logs.length ? logs[logs.length - 1] : null };
 }
 
 /**
