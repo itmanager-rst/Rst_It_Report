@@ -7,8 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <!-- (r44) defer: ไลบรารี Excel (~900KB) ไม่บล็อกการแสดงหน้าเว็บ/หน้า Login อีกต่อไป (ใช้ตอนกดนำเข้า/ส่งออกเท่านั้น) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+    <!-- (r58) ไลบรารี Excel (~900KB) ไม่โหลดตอนเปิดหน้าแล้ว — โหลดเฉพาะตอนกดนำเข้า/ส่งออก (ดู ensureXlsx_) -->
     <link rel="preconnect" href="https://script.google.com">
     <link rel="preconnect" href="https://script.googleusercontent.com">
     <!-- (2026-09-25) Chart.js สำหรับกราฟ Dashboard หน้า "รายงาน" — ใช้ defer ให้ไม่บล็อกการเปิดหน้าเว็บ (ดู renderStaffDashboardCharts) -->
@@ -17,6 +16,22 @@
         // (r47) ข้อมูลจังหวัด/อำเภอ/ตำบล ไม่ฝังในไฟล์นี้แล้ว — ดึงสดจาก GitHub: CRM-TRACKER/thailand-geo.js
         // แก้ข้อมูลที่อยู่ได้ที่ไฟล์นั้นไฟล์เดียว ทุกหน้าที่เปิดใหม่จะได้ข้อมูลล่าสุดทันที (ดู loadThailandGeoData_)
         var THAILAND_GEO_DATA = [];
+        // (r58) โหลดไลบรารี Excel ตอนต้องใช้ครั้งแรกเท่านั้น (นำเข้า Excel / Export) — เปิดหน้าเว็บ/มือถือเร็วขึ้น ~900KB
+        var XLSX_LIB_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        var xlsxLoadPromise_ = null;
+        function ensureXlsx_() {
+            if (typeof XLSX !== 'undefined') return Promise.resolve(XLSX);
+            if (xlsxLoadPromise_) return xlsxLoadPromise_;
+            xlsxLoadPromise_ = new Promise(function (resolve, reject) {
+                var sc = document.createElement('script');
+                sc.src = XLSX_LIB_URL;
+                sc.async = true;
+                sc.onload = function () { typeof XLSX !== 'undefined' ? resolve(XLSX) : reject(new Error('XLSX not defined')); };
+                sc.onerror = function () { xlsxLoadPromise_ = null; reject(new Error('โหลดไลบรารี Excel ไม่สำเร็จ')); };
+                document.head.appendChild(sc);
+            });
+            return xlsxLoadPromise_;
+        }
     </script>
     <style>
         :root {
@@ -1364,7 +1379,10 @@
             <div class="modal-body">
                 <div class="timeline-cust-info" id="history-customer-info"></div>
                 <!-- (r55) ทางลัดไปฟอร์มแก้ไข — เติมที่อยู่ / รายได้ / ข้อมูลที่ยังไม่ครบ -->
-                <button type="button" class="btn btn-secondary" id="btn-history-edit-customer" style="width:100%; justify-content:center; margin:6px 0 4px;" onclick="editCustomerFromHistoryModal()">✏️ แก้ไขข้อมูลลูกค้า / เติมที่อยู่ / รายได้</button>
+                <div class="history-quick-actions">
+                    <button type="button" class="btn btn-secondary" id="btn-history-edit-customer" onclick="editCustomerFromHistoryModal()">✏️ แก้ไขข้อมูล / เติมที่อยู่</button>
+                    <button type="button" class="btn btn-secondary" id="btn-history-print-form" onclick="printFollowupFormFromHistoryModal()">🖨️ พิมพ์ใบติดตาม</button>
+                </div>
                 <div class="modal-section-title">📜 ไทม์ไลน์การติดตาม (ล่าสุดขึ้นก่อน)</div>
                 <div class="timeline-list" id="history-timeline-list"></div>
                 <div class="modal-section-title">➕ เพิ่มบันทึกการติดตามรอบใหม่</div>
@@ -4156,17 +4174,46 @@
         const THAILAND_GEO_URL = 'https://raw.githubusercontent.com/itmanager-rst/Rst_It_Report/main/CRM-TRACKER/thailand-geo.js';
         let thailandGeoDataLoadFailed = false;
         let thailandGeoDataPromise = null;
+        // (r58) จำข้อมูลไว้ในเครื่อง (localStorage) — เปิดครั้งถัดไปใช้ของในเครื่องทันที แล้วค่อยเช็คของใหม่จาก GitHub เบื้องหลัง
+        const THAILAND_GEO_CACHE_KEY = 'crm_thailand_geo_cache_v1';
+        function applyThailandGeoText_(txt) {
+            const body = String(txt || '').replace(/^[\s\S]*?=\s*/, '').replace(/;\s*$/, '');
+            const data = JSON.parse(body);
+            if (!Array.isArray(data) || !data.length) throw new Error('ข้อมูลว่าง');
+            THAILAND_GEO_DATA.length = 0;
+            Array.prototype.push.apply(THAILAND_GEO_DATA, data);
+            thailandGeoDataLoadFailed = false;
+            return true;
+        }
+        function fetchThailandGeoText_() {
+            return nativeFetch(THAILAND_GEO_URL, { cache: 'no-cache' })
+                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+        }
         function loadThailandGeoData_() {
             if (thailandGeoDataPromise) return thailandGeoDataPromise;
-            thailandGeoDataPromise = nativeFetch(THAILAND_GEO_URL, { cache: 'no-cache' })
-                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+            let cachedTxt = null;
+            try { cachedTxt = localStorage.getItem(THAILAND_GEO_CACHE_KEY); } catch (e) {}
+            if (cachedTxt) {
+                let ok = false;
+                try { ok = applyThailandGeoText_(cachedTxt); } catch (e) { ok = false; }
+                if (ok) {
+                    thailandGeoDataPromise = Promise.resolve(true);
+                    // เช็คของใหม่เบื้องหลัง — ถ้าไฟล์บน GitHub เปลี่ยน ใช้ของใหม่ + จำไว้ (ไม่ต้องรอ/ไม่แจ้งเตือนถ้าเน็ตหลุด)
+                    setTimeout(() => {
+                        fetchThailandGeoText_().then(txt => {
+                            if (txt === cachedTxt) return;
+                            applyThailandGeoText_(txt);
+                            try { localStorage.setItem(THAILAND_GEO_CACHE_KEY, txt); } catch (e) {}
+                            if (typeof refreshGeoSelectsAfterLoad_ === 'function') refreshGeoSelectsAfterLoad_();
+                        }).catch(err => console.warn('เช็คข้อมูลจังหวัดใหม่ไม่สำเร็จ (ใช้ข้อมูลในเครื่อง)', err));
+                    }, 4000);
+                    return thailandGeoDataPromise;
+                }
+            }
+            thailandGeoDataPromise = fetchThailandGeoText_()
                 .then(txt => {
-                    const body = txt.replace(/^[\s\S]*?=\s*/, '').replace(/;\s*$/, '');
-                    const data = JSON.parse(body);
-                    if (!Array.isArray(data) || !data.length) throw new Error('ข้อมูลว่าง');
-                    THAILAND_GEO_DATA.length = 0;
-                    Array.prototype.push.apply(THAILAND_GEO_DATA, data);
-                    thailandGeoDataLoadFailed = false;
+                    applyThailandGeoText_(txt);
+                    try { localStorage.setItem(THAILAND_GEO_CACHE_KEY, txt); } catch (e) {}
                     return true;
                 })
                 .catch(err => {
@@ -4405,6 +4452,14 @@
             if (!row) { alert('ไม่พบข้อมูลลูกค้ารายนี้'); return; }
             closeHistoryModal();
             editCustomerRow_(row);
+        }
+        // (r57) พิมพ์ใบติดตามจากหน้าต่างประวัติ — ใช้ได้ทุกที่ที่เปิดหน้าต่างนี้ (ตาราง / ปฏิทิน / รายงาน / มือถือ)
+        // ใช้ประวัติการติดตามล่าสุดในหน้าต่าง (รวมรอบที่เพิ่งบันทึก)
+        function printFollowupFormFromHistoryModal() {
+            const sourceArray = historyModalSource === 'stale' ? staleLeadsData : currentRenderedData;
+            const row = sourceArray[historyModalRowIdx];
+            if (!row) { alert('ไม่พบข้อมูลลูกค้ารายนี้'); return; }
+            renderPrintForm(Object.assign({}, row, { followUpLog: historyModalEntries.slice() }));
         }
         function editCustomerRow_(row) {
             if (!row) { alert('ไม่พบข้อมูลแถวนี้'); return; }
@@ -5039,6 +5094,10 @@
         function biOnFileChosen(input) {
             const file = input.files && input.files[0];
             if (!file) return;
+            if (typeof XLSX === 'undefined') { // (r58) โหลดไลบรารี Excel ก่อน แล้วค่อยอ่านไฟล์
+                ensureXlsx_().then(() => biOnFileChosen(input), () => alert('❌ โหลดไลบรารี Excel ไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'));
+                return;
+            }
             biReset(false);
             biState.fileName = file.name;
             const reader = new FileReader();
@@ -5649,6 +5708,10 @@
             return s;
         }
         function biDownloadResults() {
+            if (typeof XLSX === 'undefined') { // (r58)
+                ensureXlsx_().then(() => biDownloadResults(), () => alert('❌ โหลดไลบรารี Excel ไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'));
+                return;
+            }
             const out = biState.rows.map(row => {
                 const res = biState.results[row.excelRow];
                 const o = { 'แถวใน Excel': row.excelRow, 'ผลการนำเข้า': res ? (BI_STATUS_META[res.status] || {}).label || res.status : (row.include ? 'ยังไม่ได้นำเข้า' : 'ไม่ได้เลือกนำเข้า'),
@@ -5919,6 +5982,7 @@
                 const pad = n => String(n).padStart(2, '0');
                 const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
                 const baseName = `CRM_Export_${stamp}_${rows.length}rows`;
+                try { await ensureXlsx_(); } catch (e) { /* (r58) โหลดไม่ได้ → ส่งออกเป็น CSV แทน */ }
                 if (typeof XLSX !== 'undefined') {
                     const ws = XLSX.utils.aoa_to_sheet(aoa);
                     // บังคับทุกช่องเป็นข้อความ (เบอร์โทร 08x ไม่หาย 0 / วันที่ไม่ถูกแปลง)
@@ -5956,6 +6020,10 @@
         function exportFullExcel() {
             if (currentRole !== 'admin') {
                 alert('เฉพาะ admin เท่านั้นที่ Export ฐานข้อมูล (Excel) ได้');
+                return;
+            }
+            if (typeof XLSX === 'undefined') { // (r58)
+                ensureXlsx_().then(() => exportFullExcel(), () => alert('❌ โหลดไลบรารี Excel ไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'));
                 return;
             }
             const exportNotifyId = crmNotify.loading('กำลังดึงข้อมูลทั้งหมดเพื่อสร้างไฟล์ Excel...');
@@ -6426,6 +6494,8 @@
         .sdr-print-bar .sdr-print-check input { width: auto; }
         .sdr-print-bar .btn { margin-left: auto; }
         .sdr-print-ranges { display: flex; flex-wrap: wrap; gap: 4px; }
+        .history-quick-actions { display: flex; gap: 8px; margin: 6px 0 4px; }
+        .history-quick-actions .btn { flex: 1 1 0; justify-content: center; }
         .sdr-print-range-label { font-size: 12px; color: #0369a1; font-weight: 600; margin-right: 6px; }
         #print-sdr-area { display: none; }
         .psr-section { font-family: inherit; color: #000; font-size: 11px; }
