@@ -10,9 +10,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!--
-  RST — รายการรถตีเทิร์น · หน้า Dashboard สำหรับผู้บริหาร / admin เท่านั้น
-  TURN_WEB: t01-2026-10-24  (ไฟล์ turn.html ในโปรเจกต์ Apps Script เดียวกับแอปรูปรถ คู่กับ turn.gs)
-  - ล็อกอินด้วยบัญชี CRM เดียวกับแอปรูปรถ (token ใช้ร่วมกัน) เซิร์ฟเวอร์ส่งข้อมูลให้เฉพาะ role = admin
+  RST — รายการรถตีเทิร์น · หน้า Dashboard
+  TURN_WEB: t03-2026-10-24  (ไฟล์ HTML ชื่อ turn ในโปรเจกต์ Apps Script เดียวกับแอปรูปรถ คู่กับสคริปต์ turn_backend)
+  - ล็อกอินด้วยบัญชี CRM เดียวกับแอปรูปรถ (token ใช้ร่วมกัน)
+  - t02: ผู้ใช้ CRM ทุกคนเข้าได้ · เพิ่ม/แก้ ใช้ PIN ทีม (admin ไม่ต้อง) · ลบ/กู้คืน/นำเข้า เฉพาะ admin
+  - t03: กันแคปหน้าจอแบบเดียวกับแอปรูปรถ (ทำได้แค่ป้องปราม): ลายน้ำ ชื่อผู้ใช้·สาขา·วันเวลา ทุกหน้า,
+         ม่านบังข้อมูลเมื่อสลับแอป/กด PrintScreen (บันทึก AccessLog), ห้ามพิมพ์ ห้ามคลิกขวา ห้ามลากเลือกข้อความ (ยกเว้น admin)
+         ส่งออก Excel เฉพาะ admin และบันทึก AccessLog ทุกครั้ง
   - เมนู: ภาพรวม (dashboard) · รายการรถ (ค้นหา/กรอง/เพิ่ม/แก้/ลบ) · นำเข้า / ส่งออก Excel
   - จับคู่กับข้อมูล Ecount (ชีต Tractors ของแอปรูปรถ) ด้วยหมายเลขรถ แสดงสถานะสต็อก สาขา ราคา จำนวนรูป
 -->
@@ -245,6 +249,22 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
   .bar input,.bar select{min-width:0;width:100%}
   .bar label{flex:1 1 45%}
 }
+/* t03: กันแคปหน้าจอ — ลายน้ำ + ม่านบัง + ห้ามเลือกข้อความ (ผู้ที่ไม่ใช่ admin) */
+.wm{position:fixed;inset:0;z-index:85;pointer-events:none;background-repeat:repeat;display:none}
+.wm.on{display:block}
+.shield{position:fixed;inset:0;z-index:99;display:none;place-items:center;background:#111;color:#fff;text-align:center;padding:24px;font-size:16px;line-height:1.6;cursor:pointer}
+.shield.on{display:grid}
+.shield b{display:block;font-size:20px;color:#FF5A64;margin-bottom:4px}
+body.guard main,body.guard .ed{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body.guard input,body.guard select,body.guard textarea{-webkit-user-select:text;user-select:text}
+/* t02: ปุ่ม/ส่วนที่ใช้ได้เฉพาะ admin (เซิร์ฟเวอร์ตรวจซ้ำ) */
+body:not(.is-admin) .adminonly{display:none!important}
+@media print{
+  body:not(.is-admin) *{visibility:hidden!important}
+  body:not(.is-admin)::after{content:"ไม่อนุญาตให้พิมพ์หรือบันทึกหน้านี้";visibility:visible!important;position:fixed;top:40%;left:0;right:0;text-align:center;font-size:20px}
+  .wm{display:block!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .shield,.toast{display:none!important}
+}
 @media print{header.top,.dbstat,.bar,.chips,.more,.btn,.ed,.scrim{display:none!important}body{background:#fff}.tbl th{position:static}}
 </style>
 </head>
@@ -252,11 +272,11 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
 
 <header class="top">
   <div class="wrap">
-    <div class="mark"><b>RST</b><span class="ttl">รายการรถตีเทิร์น</span><span class="adm">ADMIN</span></div>
+    <div class="mark"><b>RST</b><span class="ttl">รายการรถตีเทิร์น</span><span class="adm" id="roleBadge" hidden></span></div>
     <nav class="tabs" aria-label="เมนู">
       <button data-go="dash" aria-current="true">ภาพรวม</button>
       <button data-go="list">รายการรถ</button>
-      <button data-go="io">นำเข้า / ส่งออก</button>
+      <button data-go="io" id="ioTab" class="adminonly">นำเข้า / ส่งออก</button>
     </nav>
     <div class="hbtns">
       <button class="btn primary sm" id="addBtn" type="button">+ เพิ่มรถ</button>
@@ -316,7 +336,7 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
     <div class="chips" id="chips"></div>
     <div class="sumline"><span id="sumTxt"></span><span class="sp"></span>
       <button class="btn sm" id="clrBtn" type="button">ล้างตัวกรอง</button>
-      <button class="btn sm" id="xlsBtn" type="button">ส่งออก Excel (ตามตัวกรอง)</button></div>
+      <button class="btn sm adminonly" id="xlsBtn" type="button">ส่งออก Excel (ตามตัวกรอง)</button></div>
     <table class="tbl" id="tbl">
       <thead><tr><th>#</th><th>ทะเบียน</th><th>รถ</th><th>หมายเลขรถ / เครื่อง</th><th>รับเข้า</th><th>ชื่อ-สกุล</th><th>เอกสาร</th><th>สถานะ</th><th>Ecount</th></tr></thead>
       <tbody id="tbody"></tbody>
@@ -328,8 +348,8 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
   <!-- ===== นำเข้า / ส่งออก ===== -->
   <section class="view" id="v-io">
     <div class="dgrid">
-      <div class="card c7">
-        <h3>นำเข้าจาก Excel</h3>
+      <div class="card c7 adminonly">
+        <h3>นำเข้าจาก Excel <small>เฉพาะ admin</small></h3>
         <div class="small muted" style="margin-bottom:10px">รองรับไฟล์ "รายการรถตีเทิร์น" รูปแบบเดิม (ชีต รถตีเทิร์น และ รถตีเทิร์น กทบ.) ระบบหาแถวหัวตารางเอง วันที่ พ.ศ. แปลงให้อัตโนมัติ</div>
         <label class="drop" id="drop"><input type="file" id="file" accept=".xlsx,.xls,.csv" hidden><b>ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</b><span class="small muted">.xlsx / .xls</span></label>
         <div class="pv" id="pv" hidden></div>
@@ -343,7 +363,7 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
           <li>เก็บในชีต <b>TurnCars</b> ของไฟล์ Google Sheet เดียวกับแอปรูปรถ</li>
           <li>ทุกการเพิ่ม/แก้/ลบ บันทึกในชีต <b>TurnLog</b> (รายการที่ลบกู้คืนได้จากหน้าความเคลื่อนไหว)</li>
           <li>นำเข้าแบบ "แทนที่ทั้งหมด" จะสำรองชีตเดิมเป็น TurnCars_backup_วันเวลา ก่อน</li>
-          <li>เปิดได้เฉพาะบัญชี CRM ที่มีสิทธิ์ admin</li>
+          <li>ผู้ใช้ CRM ทุกคนดูได้ · เพิ่ม/แก้ไข ต้องใช้ PIN ทีม (admin ไม่ต้อง) · ลบ / กู้คืน / นำเข้า เฉพาะ admin</li>
         </ul>
       </div>
     </div>
@@ -356,7 +376,7 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
   <div class="eh"><h2 id="edTtl">เพิ่มรถตีเทิร์น<small id="edSub"></small></h2><button class="btn sm" type="button" id="edX">ปิด</button></div>
   <form class="eb" id="edForm" autocomplete="off"></form>
   <div class="ef">
-    <button class="btn ghost-red" type="button" id="edDel">ลบรายการ</button>
+    <button class="btn ghost-red adminonly" type="button" id="edDel">ลบรายการ</button>
     <span class="sp"></span>
     <button class="btn" type="button" id="edCancel">ยกเลิก</button>
     <button class="btn primary" type="button" id="edSave">บันทึก</button>
@@ -365,31 +385,27 @@ legend{font-weight:700;font-size:14px;padding:0 6px}
 
 <div class="toast" id="toast" role="status"></div>
 
+<!-- t03: ลายน้ำ + ม่านบังข้อมูล -->
+<div class="wm" id="wm" aria-hidden="true"></div>
+<div class="shield" id="shield"><div><b>ซ่อนข้อมูลชั่วคราว</b>รายการรถตีเทิร์นมีข้อมูลส่วนบุคคลของลูกค้า เป็นความลับของบริษัท<br>ห้ามแคปหน้าจอหรือถ่ายรูปส่งต่อ · ทุกการเข้าใช้งานถูกบันทึก<br><small>แตะเพื่อกลับไปใช้งาน</small></div></div>
+
 <!-- ===== ล็อกอิน (บัญชี CRM) ===== -->
 <div class="login" id="login">
   <form id="loginForm" autocomplete="on">
     <div class="lock"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
-    <div class="lb">รายการรถตีเทิร์น<small>RUAMSINTHAI GROUP · เฉพาะผู้ดูแลระบบ</small></div>
+    <div class="lb">รายการรถตีเทิร์น<small>RUAMSINTHAI GROUP</small></div>
     <label>ชื่อผู้ใช้ (เดียวกับ CRM)<input id="lgUser" name="username" autocomplete="username" required></label>
     <label>รหัสผ่าน<input id="lgPass" name="password" type="password" autocomplete="current-password" required></label>
     <div class="err" id="lgErr" role="alert"></div>
     <button class="go" type="submit" id="lgBtn">เข้าสู่ระบบ</button>
-    <div class="note">ใช้บัญชี CRM-TRACKER Pro ที่มีสิทธิ์ admin เท่านั้น · ทุกการเข้าใช้งานถูกบันทึก</div>
+    <div class="note">ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับ CRM-TRACKER Pro · ข้อมูลเป็นความลับของบริษัท ทุกการเข้าใช้งานถูกบันทึก</div>
   </form>
 </div>
-<div class="login" id="denied">
-  <div class="box" style="text-align:center">
-    <div class="lock"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
-    <div class="lb">ไม่มีสิทธิ์เข้าใช้งาน<small id="denMsg">เมนูนี้เปิดให้เฉพาะผู้ดูแลระบบ (admin)</small></div>
-    <button class="go" type="button" id="denOut" style="font-weight:600;padding:12px;border:0;border-radius:4px;background:#D7000F;color:#fff;cursor:pointer">เข้าสู่ระบบด้วยบัญชีอื่น</button>
-  </div>
-</div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
 "use strict";
-var TURN_WEB="t01-2026-10-24";
+var TURN_WEB="t03-2026-10-24";
 var $=function(s,r){return (r||document).querySelector(s)}, $$=function(s,r){return [].slice.call((r||document).querySelectorAll(s))};
 
 /* ================= การเชื่อมต่อเซิร์ฟเวอร์ (แบบเดียวกับแอปรูปรถ) =================
@@ -398,15 +414,16 @@ var $=function(s,r){return (r||document).querySelector(s)}, $$=function(s,r){ret
 var IN_GAS=!!(window.google&&google.script&&google.script.run);
 var API_URL="https://script.google.com/macros/s/AKfycbyAQ8R1vdY6-OmmHpIeC3IRH4ZV6x-Wp9jIKyBjk5N5gTz9p__rpoZvuYSepwNpaLTq1Q/exec";
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){ return null; } }
+var PIN=store("rst_team_pin")||""; // t02: PIN ทีม (ใช้ร่วมกับแอปรูปรถ) สำหรับเพิ่ม/แก้ เมื่อไม่ใช่ admin
 var TOK=store("rst_tok")||"", USER=null; try{ USER=JSON.parse(store("rst_user")||"null"); }catch(e){}
 function rawCall(fn,args){
   if(!IN_GAS){
-    return fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn:fn,args:args,pin:"",tok:TOK}),redirect:"follow"})
+    return fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn:fn,args:args,pin:PIN,tok:TOK}),redirect:"follow"})
       .then(function(r){return r.text()},function(){ throw new Error("เชื่อมต่อ Apps Script ไม่ได้ ตรวจอินเทอร์เน็ต"); })
       .then(function(t){ var j; try{ j=JSON.parse(t); }catch(e){ throw new Error("Apps Script ตอบไม่ใช่ JSON ตรวจ API_URL และ deploy เวอร์ชันล่าสุด"); } if(!j.ok) throw new Error(j.error||"ผิดพลาด"); return j.result; });
   }
   return new Promise(function(res,rej){
-    google.script.run.withSuccessHandler(res).withFailureHandler(function(e){ rej(new Error(e&&e.message?e.message:String(e))); }).call(fn,args,"",TOK);
+    google.script.run.withSuccessHandler(res).withFailureHandler(function(e){ rej(new Error(e&&e.message?e.message:String(e))); }).call(fn,args,PIN,TOK);
   });
 }
 function api(fn){
@@ -414,7 +431,14 @@ function api(fn){
   return rawCall(fn,args).catch(function(e){
     var m=e.message||"";
     if(/^AUTH:/.test(m)){ m=m.replace(/^AUTH:\s*/,""); logout(); showLogin(m); throw new Error(m); }
-    if(/^ADMIN:/.test(m)){ m=m.replace(/^ADMIN:\s*/,""); showDenied(m); throw new Error(m); }
+    if(/^ADMIN:/.test(m)) throw new Error(m.replace(/^ADMIN:\s*/,""));
+    if(/^PIN:/.test(m)){ // t02: ขอ PIN ทีม แล้วลองใหม่ครั้งเดียว (เหมือนแอปรูปรถ)
+      if(/ยังไม่ได้ตั้ง/.test(m)) throw new Error(m.replace(/^PIN:\s*/,""));
+      var p=prompt((PIN?"PIN ทีมไม่ถูกต้อง ":"")+"ใส่ PIN ทีมเพื่อบันทึกข้อมูล (ขอจากผู้ดูแลระบบ)","");
+      if(!p) throw new Error("ต้องใส่ PIN ทีมก่อนบันทึก");
+      PIN=p.trim(); store("rst_team_pin",PIN);
+      return rawCall(fn,args).catch(function(e2){ if(/^PIN:/.test(e2.message)){ PIN=""; store("rst_team_pin",""); throw new Error("PIN ทีมไม่ถูกต้อง"); } throw e2; });
+    }
     if(/ไม่รู้จักคำสั่ง turn/.test(m)) throw new Error("เซิร์ฟเวอร์ยังไม่มีไฟล์ turn.gs หรือ code.js ยังไม่ใช่ r16 ให้วางไฟล์ใหม่แล้ว Deploy เวอร์ชันใหม่");
     throw e;
   });
@@ -451,7 +475,7 @@ function money(n){ n=+n; return n? n.toLocaleString("th-TH")+" บาท" : "-";
 function keyOf(ch){ var t=String(ch||"").replace(/\(\s*GPS\s*\)/i,"").trim(); var i=t.indexOf("/"); t=(i<0?t:t.slice(0,i)).toUpperCase().replace(/\s+/g,""); return t.replace(/[-\/]/g,"").length>=5&&!/-$/.test(t)?t:""; }
 
 /* ================= state ================= */
-var ROWS=[], BYID={}, EC={}, LOG=[], STATUS=["ถือครองอยู่","รอเอกสาร","เบิกเล่มแล้ว","โอนต่อแล้ว","มีปัญหา"], APP_URL="";
+var IS_ADMIN=false, ROWS=[], BYID={}, EC={}, LOG=[], STATUS=["ถือครองอยู่","รอเอกสาร","เบิกเล่มแล้ว","โอนต่อแล้ว","มีปัญหา"], APP_URL="";
 var SCOPE=""; // กลุ่มรายการบน dashboard ("" = ทั้งหมด)
 var F={q:"",group:"",status:"",source:"",brand:"",alert:"",ec:"",model:"",year:"",owner:""};
 var STATUS_CLS={"ถือครองอยู่":"dark","รอเอกสาร":"warn","เบิกเล่มแล้ว":"info","โอนต่อแล้ว":"ok","มีปัญหา":"bad"};
@@ -495,6 +519,10 @@ function load(){
     ROWS=b.rows.map(prep); BYID={}; ROWS.forEach(function(r){BYID[r.id]=r});
     EC=b.ecount||{}; LOG=b.log||[]; if(b.status) STATUS=b.status; APP_URL=b.appUrl||"";
     if(b.me){ USER=USER||{}; USER.role=b.me.r; }
+    IS_ADMIN=!!b.isAdmin; document.body.classList.toggle("is-admin",IS_ADMIN);
+    var rb=$("#roleBadge"); rb.hidden=!(USER&&USER.role); rb.textContent=String((USER&&USER.role)||"").toUpperCase();
+    document.body.classList.toggle("guard",!IS_ADMIN); paintWm();
+    if(!IS_ADMIN&&CUR==="io") CUR="";
     $("#backLink").href=APP_URL||(IN_GAS?"#":"index.html");
     $("#loading").hidden=true; banner("");
     dbStatus("ok","เชื่อมต่อแล้ว · "+ROWS.length+" รายการ");
@@ -502,7 +530,8 @@ function load(){
     $("#syncAt").textContent=thDT(new Date());
     $("#verTxt").textContent="หน้าเว็บ "+TURN_WEB+" · เซิร์ฟเวอร์ "+(b.version||"?");
     fillFilters();
-    if(!ROWS.length&&!$("section.view.on")) { go("io"); banner("ยังไม่มีข้อมูล เริ่มจากนำเข้าไฟล์ Excel รายการรถตีเทิร์น หรือกด + เพิ่มรถ"); }
+    if(!IS_ADMIN&&$("#v-io").classList.contains("on")) go("dash");
+    if(!ROWS.length&&!$("section.view.on")) { go(IS_ADMIN?"io":"list"); banner(IS_ADMIN?"ยังไม่มีข้อมูล เริ่มจากนำเข้าไฟล์ Excel รายการรถตีเทิร์น หรือกด + เพิ่มรถ":"ยังไม่มีข้อมูลรถตีเทิร์น กด + เพิ่มรถ หรือแจ้ง admin ให้นำเข้าไฟล์ Excel"); }
     else if(!$("section.view.on")) go("dash"); else render();
   }).catch(function(e){
     $("#loading").hidden=true;
@@ -581,7 +610,7 @@ function renderDash(){
   $("#dLog").innerHTML=LOG.length?LOG.slice(0,20).map(function(l){
     var r=BYID[l.id], what=r?((r.plate&&r.plate!=="-"?r.plate+" · ":"")+(r.brand||"")+" "+(r.model||"")+" "+(r.chassis||"")):(l.chassis||"");
     return '<li><span class="a"><span class="chip '+(AC[l.action]||"")+'">'+esc(l.action)+'</span></span><span>'+esc(what||"-")
-      +(l.action==="ลบ"&&!r?' <button type="button" class="btn sm" data-restore="'+esc(l.id)+'" style="height:24px;margin-left:6px">กู้คืน</button>':"")
+      +(l.action==="ลบ"&&!r&&IS_ADMIN?' <button type="button" class="btn sm" data-restore="'+esc(l.id)+'" style="height:24px;margin-left:6px">กู้คืน</button>':"")
       +'</span><span class="w">'+esc(l.name||l.user||"")+' · '+thDT(l.at)+'</span></li>';
   }).join(""):'<li class="empty" style="display:block">ยังไม่มีความเคลื่อนไหว</li>';
   $$("[data-restore]").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); if(!confirm("กู้คืนรายการนี้?")) return; b.disabled=true;
@@ -740,7 +769,7 @@ function openEd(r){
   $("#edTtl").firstChild.nodeValue=r?"แก้ไขรถตีเทิร์น":"เพิ่มรถตีเทิร์น";
   $("#edSub").textContent=r?((r.plate||"ไม่มีทะเบียน")+" · "+(r.brand||"")+" "+(r.model||"")+" · "+(r.chassis||"")):"กรอกเท่าที่มี แก้เพิ่มภายหลังได้";
   $("#edMeta").textContent=r?("สร้างโดย "+(r.createdBy||"-")+" "+thDT(r.createdAt)+" · แก้ไขล่าสุดโดย "+(r.updatedBy||"-")+" "+thDT(r.updatedAt)):"";
-  $("#edDel").hidden=!r; $("#edSave").disabled=false;
+  $("#edDel").hidden=!r||!IS_ADMIN; $("#edSave").disabled=false;
   $("#ed").classList.add("on"); $("#scrim").classList.add("on");
   $("#edForm").scrollTop=0;
   if(!r) setTimeout(function(){ $('#edForm [name="plate"]').focus({preventScroll:true}); },260);
@@ -896,7 +925,9 @@ var XCOLS=[["sheetSrc","กลุ่ม"],["seq","ลำดับ"],["plate","�
   ["source","รายการรับเข้า"],["recvDate","วันที่รับเข้า"],["custCode","รหัส"],["ownerName","ชื่อ-สกุล"],["holder","โอนเข้าชื่อ"],["branch","ส่งรถ"],["boughtFrom","ซื้อต่อจาก"],["yctCheck","เช็ค YCT"],["transferSet","ชุดโอน"],["idExpire","บัตรหมดอายุ"],
   ["status","สถานะ"],["bookOutDate","วันที่เบิกเล่ม"],["transferDate","วันที่โอนต่อ"],["transferTo","โอนต่อให้"],["transferCode","รหัสผู้รับโอน"],["taxPaid","ต่อภาษีล่าสุด"],["prbPaid","พ.ร.บ. ล่าสุด"],["note","หมายเหตุ"]];
 function exportXls(rows,tag){
+  if(!IS_ADMIN){ toast("ส่งออก Excel ได้เฉพาะ admin"); return; }
   if(!window.XLSX){ toast("โหลดตัวสร้าง Excel ไม่ได้"); return; }
+  api("logEvent","export","turn "+tag+" "+rows.length+" รายการ").catch(function(){}); // t03: บันทึกทุกการส่งออก
   var aoa=[XCOLS.map(function(c){return c[1]}).concat(["ต้องติดตาม","Ecount สถานะ","Ecount สาขา","Ecount ราคา","Ecount รูป","แก้ไขล่าสุด","แก้ไขโดย"])];
   rows.forEach(function(r){ var e=ecOf(r);
     aoa.push(XCOLS.map(function(c){ var v=r[c[0]]||""; return DATEF[c[0]]?thInput(v):(c[0]==="seq"||c[0]==="year")&&v&&!isNaN(v)?+v:v; })
@@ -908,13 +939,11 @@ function exportXls(rows,tag){
 $("#xlsBtn").onclick=function(){ exportXls(LIST,"ตามตัวกรอง"); };
 $("#xlsAll").onclick=function(){ exportXls(sorted(ROWS),"ทั้งหมด"); };
 
-/* ================= ล็อกอิน / สิทธิ์ admin ================= */
-function showLogin(msg){ $("#denied").classList.remove("on"); $("#login").classList.add("on"); $("#lgErr").textContent=msg||""; if(USER&&USER.user&&!$("#lgUser").value) $("#lgUser").value=USER.user; setTimeout(function(){ ($("#lgUser").value?$("#lgPass"):$("#lgUser")).focus(); },50); }
-function showDenied(msg){ $("#loading").hidden=true; dbStatus("err","ไม่มีสิทธิ์"); $("#denMsg").textContent=(msg||"เมนูนี้เปิดให้เฉพาะผู้ดูแลระบบ (admin)")+(USER?" · บัญชีปัจจุบัน: "+(USER.name||USER.user)+" ("+(USER.role||"-")+")":""); $("#denied").classList.add("on"); }
-function logout(){ TOK=""; store("rst_tok",""); $("#userBtn").hidden=true; }
+/* ================= ล็อกอิน (t02: ผู้ใช้ CRM ทุกคน) ================= */
+function showLogin(msg){ $("#login").classList.add("on"); $("#lgErr").textContent=msg||""; if(USER&&USER.user&&!$("#lgUser").value) $("#lgUser").value=USER.user; setTimeout(function(){ ($("#lgUser").value?$("#lgPass"):$("#lgUser")).focus(); },50); }
+function logout(){ TOK=""; store("rst_tok",""); $("#userBtn").hidden=true; $("#wm").classList.remove("on"); $("#shield").classList.remove("on"); }
 function paintUser(){ var b=$("#userBtn"); b.hidden=!USER||!TOK; if(USER) b.textContent=(USER.name||USER.user)+" · ออก"; }
 $("#userBtn").onclick=function(){ if(!confirm("ออกจากระบบ?")) return; api("logEvent","logout","turn").catch(function(){}); logout(); ROWS=[]; $("#tbody").innerHTML=""; showLogin(""); };
-$("#denOut").onclick=function(){ logout(); showLogin(""); };
 $("#loginForm").addEventListener("submit",function(e){
   e.preventDefault();
   var u=$("#lgUser").value.trim(), p=$("#lgPass").value, b=$("#lgBtn");
@@ -923,14 +952,55 @@ $("#loginForm").addEventListener("submit",function(e){
   rawCall("login",[u,p]).then(function(r){
     TOK=r.token; store("rst_tok",TOK); USER={user:r.user,name:r.name,branch:r.branch,role:r.role}; store("rst_user",JSON.stringify(USER));
     $("#lgPass").value=""; $("#login").classList.remove("on"); paintUser();
-    if(String(r.role).toLowerCase()!=="admin"){ showDenied("บัญชีนี้ไม่ใช่ admin"); return; }
     $("#loading").hidden=false; return load();
   }).catch(function(err){ $("#lgErr").textContent=String(err.message||err).replace(/^AUTH:\s*/,""); })
     .then(function(){ b.disabled=false; b.textContent="เข้าสู่ระบบ"; });
 });
 
+/* ================= t03: กันแคปหน้าจอ (ป้องปราม — เว็บห้ามแคปของระบบปฏิบัติการไม่ได้ 100%) =================
+ * ลายน้ำ ชื่อ · สาขา · วันเวลา ทุกหน้า (admin ก็มีลายน้ำ) ถ้ามีภาพหลุดจะรู้ว่ามาจากบัญชีไหน
+ * ผู้ที่ไม่ใช่ admin: ม่านบังเมื่อสลับแอป/หน้าต่าง หรือกด PrintScreen / Win+Shift+S / Cmd+Shift+3-5 (บันทึก AccessLog),
+ * ห้ามพิมพ์ (Ctrl+P), ห้ามคลิกขวา, ห้ามลากเลือกข้อความนอกช่องกรอก */
+function paintWm(){
+  var el=$("#wm"); if(!USER||!TOK){ el.classList.remove("on"); return; }
+  var t=(USER.name||USER.user)+(USER.branch?" · "+USER.branch:"")+" · "+thDT(new Date());
+  var svg='<svg xmlns="http://www.w3.org/2000/svg" width="420" height="230"><g transform="rotate(-24 210 115)" font-family="Noto Sans Thai,sans-serif" fill="#000" fill-opacity=".09" text-anchor="middle"><text x="210" y="110" font-size="17" font-weight="600">'+esc(t)+'</text><text x="210" y="134" font-size="13">RST รถตีเทิร์น ข้อมูลภายใน ห้ามส่งต่อ</text></g></svg>';
+  el.style.backgroundImage='url("data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)+'")';
+  el.classList.add("on");
+}
+setInterval(paintWm,60000);
+var shieldT, PICKING=false;
+function guarded(){ return !!TOK&&!IS_ADMIN&&!$("#login").classList.contains("on"); }
+function shield(on,ms){
+  var el=$("#shield"); clearTimeout(shieldT);
+  if(on&&!guarded()) return;
+  el.classList.toggle("on",!!on);
+  if(on&&ms) shieldT=setTimeout(function(){ el.classList.remove("on"); },ms);
+}
+$("#shield").onclick=function(){ shield(false); };
+document.addEventListener("visibilitychange",function(){ if(document.hidden) shield(true); });
+window.addEventListener("blur",function(){ if(!PICKING) shield(true); });
+window.addEventListener("focus",function(){ PICKING=false; if($("#shield").classList.contains("on")) shieldT=setTimeout(function(){ shield(false); },400); });
+$("#file").addEventListener("click",function(){ PICKING=true; });
+function captureHit(how){
+  if(!guarded()) return;
+  shield(true,2500); toast("ไม่อนุญาตให้แคปหน้าจอรายการรถตีเทิร์น");
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText("").catch(function(){}); }catch(e){}
+  api("logEvent","capture","turn "+how+" @"+(CUR||"")).catch(function(){});
+}
+document.addEventListener("keyup",function(e){ if(e.key==="PrintScreen"||e.keyCode===44) captureHit("PrintScreen"); });
+document.addEventListener("keydown",function(e){
+  var k=String(e.key||"").toLowerCase();
+  if(e.key==="PrintScreen"||e.keyCode===44){ captureHit("PrintScreen"); return; }
+  if((e.metaKey||e.ctrlKey)&&e.shiftKey&&(k==="s"||k==="3"||k==="4"||k==="5")) captureHit("shortcut "+k);
+  if((e.ctrlKey||e.metaKey)&&(k==="p"||k==="s")&&guarded()){ e.preventDefault(); toast("ไม่อนุญาตให้พิมพ์หรือบันทึกหน้านี้"); api("logEvent","print","turn ctrl+"+k).catch(function(){}); }
+},true);
+document.addEventListener("contextmenu",function(e){ if(guarded()&&!e.target.closest("input,textarea")) e.preventDefault(); });
+document.addEventListener("copy",function(e){ if(guarded()&&!e.target.closest("input,textarea")){ e.preventDefault(); toast("ไม่อนุญาตให้คัดลอกข้อมูลจากหน้านี้"); } });
+window.addEventListener("beforeprint",function(){ if(guarded()) api("logEvent","print","turn beforeprint").catch(function(){}); });
+
 /* ================= เริ่มต้น ================= */
-if(!TOK){ $("#loading").hidden=true; dbStatus("busy","รอเข้าสู่ระบบ"); showLogin(""); } 
+if(!TOK){ $("#loading").hidden=true; dbStatus("busy","รอเข้าสู่ระบบ"); showLogin(""); }
 else { paintUser(); load(); }
 })();
 </script>

@@ -1,9 +1,14 @@
 /**
  * RST — รายการรถตีเทิร์น (Trade-in) · ไฟล์เซิร์ฟเวอร์เสริม อยู่ในโปรเจกต์ Apps Script เดียวกับแอปรูปรถ
- * TURN_VERSION: t01-2026-10-24
+ * TURN_VERSION: t02-2026-10-24-all-users
+ *
+ * t02: ผู้บริหารเปลี่ยนให้ผู้ใช้ CRM ทุกคนเข้าเมนูนี้ได้
+ *      - ดู / ค้นหา / ส่งออก: ทุกคนที่ล็อกอิน CRM
+ *      - เพิ่ม / แก้ไข: ทุกคน (role อื่นที่ไม่ใช่ admin ต้องใส่ PIN ทีม เหมือนแอปรูปรถ ดู TURN_WRITE)
+ *      - ลบ / กู้คืน / นำเข้า Excel: เฉพาะ admin
  *
  * เปิดใช้งาน: ลิงก์ Web App เดิม + ?page=turn   (หรือกดเมนู "รถตีเทิร์น" ในแอปรูปรถ ปุ่มจะโผล่เฉพาะ admin)
- * สิทธิ์:     ทุกคำสั่งในไฟล์นี้ใช้ได้เฉพาะผู้ใช้ที่ล็อกอิน CRM แล้วได้ role = admin เท่านั้น (ตรวจที่เซิร์ฟเวอร์ ไม่ใช่แค่ซ่อนปุ่ม)
+ * สิทธิ์:     (t02) ผู้ใช้ CRM ทุกคนดูได้ · เพิ่ม/แก้ ต้องใช้ PIN ทีม (admin ไม่ต้อง) · ลบ/กู้คืน/นำเข้า เฉพาะ admin (ตรวจที่เซิร์ฟเวอร์)
  *             token ล็อกอินใช้ร่วมกับแอปรูปรถ (SESSION_SECRET เดียวกัน) ล็อกอินที่ไหนก็ใช้ได้ทั้งสองหน้า
  *
  * ชีต (สร้างอัตโนมัติเมื่อเรียกใช้ครั้งแรก):
@@ -17,7 +22,7 @@
  * ใช้ฟังก์ชันกลางจาก code.js: sheet_ แบบเดียวกันไม่ได้ (HEAD ผูกกับชีตของแอปรูปรถ) จึงมี helper ของตัวเองด้านล่าง
  * แต่ใช้ readAll_/normCar_/applyPrice_/legacyCount_/keyOf_/withLock_/SESSION_ ของ code.js ร่วมกัน
  */
-var TURN_VERSION = 't01-2026-10-24';
+var TURN_VERSION = 't02-2026-10-24-all-users';
 var TURN_SH = { CARS: 'TurnCars', LOG: 'TurnLog' };
 var TURN_HEAD = {
   TurnCars: [
@@ -44,12 +49,18 @@ var TURN_API = {
   turnLink: turnLink, turnRestore: turnRestore
 };
 
-/* ================= สิทธิ์ ================= */
+/* ================= สิทธิ์ (t02) =================
+ * คำสั่งใน TURN_WRITE: code.js call() ตรวจ PIN ทีมให้ ถ้า role ไม่ใช่ admin */
+var TURN_WRITE = { turnSave: 1 };
+function turnUser_() {
+  if (!SESSION_) throw new Error('AUTH: กรุณาเข้าสู่ระบบ');
+}
+function turnIsAdmin_() { return !!SESSION_ && String(SESSION_.r || '').toLowerCase() === 'admin'; }
 function turnAdmin_() {
   if (!SESSION_) throw new Error('AUTH: กรุณาเข้าสู่ระบบ');
   if (String(SESSION_.r || '').toLowerCase() !== 'admin') {
     accessLog_(SESSION_, 'turn_denied', 'role=' + SESSION_.r);
-    throw new Error('ADMIN: เมนูรถตีเทิร์นเปิดให้เฉพาะผู้ดูแลระบบ (admin) เท่านั้น');
+    throw new Error('ADMIN: คำสั่งนี้ (ลบ / กู้คืน / นำเข้า) ใช้ได้เฉพาะผู้ดูแลระบบ (admin)');
   }
 }
 
@@ -166,7 +177,8 @@ function turnEcount_(keys) {
 
 /* ================= API ================= */
 function turnBoot() {
-  turnAdmin_();
+  turnUser_();
+  accessLog_(SESSION_, 'turn_open', '');
   var d = turnRead_();
   var rows = d.rows.map(function (o) { delete o._row; return o; });
   var log = [];
@@ -183,7 +195,7 @@ function turnBoot() {
   try { var il = readAll_(SH.LOG); if (il.length) ecLast = il[il.length - 1].at; } catch (e) { }
   var appUrl = ''; try { appUrl = ScriptApp.getService().getUrl(); } catch (e) { }
   return {
-    version: TURN_VERSION, codeVersion: CODE_VERSION, me: SESSION_, rows: rows, appUrl: appUrl,
+    version: TURN_VERSION, codeVersion: CODE_VERSION, me: SESSION_, isAdmin: turnIsAdmin_(), rows: rows, appUrl: appUrl,
     ecount: turnEcount_(rows.map(function (r) { return r.key; })), ecountAt: ecLast,
     status: TURN_STATUS, log: log
   };
@@ -192,7 +204,7 @@ function turnBoot() {
 /** เพิ่ม (ไม่มี id) หรือแก้ไข (มี id) รถ 1 รายการ
  *  rec.updatedAt ต้องตรงกับในชีต (กันเขียนทับงานคนอื่นที่แก้ไปก่อน)  rec.allowDup = ยอมให้หมายเลขรถซ้ำ */
 function turnSave(rec) {
-  turnAdmin_();
+  turnUser_(); // PIN ทีมตรวจแล้วใน call() (TURN_WRITE)
   rec = rec || {};
   var o = turnClean_(rec);
   return withLock_(function () {
@@ -296,7 +308,7 @@ function norm2_(s) { return String(s || '').toUpperCase().replace(/[\s\-\/\.]/g,
 
 /** ลิงก์หน้า รถตีเทิร์น (ให้แอปรูปรถเปิด) */
 function turnLink() {
-  turnAdmin_();
+  turnUser_();
   var u = ''; try { u = ScriptApp.getService().getUrl(); } catch (e) { }
   return { url: u ? u + (u.indexOf('?') < 0 ? '?' : '&') + 'page=turn' : '' };
 }

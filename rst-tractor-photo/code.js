@@ -1,6 +1,10 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r16-2026-10-24-turn
+ * CODE_VERSION: r18-2026-10-24-turn-guard
+ *
+ * r18: logEvent รับเหตุการณ์ export (ส่งออก Excel จากหน้ารถตีเทิร์น) บันทึกลง AccessLog
+ *
+ * r17: เมนูรถตีเทิร์นเปิดให้ผู้ใช้ CRM ทุกคน (turn_backend t02) call() ตรวจ PIN ทีมให้คำสั่งใน TURN_WRITE ด้วย
  *
  * r16: เมนูใหม่ "รายการรถตีเทิร์น" (เฉพาะ admin) โค้ดอยู่ในไฟล์ turn.gs + turn.html ในโปรเจกต์เดียวกัน
  *      - เปิดด้วยลิงก์ Web App เดิม + ?page=turn  (doGet ด้านล่างเลือกหน้า)
@@ -70,7 +74,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r16-2026-10-24-turn';
+var CODE_VERSION = 'r18-2026-10-24-turn-guard';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
@@ -87,7 +91,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ ok: true, codeVersion: CODE_VERSION }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  if (e && e.parameter && e.parameter.page === 'turn') { // r16: หน้า รายการรถตีเทิร์น (ข้อมูลส่งให้เฉพาะ admin ที่ล็อกอินแล้ว)
+  if (e && e.parameter && e.parameter.page === 'turn') { // r16: หน้า รายการรถตีเทิร์น (r17: ผู้ใช้ CRM ทุกคนที่ล็อกอินแล้ว)
     return HtmlService.createHtmlOutputFromFile('turn')
       .setTitle('RST รายการรถตีเทิร์น (Admin)')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
@@ -123,7 +127,8 @@ function call(fn, args, pin, tok) {
   if (!f) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
   if (!PUBLIC[fn]) {
     SESSION_ = verifyToken_(tok);
-    if (WRITE[fn] && SESSION_.r !== 'admin') checkPin_(pin);
+    var TW = (typeof TURN_WRITE !== 'undefined') ? TURN_WRITE : {}; // r17: เพิ่ม/แก้ รถตีเทิร์น ต้องใช้ PIN ทีม (ยกเว้น admin)
+    if ((WRITE[fn] || TW[fn]) && SESSION_.r !== 'admin') checkPin_(pin);
   }
   return f.apply(null, args || []);
 }
@@ -300,7 +305,7 @@ function login(user, pass) {
 }
 /** หน้าเว็บแจ้งเหตุการณ์ (capture = กด PrintScreen, savecar = บันทึก/แชร์รูปทั้งคัน, print = สั่งพิมพ์) */
 function logEvent(ev, detail) {
-  var ok = { capture: 1, savecar: 1, print: 1, logout: 1 };
+  var ok = { capture: 1, savecar: 1, print: 1, logout: 1, export: 1 }; // r18: export = ส่งออก Excel รถตีเทิร์น
   if (!ok[ev]) return { ok: false };
   accessLog_(SESSION_, ev, String(detail || '').slice(0, 300));
   return { ok: true };
@@ -735,4 +740,4 @@ function deletePhoto(photoId) {
     }
     return { ok: true };
   });
-} 
+}
