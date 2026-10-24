@@ -1,5 +1,5 @@
 /**
- * CODE_VERSION: r07-2026-10-24-printform-v3
+ * CODE_VERSION: r08-2026-10-24-fix-validation
  * =====================================================================
  *  ระบบติดตามสถานะงานซ่อม / PM  (Service Repair & PM Tracker)
  *  Backend : Google Apps Script  |  Database : Google Sheets
@@ -82,7 +82,7 @@ const CONFIG = {
   },
 };
 
-const CODE_VERSION = 'r07-2026-10-24-printform-v3';
+const CODE_VERSION = 'r08-2026-10-24-fix-validation';
 
 const HEADERS = {
   Repair_Jobs: [
@@ -146,6 +146,7 @@ function onOpen() {
     .createMenu('🛠️ ระบบงานซ่อม')
     .addItem('⚙️ สร้าง/ตรวจสอบโครงสร้างฐานข้อมูล', 'setupDatabase')
     .addItem('🔄 คำนวณวันกำหนดเสร็จใหม่ทั้งหมด', 'recalculateAllTargets')
+    .addItem('🩹 แก้ปัญหา "ละเมิดกฎการตรวจสอบข้อมูล"', 'fixValidationRules')
     .addSeparator()
     .addItem('📥 นำเข้าข้อมูลจริง (แทนที่ข้อมูลเดิม)', 'importRealData')
     .addToUi();
@@ -183,23 +184,7 @@ function setupDatabase() {
   jobsSh.getRange(1, col['Target_Finish_Date'])
     .setNote('คำนวณอัตโนมัติ = Start_Date + SLA_Target_Days (ไม่ต้องกรอกเอง)');
 
-  const values = function (o) { return Object.keys(o).map(function (k) { return o[k]; }); };
-  const listRule = function (list, allowInvalid) {
-    return SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(!!allowInvalid).build();
-  };
-  const rangeRule = function (range) {
-    return SpreadsheetApp.newDataValidation().requireValueInRange(range, true).setAllowInvalid(true).build();
-  };
-  const dateRule = SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build();
-
-  body('Status').setDataValidation(listRule(values(CONFIG.STATUS)));
-  body('Parts_Status').setDataValidation(listRule(values(CONFIG.PARTS), true));
-  body('Department').setDataValidation(listRule(CONFIG.DEPARTMENTS, true));
-  body('Job_Type').setDataValidation(listRule(CONFIG.JOB_TYPES, true));
-  body('Delay_Category').setDataValidation(rangeRule(reasonsSh.getRange('A2:A')));
-  body('Technician_Name').setDataValidation(rangeRule(techSh.getRange('B2:B')));
-  body('Start_Date').setDataValidation(dateRule);
-  body('Actual_Finish_Date').setDataValidation(dateRule);
+  applyValidationRules_(jobsSh, col, reasonsSh, techSh);
 
   const statusRange = body('Status');
   const cf = function (text, bg, fg) {
@@ -224,6 +209,60 @@ function setupDatabase() {
   recalculateAllTargets(true);
   toast_('สร้าง/ตรวจสอบโครงสร้างฐานข้อมูลเรียบร้อย ✅');
   return 'OK';
+}
+
+/**
+ * ตั้ง Dropdown ทุกคอลัมน์แบบ "แสดงคำเตือน" (allowInvalid = true)
+ *  -> ไม่ทำให้การบันทึกจากหน้าเว็บล้มด้วยข้อความ "ละเมิดกฎการตรวจสอบข้อมูล"
+ */
+function applyValidationRules_(jobsSh, col, reasonsSh, techSh) {
+  const maxRows = jobsSh.getMaxRows();
+  if (maxRows < 2) return;
+  const body = function (name) { return col[name] ? jobsSh.getRange(2, col[name], maxRows - 1, 1) : null; };
+  const set = function (name, rule) { const r = body(name); if (r) r.setDataValidation(rule); };
+  const listRule = function (list) {
+    return SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(true).build();
+  };
+  const rangeRule = function (range) {
+    return SpreadsheetApp.newDataValidation().requireValueInRange(range, true).setAllowInvalid(true).build();
+  };
+  const dateRule = SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build();
+
+  set('Status', listRule(objValues_(CONFIG.STATUS)));
+  set('Parts_Status', listRule(objValues_(CONFIG.PARTS)));
+  set('Department', listRule(CONFIG.DEPARTMENTS));
+  set('Job_Type', listRule(CONFIG.JOB_TYPES));
+  set('Delay_Category', rangeRule(reasonsSh.getRange('A2:A')));
+  set('Technician_Name', rangeRule(techSh.getRange('B2:B')));
+  set('Start_Date', dateRule);
+  set('Actual_Finish_Date', dateRule);
+}
+
+/** เมนู: แก้ปัญหา "ละเมิดกฎ" — ล้างกฎเดิมที่ปฏิเสธข้อมูล แล้วตั้งใหม่แบบเตือนอย่างเดียว */
+function fixValidationRules() {
+  const ss = getSpreadsheet_();
+  const jobsSh = jobsSheet_();
+  const reasonsSh = ss.getSheetByName(CONFIG.SHEETS.REASONS) || ensureSheet_(ss, CONFIG.SHEETS.REASONS, HEADERS.Delay_Reasons);
+  const techSh = ss.getSheetByName(CONFIG.SHEETS.TECHS) || ensureSheet_(ss, CONFIG.SHEETS.TECHS, HEADERS.Technicians);
+  const col = headerIndex_(jobsSh);
+  if (jobsSh.getMaxRows() > 1) {
+    jobsSh.getRange(2, 1, jobsSh.getMaxRows() - 1, jobsSh.getMaxColumns()).clearDataValidations();
+  }
+  applyValidationRules_(jobsSh, col, reasonsSh, techSh);
+  toast_('แก้กฎการตรวจสอบข้อมูลเรียบร้อย ✅ พนักงานบันทึกได้ตามปกติ');
+  return 'OK';
+}
+
+/** ก่อนเขียนแถว: เปลี่ยนกฎที่ "ปฏิเสธข้อมูล" ในแถวนั้นเป็น "แสดงคำเตือน" กันบันทึกล้ม */
+function relaxRowValidation_(sh, rowNum, width) {
+  const rng = sh.getRange(rowNum, 1, 1, width);
+  const rules = rng.getDataValidations()[0];
+  let changed = false;
+  const out = rules.map(function (r) {
+    if (r && !r.getAllowInvalid()) { changed = true; return r.copy().setAllowInvalid(true).build(); }
+    return r;
+  });
+  if (changed) rng.setDataValidations([out]);
 }
 
 function ensureSheet_(ss, name, headers) {
@@ -721,6 +760,8 @@ function saveJob(payload) {
     ['Ticket_ID', 'Machine_ID', 'Delivery_No'].forEach(function (h) {
       if (col[h]) sh.getRange(rowNum, col[h]).setNumberFormat('@');
     });
+    // กัน error "ข้อมูลที่ป้อน...ละเมิดกฎการตรวจสอบข้อมูล" (กฎ dropdown แบบปฏิเสธข้อมูล)
+    relaxRowValidation_(sh, rowNum, width);
     sh.getRange(rowNum, 1, 1, width).setValues([rowValues]);
     SpreadsheetApp.flush();
 
