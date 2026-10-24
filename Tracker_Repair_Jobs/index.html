@@ -662,8 +662,8 @@
     'สำนักงานใหญ่', 'สาขาศรีเมืองใหม่', 'สาขากุฉินารายณ์', 'สาขาตระการ',
     'สาขาเดชอุดม', 'สาขาขุขันธ์', 'สาขาเบญจลักษณ์', 'สาขาอำนาจเจริญ',
   ];
-  var JOB_TYPES = ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'ปรับสภาพมือสอง', 'อื่นๆ'];
-  var SLA_BY_TYPE = { 'ติดตั้งใบมีด': 7, 'ติดถังอุ้มรถเกี่ยว': 7, 'พ่นสี': 7, 'ปรับสภาพมือสอง': 30, 'อื่นๆ': 14 };
+  var JOB_TYPES = ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'ปรับสภาพมือสอง', 'งานซ่อมลูกค้า', 'อื่นๆ'];
+  var SLA_BY_TYPE = { 'ติดตั้งใบมีด': 7, 'ติดถังอุ้มรถเกี่ยว': 7, 'พ่นสี': 7, 'ปรับสภาพมือสอง': 30, 'งานซ่อมลูกค้า': 7, 'อื่นๆ': 14 };
 
   var COMPANY_DEFAULT = {
     nameTh: 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย', nameEn: 'RUAMSINTHAI GROUP',
@@ -902,7 +902,7 @@
   function renderBrand() {
     var c = ST.company;
     $('brandLogo').innerHTML = c.logoUrl ? '<img src="' + esc(c.logoUrl) + '" alt="logo">' : 'RST';
-    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที · หน้าเว็บ r06 · Backend ' + (ST.data.codeVersion || 'เวอร์ชันเก่า (ยังไม่ได้ Deploy ใหม่)');
+    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที · หน้าเว็บ r07 · Backend ' + (ST.data.codeVersion || 'เวอร์ชันเก่า (ยังไม่ได้ Deploy ใหม่)');
   }
 
   function keyOf(j) { return j.ticketId ? 't:' + j.ticketId : 'r:' + j.row; }
@@ -1449,7 +1449,27 @@
       return im.complete ? Promise.resolve() : new Promise(function (res) { im.onload = im.onerror = res; setTimeout(res, 2500); });
     });
     if (document.fonts && document.fonts.ready) waits.push(document.fonts.ready);
-    Promise.all(waits).then(function () { setTimeout(function () { window.print(); }, 150); });
+    Promise.all(waits).then(function () {
+      if (opt.format === 'card') fitCardsToPage(opt.orientation || 'portrait');
+      setTimeout(function () { window.print(); }, 150);
+    });
+  }
+
+  // ปรับจำนวนแถว "รายงานผลการปฏิบัติงาน" ให้ใบงานแต่ละใบเต็มหน้า A4 พอดี (ไม่ล้นไปหน้า 2)
+  function fitCardsToPage(orientation) {
+    var area = $('printArea');
+    var MM = 96 / 25.4;                                         // px ต่อ 1 มม. (ตอนพิมพ์)
+    var land = orientation === 'landscape';
+    var widthMm = (land ? 297 : 210) - 20;                      // ขอบซ้าย-ขวา 10 มม.
+    var limit = ((land ? 210 : 297) - 22 - 4) * MM;            // ขอบบน 10 + ล่าง 12 + เผื่อ 4 มม.
+    var keep = { display: area.style.display, position: area.style.position, left: area.style.left, top: area.style.top, width: area.style.width };
+    Object.assign(area.style, { display: 'block', position: 'absolute', left: '-10000px', top: '0', width: widthMm + 'mm' });
+    area.querySelectorAll('.rp-card').forEach(function (card) {
+      var body = card.querySelector('.rp-wtbl tbody');
+      if (!body) return;
+      while (card.offsetHeight > limit && body.rows.length > 6) body.deleteRow(-1);
+    });
+    Object.assign(area.style, keep);
   }
 
   function rpHeader(meta, right) {
@@ -1546,21 +1566,18 @@
       '<div class="rp-lines">' + ln + '</div>' +
       sigRow(['ผู้สั่งงาน', 'ผู้อนุมัติ']) + '</div></div>';
     var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
-    var sign = '';
-    if (opt.sign) {
-      var box = function (l) { return '<div><div class="line"></div>( .................................................. )<br><b>' + l + '</b><br>วันที่ ......../......../............</div>'; };
-      sign = '<div class="rp-sign">' + box('ช่างผู้ซ่อม') + box('หัวหน้าช่าง / ผู้ตรวจสอบ') + box('ผู้อนุมัติ') + '</div>';
-    }
-    // ตารางรายงานผลการปฏิบัติงาน (ช่างกรอกด้วยมือ) — ขยายจนเต็มหน้า
+    // (r07) ตัดช่องลงชื่อ 3 ช่อง (ช่างผู้ซ่อม / หัวหน้าช่าง / ผู้อนุมัติ) ออกจากใบงาน — ใช้พื้นที่ขยายตารางแทน
+    // ตารางรายงานผลการปฏิบัติงาน (ช่างกรอกด้วยมือ) — ขยายจนเต็มหน้า A4
     //   สถานะ: ซ่อม | รอพ่นสี | รออะไหล่ | รอซ่อมต่อ   ·   ผู้รับผิดชอบ -> ช่างผู้ดูแล
-    var nRows = (opt.sign || opt.note) ? 10 : (wd.split('\n').length > 3 ? 13 : 15), wrows = '';
+    //   สร้างแถวเผื่อไว้ แล้ว fitCardsToPage() จะตัดแถวส่วนเกินออกให้พอดี 1 หน้าพอดีก่อนสั่งพิมพ์
+    var nRows = 32, wrows = '';
     for (var r = 0; r < nRows; r++) wrows += '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
     var work = '<div class="rp-work"><div class="wt">รายงานผลการปฏิบัติงาน</div>' +
       '<table class="rp-wtbl"><colgroup><col style="width:10%"><col style="width:6.5%"><col style="width:7.5%"><col style="width:8%"><col style="width:8.5%"><col><col style="width:12%"><col style="width:12%"></colgroup>' +
       '<thead><tr><th rowspan="2">วันที่</th><th colspan="4">สถานะ</th><th rowspan="2">บันทึกการทำงาน / รายละเอียด</th><th rowspan="2">ช่างผู้ดูแล</th><th rowspan="2">ผู้ตรวจสอบ</th></tr>' +
       '<tr><th class="ws">ซ่อม</th><th class="ws">รอพ่นสี</th><th class="ws">รออะไหล่</th><th class="ws">รอซ่อมต่อ</th></tr></thead><tbody>' + wrows + '</tbody></table>' +
-      sigRow(['วันที่ส่งงาน', 'ผู้ส่งงาน', 'ผู้ขับทดสอบ']) + '</div>';
-    return '<div class="rp-card">' + head + title + info + detail + note + sign + work + rpFoot(meta) + '</div>';
+      sigRow(['วันที่ส่งงาน', 'ผู้ส่งงาน', 'ผู้บันทึกข้อมูล']) + '</div>';
+    return '<div class="rp-card">' + head + title + info + detail + note + work + rpFoot(meta) + '</div>';
   }
 
   // ------------------------------------------------------------------ CSV
