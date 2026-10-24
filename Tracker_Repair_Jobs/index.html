@@ -133,6 +133,7 @@
   .st-progress { background: #eaf2fc; color: #1c5cab; }
   .st-parts { background: #fdefe8; color: #a5401a; }
   .st-paint { background: #e6f6ef; color: #0f6e4c; }
+  .st-cont { background: #f1ecfe; color: #5b21b6; }
   .st-done { background: #ecfdf3; color: #166534; }
   .st-cancel { background: #f3f4f6; color: #4b5563; }
   .st-other { background: #f3f4f6; color: #374151; }
@@ -269,6 +270,13 @@
   .rp-wtbl td { height: 25px; }
   .rp-sign.left { justify-content: flex-start; margin-top: 16px; }
   .rp-sign.left > div { flex: 0 0 33%; }
+  .rp-wtbl th.ws { font-size: 8pt; white-space: nowrap; padding: 2px 1px; }
+  .rp-sigrow { display: flex; gap: 18px; align-items: flex-end; font-size: 10pt; padding: 10px 2px 2px; }
+  .rp-sigrow > div { flex: 1; display: flex; align-items: flex-end; white-space: nowrap; }
+  .rp-sigrow b { font-weight: 600; margin-right: 6px; }
+  .rp-sigrow span { flex: 1; border-bottom: 1px dotted #000; height: 16px; }
+  .rp-box .rp-sigrow { padding: 8px 0 2px; }
+  .rp-work .rp-sigrow { margin-top: 14px; }
   .rp-chk { display: inline-block; width: 11px; height: 11px; border: 1px solid #000; margin: 0 4px -1px 10px; }
   .rp-chk.on { background: #000; }
 
@@ -654,23 +662,24 @@
     'สำนักงานใหญ่', 'สาขาศรีเมืองใหม่', 'สาขากุฉินารายณ์', 'สาขาตระการ',
     'สาขาเดชอุดม', 'สาขาขุขันธ์', 'สาขาเบญจลักษณ์', 'สาขาอำนาจเจริญ',
   ];
-  var JOB_TYPES = ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'อื่นๆ'];
-  var SLA_BY_TYPE = { 'ติดตั้งใบมีด': 7, 'ติดถังอุ้มรถเกี่ยว': 7, 'พ่นสี': 7, 'อื่นๆ': 14 };
+  var JOB_TYPES = ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'ปรับสภาพมือสอง', 'อื่นๆ'];
+  var SLA_BY_TYPE = { 'ติดตั้งใบมีด': 7, 'ติดถังอุ้มรถเกี่ยว': 7, 'พ่นสี': 7, 'ปรับสภาพมือสอง': 30, 'อื่นๆ': 14 };
 
   var COMPANY_DEFAULT = {
     nameTh: 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย', nameEn: 'RUAMSINTHAI GROUP',
     division: 'ฝ่ายบริการ / ศูนย์ซ่อม', address: '', phone: '', taxId: '', logoUrl: '',
   };
 
-  var S = { IN_PROGRESS: 'กำลังซ่อม', PARTS: 'รออะไหล่', PAINT: 'รอพ่นสี', DONE: 'ซ่อมเสร็จแล้ว', CANCEL: 'ยกเลิก' };
+  var S = { IN_PROGRESS: 'กำลังซ่อม', PARTS: 'รออะไหล่', PAINT: 'รอพ่นสี', CONT: 'รอซ่อมต่อ', DONE: 'ซ่อมเสร็จแล้ว', CANCEL: 'ยกเลิก' };
   var STATUS_UI = {
-    'กำลังซ่อม': 'st-progress', 'รออะไหล่': 'st-parts', 'รอพ่นสี': 'st-paint',
+    'กำลังซ่อม': 'st-progress', 'รออะไหล่': 'st-parts', 'รอพ่นสี': 'st-paint', 'รอซ่อมต่อ': 'st-cont',
     'ซ่อมเสร็จแล้ว': 'st-done', 'ยกเลิก': 'st-cancel',
   };
   var SERIES = [
     { status: S.IN_PROGRESS, color: '#2a78d6' },
     { status: S.PARTS, color: '#eb6834' },
     { status: S.PAINT, color: '#1baf7a' },
+    { status: S.CONT, color: '#8b5cf6' },
   ];
   var AGE_BUCKETS = [
     { label: '0–7', max: 7, color: '#86b6ef' },
@@ -1524,29 +1533,33 @@
       row('ช่างผู้ดูแล', esc(j.technicianName || '-'), 'วันที่เริ่มซ่อม', fmtDate(j.startDate, true)) +
       row('SLA เป้าหมาย', j.slaDays + ' วัน', 'กำหนดเสร็จ', '<b>' + fmtDate(j.targetDate, true) + '</b>') +
       '</table>';
-    // รายละเอียดงานที่พนักงานพิมพ์แจ้งช่าง + เส้นว่างสำหรับเขียนเพิ่ม
+    // ช่องลงชื่อแบบเส้นประในบรรทัดเดียว เช่น  ผู้สั่งงาน ........  ผู้อนุมัติ ........
+    var sigRow = function (labels) {
+      return '<div class="rp-sigrow">' + labels.map(function (l) { return '<div><b>' + l + '</b><span></span></div>'; }).join('') + '</div>';
+    };
+    // รายละเอียดงานที่พนักงานพิมพ์แจ้งช่าง + เส้นว่างสำหรับเขียนเพิ่ม + ลงชื่อผู้สั่งงาน / ผู้อนุมัติ
     var wd = opt.detail || j.workDetail || '';
-    var blank = wd ? 3 : 6, ln = '';
+    var blank = wd ? 1 : 3, ln = '';
     for (var i = 0; i < blank; i++) ln += '<div></div>';
     var detail = '<div class="rp-box"><div class="h">รายละเอียด</div><div class="b">' +
       (wd ? '<div class="rp-detail">' + esc(wd) + '</div>' : '') +
-      '<div class="rp-lines">' + ln + '</div></div></div>';
+      '<div class="rp-lines">' + ln + '</div>' +
+      sigRow(['ผู้สั่งงาน', 'ผู้อนุมัติ']) + '</div></div>';
     var note = opt.note ? '<div class="rp-note"><b>หมายเหตุ:</b> ' + esc(opt.note) + '</div>' : '';
     var sign = '';
     if (opt.sign) {
       var box = function (l) { return '<div><div class="line"></div>( .................................................. )<br><b>' + l + '</b><br>วันที่ ......../......../............</div>'; };
-      sign = '<div class="rp-sign">' + box('ช่างผู้ซ่อม') + box('หัวหน้าช่าง / ผู้ตรวจสอบ') + box('ผู้อนุมัติ') + '</div>' +
-        '<div class="rp-sign sm">' + box('ผู้บันทึกข้อมูล') +
-        '<div><div class="line" style="border:0"></div><b>วันที่ส่งงาน</b><br>......../......../............</div><div></div></div>';
+      sign = '<div class="rp-sign">' + box('ช่างผู้ซ่อม') + box('หัวหน้าช่าง / ผู้ตรวจสอบ') + box('ผู้อนุมัติ') + '</div>';
     }
-    // ตารางรายงานผลการปฏิบัติงาน (ช่างกรอกด้วยมือ) + ลายเซ็นผู้ส่งงานไว้ล่างสุด
-    var wrows = '';
-    for (var r = 0; r < 8; r++) wrows += '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
+    // ตารางรายงานผลการปฏิบัติงาน (ช่างกรอกด้วยมือ) — ขยายจนเต็มหน้า
+    //   สถานะ: ซ่อม | รอพ่นสี | รออะไหล่ | รอซ่อมต่อ   ·   ผู้รับผิดชอบ -> ช่างผู้ดูแล
+    var nRows = (opt.sign || opt.note) ? 10 : (wd.split('\n').length > 3 ? 13 : 15), wrows = '';
+    for (var r = 0; r < nRows; r++) wrows += '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
     var work = '<div class="rp-work"><div class="wt">รายงานผลการปฏิบัติงาน</div>' +
-      '<table class="rp-wtbl"><colgroup><col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col><col style="width:13%"><col style="width:13%"></colgroup>' +
-      '<thead><tr><th rowspan="2">วันที่</th><th colspan="3">สถานะ</th><th rowspan="2">บันทึกการทำงาน / รายละเอียด</th><th rowspan="2">ผู้รับผิดชอบ</th><th rowspan="2">ผู้ตรวจสอบ</th></tr>' +
-      '<tr><th>ซ่อม</th><th>สั่งอะไหล่</th><th>รออะไหล่</th></tr></thead><tbody>' + wrows + '</tbody></table>' +
-      (opt.sign ? '<div class="rp-sign left">' + box('ผู้ส่งงาน') + '</div>' : '') + '</div>';
+      '<table class="rp-wtbl"><colgroup><col style="width:10%"><col style="width:6.5%"><col style="width:7.5%"><col style="width:8%"><col style="width:8.5%"><col><col style="width:12%"><col style="width:12%"></colgroup>' +
+      '<thead><tr><th rowspan="2">วันที่</th><th colspan="4">สถานะ</th><th rowspan="2">บันทึกการทำงาน / รายละเอียด</th><th rowspan="2">ช่างผู้ดูแล</th><th rowspan="2">ผู้ตรวจสอบ</th></tr>' +
+      '<tr><th class="ws">ซ่อม</th><th class="ws">รอพ่นสี</th><th class="ws">รออะไหล่</th><th class="ws">รอซ่อมต่อ</th></tr></thead><tbody>' + wrows + '</tbody></table>' +
+      sigRow(['วันที่ส่งงาน', 'ผู้ส่งงาน', 'ผู้ขับทดสอบ']) + '</div>';
     return '<div class="rp-card">' + head + title + info + detail + note + sign + work + rpFoot(meta) + '</div>';
   }
 

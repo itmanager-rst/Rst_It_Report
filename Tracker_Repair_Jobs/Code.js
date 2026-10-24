@@ -1,5 +1,5 @@
 /**
- * CODE_VERSION: r05-2026-10-21-types-branches
+ * CODE_VERSION: r06-2026-10-24-printform-v2
  * =====================================================================
  *  ระบบติดตามสถานะงานซ่อม / PM  (Service Repair & PM Tracker)
  *  Backend : Google Apps Script  |  Database : Google Sheets
@@ -25,6 +25,7 @@ const CONFIG = {
     IN_PROGRESS: 'กำลังซ่อม',
     WAITING_PARTS: 'รออะไหล่',
     WAITING_PAINT: 'รอพ่นสี',
+    WAITING_CONTINUE: 'รอซ่อมต่อ',
     DONE: 'ซ่อมเสร็จแล้ว',
     CANCELLED: 'ยกเลิก',
   },
@@ -38,7 +39,7 @@ const CONFIG = {
   ],
 
   // ประเภทงาน (ตัวเลือกใน dropdown หน้าเว็บ)
-  JOB_TYPES: ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'อื่นๆ'],
+  JOB_TYPES: ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'ปรับสภาพมือสอง', 'อื่นๆ'],
 
   // SLA (วัน) เริ่มต้นตามประเภทงาน — ใช้เมื่อช่อง SLA_Target_Days ว่าง
   //  (มีประเภทเก่าไว้ด้วย เพื่อให้งานเดิมคำนวณกำหนดเสร็จได้เหมือนเดิม)
@@ -80,7 +81,7 @@ const CONFIG = {
   },
 };
 
-const CODE_VERSION = 'r05-2026-10-21-types-branches';
+const CODE_VERSION = 'r06-2026-10-24-printform-v2';
 
 const HEADERS = {
   Repair_Jobs: [
@@ -208,6 +209,7 @@ function setupDatabase() {
     cf(CONFIG.STATUS.IN_PROGRESS, '#dbeafe', '#1e40af'),
     cf(CONFIG.STATUS.WAITING_PARTS, '#fef3c7', '#92400e'),
     cf(CONFIG.STATUS.WAITING_PAINT, '#ede9fe', '#5b21b6'),
+    cf(CONFIG.STATUS.WAITING_CONTINUE, '#cffafe', '#155e75'),
     cf(CONFIG.STATUS.DONE, '#dcfce7', '#166534'),
     cf(CONFIG.STATUS.CANCELLED, '#e5e7eb', '#374151'),
   ]);
@@ -393,7 +395,7 @@ function enrichJob_(r, techMap, today) {
   };
 
   job.isActive = status !== S.DONE && status !== S.CANCELLED;
-  job.isPending = status === S.WAITING_PARTS || status === S.WAITING_PAINT ||
+  job.isPending = status === S.WAITING_PARTS || status === S.WAITING_PAINT || status === S.WAITING_CONTINUE ||
     (job.isActive && (partsStatus === CONFIG.PARTS.PENDING || partsStatus === CONFIG.PARTS.PARTIAL));
   // อายุงาน (วัน) : งานยังไม่ปิด = นับถึงวันนี้, งานปิดแล้ว = นับถึงวันเสร็จจริง
   job.ageDays = startDate
