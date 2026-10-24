@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#D7000F">
+<meta name="format-detection" content="telephone=no">
+<title>RST รายการรถตีเทิร์น (Admin)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  RST — รายการรถตีเทิร์น · หน้า Dashboard สำหรับผู้บริหาร / admin เท่านั้น
+  TURN_WEB: t01-2026-10-24  (ไฟล์ turn.html ในโปรเจกต์ Apps Script เดียวกับแอปรูปรถ คู่กับ turn.gs)
+  - ล็อกอินด้วยบัญชี CRM เดียวกับแอปรูปรถ (token ใช้ร่วมกัน) เซิร์ฟเวอร์ส่งข้อมูลให้เฉพาะ role = admin
+  - เมนู: ภาพรวม (dashboard) · รายการรถ (ค้นหา/กรอง/เพิ่ม/แก้/ลบ) · นำเข้า / ส่งออก Excel
+  - จับคู่กับข้อมูล Ecount (ชีต Tractors ของแอปรูปรถ) ด้วยหมายเลขรถ แสดงสถานะสต็อก สาขา ราคา จำนวนรูป
+-->
+<style>
+:root{
+  --red:#D7000F; --red-dark:#A8000C; --red-soft:#FDE8EA;
+  --bg:#F4F6F9; --surface:#FFFFFF; --surface-2:#EEF1F5;
+  --ink:#1A1A1A; --ink-2:#5C5C5C; --ink-3:#8A8A8A; --line:#DCDCDC; --line-2:#ECECEC;
+  --warn:#9A5B00; --warn-soft:#FFF4DC; --ok:#0F7A43; --ok-soft:#E3F5EA; --info:#1F4E99; --info-soft:#E6EEFA;
+  --radius-s:4px; --radius-m:8px;
+  --font:"Noto Sans Thai","Helvetica Neue",Arial,Tahoma,system-ui,sans-serif;
+  box-sizing:border-box;
+}
+*,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:15px/1.6 var(--font);-webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom,0px)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #1A1A1A;outline-offset:2px}
+h1,h2,h3{line-height:1.3;margin:0;font-weight:700}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+.muted{color:var(--ink-2)}.small{font-size:13px}.num{font-variant-numeric:tabular-nums}
+
+/* ---------- header ---------- */
+header.top{background:#fff;border-bottom:1px solid #E5E5E5;position:sticky;top:0;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.top .wrap{display:flex;align-items:stretch;gap:16px;height:64px}
+.mark{display:flex;align-items:center;gap:12px;white-space:nowrap;min-width:0}
+.mark b{background:var(--red);color:#fff;padding:7px 12px;font-size:14px;letter-spacing:.06em;border-radius:var(--radius-s)}
+.mark .ttl{font-weight:700;font-size:16px}
+.mark .adm{font-size:11px;font-weight:700;letter-spacing:.08em;background:#1A1A1A;color:#fff;border-radius:3px;padding:2px 6px}
+nav.tabs{display:flex;gap:2px;margin-left:auto}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:0 14px;cursor:pointer;font-weight:600;font-size:14.5px;white-space:nowrap}
+nav.tabs button:hover{color:var(--red)}
+nav.tabs button[aria-current="true"]{color:var(--red);border-bottom-color:var(--red)}
+.hbtns{display:flex;align-items:center;gap:8px}
+.userbtn{background:var(--red);border:0;color:#fff;border-radius:var(--radius-s);padding:6px 12px;font-size:12.5px;cursor:pointer;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.backlink{font-size:12.5px;color:var(--ink-2);text-decoration:none;border:1px solid var(--line);border-radius:var(--radius-s);padding:5px 10px;white-space:nowrap}
+.backlink:hover{color:var(--red);border-color:var(--red)}
+
+/* ---------- common ---------- */
+.btn{height:40px;padding:0 16px;border-radius:var(--radius-s);border:1px solid #CFCFCF;background:#fff;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;text-decoration:none;color:var(--ink);transition:border-color .15s,background .15s}
+.btn:hover{border-color:#1A1A1A}
+.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.btn.primary:hover{background:var(--red-dark);border-color:var(--red-dark)}
+.btn.dark{background:#1A1A1A;border-color:#1A1A1A;color:#fff}
+.btn.ghost-red{color:var(--red);border-color:#F1B9BE}
+.btn.ghost-red:hover{border-color:var(--red);background:var(--red-soft)}
+.btn.sm{height:32px;padding:0 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.dbstat{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;background:#fff;border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 12px;margin:16px 0;font-size:13px;color:var(--ink-2)}
+.dbstat .st{display:inline-flex;align-items:center;gap:7px;font-weight:600;color:var(--ink)}
+.dbstat .dot{width:9px;height:9px;border-radius:50%;background:#B0B0B0}
+.dbstat[data-s="ok"] .dot{background:#1E9E4A;box-shadow:0 0 0 3px rgba(30,158,74,.18)}
+.dbstat[data-s="busy"] .dot{background:#F2A900}
+.dbstat[data-s="err"] .dot{background:var(--red)}
+.dbstat b{color:var(--ink)}
+.dbstat .sp{flex:1}
+.banner{background:#fff;border-left:4px solid #F2A900;border-radius:var(--radius-s);padding:10px 14px;font-size:14px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.loading{padding:70px 20px;text-align:center;color:var(--ink-2);font-weight:500}
+.ld-bar{width:180px;height:4px;margin:0 auto 14px;background:#E2E2E2;border-radius:2px;overflow:hidden;position:relative}
+.ld-bar span{position:absolute;top:0;bottom:0;width:40%;background:var(--red);animation:ld 1.2s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes ld{0%{left:-40%}100%{left:100%}}
+section.view{display:none;padding-bottom:40px}section.view.on{display:block}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius-m);padding:16px 18px}
+.card h3{font-size:15px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.card h3 small{font-weight:500;color:var(--ink-3);font-size:12.5px;margin-left:auto}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden;background:#fff}
+.seg label{padding:6px 12px;font-size:13px;cursor:pointer;border-right:1px solid var(--line);white-space:nowrap}
+.seg label:last-child{border-right:0}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:#1A1A1A;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;line-height:1.2;padding:3px 8px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--red-soft);color:var(--red-dark)}
+.chip.info{background:var(--info-soft);color:var(--info)}
+.chip.dark{background:#1A1A1A;color:#fff}
+
+/* ---------- dashboard ---------- */
+.dhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+.dhead h2{font-size:20px}
+.dhead .grow{flex:1;min-width:220px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:var(--radius-m);padding:14px 16px;cursor:pointer;text-align:left;border-top:4px solid var(--line);transition:transform .15s,box-shadow .15s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.07)}
+.kpi .l{font-size:13px;color:var(--ink-2);font-weight:600}
+.kpi .v{font-size:32px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:12.5px;color:var(--ink-3)}
+.kpi.k-all{border-top-color:#1A1A1A}.kpi.k-hold{border-top-color:var(--red)}.kpi.k-out{border-top-color:var(--ok)}
+.kpi.k-alert{border-top-color:#F2A900}.kpi.k-alert .v{color:var(--warn)}.kpi.k-ec{border-top-color:var(--info)}
+.dgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+.c4{grid-column:span 4}.c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+.hb{display:grid;gap:4px}
+.hb button{all:unset;cursor:pointer;display:grid;grid-template-columns:minmax(90px,38%) 1fr 64px;align-items:center;gap:10px;padding:4px 6px;border-radius:var(--radius-s);font-size:13.5px}
+.hb button:hover,.hb button:focus-visible{background:var(--surface-2)}
+.hb .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb .t{height:12px;background:var(--surface-2);border-radius:2px;overflow:hidden}
+.hb .t i{display:block;height:100%;background:var(--red);border-radius:2px}
+.hb .t i.k{background:#1A1A1A}.hb .t i.g{background:var(--ok)}.hb .t i.w{background:#E0A100}.hb .t i.b{background:var(--info)}.hb .t i.x{background:#9A9A9A}
+.hb .c{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.hb .c small{color:var(--ink-3);font-weight:500;margin-left:3px}
+.yrs{display:flex;align-items:flex-end;gap:4px;height:150px;padding-top:16px;overflow-x:auto}
+.yrs button{all:unset;cursor:pointer;flex:1 0 26px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:11px;color:var(--ink-2)}
+.yrs button b{font-size:11.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+.yrs button i{width:70%;max-width:26px;background:#1A1A1A;border-radius:2px 2px 0 0;min-height:2px}
+.yrs button:hover i{background:var(--red)}
+.alist{display:grid;gap:8px}
+.alist button{all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line-2);border-left:4px solid #E0A100;border-radius:var(--radius-s);background:#FFFCF5}
+.alist button.r{border-left-color:var(--red);background:#FFF8F8}
+.alist button.z{border-left-color:var(--ok);background:#F7FCF9}
+.alist button:hover{border-color:#C9C9C9}
+.alist b{font-size:22px;min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+.alist span{flex:1;font-size:14px}
+.alist span small{display:block;color:var(--ink-3);font-size:12px}
+.alist em{font-style:normal;color:var(--red);font-weight:600;font-size:13px}
+.logl{list-style:none;margin:0;padding:0;display:grid;gap:2px;max-height:330px;overflow:auto}
+.logl li{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line-2)}
+.logl li .a{grid-row:span 2}
+.logl li .w{color:var(--ink-3);font-size:12px}
+.empty{padding:26px 10px;text-align:center;color:var(--ink-3)}
+
+/* ---------- list ---------- */
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+.bar label{display:grid;gap:4px;font-size:12.5px;color:var(--ink-2);font-weight:500}
+.bar .grow{flex:1 1 260px}
+.bar input,.bar select{height:40px;border:1px solid #CFCFCF;border-radius:var(--radius-s);padding:0 10px;background:#fff;min-width:130px}
+.bar input:focus,.bar select:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:var(--red)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chips button{all:unset;cursor:pointer}
+.sumline{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px;font-size:13.5px;color:var(--ink-2)}
+.sumline .sp{flex:1}
+.tbl{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid var(--line);border-radius:var(--radius-m);overflow:hidden;font-size:13.5px}
+.tbl th{background:#FAFAFA;text-align:left;font-weight:600;font-size:12.5px;color:var(--ink-2);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+.tbl tbody tr{cursor:pointer}
+.tbl tbody tr:hover td{background:#FFF6F7}
+.tbl tbody tr:last-child td{border-bottom:0}
+.tbl .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.tbl .sub{display:block;color:var(--ink-3);font-size:12px}
+.tbl .cs{display:flex;flex-wrap:wrap;gap:4px}
+.tbl .nw{white-space:nowrap}.tbl .st{max-width:230px}
+.plate{display:inline-block;border:1.5px solid #1A1A1A;border-radius:4px;padding:0 6px;font-weight:700;background:#fff;white-space:nowrap}
+.plate.none{border-style:dashed;border-color:#BBB;color:var(--ink-3);font-weight:500}
+.more{text-align:center;margin-top:14px}
+
+/* ---------- editor (drawer) ---------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.ed{position:fixed;top:0;right:0;bottom:0;width:min(720px,100%);background:var(--bg);z-index:41;transform:translateX(100%);transition:transform .25s ease;display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,.15)}
+.ed.on{transform:none}
+.ed .eh{background:#fff;border-bottom:1px solid var(--line);padding:14px 18px;display:flex;align-items:center;gap:10px}
+.ed .eh h2{font-size:18px;flex:1;min-width:0}
+.ed .eh h2 small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:500}
+.ed .eb{flex:1;overflow:auto;padding:16px 18px;display:grid;gap:14px;align-content:start}
+.ed .ef{background:#fff;border-top:1px solid var(--line);padding:12px 18px;display:flex;gap:8px;flex-wrap:wrap}
+.ed .ef .sp{flex:1}
+fieldset{border:1px solid var(--line);border-radius:var(--radius-m);background:#fff;margin:0;padding:12px 14px 14px}
+legend{font-weight:700;font-size:14px;padding:0 6px}
+.fg{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 12px}
+.fg label{display:grid;gap:3px;font-size:12.5px;color:var(--ink-2);font-weight:500;align-content:start}
+.fg label.full{grid-column:1/-1}
+.fg input,.fg select,.fg textarea{height:40px;border:1px solid #CFCFCF;border-radius:var(--radius-s);padding:0 10px;background:#fff;font-size:15px;color:var(--ink);width:100%}
+.fg textarea{height:78px;padding:8px 10px;resize:vertical}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:var(--red)}
+.fg .hint{font-size:11.5px;color:var(--ink-3);min-height:1em}
+.fg .hint.bad{color:var(--red)}
+.fg label.req>span:first-child::after{content:" *";color:var(--red)}
+.ecbox{border:1px solid var(--line);border-left:4px solid var(--info);border-radius:var(--radius-m);background:#fff;padding:12px 14px;font-size:13.5px}
+.ecbox.none{border-left-color:#BBB}
+.ecbox h4{margin:0 0 6px;font-size:14px;display:flex;gap:8px;align-items:center}
+.ecbox dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0}
+.ecbox dt{color:var(--ink-3)}.ecbox dd{margin:0;font-weight:600}
+.meta{font-size:12px;color:var(--ink-3)}
+
+/* ---------- import ---------- */
+.drop{border:2px dashed #C9C9C9;border-radius:var(--radius-m);background:#fff;padding:30px 20px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.on{border-color:var(--red);background:#FFF8F8}
+.drop b{display:block;font-size:16px;margin-bottom:4px}
+.pv{margin-top:14px;display:grid;gap:12px}
+.pv table{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+.pv th,.pv td{border:1px solid var(--line-2);padding:5px 8px;text-align:left;white-space:nowrap}
+.pv th{background:#FAFAFA}
+.pvwrap{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:var(--radius-s)}
+.radios{display:grid;gap:8px}
+.radios label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--radius-s);padding:10px 12px;background:#fff;cursor:pointer}
+.radios label:has(input:checked){border-color:var(--red);background:#FFF8F8}
+.radios small{display:block;color:var(--ink-3)}
+
+/* ---------- overlays ---------- */
+.login{position:fixed;inset:0;z-index:100;display:none;place-items:center;padding:20px;background:linear-gradient(160deg,#1A1A1A 0%,#2B2B2B 55%,#5A0006 100%)}
+.login.on{display:grid}
+.login form,.login .box{width:min(390px,100%);background:#fff;border-radius:var(--radius-m);border-top:5px solid var(--red);padding:26px 24px 22px;display:grid;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.4)}
+.login .lb{font-weight:700;font-size:20px;text-align:center}
+.login .lb small{display:block;font-weight:500;font-size:13px;color:var(--ink-2)}
+.login label{display:grid;gap:6px;font-size:13px;color:var(--ink-2);font-weight:500}
+.login input{font-size:16px;padding:11px 12px;border:1px solid var(--line);border-radius:var(--radius-s);background:#FAFAFA}
+.login input:focus{outline:2px solid var(--red);border-color:var(--red);background:#fff}
+.login button.go{font-weight:600;font-size:16px;padding:12px;border:0;border-radius:var(--radius-s);background:var(--red);color:#fff;cursor:pointer}
+.login button.go:disabled{opacity:.6;cursor:wait}
+.login .err{color:var(--red);font-size:13.5px;min-height:1em}
+.login .note{font-size:12px;color:var(--ink-3)}
+.lock{width:54px;height:54px;border-radius:50%;background:var(--red-soft);color:var(--red);display:grid;place-items:center;margin:0 auto}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,30px);background:#1A1A1A;color:#fff;padding:10px 18px;border-radius:var(--radius-s);font-size:14px;opacity:0;pointer-events:none;transition:all .25s;z-index:120;max-width:calc(100% - 32px)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- responsive ---------- */
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.c4,.c5,.c6,.c7,.c8{grid-column:span 6}.mark .ttl{display:none}}
+@media (max-width:760px){
+  .wrap{padding:0 14px}
+  .top .wrap{flex-wrap:wrap;height:auto;padding-top:8px;gap:8px}
+  .mark{flex:1}
+  nav.tabs{order:9;width:100%;margin:0;height:42px}
+  nav.tabs button{flex:1;padding:0 6px;font-size:13.5px}
+  .backlink{display:none}
+  #verTxt{display:none}
+  .userbtn{max-width:130px}
+  .kpis{grid-template-columns:repeat(2,1fr)}.kpi .v{font-size:26px}
+  .kpis .kpi:first-child{grid-column:1/-1}
+  .c4,.c5,.c6,.c7,.c8{grid-column:1/-1}
+  .fg{grid-template-columns:1fr}
+  .tbl th{display:none}
+  .tbl,.tbl tbody,.tbl tr,.tbl td{display:block}
+  .tbl{border:0;background:none}
+  .tbl tbody{display:grid;gap:10px}
+  .tbl tbody tr{background:#fff;border:1px solid var(--line);border-radius:var(--radius-m);padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+  .tbl td{border:0;padding:0}
+  .tbl td[data-l]::before{content:attr(data-l);display:block;font-size:11px;color:var(--ink-3)}
+  .tbl td.w2{grid-column:1/-1}
+  .tbl td.hide-m{display:none}
+  .bar input,.bar select{min-width:0;width:100%}
+  .bar label{flex:1 1 45%}
+}
+@media print{header.top,.dbstat,.bar,.chips,.more,.btn,.ed,.scrim{display:none!important}body{background:#fff}.tbl th{position:static}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="mark"><b>RST</b><span class="ttl">รายการรถตีเทิร์น</span><span class="adm">ADMIN</span></div>
+    <nav class="tabs" aria-label="เมนู">
+      <button data-go="dash" aria-current="true">ภาพรวม</button>
+      <button data-go="list">รายการรถ</button>
+      <button data-go="io">นำเข้า / ส่งออก</button>
+    </nav>
+    <div class="hbtns">
+      <button class="btn primary sm" id="addBtn" type="button">+ เพิ่มรถ</button>
+      <a class="backlink" id="backLink" href="#" target="_top">← แอปรูปรถ</a>
+      <button class="userbtn" id="userBtn" type="button" hidden></button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="dbstat" id="dbStat" data-s="busy">
+    <span class="st"><span class="dot"></span><span id="dbText">กำลังเชื่อมต่อ...</span></span>
+    <span>ข้อมูล Ecount ล่าสุด: <b id="ecAt">-</b></span>
+    <span>ดึงข้อมูล: <b id="syncAt">-</b></span>
+    <span class="sp"></span>
+    <span class="small" id="verTxt"></span>
+    <button class="btn sm" id="refBtn" type="button">↻ รีเฟรช</button>
+  </div>
+  <div class="banner" id="banner" hidden></div>
+  <div class="loading" id="loading"><div class="ld-bar"><span></span></div>กำลังโหลดรายการรถตีเทิร์น...</div>
+
+  <!-- ===== ภาพรวม ===== -->
+  <section class="view" id="v-dash">
+    <div class="dhead">
+      <div class="grow"><h2>ภาพรวมรถตีเทิร์น</h2><div class="small muted" id="dAsOf"></div></div>
+      <div class="seg" id="dScope" role="radiogroup" aria-label="กลุ่มรายการ"></div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="dgrid">
+      <div class="card c5"><h3>ต้องติดตาม <small>ยังไม่โอนต่อ</small></h3><div class="alist" id="dAlerts"></div></div>
+      <div class="card c7"><h3>สถานะรถ</h3><div class="hb" id="dStatus"></div>
+        <h3 style="margin-top:16px">ประเภทการรับเข้า</h3><div class="hb" id="dSource"></div></div>
+      <div class="card c4"><h3>ยี่ห้อ</h3><div class="hb" id="dBrand"></div></div>
+      <div class="card c4"><h3>รุ่น <small>10 อันดับ</small></h3><div class="hb" id="dModel"></div></div>
+      <div class="card c4"><h3>เชื่อมกับ Ecount <small>จับคู่ด้วยหมายเลขรถ</small></h3><div class="hb" id="dEc"></div>
+        <div class="small muted" style="margin-top:8px">รถตีเทิร์นที่ลงทะเบียนเป็นสินค้ามือสองใน Ecount แล้ว จะดึงสถานะสต็อก สาขา ราคา และรูปจากแอปรูปรถมาให้อัตโนมัติ</div></div>
+      <div class="card c8"><h3>รุ่นปีรถ <small>คลิกแท่งเพื่อดูรายการ</small></h3><div class="yrs" id="dYear"></div></div>
+      <div class="card c4"><h3>ชื่อในเล่ม / ผู้ถือกรรมสิทธิ์ <small>5 อันดับ</small></h3><div class="hb" id="dOwner"></div></div>
+      <div class="card c12"><h3>ความเคลื่อนไหวล่าสุด <small>เพิ่ม · แก้ไข · ลบ · นำเข้า</small></h3><ul class="logl" id="dLog"></ul></div>
+    </div>
+  </section>
+
+  <!-- ===== รายการรถ ===== -->
+  <section class="view" id="v-list">
+    <div class="bar">
+      <label class="grow">ค้นหา<input id="q" type="search" autocomplete="off" placeholder="ทะเบียน หมายเลขรถ/เครื่อง รุ่น ชื่อ-สกุล รหัส หมายเหตุ"></label>
+      <label>กลุ่ม<select id="fGroup"></select></label>
+      <label>สถานะ<select id="fStatus"></select></label>
+      <label>รับเข้า<select id="fSource"></select></label>
+      <label>ยี่ห้อ<select id="fBrand"></select></label>
+      <label>ต้องติดตาม<select id="fAlert"></select></label>
+      <label>Ecount<select id="fEc"></select></label>
+      <label>เรียง<select id="fSort">
+        <option value="seq">ลำดับเดิม</option><option value="upd">แก้ไขล่าสุด</option><option value="tax">ภาษีครบกำหนด (เก่าก่อน)</option>
+        <option value="year">ปีรถ (ใหม่ก่อน)</option><option value="model">รุ่น</option></select></label>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="sumline"><span id="sumTxt"></span><span class="sp"></span>
+      <button class="btn sm" id="clrBtn" type="button">ล้างตัวกรอง</button>
+      <button class="btn sm" id="xlsBtn" type="button">ส่งออก Excel (ตามตัวกรอง)</button></div>
+    <table class="tbl" id="tbl">
+      <thead><tr><th>#</th><th>ทะเบียน</th><th>รถ</th><th>หมายเลขรถ / เครื่อง</th><th>รับเข้า</th><th>ชื่อ-สกุล</th><th>เอกสาร</th><th>สถานะ</th><th>Ecount</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="noRows" hidden>ไม่พบรายการตามเงื่อนไข</div>
+    <div class="more"><button class="btn" id="moreBtn" type="button" hidden>แสดงเพิ่ม</button></div>
+  </section>
+
+  <!-- ===== นำเข้า / ส่งออก ===== -->
+  <section class="view" id="v-io">
+    <div class="dgrid">
+      <div class="card c7">
+        <h3>นำเข้าจาก Excel</h3>
+        <div class="small muted" style="margin-bottom:10px">รองรับไฟล์ "รายการรถตีเทิร์น" รูปแบบเดิม (ชีต รถตีเทิร์น และ รถตีเทิร์น กทบ.) ระบบหาแถวหัวตารางเอง วันที่ พ.ศ. แปลงให้อัตโนมัติ</div>
+        <label class="drop" id="drop"><input type="file" id="file" accept=".xlsx,.xls,.csv" hidden><b>ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</b><span class="small muted">.xlsx / .xls</span></label>
+        <div class="pv" id="pv" hidden></div>
+      </div>
+      <div class="card c5">
+        <h3>ส่งออก</h3>
+        <div class="small muted" style="margin-bottom:10px">ดาวน์โหลดข้อมูลทั้งหมดเป็น Excel (หัวคอลัมน์ภาษาไทย วันที่เป็น พ.ศ.) พร้อมคอลัมน์ข้อมูลจาก Ecount</div>
+        <button class="btn dark" id="xlsAll" type="button">ดาวน์โหลด Excel ทั้งหมด</button>
+        <h3 style="margin-top:22px">เกี่ยวกับข้อมูล</h3>
+        <ul class="small muted" style="margin:0;padding-left:18px">
+          <li>เก็บในชีต <b>TurnCars</b> ของไฟล์ Google Sheet เดียวกับแอปรูปรถ</li>
+          <li>ทุกการเพิ่ม/แก้/ลบ บันทึกในชีต <b>TurnLog</b> (รายการที่ลบกู้คืนได้จากหน้าความเคลื่อนไหว)</li>
+          <li>นำเข้าแบบ "แทนที่ทั้งหมด" จะสำรองชีตเดิมเป็น TurnCars_backup_วันเวลา ก่อน</li>
+          <li>เปิดได้เฉพาะบัญชี CRM ที่มีสิทธิ์ admin</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===== ฟอร์ม เพิ่ม/แก้ไข ===== -->
+<div class="scrim" id="scrim"></div>
+<aside class="ed" id="ed" role="dialog" aria-modal="true" aria-labelledby="edTtl">
+  <div class="eh"><h2 id="edTtl">เพิ่มรถตีเทิร์น<small id="edSub"></small></h2><button class="btn sm" type="button" id="edX">ปิด</button></div>
+  <form class="eb" id="edForm" autocomplete="off"></form>
+  <div class="ef">
+    <button class="btn ghost-red" type="button" id="edDel">ลบรายการ</button>
+    <span class="sp"></span>
+    <button class="btn" type="button" id="edCancel">ยกเลิก</button>
+    <button class="btn primary" type="button" id="edSave">บันทึก</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status"></div>
+
+<!-- ===== ล็อกอิน (บัญชี CRM) ===== -->
+<div class="login" id="login">
+  <form id="loginForm" autocomplete="on">
+    <div class="lock"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+    <div class="lb">รายการรถตีเทิร์น<small>RUAMSINTHAI GROUP · เฉพาะผู้ดูแลระบบ</small></div>
+    <label>ชื่อผู้ใช้ (เดียวกับ CRM)<input id="lgUser" name="username" autocomplete="username" required></label>
+    <label>รหัสผ่าน<input id="lgPass" name="password" type="password" autocomplete="current-password" required></label>
+    <div class="err" id="lgErr" role="alert"></div>
+    <button class="go" type="submit" id="lgBtn">เข้าสู่ระบบ</button>
+    <div class="note">ใช้บัญชี CRM-TRACKER Pro ที่มีสิทธิ์ admin เท่านั้น · ทุกการเข้าใช้งานถูกบันทึก</div>
+  </form>
+</div>
+<div class="login" id="denied">
+  <div class="box" style="text-align:center">
+    <div class="lock"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
+    <div class="lb">ไม่มีสิทธิ์เข้าใช้งาน<small id="denMsg">เมนูนี้เปิดให้เฉพาะผู้ดูแลระบบ (admin)</small></div>
+    <button class="go" type="button" id="denOut" style="font-weight:600;padding:12px;border:0;border-radius:4px;background:#D7000F;color:#fff;cursor:pointer">เข้าสู่ระบบด้วยบัญชีอื่น</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+"use strict";
+var TURN_WEB="t01-2026-10-24";
+var $=function(s,r){return (r||document).querySelector(s)}, $$=function(s,r){return [].slice.call((r||document).querySelectorAll(s))};
+
+/* ================= การเชื่อมต่อเซิร์ฟเวอร์ (แบบเดียวกับแอปรูปรถ) =================
+ * เปิดจากลิงก์ Web App (?page=turn) → google.script.run
+ * เปิดจาก Live Server (ทดสอบ) → POST ไป API_URL */
+var IN_GAS=!!(window.google&&google.script&&google.script.run);
+var API_URL="https://script.google.com/macros/s/AKfycbyAQ8R1vdY6-OmmHpIeC3IRH4ZV6x-Wp9jIKyBjk5N5gTz9p__rpoZvuYSepwNpaLTq1Q/exec";
+function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){ return null; } }
+var TOK=store("rst_tok")||"", USER=null; try{ USER=JSON.parse(store("rst_user")||"null"); }catch(e){}
+function rawCall(fn,args){
+  if(!IN_GAS){
+    return fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn:fn,args:args,pin:"",tok:TOK}),redirect:"follow"})
+      .then(function(r){return r.text()},function(){ throw new Error("เชื่อมต่อ Apps Script ไม่ได้ ตรวจอินเทอร์เน็ต"); })
+      .then(function(t){ var j; try{ j=JSON.parse(t); }catch(e){ throw new Error("Apps Script ตอบไม่ใช่ JSON ตรวจ API_URL และ deploy เวอร์ชันล่าสุด"); } if(!j.ok) throw new Error(j.error||"ผิดพลาด"); return j.result; });
+  }
+  return new Promise(function(res,rej){
+    google.script.run.withSuccessHandler(res).withFailureHandler(function(e){ rej(new Error(e&&e.message?e.message:String(e))); }).call(fn,args,"",TOK);
+  });
+}
+function api(fn){
+  var args=[].slice.call(arguments,1);
+  return rawCall(fn,args).catch(function(e){
+    var m=e.message||"";
+    if(/^AUTH:/.test(m)){ m=m.replace(/^AUTH:\s*/,""); logout(); showLogin(m); throw new Error(m); }
+    if(/^ADMIN:/.test(m)){ m=m.replace(/^ADMIN:\s*/,""); showDenied(m); throw new Error(m); }
+    if(/ไม่รู้จักคำสั่ง turn/.test(m)) throw new Error("เซิร์ฟเวอร์ยังไม่มีไฟล์ turn.gs หรือ code.js ยังไม่ใช่ r16 ให้วางไฟล์ใหม่แล้ว Deploy เวอร์ชันใหม่");
+    throw e;
+  });
+}
+
+/* ================= helpers ================= */
+var TM=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]}); }
+function norm(s){ return String(s||"").toLowerCase().replace(/[\s\-\/\.]/g,""); }
+function uniq(a){ var o={},r=[]; a.forEach(function(v){ if(v&&!o[v]){o[v]=1;r.push(v);} }); return r; }
+function toast(t){ var el=$("#toast"); el.textContent=t; el.classList.add("on"); clearTimeout(toast._t); toast._t=setTimeout(function(){el.classList.remove("on")},2800); }
+function banner(t){ var b=$("#banner"); b.textContent=t||""; b.hidden=!t; }
+function isISO(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")); }
+/** ISO (ค.ศ.) → "27 พ.ย. 2568"  ไม่ใช่วันที่ → คืนข้อความเดิม */
+function thDate(v){ if(!isISO(v)) return v||""; var p=v.split("-"); return (+p[2])+" "+TM[+p[1]-1]+" "+(+p[0]+543); }
+/** ISO → "27/11/2568" สำหรับช่องกรอก */
+function thInput(v){ if(!isISO(v)) return v||""; var p=v.split("-"); return (+p[2])+"/"+(+p[1])+"/"+(+p[0]+543); }
+/** ข้อความวันที่ → ISO (รับ วว/ดด/ปปปป พ.ศ.หรือ ค.ศ., yyyy-mm-dd)  ไม่ใช่วันที่ → null */
+function parseDate(t){
+  t=String(t||"").trim(); if(!t) return "";
+  var m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y,mo,d;
+  if(m){ y=+m[1]; mo=+m[2]; d=+m[3]; }
+  else if((m=t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/))){ d=+m[1]; mo=+m[2]; y=+m[3]; if(y<100) y+= y>50?2500:2000; }
+  else return null;
+  if(y>2400) y-=543;
+  if(mo<1||mo>12||d<1||d>31||y<1950||y>2200) return null;
+  return y+"-"+(mo<10?"0":"")+mo+"-"+(d<10?"0":"")+d;
+}
+function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+function addDays(iso,n){ var d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+function thDT(v){ if(!v) return "-"; var d=new Date(v); if(isNaN(d)) return thDate(v); return d.getDate()+" "+TM[d.getMonth()]+" "+(d.getFullYear()+543)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+" น."; }
+function money(n){ n=+n; return n? n.toLocaleString("th-TH")+" บาท" : "-"; }
+/** key จับคู่ Ecount ฝั่งหน้าเว็บ (ใช้ตอน preview นำเข้า) ให้ตรงกับ turnKey_ ใน turn.gs */
+function keyOf(ch){ var t=String(ch||"").replace(/\(\s*GPS\s*\)/i,"").trim(); var i=t.indexOf("/"); t=(i<0?t:t.slice(0,i)).toUpperCase().replace(/\s+/g,""); return t.replace(/[-\/]/g,"").length>=5&&!/-$/.test(t)?t:""; }
+
+/* ================= state ================= */
+var ROWS=[], BYID={}, EC={}, LOG=[], STATUS=["ถือครองอยู่","รอเอกสาร","เบิกเล่มแล้ว","โอนต่อแล้ว","มีปัญหา"], APP_URL="";
+var SCOPE=""; // กลุ่มรายการบน dashboard ("" = ทั้งหมด)
+var F={q:"",group:"",status:"",source:"",brand:"",alert:"",ec:"",model:"",year:"",owner:""};
+var STATUS_CLS={"ถือครองอยู่":"dark","รอเอกสาร":"warn","เบิกเล่มแล้ว":"info","โอนต่อแล้ว":"ok","มีปัญหา":"bad"};
+var STATUS_BAR={"ถือครองอยู่":"k","รอเอกสาร":"w","เบิกเล่มแล้ว":"b","โอนต่อแล้ว":"g","มีปัญหา":""};
+
+/* เรื่องที่ต้องติดตาม (คิดเฉพาะรถที่ยังไม่โอนต่อ) */
+var ALERTS=[
+  {k:"tax",   t:"ภาษีขาด / เลยกำหนด",       d:"วันภาษีครบกำหนดผ่านไปแล้ว", cls:"r"},
+  {k:"taxs",  t:"ภาษีครบกำหนดใน 60 วัน",    d:"เตรียมต่อภาษี", cls:""},
+  {k:"idx",   t:"บัตรประชาชนเจ้าของหมดอายุ", d:"ต้องขอสำเนาบัตรใหม่ก่อนโอน", cls:"r"},
+  {k:"ids",   t:"บัตรหมดอายุใน 90 วัน",      d:"รีบโอนก่อนบัตรหมดอายุ", cls:""},
+  {k:"book",  t:"ไม่มีคู่มือ / รอคู่มือ",     d:"เล่มทะเบียนยังไม่ครบ", cls:"r"},
+  {k:"set",   t:"ไม่มีชุดโอน",               d:"ยังไม่ได้เอกสารชุดโอน", cls:""},
+  {k:"prob",  t:"สถานะ มีปัญหา",             d:"เช่น เจ้าของเสียชีวิต / ไม่ยอมเซ็น", cls:"r"}
+];
+function alertsOf(r){
+  if(r._al) return r._al;
+  var a=[], t=todayISO();
+  if(r.status!=="โอนต่อแล้ว"){
+    if(isISO(r.taxDue)){ if(r.taxDue<t) a.push("tax"); else if(r.taxDue<=addDays(t,60)) a.push("taxs"); }
+    if(isISO(r.idExpire)){ if(r.idExpire<t) a.push("idx"); else if(r.idExpire<=addDays(t,90)) a.push("ids"); }
+    if(/ไม่.?มีคู่มือ|รอคู่มือ/.test(r.regBook||"")) a.push("book");
+    if(/ไม่มีชุดโอน/.test(r.transferSet||"")) a.push("set");
+    if(r.status==="มีปัญหา") a.push("prob");
+  }
+  return (r._al=a);
+}
+var ALERT_T={}; ALERTS.forEach(function(x){ALERT_T[x.k]=x.t});
+function ecOf(r){ return r.key&&EC[r.key]||null; }
+function prep(r){
+  delete r._al;
+  r._nk=[r.plate,r.brand,r.model,r.chassis,r.engine,r.ownerName,r.custCode,r.transferTo,r.transferCode,r.holder,r.note,r.source,r.branch,r.boughtFrom,r.year].map(norm).join(" ");
+  return r;
+}
+
+/* ================= โหลดข้อมูล ================= */
+function dbStatus(s,t){ var el=$("#dbStat"); el.dataset.s=s; $("#dbText").textContent=t; }
+function load(){
+  dbStatus("busy","กำลังโหลด...");
+  return api("turnBoot").then(function(b){
+    ROWS=b.rows.map(prep); BYID={}; ROWS.forEach(function(r){BYID[r.id]=r});
+    EC=b.ecount||{}; LOG=b.log||[]; if(b.status) STATUS=b.status; APP_URL=b.appUrl||"";
+    if(b.me){ USER=USER||{}; USER.role=b.me.r; }
+    $("#backLink").href=APP_URL||(IN_GAS?"#":"index.html");
+    $("#loading").hidden=true; banner("");
+    dbStatus("ok","เชื่อมต่อแล้ว · "+ROWS.length+" รายการ");
+    $("#ecAt").textContent=b.ecountAt?thDT(b.ecountAt):"ยังไม่เคยนำเข้า";
+    $("#syncAt").textContent=thDT(new Date());
+    $("#verTxt").textContent="หน้าเว็บ "+TURN_WEB+" · เซิร์ฟเวอร์ "+(b.version||"?");
+    fillFilters();
+    if(!ROWS.length&&!$("section.view.on")) { go("io"); banner("ยังไม่มีข้อมูล เริ่มจากนำเข้าไฟล์ Excel รายการรถตีเทิร์น หรือกด + เพิ่มรถ"); }
+    else if(!$("section.view.on")) go("dash"); else render();
+  }).catch(function(e){
+    $("#loading").hidden=true;
+    if(!TOK){ dbStatus("busy","รอเข้าสู่ระบบ"); return; }
+    dbStatus("err","เชื่อมต่อไม่ได้"); banner("โหลดข้อมูลไม่ได้: "+e.message);
+  });
+}
+$("#refBtn").onclick=function(){ load().then(function(){ if($("#dbStat").dataset.s==="ok") toast("อัปเดตข้อมูลแล้ว"); }); };
+
+/* ================= เมนู ================= */
+var CUR="";
+function go(v){
+  CUR=v;
+  $$("section.view").forEach(function(s){ s.classList.toggle("on",s.id==="v-"+v); });
+  $$("nav.tabs button").forEach(function(b){ b.setAttribute("aria-current",b.dataset.go===v?"true":"false"); });
+  render(); window.scrollTo(0,0);
+}
+$$("nav.tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go); }; });
+function render(){ if(CUR==="dash") renderDash(); else if(CUR==="list") renderList(true); }
+
+/* ================= ภาพรวม (dashboard) ================= */
+function groups(){ return uniq(ROWS.map(function(r){return r.sheetSrc})).sort(); }
+function countBy(rows,fn){ var m={}; rows.forEach(function(r){ var k=fn(r); if(k==null||k==="") k="(ไม่ระบุ)"; m[k]=(m[k]||0)+1; }); return Object.keys(m).map(function(k){return[k,m[k]]}).sort(function(a,b){return b[1]-a[1]||a[0].localeCompare(b[0],"th")}); }
+function hbars(el,data,total,dim,cls){
+  var mx=data.reduce(function(m,d){return Math.max(m,d[1])},0)||1;
+  el.innerHTML=data.length?data.map(function(d){
+    var c=typeof cls==="function"?cls(d[0]):(cls||"");
+    return '<button type="button" data-dim="'+dim+'" data-v="'+esc(d[0])+'"><span class="n" title="'+esc(d[0])+'">'+esc(d[0])+'</span><span class="t"><i class="'+c+'" style="width:'+(d[1]/mx*100).toFixed(1)+'%"></i></span><span class="c">'+d[1]+'<small>'+(total?Math.round(d[1]/total*100):0)+'%</small></span></button>';
+  }).join(""):'<div class="empty">ไม่มีข้อมูล</div>';
+}
+function drill(dim,v){
+  Object.keys(F).forEach(function(k){F[k]=""});
+  F.group=SCOPE;
+  if(v==="(ไม่ระบุ)") v="__none";
+  F[dim]=v; syncFilterUI(); go("list");
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-dim]"); if(!b) return;
+  drill(b.dataset.dim,b.dataset.v);
+});
+function renderDash(){
+  var sc=$("#dScope"), gs=groups();
+  sc.innerHTML=[["","ทั้งหมด"]].concat(gs.map(function(g){return[g,g]})).map(function(g){ return '<label><input type="radio" name="dsc" value="'+esc(g[0])+'"'+(g[0]===SCOPE?" checked":"")+'>'+esc(g[1])+'</label>'; }).join("");
+  sc.hidden=gs.length<2;
+  $$("input",sc).forEach(function(i){ i.onchange=function(){ SCOPE=i.value; renderDash(); }; });
+  var rows=ROWS.filter(function(r){ return !SCOPE||r.sheetSrc===SCOPE; }), N=rows.length;
+  var out=rows.filter(function(r){return r.status==="โอนต่อแล้ว"}).length, hold=N-out;
+  var al=rows.filter(function(r){return alertsOf(r).length}).length;
+  var ec=rows.filter(ecOf), ecS=ec.filter(function(r){return ecOf(r).status==="stock"}).length;
+  var yan=rows.filter(function(r){return /yanmar|ยันม่าร์/i.test(r.brand)}).length;
+  $("#dAsOf").textContent="ข้อมูล ณ "+thDT(new Date())+(SCOPE?" · กลุ่ม "+SCOPE:"");
+  $("#kpis").innerHTML=[
+    ["k-all","รถตีเทิร์นทั้งหมด",N,"Yanmar "+yan+" คัน ("+(N?Math.round(yan/N*100):0)+"%)","",""],
+    ["k-hold","ยังไม่โอนต่อ",hold,"ถือครอง / รอเอกสาร / เบิกเล่ม","status","__hold"],
+    ["k-out","โอนต่อแล้ว",out,(N?Math.round(out/N*100):0)+"% ของทั้งหมด","status","โอนต่อแล้ว"],
+    ["k-alert","ต้องติดตาม",al,"มีเรื่องเอกสาร/ภาษี/บัตร","alert","__any"],
+    ["k-ec","พบใน Ecount",ec.length,"ในสต็อก "+ecS+" คัน","ec","match"]
+  ].map(function(k){ return '<button type="button" class="kpi '+k[0]+'" '+(k[4]?'data-dim="'+k[4]+'" data-v="'+k[5]+'"':'data-dim="q" data-v=""')+'><div class="l">'+k[1]+'</div><div class="v">'+k[2].toLocaleString("th-TH")+'</div><div class="s">'+esc(k[3])+'</div></button>'; }).join("");
+  // ต้องติดตาม
+  var ac={}; rows.forEach(function(r){ alertsOf(r).forEach(function(a){ ac[a]=(ac[a]||0)+1; }); });
+  var al2=ALERTS.filter(function(a){return ac[a.k]});
+  $("#dAlerts").innerHTML=al2.length?al2.map(function(a){ return '<button type="button" class="'+a.cls+'" data-dim="alert" data-v="'+a.k+'"><b>'+ac[a.k]+'</b><span>'+esc(a.t)+'<small>'+esc(a.d)+'</small></span><em>ดูรายการ →</em></button>'; }).join("")
+    :'<button type="button" class="z" data-dim="q" data-v=""><b>0</b><span>ไม่มีเรื่องค้าง<small>เอกสาร ภาษี และบัตร ครบทุกคัน</small></span></button>';
+  hbars($("#dStatus"),STATUS.map(function(s){return[s,rows.filter(function(r){return r.status===s}).length]}).filter(function(d){return d[1]}),N,"status",function(s){return STATUS_BAR[s]||""});
+  hbars($("#dSource"),countBy(rows,function(r){return r.source}),N,"source","k");
+  hbars($("#dBrand"),countBy(rows,function(r){return r.brand}).slice(0,8),N,"brand");
+  hbars($("#dModel"),countBy(rows,function(r){return r.model}).slice(0,10),N,"model","k");
+  hbars($("#dOwner"),countBy(rows,function(r){return r.holder||r.ownerName}).slice(0,5),N,"owner","x");
+  hbars($("#dEc"),[["พบ · ในสต็อก",ecS],["พบ · ออกจากสต็อกแล้ว",ec.length-ecS],["ยังไม่พบใน Ecount",rows.filter(function(r){return r.key&&!ecOf(r)}).length],["หมายเลขรถไม่ครบ",rows.filter(function(r){return !r.key}).length]].filter(function(d){return d[1]}),N,"ecbar",function(s){return /ในสต็อก/.test(s)?"b":/ออก/.test(s)?"g":"x"});
+  // ปีรถ
+  var ys=countBy(rows,function(r){return r.year}).sort(function(a,b){ return a[0]==="(ไม่ระบุ)"?1:b[0]==="(ไม่ระบุ)"?-1:a[0]-b[0]; });
+  var ym=ys.reduce(function(m,d){return Math.max(m,d[1])},0)||1;
+  $("#dYear").innerHTML=ys.map(function(d){ var lbl=d[0]==="(ไม่ระบุ)"?"ไม่ระบุ":"'"+String(d[0]).slice(2); return '<button type="button" data-dim="year" data-v="'+esc(d[0])+'" title="'+esc(d[0]==="(ไม่ระบุ)"?d[0]:d[0]+" (พ.ศ. "+(+d[0]+543)+")")+' : '+d[1]+' คัน"><b>'+d[1]+'</b><i style="height:'+(d[1]/ym*100).toFixed(1)+'%"></i>'+lbl+'</button>'; }).join("")||'<div class="empty">ไม่มีข้อมูล</div>';
+  // ความเคลื่อนไหว
+  var AC={"เพิ่ม":"ok","แก้ไข":"info","ลบ":"bad","นำเข้า":"dark","กู้คืน":"warn"};
+  $("#dLog").innerHTML=LOG.length?LOG.slice(0,20).map(function(l){
+    var r=BYID[l.id], what=r?((r.plate&&r.plate!=="-"?r.plate+" · ":"")+(r.brand||"")+" "+(r.model||"")+" "+(r.chassis||"")):(l.chassis||"");
+    return '<li><span class="a"><span class="chip '+(AC[l.action]||"")+'">'+esc(l.action)+'</span></span><span>'+esc(what||"-")
+      +(l.action==="ลบ"&&!r?' <button type="button" class="btn sm" data-restore="'+esc(l.id)+'" style="height:24px;margin-left:6px">กู้คืน</button>':"")
+      +'</span><span class="w">'+esc(l.name||l.user||"")+' · '+thDT(l.at)+'</span></li>';
+  }).join(""):'<li class="empty" style="display:block">ยังไม่มีความเคลื่อนไหว</li>';
+  $$("[data-restore]").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); if(!confirm("กู้คืนรายการนี้?")) return; b.disabled=true;
+    api("turnRestore",b.dataset.restore).then(function(){ toast("กู้คืนแล้ว"); return load(); }).catch(function(err){ b.disabled=false; toast("กู้คืนไม่ได้: "+err.message); }); }; });
+}
+
+/* ================= รายการรถ ================= */
+function opts(sel,label,vals,labels){ var keep=sel.value; sel.innerHTML='<option value="">'+label+'</option>'+vals.map(function(v,i){return'<option value="'+esc(v)+'">'+esc(labels?labels[i]:v)+'</option>'}).join(""); sel.value=keep; }
+function fillFilters(){
+  opts($("#fGroup"),"ทุกกลุ่ม",groups());
+  opts($("#fStatus"),"ทุกสถานะ",["__hold"].concat(STATUS),["ยังไม่โอนต่อ (ทั้งหมด)"].concat(STATUS));
+  opts($("#fSource"),"ทุกแบบ",countBy(ROWS,function(r){return r.source}).map(function(d){return d[0]}).filter(function(v){return v!=="(ไม่ระบุ)"}));
+  opts($("#fBrand"),"ทุกยี่ห้อ",countBy(ROWS,function(r){return r.brand}).map(function(d){return d[0]}).filter(function(v){return v!=="(ไม่ระบุ)"}));
+  opts($("#fAlert"),"ทั้งหมด",["__any"].concat(ALERTS.map(function(a){return a.k})),["มีเรื่องต้องติดตาม (ทุกเรื่อง)"].concat(ALERTS.map(function(a){return a.t})));
+  opts($("#fEc"),"ทั้งหมด",["match","stock","nomatch"],["พบใน Ecount","พบ · ยังอยู่ในสต็อก","ยังไม่พบใน Ecount"]);
+}
+var FMAP={group:"#fGroup",status:"#fStatus",source:"#fSource",brand:"#fBrand",alert:"#fAlert",ec:"#fEc"};
+function syncFilterUI(){
+  if(F.ec==="__none") F.ec="";
+  if(F.ecbar){ F.ec=/ในสต็อก/.test(F.ecbar)?"stock":/ออก/.test(F.ecbar)?"out":/ยังไม่พบ/.test(F.ecbar)?"nomatch":"nokey"; delete F.ecbar; }
+  $("#q").value=F.q;
+  Object.keys(FMAP).forEach(function(k){ $(FMAP[k]).value=F[k]; });
+}
+Object.keys(FMAP).forEach(function(k){ $(FMAP[k]).addEventListener("change",function(){ F[k]=this.value; renderList(true); }); });
+var qT; $("#q").addEventListener("input",function(){ clearTimeout(qT); var v=this.value; qT=setTimeout(function(){ F.q=v; renderList(true); },180); });
+$("#fSort").onchange=function(){ renderList(true); };
+$("#clrBtn").onclick=function(){ Object.keys(F).forEach(function(k){F[k]=""}); syncFilterUI(); renderList(true); };
+function blank(v){ return v==="__none"; }
+function match(r){
+  if(F.group&&r.sheetSrc!==F.group) return false;
+  if(F.status){ if(F.status==="__hold"){ if(r.status==="โอนต่อแล้ว") return false; } else if(blank(F.status)?r.status:r.status!==F.status) return false; }
+  if(F.source&&(blank(F.source)?r.source:r.source!==F.source)) return false;
+  if(F.brand&&(blank(F.brand)?r.brand:r.brand!==F.brand)) return false;
+  if(F.model&&(blank(F.model)?r.model:r.model!==F.model)) return false;
+  if(F.year&&(blank(F.year)?r.year:String(r.year)!==F.year)) return false;
+  if(F.owner&&(blank(F.owner)?(r.holder||r.ownerName):(r.holder||r.ownerName)!==F.owner)) return false;
+  if(F.alert){ var a=alertsOf(r); if(F.alert==="__any"?!a.length:a.indexOf(F.alert)<0) return false; }
+  if(F.ec){ var e=ecOf(r);
+    if(F.ec==="match"&&!e) return false; if(F.ec==="stock"&&!(e&&e.status==="stock")) return false;
+    if(F.ec==="out"&&!(e&&e.status!=="stock")) return false; if(F.ec==="nomatch"&&(e||!r.key)) return false; if(F.ec==="nokey"&&r.key) return false; }
+  if(F.q){ var ws=F.q.trim().split(/\s+/).map(norm).filter(Boolean); for(var i=0;i<ws.length;i++) if(r._nk.indexOf(ws[i])<0) return false; }
+  return true;
+}
+function sorted(rows){
+  var s=$("#fSort").value, num=function(v){var n=parseFloat(v);return isNaN(n)?1e9:n};
+  return rows.slice().sort(function(a,b){
+    if(s==="upd") return String(b.updatedAt).localeCompare(String(a.updatedAt));
+    if(s==="tax") return (isISO(a.taxDue)?a.taxDue:"9999")<(isISO(b.taxDue)?b.taxDue:"9999")?-1:1;
+    if(s==="year") return (+b.year||0)-(+a.year||0);
+    if(s==="model") return String(a.model).localeCompare(String(b.model))||num(a.seq)-num(b.seq);
+    return String(a.sheetSrc).localeCompare(String(b.sheetSrc),"th")||num(a.seq)-num(b.seq)||String(a.createdAt).localeCompare(String(b.createdAt));
+  });
+}
+var LIST=[], SHOWN=0, PAGE=80;
+function statusChip(s){ return '<span class="chip '+(STATUS_CLS[s]||"")+'">'+esc(s||"-")+'</span>'; }
+function docChips(r){
+  var c=[];
+  if(r.regBook) c.push('<span class="chip '+(/ไม่.?มี|รอ/.test(r.regBook)?"bad":"ok")+'">'+esc(r.regBook.replace("มีคู่มือจดทะเบียน","มีคู่มือ"))+'</span>');
+  if(r.transferSet) c.push('<span class="chip '+(/ไม่มี/.test(r.transferSet)?"warn":"")+'">'+esc(r.transferSet)+'</span>');
+  return c.join("")||'<span class="muted">-</span>';
+}
+function ecCell(r){
+  var e=ecOf(r);
+  if(e) return e.status==="stock"?'<span class="chip info">ในสต็อก</span><span class="sub">'+esc(e.branch||"")+'</span>':'<span class="chip ok">ขายออก</span><span class="sub">'+esc(thDate(e.outDate))+'</span>';
+  return r.key?'<span class="muted small">ไม่พบ</span>':'<span class="muted small">-</span>';
+}
+function rowHtml(r){
+  var al=alertsOf(r);
+  return '<tr data-id="'+esc(r.id)+'">'
+   +'<td data-l="#" class="hide-m num">'+esc(r.seq||"")+'</td>'
+   +'<td data-l="ทะเบียน"><span class="plate'+(r.plate?"":" none")+'">'+esc(r.plate||"ไม่มีทะเบียน")+'</span></td>'
+   +'<td data-l="รถ"><b>'+esc((r.brand||"")+" "+(r.model||""))+'</b><span class="sub">'+(r.year?"ปี "+esc(r.year)+" (พ.ศ. "+(+r.year+543)+")":"ไม่ระบุปี")+'</span></td>'
+   +'<td data-l="หมายเลขรถ / เครื่อง" class="w2"><span class="mono">'+esc(r.chassis||"-")+'</span><span class="sub mono">'+esc(r.engine||"")+'</span></td>'
+   +'<td data-l="รับเข้า" class="nw">'+esc(r.source||"-")+'<span class="sub">'+esc(thDate(r.recvDate))+'</span></td>'
+   +'<td data-l="ชื่อ-สกุล">'+esc(r.ownerName||"-")+'<span class="sub">'+esc(r.custCode||"")+'</span></td>'
+   +'<td data-l="เอกสาร"><div class="cs">'+docChips(r)+'</div></td>'
+   +'<td data-l="สถานะ" class="st"><div class="cs">'+statusChip(r.status)+al.map(function(a){return'<span class="chip '+(/^(tax|idx|book|prob)$/.test(a)?"bad":"warn")+'">'+esc(ALERT_T[a])+'</span>'}).join("")+'</div>'
+     +(r.transferTo?'<span class="sub">→ '+esc(r.transferTo)+(r.transferDate?" · "+esc(thDate(r.transferDate)):"")+'</span>':"")+'</td>'
+   +'<td data-l="Ecount" class="nw">'+ecCell(r)+'</td></tr>';
+}
+function renderChips(){
+  var lab={model:"รุ่น",year:"ปีรถ",owner:"ชื่อในเล่ม"}, h=[];
+  Object.keys(lab).forEach(function(k){ if(F[k]) h.push('<button type="button" data-clr="'+k+'"><span class="chip dark">'+lab[k]+': '+esc(blank(F[k])?"(ไม่ระบุ)":F[k])+' ✕</span></button>'); });
+  if(F.ec==="out") h.push('<button type="button" data-clr="ec"><span class="chip dark">Ecount: ขายออกแล้ว ✕</span></button>');
+  if(F.ec==="nokey") h.push('<button type="button" data-clr="ec"><span class="chip dark">หมายเลขรถไม่ครบ ✕</span></button>');
+  $("#chips").innerHTML=h.join("");
+  $$("[data-clr]").forEach(function(b){ b.onclick=function(){ F[b.dataset.clr]=""; syncFilterUI(); renderList(true); }; });
+}
+function renderList(reset){
+  if(reset){ LIST=sorted(ROWS.filter(match)); SHOWN=0; $("#tbody").innerHTML=""; renderChips(); }
+  var part=LIST.slice(SHOWN,SHOWN+PAGE); SHOWN+=part.length;
+  $("#tbody").insertAdjacentHTML("beforeend",part.map(rowHtml).join(""));
+  var hold=LIST.filter(function(r){return r.status!=="โอนต่อแล้ว"}).length;
+  $("#sumTxt").innerHTML='พบ <b>'+LIST.length+'</b> จาก '+ROWS.length+' รายการ · ยังไม่โอนต่อ <b>'+hold+'</b>';
+  $("#noRows").hidden=!!LIST.length; $("#tbl").hidden=!LIST.length;
+  $("#moreBtn").hidden=SHOWN>=LIST.length; $("#moreBtn").textContent="แสดงเพิ่ม (เหลือ "+(LIST.length-SHOWN)+")";
+}
+$("#moreBtn").onclick=function(){ renderList(false); };
+$("#tbody").addEventListener("click",function(e){ var tr=e.target.closest("tr[data-id]"); if(tr) openEd(BYID[tr.dataset.id]); });
+
+/* ================= ฟอร์ม เพิ่ม / แก้ไข =================
+ * ชนิดช่อง: t=ข้อความ, l=ข้อความ+รายการแนะนำ, d=วันที่ (พิมพ์ วว/ดด/ปปปป พ.ศ.), y=ปีรถ, s=สถานะ, a=หมายเหตุ */
+var SECTIONS=[
+  {t:"ข้อมูลรถ",f:[["plate","ทะเบียน","t","เช่น 1ตง6734 (ไม่มีให้เว้นว่าง)"],["brand","ยี่ห้อ","l"],["model","รุ่น","l"],["year","รุ่นปีรถ","y","ค.ศ. หรือ พ.ศ. เช่น 2015 / 2558"],["chassis","หมายเลขรถ (เลขตัวรถ)","t","ใช้จับคู่กับ Ecount"],["engine","หมายเลขเครื่อง","t"]]},
+  {t:"การรับเข้า",f:[["source","ประเภทรับเข้า","l"],["recvDate","วันที่รับเข้า","d"],["ownerName","ชื่อ-สกุล (เจ้าของเดิม / ชื่อในเล่ม)","l"],["custCode","รหัสลูกค้า","t"],["holder","โอนเข้าชื่อ (ผู้ถือเล่มปัจจุบัน)","l"],["branch","ส่งรถที่ (บริษัท / สาขา)","l"],["boughtFrom","ซื้อต่อจาก / ผู้ประสาน","l"],["yctCheck","เช็ค YCT","l"],["sheetSrc","กลุ่มรายการ","l"],["seq","ลำดับในทะเบียนเดิม","t"]]},
+  {t:"เอกสาร",f:[["regBook","คู่มือจดทะเบียน","l"],["transferSet","ชุดโอน","l"],["idExpire","บัตรประชาชนหมดอายุ","d","วว/ดด/ปปปป หรือ ตลอดชีพ / ไม่มีบัตร"],["taxDue","ภาษีครบกำหนด","d"],["taxPaid","ต่อภาษีล่าสุด","d"],["prbPaid","ทำ พ.ร.บ. ล่าสุด","d"]]},
+  {t:"สถานะ / การโอนต่อ",f:[["status","สถานะ","s"],["bookOutDate","วันที่เบิกเล่ม","d"],["transferDate","วันที่โอนต่อ","d"],["transferTo","โอนต่อให้ (ชื่อ-สกุล)","l"],["transferCode","รหัสผู้รับโอน","t"],["note","หมายเหตุ","a"]]}
+];
+var SUGGEST={brand:["Yanmar","KUBOTA","NEWHOLLAND","FORD"],source:["ตีเทิร์น","รถประมูล","รับซื้อ","รับซื้อ กทบ."],regBook:["มีคู่มือจดทะเบียน","ไม่มีคู่มือ","รอคู่มือ"],
+  transferSet:["มีชุดโอน","ไม่มีชุดโอน","สัญญาซื้อขาย","ชุดโอนคนละชื่อกับเล่ม"],yctCheck:["ยังไม่เคยจด"],sheetSrc:["รถตีเทิร์น","กองทุนหมู่บ้าน (กทบ.)"]};
+var EDIT=null;
+function buildForm(){
+  var h=SECTIONS.map(function(sec){
+    return '<fieldset><legend>'+sec.t+'</legend><div class="fg">'+sec.f.map(function(f){
+      var k=f[0], lab='<span>'+f[1]+'</span>', ph=f[3]?' placeholder="'+esc(f[3])+'"':"", inp;
+      if(f[2]==="s") inp='<select name="'+k+'"><option value="">(อัตโนมัติตามข้อมูล)</option>'+STATUS.map(function(s){return'<option>'+esc(s)+'</option>'}).join("")+'</select>';
+      else if(f[2]==="a") inp='<textarea name="'+k+'"></textarea>';
+      else inp='<input name="'+k+'"'+ph+(f[2]==="l"?' list="dl-'+k+'"':"")+(f[2]==="d"&&!f[3]?' placeholder="วว/ดด/ปปปป (พ.ศ.)" inputmode="numeric"':"")+(f[2]==="y"?' inputmode="numeric" maxlength="4"':"")+'>';
+      return '<label class="'+(f[2]==="a"?"full":"")+(k==="chassis"?" req":"")+'">'+lab+inp+((f[2]==="d"||f[2]==="y"||k==="chassis")?'<span class="hint" data-hint="'+k+'"></span>':"")+'</label>';
+    }).join("")+'</div></fieldset>';
+  }).join("");
+  $("#edForm").innerHTML='<div id="ecBox"></div>'+h+'<div class="meta" id="edMeta"></div>'+
+    SECTIONS.reduce(function(a,s){return a.concat(s.f)},[]).filter(function(f){return f[2]==="l"}).map(function(f){return'<datalist id="dl-'+f[0]+'"></datalist>'}).join("");
+  $$("#edForm [name]").forEach(function(el){ el.addEventListener("input",function(){ hint(el.name); if(el.name==="chassis") ecPaint(); }); });
+}
+function fval(k){ var el=$('#edForm [name="'+k+'"]'); return el?el.value.trim():""; }
+var DATEK={recvDate:1,taxDue:1,taxPaid:1,prbPaid:1,bookOutDate:1,transferDate:1,idExpire:1};
+function hint(k){
+  var el=$('[data-hint="'+k+'"]'); if(!el) return; var v=fval(k), t="", bad=false;
+  if(DATEK[k]&&v){ var d=parseDate(v); if(d) t="= "+thDate(d); else if(k==="idExpire") t="บันทึกเป็นข้อความ"; else { t="อ่านวันที่ไม่ได้ ใช้รูปแบบ วว/ดด/ปปปป"; bad=true; } }
+  if(k==="year"&&v){ var y=+v; if(y>2400) y-=543; if(y>=1950&&y<=new Date().getFullYear()+1) t="= ค.ศ. "+y+" / พ.ศ. "+(y+543); else { t="ปีไม่ถูกต้อง"; bad=true; } }
+  if(k==="chassis"){ var key=keyOf(v), dup=key&&ROWS.filter(function(r){return r.key===key&&(!EDIT||r.id!==EDIT.id)})[0]; if(dup){ t="⚠ หมายเลขนี้มีอยู่แล้ว: "+(dup.plate||"")+" "+(dup.ownerName||""); bad=true; } }
+  el.textContent=t; el.classList.toggle("bad",bad);
+}
+function ecPaint(){
+  var key=keyOf(fval("chassis")), e=key&&EC[key], b=$("#ecBox");
+  if(!key){ b.innerHTML='<div class="ecbox none"><h4>ข้อมูล Ecount</h4><div class="small muted">ใส่หมายเลขรถให้ครบ ระบบจะจับคู่กับสินค้ามือสองใน Ecount ให้อัตโนมัติ</div></div>'; return; }
+  if(!e){ b.innerHTML='<div class="ecbox none"><h4>ข้อมูล Ecount <span class="chip">ยังไม่พบ</span></h4><div class="small muted">ยังไม่พบเลขตัวรถ <b>'+esc(key)+'</b> ในข้อมูล Ecount ที่นำเข้าในแอปรูปรถ (ยังไม่ได้ลงทะเบียนเป็นสินค้ามือสอง หรือเขียนเลขต่างกัน) · หลังบันทึก/รีเฟรช จะจับคู่ให้ใหม่</div></div>'; return; }
+  b.innerHTML='<div class="ecbox"><h4>ข้อมูลจาก Ecount '+(e.status==="stock"?'<span class="chip info">ในสต็อก</span>':'<span class="chip ok">ออกจากสต็อกแล้ว</span>')+'</h4><dl>'
+    +'<dt>สินค้า</dt><dd>'+esc(e.name||e.series||"-")+'</dd><dt>รหัสสินค้า</dt><dd>'+esc(e.code||"-")+'</dd>'
+    +'<dt>ประเภท</dt><dd>'+esc([e.type,e.kind].filter(Boolean).join(" · ")||"-")+'</dd><dt>สาขา / จุดจอด</dt><dd>'+esc([e.branch,e.spot].filter(Boolean).join(" · ")||"-")+'</dd>'
+    +'<dt>ราคาขาย</dt><dd>'+money(e.price)+'</dd><dt>สภาพ / ชั่วโมง</dt><dd>'+esc([e.cond,e.hours?e.hours+" ชม.":""].filter(Boolean).join(" · ")||"-")+'</dd>'
+    +'<dt>รูปในแอปรูปรถ</dt><dd>'+(e.photos||0)+' รูป</dd><dt>เข้าสต็อก</dt><dd>'+esc(thDate(e.firstSeen)||"-")+(e.status!=="stock"&&e.outDate?' · ออก '+esc(thDate(e.outDate)):"")+'</dd></dl></div>';
+}
+function openEd(r){
+  if(!$("#edForm").children.length) buildForm();
+  EDIT=r||null;
+  // รายการแนะนำ = ค่าที่มีอยู่แล้วในระบบ + ค่ามาตรฐาน
+  SECTIONS.forEach(function(s){ s.f.forEach(function(f){ if(f[2]!=="l") return;
+    var vs=uniq((SUGGEST[f[0]]||[]).concat(countBy(ROWS,function(x){return x[f[0]]}).map(function(d){return d[0]}).filter(function(v){return v!=="(ไม่ระบุ)"}))).slice(0,150);
+    $("#dl-"+f[0]).innerHTML=vs.map(function(v){return'<option value="'+esc(v)+'">'}).join(""); }); });
+  $$("#edForm [name]").forEach(function(el){ var v=r?(r[el.name]||""):""; if(DATEK[el.name]) v=thInput(v); el.value=v; });
+  if(!r){ $('#edForm [name="sheetSrc"]').value=SCOPE||F.group||"รถตีเทิร์น"; $('#edForm [name="brand"]').value="Yanmar"; $('#edForm [name="source"]').value="ตีเทิร์น"; $('#edForm [name="recvDate"]').value=thInput(todayISO()); }
+  if(r&&r.status&&STATUS.indexOf(r.status)>=0) $('#edForm [name="status"]').value=r.status;
+  Object.keys(DATEK).concat(["year","chassis"]).forEach(hint); ecPaint();
+  $("#edTtl").firstChild.nodeValue=r?"แก้ไขรถตีเทิร์น":"เพิ่มรถตีเทิร์น";
+  $("#edSub").textContent=r?((r.plate||"ไม่มีทะเบียน")+" · "+(r.brand||"")+" "+(r.model||"")+" · "+(r.chassis||"")):"กรอกเท่าที่มี แก้เพิ่มภายหลังได้";
+  $("#edMeta").textContent=r?("สร้างโดย "+(r.createdBy||"-")+" "+thDT(r.createdAt)+" · แก้ไขล่าสุดโดย "+(r.updatedBy||"-")+" "+thDT(r.updatedAt)):"";
+  $("#edDel").hidden=!r; $("#edSave").disabled=false;
+  $("#ed").classList.add("on"); $("#scrim").classList.add("on");
+  $("#edForm").scrollTop=0;
+  if(!r) setTimeout(function(){ $('#edForm [name="plate"]').focus({preventScroll:true}); },260);
+}
+function closeEd(){ $("#ed").classList.remove("on"); $("#scrim").classList.remove("on"); EDIT=null; }
+$("#edX").onclick=$("#edCancel").onclick=$("#scrim").onclick=closeEd;
+document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&$("#ed").classList.contains("on")) closeEd(); });
+$("#addBtn").onclick=function(){ openEd(null); };
+function collect(){
+  var o={};
+  $$("#edForm [name]").forEach(function(el){ var v=el.value.trim(); if(DATEK[el.name]&&v){ var d=parseDate(v); if(d) v=d; } o[el.name]=v; });
+  return o;
+}
+function save(allowDup){
+  var o=collect(), bad=Object.keys(DATEK).filter(function(k){ return k!=="idExpire"&&o[k]&&!isISO(o[k]); });
+  if(bad.length){ toast("วันที่ไม่ถูกต้อง: ใช้รูปแบบ วว/ดด/ปปปป"); $('#edForm [name="'+bad[0]+'"]').focus(); return; }
+  if(EDIT){ o.id=EDIT.id; o.updatedAt=EDIT.updatedAt; }
+  if(allowDup) o.allowDup=true;
+  var b=$("#edSave"); b.disabled=true; b.textContent="กำลังบันทึก...";
+  api("turnSave",o).then(function(r){
+    var ec=r.ec; delete r.ec; if(r.key){ if(ec) EC[r.key]=ec; else delete EC[r.key]; }
+    prep(r);
+    if(BYID[r.id]){ var i=ROWS.indexOf(BYID[r.id]); ROWS[i]=r; } else ROWS.push(r);
+    BYID[r.id]=r; LOG.unshift({at:new Date().toISOString(),name:(USER&&USER.name)||"",action:EDIT?"แก้ไข":"เพิ่ม",id:r.id,chassis:r.chassis});
+    toast(EDIT?"บันทึกการแก้ไขแล้ว":"เพิ่มรถแล้ว"); closeEd(); fillFilters(); render();
+  }).catch(function(e){
+    var m=e.message||"";
+    if(/^DUP:/.test(m)){ if(confirm(m.replace(/^DUP:\s*/,"")+"\n\nยืนยันบันทึกซ้ำ?")) return "retry"; }
+    else if(/^CONFLICT:/.test(m)){ alert(m.replace(/^CONFLICT:\s*/,"")); }
+    else toast("บันทึกไม่สำเร็จ: "+m);
+  }).then(function(x){ b.disabled=false; b.textContent="บันทึก"; if(x==="retry") save(true); });
+}
+$("#edSave").onclick=function(){ save(false); };
+$("#edDel").onclick=function(){
+  if(!EDIT) return; var r=EDIT;
+  if(!confirm("ลบรายการนี้?\n"+(r.plate||"ไม่มีทะเบียน")+" · "+(r.brand||"")+" "+(r.model||"")+" · "+(r.chassis||"")+"\n\n(กู้คืนได้จาก ภาพรวม > ความเคลื่อนไหวล่าสุด)")) return;
+  var b=this; b.disabled=true;
+  api("turnDelete",r.id).then(function(){
+    ROWS=ROWS.filter(function(x){return x.id!==r.id}); delete BYID[r.id];
+    LOG.unshift({at:new Date().toISOString(),name:(USER&&USER.name)||"",action:"ลบ",id:r.id,chassis:r.chassis});
+    toast("ลบแล้ว"); closeEd(); fillFilters(); render();
+  }).catch(function(e){ toast("ลบไม่สำเร็จ: "+e.message); }).then(function(){ b.disabled=false; });
+};
+
+/* ================= นำเข้า Excel =================
+ * หาแถวหัวตารางที่มีคำว่า "หมายเลขรถ" แล้วจับคอลัมน์ตามชื่อหัว
+ * คอลัมน์ที่อยู่หลัง "หมายเหตุ" / "รายการโอน" = ข้อมูลการโอนต่อ (ว/ด/ป, ชื่อ, รหัส ซ้ำชื่อกับด้านหน้า) */
+function hnorm(h){ return String(h==null?"":h).replace(/\s+/g,"").replace(/ชิ่อ/g,"ชื่อ").replace(/ไม่่/g,"ไม่"); }
+function mapHeaders(hdr){
+  var phase=0;
+  return hdr.map(function(raw,i){
+    var h=hnorm(raw);
+    if(i===0&&(!h||/^(ลำดับ|ลับดับ|ที่|no\.?)$/i.test(h))) return "seq";
+    if(phase===0){
+      if(h==="ทะเบียน") return "plate"; if(h==="ยี่ห้อ") return "brand"; if(h==="รุ่น") return "model";
+      if(/^(หมายเลขรถ|เลขตัวรถ|เลขรถ)$/.test(h)) return "chassis"; if(/^(หมายเลขเครื่อง|เลขเครื่อง)$/.test(h)) return "engine";
+      if(/คู่มือ|มือจดทะเบียน/.test(h)) return "regBook"; if(/^(รุ่นปีรถ|ปีรถ|รุ่นปี)$/.test(h)) return "year";
+      if(/^ภาษีครบ/.test(h)) return "taxDue"; if(h==="รายการรับเข้า") return "source"; if(h==="รหัส") return "custCode";
+      if(h==="ชื่อ-สกุล") return "ownerName"; if(h==="ชุดโอน") return "transferSet"; if(/^บัตรหมด/.test(h)) return "idExpire";
+      if(/^วันที่เบิกเล่ม/.test(h)) return "bookOutDate"; if(h==="หมายเหตุ"){ phase=1; return "note"; }
+      if(h==="ว/ด/ป") return "recvDate"; if(h==="ส่งรถ") return "branch"; if(h==="ซื้อต่อจาก") return "boughtFrom";
+      if(/^เช็คYCT/i.test(h)) return "yctCheck"; if(h==="โอนแล้ว") return "holder"; if(h==="รายการโอน"){ phase=1; return "_xfer"; }
+    } else {
+      if(h==="ว/ด/ป") return "transferDate"; if(h==="โอนต่อ"||h==="ชื่อ-สกุล") return "transferTo"; if(h==="รหัส") return "transferCode";
+      if(/^ภาษีปี/.test(h)) return "taxPaid"; if(/^พ\.?ร\.?บ/.test(h)) return "prbPaid"; if(h==="หมายเหตุ") return "note";
+    }
+    return "";
+  });
+}
+var DATEF={recvDate:1,taxDue:1,idExpire:1,bookOutDate:1,transferDate:1,taxPaid:1,prbPaid:1};
+/** ค่าในเซลล์ → ข้อความ  วันที่ (เลข serial ของ Excel) → yyyy-mm-dd ค.ศ. (ไฟล์เดิมพิมพ์ปี พ.ศ. ลงในช่องวันที่ จึงลบ 543) */
+function cellVal(k,v){
+  if(v==null) return "";
+  if(DATEF[k]&&typeof v==="number"&&v>20000){
+    var d=new Date(Math.round((v-25569)*864e5)), y=d.getUTCFullYear(); if(y>2400) y-=543;
+    return y+"-"+("0"+(d.getUTCMonth()+1)).slice(-2)+"-"+("0"+d.getUTCDate()).slice(-2);
+  }
+  if(k==="year"&&typeof v==="number") return String(v>2400?v-543:v);
+  return String(v).replace(/\s+/g," ").trim();
+}
+function cleanSource(s,grp){
+  s=String(s||"").trim();
+  if(!s) return /กทบ/.test(grp)?"รับซื้อ กทบ.":"";
+  if(s==="ประมูล") return "รถประมูล"; if(s==="ซื้อ") return "รับซื้อ";
+  return s;
+}
+function parseBook(wb){
+  var out=[];
+  wb.SheetNames.forEach(function(name){
+    var aoa=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:null});
+    var hi=-1; for(var i=0;i<Math.min(aoa.length,15);i++){ if((aoa[i]||[]).some(function(c){return /^(หมายเลขรถ|เลขตัวรถ)$/.test(hnorm(c))})){ hi=i; break; } }
+    if(hi<0) return;
+    var map=mapHeaders(aoa[hi]), grp=/กทบ/.test(name)?"กองทุนหมู่บ้าน (กทบ.)":"รถตีเทิร์น", rows=[];
+    for(var r=hi+1;r<aoa.length;r++){
+      var a=aoa[r]||[], o={sheetSrc:grp}, xfer="";
+      map.forEach(function(k,i){ if(!k) return; var v=cellVal(k,a[i]); if(/^[-−–—]+$/.test(v)) v=""; if(k==="_xfer") xfer=v; else if(v) o[k]=o[k]&&k==="note"?o[k]+" · "+v:v; });
+      if(!o.chassis&&!o.plate&&!o.engine&&!o.model) continue;
+      o.source=cleanSource(o.source,grp);
+      if(xfer&&!o.transferDate&&!o.transferTo) o.note=(o.note?o.note+" · ":"")+"รายการโอน: "+xfer;
+      if(xfer&&(o.transferDate||o.transferTo)) o.status="โอนต่อแล้ว";
+      if(o.plate==="-") o.plate="";
+      rows.push(o);
+    }
+    out.push({sheet:name,group:grp,rows:rows});
+  });
+  return out;
+}
+var PARSED=null, FILE_NAME="";
+function handleFile(f){
+  if(!f) return; FILE_NAME=f.name;
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{ PARSED=parseBook(XLSX.read(new Uint8Array(rd.result),{type:"array"})); }catch(e){ toast("อ่านไฟล์ไม่ได้: "+e.message); return; }
+    showPreview();
+  };
+  rd.readAsArrayBuffer(f);
+}
+function showPreview(){
+  var pv=$("#pv"), all=PARSED.reduce(function(a,s){return a.concat(s.rows)},[]);
+  if(!all.length){ pv.hidden=false; pv.innerHTML='<div class="banner">ไม่พบตารางรถในไฟล์นี้ (ต้องมีหัวคอลัมน์ "หมายเลขรถ")</div>'; return; }
+  var have={}; ROWS.forEach(function(r){ if(r.key) have[r.key]=1; });
+  var inFile={}, dupF=0, exist=0;
+  all.forEach(function(o){ var k=keyOf(o.chassis); if(!k) return; if(inFile[k]) dupF++; inFile[k]=1; if(have[k]) exist++; });
+  var cols=[["sheetSrc","กลุ่ม"],["seq","#"],["plate","ทะเบียน"],["brand","ยี่ห้อ"],["model","รุ่น"],["chassis","หมายเลขรถ"],["engine","เครื่อง"],["year","ปี"],["source","รับเข้า"],["ownerName","ชื่อ-สกุล"],["regBook","คู่มือ"],["taxDue","ภาษีครบ"],["idExpire","บัตรหมดอายุ"],["transferDate","โอนต่อ"],["transferTo","ผู้รับโอน"]];
+  pv.hidden=false;
+  pv.innerHTML='<div class="small">ไฟล์ <b>'+esc(FILE_NAME)+'</b> · '+PARSED.map(function(s){return'ชีต "'+esc(s.sheet)+'" <b>'+s.rows.length+'</b> รายการ'}).join(" · ")
+    +'<br>รวม <b>'+all.length+'</b> รายการ · หมายเลขรถซ้ำในไฟล์ '+dupF+' · มีในระบบแล้ว '+exist+'</div>'
+    +'<div class="pvwrap"><table><thead><tr>'+cols.map(function(c){return'<th>'+c[1]+'</th>'}).join("")+'</tr></thead><tbody>'
+    +all.slice(0,60).map(function(o){return'<tr>'+cols.map(function(c){var v=o[c[0]]||""; return'<td>'+esc(DATEF[c[0]]?thDate(v):v)+'</td>'}).join("")+'</tr>'}).join("")+'</tbody></table></div>'
+    +(all.length>60?'<div class="small muted">แสดงตัวอย่าง 60 แถวแรก</div>':"")
+    +'<div class="radios"><label><input type="radio" name="imode" value="append" checked><span><b>เพิ่มเฉพาะรายการใหม่</b><small>ข้ามรถที่หมายเลขรถมีในระบบแล้ว (ข้อมูลที่แก้ในระบบไม่ถูกทับ)</small></span></label>'
+    +'<label><input type="radio" name="imode" value="replace"><span><b>แทนที่ทั้งหมด</b><small>ลบข้อมูลเดิม '+ROWS.length+' รายการ แล้วใส่ชุดนี้แทน (สำรองชีตเดิมไว้ให้อัตโนมัติ)</small></span></label></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn primary" type="button" id="impGo">นำเข้า '+all.length+' รายการ</button><button class="btn" type="button" id="impX">ยกเลิก</button></div>';
+  $("#impX").onclick=function(){ PARSED=null; pv.hidden=true; $("#file").value=""; };
+  $("#impGo").onclick=function(){
+    var mode=$('input[name="imode"]:checked').value;
+    if(mode==="replace"&&!confirm("แทนที่ข้อมูลเดิมทั้งหมด "+ROWS.length+" รายการ?")) return;
+    var b=this; b.disabled=true; b.textContent="กำลังนำเข้า...";
+    api("turnImport",all,mode,FILE_NAME).then(function(r){
+      toast("นำเข้าแล้ว เพิ่ม "+r.added+" · ข้าม "+r.skipped+(r.bad?" · ใช้ไม่ได้ "+r.bad:""));
+      PARSED=null; pv.hidden=true; $("#file").value=""; return load().then(function(){ go("dash"); });
+    }).catch(function(e){ toast("นำเข้าไม่สำเร็จ: "+e.message); b.disabled=false; b.textContent="นำเข้า"; });
+  };
+}
+$("#file").onchange=function(){ handleFile(this.files[0]); };
+var dz=$("#drop");
+["dragenter","dragover"].forEach(function(t){ dz.addEventListener(t,function(e){ e.preventDefault(); dz.classList.add("on"); }); });
+["dragleave","drop"].forEach(function(t){ dz.addEventListener(t,function(e){ e.preventDefault(); dz.classList.remove("on"); }); });
+dz.addEventListener("drop",function(e){ handleFile(e.dataTransfer.files[0]); });
+
+/* ================= ส่งออก Excel ================= */
+var XCOLS=[["sheetSrc","กลุ่ม"],["seq","ลำดับ"],["plate","ทะเบียน"],["brand","ยี่ห้อ"],["model","รุ่น"],["chassis","หมายเลขรถ"],["engine","หมายเลขเครื่อง"],["regBook","คู่มือจดทะเบียน"],["year","รุ่นปีรถ"],["taxDue","ภาษีครบกำหนด"],
+  ["source","รายการรับเข้า"],["recvDate","วันที่รับเข้า"],["custCode","รหัส"],["ownerName","ชื่อ-สกุล"],["holder","โอนเข้าชื่อ"],["branch","ส่งรถ"],["boughtFrom","ซื้อต่อจาก"],["yctCheck","เช็ค YCT"],["transferSet","ชุดโอน"],["idExpire","บัตรหมดอายุ"],
+  ["status","สถานะ"],["bookOutDate","วันที่เบิกเล่ม"],["transferDate","วันที่โอนต่อ"],["transferTo","โอนต่อให้"],["transferCode","รหัสผู้รับโอน"],["taxPaid","ต่อภาษีล่าสุด"],["prbPaid","พ.ร.บ. ล่าสุด"],["note","หมายเหตุ"]];
+function exportXls(rows,tag){
+  if(!window.XLSX){ toast("โหลดตัวสร้าง Excel ไม่ได้"); return; }
+  var aoa=[XCOLS.map(function(c){return c[1]}).concat(["ต้องติดตาม","Ecount สถานะ","Ecount สาขา","Ecount ราคา","Ecount รูป","แก้ไขล่าสุด","แก้ไขโดย"])];
+  rows.forEach(function(r){ var e=ecOf(r);
+    aoa.push(XCOLS.map(function(c){ var v=r[c[0]]||""; return DATEF[c[0]]?thInput(v):(c[0]==="seq"||c[0]==="year")&&v&&!isNaN(v)?+v:v; })
+      .concat([alertsOf(r).map(function(a){return ALERT_T[a]}).join(", "),e?(e.status==="stock"?"ในสต็อก":"ออกจากสต็อก"):"",e?e.branch:"",e&&e.price?+e.price:"",e?e.photos:"",thDT(r.updatedAt),r.updatedBy||""])); });
+  var ws=XLSX.utils.aoa_to_sheet(aoa); ws["!cols"]=aoa[0].map(function(h,i){return{wch:[3,5].indexOf(i)>=0?14:Math.max(8,Math.min(26,String(h).length+4))}});
+  var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"รถตีเทิร์น");
+  var d=new Date(); XLSX.writeFile(wb,"รายการรถตีเทิร์น_"+tag+"_"+(d.getFullYear()+543)+("0"+(d.getMonth()+1)).slice(-2)+("0"+d.getDate()).slice(-2)+".xlsx");
+}
+$("#xlsBtn").onclick=function(){ exportXls(LIST,"ตามตัวกรอง"); };
+$("#xlsAll").onclick=function(){ exportXls(sorted(ROWS),"ทั้งหมด"); };
+
+/* ================= ล็อกอิน / สิทธิ์ admin ================= */
+function showLogin(msg){ $("#denied").classList.remove("on"); $("#login").classList.add("on"); $("#lgErr").textContent=msg||""; if(USER&&USER.user&&!$("#lgUser").value) $("#lgUser").value=USER.user; setTimeout(function(){ ($("#lgUser").value?$("#lgPass"):$("#lgUser")).focus(); },50); }
+function showDenied(msg){ $("#loading").hidden=true; dbStatus("err","ไม่มีสิทธิ์"); $("#denMsg").textContent=(msg||"เมนูนี้เปิดให้เฉพาะผู้ดูแลระบบ (admin)")+(USER?" · บัญชีปัจจุบัน: "+(USER.name||USER.user)+" ("+(USER.role||"-")+")":""); $("#denied").classList.add("on"); }
+function logout(){ TOK=""; store("rst_tok",""); $("#userBtn").hidden=true; }
+function paintUser(){ var b=$("#userBtn"); b.hidden=!USER||!TOK; if(USER) b.textContent=(USER.name||USER.user)+" · ออก"; }
+$("#userBtn").onclick=function(){ if(!confirm("ออกจากระบบ?")) return; api("logEvent","logout","turn").catch(function(){}); logout(); ROWS=[]; $("#tbody").innerHTML=""; showLogin(""); };
+$("#denOut").onclick=function(){ logout(); showLogin(""); };
+$("#loginForm").addEventListener("submit",function(e){
+  e.preventDefault();
+  var u=$("#lgUser").value.trim(), p=$("#lgPass").value, b=$("#lgBtn");
+  if(!u||!p){ $("#lgErr").textContent="ใส่ชื่อผู้ใช้และรหัสผ่าน"; return; }
+  b.disabled=true; b.textContent="กำลังตรวจสอบกับ CRM..."; $("#lgErr").textContent="";
+  rawCall("login",[u,p]).then(function(r){
+    TOK=r.token; store("rst_tok",TOK); USER={user:r.user,name:r.name,branch:r.branch,role:r.role}; store("rst_user",JSON.stringify(USER));
+    $("#lgPass").value=""; $("#login").classList.remove("on"); paintUser();
+    if(String(r.role).toLowerCase()!=="admin"){ showDenied("บัญชีนี้ไม่ใช่ admin"); return; }
+    $("#loading").hidden=false; return load();
+  }).catch(function(err){ $("#lgErr").textContent=String(err.message||err).replace(/^AUTH:\s*/,""); })
+    .then(function(){ b.disabled=false; b.textContent="เข้าสู่ระบบ"; });
+});
+
+/* ================= เริ่มต้น ================= */
+if(!TOK){ $("#loading").hidden=true; dbStatus("busy","รอเข้าสู่ระบบ"); showLogin(""); } 
+else { paintUser(); load(); }
+})();
+</script>
+</body>
+</html>

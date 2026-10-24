@@ -1,6 +1,11 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r15-2026-10-22-crm-login
+ * CODE_VERSION: r16-2026-10-24-turn
+ *
+ * r16: เมนูใหม่ "รายการรถตีเทิร์น" (เฉพาะ admin) โค้ดอยู่ในไฟล์ turn.gs + turn.html ในโปรเจกต์เดียวกัน
+ *      - เปิดด้วยลิงก์ Web App เดิม + ?page=turn  (doGet ด้านล่างเลือกหน้า)
+ *      - call() มองหาคำสั่งใน TURN_API (turn.gs) ด้วย ทุกคำสั่ง turn* ตรวจ role admin ที่เซิร์ฟเวอร์
+ *      - ชีตใหม่ TurnCars / TurnLog สร้างเองตอนเรียกใช้ครั้งแรก ไม่กระทบชีตเดิม
  *
  * r15: ผู้บริหารให้เปิดลิงก์ให้สาขาใช้งาน
  *      - ต้องล็อกอินก่อนใช้ ด้วย user / password เดียวกับ CRM-TRACKER Pro (เซลล์ร้านก็ใช้รหัส CRM ของตัวเอง)
@@ -65,7 +70,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r15-2026-10-22-crm-login';
+var CODE_VERSION = 'r16-2026-10-24-turn';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
@@ -81,6 +86,12 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'checkStatus') {
     return ContentService.createTextOutput(JSON.stringify({ ok: true, codeVersion: CODE_VERSION }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (e && e.parameter && e.parameter.page === 'turn') { // r16: หน้า รายการรถตีเทิร์น (ข้อมูลส่งให้เฉพาะ admin ที่ล็อกอินแล้ว)
+    return HtmlService.createHtmlOutputFromFile('turn')
+      .setTitle('RST รายการรถตีเทิร์น (Admin)')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('RST รูปรถและทรัพย์สิน มือสอง · รถสาธิต')
@@ -106,12 +117,15 @@ var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLe
 var SESSION_ = null; // ผู้ใช้ของคำขอนี้ {u, n, b, r}
 
 function call(fn, args, pin, tok) {
-  if (!Object.prototype.hasOwnProperty.call(API, fn)) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
+  // r16: คำสั่งของเมนูรถตีเทิร์นอยู่ใน TURN_API (turn.gs) แต่ละคำสั่งตรวจ role admin เอง
+  var TA = (typeof TURN_API !== 'undefined') ? TURN_API : {};
+  var f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : Object.prototype.hasOwnProperty.call(TA, fn) ? TA[fn] : null;
+  if (!f) throw new Error('ไม่รู้จักคำสั่ง ' + fn);
   if (!PUBLIC[fn]) {
     SESSION_ = verifyToken_(tok);
     if (WRITE[fn] && SESSION_.r !== 'admin') checkPin_(pin);
   }
-  return API[fn].apply(null, args || []);
+  return f.apply(null, args || []);
 }
 function checkPin_(pin) {
   var want = PropertiesService.getScriptProperties().getProperty('TEAM_PIN');
@@ -721,4 +735,4 @@ function deletePhoto(photoId) {
     }
     return { ok: true };
   });
-}
+} 
