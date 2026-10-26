@@ -33,13 +33,14 @@
         <div>
           <div class="flex items-center gap-2">
             <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white">RST GROUP · PriceLogic Procurement</h1>
-            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.5 Full Procurement Flow</span>
+            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.6 Full Procurement Flow</span>
           </div>
           <p class="text-xs text-slate-300 mt-0.5">ดึงสถานะใบขอซื้อจาก ECOUNT อัตโนมัติ → ขอใบเสนอราคา → เปรียบเทียบราคา → อนุมัติ → ออก PO เข้า ECOUNT</p>
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-2 no-print w-full md:w-auto justify-end">
+        <select id="companyViewSel" onchange="setCompanyView(this.value)" title="เลือกดูตามบริษัท" class="bg-white text-slate-800 border border-slate-300 px-2.5 py-2 rounded-lg text-xs font-bold max-w-[260px]"><option value="">🏢 ทุกบริษัท</option></select>
         <button onclick="switchTab('tab0'); pullPRStatus(false)" class="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
           <span>🔄</span>
           <span>ดึงสถานะใบขอซื้อ</span>
@@ -103,7 +104,7 @@
         </div>
         <div>
           <label class="block font-bold text-slate-600 mb-1">บริษัท</label>
-          <select id="inboxCompanySel" onchange="setInboxFilter('company',this.value)" class="p-2 border border-slate-300 rounded-lg bg-white"><option value="">ทุกบริษัท</option></select>
+          <select id="inboxCompanySel" onchange="setCompanyView(this.value)" class="p-2 border border-slate-300 rounded-lg bg-white"><option value="">ทุกบริษัท</option></select>
         </div>
         <div>
           <label class="block font-bold text-slate-600 mb-1">ช่วงวันที่ใบขอซื้อ</label>
@@ -1040,7 +1041,7 @@
     let cloudSyncTimer = null;
     let appInitialized = false;
 
-    const APPS_SCRIPT_CODE = `// RST GROUP - PriceLogic Procurement : Code.gs (v5.2)
+    const APPS_SCRIPT_CODE = `// RST GROUP - PriceLogic Procurement : Code.gs (v5.3)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -1206,7 +1207,9 @@ function pushPRStatus(req) {
     var clean = [];
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
-      if (!row || !String(row[iPr] || "").trim() || !String(row[iName] || "").trim()) continue;
+      if (!row || !String(row[iName] || "").trim()) continue;
+      if (!/^PR\d+/i.test(String(row[iPr] || "").trim())) continue;
+      if (row.some(function (c) { return /(^|\s)รวม\s*$|ผลรวมทั้งหมด/.test(String(c || "").trim()); })) continue;
       clean.push(row);
     }
     if (!clean.length) { out.message = "ไม่มีบรรทัดข้อมูล — ไม่ได้แก้ไขข้อมูลเดิม"; return out; }
@@ -1720,9 +1723,32 @@ function testEcountLogin() {
     }
 
     // ===================== Rendering =====================
+    // ---- v5.6: view by company (applies to every tab) ----
+    let companyView = '';
+    try { companyView = localStorage.getItem('priceLogicCompanyView') || ''; } catch (e) {}
+    function inCompanyView(company) { return !companyView || (company || '') === companyView; }
+    function visiblePRs() {
+      return purchaseRequests.filter(pr => inCompanyView(pr.company) && (pr.source !== 'ecount' || /^PR\d+/i.test(String(pr.prNo || '').trim())));
+    }
+    function setCompanyView(v) {
+      companyView = v || '';
+      inboxFilter.company = companyView;
+      try { localStorage.setItem('priceLogicCompanyView', companyView); } catch (e) {}
+      renderApp();
+    }
+    function renderCompanyViewSel() {
+      const sel = document.getElementById('companyViewSel');
+      if (!sel) return;
+      const codes = Object.keys(COMPANY_NAMES);
+      prInbox.concat(purchaseRequests).forEach(x => { if (x.company && codes.indexOf(x.company) === -1) codes.push(x.company); });
+      sel.innerHTML = '<option value="">🏢 ทุกบริษัท</option>' + codes.map(c => '<option value="' + esc(c) + '"' + (c === companyView ? ' selected' : '') + '>🏢 ' + esc(companyFullName(c)) + '</option>').join('');
+      sel.value = companyView;
+    }
     function renderApp() {
-      const allItems = purchaseRequests.flatMap(pr => pr.items.map(it => ({ pr, it })));
-      const totalPRs = purchaseRequests.length;
+      inboxFilter.company = companyView;
+      renderCompanyViewSel();
+      const allItems = visiblePRs().flatMap(pr => pr.items.map(it => ({ pr, it })));
+      const totalPRs = visiblePRs().length;
       const totalItemsCount = allItems.length;
       const approvedCount = allItems.filter(({ it }) => it.approvedSupplierId).length;
       const totalSavings = allItems.reduce((sum, { pr, it }) => {
@@ -1904,7 +1930,11 @@ function testEcountLogin() {
             '<div class="space-y-1">' +
               breakdown.map(b =>
                 '<div class="flex justify-between text-xs">' +
-                  '<span class="text-emerald-900 font-medium">' + b.supplier.name + ' <span class="text-emerald-600">(' + b.count + ' รายการ)</span></span>' +
+                  '<span class="text-emerald-900 font-medium">' + b.supplier.name + ' <span class="text-emerald-600">(' + b.count + ' รายการ)</span>' +
+                    (pr.items.some(it => poSupId(it) === b.supplier.id && !it.poNo)
+                      ? ' <button onclick="openPOModal(\'' + pr.id + '\',\'' + b.supplier.id + '\')" class="no-print ml-1 text-[10px] font-bold bg-teal-600 hover:bg-teal-500 text-white px-2 py-0.5 rounded">🧾 ออก PO</button>'
+                      : (pr.items.some(it => poSupId(it) === b.supplier.id && it.poNo) ? ' <span class="text-[10px] font-bold text-teal-700">PO ' + esc(Array.from(new Set(pr.items.filter(it => poSupId(it) === b.supplier.id && it.poNo).map(it => it.poNo))).join(', ')) + '</span>' : '')) +
+                  '</span>' +
                   '<span class="font-bold text-emerald-800">฿' + Math.round(b.total).toLocaleString() + '</span>' +
                 '</div>'
               ).join('') +
@@ -2363,7 +2393,7 @@ function testEcountLogin() {
     }
 
     function renderApprovalSummary() {
-      const pairs = purchaseRequests.flatMap(pr => pr.items.map(it => ({ pr, it })));
+      const pairs = visiblePRs().flatMap(pr => pr.items.map(it => ({ pr, it })));
       const approved = pairs.filter(x => x.it.approvedSupplierId);
       const pending = pairs.filter(x => !x.it.approvedSupplierId);
 
@@ -2440,7 +2470,9 @@ function testEcountLogin() {
     const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
     const round4 = n => Math.round((n + Number.EPSILON) * 10000) / 10000;
 
-    function poPendingItems(pr) { return pr.items.filter(it => it.approvedSupplierId && !it.poNo); }
+    // Items with a chosen price (selected or approved) and no PO yet.
+    function poSupId(it) { return it.approvedSupplierId || it.selectedSupplierId || ''; }
+    function poPendingItems(pr) { return pr.items.filter(it => poSupId(it) && !it.poNo); }
     function renderPOButton(pr) {
       const pend = poPendingItems(pr);
       const done = Array.from(new Set(pr.items.filter(it => it.poNo).map(it => it.poNo)));
@@ -2491,16 +2523,17 @@ function testEcountLogin() {
       return hit ? hit[2] : '';
     }
 
-    function openPOModal(prId) {
+    function openPOModal(prId, supId) {
       const pr = findPR(prId);
       const pend = poPendingItems(pr);
-      if (!pend.length) { alert('ไม่มีรายการที่อนุมัติแล้วและยังไม่ได้ออก PO'); return; }
+      if (!pend.length) { alert('ไม่มีรายการที่เลือกราคาแล้วและยังไม่ได้ออก PO'); return; }
       poCtx = { prId: prId, reqId: 'PO' + randId() };
-      const supIds = Array.from(new Set(pend.map(it => it.approvedSupplierId)));
+      const supIds = Array.from(new Set(pend.map(poSupId)));
       document.getElementById('poSupplierSel').innerHTML = supIds.map(id => {
-        const s = findSupplier(pr, id), n = pend.filter(it => it.approvedSupplierId === id).length;
+        const s = findSupplier(pr, id), n = pend.filter(it => poSupId(it) === id).length;
         return '<option value="' + esc(id) + '">' + esc(s ? s.name : id) + ' (' + n + ' รายการ)</option>';
       }).join('');
+      if (supId && supIds.indexOf(supId) !== -1) document.getElementById('poSupplierSel').value = supId;
       document.getElementById('poCompanySel').innerHTML = companyOptionsHtml(pr.company || '');
       document.getElementById('poDateInput').value = todayISO();
       document.getElementById('poModalSub').innerText = 'Ref. PR No. ' + pr.prNo + (pr.company ? ' • ' + companyFullName(pr.company) : '');
@@ -2519,15 +2552,16 @@ function testEcountLogin() {
       if (!poCtx) return;
       poCtx.reqId = 'PO' + randId();
       const pr = findPR(poCtx.prId), sid = document.getElementById('poSupplierSel').value, s = findSupplier(pr, sid);
-      const items = poPendingItems(pr).filter(it => it.approvedSupplierId === sid);
+      const items = poPendingItems(pr).filter(it => poSupId(it) === sid);
       const rfqNos = Array.from(new Set([].concat.apply([], items.map(it => rfqNoMap()[pr.id + '|' + it.id] || []))));
       document.getElementById('poRemark').value = 'Ref. PR No. ' + pr.prNo + (rfqNos.length ? ' / ' + rfqNos.join(', ') : '');
       const rows = items.map(it => {
         const a = poLineAmounts(s, it);
+        const tag = it.approvedSupplierId ? '' : ' <span class="text-[9px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1 rounded">เลือกแล้ว ยังไม่อนุมัติ</span>';
         return '<tr class="border-t border-slate-100">' +
           '<td class="p-1.5 text-center"><input type="checkbox" checked data-po-item="' + esc(it.id) + '" onchange="poTotals()" class="w-4 h-4 accent-teal-600" /></td>' +
           '<td class="p-1.5 font-mono">' + esc(it.code) + (!it.code || it.code === '-' ? ' <span class="text-red-600 font-bold">ไม่มีรหัส</span>' : '') + '</td>' +
-          '<td class="p-1.5 font-bold">' + esc(it.name) + '</td>' +
+          '<td class="p-1.5 font-bold">' + esc(it.name) + tag + '</td>' +
           '<td class="p-1.5 text-center">' + it.qty + ' ' + esc(it.unit && it.unit !== '-' ? it.unit : '') + '</td>' +
           '<td class="p-1.5 text-right">' + a.price.toLocaleString(undefined, { maximumFractionDigits: 4 }) + '</td>' +
           '<td class="p-1.5 text-right">' + a.supply.toLocaleString(undefined, { minimumFractionDigits: 2 }) + '</td>' +
@@ -2596,7 +2630,7 @@ function testEcountLogin() {
 
     function submitPO(preview) {
       if (!poCtx) return;
-      if (!preview && !canApprove()) { alert('เฉพาะผู้จัดการเท่านั้นที่ออกใบสั่งซื้อเข้า ECOUNT ได้'); return; }
+      if (!preview && !canApprove()) { alert('เฉพาะผู้จัดการเท่านั้นที่ออกใบสั่งซื้อเข้า ECOUNT ได้ (การออก PO ถือเป็นการอนุมัติราคา) — กด "ตรวจข้อมูลก่อนส่ง" ได้'); return; }
       const req = buildPORequest(preview);
       const box = document.getElementById('poResultBox');
       if (!req.lines.length) { alert('กรุณาเลือกรายการอย่างน้อย 1 รายการ'); return; }
@@ -2628,6 +2662,7 @@ function testEcountLogin() {
         req.lines.forEach(l => {
           const it = findItem(pr, l.itemId);
           if (res.test) { it.poTestNo = poNo; return; }
+          if (!it.approvedSupplierId) { it.approvedSupplierId = it.selectedSupplierId; it.approvedBy = u ? u.name : ''; it.approvedAt = new Date().toISOString(); }
           it.poNo = poNo; it.poDate = req.header.date; it.poCompany = req.company; it.poBy = u ? u.name : ''; it.poAt = new Date().toISOString();
         });
         if (!s.ecountCodes) s.ecountCodes = {};
@@ -2710,8 +2745,15 @@ function testEcountLogin() {
     let prListFilter = { q: '', status: 'all' };
     let autoPullTimer = null;
 
+    // Only real purchase-request lines: PR number = "PR" + digits, and no
+    // subtotal text such as "พ.ค. 2569 รวม" / "ผลรวมทั้งหมด" anywhere in the row.
+    const SUBTOTAL_RE = /(^|\s)รวม\s*$|ผลรวมทั้งหมด/;
+    function isRealPRLine(r) {
+      if (!/^PR\d+/i.test(String(r.prNo || '').trim())) return false;
+      return ![r.prNo, r.dateSeq, r.project, r.code, r.name].some(v => SUBTOTAL_RE.test(String(v || '').trim()));
+    }
     function buildInboxFromRaw(rawRows) {
-      const rows = normalizeImportRows(rawRows).filter(r => r.prNo);
+      const rows = normalizeImportRows(rawRows).filter(isRealPRLine);
       const seen = {}, byKey = {};
       rows.forEach(r => {
         const base = [r.company, r.prNo, r.code, r.name].join('|');
@@ -2914,9 +2956,10 @@ function testEcountLogin() {
       const companies = Array.from(new Set(prInbox.map(r => r.company).filter(Boolean))).sort();
       if (sel.dataset.sig !== companies.join('|')) {
         sel.dataset.sig = companies.join('|');
-        sel.innerHTML = '<option value="">ทุกบริษัท</option>' + companies.map(c => '<option>' + esc(c) + '</option>').join('');
-        sel.value = inboxFilter.company;
+        sel.innerHTML = '<option value="">ทุกบริษัท</option>' + companies.map(c => '<option value="' + esc(c) + '">' + esc(companyFullName(c)) + '</option>').join('');
       }
+      if (companyView && companies.indexOf(companyView) === -1) sel.insertAdjacentHTML('beforeend', '<option value="' + esc(companyView) + '">' + esc(companyFullName(companyView)) + '</option>');
+      sel.value = companyView;
 
       const newCount = countInboxNew();
       const badge = document.getElementById('inboxBadge');
@@ -3295,7 +3338,7 @@ function testEcountLogin() {
     }
     function renderPRList() {
       const q = prListFilter.q.trim().toLowerCase();
-      const list = purchaseRequests.filter(pr => {
+      const list = visiblePRs().filter(pr => {
         const total = pr.items.length, appr = pr.items.filter(i => i.approvedSupplierId).length;
         const done = total > 0 && appr === total;
         if (prListFilter.status === 'open' && done) return false;
@@ -3477,7 +3520,7 @@ function testEcountLogin() {
       if (!pc) return;
       const keys = rfqKeySet();
       const pend = [];
-      purchaseRequests.forEach(pr => pr.items.forEach(it => { if (itemStage(pr, it, keys) === 'new') pend.push({ pr: pr, it: it }); }));
+      visiblePRs().forEach(pr => pr.items.forEach(it => { if (itemStage(pr, it, keys) === 'new') pend.push({ pr: pr, it: it }); }));
       const selCount = pend.filter(p => selectedRFQItems.has(p.pr.id + '|' + p.it.id)).length;
 
       pc.innerHTML = pend.length
@@ -3503,7 +3546,7 @@ function testEcountLogin() {
 
       const today = todayISO();
       let waiting = 0;
-      const cards = rfqs.map(rfq => {
+      const cards = rfqs.filter(rfq => !companyView || rfqRequestCompany(rfq) === companyView || rfqRefPRs(rfq).some(p => p.company === companyView)).map(rfq => {
         const entries = resolveRFQItems(rfq);
         const allApproved = entries.length > 0 && entries.every(e => e.it.approvedSupplierId);
         const refPRs = Array.from(new Set(entries.map(e => e.pr.prNo)));
@@ -3561,7 +3604,7 @@ function testEcountLogin() {
 
     function selectAllRFQPending() {
       const keys = rfqKeySet();
-      purchaseRequests.forEach(pr => pr.items.forEach(it => { if (itemStage(pr, it, keys) === 'new') selectedRFQItems.add(pr.id + '|' + it.id); }));
+      visiblePRs().forEach(pr => pr.items.forEach(it => { if (itemStage(pr, it, keys) === 'new') selectedRFQItems.add(pr.id + '|' + it.id); }));
       renderApprovalSummary();
       renderRFQTab();
     }
@@ -3716,6 +3759,7 @@ function testEcountLogin() {
       if (!canApprove()) { alert('เฉพาะผู้จัดการเท่านั้นที่ยกเลิกการเลือกราคาได้'); return; }
       const pr = findPR(prId);
       const item = findItem(pr, itemId);
+      if (item.poNo) { alert('รายการนี้ออกใบสั่งซื้อแล้ว ไม่สามารถยกเลิกการเลือกได้'); return; }
       if (item.approvedSupplierId) { alert('รายการนี้อนุมัติราคาไปแล้ว ไม่สามารถยกเลิกการเลือกได้'); return; }
       item.selectedSupplierId = null;
       renderApp();
@@ -4048,7 +4092,7 @@ function testEcountLogin() {
     }
 
     function deleteVendor(prId, supplierId) {
-      if (findPR(prId).items.some(it => it.poNo && it.approvedSupplierId === supplierId)) { alert('ผู้จำหน่ายรายนี้ออกใบสั่งซื้อใน ECOUNT ไปแล้ว ลบไม่ได้'); return; }
+      if (findPR(prId).items.some(it => it.poNo && poSupId(it) === supplierId)) { alert('ผู้จำหน่ายรายนี้ออกใบสั่งซื้อใน ECOUNT ไปแล้ว ลบไม่ได้'); return; }
       if (!confirm('ต้องการลบผู้จำหน่ายรายนี้และราคาที่เสนอทั้งหมดใช่หรือไม่?')) return;
       const pr = findPR(prId);
       pr.suppliers = pr.suppliers.filter(s => s.id !== supplierId);
