@@ -238,7 +238,7 @@ function getPRInfoJson() {
 //   PO_PASSCODE        = รหัสทีม ที่ต้องกรอกก่อนส่งใบสั่งซื้อ
 //   ECOUNT_TEST        = true  (ใช้ระบบทดสอบ sboapi ของ ECOUNT) / false = ระบบจริง
 //   ECOUNT_RUAMSINTHAI = {"COM_CODE":"...","USER_ID":"...","API_CERT_KEY":"..."}
-//   ECOUNT_RST ASIA PACIFIC / ECOUNT_RST ROBOTICS = รูปแบบเดียวกัน (ชื่อบริษัทตามใน PriceLogic)
+//   ECOUNT_ASIA / ECOUNT_ROBOTICS = รูปแบบเดียวกัน (ชื่อบริษัทตาม Data Hub: RUAMSINTHAI / ASIA / ROBOTICS)
 var PO_LOG_TAB = "PO_LOG";
 
 function ecProps() { return PropertiesService.getScriptProperties(); }
