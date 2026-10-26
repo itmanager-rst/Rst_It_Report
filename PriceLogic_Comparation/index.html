@@ -33,7 +33,7 @@
         <div>
           <div class="flex items-center gap-2">
             <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white">RST GROUP · PriceLogic Procurement</h1>
-            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.6 Full Procurement Flow</span>
+            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.6.2 Full Procurement Flow</span>
           </div>
           <p class="text-xs text-slate-300 mt-0.5">ดึงสถานะใบขอซื้อจาก ECOUNT อัตโนมัติ → ขอใบเสนอราคา → เปรียบเทียบราคา → อนุมัติ → ออก PO เข้า ECOUNT</p>
         </div>
@@ -1281,7 +1281,7 @@ function getPRInfoJson() {
 //   PO_PASSCODE        = รหัสทีม ที่ต้องกรอกก่อนส่งใบสั่งซื้อ
 //   ECOUNT_TEST        = true  (ใช้ระบบทดสอบ sboapi ของ ECOUNT) / false = ระบบจริง
 //   ECOUNT_RUAMSINTHAI = {"COM_CODE":"...","USER_ID":"...","API_CERT_KEY":"..."}
-//   ECOUNT_RST ASIA PACIFIC / ECOUNT_RST ROBOTICS = รูปแบบเดียวกัน (ชื่อบริษัทตามใน PriceLogic)
+//   ECOUNT_ASIA / ECOUNT_ROBOTICS = รูปแบบเดียวกัน (ชื่อบริษัทตาม Data Hub: RUAMSINTHAI / ASIA / ROBOTICS)
 var PO_LOG_TAB = "PO_LOG";
 
 function ecProps() { return PropertiesService.getScriptProperties(); }
@@ -1745,6 +1745,7 @@ function testEcountLogin() {
       sel.value = companyView;
     }
     function renderApp() {
+      migrateCompanyCodes();
       inboxFilter.company = companyView;
       renderCompanyViewSel();
       const allItems = visiblePRs().flatMap(pr => pr.items.map(it => ({ pr, it })));
@@ -3365,8 +3366,8 @@ function testEcountLogin() {
     // ===================== v5: RFQ (ใบขอราคา) with vendor reply tracking =====================
     const COMPANY_NAMES = {
       'RUAMSINTHAI': 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย',
-      'RST ASIA PACIFIC': 'ห้างหุ้นส่วนจำกัด อาร์ เอส ที เอเชียแปซิฟิค',
-      'RST ROBOTICS': 'บริษัท อาร์เอสที โรโบติกส์ จำกัด'
+      'ASIA': 'ห้างหุ้นส่วนจำกัด อาร์ เอส ที เอเชียแปซิฟิค',
+      'ROBOTICS': 'บริษัท อาร์เอสที โรโบติกส์ จำกัด'
     };
     function companyFullName(code) { return COMPANY_NAMES[code] || code || 'RST GROUP'; }
     function companyOptions(extra) {
@@ -4136,9 +4137,38 @@ function testEcountLogin() {
       reader.readAsArrayBuffer(file);
     }
 
+    // Company codes follow the RST GROUP Data Hub: RUAMSINTHAI / ASIA / ROBOTICS.
+    const COMPANY_ALIASES = { 'ASIA': 'ASIA', 'RST ASIA': 'ASIA', 'RSTASIA': 'ASIA', 'RST ASIA PACIFIC': 'ASIA', 'ROBOTICS': 'ROBOTICS', 'RSTROBOTICS': 'ROBOTICS', 'RST ROBOTICS': 'ROBOTICS', 'RUAMSINTHAI': 'RUAMSINTHAI' };
+    function canonicalCompany(v) {
+      const t = String(v || '').trim();
+      if (!t) return '';
+      const u = t.toUpperCase();
+      if (COMPANY_ALIASES[u]) return COMPANY_ALIASES[u];
+      if (/รวมสินไทย/.test(t)) return 'RUAMSINTHAI';
+      if (/เอเชีย/.test(t)) return 'ASIA';
+      if (/โรโบติก/.test(t)) return 'ROBOTICS';
+      return t;
+    }
+    // Converts data saved with the old names (RST ASIA PACIFIC / RST ROBOTICS).
+    function migrateCompanyCodes() {
+      const fixKeyed = obj => {
+        if (!obj) return obj;
+        Object.keys(obj).forEach(k => { const c = canonicalCompany(k); if (c !== k) { obj[c] = Object.assign({}, obj[c] || {}, obj[k]); delete obj[k]; } });
+        return obj;
+      };
+      purchaseRequests.forEach(pr => {
+        if (pr.company) pr.company = canonicalCompany(pr.company);
+        pr.items.forEach(it => { if (it.poCompany) it.poCompany = canonicalCompany(it.poCompany); if (it.srcKey) it.srcKey = it.srcKey.replace(/^RST ASIA PACIFIC\|/, 'ASIA|').replace(/^RST ROBOTICS\|/, 'ROBOTICS|'); });
+        pr.suppliers.forEach(sp => { if (sp.ecountCodes) { const n = {}; Object.keys(sp.ecountCodes).forEach(k => { n[canonicalCompany(k)] = sp.ecountCodes[k]; }); sp.ecountCodes = n; } });
+      });
+      rfqs.forEach(r => { if (r.requestCompany) r.requestCompany = canonicalCompany(r.requestCompany); });
+      Object.keys(prMeta).forEach(k => { const i = k.indexOf('|'); const c = canonicalCompany(k.slice(0, i)); const nk = c + k.slice(i); if (nk !== k) { prMeta[nk] = Object.assign({}, prMeta[nk] || {}, prMeta[k]); delete prMeta[k]; } });
+      if (hubSettings.poDefaults) fixKeyed(hubSettings.poDefaults);
+      if (companyView) companyView = canonicalCompany(companyView);
+    }
     function normalizeImportRows(rawRows) {
       const fieldAliases = {
-        dateSeq: ['วันที่-ลำดับ', 'วันที่-ลำดับ '],
+        dateSeq: ['วันที่-ลำดับ', 'วันที่-ลำดับ ', 'วันที่'],
         project: ['ชื่อโครงการ', 'โครงการ', 'project', 'projectname'],
         prNo: ['เลขที่ใบขอซื้อ', 'เลขที่ pr', 'เลขที่ใบขอ', 'prno', 'pr no', 'pr_no'],
         code: ['รหัสสินค้า', 'รหัส', 'itemcode', 'code'],
@@ -4147,11 +4177,11 @@ function testEcountLogin() {
         unit: ['หน่วย', 'unit'],
         unitPrice: ['ราคาต่อหน่วย', 'ราคาต่อหน่วย ', 'unitprice', 'ราคา'],
         amount: ['จำนวนเงิน', 'amount', 'total'],
-        neededDate: ['วันที่ต้องการ', 'วันที่ต้องการใช้', 'neededdate', 'duedate'],
+        neededDate: ['วันที่ต้องการ', 'วันที่ต้องการสินค้า', 'วันที่ต้องการใช้', 'neededdate', 'duedate'],
         vendor: ['ชื่อลูกค้า/ผู้ขาย', 'ผู้ขาย', 'supplier', 'vendor'],
         note: ['หมายเหตุ', 'note', 'remark'],
-        company: ['company', 'บริษัท'],
-        pulledAt: ['pulled_at'],
+        company: ['company', '_company', 'บริษัท'],
+        pulledAt: ['pulled_at', '_updated_at'],
         requester: ['ผู้สร้าง', 'ผู้ขอซื้อ', 'ผู้รับผิดชอบ']
       };
 
@@ -4168,11 +4198,17 @@ function testEcountLogin() {
       const lowerKeyMap = {};
       headers.forEach((h, colIdx) => { lowerKeyMap[h.toLowerCase()] = colIdx; });
 
+      // A sheet may hold several report layouts side by side (e.g. "จำนวน" for
+      // one company and "จำนวนขอซื้อ" for another), so take the first
+      // non-empty value among every column that matches the field.
       function get(row, field) {
-        const alias = fieldAliases[field].find(a => lowerKeyMap[a] !== undefined);
-        if (alias === undefined) return '';
-        const colIdx = lowerKeyMap[alias];
-        return row[colIdx] !== undefined ? row[colIdx] : '';
+        for (const a of fieldAliases[field]) {
+          const colIdx = lowerKeyMap[a];
+          if (colIdx === undefined) continue;
+          const v = row[colIdx];
+          if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+        }
+        return '';
       }
 
       const dataRows = rawRows.slice(headerRowIdx + 1);
@@ -4198,7 +4234,7 @@ function testEcountLogin() {
           vendor: (get(row, 'vendor') || '').toString().trim(),
           note: (get(row, 'note') || '').toString().trim(),
           dateSeq: (get(row, 'dateSeq') || '').toString().trim(),
-          company: (get(row, 'company') || '').toString().trim(),
+          company: canonicalCompany(get(row, 'company')),
           pulledAt: (get(row, 'pulledAt') || '').toString().trim(),
           requester: (get(row, 'requester') || '').toString().trim()
         };
