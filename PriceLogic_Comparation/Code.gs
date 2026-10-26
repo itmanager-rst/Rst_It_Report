@@ -1,4 +1,4 @@
-// RST GROUP - PriceLogic Procurement : Code.gs (v5.2)
+// RST GROUP - PriceLogic Procurement : Code.gs (v5.3)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -164,7 +164,9 @@ function pushPRStatus(req) {
     var clean = [];
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
-      if (!row || !String(row[iPr] || "").trim() || !String(row[iName] || "").trim()) continue;
+      if (!row || !String(row[iName] || "").trim()) continue;
+      if (!/^PR\d+/i.test(String(row[iPr] || "").trim())) continue;
+      if (row.some(function (c) { return /(^|\s)รวม\s*$|ผลรวมทั้งหมด/.test(String(c || "").trim()); })) continue;
       clean.push(row);
     }
     if (!clean.length) { out.message = "ไม่มีบรรทัดข้อมูล — ไม่ได้แก้ไขข้อมูลเดิม"; return out; }
