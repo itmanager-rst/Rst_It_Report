@@ -33,7 +33,7 @@
         <div>
           <div class="flex items-center gap-2">
             <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white">RST GROUP · PriceLogic Procurement</h1>
-            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.7.2 Full Procurement Flow</span>
+            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.8 Full Procurement Flow</span>
           </div>
           <p class="text-xs text-slate-300 mt-0.5">ดึงสถานะใบขอซื้อจาก ECOUNT อัตโนมัติ → ขอใบเสนอราคา → เปรียบเทียบราคา → อนุมัติ → ออก PO เข้า ECOUNT</p>
         </div>
@@ -542,10 +542,9 @@
           <div><label class="block font-bold text-slate-700 mb-1">ผู้เสนอราคา</label><input id="ymQuoter" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
           <div><label class="block font-bold text-slate-700 mb-1">วันที่สั่งซื้อ</label><input type="date" id="ymDate" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
           <div><label class="block font-bold text-slate-700 mb-1">ประเภทคำสั่งซื้อ / Order type</label><input id="ymOrder" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
-          <div><label class="block font-bold text-slate-700 mb-1">PO :</label><input id="ymPONo" placeholder="เว้นว่างได้" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
         </div>
         <div id="ymPreview"></div>
-        <p class="text-[11px] text-slate-500">ข้อมูลร้านค้าจะถูกจำไว้ต่อบริษัทสำหรับครั้งต่อไป • ราคาปลีก = ราคาขายในทะเบียนสินค้า ECOUNT หัก VAT 7%, ราคาผู้แทน = ราคา MO, ราคา NET = ราคาโปร, จำนวนเงิน = จำนวน × ราคา NET (ไม่รวมภาษี)</p>
+        <p class="text-[11px] text-slate-500">ข้อมูลร้านค้าจะถูกจำไว้ต่อบริษัทสำหรับครั้งต่อไป • ราคาผู้แทน = ราคา MO, ราคาพิเศษ = ราคาโปร, จำนวนเงิน = จำนวน × ราคาพิเศษ (ไม่รวมภาษี)</p>
       </div>
       <div class="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-2 text-xs">
         <button onclick="closeYmPO()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg">ปิด</button>
@@ -566,8 +565,6 @@
         <div id="promoModalSum"></div>
         <div id="promoModalItems" class="max-h-80 overflow-y-auto border border-slate-200 rounded-lg"></div>
         <div class="flex flex-wrap gap-2">
-          <button id="promoCopyBtn" onclick="copyPromoCodes()" class="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50">📋 คัดลอกรายการ + ราคาโปร</button>
-          <button onclick="openPromoSystem()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg">🔗 เปิดหน้าเช็คโปร (แท็บใหม่)</button>
           <button onclick="fetchPromoBest()" class="px-3 py-1.5 bg-white border border-amber-400 text-amber-700 font-bold rounded-lg hover:bg-amber-50">🔄 เช็คราคาโปรอีกครั้ง</button>
           <button onclick="setPromoChecked(true)" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg">✅ บันทึกผลเช็คโปร</button>
         </div>
@@ -1071,7 +1068,7 @@
     let cloudSyncTimer = null;
     let appInitialized = false;
 
-    const APPS_SCRIPT_CODE = `// RST GROUP - PriceLogic Procurement : Code.gs (v5.5)
+    const APPS_SCRIPT_CODE = `// RST GROUP - PriceLogic Procurement : Code.gs (v5.6)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -1096,7 +1093,6 @@ function doPost(e) {
   if (req && req.action === "pushPR") return jsonOut(JSON.stringify(pushPRStatus(req)));
   if (req && req.action === "createPO") return jsonOut(JSON.stringify(createPurchaseOrder(req)));
   if (req && req.action === "saveCodes") return jsonOut(saveEcountCode(req));
-  if (req && req.action === "retail") return jsonOut(getRetailPrices(req));
   if (req && req.action) return jsonOut(JSON.stringify({ status: "error", message: "unknown action" }));
   saveDataJson(body);
   return jsonOut(JSON.stringify({status:"ok"}));
@@ -1487,20 +1483,20 @@ function vhNum(v) { var n = parseFloat(String(v || "").replace(/,/g, "")); retur
 // คืนค่า { byCode: { "รหัสสินค้า": [[บริษัท, ผู้ขาย, รหัสผู้ขาย, วันที่, ราคาต่อหน่วย(หลังส่วนลด), จำนวน, เลขที่PO, จำนวนครั้งที่ซื้อ], ...] } }
 // เก็บผู้ขายสูงสุด 5 รายต่อรหัสสินค้า เรียงจากซื้อล่าสุด
 function getVendorHistJson() {
-  var out = { byCode: {}, sheet: "", rows: 0, error: "" };
+  var out = { byCode: {}, info: {}, sheet: "", rows: 0, error: "" };
   try {
     var ss = SpreadsheetApp.openById(DATA_HUB_ID);
     var src = [
-      { tab: "DH_PO_STATUS", co: "_company", code: "รหัสสินค้า", vendor: "ลูกค้า/ผู้ขาย", vcode: "รหัสผู้ขาย", date: "วันที่", net: "ราคาต่อหน่วยหลังส่วนลด", price: "ราคาต่อหน่วย", qty: "จำนวน", po: "เลขที่ใบสั่งซื้อ" },
-      { tab: "PO_LINES", co: "COMPANY", code: "ITEM_CODE", vendor: "VENDOR", vcode: "", date: "PO_DATE", net: "NET_PRICE", price: "UNIT_PRICE", qty: "QTY", po: "PO_NO" }
+      { tab: "DH_PO_STATUS", co: "_company", code: "รหัสสินค้า", vendor: "ลูกค้า/ผู้ขาย", vcode: "รหัสผู้ขาย", date: "วันที่", net: "ราคาต่อหน่วยหลังส่วนลด", price: "ราคาต่อหน่วย", qty: "จำนวน", po: "เลขที่ใบสั่งซื้อ", name: "ชื่อสินค้า [ข้อมูลจำเพาะ]", group: "ชื่อกลุ่มสินค้า I" },
+      { tab: "PO_LINES", co: "COMPANY", code: "ITEM_CODE", vendor: "VENDOR", vcode: "", date: "PO_DATE", net: "NET_PRICE", price: "UNIT_PRICE", qty: "QTY", po: "PO_NO", name: "ITEM_NAME", group: "ITEM_GROUP" }
     ];
-    var agg = {};
+    var agg = {}, info = {};
     for (var s = 0; s < src.length; s++) {
       var d = src[s], sh = ss.getSheetByName(d.tab);
       if (!sh || sh.getLastRow() < 2) continue;
       var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
       var h = v[0].map(function (x) { return String(x).trim(); });
-      var c = {}; ["co", "code", "vendor", "vcode", "date", "net", "price", "qty", "po"].forEach(function (k) { c[k] = d[k] ? h.indexOf(d[k]) : -1; });
+      var c = {}; ["co", "code", "vendor", "vcode", "date", "net", "price", "qty", "po", "name", "group"].forEach(function (k) { c[k] = d[k] ? h.indexOf(d[k]) : -1; });
       if (c.code < 0 || c.vendor < 0) continue;
       for (var i = 1; i < v.length; i++) {
         var r = v[i], code = String(r[c.code] || "").trim(), vendor = String(r[c.vendor] || "").trim();
@@ -1510,6 +1506,7 @@ function getVendorHistJson() {
         var co = c.co >= 0 ? String(r[c.co] || "").trim() : "";
         var key = co + "|" + vendor, date = vhIsoDate(c.date >= 0 ? r[c.date] : "");
         var byV = agg[code] || (agg[code] = {});
+        if (!info[code]) info[code] = [c.name >= 0 ? String(r[c.name] || "").trim() : "", c.group >= 0 ? String(r[c.group] || "").trim() : ""];
         var e = byV[key];
         if (!e) e = byV[key] = [co, vendor, c.vcode >= 0 ? String(r[c.vcode] || "").trim() : "", "", 0, 0, "", 0];
         e[7]++;
@@ -1524,67 +1521,11 @@ function getVendorHistJson() {
       out.byCode[code] = Object.keys(agg[code]).map(function (k) { return agg[code][k]; })
         .sort(function (a, b) { return a[3] < b[3] ? 1 : a[3] > b[3] ? -1 : 0; }).slice(0, 5);
     });
+    out.info = info; // รหัสสินค้า -> [ชื่อสินค้า, กลุ่มสินค้า] ใช้หาสินค้าใกล้เคียง/กลุ่มเดียวกัน
   } catch (err) { out.error = String(err); }
   return JSON.stringify(out);
 }
 function loadVendorHistForClient() { return getVendorHistJson(); }
-
-// ================= ราคาปลีกจากเมนูลงทะเบียนสินค้า ECOUNT (OUT_PRICE) ผ่าน API =================
-// คืนค่า { prices: { "รหัสสินค้า": { out: ราคาขายในทะเบียนสินค้า, ex: ราคาไม่รวมภาษี (out / 1.07) } }, errors: {...} }
-// เก็บผลไว้ในแคช 6 ชั่วโมงต่อรหัสสินค้า เพื่อลดจำนวนครั้งที่เรียก API
-function ecFindOutPrice(node, code, depth) {
-  if (!node || depth > 6) return null;
-  if (Array.isArray(node)) {
-    for (var i = 0; i < node.length; i++) { var a = ecFindOutPrice(node[i], code, depth + 1); if (a) return a; }
-    return null;
-  }
-  if (typeof node === "object") {
-    if (node.OUT_PRICE !== undefined && (!node.PROD_CD || String(node.PROD_CD).trim() === code)) return node;
-    for (var k in node) { if (node[k] && typeof node[k] === "object") { var b = ecFindOutPrice(node[k], code, depth + 1); if (b) return b; } }
-  }
-  return null;
-}
-function getRetailPrices(req) {
-  var out = { prices: {}, errors: {}, error: "" };
-  try {
-    var company = String(req.company || "").trim();
-    var codes = (req.codes || []).map(function (c) { return String(c || "").trim(); }).filter(function (c) { return c; });
-    codes = codes.filter(function (c, i) { return codes.indexOf(c) === i; }).slice(0, 100);
-    if (!company || !codes.length) { out.error = "ไม่ได้ระบุบริษัทหรือรหัสสินค้า"; return JSON.stringify(out); }
-    var cache = CacheService.getScriptCache(), todo = [];
-    codes.forEach(function (c) {
-      var hit = cache.get("rp_" + company + "_" + c);
-      if (hit) out.prices[c] = JSON.parse(hit); else todo.push(c);
-    });
-    if (todo.length) {
-      var s = ecSession(company, false);
-      var call = function (list, sess) {
-        return UrlFetchApp.fetchAll(list.map(function (c) {
-          return { url: ecHost(sess.zone) + "/OAPI/V2/InventoryBasic/ViewBasicProduct?SESSION_ID=" + encodeURIComponent(sess.sid),
-                   method: "post", contentType: "application/json", payload: JSON.stringify({ PROD_CD: c }), muteHttpExceptions: true };
-        }));
-      };
-      for (var i = 0; i < todo.length; i += 10) {
-        var chunk = todo.slice(i, i + 10), res = call(chunk, s);
-        var expired = res.some(function (r) { return /session/i.test(r.getContentText().substring(0, 400)); });
-        if (expired) { s = ecSession(company, true); res = call(chunk, s); }
-        res.forEach(function (r, j) {
-          var c = chunk[j], json = null;
-          try { json = JSON.parse(r.getContentText()); } catch (e) {}
-          var item = json ? ecFindOutPrice(json.Data || json, c, 0) : null;
-          if (!item) { out.errors[c] = json && json.Error ? (json.Error.Message || JSON.stringify(json.Error)).substring(0, 150) : "ไม่พบสินค้า/ราคาขายในทะเบียนสินค้า"; return; }
-          var o = parseFloat(String(item.OUT_PRICE).replace(/,/g, "")) || 0;
-          var p = { out: o, ex: Math.round(o / 1.07 * 100) / 100 };
-          out.prices[c] = p;
-          cache.put("rp_" + company + "_" + c, JSON.stringify(p), 21600);
-        });
-        if (i + 10 < todo.length) Utilities.sleep(300);
-      }
-    }
-  } catch (err) { out.error = String(err && err.message ? err.message : err); }
-  return JSON.stringify(out);
-}
-function loadRetailPricesForClient(req) { return getRetailPrices(req); }
 `;
 
     function openCloudSyncModal() {
@@ -3029,7 +2970,10 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
       const cutoff = inboxFilter.days === 'all' ? '' : toISODate(new Date(Date.now() - (+inboxFilter.days) * 86400000));
       return prInbox.map(r => {
         const m = findInboxMatch(idx, r);
-        return { r: r, stage: m ? itemStage(m.pr, m.it, keys) : 'inbox', rfqNos: m ? (rmap[m.pr.id + '|' + m.it.id] || []) : [] };
+        let stage = m ? itemStage(m.pr, m.it, keys) : 'inbox';
+        const ma = manualApproval(r);
+        if (ma && stage !== 'ordered') stage = 'approved';
+        return { r: r, stage: stage, manual: ma, rfqNos: m ? (rmap[m.pr.id + '|' + m.it.id] || []) : [] };
       }).filter(x => {
         const r = x.r;
         if (inboxFilter.company && r.company !== inboxFilter.company) return false;
@@ -3077,12 +3021,12 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
     // Data Hub sheet DH_PO_STATUS → per item code: vendors bought from before,
     // latest price, date and PO no. Same-company history first; if none, the
     // other companies' history is shown and labelled.
-    let vendorHist = null, vendorHistLoading = false;
+    let vendorHist = null, vendorHistLoading = false, vendorInfo = {}, simIndex = null, groupVendors = {}, simCache = {};
     function loadVendorHist() {
       if (vendorHist || vendorHistLoading) return;
       vendorHistLoading = true;
       serverCall('loadVendorHistForClient', null, 'vendorhist')
-        .then(d => { vendorHist = (d && d.byCode) || {}; })
+        .then(d => { vendorHist = (d && d.byCode) || {}; vendorInfo = (d && d.info) || {}; buildSimIndex(); })
         .catch(() => { vendorHist = {}; })
         .then(() => { vendorHistLoading = false; renderInbox(); });
     }
@@ -3094,16 +3038,86 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
       if (same.length) return same;
       return list.map(x => Object.assign(x, { other: true }));
     }
-    function fmtVendorHit(h, short) {
+    // ---- v5.8: similar items (name trigrams) and same product group ----
+    function simNorm(t) { return String(t || '').toLowerCase().replace(/\[[^\]]*\]/g, ' ').replace(/[\s()\-_/.,*"'#:]+/g, ''); }
+    function trigrams(t) { const s = simNorm(t), g = new Set(); for (let i = 0; i < s.length - 2; i++) g.add(s.substr(i, 3)); return g; }
+    function buildSimIndex() {
+      simIndex = []; groupVendors = {}; simCache = {};
+      Object.keys(vendorInfo).forEach(code => {
+        const inf = vendorInfo[code] || [], name = inf[0] || '', group = inf[1] || '';
+        if (name) simIndex.push({ code: code, name: name, group: group, g: trigrams(name) });
+        if (group) (vendorHist[code] || []).forEach(e => {
+          const gv = groupVendors[group] || (groupVendors[group] = {});
+          const k = canonicalCompany(e[0]) + '|' + e[1];
+          gv[k] = (gv[k] || 0) + (e[7] || 1);
+        });
+      });
+    }
+    function similarItems(name, code) {
+      if (!simIndex || !name) return [];
+      const ck = code + '|' + name;
+      if (simCache[ck]) return simCache[ck];
+      const g = trigrams(name);
+      if (g.size < 2) return (simCache[ck] = []);
+      const out = [];
+      simIndex.forEach(x => {
+        if (x.code === code) return;
+        let inter = 0; g.forEach(t => { if (x.g.has(t)) inter++; });
+        const score = 2 * inter / (g.size + x.g.size);
+        if (score >= 0.55) out.push({ code: x.code, name: x.name, group: x.group, score: score });
+      });
+      out.sort((a, b) => b.score - a.score);
+      return (simCache[ck] = out.slice(0, 3));
+    }
+    // -> { exact: [hits], similar: [hits + simName], group: {name, vendors: [{vendor, other}]} }
+    function itemSuggestions(code, name, company) {
+      const res = { exact: vendorSuggest(code, company), similar: [], group: null };
+      const sims = similarItems(name, code);
+      if (!res.exact.length) sims.forEach(si => vendorSuggest(si.code, company).slice(0, 2).forEach(h => {
+        if (!res.similar.some(x => x.vendor === h.vendor)) res.similar.push(Object.assign(h, { simName: si.name }));
+      }));
+      const grp = (vendorInfo[code] || [])[1] || (sims[0] && sims[0].group) || '';
+      if (grp && groupVendors[grp]) {
+        const seen = new Set(res.exact.concat(res.similar).map(h => h.vendor));
+        const list = Object.keys(groupVendors[grp]).map(k => { const i = k.indexOf('|'); return { company: k.slice(0, i), vendor: k.slice(i + 1), n: groupVendors[grp][k] }; })
+          .filter(v => !seen.has(v.vendor)).sort((a, b) => ((a.company !== company) - (b.company !== company)) || (b.n - a.n));
+        if (list.length) res.group = { name: grp, vendors: list.slice(0, 3).map(v => ({ vendor: v.vendor, other: company && v.company !== company })) };
+      }
+      return res;
+    }
+    // Vendor + price only (no PO no. / date)
+    function fmtVendorHit(h) {
       const price = h.price > 0 ? '฿' + h.price.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-';
       return '<div class="leading-4' + (h.other ? ' text-slate-400' : '') + '"><span class="font-bold text-slate-700">' + esc(h.vendor) + '</span> ' +
         '<span class="font-bold text-emerald-700">' + price + '</span>' +
-        (short ? '' : ' <span class="text-[10px] text-slate-400">' + esc(fmtShortDate(h.date)) + (h.po ? ' • ' + esc(h.po) : '') + (h.times > 1 ? ' • ซื้อ ' + h.times + ' ครั้ง' : '') + (h.other ? ' • จาก ' + esc(h.company) : '') + '</span>') +
+        (h.simName ? ' <span class="text-[10px] text-amber-700">(สินค้าใกล้เคียง: ' + esc(h.simName.replace(/\s*\[.*$/, '').slice(0, 30)) + ')</span>' : '') +
+        (h.other ? ' <span class="text-[10px] text-slate-400">จาก ' + esc(h.company) + '</span>' : '') +
         '</div>';
     }
-    // Vendors to suggest for a set of PR lines: ranked by how many of the
-    // lines they have sold before, then by most recent purchase.
+    function fmtSuggestCell(code, name, company) {
+      if (!vendorHist) return '<span class="text-slate-400">...</span>';
+      const s = itemSuggestions(code, name, company);
+      let html = s.exact.slice(0, 2).map(h => fmtVendorHit(h)).join('') + s.similar.slice(0, 2).map(h => fmtVendorHit(h)).join('');
+      if (s.group) html += '<div class="leading-4 text-[10px] text-slate-500">กลุ่ม ' + esc(s.group.name) + ': ' + s.group.vendors.map(v => '<span class="font-bold ' + (v.other ? 'text-slate-400' : 'text-blue-700') + '">' + esc(v.vendor) + '</span>').join(', ') + '</div>';
+      return html || '<span class="text-slate-400">ไม่พบประวัติ</span>';
+    }
+    // Vendors to suggest for a set of PR lines: exact-code vendors first,
+    // then vendors of similar items, then vendors of the same product group.
     function suggestVendorsFor(lines) {
+      const m = {};
+      const add = (vendor, other, date, w) => {
+        const e = m[vendor] || (m[vendor] = { vendor: vendor, items: 0, score: 0, last: '', other: true });
+        e.items++; e.score += w; if (date && date > e.last) e.last = date; if (!other) e.other = false;
+      };
+      lines.forEach(l => {
+        const s = itemSuggestions(l.code, l.name, l.company);
+        s.exact.forEach(h => add(h.vendor, h.other, h.date, 3));
+        s.similar.forEach(h => add(h.vendor, h.other, h.date, 2));
+        if (s.group) s.group.vendors.forEach(v => add(v.vendor, v.other, '', 1));
+      });
+      return Object.values(m).sort((a, b) => (a.other - b.other) || (b.score - a.score) || (a.last < b.last ? 1 : -1));
+    }
+    function suggestVendorsForOld(lines) {
       const m = {};
       lines.forEach(l => vendorSuggest(l.code, l.company).forEach(h => {
         const e = m[h.vendor] || (m[h.vendor] = { vendor: h.vendor, items: 0, last: '', other: true });
@@ -3112,6 +3126,25 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
       return Object.values(m).sort((a, b) => (a.other - b.other) || (b.items - a.items) || (a.last < b.last ? 1 : -1));
     }
 
+    // ---- v5.8: manual approval by a manager (stored in prMeta[prKey].appr[srcKey]) ----
+    function manualApproval(r) { const m = prMeta[prKeyOf(r)]; return m && m.appr ? m.appr[r.srcKey] || null : null; }
+    function approveMark(info) { return '<span title="อนุมัติโดย ' + esc(info.by || '-') + ' • ' + esc(fmtShortDate(info.at)) + '" class="text-base">✅</span>'; }
+    function manualApprove(gi, ii) {
+      if (!canApprove()) return;
+      const g = inboxGroups[gi], u = getCurrentUser();
+      const targets = ii == null ? prInbox.filter(r => prKeyOf(r) === g.key) : [g.items[ii].r];
+      const meta = prMeta[g.key] || (prMeta[g.key] = {});
+      if (!meta.appr) meta.appr = {};
+      targets.forEach(r => { if (!meta.appr[r.srcKey]) meta.appr[r.srcKey] = { by: u ? u.name : '', at: todayISO() }; });
+      savePrMeta(); renderInbox();
+    }
+    function cancelManualApprove(gi, ii) {
+      if (!canApprove() || !confirm('ยกเลิกการอนุมัติ?')) return;
+      const g = inboxGroups[gi], meta = prMeta[g.key];
+      if (!meta || !meta.appr) return;
+      (ii == null ? prInbox.filter(r => prKeyOf(r) === g.key) : [g.items[ii].r]).forEach(r => { delete meta.appr[r.srcKey]; });
+      savePrMeta(); renderInbox();
+    }
     function renderInbox() {
       const bar = document.getElementById('inboxStatusBar');
       if (!bar) return;
@@ -3189,6 +3222,12 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
         const stageHtml = Object.keys(STAGE).filter(k => counts[k]).map(k =>
           '<div class="mb-0.5">' + stageBadge(k) + (Object.keys(counts).length > 1 ? ' <span class="text-[10px] text-slate-500">' + counts[k] + '</span>' : '') + '</div>').join('');
         const promo = isPromoProject(r.project);
+        const allLines = prInbox.filter(x => prKeyOf(x) === g.key);
+        const apprAll = allLines.length > 0 && allLines.every(x => manualApproval(x));
+        const apprInfo = apprAll ? manualApproval(allLines[0]) : null;
+        const apprHtml = apprAll
+          ? '<div class="mt-1">' + (canApprove() ? '<button onclick="cancelManualApprove(' + gi + ')" title="กดเพื่อยกเลิก" class="bg-transparent">' + approveMark(apprInfo) + '</button>' : approveMark(apprInfo)) + '</div>'
+          : (canApprove() ? '<div class="mt-1"><button onclick="manualApprove(' + gi + ')" class="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 rounded">✔ อนุมัติ</button></div>' : '');
         const groupRfqNos = Array.from(new Set([].concat.apply([], g.items.map(x => x.rfqNos))));
 
         const sugg = vendorHist ? suggestVendorsFor(g.items.map(x => ({ code: x.r.code, company: x.r.company }))).slice(0, 3) : [];
@@ -3216,8 +3255,10 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
               '<td class="p-1.5 font-bold text-slate-900">' + esc(it.name) + '</td>' +
               '<td class="p-1.5 text-center">' + it.qty + (it.unit ? ' ' + esc(it.unit) : '') + '</td>' +
               '<td class="p-1.5 text-center whitespace-nowrap">' + esc(it.neededDate || '-') + '</td>' +
-              '<td class="p-1.5 text-center whitespace-nowrap">' + stageBadge(x.stage) + (x.rfqNos.length ? ' ' + rfqNoChips(x.rfqNos) : '') + '</td>' +
-              '<td class="p-1.5 text-[11px]">' + (!vendorHist ? '<span class="text-slate-400">...</span>' : (vendorSuggest(it.code, it.company).slice(0, 2).map(h => fmtVendorHit(h)).join('') || '<span class="text-slate-400">ไม่เคยซื้อ</span>')) + '</td>' +
+              '<td class="p-1.5 text-center whitespace-nowrap">' + stageBadge(x.stage) + (x.rfqNos.length ? ' ' + rfqNoChips(x.rfqNos) : '') +
+                (x.manual ? ' ' + (canApprove() ? '<button onclick="cancelManualApprove(' + gi + ',' + g.items.indexOf(x) + ')" title="กดเพื่อยกเลิก">' + approveMark(x.manual) + '</button>' : approveMark(x.manual))
+                          : (canApprove() && x.stage !== 'ordered' && x.stage !== 'approved' ? ' <button onclick="manualApprove(' + gi + ',' + g.items.indexOf(x) + ')" class="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-1.5 py-0.5 rounded">✔ อนุมัติ</button>' : '')) + '</td>' +
+              '<td class="p-1.5 text-[11px]">' + fmtSuggestCell(it.code, it.name, it.company) + '</td>' +
             '</tr>';
           }).join('');
           detail =
@@ -3246,11 +3287,10 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
             '<td class="p-2 whitespace-nowrap">' +
               '<div class="font-bold text-slate-900">ขอซื้อ ' + g.total + ' รายการ' + (g.items.length !== g.total ? ' <span class="font-normal text-slate-400">(ตรงตัวกรอง ' + g.items.length + ')</span>' : '') + '</div>' +
               '<button onclick="toggleInboxExpand(' + gi + ')" class="text-[11px] font-bold text-blue-700 underline">' + (open ? '▲ ซ่อนรายการ' : '▼ ดูรายการทั้งหมด') + '</button>' +
-              (promo ? '' : suggHtml) +
             '</td>' +
             '<td class="p-2 text-center whitespace-nowrap">' + esc(needed) + '</td>' +
             '<td class="p-2 text-slate-500">' + esc(r.requester || '-') + '</td>' +
-            '<td class="p-2 text-center">' + stageHtml + (groupRfqNos.length ? '<div class="mt-1 leading-5">' + rfqNoChips(groupRfqNos) + '</div>' : '') + '</td>' +
+            '<td class="p-2 text-center">' + stageHtml + apprHtml + (groupRfqNos.length ? '<div class="mt-1 leading-5">' + rfqNoChips(groupRfqNos) + '</div>' : '') + '</td>' +
             '<td class="p-2"><div class="flex flex-col items-start gap-1 text-[11px]">' + actions + '</div></td>' +
           '</tr>' + detail
         );
@@ -3330,8 +3370,7 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
       if (!m) return '';
       return (+m[3]) + '-' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[2] - 1] + '-' + String(+m[1] + 543).slice(-2);
     }
-    function ymLines(key, retail) {
-      retail = retail || {};
+    function ymLines(key) {
       const promo = ((prMeta[key] || {}).promo || {}).prices || {};
       return prInbox.filter(r => prKeyOf(r) === key).map(r => {
         const p = promo[r.code] || null, qty = Number(r.qty) || 0;
@@ -3339,16 +3378,26 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
         const sp = disc != null ? (YM_SPLIT[String(disc)] || [Math.max(disc - 1, 0), disc > 0 ? 1 : 0]) : null;
         const net = p ? Number(p.price) || 0 : 0;
         return { code: r.code, name: r.name, qty: qty, ptype: p ? (p.ptype || '') : '', disc: disc, promoDisc: sp ? sp[0] : null, quarter: sp ? sp[1] : null,
-                 mo: p ? Number(p.mo) || 0 : 0, net: net, amount: Math.round(net * qty * 100) / 100, hasPromo: !!p,
-                 retail: retail[r.code] ? retail[r.code].ex : 0 };
+                 mo: p ? Number(p.mo) || 0 : 0, net: net, amount: Math.round(net * qty * 100) / 100, hasPromo: !!p };
       });
     }
+    // One PO holds at most 10 items; extra items open a new PO automatically.
+    const YM_MAX_ITEMS = 10;
     function ymGroups(lines, mode) {
-      if (mode !== 'split') return [{ label: 'รวมทุกส่วนลด', lines: lines }];
-      const m = {};
-      lines.forEach(l => { const k = l.disc == null ? 'none' : String(l.disc); (m[k] = m[k] || []).push(l); });
-      return Object.keys(m).sort((a, b) => (a === 'none') - (b === 'none') || Number(a) - Number(b))
-        .map(k => ({ label: k === 'none' ? 'ไม่มีราคาโปร' : 'ส่วนลด ' + ymPct(Number(k)), lines: m[k] }));
+      let groups;
+      if (mode !== 'split') groups = [{ label: 'รวมทุกส่วนลด', lines: lines }];
+      else {
+        const m = {};
+        lines.forEach(l => { const k = l.disc == null ? 'none' : String(l.disc); (m[k] = m[k] || []).push(l); });
+        groups = Object.keys(m).sort((a, b) => (a === 'none') - (b === 'none') || Number(a) - Number(b))
+          .map(k => ({ label: k === 'none' ? 'ไม่มีราคาโปร' : 'ส่วนลด ' + ymPct(Number(k)), lines: m[k] }));
+      }
+      const pages = [];
+      groups.forEach(gr => {
+        const n = Math.ceil(gr.lines.length / YM_MAX_ITEMS) || 1;
+        for (let i = 0; i < n; i++) pages.push({ label: gr.label + (n > 1 ? ' (ชุดที่ ' + (i + 1) + '/' + n + ')' : ''), lines: gr.lines.slice(i * YM_MAX_ITEMS, (i + 1) * YM_MAX_ITEMS) });
+      });
+      return pages;
     }
     function openYmPO(gi, mode) {
       const g = inboxGroups[gi], key = g.key, meta = prMeta[key] || {};
@@ -3357,57 +3406,46 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
       if (lines.some(l => l.hasPromo && !l.mo)) { alert('ผลเช็คโปรที่บันทึกไว้เป็นรูปแบบเก่า (ไม่มีราคา MO) — กรุณากด "เช็คโปรโมชั่น" แล้ว "บันทึกผลเช็คโปร" ใหม่อีกครั้ง'); return; }
       const company = g.first.company || 'RUAMSINTHAI';
       const hdr = Object.assign({}, YM_DEFAULT.RUAMSINTHAI, YM_DEFAULT[company] || {}, ((hubSettings.ymForm || {})[company]) || {});
-      ymCtx = { key: key, mode: mode, company: company, pr: g.first, retail: null, retailMsg: '⏳ กำลังดึงราคาปลีกจากทะเบียนสินค้า ECOUNT...' };
-      const ctx = ymCtx;
-      serverCall('loadRetailPricesForClient', { company: company, codes: lines.map(l => l.code).filter(Boolean) }, 'retail')
-        .then(d => {
-          if (ymCtx !== ctx) return;
-          ctx.retail = (d && d.prices) || {};
-          const miss = lines.filter(l => l.code && !ctx.retail[l.code]).length;
-          ctx.retailMsg = d && d.error ? '⚠️ ดึงราคาปลีกไม่สำเร็จ: ' + d.error
-            : '✓ ราคาปลีกจากทะเบียนสินค้า ECOUNT (หัก VAT 7%) ' + (lines.length - miss) + '/' + lines.length + ' รายการ' + (miss ? ' — ' + miss + ' รายการไม่พบราคา จะแสดง "-"' : '');
-          ymDrawRetail();
-        })
-        .catch(err => { if (ymCtx !== ctx) return; ctx.retail = {}; ctx.retailMsg = '⚠️ ดึงราคาปลีกไม่สำเร็จ: ' + (err && err.message ? err.message : err); ymDrawRetail(); });
+      ymCtx = { key: key, mode: mode, company: company, pr: g.first };
       document.getElementById('ymTitle').innerText = mode === 'split' ? 'พิมพ์ PO แยกส่วนลด (แบบฟอร์ม YANMAR)' : 'พิมพ์ PO รวมส่วนลด (แบบฟอร์ม YANMAR)';
       document.getElementById('ymSub').innerText = 'Ref. PR No. ' + g.first.prNo + ' • โครงการ ' + (g.first.project || '-') + ' • ' + companyFullName(company);
       document.getElementById('ymName').value = hdr.name; document.getElementById('ymAddr').value = hdr.addr;
       document.getElementById('ymTel').value = hdr.tel; document.getElementById('ymCust').value = hdr.cust;
       document.getElementById('ymGroup').value = hdr.group; document.getElementById('ymDealer').value = hdr.dealer;
       document.getElementById('ymQuoter').value = hdr.quoter; document.getElementById('ymDate').value = todayISO();
-      document.getElementById('ymOrder').value = promoBasis(g.first.project); document.getElementById('ymPONo').value = '';
+      document.getElementById('ymOrder').value = promoBasis(g.first.project);
       const groups = ymGroups(lines, mode), noPromo = lines.filter(l => !l.hasPromo).length;
+      ymCtx.pages = groups;
       document.getElementById('ymPreview').innerHTML =
-        '<div class="font-bold text-slate-700 mb-1">จะพิมพ์ ' + groups.length + ' ใบ</div>' +
-        '<div class="border border-slate-200 rounded-lg divide-y">' + groups.map(gr => {
+        '<div class="font-bold text-slate-700 mb-1">จะพิมพ์ ' + groups.length + ' ใบ (ใบละไม่เกิน ' + YM_MAX_ITEMS + ' รายการ) — กรอกเลขที่ PO ทุกใบก่อนพิมพ์ <span class="text-red-500">*</span></div>' +
+        '<div class="border border-slate-200 rounded-lg divide-y">' + groups.map((gr, i) => {
           const sum = gr.lines.reduce((a, l) => a + l.amount, 0);
-          return '<div class="p-2 flex justify-between"><span><b>' + esc(gr.label) + '</b> — ' + gr.lines.length + ' รายการ</span><span>ก่อนภาษี ฿' + ymFmt(sum) + ' • รวมภาษี ฿' + ymFmt(sum * 1.07) + '</span></div>';
+          return '<div class="p-2 flex flex-wrap items-center gap-2 justify-between">' +
+            '<span class="flex items-center gap-2"><span class="font-bold text-slate-500">ใบที่ ' + (i + 1) + '</span>' +
+              '<input id="ymPO_' + i + '" placeholder="เลขที่ PO" autocomplete="off" class="p-1.5 border border-slate-300 rounded-lg w-40 font-mono" /></span>' +
+            '<span><b>' + esc(gr.label) + '</b> — ' + gr.lines.length + ' รายการ</span>' +
+            '<span>ก่อนภาษี ฿' + ymFmt(sum) + ' • รวมภาษี ฿' + ymFmt(sum * 1.07) + '</span></div>';
         }).join('') + '</div>' +
-        (noPromo ? '<p class="text-[11px] text-red-600 font-bold mt-1">⚠️ มี ' + noPromo + ' รายการที่ไม่มีราคาโปร — ช่องราคาจะว่าง</p>' : '') +
-        '<div id="ymRetailBox" class="mt-2"></div>';
-      ymDrawRetail();
+        (noPromo ? '<p class="text-[11px] text-red-600 font-bold mt-1">⚠️ มี ' + noPromo + ' รายการที่ไม่มีราคาโปร — ช่องราคาจะว่าง</p>' : '');
       document.getElementById('ymModal').classList.remove('hidden');
-    }
-    function ymDrawRetail() {
-      const box = document.getElementById('ymRetailBox');
-      if (!box || !ymCtx) return;
-      const ok = /^✓/.test(ymCtx.retailMsg), wait = /^⏳/.test(ymCtx.retailMsg);
-      box.innerHTML = '<div class="p-2 rounded-lg text-[11px] font-bold ' + (ok ? 'bg-emerald-50 text-emerald-800' : wait ? 'bg-slate-50 text-slate-600' : 'bg-amber-50 text-amber-800') + '">' + esc(ymCtx.retailMsg) + '</div>';
     }
     function closeYmPO() { document.getElementById('ymModal').classList.add('hidden'); }
 
     function printYmPO() {
       if (!ymCtx) return;
       const v = id => document.getElementById(id).value.trim();
+      const poNos = ymCtx.pages.map((p, i) => v('ymPO_' + i));
+      const miss = poNos.findIndex(x => !x);
+      if (miss !== -1) { alert('กรุณากรอกเลขที่ PO ของใบที่ ' + (miss + 1) + ' ก่อนพิมพ์'); document.getElementById('ymPO_' + miss).focus(); return; }
+      if (new Set(poNos).size !== poNos.length) { alert('เลขที่ PO ซ้ำกัน กรุณาตรวจสอบ'); return; }
       const hdr = { name: v('ymName'), addr: v('ymAddr'), tel: v('ymTel'), cust: v('ymCust'), group: v('ymGroup'), dealer: v('ymDealer'), quoter: v('ymQuoter') };
       if (!hubSettings.ymForm) hubSettings.ymForm = {};
       hubSettings.ymForm[ymCtx.company] = hdr;
       try { localStorage.setItem('priceLogicHubSettings', JSON.stringify(hubSettings)); } catch (e) {}
       scheduleCloudSync();
-      if (!ymCtx.retail && !confirm('ยังดึงราคาปลีกจาก ECOUNT ไม่เสร็จ — พิมพ์โดยเว้นช่องราคาปลีกเป็น "-" หรือไม่?')) return;
-      const groups = ymGroups(ymLines(ymCtx.key, ymCtx.retail), ymCtx.mode);
-      const info = Object.assign({}, hdr, { date: ymDateText(v('ymDate')), order: v('ymOrder'), po: v('ymPONo'), pr: ymCtx.pr.prNo });
-      const pages = groups.map((gr, i) => ymPageHtml(info, gr, i, groups.length)).join('');
+      const groups = ymCtx.pages;
+      const info = Object.assign({}, hdr, { date: ymDateText(v('ymDate')), order: v('ymOrder'), pr: ymCtx.pr.prNo });
+      const pages = groups.map((gr, i) => ymPageHtml(Object.assign({}, info, { po: poNos[i] }), gr, i, groups.length)).join('');
       const html = '<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>PO YANMAR ' + esc(ymCtx.pr.prNo) + '</title>' +
         '<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">' +
         '<style>' + YM_CSS + '</style></head><body>' + pages +
@@ -3435,7 +3473,7 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
       '.ul{border-bottom:1px solid #000;}.sh{background:#d9d9d9;}';
 
     function ymPageHtml(h, gr, idx, count) {
-      const rows = Math.max(10, gr.lines.length);
+      const rows = YM_MAX_ITEMS;
       let body = '', total = 0;
       for (let i = 0; i < rows; i++) {
         const l = gr.lines[i];
@@ -3449,10 +3487,10 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
           '<td class="c lbl b f9" style="color:#1f3864">' + (l && l.promoDisc != null ? ymPct(l.promoDisc) : '0.00%') + '</td>' +
           '<td class="c lbl b f9" style="color:#1f3864">' + (l && l.quarter != null ? ymPct(l.quarter) : '0.00%') + '</td>' +
           '<td class="c ylw b f9" style="color:#1f3864">' + (l && l.disc != null ? ymPct(l.disc) : '0.00%') + '</td>' +
-          '<td class="r">' + (l ? ymFmt(l.retail) : '-') + '</td>' +
-          '<td class="r">' + (l ? ymFmt(l.net) : '-') + '</td>' +
+          '<td class="r">-</td>' +
+          '<td class="r">-</td>' +
           '<td class="r">' + (l ? ymFmt(l.mo) : '-') + '</td>' +
-          '<td class="r gry b">-</td>' +
+          '<td class="r gry b">' + (l ? ymFmt(l.net) : '-') + '</td>' +
           '<td class="r b">' + (l ? ymFmt(l.amount) : '-') + '</td>' +
           '<td class="r red">-</td>' +
         '</tr>';
@@ -3874,7 +3912,7 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
             '<button onclick="addRFQVendorChip(' + i + ')" class="text-[10px] font-bold bg-slate-100 hover:bg-blue-100 border border-slate-300 text-slate-700 px-2 py-0.5 rounded-full">+ ' + esc(n) + '</button>').join('')
         : '';
 
-      const sug = suggestVendorsFor(refs.map(x => { const pr = findPR(x.prId), it = findItem(pr, x.itemId); return { code: it.code, company: pr.company }; }));
+      const sug = suggestVendorsFor(refs.map(x => { const pr = findPR(x.prId), it = findItem(pr, x.itemId); return { code: it.code, name: it.name, company: pr.company }; }));
       rfqSuggested = sug.map(v => v.vendor);
       document.getElementById('rfqVendorChips').innerHTML =
         (sug.length
@@ -3885,11 +3923,11 @@ function loadRetailPricesForClient(req) { return getRetailPrices(req); }
         document.getElementById('rfqVendorChips').innerHTML;
       const rows = refs.map((x, i) => {
         const pr = findPR(x.prId), it = findItem(pr, x.itemId);
-        const h = vendorSuggest(it.code, pr.company)[0];
+        const ss = itemSuggestions(it.code, it.name, pr.company), h = ss.exact[0] || ss.similar[0];
         return '<tr class="border-t border-slate-100"><td class="p-1.5 text-center text-slate-400">' + (i + 1) + '</td>' +
           '<td class="p-1.5 font-mono text-slate-500">' + esc(it.code) + '</td><td class="p-1.5 font-bold">' + esc(it.name) + '</td>' +
           '<td class="p-1.5 text-center">' + it.qty + ' ' + esc(it.unit || '') + '</td><td class="p-1.5 text-slate-500">' + esc(pr.prNo) + '</td>' +
-          '<td class="p-1.5">' + (h ? fmtVendorHit(h, true) : '<span class="text-slate-400">-</span>') + '</td></tr>';
+          '<td class="p-1.5">' + (h ? fmtVendorHit(h) : '<span class="text-slate-400">-</span>') + '</td></tr>';
       }).join('');
       document.getElementById('rfqItemsPreview').innerHTML =
         '<div class="font-bold text-slate-700 mb-1">รายการที่จะขอราคา (' + refs.length + ' รายการ)</div>' +
