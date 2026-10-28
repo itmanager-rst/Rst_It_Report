@@ -33,7 +33,7 @@
         <div>
           <div class="flex items-center gap-2">
             <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white">RST GROUP · PriceLogic Procurement</h1>
-            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.6.2 Full Procurement Flow</span>
+            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.7.2 Full Procurement Flow</span>
           </div>
           <p class="text-xs text-slate-300 mt-0.5">ดึงสถานะใบขอซื้อจาก ECOUNT อัตโนมัติ → ขอใบเสนอราคา → เปรียบเทียบราคา → อนุมัติ → ออก PO เข้า ECOUNT</p>
         </div>
@@ -520,6 +520,36 @@
         <button onclick="closePOModal()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50">ปิด</button>
         <button onclick="submitPO(true)" class="px-4 py-2 bg-white border border-teal-500 text-teal-700 font-bold rounded-lg hover:bg-teal-50">👁 ตรวจข้อมูลก่อนส่ง</button>
         <button id="poSendBtn" onclick="submitPO(false)" class="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-extrabold rounded-lg shadow-sm">🧾 ส่งออกใบสั่งซื้อเข้า ECOUNT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Yanmar PO form -->
+  <div id="ymModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden border border-slate-200">
+      <div class="bg-slate-900 p-4 text-white flex justify-between items-center">
+        <div><h3 class="font-extrabold text-sm" id="ymTitle">พิมพ์ PO (แบบฟอร์ม YANMAR)</h3><p class="text-[11px] text-slate-300" id="ymSub"></p></div>
+        <button onclick="closeYmPO()" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+      </div>
+      <div class="p-5 space-y-3 text-xs max-h-[75vh] overflow-y-auto">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="sm:col-span-2"><label class="block font-bold text-slate-700 mb-1">ชื่อร้านค้า / Cust Name</label><input id="ymName" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div class="sm:col-span-2"><label class="block font-bold text-slate-700 mb-1">ที่อยู่ / Address</label><input id="ymAddr" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">เบอร์โทร / Tel</label><input id="ymTel" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">รหัสร้านค้า / Cust. Code</label><input id="ymCust" class="w-full p-2 border border-slate-300 rounded-lg font-mono" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">กลุ่ม Dealer / Type Dealer</label><input id="ymGroup" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">ประเภทผู้แทนจำหน่าย</label><input id="ymDealer" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">ผู้เสนอราคา</label><input id="ymQuoter" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">วันที่สั่งซื้อ</label><input type="date" id="ymDate" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">ประเภทคำสั่งซื้อ / Order type</label><input id="ymOrder" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+          <div><label class="block font-bold text-slate-700 mb-1">PO :</label><input id="ymPONo" placeholder="เว้นว่างได้" class="w-full p-2 border border-slate-300 rounded-lg" /></div>
+        </div>
+        <div id="ymPreview"></div>
+        <p class="text-[11px] text-slate-500">ข้อมูลร้านค้าจะถูกจำไว้ต่อบริษัทสำหรับครั้งต่อไป • ราคาปลีก = ราคาขายในทะเบียนสินค้า ECOUNT หัก VAT 7%, ราคาผู้แทน = ราคา MO, ราคา NET = ราคาโปร, จำนวนเงิน = จำนวน × ราคา NET (ไม่รวมภาษี)</p>
+      </div>
+      <div class="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-2 text-xs">
+        <button onclick="closeYmPO()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg">ปิด</button>
+        <button onclick="printYmPO()" class="px-5 py-2 bg-slate-900 hover:bg-slate-700 text-white font-extrabold rounded-lg">🖨️ พิมพ์ PO</button>
       </div>
     </div>
   </div>
@@ -1041,7 +1071,7 @@
     let cloudSyncTimer = null;
     let appInitialized = false;
 
-    const APPS_SCRIPT_CODE = `// RST GROUP - PriceLogic Procurement : Code.gs (v5.3)
+    const APPS_SCRIPT_CODE = `// RST GROUP - PriceLogic Procurement : Code.gs (v5.5)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -1052,6 +1082,7 @@ function doGet(e) {
   if (p.action === "prstatus") return jsonOut(getPRStatusJson(p.hub, p.tab));
   if (p.action === "prinfo") return jsonOut(getPRInfoJson());
   if (p.action === "codes") return jsonOut(getEcountCodesJson());
+  if (p.action === "vendorhist") return jsonOut(getVendorHistJson());
   return HtmlService.createHtmlOutputFromFile("Index")
     .setTitle("RST GROUP - PriceLogic Procurement")
     .addMetaTag("viewport", "width=device-width, initial-scale=1");
@@ -1065,6 +1096,7 @@ function doPost(e) {
   if (req && req.action === "pushPR") return jsonOut(JSON.stringify(pushPRStatus(req)));
   if (req && req.action === "createPO") return jsonOut(JSON.stringify(createPurchaseOrder(req)));
   if (req && req.action === "saveCodes") return jsonOut(saveEcountCode(req));
+  if (req && req.action === "retail") return jsonOut(getRetailPrices(req));
   if (req && req.action) return jsonOut(JSON.stringify({ status: "error", message: "unknown action" }));
   saveDataJson(body);
   return jsonOut(JSON.stringify({status:"ok"}));
@@ -1437,6 +1469,122 @@ function testEcountLogin() {
     catch (err) { Logger.log(company + ": " + err.message); }
   });
 }
+
+// ================= ประวัติการซื้อ: ผู้ขายที่เคยซื้อ + ราคาล่าสุด (จากชีต DH_PO_STATUS / PO_LINES ใน Data Hub) =================
+var TH_MON = { "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6, "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12 };
+function vhIsoDate(v) {
+  var s = String(v || "").trim(), m;
+  if ((m = s.match(/^(\d{1,2})\s*([ก-๙.]+)\s*(\d{4})/)) && TH_MON[m[2]]) {
+    var y = +m[3]; if (y > 2400) y -= 543;
+    return y + "-" + ("0" + TH_MON[m[2]]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+  }
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) { var yy = +m[3]; if (yy > 2400) yy -= 543; return yy + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2); }
+  return "";
+}
+function vhNum(v) { var n = parseFloat(String(v || "").replace(/,/g, "")); return isNaN(n) ? 0 : n; }
+
+// คืนค่า { byCode: { "รหัสสินค้า": [[บริษัท, ผู้ขาย, รหัสผู้ขาย, วันที่, ราคาต่อหน่วย(หลังส่วนลด), จำนวน, เลขที่PO, จำนวนครั้งที่ซื้อ], ...] } }
+// เก็บผู้ขายสูงสุด 5 รายต่อรหัสสินค้า เรียงจากซื้อล่าสุด
+function getVendorHistJson() {
+  var out = { byCode: {}, sheet: "", rows: 0, error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID);
+    var src = [
+      { tab: "DH_PO_STATUS", co: "_company", code: "รหัสสินค้า", vendor: "ลูกค้า/ผู้ขาย", vcode: "รหัสผู้ขาย", date: "วันที่", net: "ราคาต่อหน่วยหลังส่วนลด", price: "ราคาต่อหน่วย", qty: "จำนวน", po: "เลขที่ใบสั่งซื้อ" },
+      { tab: "PO_LINES", co: "COMPANY", code: "ITEM_CODE", vendor: "VENDOR", vcode: "", date: "PO_DATE", net: "NET_PRICE", price: "UNIT_PRICE", qty: "QTY", po: "PO_NO" }
+    ];
+    var agg = {};
+    for (var s = 0; s < src.length; s++) {
+      var d = src[s], sh = ss.getSheetByName(d.tab);
+      if (!sh || sh.getLastRow() < 2) continue;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var c = {}; ["co", "code", "vendor", "vcode", "date", "net", "price", "qty", "po"].forEach(function (k) { c[k] = d[k] ? h.indexOf(d[k]) : -1; });
+      if (c.code < 0 || c.vendor < 0) continue;
+      for (var i = 1; i < v.length; i++) {
+        var r = v[i], code = String(r[c.code] || "").trim(), vendor = String(r[c.vendor] || "").trim();
+        if (!code || !vendor) continue;
+        var price = c.net >= 0 ? vhNum(r[c.net]) : 0;
+        if (!price && c.price >= 0) price = vhNum(r[c.price]);
+        var co = c.co >= 0 ? String(r[c.co] || "").trim() : "";
+        var key = co + "|" + vendor, date = vhIsoDate(c.date >= 0 ? r[c.date] : "");
+        var byV = agg[code] || (agg[code] = {});
+        var e = byV[key];
+        if (!e) e = byV[key] = [co, vendor, c.vcode >= 0 ? String(r[c.vcode] || "").trim() : "", "", 0, 0, "", 0];
+        e[7]++;
+        if (c.vcode >= 0 && String(r[c.vcode] || "").trim()) e[2] = String(r[c.vcode]).trim();
+        if (date >= e[3] && price > 0) { e[3] = date; e[4] = price; e[5] = vhNum(r[c.qty]); e[6] = c.po >= 0 ? String(r[c.po] || "") : ""; }
+        else if (!e[3] && date) e[3] = date;
+      }
+      out.sheet = d.tab; out.rows = v.length - 1;
+      break; // ใช้ชีตแรกที่มีข้อมูล
+    }
+    Object.keys(agg).forEach(function (code) {
+      out.byCode[code] = Object.keys(agg[code]).map(function (k) { return agg[code][k]; })
+        .sort(function (a, b) { return a[3] < b[3] ? 1 : a[3] > b[3] ? -1 : 0; }).slice(0, 5);
+    });
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+function loadVendorHistForClient() { return getVendorHistJson(); }
+
+// ================= ราคาปลีกจากเมนูลงทะเบียนสินค้า ECOUNT (OUT_PRICE) ผ่าน API =================
+// คืนค่า { prices: { "รหัสสินค้า": { out: ราคาขายในทะเบียนสินค้า, ex: ราคาไม่รวมภาษี (out / 1.07) } }, errors: {...} }
+// เก็บผลไว้ในแคช 6 ชั่วโมงต่อรหัสสินค้า เพื่อลดจำนวนครั้งที่เรียก API
+function ecFindOutPrice(node, code, depth) {
+  if (!node || depth > 6) return null;
+  if (Array.isArray(node)) {
+    for (var i = 0; i < node.length; i++) { var a = ecFindOutPrice(node[i], code, depth + 1); if (a) return a; }
+    return null;
+  }
+  if (typeof node === "object") {
+    if (node.OUT_PRICE !== undefined && (!node.PROD_CD || String(node.PROD_CD).trim() === code)) return node;
+    for (var k in node) { if (node[k] && typeof node[k] === "object") { var b = ecFindOutPrice(node[k], code, depth + 1); if (b) return b; } }
+  }
+  return null;
+}
+function getRetailPrices(req) {
+  var out = { prices: {}, errors: {}, error: "" };
+  try {
+    var company = String(req.company || "").trim();
+    var codes = (req.codes || []).map(function (c) { return String(c || "").trim(); }).filter(function (c) { return c; });
+    codes = codes.filter(function (c, i) { return codes.indexOf(c) === i; }).slice(0, 100);
+    if (!company || !codes.length) { out.error = "ไม่ได้ระบุบริษัทหรือรหัสสินค้า"; return JSON.stringify(out); }
+    var cache = CacheService.getScriptCache(), todo = [];
+    codes.forEach(function (c) {
+      var hit = cache.get("rp_" + company + "_" + c);
+      if (hit) out.prices[c] = JSON.parse(hit); else todo.push(c);
+    });
+    if (todo.length) {
+      var s = ecSession(company, false);
+      var call = function (list, sess) {
+        return UrlFetchApp.fetchAll(list.map(function (c) {
+          return { url: ecHost(sess.zone) + "/OAPI/V2/InventoryBasic/ViewBasicProduct?SESSION_ID=" + encodeURIComponent(sess.sid),
+                   method: "post", contentType: "application/json", payload: JSON.stringify({ PROD_CD: c }), muteHttpExceptions: true };
+        }));
+      };
+      for (var i = 0; i < todo.length; i += 10) {
+        var chunk = todo.slice(i, i + 10), res = call(chunk, s);
+        var expired = res.some(function (r) { return /session/i.test(r.getContentText().substring(0, 400)); });
+        if (expired) { s = ecSession(company, true); res = call(chunk, s); }
+        res.forEach(function (r, j) {
+          var c = chunk[j], json = null;
+          try { json = JSON.parse(r.getContentText()); } catch (e) {}
+          var item = json ? ecFindOutPrice(json.Data || json, c, 0) : null;
+          if (!item) { out.errors[c] = json && json.Error ? (json.Error.Message || JSON.stringify(json.Error)).substring(0, 150) : "ไม่พบสินค้า/ราคาขายในทะเบียนสินค้า"; return; }
+          var o = parseFloat(String(item.OUT_PRICE).replace(/,/g, "")) || 0;
+          var p = { out: o, ex: Math.round(o / 1.07 * 100) / 100 };
+          out.prices[c] = p;
+          cache.put("rp_" + company + "_" + c, JSON.stringify(p), 21600);
+        });
+        if (i + 10 < todo.length) Utilities.sleep(300);
+      }
+    }
+  } catch (err) { out.error = String(err && err.message ? err.message : err); }
+  return JSON.stringify(out);
+}
+function loadRetailPricesForClient(req) { return getRetailPrices(req); }
 `;
 
     function openCloudSyncModal() {
@@ -2925,6 +3073,45 @@ function testEcountLogin() {
       return list;
     }
 
+    // ===================== v5.7: vendor recommendation from purchase history =====================
+    // Data Hub sheet DH_PO_STATUS → per item code: vendors bought from before,
+    // latest price, date and PO no. Same-company history first; if none, the
+    // other companies' history is shown and labelled.
+    let vendorHist = null, vendorHistLoading = false;
+    function loadVendorHist() {
+      if (vendorHist || vendorHistLoading) return;
+      vendorHistLoading = true;
+      serverCall('loadVendorHistForClient', null, 'vendorhist')
+        .then(d => { vendorHist = (d && d.byCode) || {}; })
+        .catch(() => { vendorHist = {}; })
+        .then(() => { vendorHistLoading = false; renderInbox(); });
+    }
+    // -> [{company, vendor, vcode, date, price, qty, po, times, other}]
+    function vendorSuggest(code, company) {
+      if (!vendorHist || !code) return [];
+      const list = (vendorHist[String(code).trim()] || []).map(e => ({ company: canonicalCompany(e[0]), vendor: e[1], vcode: e[2], date: e[3], price: e[4], qty: e[5], po: e[6], times: e[7] }));
+      const same = list.filter(x => !company || x.company === company);
+      if (same.length) return same;
+      return list.map(x => Object.assign(x, { other: true }));
+    }
+    function fmtVendorHit(h, short) {
+      const price = h.price > 0 ? '฿' + h.price.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-';
+      return '<div class="leading-4' + (h.other ? ' text-slate-400' : '') + '"><span class="font-bold text-slate-700">' + esc(h.vendor) + '</span> ' +
+        '<span class="font-bold text-emerald-700">' + price + '</span>' +
+        (short ? '' : ' <span class="text-[10px] text-slate-400">' + esc(fmtShortDate(h.date)) + (h.po ? ' • ' + esc(h.po) : '') + (h.times > 1 ? ' • ซื้อ ' + h.times + ' ครั้ง' : '') + (h.other ? ' • จาก ' + esc(h.company) : '') + '</span>') +
+        '</div>';
+    }
+    // Vendors to suggest for a set of PR lines: ranked by how many of the
+    // lines they have sold before, then by most recent purchase.
+    function suggestVendorsFor(lines) {
+      const m = {};
+      lines.forEach(l => vendorSuggest(l.code, l.company).forEach(h => {
+        const e = m[h.vendor] || (m[h.vendor] = { vendor: h.vendor, items: 0, last: '', other: true });
+        e.items++; if (h.date > e.last) e.last = h.date; if (!h.other) e.other = false;
+      }));
+      return Object.values(m).sort((a, b) => (a.other - b.other) || (b.items - a.items) || (a.last < b.last ? 1 : -1));
+    }
+
     function renderInbox() {
       const bar = document.getElementById('inboxStatusBar');
       if (!bar) return;
@@ -2969,6 +3156,7 @@ function testEcountLogin() {
 
       inboxView = getInboxView();
       inboxGroups = buildInboxGroups();
+      if (prInbox.length) loadVendorHist();
       const pickable = inboxView.filter(x => canPick(x.stage));
       const selCount = pickable.filter(x => inboxSelected.has(x.r.srcKey)).length;
 
@@ -3003,13 +3191,19 @@ function testEcountLogin() {
         const promo = isPromoProject(r.project);
         const groupRfqNos = Array.from(new Set([].concat.apply([], g.items.map(x => x.rfqNos))));
 
+        const sugg = vendorHist ? suggestVendorsFor(g.items.map(x => ({ code: x.r.code, company: x.r.company }))).slice(0, 3) : [];
+        const suggHtml = !vendorHist ? (vendorHistLoading ? '<div class="text-[10px] text-slate-400">กำลังโหลดประวัติการซื้อ...</div>' : '')
+          : (sugg.length ? '<div class="mt-1 text-[10px] text-slate-500">แนะนำ: ' + sugg.map(v => '<span class="font-bold ' + (v.other ? 'text-slate-400' : 'text-blue-700') + '">' + esc(v.vendor) + '</span> (' + v.items + ')').join(', ') + '</div>'
+                         : '<div class="mt-1 text-[10px] text-slate-400">ไม่พบประวัติการซื้อ</div>');
         const actions =
-          (pick.length
+          (pick.length && !promo
             ? '<button onclick="rfqFromGroup(' + gi + ')" class="font-bold bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">📨 ขอ RFQ ' + (picked ? '(' + picked + ' รายการ)' : 'ทั้งใบ') + '</button>'
             : '') +
           (promo
             ? '<button onclick="openPromoModal(' + gi + ')" class="font-bold bg-amber-500 hover:bg-amber-400 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🏷️ เช็คโปรโมชั่น</button>' +
-              (meta.promo ? '<div class="text-[10px] font-bold text-emerald-700 whitespace-nowrap">✓ เช็คแล้ว ' + esc(fmtShortDate(meta.promo.at)) + '</div>' : '')
+              (meta.promo ? '<div class="text-[10px] font-bold text-emerald-700 whitespace-nowrap">✓ เช็คแล้ว ' + esc(fmtShortDate(meta.promo.at)) + '</div>' +
+                '<button onclick="openYmPO(' + gi + ',\'split\')" class="font-bold bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 PO แยกส่วนลด</button>' +
+                '<button onclick="openYmPO(' + gi + ',\'merge\')" class="font-bold bg-white border border-slate-400 hover:bg-slate-50 text-slate-800 px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 PO รวมส่วนลด</button>' : '')
             : '');
 
         let detail = '';
@@ -3023,6 +3217,7 @@ function testEcountLogin() {
               '<td class="p-1.5 text-center">' + it.qty + (it.unit ? ' ' + esc(it.unit) : '') + '</td>' +
               '<td class="p-1.5 text-center whitespace-nowrap">' + esc(it.neededDate || '-') + '</td>' +
               '<td class="p-1.5 text-center whitespace-nowrap">' + stageBadge(x.stage) + (x.rfqNos.length ? ' ' + rfqNoChips(x.rfqNos) : '') + '</td>' +
+              '<td class="p-1.5 text-[11px]">' + (!vendorHist ? '<span class="text-slate-400">...</span>' : (vendorSuggest(it.code, it.company).slice(0, 2).map(h => fmtVendorHit(h)).join('') || '<span class="text-slate-400">ไม่เคยซื้อ</span>')) + '</td>' +
             '</tr>';
           }).join('');
           detail =
@@ -3030,11 +3225,12 @@ function testEcountLogin() {
               '<div class="border border-slate-200 rounded-lg overflow-hidden bg-white">' +
                 '<table class="w-full text-[11px] text-left border-collapse">' +
                   '<thead><tr class="bg-slate-100 text-slate-600 font-bold">' +
-                    '<th class="p-1.5 w-8"></th><th class="p-1.5">รหัสสินค้า</th><th class="p-1.5">รายการสินค้า</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5 text-center">วันที่ต้องการ</th><th class="p-1.5 text-center">สถานะในระบบ</th>' +
+                    '<th class="p-1.5 w-8"></th><th class="p-1.5">รหัสสินค้า</th><th class="p-1.5">รายการสินค้า</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5 text-center">วันที่ต้องการ</th><th class="p-1.5 text-center">สถานะในระบบ</th><th class="p-1.5">ผู้ขายที่เคยซื้อ / ราคาล่าสุด</th>' +
                   '</tr></thead><tbody>' + lines + '</tbody>' +
                 '</table>' +
               '</div>' +
-              '<p class="text-[10px] text-slate-500 mt-1">ติ๊กเฉพาะบางรายการ แล้วกด "ขอ RFQ" ที่บรรทัดใบขอซื้อ เพื่อขอราคาเฉพาะรายการที่เลือก</p>' +
+              (promo ? '<p class="text-[10px] text-amber-700 mt-1">โครงการ ' + esc(r.project) + ' สั่งซื้อตามราคาโปรโมชั่น — ไม่ต้องขอ RFQ ให้กด "เช็คโปรโมชั่น"</p>'
+                     : '<p class="text-[10px] text-slate-500 mt-1">ติ๊กเฉพาะบางรายการ แล้วกด "ขอ RFQ" ที่บรรทัดใบขอซื้อ เพื่อขอราคาเฉพาะรายการที่เลือก</p>') +
             '</td></tr>';
         }
 
@@ -3050,6 +3246,7 @@ function testEcountLogin() {
             '<td class="p-2 whitespace-nowrap">' +
               '<div class="font-bold text-slate-900">ขอซื้อ ' + g.total + ' รายการ' + (g.items.length !== g.total ? ' <span class="font-normal text-slate-400">(ตรงตัวกรอง ' + g.items.length + ')</span>' : '') + '</div>' +
               '<button onclick="toggleInboxExpand(' + gi + ')" class="text-[11px] font-bold text-blue-700 underline">' + (open ? '▲ ซ่อนรายการ' : '▼ ดูรายการทั้งหมด') + '</button>' +
+              (promo ? '' : suggHtml) +
             '</td>' +
             '<td class="p-2 text-center whitespace-nowrap">' + esc(needed) + '</td>' +
             '<td class="p-2 text-slate-500">' + esc(r.requester || '-') + '</td>' +
@@ -3106,6 +3303,7 @@ function testEcountLogin() {
     // "ขอ RFQ" on a PR line: the ticked items of that PR, or the whole PR
     // when nothing in it is ticked.
     function rfqFromGroup(gi) {
+      if (isPromoProject(inboxGroups[gi].first.project)) return;
       const pick = inboxGroups[gi].items.filter(x => canPick(x.stage));
       const chosen = pick.filter(x => inboxSelected.has(x.r.srcKey));
       const use = chosen.length ? chosen : pick;
@@ -3114,6 +3312,220 @@ function testEcountLogin() {
       use.forEach(x => inboxSelected.delete(x.r.srcKey));
       renderApp();
       if (refs.length) openRFQModal(refs);
+    }
+
+    // ===================== v5.7: Yanmar PO form (projects MO / EO / SEO) =====================
+    // Layout follows the Promotion_FY2026 "FORM-PART" sheet. Prices come from
+    // the saved promotion check: ราคาผู้แทน = MO price, ราคา NET = promo price.
+    const YM_DEFAULT = {
+      RUAMSINTHAI: { name: 'ห้างหุ้นส่วนจำกัด  บ้านและที่ดินรวมสินไทย', addr: '190/2 ม. 7 ต.แจระแม อ.เมือง จ.อุบลราชธานี 34000', tel: '045-311728', cust: '367010', group: 'Agricultural', dealer: 'POTENTIAL', quoter: 'SIRAWUTH NAKKARIN' }
+    };
+    // Total discount → [Discount Promotion, Quarter] as in the form's promotion table
+    const YM_SPLIT = { '12.5': [6.5, 1], '4': [3, 1], '6': [5, 1], '11': [10, 1], '3': [2, 1], '16': [15, 1] };
+    let ymCtx = null;
+    const ymFmt = v => (v === '' || v == null || isNaN(v) || Number(v) === 0) ? '-' : Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const ymPct = v => (v === '' || v == null || isNaN(v)) ? '' : Number(v).toFixed(2) + '%';
+    function ymDateText(iso) {
+      const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return '';
+      return (+m[3]) + '-' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[2] - 1] + '-' + String(+m[1] + 543).slice(-2);
+    }
+    function ymLines(key, retail) {
+      retail = retail || {};
+      const promo = ((prMeta[key] || {}).promo || {}).prices || {};
+      return prInbox.filter(r => prKeyOf(r) === key).map(r => {
+        const p = promo[r.code] || null, qty = Number(r.qty) || 0;
+        const disc = p && p.disc != null ? Number(p.disc) : null;
+        const sp = disc != null ? (YM_SPLIT[String(disc)] || [Math.max(disc - 1, 0), disc > 0 ? 1 : 0]) : null;
+        const net = p ? Number(p.price) || 0 : 0;
+        return { code: r.code, name: r.name, qty: qty, ptype: p ? (p.ptype || '') : '', disc: disc, promoDisc: sp ? sp[0] : null, quarter: sp ? sp[1] : null,
+                 mo: p ? Number(p.mo) || 0 : 0, net: net, amount: Math.round(net * qty * 100) / 100, hasPromo: !!p,
+                 retail: retail[r.code] ? retail[r.code].ex : 0 };
+      });
+    }
+    function ymGroups(lines, mode) {
+      if (mode !== 'split') return [{ label: 'รวมทุกส่วนลด', lines: lines }];
+      const m = {};
+      lines.forEach(l => { const k = l.disc == null ? 'none' : String(l.disc); (m[k] = m[k] || []).push(l); });
+      return Object.keys(m).sort((a, b) => (a === 'none') - (b === 'none') || Number(a) - Number(b))
+        .map(k => ({ label: k === 'none' ? 'ไม่มีราคาโปร' : 'ส่วนลด ' + ymPct(Number(k)), lines: m[k] }));
+    }
+    function openYmPO(gi, mode) {
+      const g = inboxGroups[gi], key = g.key, meta = prMeta[key] || {};
+      if (!meta.promo) { alert('กรุณาเช็คโปรโมชั่นและบันทึกผลก่อน'); return; }
+      const lines = ymLines(key);
+      if (lines.some(l => l.hasPromo && !l.mo)) { alert('ผลเช็คโปรที่บันทึกไว้เป็นรูปแบบเก่า (ไม่มีราคา MO) — กรุณากด "เช็คโปรโมชั่น" แล้ว "บันทึกผลเช็คโปร" ใหม่อีกครั้ง'); return; }
+      const company = g.first.company || 'RUAMSINTHAI';
+      const hdr = Object.assign({}, YM_DEFAULT.RUAMSINTHAI, YM_DEFAULT[company] || {}, ((hubSettings.ymForm || {})[company]) || {});
+      ymCtx = { key: key, mode: mode, company: company, pr: g.first, retail: null, retailMsg: '⏳ กำลังดึงราคาปลีกจากทะเบียนสินค้า ECOUNT...' };
+      const ctx = ymCtx;
+      serverCall('loadRetailPricesForClient', { company: company, codes: lines.map(l => l.code).filter(Boolean) }, 'retail')
+        .then(d => {
+          if (ymCtx !== ctx) return;
+          ctx.retail = (d && d.prices) || {};
+          const miss = lines.filter(l => l.code && !ctx.retail[l.code]).length;
+          ctx.retailMsg = d && d.error ? '⚠️ ดึงราคาปลีกไม่สำเร็จ: ' + d.error
+            : '✓ ราคาปลีกจากทะเบียนสินค้า ECOUNT (หัก VAT 7%) ' + (lines.length - miss) + '/' + lines.length + ' รายการ' + (miss ? ' — ' + miss + ' รายการไม่พบราคา จะแสดง "-"' : '');
+          ymDrawRetail();
+        })
+        .catch(err => { if (ymCtx !== ctx) return; ctx.retail = {}; ctx.retailMsg = '⚠️ ดึงราคาปลีกไม่สำเร็จ: ' + (err && err.message ? err.message : err); ymDrawRetail(); });
+      document.getElementById('ymTitle').innerText = mode === 'split' ? 'พิมพ์ PO แยกส่วนลด (แบบฟอร์ม YANMAR)' : 'พิมพ์ PO รวมส่วนลด (แบบฟอร์ม YANMAR)';
+      document.getElementById('ymSub').innerText = 'Ref. PR No. ' + g.first.prNo + ' • โครงการ ' + (g.first.project || '-') + ' • ' + companyFullName(company);
+      document.getElementById('ymName').value = hdr.name; document.getElementById('ymAddr').value = hdr.addr;
+      document.getElementById('ymTel').value = hdr.tel; document.getElementById('ymCust').value = hdr.cust;
+      document.getElementById('ymGroup').value = hdr.group; document.getElementById('ymDealer').value = hdr.dealer;
+      document.getElementById('ymQuoter').value = hdr.quoter; document.getElementById('ymDate').value = todayISO();
+      document.getElementById('ymOrder').value = promoBasis(g.first.project); document.getElementById('ymPONo').value = '';
+      const groups = ymGroups(lines, mode), noPromo = lines.filter(l => !l.hasPromo).length;
+      document.getElementById('ymPreview').innerHTML =
+        '<div class="font-bold text-slate-700 mb-1">จะพิมพ์ ' + groups.length + ' ใบ</div>' +
+        '<div class="border border-slate-200 rounded-lg divide-y">' + groups.map(gr => {
+          const sum = gr.lines.reduce((a, l) => a + l.amount, 0);
+          return '<div class="p-2 flex justify-between"><span><b>' + esc(gr.label) + '</b> — ' + gr.lines.length + ' รายการ</span><span>ก่อนภาษี ฿' + ymFmt(sum) + ' • รวมภาษี ฿' + ymFmt(sum * 1.07) + '</span></div>';
+        }).join('') + '</div>' +
+        (noPromo ? '<p class="text-[11px] text-red-600 font-bold mt-1">⚠️ มี ' + noPromo + ' รายการที่ไม่มีราคาโปร — ช่องราคาจะว่าง</p>' : '') +
+        '<div id="ymRetailBox" class="mt-2"></div>';
+      ymDrawRetail();
+      document.getElementById('ymModal').classList.remove('hidden');
+    }
+    function ymDrawRetail() {
+      const box = document.getElementById('ymRetailBox');
+      if (!box || !ymCtx) return;
+      const ok = /^✓/.test(ymCtx.retailMsg), wait = /^⏳/.test(ymCtx.retailMsg);
+      box.innerHTML = '<div class="p-2 rounded-lg text-[11px] font-bold ' + (ok ? 'bg-emerald-50 text-emerald-800' : wait ? 'bg-slate-50 text-slate-600' : 'bg-amber-50 text-amber-800') + '">' + esc(ymCtx.retailMsg) + '</div>';
+    }
+    function closeYmPO() { document.getElementById('ymModal').classList.add('hidden'); }
+
+    function printYmPO() {
+      if (!ymCtx) return;
+      const v = id => document.getElementById(id).value.trim();
+      const hdr = { name: v('ymName'), addr: v('ymAddr'), tel: v('ymTel'), cust: v('ymCust'), group: v('ymGroup'), dealer: v('ymDealer'), quoter: v('ymQuoter') };
+      if (!hubSettings.ymForm) hubSettings.ymForm = {};
+      hubSettings.ymForm[ymCtx.company] = hdr;
+      try { localStorage.setItem('priceLogicHubSettings', JSON.stringify(hubSettings)); } catch (e) {}
+      scheduleCloudSync();
+      if (!ymCtx.retail && !confirm('ยังดึงราคาปลีกจาก ECOUNT ไม่เสร็จ — พิมพ์โดยเว้นช่องราคาปลีกเป็น "-" หรือไม่?')) return;
+      const groups = ymGroups(ymLines(ymCtx.key, ymCtx.retail), ymCtx.mode);
+      const info = Object.assign({}, hdr, { date: ymDateText(v('ymDate')), order: v('ymOrder'), po: v('ymPONo'), pr: ymCtx.pr.prNo });
+      const pages = groups.map((gr, i) => ymPageHtml(info, gr, i, groups.length)).join('');
+      const html = '<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>PO YANMAR ' + esc(ymCtx.pr.prNo) + '</title>' +
+        '<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">' +
+        '<style>' + YM_CSS + '</style></head><body>' + pages +
+        '<script>window.addEventListener("load",function(){var go=function(){setTimeout(function(){window.focus();window.print();},300);};(document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go());});<\/script></body></html>';
+      const w = window.open('', '_blank');
+      if (!w) { alert('เบราว์เซอร์บล็อกป๊อปอัพ กรุณาอนุญาตป๊อปอัพสำหรับหน้านี้'); return; }
+      w.document.write(html); w.document.close();
+    }
+
+    const YM_CSS =
+      '@page{size:A4 portrait;margin:8mm;}' +
+      '*{box-sizing:border-box;}html,body{margin:0;padding:0;color:#000;}' +
+      'body{font-family:"Sarabun","Tahoma",sans-serif;}' +
+      '.pg{width:911px;zoom:0.8;border:1.5px solid #000;page-break-after:always;margin-bottom:6px;}.pg:last-child{page-break-after:auto;}' +
+      'table{border-collapse:collapse;width:100%;table-layout:fixed;}td,th{padding:0 3px;vertical-align:middle;line-height:1.25;}' +
+      '.tnr{font-family:"Times New Roman",serif;}' +
+      '.f9{font-size:8.5px}.f10{font-size:9.5px}.f11{font-size:10px}.f12{font-size:11px}.f13{font-size:12.5px}.b{font-weight:bold}.c{text-align:center}.r{text-align:right}.red{color:#d00000}' +
+      '.bx td,.bx th{border:1px solid #000;}' +
+      '.mini td{border:1px solid #000;font-family:Tahoma,Arial,sans-serif;font-size:6px;text-align:center;padding:0 1px;height:10px;line-height:1;}' +
+      '.mini .hd{background:#dce6f1;font-weight:bold;}.mini .hy{background:#fff2cc;font-weight:bold;}.mini .tot{font-weight:bold;}' +
+      '.lab{font-family:"Times New Roman","Sarabun",serif;font-weight:bold;font-size:10px;}' +
+      '.blk{background:#000;color:#fff;font-weight:bold;text-align:center;font-family:"Times New Roman",serif;font-size:10px;}' +
+      '.redbx{background:#c00000;color:#fff;font-weight:bold;text-align:center;font-family:"Times New Roman",serif;font-size:10px;}' +
+      '.ln td{height:14px;font-size:9.5px;}.gry{background:#d9d9d9;}.lbl{background:#dce6f1;}.ylw{background:#fffbd6;}.org{background:#ffc000;}' +
+      '.ul{border-bottom:1px solid #000;}.sh{background:#d9d9d9;}';
+
+    function ymPageHtml(h, gr, idx, count) {
+      const rows = Math.max(10, gr.lines.length);
+      let body = '', total = 0;
+      for (let i = 0; i < rows; i++) {
+        const l = gr.lines[i];
+        if (l) total += l.amount;
+        body += '<tr class="ln">' +
+          '<td class="c">' + (i + 1) + '</td>' +
+          '<td>' + (l ? esc(l.code) : '') + '</td>' +
+          '<td style="font-size:9px;">' + (l ? esc(l.name) : '') + '</td>' +
+          '<td class="c">' + (l ? l.qty : '') + '</td>' +
+          '<td class="c lbl">' + (l && l.ptype ? esc(l.ptype) : '-') + '</td>' +
+          '<td class="c lbl b f9" style="color:#1f3864">' + (l && l.promoDisc != null ? ymPct(l.promoDisc) : '0.00%') + '</td>' +
+          '<td class="c lbl b f9" style="color:#1f3864">' + (l && l.quarter != null ? ymPct(l.quarter) : '0.00%') + '</td>' +
+          '<td class="c ylw b f9" style="color:#1f3864">' + (l && l.disc != null ? ymPct(l.disc) : '0.00%') + '</td>' +
+          '<td class="r">' + (l ? ymFmt(l.retail) : '-') + '</td>' +
+          '<td class="r">' + (l ? ymFmt(l.net) : '-') + '</td>' +
+          '<td class="r">' + (l ? ymFmt(l.mo) : '-') + '</td>' +
+          '<td class="r gry b">-</td>' +
+          '<td class="r b">' + (l ? ymFmt(l.amount) : '-') + '</td>' +
+          '<td class="r red">-</td>' +
+        '</tr>';
+      }
+      const vat = Math.round(total * 7) / 100;
+      const mini =
+        '<table class="mini">' +
+          '<tr><td colspan="5" class="hd">โปรโมรชั่นสำหรับ รายการอะไหล่ แทรคเตอร์</td></tr>' +
+          '<tr><td>Type Parts</td><td>Discount</td><td>DC : Quarter</td><td>DC : Yearly</td><td>Total Discount</td></tr>' +
+          '<tr><td>PM</td><td>6.50%</td><td>1%</td><td>5%</td><td class="tot">12.50%</td></tr>' +
+          '<tr><td rowspan="3">Rec</td><td>3%</td><td>1%</td><td></td><td class="tot">4.00%</td></tr>' +
+          '<tr><td>5%</td><td>1%</td><td></td><td class="tot">6.00%</td></tr>' +
+          '<tr><td>10%</td><td>1%</td><td></td><td class="tot">11.00%</td></tr>' +
+          '<tr><td>Other</td><td>2%</td><td>1%</td><td></td><td class="tot">3.00%</td></tr>' +
+          '<tr><td colspan="5" class="hy">โปรโมรชั่นสำหรับ รถเกี่ยว จนถึง 30 กันยายน 2569</td></tr>' +
+          '<tr><td>Type Parts</td><td>Discount</td><td>DC : Quarter</td><td>DC : Yearly</td><td>Total Discount</td></tr>' +
+          '<tr><td class="red b">RA</td><td></td><td></td><td></td><td class="red b">Special Price</td></tr>' +
+          '<tr><td rowspan="3">Rec</td><td>5%</td><td>1%</td><td></td><td class="tot">6.00%</td></tr>' +
+          '<tr><td>10%</td><td>1%</td><td></td><td class="tot">11.00%</td></tr>' +
+          '<tr><td>15%</td><td>1%</td><td></td><td class="tot">16.00%</td></tr>' +
+          '<tr><td class="red b">CRAWLER</td><td></td><td></td><td></td><td class="red b">Special Price</td></tr>' +
+        '</table>';
+      return '<div class="pg">' +
+        // top banner
+        '<table><colgroup><col style="width:13%"><col style="width:62%"><col style="width:25%"></colgroup>' +
+          '<tr><td rowspan="3" style="padding-left:2px"><span style="font-family:Arial Black,Arial,sans-serif;font-weight:900;font-style:italic;color:#d00000;font-size:17px;letter-spacing:-0.5px">YANMAR</span></td>' +
+            '<td class="tnr b f9" style="padding-top:3px">YANMAR S.P. CO., LTD.</td><td class="tnr b red r f10" style="padding-right:30px">All Group</td></tr>' +
+          '<tr><td class="tnr b f9">115 Moo 9 Chalong Krung Rd. Lamplatiew, Ladkrabang, Bangkok 10520</td><td></td></tr>' +
+          '<tr><td class="tnr b f9" style="padding-bottom:3px">Tel: 02-326-700 Ext 741 - 749</td><td class="tnr b f9 r" style="padding-right:30px">(Services Parts Department)</td></tr>' +
+        '</table>' +
+        '<div class="c b f13" style="border-top:1.5px solid #000;border-bottom:1.5px solid #000;padding:1px 0">ตารางแสดงราคา รายการอะไหล่ FY2025 ( ราคาขายปลีกอาจมีการเปลี่ยนแปลง รบกวนเช็คใน YDS อีกครั้ง)' +
+          (count > 1 ? ' <span class="f11" style="font-weight:normal">— ' + esc(gr.label) + ' (ใบที่ ' + (idx + 1) + '/' + count + ')</span>' : '') + '</div>' +
+        // header block
+        '<table><colgroup><col style="width:13.5%"><col style="width:37.5%"><col style="width:20.9%"><col style="width:3.3%"><col style="width:13.2%"><col style="width:11.6%"></colgroup>' +
+          '<tr><td style="height:6px"></td><td></td><td rowspan="9" style="vertical-align:top;padding:2px 2px 0 2px">' + mini + '</td><td></td><td></td><td></td></tr>' +
+          '<tr><td class="lab f10">ชื่อร้านค้า/cust Name:</td><td class="b f12 ul">' + esc(h.name) + '</td><td></td><td class="lab f10">รหัสร้านค้า/ Cust. Code :</td><td class="blk" style="height:22px">' + esc(h.cust) + '</td></tr>' +
+          '<tr><td class="lab f10">ที่อยู่/Address:</td><td class="b f11 ul">' + esc(h.addr) + '</td><td></td><td></td><td></td></tr>' +
+          '<tr><td class="lab f10">เบอร์โทร/Tel:</td><td class="b f11 ul">' + esc(h.tel) + '</td><td></td><td class="lab f10">วันที่สั่งซื้อ/ Date  :</td><td class="c red f11">' + esc(h.date) + '</td></tr>' +
+          '<tr><td class="lab f10 red">กลุ่มDealer/Type Deler :</td><td class="b f11 red ul">' + esc(h.group) + '</td><td></td><td></td><td></td></tr>' +
+          '<tr><td class="lab f10 sh" style="padding-left:12px">PO :</td><td class="sh b f11">' + esc(h.po) + '</td><td></td><td class="lab f10">ประเภทผู้แทนจำหน่าย</td><td class="redbx">' + esc(h.dealer) + '</td></tr>' +
+          '<tr><td class="f10 red b" style="background:#fde9d9">*หมายเหตุ*</td><td class="f10 red" style="background:#fde9d9">Ref. PR No. ' + esc(h.pr) + '</td><td></td><td class="lab f10">ประเภทคำสั่งซื้อ/ Order type:</td><td class="blk">' + esc(h.order) + '</td></tr>' +
+          '<tr><td style="height:6px"></td><td></td><td></td><td></td><td></td></tr>' +
+          '<tr><td style="height:2px"></td><td></td><td></td><td></td><td></td></tr>' +
+        '</table>' +
+        // item table
+        '<table class="bx" style="border-top:1.5px solid #000"><colgroup>' +
+          [38, 84, 151, 35, 50, 46, 41, 41, 64, 65, 64, 65, 71, 96].map(w => '<col style="width:' + (w / 911 * 100).toFixed(3) + '%">').join('') + '</colgroup>' +
+          '<tr class="c b f11" style="height:34px">' +
+            '<th class="gry">ลำดับที่<br>No.</th><th class="gry">รหัสอะไหล่<br><span class="tnr f9">Parts No</span></th><th class="gry">ชื่ออะไหล่<br><span class="tnr f9">Part Description</span></th>' +
+            '<th class="gry">จำนวน<br><span class="tnr f9">Qty</span></th><th class="lbl tnr f9">Type Parts</th><th class="lbl tnr f9">Discount<br>Promotion</th>' +
+            '<th class="lbl tnr" style="font-size:7px">Discount<br>Quarter 1%</th><th class="org tnr f9">Total<br>Discount</th>' +
+            '<th class="gry" style="font-weight:normal">ราคาปลีก<br>ไม่รวมภาษี</th><th class="gry" style="font-weight:normal">ราคา NET<br>ไม่รวมภาษี</th>' +
+            '<th class="gry" style="font-weight:normal">ราคาผู้แทน<br>ไม่รวมภาษี</th><th class="gry" style="font-weight:normal">ราคาพิเศษ<br>ไม่รวมภาษี</th>' +
+            '<th class="gry" style="font-weight:normal">จำนวนเงิน<br><span class="tnr f9">Amount</span></th><th class="gry red" style="font-weight:normal">หมายเหตุ<br>รหัสเก่าเลิกใช้/เปลี่ยนเป็น<br>รหัสใหม่</th>' +
+          '</tr>' + body +
+        '</table>' +
+        // notes + totals
+        '<table><colgroup><col style="width:67.7%"><col style="width:7.1%"><col style="width:7.1%"><col style="width:7.8%"><col style="width:10.3%"></colgroup>' +
+          '<tr class="f11"><td></td><td colspan="2" style="border-left:1px solid #000;border-bottom:1px solid #000">จำนวนเงินก่อนภาษี</td><td class="r" style="border:1px solid #000;border-top:0">' + ymFmt(total) + '</td><td style="border-left:1px solid #000"></td></tr>' +
+          '<tr class="f11"><td class="b f12">* หมายเหตุ*</td><td style="border-left:1px solid #000;border-bottom:1px solid #000">ส่วนลด</td><td class="c" style="border:1px solid #000">0%</td><td class="r" style="border:1px solid #000">-</td><td style="border-left:1px solid #000"></td></tr>' +
+          '<tr class="f11"><td class="b f11">SEO = ลด10% จัดส่ง ภายใน 3 วัน ร้านจ่ายค่าขนส่ง</td><td colspan="2" style="border-left:1px solid #000;border-bottom:1px solid #000">จำนวนเงินหลังหักส่วนก่อนภาษี</td><td class="r" style="border:1px solid #000">' + ymFmt(total) + '</td><td style="border-left:1px solid #000"></td></tr>' +
+          '<tr class="f11"><td class="b f11">EO  = ลด 20% จัดส่งหลัง 7 วัน ร้านจ่ายค่าขนส่ง</td><td colspan="2" style="border-left:1px solid #000;border-bottom:1px solid #000">ภาษีมูลค่าเพิ่ม 7%</td><td class="r" style="border:1px solid #000">' + ymFmt(vat) + '</td><td style="border-left:1px solid #000"></td></tr>' +
+          '<tr class="f11"><td class="b f11">สั่งซื้อเกิน 50,000 บาท ต่อ PO ฟรีค่าขนส่ง</td><td colspan="2" style="border-left:1px solid #000;border-bottom:1px solid #000;height:14px"></td><td style="border:1px solid #000"></td><td style="border-left:1px solid #000"></td></tr>' +
+          '<tr class="f11"><td class="b f11">MO  = ลด 25% จัดส่งหลัง 15 วัน YSP จ่ายค่าขนส่ง</td><td colspan="2" class="b f12" style="border-left:1px solid #000;border-bottom:1px solid #000">รวมทั้งสิ้น</td><td class="r b" style="border:1px solid #000">' + ymFmt(total + vat) + '</td><td style="border-left:1px solid #000"></td></tr>' +
+          '<tr><td class="red f11" style="padding:6px 3px 8px">ราคา อาจจะมีการเปลี่ยนแปลงโดยไม่แจ้งให้ทราบล่วงหน้า</td><td colspan="4"></td></tr>' +
+        '</table>' +
+        // signatures
+        '<table style="border-top:1.5px solid #000"><colgroup><col style="width:30%"><col style="width:44.6%"><col style="width:25.4%"></colgroup>' +
+          '<tr style="height:30px"><td class="c tnr b f9" style="border-right:1px solid #000">' + esc(h.quoter) + '</td><td style="border-right:1px solid #000"></td><td></td></tr>' +
+          '<tr class="c f11" style="border-top:1px solid #000;border-bottom:1px solid #000"><td style="border-right:1px solid #000">ผู้เสนอราคา</td><td style="border-right:1px solid #000">ผู้อนุมัติ</td><td>ยืนยันการสั่งซื้อ</td></tr>' +
+          '<tr class="c tnr f9" style="height:15px"><td style="border-right:1px solid #000">Date : ............./…................../….........................</td><td style="border-right:1px solid #000">Date : ............./…................../….........................</td><td>Date : ............./…................../….........................</td></tr>' +
+        '</table>' +
+      '</div>';
     }
 
     // ---- v5.2: promotion check (projects MO / EO / SEO) ----
@@ -3217,7 +3629,7 @@ function testEcountLogin() {
       if (!prMeta[promoGroupKey]) prMeta[promoGroupKey] = {};
       if (on) {
         const u = getCurrentUser(), prices = {};
-        promoRows().forEach((r, i) => { const x = promoOf(r, i); if (x && x.best) prices[r.code] = { price: x.bestPrice, set: x.best.set, basis: x.basis }; });
+        promoRows().forEach((r, i) => { const x = promoOf(r, i); if (x && x.best) prices[r.code] = { price: x.bestPrice, set: x.best.set, basis: x.basis, mo: x.best.mo, disc: x.best.disc, ptype: x.best.ptype, name: x.name || r.name }; });
         prMeta[promoGroupKey].promo = Object.assign({ by: u ? u.name : '', at: todayISO() }, Object.keys(prices).length ? { prices } : {});
       }
       else delete prMeta[promoGroupKey].promo;
@@ -3308,6 +3720,12 @@ function testEcountLogin() {
       switchTab('tab1');
     }
     function inboxToRFQ() {
+      const promoSel = prInbox.filter(r => inboxSelected.has(r.srcKey) && isPromoProject(r.project));
+      if (promoSel.length) {
+        promoSel.forEach(r => inboxSelected.delete(r.srcKey));
+        alert('ข้าม ' + promoSel.length + ' รายการของโครงการ MO / EO / SEO (ใช้ราคาโปรโมชั่น ไม่ต้องขอ RFQ)');
+        if (!prInbox.some(r => inboxSelected.has(r.srcKey))) { renderInbox(); return; }
+      }
       const refs = takeInboxSelection();
       if (!refs) return;
       renderApp();
@@ -3456,21 +3874,39 @@ function testEcountLogin() {
             '<button onclick="addRFQVendorChip(' + i + ')" class="text-[10px] font-bold bg-slate-100 hover:bg-blue-100 border border-slate-300 text-slate-700 px-2 py-0.5 rounded-full">+ ' + esc(n) + '</button>').join('')
         : '';
 
+      const sug = suggestVendorsFor(refs.map(x => { const pr = findPR(x.prId), it = findItem(pr, x.itemId); return { code: it.code, company: pr.company }; }));
+      rfqSuggested = sug.map(v => v.vendor);
+      document.getElementById('rfqVendorChips').innerHTML =
+        (sug.length
+          ? '<div class="w-full flex flex-wrap items-center gap-1 mb-1"><span class="text-[10px] font-bold text-blue-800">⭐ แนะนำจากประวัติการซื้อ:</span>' +
+              sug.slice(0, 8).map((v, i) => '<button onclick="addRFQSuggested(' + i + ')" title="เคยขาย ' + v.items + ' จาก ' + refs.length + ' รายการ • ซื้อล่าสุด ' + esc(fmtShortDate(v.last)) + '" class="text-[10px] font-bold ' + (v.other ? 'bg-slate-50 text-slate-500 border-slate-300' : 'bg-blue-50 text-blue-800 border-blue-300') + ' hover:bg-blue-100 border px-2 py-0.5 rounded-full">+ ' + esc(v.vendor) + ' (' + v.items + '/' + refs.length + ')</button>').join('') +
+              '<button onclick="addRFQSuggested(-1)" class="text-[10px] font-bold text-blue-700 underline ml-1">เพิ่มที่แนะนำ 3 รายแรก</button></div>'
+          : (vendorHist ? '<div class="w-full text-[10px] text-slate-400 mb-1">ไม่พบประวัติการซื้อของรายการเหล่านี้</div>' : '')) +
+        document.getElementById('rfqVendorChips').innerHTML;
       const rows = refs.map((x, i) => {
         const pr = findPR(x.prId), it = findItem(pr, x.itemId);
+        const h = vendorSuggest(it.code, pr.company)[0];
         return '<tr class="border-t border-slate-100"><td class="p-1.5 text-center text-slate-400">' + (i + 1) + '</td>' +
           '<td class="p-1.5 font-mono text-slate-500">' + esc(it.code) + '</td><td class="p-1.5 font-bold">' + esc(it.name) + '</td>' +
-          '<td class="p-1.5 text-center">' + it.qty + ' ' + esc(it.unit || '') + '</td><td class="p-1.5 text-slate-500">' + esc(pr.prNo) + '</td></tr>';
+          '<td class="p-1.5 text-center">' + it.qty + ' ' + esc(it.unit || '') + '</td><td class="p-1.5 text-slate-500">' + esc(pr.prNo) + '</td>' +
+          '<td class="p-1.5">' + (h ? fmtVendorHit(h, true) : '<span class="text-slate-400">-</span>') + '</td></tr>';
       }).join('');
       document.getElementById('rfqItemsPreview').innerHTML =
         '<div class="font-bold text-slate-700 mb-1">รายการที่จะขอราคา (' + refs.length + ' รายการ)</div>' +
         '<div class="max-h-44 overflow-y-auto border border-slate-200 rounded-lg"><table class="w-full text-[11px] text-left">' +
-          '<thead class="bg-slate-100 sticky top-0"><tr><th class="p-1.5 w-8">No.</th><th class="p-1.5">รหัส</th><th class="p-1.5">รายการ</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5">ใบขอซื้อ</th></tr></thead>' +
+          '<thead class="bg-slate-100 sticky top-0"><tr><th class="p-1.5 w-8">No.</th><th class="p-1.5">รหัส</th><th class="p-1.5">รายการ</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5">ใบขอซื้อ</th><th class="p-1.5">ซื้อล่าสุด</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table></div>';
 
       document.getElementById('rfqModal').classList.remove('hidden');
     }
     function closeRFQModal() { document.getElementById('rfqModal').classList.add('hidden'); }
+    let rfqSuggested = [];
+    function addRFQSuggested(i) {
+      const box = document.getElementById('rfqVendorsInput');
+      const lines = box.value.split('\n').map(x => x.trim()).filter(Boolean);
+      (i < 0 ? rfqSuggested.slice(0, 3) : [rfqSuggested[i]]).forEach(n => { if (n && lines.indexOf(n) === -1) lines.push(n); });
+      box.value = lines.join('\n');
+    }
     function addRFQVendorChip(i) {
       const box = document.getElementById('rfqVendorsInput');
       const lines = box.value.split('\n').map(x => x.trim()).filter(Boolean);
@@ -3521,7 +3957,7 @@ function testEcountLogin() {
       if (!pc) return;
       const keys = rfqKeySet();
       const pend = [];
-      visiblePRs().forEach(pr => pr.items.forEach(it => { if (itemStage(pr, it, keys) === 'new') pend.push({ pr: pr, it: it }); }));
+      visiblePRs().forEach(pr => { if (isPromoProject(pr.projectName)) return; pr.items.forEach(it => { if (itemStage(pr, it, keys) === 'new') pend.push({ pr: pr, it: it }); }); });
       const selCount = pend.filter(p => selectedRFQItems.has(p.pr.id + '|' + p.it.id)).length;
 
       pc.innerHTML = pend.length

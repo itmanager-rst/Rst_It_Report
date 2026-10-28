@@ -1,4 +1,4 @@
-// RST GROUP - PriceLogic Procurement : Code.gs (v5.3)
+// RST GROUP - PriceLogic Procurement : Code.gs (v5.5)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -9,6 +9,7 @@ function doGet(e) {
   if (p.action === "prstatus") return jsonOut(getPRStatusJson(p.hub, p.tab));
   if (p.action === "prinfo") return jsonOut(getPRInfoJson());
   if (p.action === "codes") return jsonOut(getEcountCodesJson());
+  if (p.action === "vendorhist") return jsonOut(getVendorHistJson());
   return HtmlService.createHtmlOutputFromFile("Index")
     .setTitle("RST GROUP - PriceLogic Procurement")
     .addMetaTag("viewport", "width=device-width, initial-scale=1");
@@ -22,6 +23,7 @@ function doPost(e) {
   if (req && req.action === "pushPR") return jsonOut(JSON.stringify(pushPRStatus(req)));
   if (req && req.action === "createPO") return jsonOut(JSON.stringify(createPurchaseOrder(req)));
   if (req && req.action === "saveCodes") return jsonOut(saveEcountCode(req));
+  if (req && req.action === "retail") return jsonOut(getRetailPrices(req));
   if (req && req.action) return jsonOut(JSON.stringify({ status: "error", message: "unknown action" }));
   saveDataJson(body);
   return jsonOut(JSON.stringify({status:"ok"}));
@@ -394,3 +396,119 @@ function testEcountLogin() {
     catch (err) { Logger.log(company + ": " + err.message); }
   });
 }
+
+// ================= ประวัติการซื้อ: ผู้ขายที่เคยซื้อ + ราคาล่าสุด (จากชีต DH_PO_STATUS / PO_LINES ใน Data Hub) =================
+var TH_MON = { "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6, "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12 };
+function vhIsoDate(v) {
+  var s = String(v || "").trim(), m;
+  if ((m = s.match(/^(\d{1,2})\s*([ก-๙.]+)\s*(\d{4})/)) && TH_MON[m[2]]) {
+    var y = +m[3]; if (y > 2400) y -= 543;
+    return y + "-" + ("0" + TH_MON[m[2]]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+  }
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) { var yy = +m[3]; if (yy > 2400) yy -= 543; return yy + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2); }
+  return "";
+}
+function vhNum(v) { var n = parseFloat(String(v || "").replace(/,/g, "")); return isNaN(n) ? 0 : n; }
+
+// คืนค่า { byCode: { "รหัสสินค้า": [[บริษัท, ผู้ขาย, รหัสผู้ขาย, วันที่, ราคาต่อหน่วย(หลังส่วนลด), จำนวน, เลขที่PO, จำนวนครั้งที่ซื้อ], ...] } }
+// เก็บผู้ขายสูงสุด 5 รายต่อรหัสสินค้า เรียงจากซื้อล่าสุด
+function getVendorHistJson() {
+  var out = { byCode: {}, sheet: "", rows: 0, error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID);
+    var src = [
+      { tab: "DH_PO_STATUS", co: "_company", code: "รหัสสินค้า", vendor: "ลูกค้า/ผู้ขาย", vcode: "รหัสผู้ขาย", date: "วันที่", net: "ราคาต่อหน่วยหลังส่วนลด", price: "ราคาต่อหน่วย", qty: "จำนวน", po: "เลขที่ใบสั่งซื้อ" },
+      { tab: "PO_LINES", co: "COMPANY", code: "ITEM_CODE", vendor: "VENDOR", vcode: "", date: "PO_DATE", net: "NET_PRICE", price: "UNIT_PRICE", qty: "QTY", po: "PO_NO" }
+    ];
+    var agg = {};
+    for (var s = 0; s < src.length; s++) {
+      var d = src[s], sh = ss.getSheetByName(d.tab);
+      if (!sh || sh.getLastRow() < 2) continue;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var c = {}; ["co", "code", "vendor", "vcode", "date", "net", "price", "qty", "po"].forEach(function (k) { c[k] = d[k] ? h.indexOf(d[k]) : -1; });
+      if (c.code < 0 || c.vendor < 0) continue;
+      for (var i = 1; i < v.length; i++) {
+        var r = v[i], code = String(r[c.code] || "").trim(), vendor = String(r[c.vendor] || "").trim();
+        if (!code || !vendor) continue;
+        var price = c.net >= 0 ? vhNum(r[c.net]) : 0;
+        if (!price && c.price >= 0) price = vhNum(r[c.price]);
+        var co = c.co >= 0 ? String(r[c.co] || "").trim() : "";
+        var key = co + "|" + vendor, date = vhIsoDate(c.date >= 0 ? r[c.date] : "");
+        var byV = agg[code] || (agg[code] = {});
+        var e = byV[key];
+        if (!e) e = byV[key] = [co, vendor, c.vcode >= 0 ? String(r[c.vcode] || "").trim() : "", "", 0, 0, "", 0];
+        e[7]++;
+        if (c.vcode >= 0 && String(r[c.vcode] || "").trim()) e[2] = String(r[c.vcode]).trim();
+        if (date >= e[3] && price > 0) { e[3] = date; e[4] = price; e[5] = vhNum(r[c.qty]); e[6] = c.po >= 0 ? String(r[c.po] || "") : ""; }
+        else if (!e[3] && date) e[3] = date;
+      }
+      out.sheet = d.tab; out.rows = v.length - 1;
+      break; // ใช้ชีตแรกที่มีข้อมูล
+    }
+    Object.keys(agg).forEach(function (code) {
+      out.byCode[code] = Object.keys(agg[code]).map(function (k) { return agg[code][k]; })
+        .sort(function (a, b) { return a[3] < b[3] ? 1 : a[3] > b[3] ? -1 : 0; }).slice(0, 5);
+    });
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+function loadVendorHistForClient() { return getVendorHistJson(); }
+
+// ================= ราคาปลีกจากเมนูลงทะเบียนสินค้า ECOUNT (OUT_PRICE) ผ่าน API =================
+// คืนค่า { prices: { "รหัสสินค้า": { out: ราคาขายในทะเบียนสินค้า, ex: ราคาไม่รวมภาษี (out / 1.07) } }, errors: {...} }
+// เก็บผลไว้ในแคช 6 ชั่วโมงต่อรหัสสินค้า เพื่อลดจำนวนครั้งที่เรียก API
+function ecFindOutPrice(node, code, depth) {
+  if (!node || depth > 6) return null;
+  if (Array.isArray(node)) {
+    for (var i = 0; i < node.length; i++) { var a = ecFindOutPrice(node[i], code, depth + 1); if (a) return a; }
+    return null;
+  }
+  if (typeof node === "object") {
+    if (node.OUT_PRICE !== undefined && (!node.PROD_CD || String(node.PROD_CD).trim() === code)) return node;
+    for (var k in node) { if (node[k] && typeof node[k] === "object") { var b = ecFindOutPrice(node[k], code, depth + 1); if (b) return b; } }
+  }
+  return null;
+}
+function getRetailPrices(req) {
+  var out = { prices: {}, errors: {}, error: "" };
+  try {
+    var company = String(req.company || "").trim();
+    var codes = (req.codes || []).map(function (c) { return String(c || "").trim(); }).filter(function (c) { return c; });
+    codes = codes.filter(function (c, i) { return codes.indexOf(c) === i; }).slice(0, 100);
+    if (!company || !codes.length) { out.error = "ไม่ได้ระบุบริษัทหรือรหัสสินค้า"; return JSON.stringify(out); }
+    var cache = CacheService.getScriptCache(), todo = [];
+    codes.forEach(function (c) {
+      var hit = cache.get("rp_" + company + "_" + c);
+      if (hit) out.prices[c] = JSON.parse(hit); else todo.push(c);
+    });
+    if (todo.length) {
+      var s = ecSession(company, false);
+      var call = function (list, sess) {
+        return UrlFetchApp.fetchAll(list.map(function (c) {
+          return { url: ecHost(sess.zone) + "/OAPI/V2/InventoryBasic/ViewBasicProduct?SESSION_ID=" + encodeURIComponent(sess.sid),
+                   method: "post", contentType: "application/json", payload: JSON.stringify({ PROD_CD: c }), muteHttpExceptions: true };
+        }));
+      };
+      for (var i = 0; i < todo.length; i += 10) {
+        var chunk = todo.slice(i, i + 10), res = call(chunk, s);
+        var expired = res.some(function (r) { return /session/i.test(r.getContentText().substring(0, 400)); });
+        if (expired) { s = ecSession(company, true); res = call(chunk, s); }
+        res.forEach(function (r, j) {
+          var c = chunk[j], json = null;
+          try { json = JSON.parse(r.getContentText()); } catch (e) {}
+          var item = json ? ecFindOutPrice(json.Data || json, c, 0) : null;
+          if (!item) { out.errors[c] = json && json.Error ? (json.Error.Message || JSON.stringify(json.Error)).substring(0, 150) : "ไม่พบสินค้า/ราคาขายในทะเบียนสินค้า"; return; }
+          var o = parseFloat(String(item.OUT_PRICE).replace(/,/g, "")) || 0;
+          var p = { out: o, ex: Math.round(o / 1.07 * 100) / 100 };
+          out.prices[c] = p;
+          cache.put("rp_" + company + "_" + c, JSON.stringify(p), 21600);
+        });
+        if (i + 10 < todo.length) Utilities.sleep(300);
+      }
+    }
+  } catch (err) { out.error = String(err && err.message ? err.message : err); }
+  return JSON.stringify(out);
+}
+function loadRetailPricesForClient(req) { return getRetailPrices(req); }
