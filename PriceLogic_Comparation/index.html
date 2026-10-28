@@ -33,7 +33,7 @@
         <div>
           <div class="flex items-center gap-2">
             <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white">RST GROUP · PriceLogic Procurement</h1>
-            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.8 Full Procurement Flow</span>
+            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v5.8.5 Full Procurement Flow</span>
           </div>
           <p class="text-xs text-slate-300 mt-0.5">ดึงสถานะใบขอซื้อจาก ECOUNT อัตโนมัติ → ขอใบเสนอราคา → เปรียบเทียบราคา → อนุมัติ → ออก PO เข้า ECOUNT</p>
         </div>
@@ -547,8 +547,31 @@
         <p class="text-[11px] text-slate-500">ข้อมูลร้านค้าจะถูกจำไว้ต่อบริษัทสำหรับครั้งต่อไป • ราคาผู้แทน = ราคา MO, ราคาพิเศษ = ราคาโปร, จำนวนเงิน = จำนวน × ราคาพิเศษ (ไม่รวมภาษี)</p>
       </div>
       <div class="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-2 text-xs">
+        <span id="ymSavedNote" class="mr-auto self-center text-[11px] font-bold text-emerald-700"></span>
+        <button onclick="openPoHistory()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50">📚 ประวัติ PO</button>
         <button onclick="closeYmPO()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg">ปิด</button>
+        <button onclick="ymSavePO('บันทึก')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg">💾 บันทึก PO</button>
         <button onclick="printYmPO()" class="px-5 py-2 bg-slate-900 hover:bg-slate-700 text-white font-extrabold rounded-lg">🖨️ พิมพ์ PO</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: PO history (MO/EO/SEO) -->
+  <div id="poHistModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-6xl w-full shadow-2xl overflow-hidden border border-slate-200">
+      <div class="bg-slate-900 p-4 text-white flex justify-between items-center">
+        <div><h3 class="font-extrabold text-sm">📚 ประวัติ PO โครงการ MO / EO / SEO</h3><p class="text-[11px] text-slate-300">✅ = ดาวน์โหลดไฟล์ Excel (Web Estimate Upload) แล้ว • ⬇️ = ยังไม่ได้ดาวน์โหลด</p></div>
+        <button onclick="closePoHistory()" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+      </div>
+      <div class="p-4 space-y-3 text-xs">
+        <div class="flex flex-wrap gap-2 items-center">
+          <input id="poHistQ" oninput="renderPoHistory()" placeholder="ค้นหาเลขที่ PO / PR / โครงการ" class="p-2 border border-slate-300 rounded-lg w-72" />
+          <select id="poHistXls" onchange="renderPoHistory()" class="p-2 border border-slate-300 rounded-lg bg-white">
+            <option value="">Excel: ทั้งหมด</option><option value="no">ยังไม่ดาวน์โหลด</option><option value="yes">ดาวน์โหลดแล้ว</option>
+          </select>
+          <span id="poHistCount" class="text-slate-500"></span>
+        </div>
+        <div id="poHistBox" class="max-h-[65vh] overflow-auto border border-slate-200 rounded-lg"></div>
       </div>
     </div>
   </div>
@@ -3069,16 +3092,52 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       out.sort((a, b) => b.score - a.score);
       return (simCache[ck] = out.slice(0, 3));
     }
-    // -> { exact: [hits], similar: [hits + simName], group: {name, vendors: [{vendor, other}]} }
+    // ---- v5.8.1: vendors that quoted in this system's price comparisons ----
+    // From every PR in the comparison tab: supplier + quoted price (after
+    // discount) per item, matched to the PR line by item code, else by a
+    // similar item name.
+    let quoteIndex = [];
+    function buildQuoteIndex() {
+      quoteIndex = [];
+      purchaseRequests.forEach(pr => pr.suppliers.forEach(sp => pr.items.forEach(it => {
+        const raw = sp.prices ? sp.prices[it.id] : undefined;
+        if (raw === undefined || raw === null || raw === '' || !sp.name) return;
+        quoteIndex.push({ code: String(it.code || '').trim(), name: it.name, g: trigrams(it.name), vendor: sp.name.trim(), price: parseFloat(raw) || 0,
+          priceType: sp.priceType, date: sp.quoteDate || '', prNo: pr.prNo, company: pr.company || '', won: it.approvedSupplierId === sp.id || it.selectedSupplierId === sp.id });
+      })));
+    }
+    function quotedSuggest(code, name, company) {
+      const c = String(code || '').trim(), g = trigrams(name), m = {};
+      quoteIndex.forEach(q => {
+        let match = c && c !== '-' && q.code === c;
+        const exact = match;
+        if (!match && g.size >= 2 && q.g.size >= 2) {
+          let inter = 0; g.forEach(t => { if (q.g.has(t)) inter++; });
+          match = 2 * inter / (g.size + q.g.size) >= 0.7;
+        }
+        if (!match) return;
+        const e = m[q.vendor];
+        if (!e || (exact && e.sim) || ((q.date || '') > (e.date || '') && !(e && !e.sim && !exact))) m[q.vendor] = Object.assign({}, q, { sim: !exact, other: !!(company && q.company && q.company !== company) });
+      });
+      return Object.values(m).sort((a, b) => (a.other - b.other) || (b.won - a.won) || ((a.date || '') < (b.date || '') ? 1 : -1));
+    }
+    function fmtQuotedHit(q) {
+      const price = q.price > 0 ? '฿' + q.price.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (q.priceType === 'inc_vat' ? ' <span class="text-[9px] font-normal">(รวม VAT)</span>' : '') : '-';
+      return '<div class="leading-4' + (q.other ? ' text-slate-400' : '') + '"><span class="text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1 rounded">เสนอราคา</span> ' +
+        '<span class="font-bold text-slate-700">' + esc(q.vendor) + '</span> <span class="font-bold text-purple-700">' + price + '</span>' +
+        (q.sim ? ' <span class="text-[10px] text-amber-700">(สินค้าใกล้เคียง: ' + esc(String(q.name || '').replace(/\s*\[.*$/, '').slice(0, 30)) + ')</span>' : '') +
+        (q.won ? ' <span class="text-[10px] text-emerald-700 font-bold">✓ เลือก</span>' : '') + '</div>';
+    }
+    // -> { exact: [hits], similar: [hits + simName], quoted: [quotes], group: {name, vendors: [{vendor, other}]} }
     function itemSuggestions(code, name, company) {
-      const res = { exact: vendorSuggest(code, company), similar: [], group: null };
+      const res = { exact: vendorSuggest(code, company), similar: [], quoted: quotedSuggest(code, name, company), group: null };
       const sims = similarItems(name, code);
       if (!res.exact.length) sims.forEach(si => vendorSuggest(si.code, company).slice(0, 2).forEach(h => {
         if (!res.similar.some(x => x.vendor === h.vendor)) res.similar.push(Object.assign(h, { simName: si.name }));
       }));
       const grp = (vendorInfo[code] || [])[1] || (sims[0] && sims[0].group) || '';
       if (grp && groupVendors[grp]) {
-        const seen = new Set(res.exact.concat(res.similar).map(h => h.vendor));
+        const seen = new Set(res.exact.concat(res.similar, res.quoted).map(h => h.vendor));
         const list = Object.keys(groupVendors[grp]).map(k => { const i = k.indexOf('|'); return { company: k.slice(0, i), vendor: k.slice(i + 1), n: groupVendors[grp][k] }; })
           .filter(v => !seen.has(v.vendor)).sort((a, b) => ((a.company !== company) - (b.company !== company)) || (b.n - a.n));
         if (list.length) res.group = { name: grp, vendors: list.slice(0, 3).map(v => ({ vendor: v.vendor, other: company && v.company !== company })) };
@@ -3097,7 +3156,9 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
     function fmtSuggestCell(code, name, company) {
       if (!vendorHist) return '<span class="text-slate-400">...</span>';
       const s = itemSuggestions(code, name, company);
-      let html = s.exact.slice(0, 2).map(h => fmtVendorHit(h)).join('') + s.similar.slice(0, 2).map(h => fmtVendorHit(h)).join('');
+      const bought = new Set(s.exact.concat(s.similar).map(h => h.vendor));
+      let html = s.exact.slice(0, 2).map(h => fmtVendorHit(h)).join('') + s.similar.slice(0, 2).map(h => fmtVendorHit(h)).join('') +
+        s.quoted.filter(q => !bought.has(q.vendor)).slice(0, 3).map(fmtQuotedHit).join('');
       if (s.group) html += '<div class="leading-4 text-[10px] text-slate-500">กลุ่ม ' + esc(s.group.name) + ': ' + s.group.vendors.map(v => '<span class="font-bold ' + (v.other ? 'text-slate-400' : 'text-blue-700') + '">' + esc(v.vendor) + '</span>').join(', ') + '</div>';
       return html || '<span class="text-slate-400">ไม่พบประวัติ</span>';
     }
@@ -3113,6 +3174,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
         const s = itemSuggestions(l.code, l.name, l.company);
         s.exact.forEach(h => add(h.vendor, h.other, h.date, 3));
         s.similar.forEach(h => add(h.vendor, h.other, h.date, 2));
+        s.quoted.forEach(q => add(q.vendor, q.other, q.date, 2));
         if (s.group) s.group.vendors.forEach(v => add(v.vendor, v.other, '', 1));
       });
       return Object.values(m).sort((a, b) => (a.other - b.other) || (b.score - a.score) || (a.last < b.last ? 1 : -1));
@@ -3187,6 +3249,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       badge.innerText = newCount;
       badge.classList.toggle('hidden', newCount === 0);
 
+      buildQuoteIndex();
       inboxView = getInboxView();
       inboxGroups = buildInboxGroups();
       if (prInbox.length) loadVendorHist();
@@ -3197,6 +3260,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
         '<div class="flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs">' +
           '<span class="text-slate-500">แสดง ' + inboxGroups.length + ' ใบขอซื้อ (' + inboxView.length + ' รายการ) • เลือกแล้ว <b class="text-slate-800">' + selCount + '</b> รายการ</span>' +
           '<span class="flex gap-2">' +
+            '<button onclick="openPoHistory()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-lg">📚 ประวัติ PO' + (ymAllPOs().length ? ' (' + ymAllPOs().length + ')' : '') + '</button>' +
             '<button onclick="inboxToCompare()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-lg">➡️ นำเข้าเปรียบเทียบราคา</button>' +
             '<button onclick="inboxToRFQ()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-1.5 rounded-lg">📨 ขอ RFQ รายการที่เลือก (ทุกใบ)</button>' +
           '</span>' +
@@ -3221,7 +3285,8 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
         g.items.forEach(x => { counts[x.stage] = (counts[x.stage] || 0) + 1; });
         const stageHtml = Object.keys(STAGE).filter(k => counts[k]).map(k =>
           '<div class="mb-0.5">' + stageBadge(k) + (Object.keys(counts).length > 1 ? ' <span class="text-[10px] text-slate-500">' + counts[k] + '</span>' : '') + '</div>').join('');
-        const promo = isPromoProject(r.project);
+        const promo = isPromoProject(r.project), isMO = ymIsMO(r.project);
+        const st = poStatusOf(g);
         const allLines = prInbox.filter(x => prKeyOf(x) === g.key);
         const apprAll = allLines.length > 0 && allLines.every(x => manualApproval(x));
         const apprInfo = apprAll ? manualApproval(allLines[0]) : null;
@@ -3241,9 +3306,11 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
           (promo
             ? '<button onclick="openPromoModal(' + gi + ')" class="font-bold bg-amber-500 hover:bg-amber-400 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🏷️ เช็คโปรโมชั่น</button>' +
               (meta.promo ? '<div class="text-[10px] font-bold text-emerald-700 whitespace-nowrap">✓ เช็คแล้ว ' + esc(fmtShortDate(meta.promo.at)) + '</div>' +
-                '<button onclick="openYmPO(' + gi + ',\'split\')" class="font-bold bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 PO แยกส่วนลด</button>' +
-                '<button onclick="openYmPO(' + gi + ',\'merge\')" class="font-bold bg-white border border-slate-400 hover:bg-slate-50 text-slate-800 px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 PO รวมส่วนลด</button>' : '')
-            : '');
+                (isMO
+                  ? '<button onclick="openYmPO(' + gi + ',\'split\')" class="font-bold bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 PO YANMAR แยกส่วนลด</button>' +
+                    '<button onclick="openYmPO(' + gi + ',\'merge\')" class="font-bold bg-white border border-slate-400 hover:bg-slate-50 text-slate-800 px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 PO YANMAR รวมส่วนลด</button>'
+                  : (st.ecPending || !st.ecAll ? '<button onclick="promoEcountPO(' + gi + ')" class="font-bold bg-teal-600 hover:bg-teal-500 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 เปิด PO ECOUNT</button>' : '')) : '')
+            : (st.ecPrId ? '<button onclick="openPOModal(\'' + st.ecPrId + '\')" class="font-bold bg-teal-600 hover:bg-teal-500 text-white px-2.5 py-1 rounded-lg whitespace-nowrap">🧾 เปิด PO ECOUNT (' + st.ecPending + ')</button>' : ''));
 
         let detail = '';
         if (open) {
@@ -3266,7 +3333,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
               '<div class="border border-slate-200 rounded-lg overflow-hidden bg-white">' +
                 '<table class="w-full text-[11px] text-left border-collapse">' +
                   '<thead><tr class="bg-slate-100 text-slate-600 font-bold">' +
-                    '<th class="p-1.5 w-8"></th><th class="p-1.5">รหัสสินค้า</th><th class="p-1.5">รายการสินค้า</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5 text-center">วันที่ต้องการ</th><th class="p-1.5 text-center">สถานะในระบบ</th><th class="p-1.5">ผู้ขายที่เคยซื้อ / ราคาล่าสุด</th>' +
+                    '<th class="p-1.5 w-8"></th><th class="p-1.5">รหัสสินค้า</th><th class="p-1.5">รายการสินค้า</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5 text-center">วันที่ต้องการ</th><th class="p-1.5 text-center">สถานะในระบบ</th><th class="p-1.5">ผู้ขายแนะนำ / ราคา <span class="font-normal text-slate-400">(เคยซื้อ • เสนอราคา • กลุ่มสินค้า)</span></th>' +
                   '</tr></thead><tbody>' + lines + '</tbody>' +
                 '</table>' +
               '</div>' +
@@ -3276,8 +3343,8 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
         }
 
         return (
-          '<tr class="border-t border-slate-200 hover:bg-slate-50 align-top">' +
-            '<td class="p-2 text-center">' + (pick.length ? '<input type="checkbox" title="เลือกทั้งใบ" ' + (allOn ? 'checked' : '') + ' onchange="toggleInboxPR(' + gi + ')" class="w-4 h-4 accent-blue-600 cursor-pointer" />' : '') + '</td>' +
+          '<tr class="border-t border-slate-200 hover:bg-slate-50 align-top' + (st.bar ? ' ' + st.rowBg : '') + '">' +
+            '<td class="p-2 text-center"' + (st.bar ? ' style="box-shadow:inset 6px 0 0 ' + st.bar + '"' : '') + '>' + (pick.length ? '<input type="checkbox" title="เลือกทั้งใบ" ' + (allOn ? 'checked' : '') + ' onchange="toggleInboxPR(' + gi + ')" class="w-4 h-4 accent-blue-600 cursor-pointer" />' : '') + '</td>' +
             '<td class="p-2 whitespace-nowrap">' +
               '<div class="font-mono font-bold text-slate-800">' + esc(r.prNo) + '</div>' +
               '<div class="text-[10px] text-slate-400">' + esc(r.prDate || r.dateSeq) + (r.company ? ' • ' + esc(r.company) : '') + '</div>' +
@@ -3291,7 +3358,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
             '<td class="p-2 text-center whitespace-nowrap">' + esc(needed) + '</td>' +
             '<td class="p-2 text-slate-500">' + esc(r.requester || '-') + '</td>' +
             '<td class="p-2 text-center">' + stageHtml + apprHtml + (groupRfqNos.length ? '<div class="mt-1 leading-5">' + rfqNoChips(groupRfqNos) + '</div>' : '') + '</td>' +
-            '<td class="p-2"><div class="flex flex-col items-start gap-1 text-[11px]">' + actions + '</div></td>' +
+            '<td class="p-2"><div class="flex flex-col items-start gap-1 text-[11px]">' + poStatusPills(st) + actions + '</div></td>' +
           '</tr>' + detail
         );
       }).join('');
@@ -3415,38 +3482,119 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       document.getElementById('ymQuoter').value = hdr.quoter; document.getElementById('ymDate').value = todayISO();
       document.getElementById('ymOrder').value = promoBasis(g.first.project);
       const groups = ymGroups(lines, mode), noPromo = lines.filter(l => !l.hasPromo).length;
-      ymCtx.pages = groups;
+      ymCtx.pages = groups; ymCtx.noPromo = noPromo;
+      const prev = (meta.pos || []).filter(r => r.mode === mode).slice(-1)[0];
       document.getElementById('ymPreview').innerHTML =
-        '<div class="font-bold text-slate-700 mb-1">จะพิมพ์ ' + groups.length + ' ใบ (ใบละไม่เกิน ' + YM_MAX_ITEMS + ' รายการ) — กรอกเลขที่ PO ทุกใบก่อนพิมพ์ <span class="text-red-500">*</span></div>' +
-        '<div class="border border-slate-200 rounded-lg divide-y">' + groups.map((gr, i) => {
-          const sum = gr.lines.reduce((a, l) => a + l.amount, 0);
-          return '<div class="p-2 flex flex-wrap items-center gap-2 justify-between">' +
-            '<span class="flex items-center gap-2"><span class="font-bold text-slate-500">ใบที่ ' + (i + 1) + '</span>' +
-              '<input id="ymPO_' + i + '" placeholder="เลขที่ PO" autocomplete="off" class="p-1.5 border border-slate-300 rounded-lg w-40 font-mono" /></span>' +
-            '<span><b>' + esc(gr.label) + '</b> — ' + gr.lines.length + ' รายการ</span>' +
-            '<span>ก่อนภาษี ฿' + ymFmt(sum) + ' • รวมภาษี ฿' + ymFmt(sum * 1.07) + '</span></div>';
-        }).join('') + '</div>' +
-        (noPromo ? '<p class="text-[11px] text-red-600 font-bold mt-1">⚠️ มี ' + noPromo + ' รายการที่ไม่มีราคาโปร — ช่องราคาจะว่าง</p>' : '');
+        '<div class="flex flex-wrap items-center gap-2 mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-left">' +
+          '<label class="font-bold text-slate-800">เลขที่ PO Master <span class="text-red-500">*</span></label>' +
+          '<input id="ymMaster" oninput="ymRefreshPoNos()" placeholder="เช่น MOHQ261260" autocomplete="off" class="p-1.5 border border-slate-300 rounded-lg w-48 font-mono font-bold bg-white" />' +
+          '<span class="text-[11px] text-slate-500">ระบบรันเลขที่ PO ให้อัตโนมัติ: ใบที่ 1 = Master-1, ใบที่ 2 = Master-2 …</span></div>' +
+        '<div id="ymPageList"></div>';
+      document.getElementById('ymMaster').value = prev ? prev.master : '';
+      if (prev && prev.date) document.getElementById('ymDate').value = prev.date;
+      document.getElementById('ymSavedNote').innerText = prev ? '✅ บันทึกแล้ว ' + ymStamp(prev.savedAt) + (prev.by ? ' โดย ' + prev.by : '') : '';
+      ymRefreshPoNos();
       document.getElementById('ymModal').classList.remove('hidden');
     }
-    function closeYmPO() { document.getElementById('ymModal').classList.add('hidden'); }
-
-    function printYmPO() {
+    // ---- v5.8.3: PO Master → auto PO numbers, saved PO history, Excel status ----
+    // prMeta[prKey].pos = [{ master, mode, prNo, company, project, date, order, hdr, savedAt, by,
+    //                        pages: [{ po, label, lines: [...], xlsAt, xlsBy }] }]
+    const ymArg = s => "'" + encodeURIComponent(String(s)).replace(/'/g, '%27') + "'";
+    const ymPoNo = (master, i) => master + '-' + (i + 1);
+    function ymStamp(iso) {
+      const d = new Date(iso); if (isNaN(d)) return '';
+      return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) + ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    }
+    // Left-aligned list of the POs in the popup, with the Excel column
+    function ymRefreshPoNos() {
       if (!ymCtx) return;
+      const box = document.getElementById('ymPageList'); if (!box) return;
+      const m = document.getElementById('ymMaster').value.trim().replace(/\s+/g, '');
+      const rec = m ? ymFindRec(ymCtx.key, m) : null;
+      box.innerHTML =
+        '<div class="font-bold text-slate-700 mb-1 text-left">PO ทั้งหมด ' + ymCtx.pages.length + ' ใบ (ใบละไม่เกิน ' + YM_MAX_ITEMS + ' รายการ)</div>' +
+        '<div class="border border-slate-200 rounded-lg overflow-x-auto"><table class="w-full text-[11px] text-left border-collapse">' +
+          '<thead><tr class="bg-slate-100 text-slate-600 font-bold">' +
+            '<th class="p-2 text-left">ใบที่</th><th class="p-2 text-left">เลขที่ PO</th><th class="p-2 text-left">ชุดส่วนลด</th><th class="p-2 text-left">รายการ</th>' +
+            '<th class="p-2 text-left">ก่อนภาษี (฿)</th><th class="p-2 text-left">รวมภาษี (฿)</th><th class="p-2 text-left">⬇️ Excel</th>' +
+          '</tr></thead><tbody>' +
+          ymCtx.pages.map((gr, i) => {
+            const sum = gr.lines.reduce((a, l) => a + l.amount, 0);
+            const same = rec && rec.pages[i] && rec.pages.length === ymCtx.pages.length &&
+              JSON.stringify(rec.pages[i].lines.map(l => [l.code, l.qty])) === JSON.stringify(gr.lines.map(l => [l.code, l.qty]));
+            const xls = same ? ymXlsCell(ymCtx.key, rec, i, false)
+              : '<button onclick="ymXlsFromModal(' + i + ')" class="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-1.5 py-0.5 rounded whitespace-nowrap">⬇️ Excel</button>';
+            return '<tr class="border-t border-slate-100 align-top">' +
+              '<td class="p-2 font-bold text-slate-500">' + (i + 1) + '</td>' +
+              '<td id="ymPO_' + i + '" class="p-2 font-mono font-bold text-slate-900 whitespace-nowrap">' + (m ? esc(ymPoNo(m, i)) : '<span class="text-slate-400 font-normal">— กรอก PO Master</span>') + '</td>' +
+              '<td class="p-2 font-bold">' + esc(gr.label) + '</td>' +
+              '<td class="p-2">' + gr.lines.length + '</td>' +
+              '<td class="p-2">' + ymFmt(sum) + '</td>' +
+              '<td class="p-2">' + ymFmt(sum * 1.07) + '</td>' +
+              '<td class="p-2 whitespace-nowrap">' + xls + '</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table></div>' +
+        (ymCtx.noPromo ? '<p class="text-[11px] text-red-600 font-bold mt-1 text-left">⚠️ มี ' + ymCtx.noPromo + ' รายการที่ไม่มีราคาโปร — ช่องราคาจะว่าง</p>' : '');
+    }
+    function ymXlsFromModal(i) {
+      const rec = ymSavePO('ดาวน์โหลด Excel');
+      if (rec) ymXls(encodeURIComponent(ymCtx.key), encodeURIComponent(rec.master), i);
+    }
+    function ymAllPOs() {
+      const out = [];
+      Object.keys(prMeta).forEach(k => ((prMeta[k] || {}).pos || []).forEach(r => out.push(Object.assign({ key: k }, r))));
+      return out.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+    }
+    function ymFindRec(key, master) { return ((prMeta[key] || {}).pos || []).find(r => r.master === master) || null; }
+    function ymHeaderInputs() {
       const v = id => document.getElementById(id).value.trim();
-      const poNos = ymCtx.pages.map((p, i) => v('ymPO_' + i));
-      const miss = poNos.findIndex(x => !x);
-      if (miss !== -1) { alert('กรุณากรอกเลขที่ PO ของใบที่ ' + (miss + 1) + ' ก่อนพิมพ์'); document.getElementById('ymPO_' + miss).focus(); return; }
-      if (new Set(poNos).size !== poNos.length) { alert('เลขที่ PO ซ้ำกัน กรุณาตรวจสอบ'); return; }
-      const hdr = { name: v('ymName'), addr: v('ymAddr'), tel: v('ymTel'), cust: v('ymCust'), group: v('ymGroup'), dealer: v('ymDealer'), quoter: v('ymQuoter') };
+      return { name: v('ymName'), addr: v('ymAddr'), tel: v('ymTel'), cust: v('ymCust'), group: v('ymGroup'), dealer: v('ymDealer'), quoter: v('ymQuoter') };
+    }
+    function ymSavePO(verb) {
+      verb = typeof verb === 'string' ? verb : (verb ? 'พิมพ์' : 'บันทึก');
+      if (!ymCtx) return null;
+      const mEl = document.getElementById('ymMaster'), master = mEl.value.trim().replace(/\s+/g, '');
+      if (!master) { alert('กรุณากรอกเลขที่ PO Master ก่อน' + verb); mEl.focus(); return null; }
+      mEl.value = master;
+      const clash = ymAllPOs().find(r => r.master.toUpperCase() === master.toUpperCase() && r.key !== ymCtx.key);
+      if (clash) { alert('เลขที่ PO Master ' + master + ' ถูกใช้แล้วกับใบขอซื้อ ' + clash.prNo + ' กรุณาใช้เลขอื่น'); mEl.focus(); return null; }
+      const hdr = ymHeaderInputs();
       if (!hubSettings.ymForm) hubSettings.ymForm = {};
       hubSettings.ymForm[ymCtx.company] = hdr;
       try { localStorage.setItem('priceLogicHubSettings', JSON.stringify(hubSettings)); } catch (e) {}
-      scheduleCloudSync();
-      const groups = ymCtx.pages;
-      const info = Object.assign({}, hdr, { date: ymDateText(v('ymDate')), order: v('ymOrder'), pr: ymCtx.pr.prNo });
-      const pages = groups.map((gr, i) => ymPageHtml(Object.assign({}, info, { po: poNos[i] }), gr, i, groups.length)).join('');
-      const html = '<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>PO YANMAR ' + esc(ymCtx.pr.prNo) + '</title>' +
+      const meta = prMeta[ymCtx.key] || (prMeta[ymCtx.key] = {});
+      const list = meta.pos || (meta.pos = []);
+      const old = list.find(r => r.master === master);
+      const u = getCurrentUser();
+      const rec = {
+        master: master, mode: ymCtx.mode, prNo: ymCtx.pr.prNo, company: ymCtx.company, project: ymCtx.pr.project || '',
+        date: document.getElementById('ymDate').value, order: document.getElementById('ymOrder').value.trim(), hdr: hdr,
+        savedAt: new Date().toISOString(), by: u ? u.name : '',
+        pages: ymCtx.pages.map((p, i) => {
+          const po = ymPoNo(master, i);
+          const lines = p.lines.map(l => ({ code: l.code, name: l.name, qty: l.qty, ptype: l.ptype, disc: l.disc, promoDisc: l.promoDisc, quarter: l.quarter, mo: l.mo, net: l.net, amount: l.amount, hasPromo: l.hasPromo }));
+          const prev = old && old.pages.find(x => x.po === po);
+          const same = prev && JSON.stringify(prev.lines.map(l => [l.code, l.qty])) === JSON.stringify(lines.map(l => [l.code, l.qty]));
+          return { po: po, label: p.label, lines: lines, xlsAt: same ? prev.xlsAt || null : null, xlsBy: same ? prev.xlsBy || '' : '' };
+        })
+      };
+      if (old) list[list.indexOf(old)] = rec; else list.push(rec);
+      savePrMeta();
+      document.getElementById('ymSavedNote').innerText = '✅ บันทึกแล้ว ' + ymStamp(rec.savedAt) + (rec.by ? ' โดย ' + rec.by : '') + ' • ' + rec.pages.length + ' ใบ';
+      ymRefreshPoNos();
+      renderInbox();
+      if (!document.getElementById('poHistModal').classList.contains('hidden')) renderPoHistory();
+      return rec;
+    }
+    function closeYmPO() { document.getElementById('ymModal').classList.add('hidden'); }
+    function printYmPO() {
+      const rec = ymSavePO('พิมพ์');
+      if (rec) ymPrintRecord(rec);
+    }
+    function ymPrintRecord(rec) {
+      const info = Object.assign({}, rec.hdr || {}, { date: ymDateText(rec.date), order: rec.order, pr: rec.prNo });
+      const pages = rec.pages.map((p, i) => ymPageHtml(Object.assign({}, info, { po: p.po }), p, i, rec.pages.length)).join('');
+      const html = '<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>PO YANMAR ' + esc(rec.master) + '</title>' +
         '<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">' +
         '<style>' + YM_CSS + '</style></head><body>' + pages +
         '<script>window.addEventListener("load",function(){var go=function(){setTimeout(function(){window.focus();window.print();},300);};(document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go());});<\/script></body></html>';
@@ -3454,22 +3602,147 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       if (!w) { alert('เบราว์เซอร์บล็อกป๊อปอัพ กรุณาอนุญาตป๊อปอัพสำหรับหน้านี้'); return; }
       w.document.write(html); w.document.close();
     }
+    function ymReprint(k, m) { const rec = ymFindRec(decodeURIComponent(k), decodeURIComponent(m)); if (rec) ymPrintRecord(rec); }
+    // Excel upload file for YANMAR (Web_EstimateUpload format) — one file per PO
+    function ymXls(k, m, i) {
+      const key = decodeURIComponent(k), rec = ymFindRec(key, decodeURIComponent(m)), page = rec && rec.pages[i];
+      if (!page) return;
+      if (typeof XLSX === 'undefined') { alert('โหลดไลบรารี Excel ไม่สำเร็จ กรุณาโหลดหน้าใหม่'); return; }
+      const aoa = [['Up-loading file for Survice Parts'], [], [], ['No.', 'Parts No.', 'Input Qty', 'Model Name', 'Serial Number']];
+      page.lines.forEach((l, n) => aoa.push([n + 1, String(l.code || ''), Number(l.qty) || 0, '', '']));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{ wch: 4.4 }, { wch: 14.5 }, { wch: 10.1 }, { wch: 20.75 }, { wch: 13.5 }];
+      page.lines.forEach((l, n) => { const c = ws[XLSX.utils.encode_cell({ r: 4 + n, c: 1 })]; if (c) { c.t = 's'; c.z = '@'; } });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      XLSX.writeFile(wb, 'Web_EstimateUpload_' + page.po.replace(/[\\/:*?"<>|]+/g, '-') + '.xls', { bookType: 'biff8' });
+      const u = getCurrentUser();
+      page.xlsAt = new Date().toISOString(); page.xlsBy = u ? u.name : '';
+      savePrMeta();
+      renderInbox();
+      if (!document.getElementById('poHistModal').classList.contains('hidden')) renderPoHistory();
+      if (!document.getElementById('ymModal').classList.contains('hidden')) ymRefreshPoNos();
+    }
+    function ymXlsCell(key, rec, i, small) {
+      const p = rec.pages[i], call = 'ymXls(' + ymArg(key) + ',' + ymArg(rec.master) + ',' + i + ')';
+      return p.xlsAt
+        ? '<span title="ดาวน์โหลด Excel แล้ว ' + esc(ymStamp(p.xlsAt)) + (p.xlsBy ? ' โดย ' + esc(p.xlsBy) : '') + '" class="text-emerald-700 font-bold">✅' + (small ? '' : ' <span class="font-normal text-[10px] text-slate-500">' + esc(ymStamp(p.xlsAt)) + '</span>') + '</span>' +
+          ' <button onclick="' + call + '" title="ดาวน์โหลดอีกครั้ง" class="text-[10px] text-slate-400 hover:text-slate-700 underline">โหลดซ้ำ</button>'
+        : '<button onclick="' + call + '" class="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-1.5 py-0.5 rounded whitespace-nowrap">⬇️ Excel</button>';
+    }
+    // ---- v5.8.4: which PO route a PR takes, and whether its PO is open ----
+    // MO → YANMAR PO form; every other project (EO/SEO included) → ECOUNT PO
+    function ymIsMO(project) { return /^MO(\b|[^A-Za-z])/i.test(String(project || '').trim() + ' '); }
+    function poStatusOf(g) {
+      const recs = (prMeta[g.key] || {}).pos || [];
+      const xlsTotal = recs.reduce((a, r) => a + r.pages.length, 0), xlsDone = recs.reduce((a, r) => a + r.pages.filter(p => p.xlsAt).length, 0);
+      const idx = buildExistingIndex();
+      const lines = prInbox.filter(x => prKeyOf(x) === g.key);
+      let ordered = 0, ecPending = 0, ecPrId = '';
+      lines.forEach(x => {
+        const m = findInboxMatch(idx, x);
+        if (!m) return;
+        if (m.it.poNo) ordered++;
+        else if (poSupId(m.it)) { ecPending++; ecPrId = ecPrId || m.pr.id; }
+      });
+      const st = { ym: recs.length > 0, xlsTotal: xlsTotal, xlsDone: xlsDone, ordered: ordered, total: lines.length,
+                   ecAll: lines.length > 0 && ordered === lines.length, ecPending: ecPending, ecPrId: ecPrId,
+                   poNos: recs.map(r => r.pages.map(p => p.po).join(', ')).join(', ') };
+      st.bar = st.ym ? '#10b981' : st.ecAll ? '#0284c7' : ordered ? '#7dd3fc' : '';
+      st.rowBg = st.ym ? 'bg-emerald-50/40' : st.ordered ? 'bg-sky-50/50' : '';
+      return st;
+    }
+    function poStatusPills(st) {
+      let h = '';
+      if (st.ym) h += '<span title="' + esc('PO: ' + st.poNos) + '" class="inline-flex items-center gap-1 text-[11px] font-extrabold bg-emerald-600 text-white px-2 py-0.5 rounded-full whitespace-nowrap">✓ YANMAR' +
+        (st.xlsTotal ? '<span class="font-bold text-[9px] px-1 rounded ' + (st.xlsDone === st.xlsTotal ? 'bg-emerald-800' : 'bg-amber-400 text-slate-900') + '">Excel ' + (st.xlsDone === st.xlsTotal ? '✓' : st.xlsDone + '/' + st.xlsTotal) + '</span>' : '') + '</span>';
+      if (st.ordered) h += '<span class="inline-flex items-center gap-1 text-[11px] font-extrabold ' + (st.ecAll ? 'bg-sky-600 text-white' : 'bg-sky-100 text-sky-800 border border-sky-300') + ' px-2 py-0.5 rounded-full whitespace-nowrap">✓ ECOUNT' + (st.ecAll ? '' : ' <span class="text-[9px]">' + st.ordered + '/' + st.total + '</span>') + '</span>';
+      return h;
+    }
+    // EO / SEO (and any non-MO promo project): ECOUNT PO at the saved promo price
+    function promoEcountPO(gi) {
+      const g = inboxGroups[gi], promo = ((prMeta[g.key] || {}).promo || {}).prices || {};
+      if (!Object.keys(promo).length) { alert('ยังไม่มีราคาโปรที่บันทึกไว้ — กด "เช็คโปรโมชั่น" แล้ว "บันทึกผลเช็คโปร" ก่อน'); return; }
+      const rows = prInbox.filter(x => prKeyOf(x) === g.key);
+      refsForInboxRows(rows);
+      const idx = buildExistingIndex();
+      const VNAME = 'YANMAR S.P. (ราคาโปรโมชั่น ' + promoBasis(g.first.project) + ')';
+      let prId = '', supId = '', n = 0, miss = 0;
+      rows.forEach(x => {
+        const m = findInboxMatch(idx, x);
+        if (!m || m.it.poNo) return;
+        const p = promo[x.code];
+        if (!p || !(Number(p.price) > 0)) { miss++; return; }
+        let s = m.pr.suppliers.find(v => v.name === VNAME);
+        if (!s) { s = { id: 'SUP' + randId(), name: VNAME, priceType: 'exc_vat', delivery: '-', shippingCost: '', warranty: '-', paymentTerms: '', additional: 'ราคาจากผลเช็คโปรโมชั่น', quoteDate: todayISO(), prices: {}, discounts: {}, specialDiscount: '' }; m.pr.suppliers.push(s); }
+        s.prices[m.it.id] = Number(p.price);
+        if (!m.it.approvedSupplierId) m.it.selectedSupplierId = s.id;
+        prId = prId || m.pr.id; supId = supId || s.id; n++;
+      });
+      if (!n) { alert('ไม่มีรายการที่มีราคาโปรและยังไม่ได้ออก PO'); renderApp(); return; }
+      renderApp();
+      openPOModal(prId, supId);
+      if (miss) document.getElementById('poResultBox').innerHTML = '<div class="p-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 font-bold">⚠️ ' + miss + ' รายการไม่มีราคาโปร จึงไม่ได้ใส่ใน PO นี้</div>';
+    }
+    function ymRowChips(key) {
+      const list = (prMeta[key] || {}).pos || [];
+      if (!list.length) return '';
+      return '<div class="mt-1 border-t border-slate-200 pt-1 space-y-0.5">' + list.map(rec => rec.pages.map((p, i) =>
+        '<div class="flex items-center gap-1.5 text-[10px] whitespace-nowrap"><span class="font-mono font-bold text-slate-800">' + esc(p.po) + '</span>' + ymXlsCell(key, rec, i, true) + '</div>').join('')).join('') + '</div>';
+    }
+    function ymDeleteRec(k, m) {
+      const key = decodeURIComponent(k), master = decodeURIComponent(m), meta = prMeta[key];
+      if (!meta || !meta.pos) return;
+      if (!confirm('ลบประวัติ PO ' + master + ' (ทุกใบ) ใช่หรือไม่?')) return;
+      meta.pos = meta.pos.filter(r => r.master !== master);
+      if (!meta.pos.length) delete meta.pos;
+      savePrMeta(); renderInbox(); renderPoHistory();
+    }
+    function openPoHistory() { document.getElementById('poHistModal').classList.remove('hidden'); renderPoHistory(); }
+    function closePoHistory() { document.getElementById('poHistModal').classList.add('hidden'); }
+    function renderPoHistory() {
+      const q = document.getElementById('poHistQ').value.trim().toLowerCase(), fx = document.getElementById('poHistXls').value;
+      const recs = ymAllPOs().filter(r => !q || [r.master, r.prNo, r.project, r.company].concat(r.pages.map(p => p.po)).join(' ').toLowerCase().includes(q))
+        .filter(r => !fx || r.pages.some(p => fx === 'yes' ? p.xlsAt : !p.xlsAt));
+      const nPo = recs.reduce((a, r) => a + r.pages.length, 0), nDone = recs.reduce((a, r) => a + r.pages.filter(p => p.xlsAt).length, 0);
+      document.getElementById('poHistCount').innerText = recs.length + ' PO Master • ' + nPo + ' ใบ • ดาวน์โหลด Excel แล้ว ' + nDone + '/' + nPo;
+      if (!recs.length) { document.getElementById('poHistBox').innerHTML = '<div class="p-8 text-center text-slate-400">ยังไม่มีประวัติ PO — กด "💾 บันทึก PO" ในหน้าออก PO</div>'; return; }
+      document.getElementById('poHistBox').innerHTML =
+        '<table class="w-full text-[11px] text-left border-collapse"><thead class="sticky top-0"><tr class="bg-slate-100 text-slate-600 font-bold">' +
+        '<th class="p-2">PO Master</th><th class="p-2">Ref. PR / โครงการ</th><th class="p-2">เลขที่ PO</th><th class="p-2">ชุด</th><th class="p-2 text-center">รายการ</th><th class="p-2 text-right">ก่อนภาษี (฿)</th><th class="p-2">Excel</th><th class="p-2">จัดการ</th>' +
+        '</tr></thead><tbody>' + recs.map(rec => rec.pages.map((p, i) => {
+          const sum = p.lines.reduce((a, l) => a + (Number(l.amount) || 0), 0), n = rec.pages.length;
+          return '<tr class="border-t border-slate-200 align-top' + (i ? '' : ' border-t-2 border-t-slate-300') + '">' +
+            (i ? '' : '<td class="p-2" rowspan="' + n + '"><div class="font-mono font-black text-slate-900">' + esc(rec.master) + '</div>' +
+              '<div class="text-[10px] text-slate-500">' + (rec.mode === 'split' ? 'แยกส่วนลด' : 'รวมส่วนลด') + ' • วันที่ PO ' + esc(fmtShortDate(rec.date)) + '</div>' +
+              '<div class="text-[10px] text-slate-400">บันทึก ' + esc(ymStamp(rec.savedAt)) + (rec.by ? ' • ' + esc(rec.by) : '') + '</div></td>' +
+              '<td class="p-2" rowspan="' + n + '"><div class="font-mono font-bold">' + esc(rec.prNo) + '</div><div class="text-[10px] text-slate-500">' + esc(rec.project || '-') + ' • ' + esc(rec.company) + '</div></td>') +
+            '<td class="p-2 font-mono font-bold whitespace-nowrap">' + esc(p.po) + '</td>' +
+            '<td class="p-2">' + esc(p.label) + '</td>' +
+            '<td class="p-2 text-center">' + p.lines.length + '</td>' +
+            '<td class="p-2 text-right">' + ymFmt(sum) + '</td>' +
+            '<td class="p-2 whitespace-nowrap">' + ymXlsCell(rec.key, rec, i, false) + '</td>' +
+            (i ? '' : '<td class="p-2 whitespace-nowrap" rowspan="' + n + '"><button onclick="ymReprint(' + ymArg(rec.key) + ',' + ymArg(rec.master) + ')" class="font-bold bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded">🖨️ พิมพ์ซ้ำ</button> ' +
+              '<button onclick="ymDeleteRec(' + ymArg(rec.key) + ',' + ymArg(rec.master) + ')" class="text-red-600 underline ml-1">ลบ</button></td>') +
+          '</tr>';
+        }).join('')).join('') + '</tbody></table>';
+    }
 
     const YM_CSS =
       '@page{size:A4 portrait;margin:8mm;}' +
       '*{box-sizing:border-box;}html,body{margin:0;padding:0;color:#000;}' +
-      'body{font-family:"Sarabun","Tahoma",sans-serif;}' +
+      'body{font-family:"Sarabun","Tahoma",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-font-smoothing:antialiased;}' +
       '.pg{width:911px;zoom:0.8;border:1.5px solid #000;page-break-after:always;margin-bottom:6px;}.pg:last-child{page-break-after:auto;}' +
       'table{border-collapse:collapse;width:100%;table-layout:fixed;}td,th{padding:0 3px;vertical-align:middle;line-height:1.25;}' +
       '.tnr{font-family:"Times New Roman",serif;}' +
-      '.f9{font-size:8.5px}.f10{font-size:9.5px}.f11{font-size:10px}.f12{font-size:11px}.f13{font-size:12.5px}.b{font-weight:bold}.c{text-align:center}.r{text-align:right}.red{color:#d00000}' +
+      '.f9{font-size:10.5px}.f10{font-size:11.5px}.f11{font-size:12px}.f12{font-size:13px}.f13{font-size:14.5px}.b{font-weight:bold}.c{text-align:center}.r{text-align:right}.red{color:#d00000}' +
       '.bx td,.bx th{border:1px solid #000;}' +
-      '.mini td{border:1px solid #000;font-family:Tahoma,Arial,sans-serif;font-size:6px;text-align:center;padding:0 1px;height:10px;line-height:1;}' +
+      '.mini td{border:1px solid #000;font-family:Tahoma,Arial,sans-serif;font-size:7.5px;text-align:center;padding:0 1px;height:11px;line-height:1.05;}' +
       '.mini .hd{background:#dce6f1;font-weight:bold;}.mini .hy{background:#fff2cc;font-weight:bold;}.mini .tot{font-weight:bold;}' +
-      '.lab{font-family:"Times New Roman","Sarabun",serif;font-weight:bold;font-size:10px;}' +
-      '.blk{background:#000;color:#fff;font-weight:bold;text-align:center;font-family:"Times New Roman",serif;font-size:10px;}' +
-      '.redbx{background:#c00000;color:#fff;font-weight:bold;text-align:center;font-family:"Times New Roman",serif;font-size:10px;}' +
-      '.ln td{height:14px;font-size:9.5px;}.gry{background:#d9d9d9;}.lbl{background:#dce6f1;}.ylw{background:#fffbd6;}.org{background:#ffc000;}' +
+      '.lab{font-family:"Times New Roman","Sarabun",serif;font-weight:bold;font-size:12px;}' +
+      '.blk{background:#000;color:#fff;font-weight:bold;text-align:center;font-family:"Times New Roman",serif;font-size:12px;}' +
+      '.redbx{background:#c00000;color:#fff;font-weight:bold;text-align:center;font-family:"Times New Roman",serif;font-size:12px;}' +
+      '.ln td{height:20px;font-size:12px;}.gry{background:#d9d9d9;}.lbl{background:#dce6f1;}.ylw{background:#fffbd6;}.org{background:#ffc000;}' +
       '.ul{border-bottom:1px solid #000;}.sh{background:#d9d9d9;}';
 
     function ymPageHtml(h, gr, idx, count) {
@@ -3481,7 +3754,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
         body += '<tr class="ln">' +
           '<td class="c">' + (i + 1) + '</td>' +
           '<td>' + (l ? esc(l.code) : '') + '</td>' +
-          '<td style="font-size:9px;">' + (l ? esc(l.name) : '') + '</td>' +
+          '<td style="font-size:11px;line-height:1.15;">' + (l ? esc(l.name) : '') + '</td>' +
           '<td class="c">' + (l ? l.qty : '') + '</td>' +
           '<td class="c lbl">' + (l && l.ptype ? esc(l.ptype) : '-') + '</td>' +
           '<td class="c lbl b f9" style="color:#1f3864">' + (l && l.promoDisc != null ? ymPct(l.promoDisc) : '0.00%') + '</td>' +
@@ -3516,7 +3789,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       return '<div class="pg">' +
         // top banner
         '<table><colgroup><col style="width:13%"><col style="width:62%"><col style="width:25%"></colgroup>' +
-          '<tr><td rowspan="3" style="padding-left:2px"><span style="font-family:Arial Black,Arial,sans-serif;font-weight:900;font-style:italic;color:#d00000;font-size:17px;letter-spacing:-0.5px">YANMAR</span></td>' +
+          '<tr><td rowspan="3" style="padding-left:2px"><span style="font-family:Arial Black,Arial,sans-serif;font-weight:900;font-style:italic;color:#d00000;font-size:20px;letter-spacing:-0.5px">YANMAR</span></td>' +
             '<td class="tnr b f9" style="padding-top:3px">YANMAR S.P. CO., LTD.</td><td class="tnr b red r f10" style="padding-right:30px">All Group</td></tr>' +
           '<tr><td class="tnr b f9">115 Moo 9 Chalong Krung Rd. Lamplatiew, Ladkrabang, Bangkok 10520</td><td></td></tr>' +
           '<tr><td class="tnr b f9" style="padding-bottom:3px">Tel: 02-326-700 Ext 741 - 749</td><td class="tnr b f9 r" style="padding-right:30px">(Services Parts Department)</td></tr>' +
@@ -3541,7 +3814,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
           '<tr class="c b f11" style="height:34px">' +
             '<th class="gry">ลำดับที่<br>No.</th><th class="gry">รหัสอะไหล่<br><span class="tnr f9">Parts No</span></th><th class="gry">ชื่ออะไหล่<br><span class="tnr f9">Part Description</span></th>' +
             '<th class="gry">จำนวน<br><span class="tnr f9">Qty</span></th><th class="lbl tnr f9">Type Parts</th><th class="lbl tnr f9">Discount<br>Promotion</th>' +
-            '<th class="lbl tnr" style="font-size:7px">Discount<br>Quarter 1%</th><th class="org tnr f9">Total<br>Discount</th>' +
+            '<th class="lbl tnr" style="font-size:9px">Discount<br>Quarter 1%</th><th class="org tnr f9">Total<br>Discount</th>' +
             '<th class="gry" style="font-weight:normal">ราคาปลีก<br>ไม่รวมภาษี</th><th class="gry" style="font-weight:normal">ราคา NET<br>ไม่รวมภาษี</th>' +
             '<th class="gry" style="font-weight:normal">ราคาผู้แทน<br>ไม่รวมภาษี</th><th class="gry" style="font-weight:normal">ราคาพิเศษ<br>ไม่รวมภาษี</th>' +
             '<th class="gry" style="font-weight:normal">จำนวนเงิน<br><span class="tnr f9">Amount</span></th><th class="gry red" style="font-weight:normal">หมายเหตุ<br>รหัสเก่าเลิกใช้/เปลี่ยนเป็น<br>รหัสใหม่</th>' +
@@ -3614,6 +3887,14 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
         drawPromoItems();
       });
     }
+    // v5.8.5: each project is compared with its own column of the promotion table
+    // (MO → MO, EO → EO, SEO → SEO). The library reports which column it used
+    // per item (x.basis); anything that does not match the project is flagged.
+    function promoBasisMismatch(x, want) {
+      const b = String((x && x.basis) || '').toUpperCase().trim();
+      if (!b || !want) return false;
+      return !new RegExp('(^|[^A-Z])' + want + '([^A-Z]|$)').test(b);
+    }
     function promoOf(r) { return promoResult && promoResult.key === promoGroupKey && promoResult.by ? promoResult.by.get(r) || null : null; }
     function drawPromoItems() {
       const all = promoRows(), R = promoResult && promoResult.key === promoGroupKey ? promoResult : null;
@@ -3622,24 +3903,27 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       if (!R || R.loading) sum = '<div class="p-2 rounded-lg bg-amber-50 text-amber-800 font-bold">⏳ กำลังหาราคาโปรที่ดีที่สุดจากคลังโปรโมชั่น...</div>';
       else if (R.error) sum = '<div class="p-2 rounded-lg bg-red-50 text-red-700 font-bold">⚠️ ' + esc(R.error) + '</div>';
       else {
-        let inP = 0, total = 0, save = 0, over = 0;
-        all.forEach(r => { const x = promoOf(r); if (x && x.bestPrice != null) { inP++; total += x.bestPrice * (Number(r.qty) || 0); save += x.saving || 0; if (!x.ok) over++; } });
+        let inP = 0, total = 0, save = 0, over = 0, mis = 0;
+        all.forEach(r => { const x = promoOf(r); if (x && x.bestPrice != null) { inP++; total += x.bestPrice * (Number(r.qty) || 0); save += x.saving || 0; if (!x.ok) over++; if (promoBasisMismatch(x, R.basis)) mis++; } });
         sum = '<div class="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex flex-wrap gap-x-4 gap-y-1">' +
-          '<b>💡 ราคาแนะนำสำหรับเปิด PO (' + esc(R.basis === 'MO' ? 'MO' : 'EO/SEO') + ')</b><span>มีโปร ' + inP + '/' + all.length + ' รายการ</span>' +
+          '<b>💡 ราคาแนะนำสำหรับเปิด PO (เทียบตารางราคา ' + esc(R.basis) + ')</b><span>มีโปร ' + inP + '/' + all.length + ' รายการ</span>' +
           '<span>ยอดตามราคาโปร <b>' + n(total) + '</b> บาท</span>' +
           (save > 0 ? '<span class="text-red-700 font-bold">ราคาใน PR สูงกว่าโปร — ประหยัดได้ ' + n(save) + ' บาท</span>' : '') +
-          '<span class="text-slate-500">ณ ' + R.at.toLocaleTimeString('th-TH') + '</span></div>';
+          '<span class="text-slate-500">ณ ' + R.at.toLocaleTimeString('th-TH') + '</span></div>' +
+          (mis ? '<div class="mt-1 p-2 rounded-lg bg-red-50 border border-red-300 text-red-700 font-bold">⚠️ มี ' + mis + ' รายการที่คลังโปรตอบกลับเป็นราคาตารางอื่น ไม่ใช่ตาราง ' + esc(R.basis) + ' — ตรวจสอบก่อนบันทึก</div>' : '');
       }
       document.getElementById('promoModalSum').innerHTML = sum;
       document.getElementById('promoModalItems').innerHTML =
         '<table class="w-full text-[11px] text-left border-collapse">' +
-          '<thead class="bg-slate-100 sticky top-0"><tr><th class="p-1.5 w-8">No.</th><th class="p-1.5">รหัสสินค้า</th><th class="p-1.5">รายการสินค้า</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5 text-right">ราคาใน PR</th><th class="p-1.5 text-right bg-amber-50">ราคาโปรที่ดีที่สุด</th><th class="p-1.5 bg-amber-50">โปรโมชั่น</th><th class="p-1.5">ผล</th></tr></thead><tbody>' +
+          '<thead class="bg-slate-100 sticky top-0"><tr><th class="p-1.5 w-8">No.</th><th class="p-1.5">รหัสสินค้า</th><th class="p-1.5">รายการสินค้า</th><th class="p-1.5 text-center">จำนวน</th><th class="p-1.5 text-right">ราคาใน PR</th><th class="p-1.5 text-right bg-amber-50">ราคาโปรที่ดีที่สุด</th><th class="p-1.5 bg-amber-50">โปรโมชั่น</th><th class="p-1.5 bg-amber-50 text-center">ตารางราคา</th><th class="p-1.5">ผล</th></tr></thead><tbody>' +
           all.map((r, i) => {
             const x = promoOf(r);
             const best = x ? (x.bestPrice != null ? '<b class="text-emerald-700">' + n(x.bestPrice) + '</b>' + (x.best && x.best.disc != null ? '<div class="text-[10px] text-slate-500">ลด ' + x.best.disc + '%</div>' : '') : '-') : (R && R.loading ? '…' : '-');
             const set = x && x.best ? esc(x.best.set) + '<div class="text-[10px] text-slate-500">' + esc(fmtShortDate(x.best.start)) + ' – ' + esc(fmtShortDate(x.best.end)) + '</div>' : '-';
+            const bs = x && x.bestPrice != null ? (x.basis ? String(x.basis) : (R ? R.basis : '')) : '';
+            const bsHtml = bs ? '<span class="font-bold px-1.5 py-0.5 rounded ' + (promoBasisMismatch(x, R && R.basis) ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800') + '">' + esc(bs) + '</span>' : '-';
             const vd = x ? '<span class="font-bold ' + (x.ok ? 'text-emerald-700' : (x.bestPrice != null ? 'text-red-600' : 'text-slate-500')) + '">' + esc(x.verdict) + '</span>' : '';
-            return '<tr class="border-t border-slate-100"><td class="p-1.5 text-center text-slate-400">' + (i + 1) + '</td><td class="p-1.5 font-mono">' + esc(r.code || '-') + '</td><td class="p-1.5 font-bold">' + esc(r.name) + '</td><td class="p-1.5 text-center">' + r.qty + '</td><td class="p-1.5 text-right">' + (r.unitPrice > 0 ? r.unitPrice.toLocaleString() : '-') + '</td><td class="p-1.5 text-right bg-amber-50/50">' + best + '</td><td class="p-1.5 bg-amber-50/50">' + set + '</td><td class="p-1.5">' + vd + '</td></tr>';
+            return '<tr class="border-t border-slate-100"><td class="p-1.5 text-center text-slate-400">' + (i + 1) + '</td><td class="p-1.5 font-mono">' + esc(r.code || '-') + '</td><td class="p-1.5 font-bold">' + esc(r.name) + '</td><td class="p-1.5 text-center">' + r.qty + '</td><td class="p-1.5 text-right">' + (r.unitPrice > 0 ? r.unitPrice.toLocaleString() : '-') + '</td><td class="p-1.5 text-right bg-amber-50/50">' + best + '</td><td class="p-1.5 bg-amber-50/50">' + set + '</td><td class="p-1.5 bg-amber-50/50 text-center">' + bsHtml + '</td><td class="p-1.5">' + vd + '</td></tr>';
           }).join('') +
         '</tbody></table>';
     }
@@ -3649,7 +3933,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       const all = promoRows();
       document.getElementById('promoModalInfo').innerHTML =
         '<b>' + esc(g.first.prNo) + '</b> • โครงการ ' + esc(g.first.project || '-') + (g.first.company ? ' • ' + esc(g.first.company) : '') + ' • ' + all.length + ' รายการ' +
-        ' • เทียบกับราคา <b>' + (promoBasis(g.first.project) === 'MO' ? 'MO' : 'EO/SEO') + '</b>';
+        ' • เทียบกับตารางราคา <b>' + esc(promoBasis(g.first.project)) + '</b>';
       promoResult = null;
       renderPromoState();
       document.getElementById('promoModal').classList.remove('hidden');
@@ -3667,7 +3951,10 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
       if (!prMeta[promoGroupKey]) prMeta[promoGroupKey] = {};
       if (on) {
         const u = getCurrentUser(), prices = {};
-        promoRows().forEach((r, i) => { const x = promoOf(r, i); if (x && x.best) prices[r.code] = { price: x.bestPrice, set: x.best.set, basis: x.basis, mo: x.best.mo, disc: x.best.disc, ptype: x.best.ptype, name: x.name || r.name }; });
+        const want = promoResult && promoResult.key === promoGroupKey ? promoResult.basis : '';
+        const mis = promoRows().filter(r => { const x = promoOf(r); return x && x.best && promoBasisMismatch(x, want); }).length;
+        if (mis && !confirm('มี ' + mis + ' รายการที่ราคาไม่ได้มาจากตาราง ' + want + '\nต้องการบันทึกผลเช็คโปรต่อหรือไม่?')) return;
+        promoRows().forEach((r, i) => { const x = promoOf(r, i); if (x && x.best) prices[r.code] = { price: x.bestPrice, set: x.best.set, basis: x.basis || want, mo: x.best.mo, disc: x.best.disc, ptype: x.best.ptype, name: x.name || r.name }; });
         prMeta[promoGroupKey].promo = Object.assign({ by: u ? u.name : '', at: todayISO() }, Object.keys(prices).length ? { prices } : {});
       }
       else delete prMeta[promoGroupKey].promo;
@@ -3912,6 +4199,7 @@ function loadVendorHistForClient() { return getVendorHistJson(); }
             '<button onclick="addRFQVendorChip(' + i + ')" class="text-[10px] font-bold bg-slate-100 hover:bg-blue-100 border border-slate-300 text-slate-700 px-2 py-0.5 rounded-full">+ ' + esc(n) + '</button>').join('')
         : '';
 
+      buildQuoteIndex();
       const sug = suggestVendorsFor(refs.map(x => { const pr = findPR(x.prId), it = findItem(pr, x.itemId); return { code: it.code, name: it.name, company: pr.company }; }));
       rfqSuggested = sug.map(v => v.vendor);
       document.getElementById('rfqVendorChips').innerHTML =
