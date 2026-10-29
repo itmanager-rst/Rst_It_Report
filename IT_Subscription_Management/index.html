@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IT Subscription Expense Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f6f8; --surface: #ffffff; --border: #e5e7eb;
+      --text-1: #0f172a; --text-2: #475569; --text-3: #94a3b8;
+      --m365: #0078d4; --gws: #ea4335; --accent: #0f766e;
+      --up: #b91c1c; --down: #047857;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans Thai', 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text-1); padding: 24px 16px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .num { font-variant-numeric: tabular-nums; }
+
+    header { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+    header .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); font-weight: 600; }
+    header h1 { font-size: 26px; font-weight: 700; margin: 2px 0; }
+    header p { color: var(--text-2); font-size: 14px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    .btn { border: 1px solid var(--border); background: var(--surface); color: var(--text-1); border-radius: 8px; padding: 8px 14px; font: 600 13px inherit; font-family: inherit; cursor: pointer; }
+    .btn:hover { background: #f1f5f9; }
+    .btn-primary { background: var(--text-1); color: #fff; border-color: var(--text-1); }
+    .btn-primary:hover { background: #1e293b; }
+    .btn-blue { background: var(--m365); color: #fff; border-color: var(--m365); }
+    .btn-red { background: var(--gws); color: #fff; border-color: var(--gws); }
+    select, input[type=number] { border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; background: var(--surface); color: var(--text-1); }
+
+    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+    .seg button { border: 0; background: transparent; padding: 7px 12px; font: 600 13px inherit; font-family: inherit; color: var(--text-2); cursor: pointer; }
+    .seg button.active { background: var(--text-1); color: #fff; }
+
+    .ratebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--text-2); margin-bottom: 20px; }
+    .ratebar input { width: 100px; font-weight: 600; }
+    .ratebar .src { color: var(--text-3); font-size: 12px; }
+
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+    .kpi .label { font-size: 13px; color: var(--text-2); font-weight: 500; }
+    .kpi .value { font-size: 28px; display: flex; flex-wrap: wrap; align-items: baseline; font-weight: 700; margin-top: 6px; line-height: 1.1; }
+    .kpi .value small { font-size: 16px; font-weight: 600; color: var(--text-2); margin-left: 2px; }
+    .kpi .thb-side { font-size: 17px; font-weight: 600; color: #0f766e; margin-left: 10px; white-space: nowrap; }
+    .kpi .alt { font-size: 13px; color: var(--text-3); margin-top: 4px; }
+    .kpi .delta { display: inline-block; font-size: 12px; font-weight: 600; margin-top: 8px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: var(--text-2); }
+    .kpi .delta.up { background: #fee2e2; color: var(--up); }
+    .kpi .delta.down { background: #d1fae5; color: var(--down); }
+
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .grid-2 .panel { margin-bottom: 0; }
+    .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .panel h2 { font-size: 16px; font-weight: 600; }
+    .panel .hint { font-size: 12px; color: var(--text-3); }
+    .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-2); }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+    .chart-box { position: relative; height: 320px; }
+    .donut-box { position: relative; height: 210px; }
+    .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+    .donut-center b { font-size: 20px; }
+    .donut-center span { font-size: 12px; color: var(--text-3); }
+    .share-list { margin-top: 14px; display: grid; gap: 10px; }
+    .share-row { display: grid; grid-template-columns: 1fr auto; font-size: 13px; }
+    .share-row .n { color: var(--text-2); }
+    .share-row .v { font-weight: 600; text-align: right; }
+    .share-row .s { grid-column: 1 / -1; color: var(--text-3); font-size: 12px; }
+
+    .insights { list-style: none; display: grid; gap: 10px; }
+    .insights li { font-size: 14px; color: var(--text-2); padding-left: 18px; position: relative; line-height: 1.5; }
+    .insights li::before { content: ""; position: absolute; left: 0; top: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+    .insights b { color: var(--text-1); }
+
+    /* สรุปรายเดือน */
+    .month-nav { display: flex; align-items: center; gap: 6px; }
+    .month-nav .btn { padding: 6px 10px; }
+    .month-grid { display: grid; grid-template-columns: 260px 1fr 1.1fr; gap: 24px; align-items: start; }
+    @media (max-width: 980px) { .month-grid { grid-template-columns: 1fr; } }
+    .pie-box { position: relative; height: 240px; }
+    .m-total .lbl { font-size: 13px; color: var(--text-2); }
+    .m-total .big { font-size: 30px; font-weight: 700; display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-top: 4px; }
+    .m-total .big .thb-side { font-size: 18px; color: #0f766e; font-weight: 600; }
+    .m-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .chip { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: #f1f5f9; color: var(--text-2); }
+    .chip.up { background: #fee2e2; color: var(--up); } .chip.down { background: #d1fae5; color: var(--down); }
+    .sys-rows { margin-top: 18px; display: grid; gap: 14px; }
+    .sys-row .top { display: flex; justify-content: space-between; font-size: 14px; gap: 8px; }
+    .sys-row .top b { font-weight: 600; }
+    .sys-row .sub { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); margin-top: 2px; gap: 8px; }
+    .bar-track { height: 8px; background: #f1f5f9; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; }
+    .m-list h3 { font-size: 13px; color: var(--text-2); font-weight: 600; margin-bottom: 8px; }
+    .m-list table td, .m-list table th { padding: 8px 6px; font-size: 13px; }
+    .linkbtn { background: none; border: 0; color: var(--m365); font: 600 13px inherit; font-family: inherit; cursor: pointer; margin-top: 10px; padding: 0; }
+    .tbl-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .tbl-tools .tabs { margin-bottom: 0; }
+    .tbl-tools input[type=search] { border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; min-width: 200px; }
+
+    details.panel summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+    .import-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+    .import-box { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; }
+    .import-box h3 { font-size: 14px; margin-bottom: 4px; }
+    .import-box p { font-size: 12px; color: var(--text-2); margin-bottom: 8px; }
+    textarea { width: 100%; height: 100px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; margin: 8px 0; resize: vertical; font-family: inherit; }
+    input[type=file] { font-size: 13px; width: 100%; }
+    .msg { font-size: 13px; margin-top: 8px; min-height: 18px; }
+    .msg.ok { color: var(--down); } .msg.err { color: var(--up); }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tab { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; font-family: inherit; }
+    .tab.active { background: var(--text-1); color: #fff; border-color: var(--text-1); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; white-space: nowrap; }
+    th { background: #f8fafc; color: var(--text-2); font-weight: 600; font-size: 13px; }
+    td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
+    td.thb { color: #0f766e; font-weight: 500; }
+    tfoot td { font-weight: 700; background: #f8fafc; }
+    .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.paid { background: #d1fae5; color: #065f46; }
+    .badge.pending { background: #fef3c7; color: #92400e; }
+    .badge.other { background: #e2e8f0; color: #334155; }
+    .srcb { font-size: 11px; padding: 2px 6px; border-radius: 4px; color: #fff; font-weight: 600; }
+    .srcb.m365 { background: var(--m365); } .srcb.gsuite { background: var(--gws); }
+
+    @media print {
+      body { background: #fff; padding: 0; }
+      .no-print, details.panel { display: none !important; }
+      .panel, .kpi { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <div class="eyebrow">Ruamsinthaigroup · IT Department</div>
+      <h1>IT Subscription Expense Dashboard</h1>
+      <p>สรุปค่าใช้จ่าย Microsoft 365 และ Google Workspace · ข้อมูลถึง <span id="asof">-</span></p>
+    </div>
+    <div class="toolbar no-print">
+      <div class="seg" id="viewSeg" title="รูปแบบการแสดงยอดรวม">
+        <button data-v="month" class="active">รายเดือน</button>
+        <button data-v="year">รายปี</button>
+      </div>
+      <select id="rangeSel" title="ช่วงเวลา"></select>
+      <button class="btn" onclick="window.print()">🖨️ พิมพ์ / PDF</button>
+    </div>
+  </header>
+
+  <div class="ratebar no-print">
+    <span>อัตราแลกเปลี่ยน <b>1 USD =</b></span>
+    <input type="number" id="rateInput" step="0.01" min="1" class="num">
+    <span>THB</span>
+    <button class="btn" id="rateBtn" onclick="fetchRate()">↻ อัปเดตอัตราล่าสุด</button>
+    <span class="src" id="rateSrc"></span>
+  </div>
+
+  <!-- Executive KPIs -->
+  <div class="kpis">
+    <div class="kpi"><div class="label" id="k-total-lbl"></div><div class="value num"><span id="k-total"></span><span class="thb-side" id="k-total-alt"></span></div></div>
+    <div class="kpi"><div class="label" id="k-avg-lbl"></div><div class="value num"><span id="k-avg"></span><span class="thb-side" id="k-avg-alt"></span></div></div>
+    <div class="kpi"><div class="label" id="k-last-lbl"></div><div class="value num"><span id="k-last"></span><span class="thb-side" id="k-last-alt"></span></div><span class="delta" id="k-last-delta"></span></div>
+    <div class="kpi"><div class="label" id="k-run-lbl"></div><div class="value num"><span id="k-run"></span><span class="thb-side" id="k-run-alt"></span></div><div class="alt" id="k-run-note"></div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-head">
+        <h2 id="trendTitle">ค่าใช้จ่ายรายเดือน</h2>
+        <div class="legend"><span><i style="background:var(--m365)"></i>Microsoft 365</span><span><i style="background:var(--gws)"></i>Google Workspace</span></div>
+      </div>
+      <div class="chart-box"><canvas id="trendChart" aria-label="กราฟค่าใช้จ่ายรายเดือน"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>สัดส่วนค่าใช้จ่าย</h2><span class="hint rangeLbl"></span></div>
+      <div class="donut-box">
+        <canvas id="shareChart" aria-label="สัดส่วนค่าใช้จ่าย"></canvas>
+        <div class="donut-center"><b class="num" id="donutTotal"></b><span class="num" id="donutTotalThb" style="color:#0f766e;font-weight:600;font-size:13px"></span><span>รวม</span></div>
+      </div>
+      <div class="share-list" id="shareList"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>ประเด็นสำคัญ</h2><span class="hint">สรุปอัตโนมัติจากข้อมูล</span></div>
+    <ul class="insights" id="insights"></ul>
+  </div>
+
+  <!-- สรุปรายเดือน -->
+  <div class="panel" id="monthPanel">
+    <div class="panel-head">
+      <h2>สรุปรายเดือน</h2>
+      <div class="month-nav no-print">
+        <button class="btn" id="mPrev" title="เดือนก่อนหน้า">‹</button>
+        <select id="monthSel"></select>
+        <button class="btn" id="mNext" title="เดือนถัดไป">›</button>
+      </div>
+    </div>
+    <div class="month-grid">
+      <div class="pie-box"><canvas id="monthPie" aria-label="สัดส่วนค่าใช้จ่ายรายเดือน"></canvas></div>
+      <div>
+        <div class="m-total">
+          <div class="lbl">ค่าใช้จ่ายรวมเดือน <span id="mName"></span></div>
+          <div class="big num"><span id="mTotal"></span><span class="thb-side" id="mTotalThb"></span></div>
+          <div class="m-chips" id="mChips"></div>
+        </div>
+        <div class="sys-rows" id="mSys"></div>
+      </div>
+      <div class="m-list">
+        <h3>ใบแจ้งหนี้ในเดือนนี้</h3>
+        <div id="mInvoices"></div>
+        <button class="linkbtn no-print" id="mToTable">ดูในตารางรายการ →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import (ซ่อนได้ เพื่อให้หน้าผู้บริหารสะอาด) -->
+  <details class="panel no-print">
+    <summary>📥 นำเข้าข้อมูล / จัดการข้อมูล</summary>
+    <div class="import-grid">
+      <div class="import-box">
+        <h3>Microsoft 365 — Billing invoice list</h3>
+        <p>.csv / .xlsx จาก M365 Admin Center (Billing &gt; Bills &amp; payments)</p>
+        <input type="file" id="m365File" accept=".csv,.xlsx,.xls">
+        <textarea id="m365Text" placeholder="หรือวางเนื้อหา CSV ที่นี่..."></textarea>
+        <button class="btn btn-blue" onclick="importM365()">นำเข้า Microsoft 365</button>
+        <div class="msg" id="m365Msg"></div>
+      </div>
+      <div class="import-box">
+        <h3>Google Workspace — Billing</h3>
+        <p>คัดลอกข้อความจากหน้า Admin Console &gt; Billing มาวาง (ไทย/อังกฤษ) หรือเลือกไฟล์ CSV</p>
+        <input type="file" id="gsuiteFile" accept=".csv,.xlsx,.xls,.txt">
+        <textarea id="gsuiteText" placeholder="1–28 ต.ค. 2569&#10;ยอดเงินสุดท้าย: US$81.18&#10;..."></textarea>
+        <button class="btn btn-red" onclick="importGsuite()">นำเข้า Google Workspace</button>
+        <div class="msg" id="gsuiteMsg"></div>
+      </div>
+    </div>
+    <div class="toolbar" style="margin-top:14px">
+      <button class="btn" onclick="clearAll()">🗑️ ล้างข้อมูลทั้งหมด</button>
+    </div>
+  </details>
+
+  <div class="panel">
+    <div class="panel-head"><h2>รายการค่าใช้จ่าย (ใหม่ → เก่า) <span id="tblMonthLbl" style="color:var(--text-3);font-weight:500"></span></h2><span class="hint">THB คำนวณจากอัตราด้านบน</span></div>
+    <div class="tbl-tools no-print">
+      <div class="tabs">
+        <button class="tab active" data-f="all">ทั้งหมด</button>
+        <button class="tab" data-f="m365">Microsoft 365</button>
+        <button class="tab" data-f="gsuite">Google Workspace</button>
+      </div>
+      <div class="toolbar">
+        <select id="tblMonth" title="กรองตามเดือน"><option value="">ทุกเดือน</option></select>
+        <input type="search" id="tblSearch" placeholder="ค้นหา Invoice ID / สถานะ...">
+      </div>
+    </div>
+    <div class="table-wrap" id="table-container"></div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   1) ข้อมูลตัวอย่าง (แปลงจากไฟล์ที่ให้มาแล้ว)
+   ========================================================= */
+const HEADER = ["Date", "Invoice ID", "Billing Period", "Total Amount", "Status"];
+const STORAGE_KEY = "itSubDashboard.v1";
+
+const SAMPLE_M365_CSV = `SEP=,
+INVOICE ID,INVOICE DATE (UTC),BILLING PERIOD (UTC),BILLING PROFILE,TOTAL AMOUNT CURRENCY,TOTAL AMOUNT,STATUS,
+"G193303834","10/23/2026","10/22/2026","Ruamsinthaigroup","USD","314.58","Paid",
+"G186349434","9/23/2026","9/22/2026","Ruamsinthaigroup","USD","314.58","Paid",
+"G179553411","8/23/2026","8/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G173056111","7/23/2026","7/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G166553099","6/23/2026","6/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G160368920","5/23/2026","5/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G154212351","4/23/2026","4/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G148250266","3/23/2026","3/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G142484495","2/23/2026","2/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G136675769","1/23/2026","1/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
+"G131088440","12/23/2025","12/22/2025","Ruamsinthaigroup","USD","280.88","Paid",
+"G125590063","11/23/2025","11/22/2025","Ruamsinthaigroup","USD","280.88","Paid",
+"G120245725","10/23/2025","10/22/2025","Ruamsinthaigroup","USD","280.88","Paid",`;
+
+const SAMPLE_GSUITE_TEXT = `1–28 ต.ค. 2569
+ยอดเงินสุดท้าย: US$81.18
+1–30 ก.ย. 2569
+1 ต.ค. 2569 การชำระเงินอัตโนมัติ:: Visa  • • • • 1118 A63246005571215927
+−US$89.88
+ยอดเงินสุดท้าย: US$89.88
+1–31 ส.ค. 2569
+1 ก.ย. 2569 การชำระเงินอัตโนมัติ:: Visa  • • • • 1118 A12228959523811714
+−US$105.79
+ยอดเงินสุดท้าย: US$105.79
+1–31 ก.ค. 2569
+ยอดเงินสุดท้าย: US$116.84
+1–30 มิ.ย. 2569
+ยอดเงินสุดท้าย: US$108.16
+1–31 พ.ค. 2569
+ยอดเงินสุดท้าย: US$108.42
+1–30 เม.ย. 2569
+ยอดเงินสุดท้าย: US$110.85
+1–31 มี.ค. 2569
+ยอดเงินสุดท้าย: US$107.86
+1–28 ก.พ. 2569
+ยอดเงินสุดท้าย: US$109.78
+1–31 ม.ค. 2569
+ยอดเงินสุดท้าย: US$116.84`;
+
+/* state: แต่ละรายการ = { date, invoiceId, period, amount(number), currency, status } */
+let state = { m365: [], gsuite: [] };
+let chart = null;
+let filter = "all";
+
+/* =========================================================
+   2) Helpers
+   ========================================================= */
+const pad = n => String(n).padStart(2, "0");
+const ymd = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+
+/** แปลงวันที่หลายรูปแบบ -> YYYY-MM-DD */
+function toISODate(raw) {
+  if (raw == null || raw === "") return "";
+  if (typeof raw === "number") {              // Excel serial date
+    const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+    return ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+  const s = String(raw).trim();
+  let m;
+  if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return ymd(fixYear(+m[1]), +m[2], +m[3]);
+  if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/))) {
+    // M365 ใช้ M/D/YYYY ; ถ้าตัวแรก > 12 ถือเป็น D/M/YYYY
+    let a = +m[1], b = +m[2];
+    const [mo, d] = a > 12 ? [b, a] : [a, b];
+    return ymd(fixYear(+m[3]), mo, d);
+  }
+  const t = Date.parse(s);
+  if (!isNaN(t)) { const d = new Date(t); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+  return s;
+}
+const fixYear = y => (y > 2400 ? y - 543 : y);   // พ.ศ. -> ค.ศ.
+
+/** ดึงตัวเลขจากสตริงเงิน เช่น "US$1,234.50" / "−US$89.88" / "THB 1,200" */
+function toNumber(raw) {
+  if (typeof raw === "number") return raw;
+  const s = String(raw || "").replace(/[−–]/g, "-");
+  const neg = /^\s*-|\(.*\)/.test(s);
+  const n = parseFloat(s.replace(/[^0-9.]/g, ""));
+  return isNaN(n) ? 0 : (neg ? -n : n);
+}
+
+function detectCurrency(raw, fallback = "USD") {
+  const s = String(raw || "").toUpperCase();
+  if (/THB|฿|บาท/.test(s)) return "THB";
+  if (/USD|US\$|\$/.test(s)) return "USD";
+  if (/EUR|€/.test(s)) return "EUR";
+  return fallback;
+}
+
+/** Format เงิน: USD -> $123.45 , อื่นๆ -> THB 1,200.00 */
+function fmtMoney(n, cur = "USD") {
+  const v = Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return cur === "USD" ? `$${v}` : `${cur} ${v}`;
+}
+
+/** CSV parser ที่รองรับเครื่องหมายคำพูด / คอมมาในฟิลด์ / บรรทัด SEP= */
+function parseCSV(text) {
+  text = text.replace(/^﻿/, "");
+  let sep = ",";
+  const first = text.split(/\r?\n/, 1)[0];
+  const sm = first.match(/^"?sep=(.)"?\s*$/i);
+  if (sm) { sep = sm[1]; text = text.slice(first.length).replace(/^\r?\n/, ""); }
+  else if (first.split("\t").length > first.split(",").length) sep = "\t";
+
+  const rows = []; let row = [], field = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') q = false;
+      else field += c;
+    } else if (c === '"') q = true;
+    else if (c === sep) { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.map(r => r.map(x => x.trim())).filter(r => r.some(x => x !== ""));
+}
+
+/** หา index ของคอลัมน์จาก keyword */
+function findCol(headers, ...patterns) {
+  const H = headers.map(h => h.toUpperCase());
+  for (const p of patterns) { const i = H.findIndex(h => p.test(h)); if (i >= 0) return i; }
+  return -1;
+}
+
+/** อ่านไฟล์ (csv/txt หรือ xlsx) -> text */
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    const isExcel = /\.xlsx?$/i.test(file.name);
+    r.onerror = () => reject(r.error);
+    r.onload = e => {
+      if (!isExcel) return resolve(e.target.result);
+      if (typeof XLSX === "undefined") return reject(new Error("โหลด SheetJS ไม่สำเร็จ (ต้องต่ออินเทอร์เน็ต)"));
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+      resolve(XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]));
+    };
+    isExcel ? r.readAsArrayBuffer(file) : r.readAsText(file, "UTF-8");
+  });
+}
+
+/* =========================================================
+   3) Parsers
+   ========================================================= */
+
+/** Microsoft 365 Billing invoice list (CSV/XLSX) */
+function parseM365(text) {
+  const rows = parseCSV(text);
+  const hIdx = rows.findIndex(r => r.some(c => /INVOICE/i.test(c)));
+  if (hIdx < 0) throw new Error("ไม่พบหัวตาราง (INVOICE ID / INVOICE DATE)");
+  const h = rows[hIdx];
+  const c = {
+    id: findCol(h, /INVOICE ID/, /INVOICE NUMBER/, /^ID$/),
+    date: findCol(h, /INVOICE DATE/, /^DATE/),
+    period: findCol(h, /BILLING PERIOD/, /PERIOD/),
+    cur: findCol(h, /CURRENCY/),
+    amt: findCol(h, /^TOTAL AMOUNT$/, /TOTAL AMOUNT(?! CURRENCY)/, /AMOUNT/),
+    status: findCol(h, /STATUS/)
+  };
+  if (c.date < 0 || c.amt < 0) throw new Error("ไม่พบคอลัมน์วันที่หรือยอดเงิน");
+
+  return rows.slice(hIdx + 1).filter(r => r[c.date]).map(r => {
+    const cur = c.cur >= 0 ? (r[c.cur] || "USD").toUpperCase() : detectCurrency(r[c.amt]);
+    return {
+      date: toISODate(r[c.date]),
+      invoiceId: c.id >= 0 ? r[c.id] : "",
+      period: c.period >= 0 ? toISODate(r[c.period]) : "",
+      amount: toNumber(r[c.amt]),
+      currency: cur,
+      status: c.status >= 0 ? r[c.status] : "Paid"
+    };
+  });
+}
+
+const TH_MONTHS = { "ม.ค.":1,"ก.พ.":2,"มี.ค.":3,"เม.ย.":4,"พ.ค.":5,"มิ.ย.":6,"ก.ค.":7,"ส.ค.":8,"ก.ย.":9,"ต.ค.":10,"พ.ย.":11,"ธ.ค.":12 };
+const EN_MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+
+/** จับช่วงวันที่ เช่น "1–28 ต.ค. 2569" หรือ "Oct 1 – 28, 2026" */
+function matchPeriod(line) {
+  let m = line.match(/^(\d{1,2})\s*[–-]\s*(\d{1,2})\s+([ก-๙.]+)\s+(\d{4})$/);
+  if (m && TH_MONTHS[m[3]]) return { y: fixYear(+m[4]), mo: TH_MONTHS[m[3]], d1: +m[1], d2: +m[2] };
+  m = line.match(/^([A-Za-z]{3})[a-z]*\s+(\d{1,2})\s*[–-]\s*(\d{1,2}),?\s+(\d{4})$/);
+  if (m && EN_MONTHS[m[1].toLowerCase()]) return { y: +m[4], mo: EN_MONTHS[m[1].toLowerCase()], d1: +m[2], d2: +m[3] };
+  return null;
+}
+
+/** Google Workspace: ข้อความที่คัดลอกจากหน้า Billing หรือ CSV */
+function parseGsuite(text) {
+  const lines = text.split(/\r?\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const out = new Map();
+  const paid = new Set();          // เดือนที่ถูกชำระแล้ว (จากบรรทัดการชำระเงินอัตโนมัติ)
+  let lastPeriod = null;
+
+  for (const line of lines) {
+    const p = matchPeriod(line);
+    if (p) { lastPeriod = p; continue; }
+
+    // การชำระเงินวันที่ 1 ของเดือน M = ชำระยอดของเดือน M-1
+    const pm = line.match(/^(\d{1,2})\s+([ก-๙.A-Za-z]+)\s+(\d{4})\s+(?:การชำระเงินอัตโนมัติ|Automatic payment)/i);
+    if (pm) {
+      const mo = TH_MONTHS[pm[2]] || EN_MONTHS[pm[2].slice(0, 3).toLowerCase()];
+      if (mo) {
+        const prev = new Date(fixYear(+pm[3]), mo - 2, 1);
+        paid.add(`${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`);
+      }
+      continue;
+    }
+
+    const fm = line.match(/^(?:ยอดเงินสุดท้าย|Final balance|Ending balance)\s*:?\s*(.+)$/i);
+    if (fm && lastPeriod) {
+      const { y, mo, d1, d2 } = lastPeriod;
+      const key = `${y}-${pad(mo)}`;
+      if (!out.has(key)) {
+        out.set(key, {
+          date: ymd(y, mo, d1),
+          invoiceId: `GWS-${y}${pad(mo)}`,
+          period: `${ymd(y, mo, d1)} – ${ymd(y, mo, d2)}`,
+          amount: toNumber(fm[1]),
+          currency: detectCurrency(fm[1]),
+          status: ""
+        });
+      }
+    }
+  }
+
+  let list = [...out.values()];
+  if (!list.length) {                       // fallback: CSV
+    list = parseGsuiteCSV(text);
+    if (!list.length) throw new Error("ไม่พบข้อมูล (ต้องมีบรรทัดช่วงวันที่ + 'ยอดเงินสุดท้าย')");
+    list.forEach(r => { if (!r.status) r.status = "ไม่ทราบ"; });
+    return list.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  // สถานะ (อ้างจากข้อมูลจริง):
+  //  Paid            = มีบรรทัดการชำระเงินของเดือนนั้น หรือเดือนที่เก่ากว่าการชำระล่าสุด
+  //  ยังไม่ปิดรอบ    = ยังไม่มีการชำระ และเป็นเดือนปัจจุบัน (ยอดยังสะสมอยู่ ยังไม่ถูกตัดบัตร)
+  //  ค้างชำระ        = ยังไม่มีการชำระ และเป็นเดือนที่ผ่านมาแล้ว
+  const now = new Date(), curYM = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const latestPaid = [...paid].sort().pop() || "";
+  list.forEach(r => {
+    const k = r.date.slice(0, 7);
+    r.status = paid.has(k) || (latestPaid && k < latestPaid) ? "Paid"
+             : k >= curYM ? "ยังไม่ปิดรอบ" : "ค้างชำระ";
+  });
+  list.sort((a, b) => b.date.localeCompare(a.date));
+  return list;
+}
+
+/** Google Workspace CSV (ใบแจ้งหนี้ CSV / Transactions CSV) */
+function parseGsuiteCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
+  const hIdx = rows.findIndex(r => r.some(c => /date|วันที่/i.test(c)));
+  if (hIdx < 0) return [];
+  const h = rows[hIdx];
+  const c = {
+    date: findCol(h, /INVOICE DATE/, /DATE|วันที่/),
+    id: findCol(h, /INVOICE|DOCUMENT|ใบแจ้งหนี้/),
+    desc: findCol(h, /DESCRIPTION|คำอธิบาย/),
+    period: findCol(h, /PERIOD|SERVICE/),
+    amt: findCol(h, /TOTAL|AMOUNT|จำนวนเงิน/),
+    status: findCol(h, /STATUS/)
+  };
+  if (c.date < 0 || c.amt < 0) return [];
+  // รวมยอดตามเดือน (ไม่นับรายการชำระเงิน)
+  const map = new Map();
+  rows.slice(hIdx + 1).forEach(r => {
+    const desc = c.desc >= 0 ? r[c.desc] : "";
+    if (/payment|ชำระเงิน/i.test(desc)) return;
+    const d = toISODate(r[c.date]); if (!/^\d{4}-\d{2}/.test(d)) return;
+    const key = d.slice(0, 7);
+    const cur = map.get(key) || { date: `${key}-01`, invoiceId: c.id >= 0 ? r[c.id] : `GWS-${key.replace("-", "")}`,
+      period: c.period >= 0 ? r[c.period] : key, amount: 0, currency: detectCurrency(r[c.amt]), status: c.status >= 0 ? r[c.status] : "" };
+    cur.amount += toNumber(r[c.amt]);
+    map.set(key, cur);
+  });
+  return [...map.values()];
+}
+
+/* =========================================================
+   4) Import / Merge / Storage
+   ========================================================= */
+function merge(target, items, keyFn) {
+  const map = new Map(state[target].map(r => [keyFn(r), r]));
+  let added = 0, updated = 0;
+  items.forEach(it => { map.has(keyFn(it)) ? updated++ : added++; map.set(keyFn(it), it); });
+  state[target] = [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+  save(); render();
+  return { added, updated };
+}
+const keyM365 = r => r.invoiceId || r.date;
+const keyGsuite = r => r.date.slice(0, 7);
+
+async function getInput(fileId, textId) {
+  const f = document.getElementById(fileId).files[0];
+  if (f) return readFileAsText(f);
+  return document.getElementById(textId).value;
+}
+function showMsg(id, text, ok) { const el = document.getElementById(id); el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); }
+
+async function importM365() {
+  try {
+    const text = await getInput("m365File", "m365Text");
+    if (!text.trim()) throw new Error("กรุณาเลือกไฟล์หรือวางข้อมูล");
+    const { added, updated } = merge("m365", parseM365(text), keyM365);
+    showMsg("m365Msg", `✅ นำเข้าสำเร็จ: เพิ่มใหม่ ${added} / อัปเดต ${updated} รายการ`, true);
+    document.getElementById("m365File").value = ""; document.getElementById("m365Text").value = "";
+  } catch (e) { showMsg("m365Msg", "❌ " + e.message, false); }
+}
+
+async function importGsuite() {
+  try {
+    const text = await getInput("gsuiteFile", "gsuiteText");
+    if (!text.trim()) throw new Error("กรุณาเลือกไฟล์หรือวางข้อมูล");
+    const items = parseGsuite(text);
+    const { added, updated } = merge("gsuite", items, keyGsuite);
+    save(); render();
+    showMsg("gsuiteMsg", `✅ นำเข้าสำเร็จ: เพิ่มใหม่ ${added} / อัปเดต ${updated} รายการ`, true);
+    document.getElementById("gsuiteFile").value = ""; document.getElementById("gsuiteText").value = "";
+  } catch (e) { showMsg("gsuiteMsg", "❌ " + e.message, false); }
+}
+
+function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (s && s.m365 && s.gsuite) {
+    state = s;
+    state.gsuite.forEach(r => { if (r.status === "Pending") r.status = "ยังไม่ปิดรอบ"; });
+    return true;
+  } } catch (e) {}
+  return false;
+}
+function resetToSample() {
+  state = {
+    m365: parseM365(SAMPLE_M365_CSV).sort((a, b) => b.date.localeCompare(a.date)),
+    gsuite: parseGsuite(SAMPLE_GSUITE_TEXT)
+  };
+  save(); render();
+}
+function clearAll() {
+  if (!confirm("ล้างข้อมูลทั้งหมด?")) return;
+  state = { m365: [], gsuite: [] }; save(); render();
+}
+
+
+/* =========================================================
+   6) อัตราแลกเปลี่ยน USD -> THB
+   ========================================================= */
+const RATE_KEY = "itSubDashboard.rate";
+const DEFAULT_RATE = 32.50;          // ค่าเริ่มต้น (แก้ได้ในช่องด้านบน)
+let rate = { value: DEFAULT_RATE, source: "ค่าเริ่มต้น (ยังไม่ได้อัปเดต)", date: "" };
+let viewCur = "USD";   // หน่วยหลัก = USD, แสดง THB คู่กันเสมอ
+let range = "12";        // โหมดรายเดือน: "12" | "all" | "y2026"
+let viewMode = "month";  // "month" | "year"
+let trendChart = null, shareChart = null, monthPie = null;
+let selMonth = "";      // เดือนที่เลือกในแผงสรุปรายเดือน
+let tblMonth = "", tblQuery = "";
+
+function loadRate() {
+  try { const r = JSON.parse(localStorage.getItem(RATE_KEY)); if (r && r.value > 0) rate = r; } catch (e) {}
+  showRate();
+}
+function saveRate() { try { localStorage.setItem(RATE_KEY, JSON.stringify(rate)); } catch (e) {} }
+function showRate() {
+  document.getElementById("rateInput").value = rate.value.toFixed(2);
+  document.getElementById("rateSrc").textContent = `ที่มา: ${rate.source}${rate.date ? " · " + rate.date : ""}`;
+}
+
+/** ดึงอัตราล่าสุด: Frankfurter (ECB) -> สำรอง open.er-api.com */
+async function fetchRate() {
+  const btn = document.getElementById("rateBtn");
+  btn.disabled = true; btn.textContent = "กำลังโหลด...";
+  const sources = [
+    { name: "Frankfurter (ECB)", url: "https://api.frankfurter.dev/v1/latest?base=USD&symbols=THB", pick: j => [j.rates.THB, j.date] },
+    { name: "ExchangeRate-API", url: "https://open.er-api.com/v6/latest/USD", pick: j => [j.rates.THB, (j.time_last_update_utc || "").slice(5, 16)] }
+  ];
+  for (const s of sources) {
+    try {
+      const j = await (await fetch(s.url)).json();
+      const [v, d] = s.pick(j);
+      if (v > 0) { rate = { value: +v, source: s.name, date: d }; saveRate(); showRate(); render(); break; }
+    } catch (e) { /* ลองแหล่งถัดไป */ }
+  }
+  btn.disabled = false; btn.textContent = "↻ อัปเดตอัตราล่าสุด";
+}
+
+/* =========================================================
+   7) Helpers สำหรับการแสดงผล
+   ========================================================= */
+const TH_MON_SHORT = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const monthLabel = ym => { const [y, m] = ym.split("-").map(Number); return `${TH_MON_SHORT[m - 1]} ${String(y + 543).slice(2)}`; };
+
+const toUSD = r => r.currency === "USD" ? r.amount : r.currency === "THB" ? r.amount / rate.value : r.amount;
+const toTHB = r => r.currency === "THB" ? r.amount : toUSD(r) * rate.value;
+const fmtTHB = n => "฿" + Math.round(n).toLocaleString("en-US");
+const fmtTHB2 = n => "฿" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtUSD = n => fmtMoney(n, "USD");
+const fmtView = n => viewCur === "THB" ? fmtTHB(n) : fmtUSD(n);
+const fmtAlt  = n => viewCur === "THB" ? fmtUSD(n / rate.value) : fmtTHB(n * rate.value);
+const conv = r => viewCur === "THB" ? toTHB(r) : toUSD(r);
+const pct = (a, b) => b ? ((a - b) / b) * 100 : null;
+
+/** คืนรายการเดือน (YYYY-MM) ตามช่วงที่เลือก */
+function monthsInRange() {
+  const all = [...new Set([...state.m365, ...state.gsuite].map(r => r.date.slice(0, 7)))].sort();
+  if (!all.length) return [];
+  const last = all[all.length - 1];
+  if (range === "all") return all;
+  if (range.startsWith("y")) return all.filter(m => m.startsWith(range.slice(1)));
+  return all.slice(-12);
+}
+function rangeLabel(months) {
+  if (!months.length) return "-";
+  const t = range === "12" ? "12 เดือนล่าสุด" : range.startsWith("y") ? "ปี " + (+range.slice(1) + 543) : "ทั้งหมด";
+  return `${t} (${monthLabel(months[0])} – ${monthLabel(months[months.length - 1])})`;
+}
+function monthly(list, months) {
+  const m = Object.fromEntries(months.map(k => [k, 0]));
+  list.forEach(r => { const k = r.date.slice(0, 7); if (k in m) m[k] += conv(r); });
+  return months.map(k => m[k]);
+}
+
+/* =========================================================
+   8) Render
+   ========================================================= */
+const beYear = y => +y + 543;
+const allYears = () => [...new Set(allMonths().map(m => m.slice(0, 4)))].sort();
+
+function renderRangeOptions() {
+  const sel = document.getElementById("rangeSel");
+  sel.style.display = viewMode === "year" ? "none" : "";
+  const years = allYears().reverse();
+  const opts = [["12", "12 เดือนล่าสุด"], ...years.map(y => ["y" + y, "ปี " + beYear(y)]), ["all", "ทั้งหมด"]];
+  if (!opts.some(o => o[0] === range)) range = "12";
+  sel.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+  sel.value = range;
+}
+
+const setKpi = (id, v) => { document.getElementById(id).textContent = fmtView(v); document.getElementById(id + "-alt").textContent = fmtAlt(v); };
+const setText = (id, t) => document.getElementById(id).textContent = t;
+function setDelta(d, text) {
+  const dEl = document.getElementById("k-last-delta");
+  if (d == null || !isFinite(d)) {
+    if (text) { dEl.style.display = "inline-block"; dEl.className = "delta"; dEl.textContent = text; }
+    else dEl.style.display = "none";
+    return;
+  }
+  dEl.style.display = "inline-block";
+  dEl.className = "delta " + (d > 0.5 ? "up" : d < -0.5 ? "down" : "");
+  dEl.textContent = `${d > 0 ? "▲" : d < 0 ? "▼" : "■"} ${Math.abs(d).toFixed(1)}% ${text}`;
+}
+
+function render() {
+  renderRangeOptions();
+  document.getElementById("trendTitle").textContent = viewMode === "year" ? "ค่าใช้จ่ายรายปี" : "ค่าใช้จ่ายรายเดือน";
+  if (viewMode === "year") renderYearly(); else renderMonthly();
+  renderMonthSelectors();
+  renderMonth();
+  renderTable();
+}
+
+/* ---------- โหมดรายปี ---------- */
+function renderYearly() {
+  const months = allMonths(), years = allYears();
+  const byYear = list => years.map(y => list.filter(r => r.date.startsWith(y)).reduce((s, r) => s + conv(r), 0));
+  const m365 = byYear(state.m365), gws = byYear(state.gsuite);
+  const total = years.map((_, i) => m365[i] + gws[i]);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const T = sum(total), n = years.length;
+  const monthsOf = y => months.filter(m => m.startsWith(y));
+  const lbl = years.length ? `ทุกปี (${beYear(years[0])}${n > 1 ? "–" + beYear(years[n - 1]) : ""})` : "-";
+
+  document.querySelectorAll(".rangeLbl").forEach(e => e.textContent = lbl);
+  setText("asof", months.length ? monthLabel(months[months.length - 1]) : "-");
+
+  const ly = years[n - 1], lyMonths = ly ? monthsOf(ly) : [];
+  const lyTotal = n ? total[n - 1] : 0;
+  const lyAvg = lyMonths.length ? lyTotal / lyMonths.length : 0;
+  const span = ms => ms.length ? `${TH_MON_SHORT[+ms[0].slice(5) - 1]}–${TH_MON_SHORT[+ms[ms.length - 1].slice(5) - 1]}` : "";
+
+  setText("k-total-lbl", "ค่าใช้จ่ายรวม · " + lbl);            setKpi("k-total", T);
+  setText("k-avg-lbl", `เฉลี่ยต่อเดือน · ปี ${ly ? beYear(ly) : "-"}`); setKpi("k-avg", lyAvg);
+  setText("k-last-lbl", `ปีล่าสุด · ${ly ? beYear(ly) : "-"} (${span(lyMonths)}, ${lyMonths.length} เดือน)`); setKpi("k-last", lyTotal);
+  setText("k-run-lbl", `ประมาณการทั้งปี ${ly ? beYear(ly) : ""}`);    setKpi("k-run", lyAvg * 12);
+  setText("k-run-note", "เฉลี่ยต่อเดือน × 12");
+
+  // เทียบช่วงเดียวกันของปีก่อน (ต้องมีข้อมูลครบทุกเดือนที่เทียบ ทั้งสองระบบ)
+  if (n > 1) {
+    const py = years[n - 2];
+    const same = lyMonths.map(m => py + m.slice(4));
+    const covered = sys => same.every(m => sys.some(r => r.date.startsWith(m)));
+    const sysNow = [state.m365, state.gsuite].filter(l => l.some(r => r.date.startsWith(ly)));
+    if (sysNow.every(covered)) {
+      const prevSame = [...state.m365, ...state.gsuite].filter(r => same.includes(r.date.slice(0, 7))).reduce((s, r) => s + conv(r), 0);
+      setDelta(pct(lyTotal, prevSame), `เทียบช่วงเดียวกันปี ${beYear(py)}`);
+    } else setDelta(null, `ข้อมูลปี ${beYear(py)} ไม่ครบสำหรับเปรียบเทียบ`);
+  } else setDelta(null);
+
+  const labels = years.map(y => [String(beYear(y)), `${monthsOf(y).length} เดือน`]);
+  renderTrend(labels, m365, gws, total, true);
+  renderShare(sum(m365), sum(gws));
+
+  // ประเด็นสำคัญ (รายปี)
+  const out = [];
+  if (!n) { document.getElementById("insights").innerHTML = "<li>ยังไม่มีข้อมูล</li>"; return; }
+  out.push(`ค่าใช้จ่าย IT Subscription รวม${lbl} <b>${fmtView(T)}</b> (${fmtAlt(T)})`);
+  years.forEach((y, i) => out.push(`ปี ${beYear(y)} (${monthsOf(y).length} เดือน): <b>${fmtView(total[i])}</b> (${fmtAlt(total[i])}) — Microsoft 365 ${fmtView(m365[i])} · Google Workspace ${fmtView(gws[i])}`));
+  if (T) out.push(`Microsoft 365 คิดเป็น <b>${(sum(m365) / T * 100).toFixed(1)}%</b> ของค่าใช้จ่ายทั้งหมด Google Workspace <b>${(sum(gws) / T * 100).toFixed(1)}%</b>`);
+  out.push(`ปี ${beYear(ly)} เฉลี่ย <b>${fmtView(lyAvg)}</b> (${fmtAlt(lyAvg)})/เดือน คาดว่าทั้งปีจะอยู่ที่ประมาณ <b>${fmtView(lyAvg * 12)}</b> (${fmtAlt(lyAvg * 12)})`);
+  const partial = years.filter(y => monthsOf(y).length < 12).map(beYear);
+  if (partial.length) out.push(`หมายเหตุ: ปี ${partial.join(", ")} มีข้อมูลไม่ครบ 12 เดือน ยอดรายปีจึงยังไม่ใช่ยอดเต็มปี`);
+  out.push(`ยอดเงินบาทคำนวณที่ 1 USD = ${rate.value.toFixed(2)} THB (ยอดที่ธนาคารเรียกเก็บจริงอาจต่างเล็กน้อยตามอัตราวันตัดบัตร)`);
+  document.getElementById("insights").innerHTML = out.map(x => `<li>${x}</li>`).join("");
+}
+
+/* ---------- โหมดรายเดือน ---------- */
+function renderMonthly() {
+  const months = monthsInRange();
+  const m365 = monthly(state.m365, months);
+  const gws = monthly(state.gsuite, months);
+  const total = months.map((_, i) => m365[i] + gws[i]);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const T = sum(total), T1 = sum(m365), T2 = sum(gws);
+  const n = months.length;
+
+  document.querySelectorAll(".rangeLbl").forEach(e => e.textContent = rangeLabel(months));
+  document.getElementById("asof").textContent = n ? monthLabel(months[n - 1]) : "-";
+
+  // KPI
+  setText("k-total-lbl", "ค่าใช้จ่ายรวม · " + rangeLabel(months));
+  setText("k-avg-lbl", "เฉลี่ยต่อเดือน");
+  setText("k-run-lbl", "ประมาณการต่อปี (Run-rate)");
+  setText("k-run-note", "เดือนล่าสุด × 12");
+  setKpi("k-total", T);
+  setKpi("k-avg", n ? T / n : 0);
+  const last = n ? total[n - 1] : 0, prev = n > 1 ? total[n - 2] : 0;
+  setKpi("k-last", last);
+  setKpi("k-run", last * 12);
+  setText("k-last-lbl", "เดือนล่าสุด · " + (n ? monthLabel(months[n - 1]) : "-"));
+  setDelta(n > 1 ? pct(last, prev) : null, n > 1 ? "เทียบ " + monthLabel(months[n - 2]) : "");
+
+  renderTrend(months.map(monthLabel), m365, gws, total, false);
+  renderShare(T1, T2);
+  renderInsights(months, m365, gws, total);
+}
+
+/** ปลั๊กอินเล็กๆ: เขียนยอดรวมเหนือแท่งเดือนล่าสุดและเดือนสูงสุด */
+const totalLabelPlugin = {
+  id: "totalLabel",
+  afterDatasetsDraw(chart) {
+    const totals = chart.$totals; if (!totals || !totals.length) return;
+    const { ctx } = chart, meta = chart.getDatasetMeta(chart.data.datasets.length - 1);
+    const lastI = totals.length - 1;
+    const maxI = totals.indexOf(Math.max(...totals));
+    const idx = chart.$labelAll ? totals.map((_, i) => i) : [lastI, maxI];
+    new Set(idx).forEach(i => {
+      const bar = meta.data[i]; if (!bar) return;
+      const top = Math.min(...chart.data.datasets.map((_, di) => chart.getDatasetMeta(di).data[i].y));
+      ctx.save();
+      ctx.font = "600 12px 'IBM Plex Sans Thai', sans-serif";
+      ctx.fillStyle = "#0f172a"; ctx.textAlign = "center";
+      ctx.fillText(fmtView(totals[i]), bar.x, top - 20);
+      ctx.fillStyle = "#0f766e"; ctx.font = "500 11px 'IBM Plex Sans Thai', sans-serif";
+      ctx.fillText(fmtAlt(totals[i]), bar.x, top - 6);
+      ctx.restore();
+    });
+  }
+};
+
+function renderTrend(labels, m365, gws, total, labelAll) {
+  if (typeof Chart === "undefined") return;
+  const data = {
+    labels,
+    datasets: [
+      { label: "Microsoft 365", data: m365, backgroundColor: "#0078d4", borderColor: "#fff", borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 0, stack: "s", maxBarThickness: labelAll ? 90 : 44 },
+      { label: "Google Workspace", data: gws, backgroundColor: "#ea4335", borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: false, stack: "s", maxBarThickness: labelAll ? 90 : 44 }
+    ]
+  };
+  const opts = {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    layout: { padding: { top: 36 } },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: "#0f172a", padding: 12, titleFont: { weight: "600" }, boxPadding: 4,
+        callbacks: {
+          title: items => [].concat(items[0].label).join(" · "),
+          label: c => ` ${c.dataset.label}: ${fmtView(c.raw)}  (${fmtAlt(c.raw)})`,
+          footer: items => { const t = items.reduce((s, i) => s + i.raw, 0); return `รวม: ${fmtView(t)}  (${fmtAlt(t)})`; }
+        }
+      }
+    },
+    scales: {
+      x: { stacked: true, grid: { display: false }, ticks: { color: "#475569" }, border: { color: "#cbd5e1" } },
+      y: { stacked: true, beginAtZero: true, grid: { color: "#eef2f6" }, border: { display: false },
+           ticks: { color: "#94a3b8", maxTicksLimit: 6, callback: v => viewCur === "THB" ? "฿" + (v >= 1000 ? (v / 1000) + "k" : v) : "$" + v } }
+    }
+  };
+  if (trendChart) { trendChart.data = data; trendChart.options = opts; }
+  else trendChart = new Chart(document.getElementById("trendChart"), { type: "bar", data, options: opts, plugins: [totalLabelPlugin] });
+  trendChart.$totals = total;
+  trendChart.$labelAll = labelAll;
+  trendChart.update();
+}
+
+function renderShare(T1, T2) {
+  const T = T1 + T2;
+  document.getElementById("donutTotal").textContent = fmtView(T);
+  document.getElementById("donutTotalThb").textContent = fmtAlt(T);
+  const row = (name, color, v) => `<div class="share-row">
+      <span class="n"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${color};margin-right:6px"></i>${name}</span>
+      <span class="v num">${T ? (v / T * 100).toFixed(1) : 0}%</span>
+      <span class="s num">${fmtView(v)} · ${fmtAlt(v)}</span></div>`;
+  document.getElementById("shareList").innerHTML = row("Microsoft 365", "#0078d4", T1) + row("Google Workspace", "#ea4335", T2);
+  if (typeof Chart === "undefined") return;
+  const data = { labels: ["Microsoft 365", "Google Workspace"], datasets: [{ data: [T1, T2], backgroundColor: ["#0078d4", "#ea4335"], borderColor: "#fff", borderWidth: 2, hoverOffset: 4 }] };
+  const opts = { responsive: true, maintainAspectRatio: false, cutout: "72%",
+    plugins: { legend: { display: false }, tooltip: { backgroundColor: "#0f172a", callbacks: { label: c => ` ${c.label}: ${fmtView(c.raw)} (${(c.raw / T * 100).toFixed(1)}%)` } } } };
+  if (shareChart) { shareChart.data = data; shareChart.options = opts; shareChart.update(); }
+  else shareChart = new Chart(document.getElementById("shareChart"), { type: "doughnut", data, options: opts });
+}
+
+function renderInsights(months, m365, gws, total) {
+  const ul = document.getElementById("insights"), out = [];
+  const n = months.length;
+  if (!n) { ul.innerHTML = "<li>ยังไม่มีข้อมูล</li>"; return; }
+  const T = total.reduce((a, b) => a + b, 0), T1 = m365.reduce((a, b) => a + b, 0);
+  out.push(`ช่วง ${rangeLabel(months)} ค่าใช้จ่าย IT Subscription รวม <b>${fmtView(T)}</b> (${fmtAlt(T)}) เฉลี่ย <b>${fmtView(T / n)}</b> (${fmtAlt(T / n)})/เดือน`);
+  if (T) out.push(`Microsoft 365 คิดเป็น <b>${(T1 / T * 100).toFixed(1)}%</b> ของค่าใช้จ่ายทั้งหมด Google Workspace <b>${(100 - T1 / T * 100).toFixed(1)}%</b>`);
+
+  // จุดที่ยอดเปลี่ยนแปลงมากที่สุดของแต่ละระบบ
+  const biggestChange = (arr, name) => {
+    let best = null;
+    for (let i = 1; i < arr.length; i++) {
+      if (!arr[i] || !arr[i - 1]) continue;
+      const p = pct(arr[i], arr[i - 1]);
+      if (Math.abs(p) >= 5 && (!best || Math.abs(p) > Math.abs(best.p))) best = { i, p };
+    }
+    if (best) out.push(`${name} ${best.p > 0 ? "เพิ่มขึ้น" : "ลดลง"} <b>${Math.abs(best.p).toFixed(1)}%</b> ใน ${monthLabel(months[best.i])} (${fmtView(arr[best.i - 1])} → ${fmtView(arr[best.i])} · ${fmtAlt(arr[best.i - 1])} → ${fmtAlt(arr[best.i])})`);
+  };
+  biggestChange(m365, "Microsoft 365");
+  biggestChange(gws, "Google Workspace");
+
+  const last = total[n - 1];
+  out.push(`หากค่าใช้จ่ายคงที่ระดับเดือนล่าสุด ประมาณการทั้งปีอยู่ที่ <b>${fmtView(last * 12)}</b> (${fmtAlt(last * 12)})`);
+  const pending = state.gsuite.concat(state.m365).filter(r => /pend|unpaid|due|ยังไม่ปิด|ค้าง/i.test(r.status));
+  if (pending.length) out.push(`มี <b>${pending.length}</b> รายการยังไม่ชำระ (รวมรอบที่ยังไม่ปิด) รวม <b>${fmtView(pending.reduce((s, r) => s + conv(r), 0))}</b> (${fmtAlt(pending.reduce((s, r) => s + conv(r), 0))}) (ตัดบัตรอัตโนมัติรอบถัดไป)`);
+  out.push(`ยอดเงินบาทคำนวณที่ 1 USD = ${rate.value.toFixed(2)} THB (ยอดที่ธนาคารเรียกเก็บจริงอาจต่างเล็กน้อยตามอัตราวันตัดบัตร)`);
+  ul.innerHTML = out.map(s => `<li>${s}</li>`).join("");
+}
+
+function renderTable() {
+  const rows = [
+    ...(filter !== "gsuite" ? state.m365.map(r => ({ ...r, src: "m365" })) : []),
+    ...(filter !== "m365" ? state.gsuite.map(r => ({ ...r, src: "gsuite" })) : [])
+  ].sort((a, b) => b.date.localeCompare(a.date))
+   .filter(r => !tblMonth || r.date.startsWith(tblMonth))
+   .filter(r => !tblQuery || [r.invoiceId, r.status, r.date, r.period, r.src === "m365" ? "microsoft 365 m365" : "google workspace gws"]
+                              .join(" ").toLowerCase().includes(tblQuery));
+  document.getElementById("tblMonthLbl").textContent = tblMonth ? "· " + monthLabelLong(tblMonth) : "";
+  const el = document.getElementById("table-container");
+  if (!rows.length) { el.innerHTML = (state.m365.length + state.gsuite.length) ? "<p style='color:var(--text-3)'>ไม่พบรายการตามเงื่อนไขที่เลือก</p>" : "<p style='color:var(--text-3)'>ยังไม่มีข้อมูล — เปิดส่วน “นำเข้าข้อมูล” ด้านบน</p>"; return; }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const badge = s => `<span class="badge ${/paid/i.test(s) ? "paid" : /pend|unpaid|due|ยังไม่ปิด|ค้าง/i.test(s) ? "pending" : "other"}">${esc(s)}</span>`;
+  const sumUSD = rows.reduce((s, r) => s + toUSD(r), 0), sumTHB = rows.reduce((s, r) => s + toTHB(r), 0);
+  el.innerHTML = `<table>
+    <thead><tr><th>ระบบ</th><th>Date</th><th>Invoice ID</th><th>Billing Period</th><th class="r">Total Amount (USD)</th><th class="r">Total Amount (THB)</th><th>Status</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td><span class="srcb ${r.src}">${r.src === "m365" ? "M365" : "GWS"}</span></td>
+      <td class="num">${esc(r.date)}</td><td>${esc(r.invoiceId)}</td><td class="num">${esc(r.period)}</td>
+      <td class="r">${fmtMoney(r.amount, r.currency)}</td><td class="r thb">${fmtTHB2(toTHB(r))}</td><td>${badge(r.status)}</td></tr>`).join("")}
+    </tbody>
+    <tfoot><tr><td colspan="4">รวม ${rows.length} รายการ</td><td class="r">${fmtUSD(sumUSD)}</td><td class="r">${fmtTHB2(sumTHB)}</td><td></td></tr></tfoot>
+    </table>`;
+}
+
+/* =========================================================
+   8.1) สรุปรายเดือน + Pie chart
+   ========================================================= */
+const TH_MON_LONG = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const monthLabelLong = ym => { const [y, m] = ym.split("-").map(Number); return `${TH_MON_LONG[m - 1]} ${y + 543}`; };
+const allMonths = () => [...new Set([...state.m365, ...state.gsuite].map(r => r.date.slice(0, 7)))].sort();
+
+function renderMonthSelectors() {
+  const months = allMonths().reverse();             // ใหม่ -> เก่า
+  if (!months.includes(selMonth)) selMonth = months[0] || "";
+  if (tblMonth && !months.includes(tblMonth)) tblMonth = "";
+  const opts = months.map(m => `<option value="${m}">${monthLabelLong(m)}</option>`).join("");
+  const ms = document.getElementById("monthSel"); ms.innerHTML = opts; ms.value = selMonth;
+  const ts = document.getElementById("tblMonth"); ts.innerHTML = `<option value="">ทุกเดือน</option>` + opts; ts.value = tblMonth;
+  document.getElementById("mPrev").disabled = !months.length || selMonth === months[months.length - 1];
+  document.getElementById("mNext").disabled = !months.length || selMonth === months[0];
+}
+
+function renderMonth() {
+  const ym = selMonth;
+  const panel = document.getElementById("monthPanel");
+  if (!ym) { panel.style.display = "none"; return; }
+  panel.style.display = "";
+  const months = allMonths(), idx = months.indexOf(ym), prevYm = idx > 0 ? months[idx - 1] : null;
+  const sumOf = (list, m) => list.filter(r => r.date.startsWith(m)).reduce((s, r) => s + toUSD(r), 0);
+  const a = sumOf(state.m365, ym), b = sumOf(state.gsuite, ym), T = a + b;
+  const pa = prevYm ? sumOf(state.m365, prevYm) : null, pb = prevYm ? sumOf(state.gsuite, prevYm) : null;
+  const last12 = months.slice(Math.max(0, idx - 11), idx + 1);
+  const avg12 = last12.reduce((s, m) => s + sumOf(state.m365, m) + sumOf(state.gsuite, m), 0) / last12.length;
+
+  document.getElementById("mName").textContent = monthLabelLong(ym);
+  document.getElementById("mTotal").textContent = fmtUSD(T);
+  document.getElementById("mTotalThb").textContent = fmtTHB(T * rate.value);
+
+  const chip = (d, text) => {
+    if (d == null || !isFinite(d)) return "";
+    const cls = d > 0.5 ? "up" : d < -0.5 ? "down" : "";
+    return `<span class="chip ${cls}">${d > 0 ? "▲" : d < 0 ? "▼" : "■"} ${Math.abs(d).toFixed(1)}% ${text}</span>`;
+  };
+  document.getElementById("mChips").innerHTML =
+    (prevYm ? chip(pct(T, pa + pb), "เทียบ " + monthLabel(prevYm)) : `<span class="chip">เดือนแรกของข้อมูล</span>`) +
+    (last12.length > 1 ? chip(pct(T, avg12), `เทียบค่าเฉลี่ย ${last12.length} เดือน`) : "");
+
+  const sysRow = (name, color, v, pv) => {
+    const share = T ? v / T * 100 : 0, d = pv ? pct(v, pv) : null;
+    const dTxt = d == null ? (pv === 0 && v > 0 ? "เริ่มเดือนนี้" : "-") :
+      `<span style="color:${d > 0.5 ? "var(--up)" : d < -0.5 ? "var(--down)" : "inherit"}">${d > 0 ? "▲" : d < 0 ? "▼" : "■"} ${Math.abs(d).toFixed(1)}%</span> เทียบเดือนก่อน`;
+    return `<div class="sys-row">
+      <div class="top"><span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${color};margin-right:6px"></i>${name}</span>
+        <b class="num">${fmtUSD(v)} <span style="color:#0f766e">${fmtTHB(v * rate.value)}</span></b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${share}%;background:${color}"></div></div>
+      <div class="sub"><span>${share.toFixed(1)}% ของเดือนนี้</span><span>${dTxt}</span></div></div>`;
+  };
+  document.getElementById("mSys").innerHTML = sysRow("Microsoft 365", "#0078d4", a, pa) + sysRow("Google Workspace", "#ea4335", b, pb);
+
+  // ใบแจ้งหนี้ของเดือน
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const inv = [...state.m365.map(r => ({ ...r, src: "m365" })), ...state.gsuite.map(r => ({ ...r, src: "gsuite" }))]
+    .filter(r => r.date.startsWith(ym)).sort((x, y) => y.date.localeCompare(x.date));
+  document.getElementById("mInvoices").innerHTML = inv.length ? `<table><tbody>${inv.map(r => `<tr>
+      <td><span class="srcb ${r.src}">${r.src === "m365" ? "M365" : "GWS"}</span></td>
+      <td class="num">${esc(r.date)}<div style="font-size:11px;color:var(--text-3)">${esc(r.invoiceId)}</div></td>
+      <td class="r">${fmtMoney(r.amount, r.currency)}<div style="font-size:11px;color:#0f766e">${fmtTHB2(toTHB(r))}</div></td>
+      <td><span class="badge ${/paid/i.test(r.status) ? "paid" : /pend|unpaid|due|ยังไม่ปิด|ค้าง/i.test(r.status) ? "pending" : "other"}">${esc(r.status)}</span></td></tr>`).join("")}</tbody></table>`
+    : "<p style='color:var(--text-3);font-size:13px'>ไม่มีใบแจ้งหนี้</p>";
+
+  // Pie chart
+  if (typeof Chart === "undefined") return;
+  const data = { labels: ["Microsoft 365", "Google Workspace"],
+    datasets: [{ data: [a, b], backgroundColor: ["#0078d4", "#ea4335"], borderColor: "#fff", borderWidth: 2, hoverOffset: 6 }] };
+  const opts = { responsive: true, maintainAspectRatio: false, layout: { padding: 8 },
+    plugins: { legend: { display: false },
+      tooltip: { backgroundColor: "#0f172a", padding: 10, callbacks: { label: c => ` ${c.label}: ${fmtUSD(c.raw)} · ${fmtTHB(c.raw * rate.value)} (${T ? (c.raw / T * 100).toFixed(1) : 0}%)` } } } };
+  if (monthPie) { monthPie.data = data; monthPie.options = opts; monthPie.update(); }
+  else monthPie = new Chart(document.getElementById("monthPie"), { type: "pie", data, options: opts, plugins: [pieLabelPlugin] });
+}
+
+/** เขียน % ลงบนชิ้นพาย (เฉพาะชิ้นที่ใหญ่พอ) */
+const pieLabelPlugin = {
+  id: "pieLabel",
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart, ds = chart.data.datasets[0], total = ds.data.reduce((s, v) => s + v, 0);
+    if (!total) return;
+    chart.getDatasetMeta(0).data.forEach((arc, i) => {
+      const share = ds.data[i] / total; if (share < 0.08) return;
+      const p = arc.tooltipPosition();
+      ctx.save(); ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "700 15px 'IBM Plex Sans Thai', sans-serif";
+      ctx.fillText((share * 100).toFixed(1) + "%", p.x, p.y);
+      ctx.restore();
+    });
+  }
+};
+
+/* =========================================================
+   9) Events & Init
+   ========================================================= */
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active"); filter = t.dataset.f; renderTable();
+}));
+const stepMonth = dir => {
+  const months = allMonths(), i = months.indexOf(selMonth) + dir;
+  if (i >= 0 && i < months.length) { selMonth = months[i]; renderMonthSelectors(); renderMonth(); }
+};
+document.getElementById("mPrev").addEventListener("click", () => stepMonth(-1));
+document.getElementById("mNext").addEventListener("click", () => stepMonth(1));
+document.getElementById("monthSel").addEventListener("change", e => { selMonth = e.target.value; renderMonthSelectors(); renderMonth(); });
+document.getElementById("mToTable").addEventListener("click", () => {
+  tblMonth = selMonth; document.getElementById("tblMonth").value = tblMonth; renderTable();
+  document.getElementById("table-container").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.getElementById("tblMonth").addEventListener("change", e => { tblMonth = e.target.value; renderTable(); });
+document.getElementById("tblSearch").addEventListener("input", e => { tblQuery = e.target.value.trim().toLowerCase(); renderTable(); });
+document.querySelectorAll("#viewSeg button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#viewSeg button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active"); viewMode = b.dataset.v; render();
+}));
+document.getElementById("rangeSel").addEventListener("change", e => { range = e.target.value; render(); });
+document.getElementById("rateInput").addEventListener("change", e => {
+  const v = parseFloat(e.target.value);
+  if (v > 0) { rate = { value: v, source: "กำหนดเอง", date: new Date().toISOString().slice(0, 10) }; saveRate(); showRate(); render(); }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadRate();
+  if (!load()) resetToSample(); else render();
+  // อัปเดตอัตราอัตโนมัติถ้ายังไม่เคยดึง หรือข้อมูลเก่ากว่า 1 วัน
+  const today = new Date().toISOString().slice(0, 10);
+  if (rate.source !== "กำหนดเอง" && rate.date !== today) fetchRate();
+});
+</script>
+</body>
+</html>
