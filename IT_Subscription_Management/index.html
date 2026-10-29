@@ -106,6 +106,24 @@
     details.panel summary { cursor: pointer; font-weight: 600; font-size: 16px; }
     .import-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
     .import-box { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; }
+    .dropzone { display: block; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 26px 16px; text-align: center; cursor: pointer; background: #fafbfc; transition: .15s; }
+    .dropzone:hover, .dropzone.over { border-color: var(--accent); background: #f0fdfa; }
+    .dz-title { font-weight: 600; font-size: 15px; }
+    .dz-sub { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.6; }
+    .paste { margin-top: 12px; }
+    .paste summary { cursor: pointer; font-size: 13px; color: var(--text-2); }
+    .preview-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-top: 10px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+    .preview-card b { font-weight: 600; }
+    .preview-card .meta { color: var(--text-2); }
+    .preview-card.err { border-color: #fecaca; background: #fef2f2; color: var(--up); }
+    .preview-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .conn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: #fff; max-width: 100%; }
+    .conn .dot { width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; flex: none; }
+    .conn.ok { color: #065f46; border-color: #a7f3d0; } .conn.ok .dot { background: #10b981; box-shadow: 0 0 0 3px #d1fae5; }
+    .conn.wait { color: #92400e; border-color: #fde68a; } .conn.wait .dot { background: #f59e0b; }
+    .conn.err { color: #991b1b; border-color: #fecaca; } .conn.err .dot { background: #ef4444; }
+    .conn.off { color: var(--text-2); } .conn.off .dot { background: #cbd5e1; }
     .import-box h3 { font-size: 14px; margin-bottom: 4px; }
     .import-box p { font-size: 12px; color: var(--text-2); margin-bottom: 8px; }
     textarea { width: 100%; height: 100px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; margin: 8px 0; resize: vertical; font-family: inherit; }
@@ -151,6 +169,8 @@
         <button data-v="year">รายปี</button>
       </div>
       <select id="rangeSel" title="ช่วงเวลา"></select>
+      <div class="conn wait" id="connPill"><span class="dot"></span><span id="connText">กำลังเริ่มต้น…</span></div>
+      <button class="btn" onclick="loadFromSheet()" title="ตรวจสอบการเชื่อมต่อและดึงข้อมูลล่าสุด">↻ ตรวจสอบ</button>
       <button class="btn" onclick="window.print()">🖨️ พิมพ์ / PDF</button>
     </div>
   </header>
@@ -222,26 +242,22 @@
     </div>
   </div>
 
-  <!-- Import (ซ่อนได้ เพื่อให้หน้าผู้บริหารสะอาด) -->
-  <details class="panel no-print">
-    <summary>📥 นำเข้าข้อมูล / จัดการข้อมูล</summary>
-    <div class="import-grid">
-      <div class="import-box">
-        <h3>Microsoft 365 — Billing invoice list</h3>
-        <p>.csv / .xlsx จาก M365 Admin Center (Billing &gt; Bills &amp; payments)</p>
-        <input type="file" id="m365File" accept=".csv,.xlsx,.xls">
-        <textarea id="m365Text" placeholder="หรือวางเนื้อหา CSV ที่นี่..."></textarea>
-        <button class="btn btn-blue" onclick="importM365()">นำเข้า Microsoft 365</button>
-        <div class="msg" id="m365Msg"></div>
-      </div>
-      <div class="import-box">
-        <h3>Google Workspace — Billing</h3>
-        <p>คัดลอกข้อความจากหน้า Admin Console &gt; Billing มาวาง (ไทย/อังกฤษ) หรือเลือกไฟล์ CSV</p>
-        <input type="file" id="gsuiteFile" accept=".csv,.xlsx,.xls,.txt">
-        <textarea id="gsuiteText" placeholder="1–28 ต.ค. 2569&#10;ยอดเงินสุดท้าย: US$81.18&#10;..."></textarea>
-        <button class="btn btn-red" onclick="importGsuite()">นำเข้า Google Workspace</button>
-        <div class="msg" id="gsuiteMsg"></div>
-      </div>
+  <!-- อัปโหลดข้อมูล (ซ่อนได้ เพื่อให้หน้าผู้บริหารสะอาด) -->
+  <details class="panel no-print" id="uploadPanel">
+    <summary>📥 อัปโหลดข้อมูล</summary>
+    <div style="margin-top:14px">
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.txt" multiple hidden>
+        <div class="dz-title">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</div>
+        <div class="dz-sub">เลือกได้หลายไฟล์พร้อมกัน ระบบตรวจชนิดไฟล์ให้อัตโนมัติ<br>
+          Microsoft 365: Billing invoice list (.csv / .xlsx) · Google Workspace: Account activities (.csv)</div>
+      </label>
+      <details class="paste">
+        <summary>หรือวางข้อความ Billing ของ Google (คัดลอกจากหน้า Admin Console)</summary>
+        <textarea id="pasteText" placeholder="1–28 ต.ค. 2569&#10;ยอดเงินสุดท้าย: US$81.18&#10;..."></textarea>
+        <button class="btn" id="pasteBtn">ตรวจสอบข้อความ</button>
+      </details>
+      <div id="previewBox"></div>
     </div>
     <div class="toolbar" style="margin-top:14px">
       <button class="btn" onclick="clearAll()">🗑️ ล้างข้อมูลทั้งหมด</button>
@@ -267,53 +283,18 @@
 
 <script>
 /* =========================================================
-   1) ข้อมูลตัวอย่าง (แปลงจากไฟล์ที่ให้มาแล้ว)
+   1) การตั้งค่า (ข้อมูลทั้งหมดอ่านจาก Google Sheet)
    ========================================================= */
 const HEADER = ["Date", "Invoice ID", "Billing Period", "Total Amount", "Status"];
-const STORAGE_KEY = "itSubDashboard.v1";
 
-const SAMPLE_M365_CSV = `SEP=,
-INVOICE ID,INVOICE DATE (UTC),BILLING PERIOD (UTC),BILLING PROFILE,TOTAL AMOUNT CURRENCY,TOTAL AMOUNT,STATUS,
-"G193303834","10/23/2026","10/22/2026","Ruamsinthaigroup","USD","314.58","Paid",
-"G186349434","9/23/2026","9/22/2026","Ruamsinthaigroup","USD","314.58","Paid",
-"G179553411","8/23/2026","8/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G173056111","7/23/2026","7/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G166553099","6/23/2026","6/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G160368920","5/23/2026","5/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G154212351","4/23/2026","4/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G148250266","3/23/2026","3/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G142484495","2/23/2026","2/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G136675769","1/23/2026","1/22/2026","Ruamsinthaigroup","USD","280.88","Paid",
-"G131088440","12/23/2025","12/22/2025","Ruamsinthaigroup","USD","280.88","Paid",
-"G125590063","11/23/2025","11/22/2025","Ruamsinthaigroup","USD","280.88","Paid",
-"G120245725","10/23/2025","10/22/2025","Ruamsinthaigroup","USD","280.88","Paid",`;
+/* ===== การเชื่อม Google Sheet (Apps Script Web App) =====
+   วาง URL ที่ได้จากการ Deploy และรหัส TOKEN ที่ตั้งไว้ในไฟล์ Code.js
+   ถ้ายังไม่วาง หน้านี้จะบันทึกเฉพาะในเบราว์เซอร์ */
+const API_URL = "https://script.google.com/macros/s/AKfycbyvTYZgMsODRfEIRQ0DcfAFGYMKeWMjFDSzcrNK9PTzYAXTA3WuY_0F6dutBV2DnLWX5g/exec";
+const API_TOKEN = "Qm7vT2xLp9WzRk4HsD1axcsdewsLpOjkGFDXvzgabxcs";
+const API_CONFIGURED = API_URL.startsWith("https://script.google.com/") && !API_TOKEN.startsWith("วาง_");
 
-const SAMPLE_GSUITE_TEXT = `1–28 ต.ค. 2569
-ยอดเงินสุดท้าย: US$81.18
-1–30 ก.ย. 2569
-1 ต.ค. 2569 การชำระเงินอัตโนมัติ:: Visa  • • • • 1118 A63246005571215927
-−US$89.88
-ยอดเงินสุดท้าย: US$89.88
-1–31 ส.ค. 2569
-1 ก.ย. 2569 การชำระเงินอัตโนมัติ:: Visa  • • • • 1118 A12228959523811714
-−US$105.79
-ยอดเงินสุดท้าย: US$105.79
-1–31 ก.ค. 2569
-ยอดเงินสุดท้าย: US$116.84
-1–30 มิ.ย. 2569
-ยอดเงินสุดท้าย: US$108.16
-1–31 พ.ค. 2569
-ยอดเงินสุดท้าย: US$108.42
-1–30 เม.ย. 2569
-ยอดเงินสุดท้าย: US$110.85
-1–31 มี.ค. 2569
-ยอดเงินสุดท้าย: US$107.86
-1–28 ก.พ. 2569
-ยอดเงินสุดท้าย: US$109.78
-1–31 ม.ค. 2569
-ยอดเงินสุดท้าย: US$116.84`;
-
-/* state: แต่ละรายการ = { date, invoiceId, period, amount(number), currency, status } */
+/* state: แต่ละรายการ = { date, invoiceId, period, amount(number), currency, status } — โหลดจาก Google Sheet เท่านั้น */
 let state = { m365: [], gsuite: [] };
 let chart = null;
 let filter = "all";
@@ -334,11 +315,11 @@ function toISODate(raw) {
   const s = String(raw).trim();
   let m;
   if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return ymd(fixYear(+m[1]), +m[2], +m[3]);
-  if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/))) {
+  if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/))) {
     // M365 ใช้ M/D/YYYY ; ถ้าตัวแรก > 12 ถือเป็น D/M/YYYY
     let a = +m[1], b = +m[2];
     const [mo, d] = a > 12 ? [b, a] : [a, b];
-    return ymd(fixYear(+m[3]), mo, d);
+    return ymd(m[3].length === 2 ? 2000 + +m[3] : fixYear(+m[3]), mo, d);
   }
   const t = Date.parse(s);
   if (!isNaN(t)) { const d = new Date(t); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
@@ -413,7 +394,7 @@ function readFileAsText(file) {
       if (!isExcel) return resolve(e.target.result);
       if (typeof XLSX === "undefined") return reject(new Error("โหลด SheetJS ไม่สำเร็จ (ต้องต่ออินเทอร์เน็ต)"));
       const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-      resolve(XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]));
+      resolve(XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { raw: false, dateNF: "yyyy-mm-dd", blankrows: false }));
     };
     isExcel ? r.readAsArrayBuffer(file) : r.readAsText(file, "UTF-8");
   });
@@ -511,19 +492,82 @@ function parseGsuite(text) {
     return list.sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  // สถานะ (อ้างจากข้อมูลจริง):
-  //  Paid            = มีบรรทัดการชำระเงินของเดือนนั้น หรือเดือนที่เก่ากว่าการชำระล่าสุด
-  //  ยังไม่ปิดรอบ    = ยังไม่มีการชำระ และเป็นเดือนปัจจุบัน (ยอดยังสะสมอยู่ ยังไม่ถูกตัดบัตร)
-  //  ค้างชำระ        = ยังไม่มีการชำระ และเป็นเดือนที่ผ่านมาแล้ว
+  return finalizeGsuite(list, paid);
+}
+
+/** สถานะ Google: Paid / ยังไม่ปิดรอบ / ค้างชำระ (ใช้ร่วมกันทุกรูปแบบไฟล์) */
+function finalizeGsuite(list, paid) {
   const now = new Date(), curYM = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
   const latestPaid = [...paid].sort().pop() || "";
   list.forEach(r => {
     const k = r.date.slice(0, 7);
-    r.status = paid.has(k) || (latestPaid && k < latestPaid) ? "Paid"
-             : k >= curYM ? "ยังไม่ปิดรอบ" : "ค้างชำระ";
+    if (paid.has(k) || (latestPaid && k < latestPaid)) r.status = "Paid";
+    else if (k >= curYM) r.status = "ยังไม่ปิดรอบ";
+    else if (latestPaid) r.status = "ค้างชำระ";          // มีหลักฐานการชำระเงินในไฟล์ แต่รอบนี้ยังไม่มีการชำระ
+    else r.status = "ไม่ทราบ";                           // ไม่มีบรรทัดการชำระเงิน จึงยืนยันไม่ได้
   });
-  list.sort((a, b) => b.date.localeCompare(a.date));
-  return list;
+  return list.sort((x, y) => y.date.localeCompare(x.date));
+}
+
+/** วันที่ภาษาไทย เช่น "1–28 ต.ค. 2569" / "30 ต.ค. 2569" */
+function parseThDate(s) {
+  const m = String(s).match(/(\d{1,2})(?:\s*[–-]\s*(\d{1,2}))?\s+([ก-๙.A-Za-z]+)\s+(\d{4})/);
+  if (!m) return null;
+  const mo = TH_MONTHS[m[3]] || EN_MONTHS[m[3].slice(0, 3).toLowerCase()];
+  if (!mo) return null;
+  return { y: fixYear(+m[4]), mo, d1: +m[1], d2: m[2] ? +m[2] : +m[1] };
+}
+
+/** ไฟล์ Account activities ของ Google: วันที่, คำอธิบาย, จำนวนเงิน (USD) */
+function parseGsuiteActivity(text) {
+  const rows = parseCSV(text);
+  const hIdx = rows.findIndex(r => r.some(c => /คำอธิบาย|description/i.test(c)));
+  if (hIdx < 0) return [];
+  const h = rows[hIdx];
+  const cDate = findCol(h, /วันที่|DATE/), cDesc = findCol(h, /คำอธิบาย|DESCRIPTION/), cAmt = findCol(h, /จำนวนเงิน|AMOUNT/);
+  if (cDate < 0 || cDesc < 0 || cAmt < 0) return [];
+
+  // รวมยอดรายเดือนจากรายการ "การใช้งาน" + "ภาษี" (ไม่รวมยอดคงเหลือสะสม)
+  const months = new Map(), paid = new Set();
+  const getM = key => months.get(key) || months.set(key, { usage: 0, vat: 0, minD: 99, maxD: 0, y: 0, mo: 0 }).get(key);
+  rows.slice(hIdx + 1).forEach(r => {
+    const dt = parseThDate(r[cDate]); if (!dt) return;
+    const desc = r[cDesc] || "", amt = toNumber(r[cAmt]);
+    const key = `${dt.y}-${pad(dt.mo)}`;
+    if (/การชำระเงินอัตโนมัติ|Automatic payment/i.test(desc)) {
+      const prev = new Date(dt.y, dt.mo - 2, 1);                             // ชำระวันที่ 1 = ชำระยอดเดือนก่อน
+      paid.add(`${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`);
+      return;
+    }
+    if (/ยอดเงินเริ่มต้น|ยอดเงินสุดท้าย|Opening balance|Final balance|Ending balance/i.test(desc)) return;   // ยอดสะสม ไม่ใช่ค่าใช้จ่ายของเดือน
+    const m = getM(key);
+    m.y = dt.y; m.mo = dt.mo;
+    m.minD = Math.min(m.minD, dt.d1); m.maxD = Math.max(m.maxD, dt.d2);
+    if (/ภาษี|VAT|tax/i.test(desc)) m.vat += amt;
+    else m.usage += amt;
+  });
+
+  const list = [...months.entries()].filter(([, m]) => m.usage || m.vat).map(([key, m]) => {
+    // ถ้าไม่มีบรรทัดภาษีในเดือนนั้น ใช้ VAT 7% คำนวณจากยอดใช้งาน
+    const total = m.vat ? m.usage + m.vat : m.usage * 1.07;
+    return {
+      date: ymd(m.y, m.mo, 1), invoiceId: `GWS-${key.replace("-", "")}`,
+      period: `${ymd(m.y, m.mo, m.minD)} – ${ymd(m.y, m.mo, m.maxD)}`,
+      amount: Math.round(total * 100) / 100, currency: "USD", status: ""
+    };
+  });
+  if (!list.length) throw new Error("ไม่พบรายการการใช้งานในไฟล์ Account activities");
+  return finalizeGsuite(list, paid);
+}
+
+/** ตรวจชนิดไฟล์จากเนื้อหา */
+function detectSource(text) {
+  const t = text.replace(/^\uFEFF/, "");
+  if (/INVOICE ID/i.test(t) && /TOTAL AMOUNT/i.test(t)) return "m365";
+  const first = t.split(/\r?\n/).find(l => l.trim()) || "";
+  if (/^"?(วันที่|date)"?\s*,\s*"?(คำอธิบาย|description)/i.test(first)) return "gsuite-activity";
+  if (/ยอดเงินสุดท้าย|Final balance|Ending balance/i.test(t)) return "gsuite-text";
+  return null;
 }
 
 /** Google Workspace CSV (ใบแจ้งหนี้ CSV / Transactions CSV) */
@@ -563,7 +607,13 @@ function parseGsuiteCSV(text) {
 function merge(target, items, keyFn) {
   const map = new Map(state[target].map(r => [keyFn(r), r]));
   let added = 0, updated = 0;
-  items.forEach(it => { map.has(keyFn(it)) ? updated++ : added++; map.set(keyFn(it), it); });
+  items.forEach(it => {
+    const old = map.get(keyFn(it));
+    // ไฟล์ที่ไม่มีหลักฐานการชำระเงิน จะไม่ลบสถานะ Paid เดิมของเดือนนั้น
+    if (old && it.status === "ไม่ทราบ" && old.status) it.status = old.status;
+    old ? updated++ : added++;
+    map.set(keyFn(it), it);
+  });
   state[target] = [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
   save(); render();
   return { added, updated };
@@ -571,54 +621,166 @@ function merge(target, items, keyFn) {
 const keyM365 = r => r.invoiceId || r.date;
 const keyGsuite = r => r.date.slice(0, 7);
 
-async function getInput(fileId, textId) {
-  const f = document.getElementById(fileId).files[0];
-  if (f) return readFileAsText(f);
-  return document.getElementById(textId).value;
-}
-function showMsg(id, text, ok) { const el = document.getElementById(id); el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); }
+/* ---------- นำเข้าไฟล์ (ตรวจชนิด -> แสดงตัวอย่าง -> ยืนยันนำเข้า) ---------- */
+let pending = [];   // [{ name, kind, records } | { name, error }]
+const KIND_LABEL = { "m365": "Microsoft 365 Billing", "gsuite-activity": "Google Account activities", "gsuite-text": "Google Billing (ข้อความ)" };
 
-async function importM365() {
-  try {
-    const text = await getInput("m365File", "m365Text");
-    if (!text.trim()) throw new Error("กรุณาเลือกไฟล์หรือวางข้อมูล");
-    const { added, updated } = merge("m365", parseM365(text), keyM365);
-    showMsg("m365Msg", `✅ นำเข้าสำเร็จ: เพิ่มใหม่ ${added} / อัปเดต ${updated} รายการ`, true);
-    document.getElementById("m365File").value = ""; document.getElementById("m365Text").value = "";
-  } catch (e) { showMsg("m365Msg", "❌ " + e.message, false); }
+function parseByKind(kind, text) {
+  if (kind === "m365") return parseM365(text);
+  if (kind === "gsuite-activity") return parseGsuiteActivity(text);
+  return parseGsuite(text);
 }
 
-async function importGsuite() {
-  try {
-    const text = await getInput("gsuiteFile", "gsuiteText");
-    if (!text.trim()) throw new Error("กรุณาเลือกไฟล์หรือวางข้อมูล");
-    const items = parseGsuite(text);
-    const { added, updated } = merge("gsuite", items, keyGsuite);
-    save(); render();
-    showMsg("gsuiteMsg", `✅ นำเข้าสำเร็จ: เพิ่มใหม่ ${added} / อัปเดต ${updated} รายการ`, true);
-    document.getElementById("gsuiteFile").value = ""; document.getElementById("gsuiteText").value = "";
-  } catch (e) { showMsg("gsuiteMsg", "❌ " + e.message, false); }
+async function addSources(sources) {
+  pending = [];
+  for (const src of sources) {
+    const kind = detectSource(src.text);
+    if (!kind) { pending.push({ name: src.name, error: "ไม่รู้จักรูปแบบไฟล์นี้ (รองรับ M365 Billing, Google Account activities และข้อความ Billing ของ Google)" }); continue; }
+    try { pending.push({ name: src.name, kind, records: parseByKind(kind, src.text) }); }
+    catch (e) { pending.push({ name: src.name, error: e.message }); }
+  }
+  renderPreview();
 }
 
-function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
-function load() {
-  try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (s && s.m365 && s.gsuite) {
-    state = s;
-    state.gsuite.forEach(r => { if (r.status === "Pending") r.status = "ยังไม่ปิดรอบ"; });
-    return true;
-  } } catch (e) {}
-  return false;
+function renderPreview() {
+  const box = document.getElementById("previewBox");
+  if (!pending.length) { box.innerHTML = ""; return; }
+  const cards = pending.map(p => {
+    if (p.error) return `<div class="preview-card err"><div><b>${esc(p.name)}</b></div><div>❌ ${esc(p.error)}</div></div>`;
+    const recs = p.records, dates = recs.map(r => r.date).sort();
+    const total = recs.reduce((s, r) => s + toUSD(r), 0);
+    const range = dates.length ? `${monthLabel(dates[0].slice(0, 7))} – ${monthLabel(dates[dates.length - 1].slice(0, 7))}` : "-";
+    return `<div class="preview-card"><div><b>${esc(p.name)}</b><div class="meta">${KIND_LABEL[p.kind]} · ${recs.length} รายการ · ${range}</div></div>
+      <div style="text-align:right"><b class="num">${fmtUSD(total)}</b><div class="meta num">${fmtTHB(total * rate.value)}</div></div></div>`;
+  }).join("");
+  const ok = pending.some(p => p.records && p.records.length);
+  box.innerHTML = cards + `<div class="preview-actions">
+      <button class="btn btn-primary" id="confirmBtn" ${ok ? "" : "disabled"}>✅ นำเข้าข้อมูล</button>
+      <button class="btn" id="cancelBtn">ยกเลิก</button></div>`;
+  document.getElementById("confirmBtn")?.addEventListener("click", commitImport);
+  document.getElementById("cancelBtn").addEventListener("click", () => { pending = []; renderPreview(); });
 }
-function resetToSample() {
-  state = {
-    m365: parseM365(SAMPLE_M365_CSV).sort((a, b) => b.date.localeCompare(a.date)),
-    gsuite: parseGsuite(SAMPLE_GSUITE_TEXT)
+
+function commitImport() {
+  if (!API_CONFIGURED) {
+    document.getElementById("previewBox").insertAdjacentHTML("afterbegin", '<div class="msg err">❌ ยังไม่ได้เชื่อมต่อ Server จึงนำเข้าไม่ได้</div>');
+    return;
+  }
+  const m = pending.filter(p => p.records && p.kind === "m365").flatMap(p => p.records);
+  const g = pending.filter(p => p.records && p.kind !== "m365").flatMap(p => p.records);
+  const msgs = [];
+  if (m.length) { const r = merge("m365", m, keyM365); msgs.push(`Microsoft 365: เพิ่ม ${r.added} / อัปเดต ${r.updated}`); }
+  if (g.length) { const r = merge("gsuite", g, keyGsuite); msgs.push(`Google Workspace: เพิ่ม ${r.added} / อัปเดต ${r.updated}`); }
+  pending = [];
+  renderPreview();
+  document.getElementById("previewBox").insertAdjacentHTML("afterbegin", `<div class="msg ok" style="margin:6px 0">✅ นำเข้าสำเร็จ — ${msgs.join(" · ")}</div>`);
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function setupUpload() {
+  const dz = document.getElementById("dropzone"), fi = document.getElementById("fileInput");
+  const takeFiles = async files => {
+    const list = [...files];
+    if (!list.length) return;
+    const sources = [];
+    for (const f of list) {
+      try { sources.push({ name: f.name, text: await readFileAsText(f) }); }
+      catch (e) { sources.push({ name: f.name, text: "" }); }
+    }
+    await addSources(sources);
+    fi.value = "";
   };
-  save(); render();
+  fi.addEventListener("change", e => takeFiles(e.target.files));
+  ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop", e => takeFiles(e.dataTransfer.files));
+  document.getElementById("pasteBtn").addEventListener("click", () => {
+    const t = document.getElementById("pasteText").value;
+    if (!t.trim()) { pending = [{ name: "ข้อความที่วาง", error: "ยังไม่มีข้อความ" }]; renderPreview(); return; }
+    addSources([{ name: "ข้อความที่วาง", text: t }]);
+  });
 }
+
+/* ---------- สถานะการเชื่อมต่อ Server ---------- */
+function setConn(kind, text) {
+  const el = document.getElementById("connPill"); if (!el) return;
+  el.className = "conn " + kind;
+  document.getElementById("connText").textContent = text;
+}
+const nowTH = () => new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function connOk(detail) { setConn("ok", `เชื่อมต่อ Server สำเร็จ · ${detail} · อัปเดต ${nowTH()}`); }
+function errMsg(e) {
+  if (e instanceof SyntaxError) return "Server ตอบกลับไม่ถูกต้อง (ตรวจสอบการ Deploy: Who has access = Anyone)";
+  if (e && e.message === "Failed to fetch") return "ติดต่อ Server ไม่ได้ (ตรวจสอบอินเทอร์เน็ตและ URL)";
+  if (e && e.message === "unauthorized") return "TOKEN ไม่ถูกต้อง";
+  return (e && e.message) || "ไม่ทราบสาเหตุ";
+}
+
+/* แปลงระหว่าง state กับแถวในชีต: [Date, Invoice ID, Billing Period, Total Amount, Status] */
+const toRows = list => list.map(r => [r.date, r.invoiceId, r.period, fmtMoney(r.amount, r.currency), r.status]);
+const fromRows = rows => rows.filter(r => r && r[0]).map(r => ({
+  date: toISODate(r[0]), invoiceId: r[1] || "", period: r[2] || "",
+  amount: toNumber(r[3]), currency: detectCurrency(r[3]), status: r[4] || ""
+})).sort((a, b) => b.date.localeCompare(a.date));
+
+let busy = false, dirty = false, saveTimer = null;
+
+/** ดึงข้อมูลล่าสุดจาก Google Sheet (ใช้ทั้งตอนเปิดหน้า ปุ่มตรวจสอบ และ polling) */
+async function loadFromSheet() {
+  if (!API_CONFIGURED) { setConn("off", "ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html"); render(); return false; }
+  if (busy || dirty) return false;                  // กำลังบันทึกอยู่ ไม่ดึงทับ
+  setConn("wait", "กำลังเชื่อมต่อ Server…");
+  try {
+    const res = await fetch(`${API_URL}?token=${encodeURIComponent(API_TOKEN)}`, { cache: "no-store" });
+    const j = await res.json();
+    if (j.error) throw new Error(j.error);
+    state = { m365: fromRows(j.m365 || []), gsuite: fromRows(j.gsuite || []) };
+    render();
+    connOk(`${state.m365.length + state.gsuite.length} รายการ`);
+    return true;
+  } catch (e) {
+    setConn("err", "เชื่อมต่อ Server ไม่สำเร็จ: " + errMsg(e));
+    return false;
+  }
+}
+
+/** บันทึกทุกการเปลี่ยนแปลงลง Google Sheet (รวมการแก้ที่ติดกันเป็นครั้งเดียว) */
+function save() {
+  if (!API_CONFIGURED) return;
+  dirty = true;
+  clearTimeout(saveTimer);
+  setConn("wait", "กำลังบันทึกลง Google Sheet…");
+  saveTimer = setTimeout(saveToSheet, 300);
+}
+async function saveToSheet() {
+  busy = true; dirty = false;
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ token: API_TOKEN, m365: toRows(state.m365), gsuite: toRows(state.gsuite) })
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || "บันทึกไม่สำเร็จ");
+    connOk("บันทึกลง Google Sheet แล้ว");
+  } catch (e) {
+    busy = false;
+    setConn("err", "บันทึกไม่สำเร็จ: " + errMsg(e) + " — โหลดข้อมูลล่าสุดจากชีตแทน");
+    await loadFromSheet();
+    return;
+  }
+  busy = false;
+}
+
+const POLL_MS = 60000;                              // อัปเดตข้อมูลจากชีตทุก 1 นาที
+function startRealtime() {
+  setInterval(() => { loadFromSheet(); }, POLL_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadFromSheet(); });
+}
+
 function clearAll() {
-  if (!confirm("ล้างข้อมูลทั้งหมด?")) return;
-  state = { m365: [], gsuite: [] }; save(); render();
+  if (!confirm("ล้างข้อมูลทั้งหมดใน Google Sheet?")) return;
+  state = { m365: [], gsuite: [] }; render(); save();
 }
 
 
@@ -1080,7 +1242,9 @@ document.getElementById("rateInput").addEventListener("change", e => {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadRate();
-  if (!load()) resetToSample(); else render();
+  setupUpload();
+  loadFromSheet();
+  startRealtime();
   // อัปเดตอัตราอัตโนมัติถ้ายังไม่เคยดึง หรือข้อมูลเก่ากว่า 1 วัน
   const today = new Date().toISOString().slice(0, 10);
   if (rate.source !== "กำหนดเอง" && rate.date !== today) fetchRate();
