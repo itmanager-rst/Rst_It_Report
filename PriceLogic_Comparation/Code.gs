@@ -1,4 +1,4 @@
-// RST GROUP - PriceLogic Procurement : Code.gs (v5.6)
+// RST GROUP - PriceLogic Procurement : Code.gs (v5.9.6)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -10,6 +10,8 @@ function doGet(e) {
   if (p.action === "prinfo") return jsonOut(getPRInfoJson());
   if (p.action === "codes") return jsonOut(getEcountCodesJson());
   if (p.action === "vendorhist") return jsonOut(getVendorHistJson());
+  if (p.action === "ecKeyStatus") return jsonOut(ecKeyStatusForClient());
+  if (p.action === "vendormaster") return jsonOut(getVendorMasterJson());
   return HtmlService.createHtmlOutputFromFile("Index")
     .setTitle("RST GROUP - PriceLogic Procurement")
     .addMetaTag("viewport", "width=device-width, initial-scale=1");
@@ -23,6 +25,10 @@ function doPost(e) {
   if (req && req.action === "pushPR") return jsonOut(JSON.stringify(pushPRStatus(req)));
   if (req && req.action === "createPO") return jsonOut(JSON.stringify(createPurchaseOrder(req)));
   if (req && req.action === "saveCodes") return jsonOut(saveEcountCode(req));
+  if (req && req.action === "ecKeySave") return jsonOut(saveEcountKeyForClient(req));
+  if (req && req.action === "pushVendor") return jsonOut(JSON.stringify(pushVendorMaster(req)));
+  if (req && req.action === "pushLocation") return jsonOut(JSON.stringify(pushLocations(req)));
+  if (req && req.action === "ecKeyTest") return jsonOut(testEcountKeyForClient(req));
   if (req && req.action) return jsonOut(JSON.stringify({ status: "error", message: "unknown action" }));
   saveDataJson(body);
   return jsonOut(JSON.stringify({status:"ok"}));
@@ -287,6 +293,9 @@ function ecBuildPOBody(req) {
     return { BulkDatas: {
       ORD_DATE: String(h.date || "").replace(/-/g, ""),
       UPLOAD_SER_NO: "1",
+      DOC_NO: h.docNo || "",
+      IO_TYPE: h.ioType || "",
+      PJT_CD: h.projectCode || "",
       CUST: h.custCode || "", CUST_DES: h.custName || "",
       EMP_CD: h.empCode || "", WH_CD: h.whCode || "",
       TIME_DATE: String(l.dueDate || h.dueDate || "").replace(/-/g, ""),
@@ -350,6 +359,59 @@ function createPurchaseOrder(req) {
   return out;
 }
 function createPOForClient(req) { return JSON.stringify(createPurchaseOrder(req)); }
+
+// ================= v5.9.1: ตั้งค่า ECOUNT API Key จากหน้าแอป (เก็บใน Script Properties เท่านั้น ไม่ส่งกลับไปที่เบราว์เซอร์) =================
+var EC_COMPANIES = ["RUAMSINTHAI", "ASIA", "ROBOTICS"];
+function ecMask(v) { v = String(v || ""); return v ? "••••" + v.slice(-4) : ""; }
+function ecKeyStatusForClient() {
+  var p = ecProps(), out = { test: ecIsTest(), passcodeSet: !!p.getProperty("PO_PASSCODE"), companies: {} };
+  EC_COMPANIES.forEach(function (c) {
+    var raw = p.getProperty("ECOUNT_" + c), o = { set: false };
+    if (raw) { try { var j = JSON.parse(raw); o = { set: !!(j.COM_CODE && j.USER_ID && j.API_CERT_KEY), comCode: j.COM_CODE || "", userId: j.USER_ID || "", key: ecMask(j.API_CERT_KEY), zone: j.ZONE || "" }; } catch (e) { o = { set: false, error: "รูปแบบ JSON ไม่ถูกต้อง" }; } }
+    out.companies[c] = o;
+  });
+  return JSON.stringify(out);
+}
+// ตรวจรหัสทีม — ถ้ายังไม่เคยตั้ง PO_PASSCODE ระบบจะใช้รหัสที่กรอกครั้งแรกเป็นรหัสทีม
+function ecCheckPass(req, allowFirst) {
+  var p = ecProps(), pass = p.getProperty("PO_PASSCODE"), given = String(req.passcode || "");
+  if (!pass) {
+    if (allowFirst && given.length >= 4) { p.setProperty("PO_PASSCODE", given); return ""; }
+    return "ยังไม่ได้ตั้งรหัสทีม — กรอกรหัสทีมอย่างน้อย 4 ตัวอักษร (ครั้งแรกจะถูกตั้งเป็นรหัสทีม)";
+  }
+  return given === pass ? "" : "รหัสทีมไม่ถูกต้อง";
+}
+function saveEcountKeyForClient(req) {
+  var out = { status: "error", message: "" };
+  try {
+    var bad = ecCheckPass(req, true); if (bad) { out.message = bad; return JSON.stringify(out); }
+    var c = String(req.company || "");
+    if (EC_COMPANIES.indexOf(c) === -1) { out.message = "บริษัทไม่ถูกต้อง"; return JSON.stringify(out); }
+    var p = ecProps(), old = {};
+    try { old = JSON.parse(p.getProperty("ECOUNT_" + c) || "{}"); } catch (e) {}
+    var cred = {
+      COM_CODE: String(req.comCode || old.COM_CODE || "").trim(),
+      USER_ID: String(req.userId || old.USER_ID || "").trim(),
+      API_CERT_KEY: String(req.apiKey || old.API_CERT_KEY || "").trim()
+    };
+    var zone = String(req.zone != null ? req.zone : (old.ZONE || "")).trim(); if (zone) cred.ZONE = zone;
+    if (!cred.COM_CODE || !cred.USER_ID || !cred.API_CERT_KEY) { out.message = "ต้องกรอก Company Code, User ID และ API Key ให้ครบ"; return JSON.stringify(out); }
+    p.setProperty("ECOUNT_" + c, JSON.stringify(cred));
+    if (req.mode === "live" || req.mode === "test") p.setProperty("ECOUNT_TEST", req.mode === "test" ? "true" : "false");
+    var cache = CacheService.getScriptCache(); cache.remove("ecs_" + c); cache.remove("ecs_" + c + "_t");
+    out.status = "ok";
+  } catch (err) { out.message = String(err && err.message ? err.message : err); }
+  return JSON.stringify(out);
+}
+function testEcountKeyForClient(req) {
+  var out = { status: "error", message: "", test: ecIsTest() };
+  try {
+    var bad = ecCheckPass(req, false); if (bad) { out.message = bad; return JSON.stringify(out); }
+    var s = ecSession(String(req.company || ""), true);
+    out.status = "ok"; out.zone = s.zone;
+  } catch (err) { out.message = String(err && err.message ? err.message : err); }
+  return JSON.stringify(out);
+}
 
 // รหัสผู้ขาย/คลัง/พนักงาน ที่จำไว้ใช้ครั้งต่อไป (เก็บในชีต "รหัส ECOUNT" ของ Data Hub)
 function getEcountCodesJson() {
@@ -456,3 +518,151 @@ function getVendorHistJson() {
   return JSON.stringify(out);
 }
 function loadVendorHistForClient() { return getVendorHistJson(); }
+
+
+// ================= v5.9.2: รายชื่อลูกค้า/ผู้ขาย จาก ECOUNT (ชีต DH_VENDOR ใน Data Hub) =================
+// รับได้ทั้งจากการอัปโหลด Excel ในแอป และจากผู้ช่วย AI (POST action=pushVendor) — แทนที่รายชื่อของบริษัทนั้นทั้งชุด
+var VENDOR_TAB = "DH_VENDOR";
+var VENDOR_HEAD = ["_company", "รหัสลูกค้า/ผู้ขาย", "ชื่อลูกค้า/ผู้ขาย", "เลขประจำตัวผู้เสียภาษี", "โทรศัพท์", "_updated"];
+function vmFind(h, tests) {
+  for (var t = 0; t < tests.length; t++) for (var i = 0; i < h.length; i++) if (tests[t](h[i])) return i;
+  return -1;
+}
+function pushVendorMaster(req) {
+  var out = { status: "error", rows: 0, message: "" };
+  try {
+    var company = String(req.company || "").trim().toUpperCase();
+    if (EC_COMPANIES.indexOf(company) === -1) { out.message = "company ต้องเป็น RUAMSINTHAI / ASIA / ROBOTICS"; return out; }
+    var h = (req.headers || []).map(function (x) { return String(x || "").trim(); }), rows = req.rows || [];
+    var party = /(ลูกค้า|ผู้ขาย|คู่ค้า|ผู้จำหน่าย)/;
+    var iCode = vmFind(h, [function (x) { return /รหัส/.test(x) && party.test(x); }, function (x) { return x === "รหัส" || /^(CUST_CD|CUST|CODE)$/i.test(x); }]);
+    var iName = vmFind(h, [function (x) { return /ชื่อ/.test(x) && party.test(x) && !/ผู้ติดต่อ|ภาษาอังกฤษ/.test(x); }, function (x) { return x === "ชื่อ" || /^(CUST_NAME|CUST_DES|NAME)$/i.test(x); }]);
+    var iTax = vmFind(h, [function (x) { return /ผู้เสียภาษี|เลขประจำตัว|BUSINESS_NO/i.test(x); }]);
+    var iTel = vmFind(h, [function (x) { return /โทรศัพท์|เบอร์โทร|^TEL/i.test(x); }]);
+    if (iCode === -1 || iName === -1) { out.message = "ไม่พบคอลัมน์ รหัสลูกค้า/ผู้ขาย และ ชื่อลูกค้า/ผู้ขาย"; return out; }
+    var now = new Date().toISOString(), seen = {}, clean = [];
+    rows.forEach(function (r) {
+      var code = String(r[iCode] == null ? "" : r[iCode]).trim(), name = String(r[iName] == null ? "" : r[iName]).trim();
+      if (!code || !name || seen[code] || /^(รวม|ผลรวม|total)/i.test(code)) return;
+      seen[code] = 1;
+      clean.push([company, code, name, iTax === -1 ? "" : String(r[iTax] || "").trim(), iTel === -1 ? "" : String(r[iTel] || "").trim(), now]);
+    });
+    if (!clean.length) { out.message = "ไม่มีรายชื่อที่ใช้ได้"; return out; }
+    var lock = LockService.getScriptLock(); lock.waitLock(30000);
+    try {
+      var ss = SpreadsheetApp.openById(DATA_HUB_ID), sh = ss.getSheetByName(VENDOR_TAB) || ss.insertSheet(VENDOR_TAB);
+      var keep = [];
+      if (sh.getLastRow() > 1) keep = sh.getRange(2, 1, sh.getLastRow() - 1, VENDOR_HEAD.length).getValues().filter(function (r) { return String(r[0]) !== company; });
+      var all = keep.concat(clean);
+      sh.clearContents();
+      sh.getRange(1, 1, 1, VENDOR_HEAD.length).setValues([VENDOR_HEAD]);
+      sh.getRange(2, 1, all.length, VENDOR_HEAD.length).setNumberFormat("@").setValues(all);
+    } finally { lock.releaseLock(); }
+    out.status = "ok"; out.rows = clean.length;
+  } catch (err) { out.message = String(err && err.message ? err.message : err); }
+  return out;
+}
+function saveVendorMasterForClient(req) { return JSON.stringify(pushVendorMaster(req)); }
+// อ่านรายชื่อลูกค้า/ผู้ขาย: หลักคือชีต DH_PARTNER_MASTER (ที่ดึงจาก ECOUNT เข้า Data Hub) + DH_VENDOR (ถ้ามี)
+// คืน rows: [บริษัท, รหัส, ชื่อ, เลขผู้เสียภาษี, โทรศัพท์, เงื่อนไขการชำระเงิน, สถานะ]
+function getVendorMasterJson() {
+  var out = { rows: [], updated: {}, source: [], cols: {}, error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID), party = /(ลูกค้า|ผู้ขาย|คู่ค้า|ผู้จำหน่าย)/;
+    ["DH_PARTNER_MASTER", VENDOR_TAB].forEach(function (tab) {
+      var sh = ss.getSheetByName(tab);
+      if (!sh || sh.getLastRow() < 2) return;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var iCo = vmFind(h, [function (x) { return /^_?company$/i.test(x) || x === "บริษัท"; }]);
+      var iCode = vmFind(h, [function (x) { return /รหัส/.test(x) && party.test(x); }]);
+      var iName = vmFind(h, [function (x) { return /ชื่อ/.test(x) && party.test(x) && !/ผู้ติดต่อ|ภาษาอังกฤษ|PIC/i.test(x); }]);
+      var iTax = vmFind(h, [function (x) { return /ผู้เสียภาษี|ภาษี|เลขประจำตัว|BUSINESS_NO|TAX/i.test(x); }, function (x) { return /ทะเบียน/.test(x); }, function (x) { return /^หมายเลข/.test(x) && !/โทร|แฟกซ์|fax|มือถือ/i.test(x); }]);
+      var iTel = vmFind(h, [function (x) { return /โทรศัพท์|เบอร์โทร|^TEL/i.test(x) && !/มือถือ/.test(x); }, function (x) { return /โทร|มือถือ/.test(x); }]);
+      var iPay = vmFind(h, [function (x) { return /เงื่อนไข/.test(x) && /ชำระ|เครดิต|จ่าย/.test(x); }, function (x) { return /เครดิต|credit|payment/i.test(x); }, function (x) { return /เงื่อนไข/.test(x) && !/จัดส่ง|ส่งสินค้า/.test(x); }]);
+      var iSt = vmFind(h, [function (x) { return /สถานะ/.test(x); }]);
+      var iUp = vmFind(h, [function (x) { return /^_?updated/i.test(x); }]);
+      if (iCode === -1 || iName === -1) return;
+      out.source.push(tab);
+      out.cols[tab] = { code: h[iCode], name: h[iName], tax: iTax === -1 ? "" : h[iTax], tel: iTel === -1 ? "" : h[iTel], pay: iPay === -1 ? "" : h[iPay], status: iSt === -1 ? "" : h[iSt] };
+      for (var r = 1; r < v.length; r++) {
+        var row = v[r], co = iCo === -1 ? "" : String(row[iCo]).trim(), code = String(row[iCode]).trim(), name = String(row[iName]).trim();
+        if (!code || !name) continue;
+        out.rows.push([co, code, name, iTax === -1 ? "" : row[iTax], iTel === -1 ? "" : row[iTel], iPay === -1 ? "" : row[iPay], iSt === -1 ? "" : row[iSt]]);
+        var up = iUp === -1 ? "" : String(row[iUp]);
+        if (up && (!out.updated[co] || up > out.updated[co])) out.updated[co] = up;
+      }
+    });
+    out.wh = ecWarehouses(ss);
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+// สถานที่รับเข้า (คลัง) จาก Data Hub: [บริษัท, รหัส, ชื่อ]
+function ecWarehouses(ss) {
+  var m = {}, src = "", add = function (co, code, name) {
+    co = String(co || "").trim(); code = String(code || "").trim(); name = String(name || "").trim();
+    if (!code && !name) return;
+    var k = co + "|" + (code || ("#" + name));
+    if (!m[k]) m[k] = [co, code, name, src]; else if (name && !m[k][2]) m[k][2] = name;
+  };
+  try {
+    var loc = ss.getSheetByName(LOC_TAB);
+    src = "loc";
+    if (loc && loc.getLastRow() > 1) loc.getRange(2, 1, loc.getLastRow() - 1, 3).getDisplayValues().forEach(function (r) { add(r[0], r[1], r[2]); });
+  } catch (e) {}
+  src = "";
+  var src = [
+    { tab: "STOCK_BY_WH", co: ["COMPANY"], code: ["WH_CD"], name: ["WH_DES"] },
+    { tab: "PO_HEADER", co: ["COMPANY"], code: ["WH_CD"], name: ["WH_DES"] },
+    { tab: "PO_LINES", co: ["COMPANY"], code: [], name: ["WAREHOUSE"] },
+    { tab: "DH_PO_STATUS", co: ["_company"], code: ["รหัสสถานที่รับเข้า", "รหัสคลัง"], name: ["ชื่อสถานที่รับเข้า", "สถานที่รับเข้า", "ชื่อคลัง"] }
+  ];
+  src.forEach(function (d) {
+    try {
+      var sh = ss.getSheetByName(d.tab); if (!sh || sh.getLastRow() < 2) return;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var pick = function (names, loose) { for (var i = 0; i < names.length; i++) { var j = h.indexOf(names[i]); if (j > -1) return j; } if (loose) for (var k = 0; k < h.length; k++) if (loose.test(h[k])) return k; return -1; };
+      var iCo = pick(d.co), iCode = pick(d.code), iName = pick(d.name, d.tab === "DH_PO_STATUS" ? /สถานที่|คลัง/ : null);
+      if (iCode === -1 && iName === -1) return;
+      for (var r = 1; r < v.length; r++) add(iCo === -1 ? "" : v[r][iCo], iCode === -1 ? "" : v[r][iCode], iName === -1 ? "" : v[r][iName]);
+    } catch (e) {}
+  });
+  try {
+    var c = ss.getSheetByName("รหัส ECOUNT");
+    if (c && c.getLastRow() > 1) c.getRange(2, 1, c.getLastRow() - 1, Math.min(4, c.getLastColumn())).getDisplayValues().forEach(function (r) { if (r[0] === "คลัง") add(r[3] || "", r[2], r[1]); });
+  } catch (e) {}
+  return Object.keys(m).map(function (k) { return m[k]; });
+}
+function loadVendorMasterForClient() { return getVendorMasterJson(); }
+
+
+// ================= v5.9.5: สถานที่รับเข้า (คลัง) ที่นำเข้าจากหน้า "ตั้งค่า" — ชีต DH_LOCATION (รหัสต้องตรงกับ ECOUNT) =================
+var LOC_TAB = "DH_LOCATION";
+var LOC_HEAD = ["_company", "รหัสสถานที่", "ชื่อสถานที่", "_updated"];
+function pushLocations(req) {
+  var out = { status: "error", rows: 0, message: "" };
+  try {
+    var company = String(req.company || "").trim().toUpperCase();
+    if (EC_COMPANIES.indexOf(company) === -1) { out.message = "company ต้องเป็น RUAMSINTHAI / ASIA / ROBOTICS"; return out; }
+    var now = new Date().toISOString(), seen = {}, clean = [];
+    (req.rows || []).forEach(function (r) {
+      var code = String(r[0] == null ? "" : r[0]).trim(), name = String(r[1] == null ? "" : r[1]).trim();
+      if (!code || seen[code]) return;
+      seen[code] = 1; clean.push([company, code, name || code, now]);
+    });
+    if (!clean.length && !req.allowEmpty) { out.message = "ไม่มีรายการสถานที่ที่ใช้ได้"; return out; }
+    var lock = LockService.getScriptLock(); lock.waitLock(30000);
+    try {
+      var ss = SpreadsheetApp.openById(DATA_HUB_ID), sh = ss.getSheetByName(LOC_TAB) || ss.insertSheet(LOC_TAB);
+      var keep = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, LOC_HEAD.length).getValues().filter(function (r) { return String(r[0]) !== company; }) : [];
+      var all = keep.concat(clean);
+      sh.clearContents();
+      sh.getRange(1, 1, 1, LOC_HEAD.length).setValues([LOC_HEAD]);
+      if (all.length) sh.getRange(2, 1, all.length, LOC_HEAD.length).setNumberFormat("@").setValues(all);
+    } finally { lock.releaseLock(); }
+    out.status = "ok"; out.rows = clean.length;
+  } catch (err) { out.message = String(err && err.message ? err.message : err); }
+  return out;
+}
+function saveLocationsForClient(req) { return JSON.stringify(pushLocations(req)); }
