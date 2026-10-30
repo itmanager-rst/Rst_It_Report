@@ -2,14 +2,19 @@
  * Apps Script ที่ผูกกับชีต IT_Billing_Master_Log
  * หน้าที่: ให้ index.html อ่านและบันทึกข้อมูลลงชีตผ่าน Web App
  * แท็บ: M365_Logs, GSuite_Logs, Bluehost_Logs (บริการ/วันต่ออายุ), Bluehost_Payments (ประวัติการชำระเงิน),
- *       Bluehost_Dedupe_Log (บันทึกแถวที่ถูกลบจากการรวมรายการซ้ำ — กู้คืนได้)
+ *       Bluehost_Dedupe_Log (บันทึกแถวที่ถูกลบจากการรวมรายการซ้ำ — กู้คืนได้),
+ *       BQ_IT_Expenses (ค่าใช้จ่ายแผนก IT ดึงจาก BigQuery: multi_company_inventory)
  *
  * วิธีติดตั้ง:
  * 1) เปิดชีต IT_Billing_Master_Log > Extensions > Apps Script
  * 2) วางโค้ดนี้แทนของเดิม (TOKEN ต้องตรงกับ API_TOKEN ใน index.html)
- * 3) (ครั้งแรก) Run ฟังก์ชัน setupSheets เพื่อสร้างแท็บและหัวตาราง
- * 4) (ล้างข้อมูลซ้ำที่มีอยู่แล้ว) Run ฟังก์ชัน dedupeBluehostSheet หรือใช้เมนู "IT Dashboard" ในชีต
- * 5) Deploy > Manage deployments > Edit (ไอคอนดินสอ) > Version: New version > Deploy
+ * 3) Services (+) > เพิ่ม "BigQuery API" (Advanced Service ชื่อ BigQuery) > Add
+ * 4) แก้ BQ_TABLE ด้านล่างให้เป็น dataset.table ที่เก็บ PO จริง
+ * 5) (ครั้งแรก) Run ฟังก์ชัน setupSheets เพื่อสร้างแท็บและหัวตาราง
+ * 6) Run ฟังก์ชัน createBigQuerySyncTrigger (ตั้งให้ดึงข้อมูล BigQuery ทุกวันเวลา 06:00 อัตโนมัติ)
+ *    หรือกดเมนู "IT Dashboard > ดึงข้อมูล BigQuery (IT) ทันที" ในชีต
+ * 7) (ล้างข้อมูลซ้ำที่มีอยู่แล้ว) Run ฟังก์ชัน dedupeBluehostSheet หรือใช้เมนู "IT Dashboard" ในชีต
+ * 8) Deploy > Manage deployments > Edit (ไอคอนดินสอ) > Version: New version > Deploy
  *    - Execute as: Me
  *    - Who has access: Anyone
  *    (ใช้ deployment เดิม URL จะไม่เปลี่ยน ไม่ต้องแก้ API_URL ใน index.html)
@@ -17,7 +22,13 @@
 
 const TOKEN = "Qm7vT2xLp9WzRk4HsD1axcsdewsLpOjkGFDXvzgabxcs";
 
-const TABS = { m365: "M365_Logs", gsuite: "GSuite_Logs", bluehost: "Bluehost_Logs", bhpay: "Bluehost_Payments" };
+const TABS = {
+  m365: "M365_Logs",
+  gsuite: "GSuite_Logs",
+  bluehost: "Bluehost_Logs",
+  bhpay: "Bluehost_Payments",
+  bqit: "BQ_IT_Expenses"
+};
 const DEDUPE_LOG_TAB = "Bluehost_Dedupe_Log";
 
 const BILLING_HEADER = ["Date", "Invoice ID", "Billing Period", "Total Amount", "Status"];
@@ -26,7 +37,21 @@ const BLUEHOST_HEADER = ["Service Name", "Plan / Domain", "Billing Cycle", "Amou
 const BHPAY_HEADER = ["Date", "Order Number", "Payment Method", "Total Amount", "Status"];
 const DEDUPE_LOG_HEADER = ["Logged At", "Reason", "Composite Key"].concat(BLUEHOST_HEADER);
 
-const HEADERS = { m365: BILLING_HEADER, gsuite: BILLING_HEADER, bluehost: BLUEHOST_HEADER, bhpay: BHPAY_HEADER };
+/* ----- BigQuery (IT expenses) ----- */
+const BQ_PROJECT = "rst-ecount-sync-py";                    // GCP project ที่เก็บตาราง (ใช้เป็น billing project ด้วย)
+const BQ_TABLE = "multi_company_inventory.it_expenses";     // dataset.table ที่เก็บ PO (ยืนยันจากหน้า BigQuery Console)
+const BQ_IT_FILTER = "pjt_des IN ('แผนก IT', 'IT', 'ไอที')";   // ค่าใช้จ่ายแผนก IT ทุกบริษัท
+const BQ_HEADER = ["Company", "PO No", "Order No", "Order Date", "Project Code", "Project",
+                   "Vendor Code", "Vendor", "Product", "Qty", "Amount", "VAT", "Total Amount",
+                   "PIC", "Payment Flag", "Status", "Updated At"];
+
+const HEADERS = {
+  m365: BILLING_HEADER,
+  gsuite: BILLING_HEADER,
+  bluehost: BLUEHOST_HEADER,
+  bhpay: BHPAY_HEADER,
+  bqit: BQ_HEADER
+};
 
 /* =========================================================
    Web App API
@@ -35,6 +60,9 @@ const HEADERS = { m365: BILLING_HEADER, gsuite: BILLING_HEADER, bluehost: BLUEHO
 /** GET ?token=... -> ส่งข้อมูลทุกแท็บเป็น JSON */
 function doGet(e) {
   if (!authorized(e && e.parameter && e.parameter.token)) return out({ error: "unauthorized" });
+  const action = (e.parameter && e.parameter.action) || "";
+  if (action === "bqsync") return out(runBqSyncForWeb_());   // ดึง BigQuery → Sheet จากปุ่มในเว็บ
+  if (action === "status") return out(getStatus_());          // สถานะการเชื่อมต่อ Sheet / BigQuery
   const res = {};
   Object.keys(TABS).forEach(key => { res[key] = readTab(key); });
   return out(res);
@@ -42,7 +70,8 @@ function doGet(e) {
 
 /** POST (text/plain, JSON) -> เขียนทับเฉพาะแท็บที่ส่งมา (แท็บที่ไม่ได้ส่งมาจะไม่ถูกแตะ)
  *  - bluehost / bhpay จะถูก Deduplicate ฝั่ง Server อีกชั้นก่อนเขียน (กันข้อมูลซ้ำจาก client รุ่นเก่า)
- *  - bluehostRemoved: แถวที่ client รวม/ลบไป -> บันทึกลง Bluehost_Dedupe_Log */
+ *  - bluehostRemoved: แถวที่ client รวม/ลบไป -> บันทึกลง Bluehost_Dedupe_Log
+ *  - bqit ไม่ได้มาจาก client: ดึงจาก BigQuery ด้วย syncBigQueryItExpenses() เท่านั้น */
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out({ error: "bad json" }); }
@@ -53,6 +82,7 @@ function doPost(e) {
   try {
     const written = {}, removed = {};
     Object.keys(TABS).forEach(key => {
+      if (key === "bqit") return;                                // ป้องกัน client เขียนทับข้อมูล BigQuery
       if (!Array.isArray(body[key])) return;
       let rows = body[key];
       if (key === "bluehost") {
@@ -75,6 +105,96 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* =========================================================
+   BigQuery: ค่าใช้จ่ายแผนก IT (multi_company_inventory)
+   ========================================================= */
+
+/** SQL ของตาราง PO — คอลัมน์เรียงตาม BQ_HEADER */
+function bqSql_() {
+  return `SELECT
+    company_id, po_no, CAST(ord_no AS STRING) AS ord_no,
+    PARSE_DATE('%Y%m%d', CAST(ord_date AS STRING)) AS ord_date,
+    pjt_cd, pjt_des, cust_cd, cust_des, prod_des, qty, buy_amt, vat_amt, total_amt,
+    pic_name, p_flag, status_name, CAST(updated_at AS STRING) AS updated_at
+  FROM \`${BQ_PROJECT}.${BQ_TABLE}\`
+  WHERE ${BQ_IT_FILTER}
+  ORDER BY ord_date DESC`;
+}
+
+/** รัน query แล้วคืนแถวทั้งหมด (รอ job เสร็จ + อ่านทุกหน้า) เป็นข้อความ */
+function bqRunQuery_() {
+  let res = BigQuery.Jobs.query({ query: bqSql_(), useLegacySql: false, timeoutMs: 20000 }, BQ_PROJECT);
+  const jobId = res.jobReference.jobId, location = res.jobReference.location;
+  while (!res.jobComplete) {
+    Utilities.sleep(2000);
+    res = BigQuery.Jobs.getQueryResults(BQ_PROJECT, jobId, { location: location, timeoutMs: 20000 });
+  }
+  let rows = res.rows || [], token = res.pageToken;
+  while (token) {
+    res = BigQuery.Jobs.getQueryResults(BQ_PROJECT, jobId, { location: location, pageToken: token });
+    rows = rows.concat(res.rows || []);
+    token = res.pageToken;
+  }
+  return rows.map(r => r.f.map(c => (c.v == null ? "" : String(c.v))));
+}
+
+/** ดึงข้อมูลจาก BigQuery แล้วเขียนลงแท็บ BQ_IT_Expenses (ใช้กับ Trigger และเมนู) */
+// ใช้กับ trigger ตามเวลา และเมนูในชีต: ถ้าล้มเหลวจะ throw เพื่อให้เห็นใน Executions
+function syncBigQueryItExpenses() {
+  const info = runBqSyncForWeb_();
+  if (!info.ok) throw new Error(info.error);
+  const msg = "BigQuery → " + TABS.bqit + ": " + info.rows + " แถว";
+  Logger.log(msg);
+  return msg;
+}
+
+// ดึง BigQuery → แท็บ BQ_IT_Expenses แล้วบันทึกผลล่าสุดไว้ใน Script Properties
+function runBqSyncForWeb_() {
+  const lock = LockService.getScriptLock();
+  let info;
+  try {
+    if (!lock.tryLock(60000)) throw new Error("ระบบกำลังซิงก์อยู่ กรุณาลองใหม่อีกครั้ง");
+    try {
+      const rows = bqRunQuery_();
+      writeTab("bqit", rows);
+      info = { ok: true, at: new Date().toISOString(), rows: rows.length };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    info = { ok: false, at: new Date().toISOString(), error: String((err && err.message) || err) };
+  }
+  PropertiesService.getScriptProperties().setProperty("bqLast", JSON.stringify(info));
+  return info;
+}
+
+// ทดสอบการเชื่อมต่อ BigQuery ด้วยคำสั่งเบาๆ (SELECT 1)
+function bqCheck_() {
+  try {
+    const res = BigQuery.Jobs.query({ query: "SELECT 1 AS ok", useLegacySql: false, timeoutMs: 10000 }, BQ_PROJECT);
+    return { ok: !!res.jobComplete, error: res.jobComplete ? "" : "หมดเวลาตอบกลับ" };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
+// สถานะรวม: Google Sheet (อ่านได้หรือไม่) + BigQuery (ทดสอบเชื่อมต่อ) + ผลซิงก์ล่าสุด
+function getStatus_() {
+  let sheetOk = true, sheetError = "";
+  try { SpreadsheetApp.getActiveSpreadsheet().getName(); } catch (err) { sheetOk = false; sheetError = String(err.message || err); }
+  let last = null;
+  try { last = JSON.parse(PropertiesService.getScriptProperties().getProperty("bqLast") || "null"); } catch (e) {}
+  return { sheet: { ok: sheetOk, error: sheetError }, bigquery: bqCheck_(), lastSync: last, serverTime: new Date().toISOString() };
+}
+
+/** รันครั้งเดียว: ตั้ง Time-driven trigger ให้ดึงข้อมูล BigQuery ทุกวัน 06:00 */
+function createBigQuerySyncTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === "syncBigQueryItExpenses") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("syncBigQueryItExpenses").timeBased().everyDays(1).atHour(6).create();
 }
 
 /* =========================================================
@@ -168,6 +288,7 @@ function dedupeBluehostSheet() {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu("IT Dashboard")
     .addItem("ลบรายการซ้ำ Bluehost", "dedupeBluehostSheet")
+    .addItem("ดึงข้อมูล BigQuery (IT) ทันที", "syncBigQueryItExpenses")
     .addItem("สร้างแท็บ / หัวตาราง", "setupSheets")
     .addToUi();
 }
