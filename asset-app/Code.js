@@ -2,6 +2,7 @@
 // IT Asset Management — Apps Script Backend (RuamsinthaiGroup)
 // เวอร์ชันความปลอดภัย v5 : PIN ตรวจที่ Server + Token (HMAC-SHA256)
 // v5.1 : ลายเซ็นเบิก/โอน/คืน บันทึกแบบต่อท้ายบน Server (trAck / trComment / trDecide / trGet)
+// v5.2 : อ่าน/เขียนไฟล์ใน SHEET_FILES โดยตรง (IT Assets / IT Tickets / IT Transfers) — หลังวางโค้ดให้ Run checkFiles 1 ครั้ง
 // ───────────────────────────────────────────────────────────────
 // ใช้โค้ดไฟล์นี้ชุดเดียวกันทั้ง 3 โปรเจกต์ (Asset / Ticket / Transfer)
 //
@@ -25,6 +26,14 @@ var SETUP = {
   PIN_MANAGER: '',
   PIN_STAFF:   '',
   SESSION_HOURS: 10              // อายุ Token (ชั่วโมง)
+};
+
+// ── ไฟล์ Google Sheets ที่ใช้จริง (โฟลเดอร์ Drive: it report / asset-app) ──
+// ทุกโปรเจกต์อ่าน/เขียนไฟล์เหล่านี้โดยตรง ไม่ขึ้นกับว่าสคริปต์ผูกอยู่กับไฟล์ไหน
+var SHEET_FILES = {
+  asset:    '14GL3BP6oYWtp5ewE-Z8tOVvY2pT2Jyl19B2-0Ip9th0',   // IT Assets
+  ticket:   '1C4__MYNtzIohekmbm6xMVoRnYCEl4f34SVgyC3_zDbU',   // IT Tickets
+  transfer: '1YhRbb3mTJmeWcy6H9vubv_oLpcryFa-gwcfzuFgbOd8'    // IT Transfers
 };
 
 var PIN_LENGTH       = 6;
@@ -166,6 +175,28 @@ function sheetKind(sheetName) {
   if (/transfer|โอน|เบิก/i.test(sheetName)) return 'transfer';
   return props().getProperty('SCRIPT_KIND') || 'asset';
 }
+// เลือกไฟล์ตามชื่อชีตที่ขอ (ถ้าไม่ระบุ ใช้ตาม SCRIPT_KIND ของโปรเจกต์)
+function kindOfSheetName(name) {
+  name = String(name || '');
+  if (/transfer|โอน|เบิก/i.test(name)) return 'transfer';
+  if (/ticket/i.test(name)) return 'ticket';
+  if (name) return 'asset';
+  return props().getProperty('SCRIPT_KIND') || SETUP.SCRIPT_KIND || 'asset';
+}
+var _ssCache = {};
+function getSS(kind) {
+  kind = SHEET_FILES[kind] ? kind : 'asset';
+  if (!_ssCache[kind]) _ssCache[kind] = SpreadsheetApp.openById(SHEET_FILES[kind]);
+  return _ssCache[kind];
+}
+// Run จาก Editor ครั้งแรกหลังวางโค้ด (เพื่ออนุญาตสิทธิ์เปิดไฟล์) — แสดงชื่อไฟล์และจำนวนแถวของแต่ละชีต
+function checkFiles() {
+  Object.keys(SHEET_FILES).forEach(function (k) {
+    var ss = getSS(k);
+    Logger.log(k + ' → ' + ss.getName() + ' : ' + ss.getSheets().map(function (sh) { return sh.getName() + ' (' + Math.max(sh.getLastRow() - 1, 0) + ' แถว)'; }).join(', '));
+  });
+}
+
 function isMgr(role) { return role === 'admin' || role === 'manager'; }
 function checkWrite(role, action, sheet, row, key) {
   var kind = sheetKind(sheet.getName());
@@ -225,15 +256,15 @@ function main(e) {
     if (action === 'whoami') return out({ status: 'ok', role: role }, cb);
 
     if (action === 'test') {
-      var names = SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) { return s.getName(); });
+      var names = getSS(kindOfSheetName(param.sheet)).getSheets().map(function (s) { return s.getName(); });
       return out({ status: 'ok', msg: 'connected', sheets: names, role: role }, cb);
     }
 
     if (action.indexOf('line') === 0) return handleLine(action, param, cb, role);
 
     var sheetName = param.sheet || '';
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
+    var ss = getSS(kindOfSheetName(sheetName));
+    var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getSheets()[0];
     if (!sheet) return out({ status: 'error', msg: 'Sheet not found: ' + sheetName }, cb);
 
     // ── ใบเบิก/โอน: ลงนาม / ความเห็น / อนุมัติ แบบ "ต่อท้าย" บน Server (ลายเซ็นไม่หาย ไม่ทับกัน) ──
