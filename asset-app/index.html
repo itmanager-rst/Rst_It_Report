@@ -1606,12 +1606,11 @@ function lineWebhook(e) {
           <div class="fi"><label class="fl">ชื่อผู้ลงนาม *</label><input class="fn" id="td-ack-name" placeholder="ชื่อ-นามสกุล"></div>
           <div class="fi"><label class="fl">ในฐานะ *</label>
             <select class="fs" id="td-ack-role">
-              <option>ผู้รับทรัพย์สิน</option>
-              <option>ผู้เบิก / ผู้ตรวจเช็ค</option>
-              <option>ผู้จัดเตรียม</option>
-              <option>ผู้อนุมัติเบิก</option>
-              <option>ผู้ตรวจปล่อย</option>
+              <option>ผู้เบิก</option>
+              <option>ผู้ตรวจสอบ</option>
               <option>ผู้อนุมัติ</option>
+              <option>ผู้ส่ง</option>
+              <option>ผู้รับ</option>
               <option>หัวหน้าแผนก</option>
               <option>ผู้เกี่ยวข้อง (รับทราบ)</option>
             </select></div>
@@ -2787,6 +2786,10 @@ async function syncTransfer(tr, okMsg){
 
 // ── ลายเซ็น / ความเห็น / อนุมัติ: ส่งเฉพาะรายการใหม่ให้ Server ต่อท้าย (ไม่ส่งทั้งแถว) ──
 const TR_APPROVER_ROLES = ['ผู้อนุมัติ','ผู้อนุมัติเบิก'];
+// ช่องลายเซ็นในใบพิมพ์ (เรียงซ้าย → ขวา) + ชื่อบทบาทเดิมที่เคยใช้ (ลายเซ็นเก่ายังไปลงช่องที่ถูกต้อง)
+const SIG_SLOTS = ['ผู้เบิก','ผู้ตรวจสอบ','ผู้อนุมัติ','ผู้ส่ง','ผู้รับ'];
+const SIG_ALIAS = { 'ผู้เบิก / ผู้ตรวจเช็ค':'ผู้เบิก', 'ผู้อนุมัติเบิก':'ผู้อนุมัติ', 'ผู้ตรวจปล่อย':'ผู้ส่ง', 'ผู้จัดเตรียม':'ผู้ส่ง', 'ผู้รับทรัพย์สิน':'ผู้รับ' };
+function sigSlotOf(role){ return SIG_ALIAS[role] || role; }
 function mergeByKey(a, b){
   const key = x => [x.at||'', x.name||x.by||'', x.role||'', x.kind||''].join('|');
   const seen = new Set(), res = [];
@@ -2948,10 +2951,11 @@ function openTransferDetail(key){
   document.getElementById('td-cmt-by').value   = lsGet('it_signer_name');
   document.getElementById('td-cmt-role').value = roleLabel();
   document.getElementById('td-ack-name').value = '';
-  // เดาบทบาทผู้ลงนาม: ถ้ายังไม่มีผู้รับเซ็น → ผู้รับทรัพย์สิน
+  // เดาบทบาทผู้ลงนาม: ช่องแรกตามลำดับใบพิมพ์ที่ยังไม่มีคนเซ็น
   const roleSel = document.getElementById('td-ack-role');
+  const signed = new Set(tr.acks.map(a => sigSlotOf(a.role)));
   roleSel.value = canApprove() && tr.status === 'pending' ? 'ผู้อนุมัติ'
-    : tr.acks.some(a => a.role === 'ผู้รับทรัพย์สิน') ? 'ผู้เกี่ยวข้อง (รับทราบ)' : 'ผู้รับทรัพย์สิน';
+    : (SIG_SLOTS.find(r => !signed.has(r) && !(TR_APPROVER_ROLES.includes(r) && !canApprove())) || 'ผู้เกี่ยวข้อง (รับทราบ)');
   document.getElementById('td-ack-name').value = canApprove() && tr.status === 'pending' ? lsGet('it_signer_name') : '';
   renderTransferDetail();
   document.getElementById('trDetailOverlay').classList.add('show');
@@ -4139,13 +4143,7 @@ function printTransfer(rec){
   const a = assets.find(x => x.id === assetId) || {};
   const brandModel = [a.brand, a.model].filter(Boolean).join(' ');
 
-  const sigs = [
-    {t:'ผู้จัดเตรียม',      s:'(จนท.ธุรการประสานงาน)'},
-    {t:'ผู้เบิก / ผู้ตรวจเช็ค', s:'(.............................)'},
-    {t:'ผู้อนุมัติเบิก',    s:'(ผู้จัดการฯ)'},
-    {t:'ผู้ตรวจปล่อย',     s:'(เจ้าหน้าที่จัดส่ง)'},
-    {t:'ผู้อนุมัติ',        s:'(คุณ' + approverFor(R.company) + ')'}
-  ];
+  const sigs = SIG_SLOTS.map(t => ({ t, s:'(.............................)' }));
 
   // ── อุปกรณ์ที่ส่งมอบ / รับคืน ──
   const pItems = rec ? (rec.items || []) : getFormItems();
@@ -4168,9 +4166,9 @@ function printTransfer(rec){
   const dShort = v => { const d = new Date(v); return isNaN(d) ? String(v||'') : d.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'}); };
   const acks = rec ? (rec.acks || []) : [];
   const used = new Set();
-  const ackFor = t => { for(let i = acks.length - 1; i >= 0; i--){ if(acks[i].role === t && !used.has(i)){ used.add(i); return acks[i]; } } return null; };
+  const ackFor = t => { for(let i = acks.length - 1; i >= 0; i--){ if(sigSlotOf(acks[i].role) === t && !used.has(i)){ used.add(i); return acks[i]; } } return null; };
   const slotRoles = new Set(sigs.map(s => s.t));
-  const extraAcks = acks.filter(k => !slotRoles.has(k.role));
+  const extraAcks = acks.filter(k => !slotRoles.has(sigSlotOf(k.role)));
   let approvalHTML = '';
   if(rec){
     const stTH = {pending:'รออนุมัติ', approved:'อนุมัติ', rejected:'ไม่อนุมัติ'}[rec.status] || rec.status;
@@ -4196,7 +4194,8 @@ function printTransfer(rec){
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:#fff;}
   body{font-family:'Sarabun','Tahoma','Noto Sans Thai',sans-serif;font-size:11.5pt;color:#111;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .sheet{width:100%;min-height:272mm;display:flex;flex-direction:column;page-break-inside:avoid;}
+  @media screen{ html{background:#e5e7eb;} body{width:184mm;margin:8mm auto;padding:0;box-shadow:0 2px 12px rgba(0,0,0,.15);} }
+  .sheet{width:184mm;min-height:272mm;display:flex;flex-direction:column;page-break-inside:avoid;}
 
   .lh{margin-bottom:8px;}
   .hd{display:flex;align-items:flex-end;gap:14px;padding-bottom:9px;border-bottom:2.5px solid #111;}
@@ -4211,35 +4210,35 @@ function printTransfer(rec){
   .meta b{font-weight:600;}
   .dots{display:inline-block;min-width:36mm;border-bottom:1px dotted #111;text-align:center;padding:0 4px;}
 
-  .types{display:flex;gap:26px;margin:11px 0 2px;font-size:11.5pt;font-weight:600;}
+  .types{display:flex;gap:26px;margin:8px 0 2px;font-size:11.5pt;font-weight:600;}
   .cb{display:inline-block;position:relative;width:13px;height:13px;border:1.4px solid #111;margin-right:6px;vertical-align:-2px;background:#fff;}
   .cb.on::after{content:"";position:absolute;left:3.5px;top:-1px;width:4px;height:9px;border:solid #111;border-width:0 2px 2px 0;transform:rotate(45deg);}
 
-  .sec{margin-top:11px;}
+  .sec{margin-top:8px;}
   .sec-t{background:#e9e9e9;border:1px solid #111;border-bottom:none;padding:3px 9px;font-weight:700;font-size:11pt;}
   table.t{width:100%;border-collapse:collapse;table-layout:fixed;}
-  table.t th,table.t td{border:1px solid #111;padding:6px 9px;vertical-align:top;font-size:11pt;word-wrap:break-word;}
+  table.t th,table.t td{border:1px solid #111;padding:4px 8px;vertical-align:top;font-size:11pt;word-wrap:break-word;}
   table.t th{background:#f5f5f5;font-weight:600;text-align:left;width:19%;}
   table.t td{width:31%;}
-  .note{border:1px solid #111;padding:7px 9px;min-height:38mm;white-space:pre-wrap;font-size:11pt;}
-  .chk{border:1px solid #111;border-top:none;padding:7px 9px;font-size:10.5pt;}
+  .note{border:1px solid #111;padding:6px 9px;min-height:30mm;white-space:pre-wrap;font-size:11pt;}
+  .chk{border:1px solid #111;border-top:none;padding:5px 9px;font-size:10.5pt;}
   .chk:first-of-type{border-top:1px solid #111;}
   .chk span.i{margin-right:12px;white-space:nowrap;}
   .chk .lb{font-weight:600;margin-right:10px;}
   .ln{display:inline-block;min-width:30mm;border-bottom:1px dotted #111;}
 
-  .sigs{margin-top:auto;padding-top:12px;}
+  .sigs{margin-top:auto;padding-top:8px;page-break-inside:avoid;}
   .sigs .t{font-weight:700;font-size:10.5pt;margin-bottom:4px;}
   .sig-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
   .sig{text-align:center;font-size:10pt;}
-  .sig .sp{height:24mm;border-bottom:1px solid #111;margin-bottom:5px;}
+  .sig .sp{height:19mm;border-bottom:1px solid #111;margin-bottom:5px;}
   .sig .sp.sv{display:flex;align-items:flex-end;justify-content:center;padding:2px 4px;}
   .sig .sp.sv svg{width:100%;height:100%;}
   .sig .r{font-weight:700;line-height:1.25;}
   .sig .s{font-size:9pt;color:#333;line-height:1.25;min-height:2.4em;}
   .sig .dt{font-size:9pt;margin-top:3px;color:#333;}
 
-  .ft{margin-top:10px;padding-top:5px;border-top:1px solid #999;display:flex;justify-content:space-between;font-size:8.5pt;color:#666;}
+  .ft{margin-top:6px;padding-top:4px;border-top:1px solid #999;display:flex;justify-content:space-between;font-size:8.5pt;color:#666;}
 </style>
 <\/head>
 <body>
@@ -4325,7 +4324,20 @@ function printTransfer(rec){
 
   // รอให้โลโก้และฟอนต์โหลดเสร็จก่อนสั่งพิมพ์ (กันโลโก้/ตัวอักษรเพี้ยนในใบพิมพ์)
   let printed = false;
-  const go = () => { if(printed) return; printed = true; try{ win.focus(); win.print(); }catch(e){} };
+  // ย่อให้พอดี A4 1 หน้าเสมอ (เนื้อหายาว เช่น มีความเห็น/ลายเซ็นหลายรายการ)
+  const fitA4 = () => {
+    try{
+      const d = win.document, sh = d.querySelector('.sheet'); if(!sh) return;
+      sh.style.zoom = 1;
+      const m = d.createElement('div'); m.style.cssText = 'height:271mm;position:absolute;visibility:hidden;';
+      d.body.appendChild(m); const max = m.offsetHeight; m.remove();
+      const h = sh.scrollHeight;
+      if(h > max) sh.style.zoom = Math.max(0.6, max / h - 0.005).toFixed(3);
+    }catch(e){}
+  };
+  fitA4();
+  try{ win.addEventListener('beforeprint', fitA4); }catch(e){}
+  const go = () => { if(printed) return; printed = true; try{ fitA4(); win.focus(); win.print(); }catch(e){} };
   win.addEventListener('load', () => {
     const fontsReady = (win.document.fonts && win.document.fonts.ready) ? win.document.fonts.ready : Promise.resolve();
     fontsReady.then(() => setTimeout(go, 250));
