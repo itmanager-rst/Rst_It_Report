@@ -171,6 +171,7 @@
                         <option value="ตระการพืชผล">ตระการพืชผล</option>
                         <option value="ศรีเมืองใหม่">ศรีเมืองใหม่</option>
                         <option value="อำนาจเจริญ">อำนาจเจริญ</option>
+                        <option value="สำนักงานใหญ่">สำนักงานใหญ่</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -183,6 +184,8 @@
                         <option value="ปกติ">ปกติ</option>
                         <option value="ชำรุด">ชำรุด</option>
                         <option value="รอซ่อม">รอซ่อม</option>
+                        <option value="รอตรวจสอบการรับคืน">รอตรวจสอบการรับคืน</option>
+                        <option value="รับคืนแล้ว">รับคืนแล้ว</option>
                     </select>
                 </div>
                 
@@ -237,6 +240,7 @@
                 <option value="ตระการพืชผล">ตระการพืชผล</option>
                 <option value="ศรีเมืองใหม่">ศรีเมืองใหม่</option>
                 <option value="อำนาจเจริญ">อำนาจเจริญ</option>
+                <option value="สำนักงานใหญ่">สำนักงานใหญ่ (รับคืนแล้ว / รอตรวจรับ)</option>
             </select>
         </div>
 
@@ -250,7 +254,7 @@
                         <th style="width: 80px; text-align: center;">จำนวน</th>
                         <th>สถานะระบบ</th>
                         <th style="width: 200px;">ผลการตรวจเช็คหน้างาน</th>
-                        <th class="col-action" style="width: 140px; text-align: center;">จัดการ</th>
+                        <th class="col-action" style="width: 170px; text-align: center;">จัดการ</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -345,7 +349,7 @@
                         ${item.note ? `<div style="font-size: 0.8rem; color: #ef4444; margin-top:4px;">📝 หมายเหตุ: ${item.note}</div>` : ''}
                     </td>
                     <td style="text-align: center; font-weight: bold; font-size: 1.1rem; color: var(--primary-color);">${item.quantity || '1'}</td>
-                    <td><span class="status-badge" style="background-color: ${item.status === 'ปกติ' ? '#dcfce7' : '#fee2e2'}; color: ${item.status === 'ปกติ' ? '#15803d' : '#b91c1c'}">${item.status || 'ปกติ'}</span></td>
+                    <td><span class="status-badge" style="${statusBadgeStyle(item.status)}">${item.status || 'ปกติ'}</span></td>
                     <td>
                         <div class="check-item"><input type="checkbox"> ปกติ ครบถ้วน</div>
                         <div class="check-item"><input type="checkbox"> ชำรุด/เสียหาย</div>
@@ -356,6 +360,7 @@
                             <button class="btn-edit" onclick="startEditAsset('${item.assetId}')">✏️ แก้ไข</button>
                             <button class="btn-delete" onclick="deleteAsset('${item.assetId}', ${item.rowNumber})">🗑️ ลบ</button>
                         </div>
+                        <div style="margin-top: 6px;">${returnHQButton(item)}</div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -523,11 +528,151 @@
         }
     }
 
+    // สีป้ายสถานะ
+    function statusBadgeStyle(st) {
+        const m = {
+            'ปกติ': ['#dcfce7', '#15803d'],
+            'รอตรวจสอบการรับคืน': ['#fef3c7', '#92400e'],
+            'รับคืนแล้ว': ['#dbeafe', '#1e40af']
+        };
+        const c = m[st || 'ปกติ'] || ['#fee2e2', '#b91c1c'];
+        return `background-color:${c[0]};color:${c[1]}`;
+    }
+    // หลังแจ้งคืนสำเร็จ → โหลดตารางใหม่
+    window.onReturnHQDone = function () { loadAssets(); };
+
     document.getElementById("filterBranch").addEventListener("change", loadAssets);
     window.addEventListener("DOMContentLoaded", () => {
         setLiveDate();
         loadAssets();
     });
 </script>
+<!-- ═══════════════════════════════════════════════════════════════
+     SiteAsset-Tracker : ปุ่ม "📤 แจ้งคืนทรัพย์สินเข้าสำนักงานใหญ่"
+     วิธีใช้:
+       1) วางโค้ดทั้งไฟล์นี้ไว้ก่อน </body> ของ index.html ของ SiteAsset-Tracker
+       2) ในฟังก์ชันที่สร้างแถวตาราง ให้เพิ่มปุ่มในช่อง "จัดการ":
+            html += returnHQButton(item);      // item = {assetId, assetName, branch, quantity, status}
+       3) หลังแจ้งคืนสำเร็จ ระบบจะเรียก window.onReturnHQDone(result) (ถ้ามี) — ใช้โหลดตารางใหม่
+     ═══════════════════════════════════════════════════════════════ -->
+<style>
+  .rthq-btn{display:inline-flex;justify-content:center;width:100%;align-items:center;gap:4px;padding:5px 10px;border-radius:7px;border:1px solid #f59e0b;
+    background:#fff7e6;color:#b45309;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit;}
+  .rthq-btn:hover{background:#fdecc8;}
+  .rthq-btn[disabled]{opacity:.45;cursor:not-allowed;}
+  .rthq-tag{display:inline-block;padding:3px 8px;border-radius:7px;background:#fef3c7;color:#92400e;font-size:11px;white-space:nowrap;}
+  .rthq-ov{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;}
+  .rthq-ov.show{display:flex;}
+  .rthq-box{background:#fff;color:#0f172a;border-radius:14px;width:100%;max-width:440px;box-shadow:0 20px 50px rgba(0,0,0,.3);font-family:inherit;overflow:hidden;}
+  .rthq-hd{padding:14px 18px;border-bottom:1px solid #e2e8f0;font-weight:700;font-size:15px;}
+  .rthq-bd{padding:14px 18px;display:grid;gap:10px;font-size:13px;}
+  .rthq-info{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;line-height:1.6;}
+  .rthq-bd label{display:grid;gap:4px;font-weight:600;font-size:12px;color:#334155;}
+  .rthq-bd input,.rthq-bd select,.rthq-bd textarea{font:inherit;font-size:14px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;width:100%;box-sizing:border-box;}
+  .rthq-qty{display:flex;align-items:center;gap:8px;}
+  .rthq-qty input{width:90px;text-align:center;}
+  .rthq-ft{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid #e2e8f0;}
+  .rthq-ft button{font:inherit;padding:8px 16px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;}
+  .rthq-ft .ok{background:#f59e0b;border-color:#f59e0b;color:#fff;font-weight:700;}
+  .rthq-msg{font-size:12px;min-height:16px;}
+</style>
+
+<div class="rthq-ov" id="rthqOv" onclick="if(event.target===this)rthqClose()">
+  <div class="rthq-box">
+    <div class="rthq-hd">📤 แจ้งคืนทรัพย์สินเข้าสำนักงานใหญ่</div>
+    <div class="rthq-bd">
+      <div class="rthq-info" id="rthqInfo"></div>
+      <label>จำนวนที่คืน
+        <span class="rthq-qty"><input type="number" id="rthqQty" min="1" step="1"> <span id="rthqMax" style="font-weight:400;color:#64748b;"></span></span>
+      </label>
+      <label>สภาพ
+        <select id="rthqCond"><option>ปกติ</option><option>มีรอยตำหนิ</option><option>ชำรุด</option></select>
+      </label>
+      <label>ชื่อผู้แจ้งคืน *<input id="rthqBy" placeholder="ชื่อ-นามสกุล" autocomplete="name"></label>
+      <label>หมายเหตุ<textarea id="rthqNote" rows="2" placeholder="เหตุผลที่คืน / รายละเอียดเพิ่มเติม"></textarea></label>
+      <div class="rthq-msg" id="rthqMsg"></div>
+    </div>
+    <div class="rthq-ft">
+      <button type="button" onclick="rthqClose()">ยกเลิก</button>
+      <button type="button" class="ok" id="rthqOk" onclick="rthqSubmit()">📤 ยืนยันแจ้งคืน</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ถ้าหน้าเว็บนี้ "ไม่ได้" เปิดผ่าน Apps Script (HtmlService) ให้ใส่ Web App URL ของ SiteAsset-Tracker ที่นี่
+var RTHQ_WEBAPP_URL = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : '';   // ใช้ URL เดียวกับแอปนี้
+var RTHQ_PENDING = 'รอตรวจสอบการรับคืน', RTHQ_HQ = 'สำนักงานใหญ่';
+var _rthqItem = null;
+
+function rthqEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+// ใช้ในตาราง: คืนค่า HTML ของปุ่ม (หรือป้ายสถานะ ถ้าแจ้งคืนไปแล้ว)
+function returnHQButton(item){
+  if(!item) return '';
+  if(String(item.status) === RTHQ_PENDING) return '<span class="rthq-tag">⏳ รอตรวจสอบการรับคืน</span>';
+  if(String(item.branch) === RTHQ_HQ) return '';
+  var data = encodeURIComponent(JSON.stringify({ assetId:item.assetId, assetName:item.assetName, branch:item.branch, quantity:item.quantity }));
+  return '<button type="button" class="rthq-btn" data-a="' + data + '" onclick="event.stopPropagation();openReturnHQ(JSON.parse(decodeURIComponent(this.dataset.a)))">📤 แจ้งคืนเข้า สนญ.</button>';
+}
+
+function openReturnHQ(item){
+  _rthqItem = item;
+  var max = parseInt(item.quantity, 10) || 1;
+  document.getElementById('rthqInfo').innerHTML =
+    '<b>' + rthqEsc(item.assetId) + '</b> · ' + rthqEsc(item.assetName) +
+    '<br>สาขาปัจจุบัน: ' + rthqEsc(item.branch || '-') + ' → <b>' + RTHQ_HQ + '</b>';
+  var q = document.getElementById('rthqQty');
+  q.max = max; q.value = max; q.disabled = max === 1;
+  document.getElementById('rthqMax').textContent = 'จากทั้งหมด ' + max + ' ชิ้น';
+  document.getElementById('rthqCond').value = 'ปกติ';
+  document.getElementById('rthqNote').value = '';
+  try{ document.getElementById('rthqBy').value = localStorage.getItem('rthq_by') || ''; }catch(e){}
+  document.getElementById('rthqMsg').textContent = '';
+  document.getElementById('rthqOk').disabled = false;
+  document.getElementById('rthqOv').classList.add('show');
+}
+function rthqClose(){ document.getElementById('rthqOv').classList.remove('show'); }
+
+function rthqSubmit(){
+  var it = _rthqItem; if(!it) return;
+  var max = parseInt(it.quantity, 10) || 1;
+  var qty = parseInt(document.getElementById('rthqQty').value, 10);
+  var by = document.getElementById('rthqBy').value.trim();
+  var msg = document.getElementById('rthqMsg');
+  if(!(qty >= 1 && qty <= max)){ msg.style.color = '#dc2626'; msg.textContent = 'จำนวนต้องอยู่ระหว่าง 1 – ' + max; return; }
+  if(!by){ msg.style.color = '#dc2626'; msg.textContent = 'กรุณาระบุชื่อผู้แจ้งคืน'; document.getElementById('rthqBy').focus(); return; }
+  if(!confirm('ยืนยันแจ้งคืน ' + it.assetName + ' จำนวน ' + qty + ' ชิ้น เข้าสำนักงานใหญ่?')) return;
+  try{ localStorage.setItem('rthq_by', by); }catch(e){}
+  var payload = { assetId:it.assetId, qty:qty, requester:by,
+                  cond:document.getElementById('rthqCond').value, note:document.getElementById('rthqNote').value.trim() };
+  document.getElementById('rthqOk').disabled = true;
+  msg.style.color = '#64748b'; msg.textContent = '⟳ กำลังส่งข้อมูล...';
+
+  var done = function(res){
+    if(res && res.status === 'ok'){
+      msg.style.color = '#16a34a'; msg.textContent = '✓ ' + res.msg;
+      setTimeout(function(){ rthqClose(); if(typeof window.onReturnHQDone === 'function') window.onReturnHQDone(res); else location.reload(); }, 1400);
+    }else{
+      msg.style.color = '#dc2626'; msg.textContent = '✕ ' + ((res && res.msg) || 'ส่งข้อมูลไม่สำเร็จ');
+      document.getElementById('rthqOk').disabled = false;
+    }
+  };
+  var fail = function(err){ done({ status:'error', msg:(err && err.message) || String(err) }); };
+
+  if(window.google && google.script && google.script.run){
+    // เปิดผ่าน Apps Script → เรียกฟังก์ชันฝั่ง Server โดยตรง (ไม่มีปัญหา CORS)
+    google.script.run.withSuccessHandler(done).withFailureHandler(fail).siteReturnToHQ(payload);
+  }else if(RTHQ_WEBAPP_URL){
+    // เปิดจากเว็บอื่น (เช่น GitHub Pages) → POST แบบ text/plain เพื่อไม่ให้เกิด CORS preflight
+    payload.action = 'returnToHQ';
+    fetch(RTHQ_WEBAPP_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body:JSON.stringify(payload) })
+      .then(function(r){ return r.json(); }).then(done).catch(fail);
+  }else{
+    fail(new Error('ยังไม่ได้ตั้งค่า RTHQ_WEBAPP_URL'));
+  }
+}
+</script>
+
 </body>
 </html>
