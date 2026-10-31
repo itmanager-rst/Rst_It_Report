@@ -2333,9 +2333,13 @@ async function syncAll(){
   }
 
   saveAll();
+  // ดึงข้อมูลล่าสุดกลับมาด้วย (เช่น ผลอนุมัติ/ลายเซ็นจากเครื่องอื่น)
+  if(!document.querySelector('.overlay.show')){   // ถ้ามีฟอร์มเปิดอยู่ ข้ามการดึง (กันฟอร์มถูกเปลี่ยนข้อมูล)
+    try{ await loadFromSheets({ background:true, silent:true }); refreshCurrentView(); }catch(e){ dbg('sync pull error: ' + e.message); }
+  }
   btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2a6 6 0 11-3.5 10.5"/><path d="M10 6V2H6"/></svg> Sync';
   btn.disabled = false;
-  toast(ok ? `✓ Sync ${ok} รายการสำเร็จ` : '✓ ทุกรายการ Sync แล้ว');
+  toast(ok ? `✓ Sync ${ok} รายการสำเร็จ · อัปเดตข้อมูลล่าสุดแล้ว` : '✓ อัปเดตข้อมูลล่าสุดแล้ว');
 }
 
 // ═══════════════════════════════════════════════════
@@ -5285,6 +5289,31 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeScan();
     l.href = URL.createObjectURL(new Blob([JSON.stringify(m)], { type:'application/manifest+json' }));
     document.head.appendChild(l);
   }catch(e){}
+})();
+
+// ═══ อัปเดตข้อมูลอัตโนมัติ — เห็นผลอนุมัติ/ลายเซ็นจากเครื่องอื่นโดยไม่ต้องออกจากระบบ ═══
+(function(){
+  let busy = false, last = Date.now();
+  async function pull(reason){
+    if(busy || !AUTH || !AUTH.token || document.hidden) return;
+    if(document.querySelector('.overlay.show, .msheet.show, .scan-ov.show')) return;   // ไม่รบกวนขณะกรอกฟอร์ม
+    busy = true;
+    try{
+      // ส่งของค้างในเครื่องก่อน แล้วค่อยดึงของใหม่
+      for(const tr of transfers.filter(x => x.synced === false)){ try{ if(await pushTransferRow(tr)) tr.synced = true; }catch(e){} }
+      const before = transfers.filter(t => t.status === 'pending').length;
+      const n = await loadFromSheets({ background:true, silent:true });
+      if(n){ last = Date.now(); refreshCurrentView(); updateNav();
+        const after = transfers.filter(t => t.status === 'pending').length;
+        if(after !== before) toast(after < before ? '✓ มีใบเบิก/โอนได้รับการพิจารณาแล้ว' : '⏳ มีใบเบิก/โอนใหม่รออนุมัติ');
+      }
+      dbg('auto refresh (' + reason + ')');
+    }catch(e){ dbg('auto refresh error: ' + e.message); }
+    busy = false;
+  }
+  document.addEventListener('visibilitychange', () => { if(!document.hidden && Date.now() - last > 45000) pull('กลับมาที่แอป'); });
+  window.addEventListener('focus', () => { if(Date.now() - last > 45000) pull('focus'); });
+  setInterval(() => pull('ทุก 2 นาที'), 120000);
 })();
 </script>
 </body>
