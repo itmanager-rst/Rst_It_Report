@@ -1571,10 +1571,22 @@ let tickets   = JSON.parse(localStorage.getItem(TK)  || '[]');
 let transfers = JSON.parse(localStorage.getItem(TRK) || '[]');
 // ── URLs ที่ใช้งาน (hardcoded — ทุกเครื่องใช้ได้ทันที) ──
 const DEFAULT_ASSET_URL    = 'https://script.google.com/macros/s/AKfycbysfZf7jhL7o-fuh5D1hy64Rvx_n2cUnEOn5w3K9LgKlBvY0NrwpXW7HNsHofwKMVqj/exec';
-const DEFAULT_TICKET_URL   = 'https://script.google.com/macros/s/AKfycbwlk5mS5KyqvBZ4u2-jALiXMXznPnTdJOZ2p6vi-ybYR5L40EOFZRk9EIzfWGtvz2Kj/exec';
-const DEFAULT_TRANSFER_URL = 'https://script.google.com/macros/s/AKfycbyzJU3FRAY0wNWVOrjBEmoDtm9Wx13z43J_UfeN2ppjF9UR6qKCYURk4sKBM9ORdlPHhw/exec'; // ← ใส่ URL Apps Script จากไฟล์ IT Transfers
+const DEFAULT_TICKET_URL   = 'https://script.google.com/macros/s/AKfycbzCQZLvDTS8iKJKSVxEQDEewzyWoBNLXHh-f-QKIjt42uIuk85-vpd4d_vZR8i9TKAD/exec';
+const DEFAULT_TRANSFER_URL = 'https://script.google.com/macros/s/AKfycbyzJU3FRAY0wNWVOrjBEmoDtm9Wx13z43J_UfeN2ppjF9UR6qKCYURk4sKBM9ORdlPHhw/exec';
 
 const TRU = 'it_transfer_url'; // localStorage key สำหรับ transfer URL
+
+// ── เปลี่ยน URL ชุดนี้เมื่อไร ให้เพิ่มเลข URL_SET_VERSION → ทุกเครื่องจะรีเซ็ตเป็น URL ใหม่อัตโนมัติ 1 ครั้ง ──
+const URL_SET_VERSION = '2026-10-31b';
+try{
+  if(localStorage.getItem('it_url_set_ver') !== URL_SET_VERSION){
+    localStorage.setItem(UK,  DEFAULT_ASSET_URL);
+    localStorage.setItem(TUK, DEFAULT_TICKET_URL);
+    localStorage.setItem(TRU, DEFAULT_TRANSFER_URL);
+    localStorage.removeItem('it_sheet_names_v1');          // ให้ตรวจชื่อชีตใหม่
+    localStorage.setItem('it_url_set_ver', URL_SET_VERSION);
+  }
+}catch(e){}
 
 let scriptUrl   = localStorage.getItem(UK)  || DEFAULT_ASSET_URL;
 let ticketUrl   = localStorage.getItem(TUK) || DEFAULT_TICKET_URL;
@@ -1938,6 +1950,10 @@ async function loadFromSheets(opts){
 
   let loaded = 0;
   results.forEach(r => {
+    if(r && r.kind === 'transfers' && !r.ok){
+      dbg('⚠ โหลดชีตเบิก/โอนไม่สำเร็จ — ใช้ข้อมูลในเครื่อง (ลายเซ็นจากคนอื่นจะไม่แสดง)');
+      setTimeout(() => toast('⚠ โหลดข้อมูลเบิก/โอน (IT Transfers) ไม่สำเร็จ — ตรวจ URL Transfer ในหน้าตั้งค่า', 'warn'), 1500);
+    }
     if(!r || !r.ok) return;
     try{
       if(r.kind === 'assets')    { applyAssetRows(r.rows);    loaded++; }
