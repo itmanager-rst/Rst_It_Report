@@ -195,6 +195,11 @@ tbody tr:hover td{background:rgba(255,255,255,.02);cursor:pointer;}
 .ack-card .an{font-size:12px;font-weight:500;margin-top:6px;}
 .ack-card .ar{font-size:10px;color:var(--cyan);}
 .ack-card .at{font-size:10px;color:var(--text3);font-family:'IBM Plex Mono',monospace;}
+.ack-card .av{font-size:9px;color:#4ade80;margin-top:2px;}
+.td-status{flex-wrap:wrap;}
+.td-ap-sig{flex-basis:100%;display:flex;align-items:center;gap:10px;margin-top:6px;padding-top:8px;border-top:1px dashed currentColor;color:var(--text2);font-size:11px;}
+.td-ap-sig svg{width:150px;height:48px;background:#f8fafc;border-radius:6px;flex-shrink:0;}
+.td-ap-sig b{color:var(--text);font-size:12px;}
 .ack-card .ack-del{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:5px;border:none;background:rgba(239,68,68,.15);color:#f87171;cursor:pointer;font-size:12px;line-height:1;}
 .sigpad-wrap{position:relative;border:1px dashed var(--border2);border-radius:8px;background:#f8fafc;overflow:hidden;touch-action:none;}
 .sigpad-wrap canvas{display:block;width:100%;height:130px;cursor:crosshair;touch-action:none;}
@@ -1427,11 +1432,12 @@ function lineWebhook(e) {
               <option>ผู้เกี่ยวข้อง (รับทราบ)</option>
             </select></div>
           <div class="fi full">
-            <label class="fl">ลายเซ็น (วาดด้วยเมาส์ / นิ้ว)</label>
+            <label class="fl" id="td-sig-lbl">ลายเซ็น (วาดด้วยเมาส์ / นิ้ว)</label>
             <div class="sigpad-wrap" id="td-sigwrap">
               <canvas id="td-sigpad"></canvas>
               <div class="sigpad-hint">เซ็นชื่อที่นี่</div>
               <button type="button" class="sigpad-clear" onclick="clearSigPad()">ล้าง</button>
+              <button type="button" class="sigpad-clear" id="td-sig-mine" style="right:52px;display:none;" onclick="useMySig()" title="ใช้ลายเซ็นล่าสุดที่เคยเซ็นจากเครื่องนี้">↺ ใช้ลายเซ็นเดิม</button>
             </div>
           </div>
         </div>
@@ -2017,7 +2023,15 @@ function applyTransferRows(rows){
     .filter(r => r[0] && String(r[0]).trim() !== '')
     .map(r => {
       const local = localTransfers.find(lt => lt._k === String(r[0]));
-      if(local && local.synced === false) return normalizeTransfer(local);
+      if(local && local.synced === false){
+        // ยังมีของค้าง Sync ในเครื่อง → รวมลายเซ็น/ความเห็นจาก Sheet เข้ามาด้วย (ไม่ให้ของคนอื่นหาย)
+        normalizeTransfer(local);
+        local.acks     = mergeByKey(parseJSONCell(r[15]), local.acks);
+        local.comments = mergeByKey(parseJSONCell(r[12]), local.comments);
+        const ss = String(r[10]||'pending');
+        if(ss !== 'pending' && local.status === 'pending'){ local.status = ss; local.decidedBy = String(r[13]||''); local.decidedAt = String(r[14]||''); }
+        return normalizeTransfer(local);
+      }
       const sheetStatus = String(r[10]||'pending');
       const finalStatus = (local && local.status!=='pending' && sheetStatus==='pending') ? local.status : sheetStatus;
       const sheetCmts = parseJSONCell(r[12]);
@@ -2548,8 +2562,10 @@ async function pushTransferRow(t){
   if(!url) return false;
   const row = JSON.stringify(trRow(t));
   if(row.length > 6500) dbg('⚠ Transfer row ' + t.id + ' ยาว ' + row.length + ' ตัวอักษร (ลายเซ็นหลายรายการ) — อาจเกินขีดจำกัด URL');
-  let res = await callSheet({ action:'update', sheet:SHEET_NAMES.transfers, key:t._k, row }, url);
-  if(res && res.status === 'ok') return true;
+  const p = { action:'update', sheet:SHEET_NAMES.transfers, key:t._k, row };
+  if(t._replaceAcks) p.replaceAcks = '1';   // ลบลายเซ็น (เฉพาะผู้จัดการ) — ไม่งั้น Server จะรวมของเดิมกลับมา
+  let res = await callSheet(p, url);
+  if(res && res.status === 'ok'){ delete t._replaceAcks; return true; }
   if(res && /key not found/i.test(res.msg || '')){
     res = await callSheet({ action:'add', sheet:SHEET_NAMES.transfers, key:t._k, row }, url);
     return !!(res && res.status === 'ok');
@@ -2567,6 +2583,79 @@ async function syncTransfer(tr, okMsg){
   try{ ok = await pushTransferRow(tr); }catch(e){ dbg('syncTransfer error: ' + e.message); }
   if(ok){ tr.synced = true; saveAll(); renderTransfers(); }
   toast(ok ? '✓ ' + okMsg + ' และ Sync สำเร็จ' : '⚠ ' + okMsg + ' (Sync ไม่สำเร็จ — จะ Sync ใหม่ภายหลัง)', ok ? 'ok' : 'warn');
+}
+
+// ── ลายเซ็น / ความเห็น / อนุมัติ: ส่งเฉพาะรายการใหม่ให้ Server ต่อท้าย (ไม่ส่งทั้งแถว) ──
+const TR_APPROVER_ROLES = ['ผู้อนุมัติ','ผู้อนุมัติเบิก'];
+function mergeByKey(a, b){
+  const key = x => [x.at||'', x.name||x.by||'', x.role||'', x.kind||''].join('|');
+  const seen = new Set(), res = [];
+  (a||[]).concat(b||[]).forEach(x => { if(!x || typeof x !== 'object') return; const k = key(x); if(seen.has(k)) return; seen.add(k); res.push(x); });
+  return res.sort((p,q) => String(p.at||'') < String(q.at||'') ? -1 : String(p.at||'') > String(q.at||'') ? 1 : 0);
+}
+// อัปเดตรายการในเครื่องจากแถวล่าสุดบน Server
+function applyServerTransferRow(tr, r, keepLocal){
+  if(!Array.isArray(r)) return;
+  const sAcks = parseJSONCell(r[15]), sCmts = parseJSONCell(r[12]);
+  tr.acks     = keepLocal ? mergeByKey(sAcks, tr.acks)     : sAcks;
+  tr.comments = keepLocal ? mergeByKey(sCmts, tr.comments) : sCmts;
+  const ss = String(r[10]||'pending');
+  if(!keepLocal || ss !== 'pending'){ tr.status = ss; tr.decidedBy = String(r[13]||''); tr.decidedAt = String(r[14]||''); }
+  normalizeTransfer(tr);
+}
+function trRefreshUI(tr){
+  saveAll(); renderTransfers(); renderKPI();
+  if(tdKey === tr._k) renderTransferDetail();
+}
+// ส่งคำสั่ง trAck / trComment / trDecide — คืนค่า true ถ้าบันทึกบน Server สำเร็จ
+async function trSend(tr, action, extra, okMsg, undo){
+  const wasUnsynced = tr.synced === false;
+  tr.synced = false; trRefreshUI(tr);
+  const url = getUrlForSheet(SHEET_NAMES.transfers);
+  if(!url){ toast('✓ ' + okMsg + ' (บันทึกในเครื่อง)'); return false; }
+  toast('⟳ กำลังบันทึกขึ้นระบบ...');
+  let res = null;
+  try{ res = await callSheet({ action, sheet:SHEET_NAMES.transfers, key:tr._k, ...extra }, url); }
+  catch(e){ dbg(action + ' error: ' + e.message); }
+
+  if(res && res.status === 'ok' && res.row){
+    applyServerTransferRow(tr, res.row, wasUnsynced);
+    tr.synced = true;
+    if(wasUnsynced){ try{ tr.synced = await pushTransferRow(tr); }catch(e){ tr.synced = false; } }
+    trRefreshUI(tr);
+    toast('✓ ' + okMsg + ' — บันทึกขึ้นระบบแล้ว ทุกคนเห็นลายเซ็นนี้');
+    return true;
+  }
+  if(res && res.status === 'error' && (res.code === 'forbidden' || /ระบุ|ไม่ถูกต้อง|เต็ม/.test(res.msg||''))){
+    if(undo) undo();
+    tr.synced = !wasUnsynced; trRefreshUI(tr);
+    if(res.code !== 'forbidden') toast('⚠ ' + res.msg, 'warn');
+    return false;
+  }
+  // Server รุ่นเก่า (ยังไม่มีคำสั่งนี้) หรือรายการยังไม่ขึ้น Sheet → ส่งทั้งแถวแทน
+  if(res && /unknown action|key not found|ไม่ใช่ชีต/i.test(res.msg || '')){
+    let ok = false;
+    try{ ok = await pushTransferRow(tr); }catch(e){}
+    tr.synced = ok; trRefreshUI(tr);
+    toast(ok ? '✓ ' + okMsg + ' และ Sync สำเร็จ' : '⚠ ' + okMsg + ' (Sync ไม่สำเร็จ — จะ Sync ใหม่ภายหลัง)', ok ? 'ok' : 'warn');
+    return ok;
+  }
+  trRefreshUI(tr);
+  toast('⚠ ' + okMsg + ' ในเครื่องแล้ว แต่ส่งขึ้นระบบไม่สำเร็จ — กด Sync อีกครั้งภายหลัง', 'warn');
+  return false;
+}
+// ดึงแถวล่าสุดของใบนี้จาก Server (เห็นลายเซ็นที่คนอื่นเพิ่งเซ็น)
+async function refreshTransferFromServer(tr){
+  const url = getUrlForSheet(SHEET_NAMES.transfers);
+  if(!url || !tr) return;
+  try{
+    const res = await callSheet({ action:'trGet', sheet:SHEET_NAMES.transfers, key:tr._k }, url);
+    if(res && res.status === 'ok' && res.row){
+      applyServerTransferRow(tr, res.row, tr.synced === false);
+      saveAll(); renderTransfers();
+      if(tdKey === tr._k) renderTransferDetail();
+    }
+  }catch(e){ dbg('trGet error: ' + e.message); }
 }
 
 // ── ตาราง ─────────────────────────────────────────────
@@ -2653,10 +2742,13 @@ function openTransferDetail(key){
   document.getElementById('td-ack-name').value = '';
   // เดาบทบาทผู้ลงนาม: ถ้ายังไม่มีผู้รับเซ็น → ผู้รับทรัพย์สิน
   const roleSel = document.getElementById('td-ack-role');
-  roleSel.value = tr.acks.some(a => a.role === 'ผู้รับทรัพย์สิน') ? 'ผู้เกี่ยวข้อง (รับทราบ)' : 'ผู้รับทรัพย์สิน';
+  roleSel.value = canApprove() && tr.status === 'pending' ? 'ผู้อนุมัติ'
+    : tr.acks.some(a => a.role === 'ผู้รับทรัพย์สิน') ? 'ผู้เกี่ยวข้อง (รับทราบ)' : 'ผู้รับทรัพย์สิน';
+  document.getElementById('td-ack-name').value = canApprove() && tr.status === 'pending' ? lsGet('it_signer_name') : '';
   renderTransferDetail();
   document.getElementById('trDetailOverlay').classList.add('show');
   requestAnimationFrame(() => initSigPad());
+  refreshTransferFromServer(tr);   // โหลดลายเซ็นล่าสุดจากระบบ (เบื้องหลัง)
 }
 function closeTransferDetail(){
   document.getElementById('trDetailOverlay').classList.remove('show');
@@ -2707,6 +2799,9 @@ function renderTransferDetail(){
   box.innerHTML = tr.status === 'pending'
     ? `<span class="badge b-pend pulse">⏳ รออนุมัติ</span><span>รอการพิจารณาจาก <b>${escH(tr.approver || 'ผู้อนุมัติ')}</b></span>`
     : `<span class="badge ${st.c}">${tr.status==='approved'?'✓':'✕'} ${st.t}</span><span>โดย <b>${escH(tr.decidedBy || '-')}</b></span><small>${escH(fmtDT(tr.decidedAt))}</small>`;
+  const apSig = approverAck(tr);
+  if(apSig && tr.status !== 'pending')
+    box.innerHTML += `<div class="td-ap-sig" title="ลายเซ็นผู้อนุมัติ">${sigSVG(apSig.sig)}<div><b>${escH(apSig.name)}</b><br><span>ลายเซ็นผู้อนุมัติ${apSig.sys ? ' · 🔒 ' + escH(apSig.sys) : ''}</span></div></div>`;
 
   const cell = (k, v, full) => `<div class="td-cell${full?' full':''}"><div class="td-k">${k}</div><div class="td-v">${escH(v || '—')}</div></div>`;
   document.getElementById('td-info').innerHTML =
@@ -2735,13 +2830,24 @@ function renderTransferDetail(){
     ? tr.acks.map((k, i) => `<div class="ack-card">
         ${canDelete() ? `<button class="ack-del" title="ลบลายเซ็น" onclick="delTransferAck(${i})">×</button>` : ''}
         ${sigSVG(k.sig)}
-        <div class="an">${escH(k.name)}</div><div class="ar">${escH(k.role)}</div><div class="at">${escH(fmtDT(k.at))}</div></div>`).join('')
+        <div class="an">${escH(k.name)}</div><div class="ar">${escH(k.role)}</div><div class="at">${escH(fmtDT(k.at))}</div>
+        ${k.sys ? `<div class="av" title="ยืนยันตัวตนผ่านการเข้าสู่ระบบ">🔒 ยืนยันโดยระบบ (${escH(k.sys)})</div>` : ''}</div>`).join('')
     : '<div class="tl-empty" style="grid-column:1/-1;">ยังไม่มีผู้ลงนามรับทราบ</div>';
 
   // ปุ่มอนุมัติ
   const can = canApprove();
   document.getElementById('td-approve').style.display = can && tr.status !== 'approved' ? '' : 'none';
   document.getElementById('td-reject').style.display  = can && tr.status === 'pending'  ? '' : 'none';
+  const lbl = document.getElementById('td-sig-lbl');
+  if(lbl) lbl.textContent = can && tr.status !== 'approved'
+    ? 'ลายเซ็น (วาดด้วยเมาส์ / นิ้ว) — ใช้เป็นลายเซ็นผู้อนุมัติเมื่อกด ✓ อนุมัติ'
+    : 'ลายเซ็น (วาดด้วยเมาส์ / นิ้ว)';
+  const mine = document.getElementById('td-sig-mine');
+  if(mine) mine.style.display = lsGet('it_my_sig') ? '' : 'none';
+}
+function approverAck(tr){
+  for(let i = tr.acks.length - 1; i >= 0; i--) if(tr.acks[i].role === 'ผู้อนุมัติ') return tr.acks[i];
+  return null;
 }
 
 function addTransferComment(){
@@ -2751,15 +2857,17 @@ function addTransferComment(){
   if(!by){ toast('⚠ กรุณาระบุชื่อผู้บันทึก','warn'); document.getElementById('td-cmt-by').focus(); return; }
   if(!text){ toast('⚠ กรุณาเขียนความเห็น','warn'); document.getElementById('td-cmt-text').focus(); return; }
   lsSet('it_signer_name', by);
-  tr.comments.push({ by, role:roleLabel(), at:new Date().toISOString(), text, kind:'comment' });
+  const c = { by, role:roleLabel(), at:new Date().toISOString(), text, kind:'comment' };
+  tr.comments.push(c);
   document.getElementById('td-cmt-text').value = '';
-  syncTransfer(tr, 'บันทึกความเห็นแล้ว');
+  trSend(tr, 'trComment', { c: JSON.stringify(c) }, 'บันทึกความเห็นแล้ว',
+    () => { tr.comments = tr.comments.filter(x => x !== c); });
 }
 
-function applyTransferDecision(tr, status, by, text){
+function applyTransferDecision(tr, status, by, text, at){
   tr.status    = status;
   tr.decidedBy = by;
-  tr.decidedAt = new Date().toISOString();
+  tr.decidedAt = at || new Date().toISOString();
   tr.comments.push({ by, role:roleLabel(), at:tr.decidedAt,
     text: text || (status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ'),
     kind: status === 'approved' ? 'approve' : 'reject' });
@@ -2776,27 +2884,53 @@ function decideTransfer(status){
   if(!requirePerm(canApprove(), status==='approved' ? 'อนุมัติการโอน' : 'ไม่อนุมัติการโอน')) return;
   const tr = transfers.find(t => t._k === tdKey); if(!tr) return;
   const text = document.getElementById('td-cmt-text').value.trim();
-  const by   = document.getElementById('td-cmt-by').value.trim() || roleLabel();
+  const by   = document.getElementById('td-cmt-by').value.trim() || document.getElementById('td-ack-name').value.trim();
   if(status === 'rejected' && !text){
     toast('⚠ กรุณาระบุเหตุผลที่ไม่อนุมัติในช่องความเห็น','warn');
     document.getElementById('td-cmt-text').focus(); return;
   }
+  if(!by){
+    toast('⚠ กรุณาระบุชื่อผู้อนุมัติ (ช่อง "ชื่อผู้บันทึก" หรือ "ชื่อผู้ลงนาม")','warn');
+    document.getElementById('td-cmt-by').focus(); return;
+  }
+  // ลายเซ็นผู้อนุมัติ: บังคับเมื่ออนุมัติ / ไม่บังคับเมื่อไม่อนุมัติ
+  const sig = sigPadData();
+  if(status === 'approved' && !sig){
+    document.getElementById('td-ack-role').value = 'ผู้อนุมัติ';
+    document.getElementById('td-sigwrap').scrollIntoView({ behavior:'smooth', block:'center' });
+    toast('✍️ กรุณาเซ็นลายเซ็นผู้อนุมัติในช่องลายเซ็นก่อนกดอนุมัติ' + (lsGet('it_my_sig') ? ' (หรือกด "ใช้ลายเซ็นเดิม")' : ''),'warn');
+    return;
+  }
   if(!confirm(`ยืนยัน${status==='approved'?'อนุมัติ':'ไม่อนุมัติ'}ใบ ${tr.id} ?`)) return;
-  if(document.getElementById('td-cmt-by').value.trim()) lsSet('it_signer_name', by);
-  applyTransferDecision(tr, status, by, text);
+  lsSet('it_signer_name', by);
+  const snap = JSON.parse(JSON.stringify({ status:tr.status, decidedBy:tr.decidedBy, decidedAt:tr.decidedAt, comments:tr.comments, acks:tr.acks }));
+  const at = new Date().toISOString();
+  applyTransferDecision(tr, status, by, text, at);
+  const extra = { st:status, by, text, at, roleLabel:roleLabel() };
+  if(sig){
+    const ack = { name:by, role:'ผู้อนุมัติ', at, sig, sys:currentRole };
+    tr.acks.push(ack);
+    extra.ack = JSON.stringify(ack);
+    lsSet('it_my_sig', sig);
+    clearSigPad();
+  }
   document.getElementById('td-cmt-text').value = '';
-  syncTransfer(tr, status === 'approved' ? 'อนุมัติแล้ว' : 'บันทึกไม่อนุมัติแล้ว');
+  trSend(tr, 'trDecide', extra, status === 'approved' ? 'อนุมัติและลงลายเซ็นแล้ว' : 'บันทึกไม่อนุมัติแล้ว',
+    () => Object.assign(tr, snap));
 }
 
-// ปุ่ม ✓ ในตาราง (อนุมัติด่วน)
-async function approveTransfer(key){
+// ปุ่ม ✓ ในตาราง → เปิดหน้ารายละเอียดให้เซ็นลายเซ็นผู้อนุมัติก่อน
+function approveTransfer(key){
   if(!requirePerm(canApprove(),'อนุมัติการโอน')) return;
   const tr = transfers.find(t => t._k === key); if(!tr) return;
   normalizeTransfer(tr);
   if(tr.status === 'approved') return;
-  if(!confirm(`อนุมัติใบ ${tr.id} ทันที?\n(ต้องการเขียนความเห็น ให้คลิกที่แถวเพื่อเปิดรายละเอียด)`)) return;
-  applyTransferDecision(tr, 'approved', lsGet('it_signer_name') || roleLabel(), '');
-  await syncTransfer(tr, 'อนุมัติแล้ว');
+  openTransferDetail(key);
+  document.getElementById('td-ack-role').value = 'ผู้อนุมัติ';
+  setTimeout(() => {
+    document.getElementById('td-sigwrap').scrollIntoView({ behavior:'smooth', block:'center' });
+    toast('✍️ เซ็นลายเซ็นผู้อนุมัติ แล้วกด ✓ อนุมัติ ด้านล่าง');
+  }, 250);
 }
 
 function addTransferAck(){
@@ -2804,12 +2938,24 @@ function addTransferAck(){
   const name = document.getElementById('td-ack-name').value.trim();
   const role = document.getElementById('td-ack-role').value;
   if(!name){ toast('⚠ กรุณาระบุชื่อผู้ลงนาม','warn'); document.getElementById('td-ack-name').focus(); return; }
+  if(TR_APPROVER_ROLES.includes(role) && !canApprove()){
+    toast('🔒 ลงนามในฐานะ "' + role + '" ได้เฉพาะผู้ที่เข้าสู่ระบบด้วยสิทธิ์ผู้จัดการ/แอดมิน','warn'); return;
+  }
+  if(role === 'ผู้อนุมัติ' && tr.status === 'pending' && canApprove()){
+    if(confirm('ต้องการ "อนุมัติ" ใบนี้พร้อมลายเซ็นเลยหรือไม่?\n(ตกลง = อนุมัติ + ลงลายเซ็น / ยกเลิก = ลงลายเซ็นอย่างเดียว)')){
+      if(!document.getElementById('td-cmt-by').value.trim()) document.getElementById('td-cmt-by').value = name;
+      decideTransfer('approved'); return;
+    }
+  }
   const sig = sigPadData();
   if(!sig){ toast('⚠ กรุณาเซ็นชื่อในช่องลายเซ็น','warn'); return; }
-  tr.acks.push({ name, role, at:new Date().toISOString(), sig });
+  const ack = { name, role, at:new Date().toISOString(), sig, sys:currentRole };
+  tr.acks.push(ack);
+  lsSet('it_my_sig', sig); lsSet('it_signer_name', name);
   document.getElementById('td-ack-name').value = '';
   clearSigPad();
-  syncTransfer(tr, `${name} ลงนามรับทราบแล้ว`);
+  trSend(tr, 'trAck', { ack: JSON.stringify(ack) }, `${name} ลงนามรับทราบแล้ว`,
+    () => { tr.acks = tr.acks.filter(x => x !== ack); });
 }
 
 function delTransferAck(i){
@@ -2817,6 +2963,7 @@ function delTransferAck(i){
   const tr = transfers.find(t => t._k === tdKey); if(!tr || !tr.acks[i]) return;
   if(!confirm(`ลบลายเซ็นของ ${tr.acks[i].name} ?`)) return;
   tr.acks.splice(i, 1);
+  tr._replaceAcks = true;
   syncTransfer(tr, 'ลบลายเซ็นแล้ว');
 }
 
@@ -2859,6 +3006,31 @@ function clearSigPad(){
   if(SIG.ctx) SIG.ctx.clearRect(0, 0, cv.width, cv.height);
   SIG.strokes = []; SIG.cur = null;
   document.getElementById('td-sigwrap').classList.remove('dirty');
+}
+// โหลดลายเซ็นที่บันทึกไว้ (path มาตรฐาน สูง 100 หน่วย) กลับลงช่องเซ็น
+function sigPadLoad(d){
+  if(!d || !SIG.ctx) return;
+  clearSigPad();
+  const k = 1 / (SIG.scale || 1);
+  String(d).split(/(?=M)/).forEach(seg => {
+    const n = (seg.match(/-?\d+(\.\d+)?/g) || []).map(Number);
+    if(n.length < 2) return;
+    const st = [];
+    for(let i = 0; i + 1 < n.length; i += 2) st.push([n[i] * k, n[i+1] * k]);
+    if(/l0 0$/.test(seg)) st.length = 1;
+    SIG.strokes.push(st);
+    SIG.ctx.beginPath(); SIG.ctx.moveTo(st[0][0], st[0][1]);
+    if(st.length === 1) SIG.ctx.lineTo(st[0][0] + .1, st[0][1] + .1);
+    st.slice(1).forEach(p => SIG.ctx.lineTo(p[0], p[1]));
+    SIG.ctx.stroke();
+  });
+  document.getElementById('td-sigwrap').classList.add('dirty');
+}
+function useMySig(){
+  const d = lsGet('it_my_sig');
+  if(!d){ toast('ยังไม่มีลายเซ็นที่บันทึกไว้ในเครื่องนี้','warn'); return; }
+  sigPadLoad(d);
+  if(!document.getElementById('td-ack-name').value.trim()) document.getElementById('td-ack-name').value = lsGet('it_signer_name');
 }
 function sigPadData(){
   const pts = SIG.strokes.reduce((n, s) => n + s.length, 0);

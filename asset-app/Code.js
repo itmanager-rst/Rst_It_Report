@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // IT Asset Management — Apps Script Backend (RuamsinthaiGroup)
 // เวอร์ชันความปลอดภัย v5 : PIN ตรวจที่ Server + Token (HMAC-SHA256)
+// v5.1 : ลายเซ็นเบิก/โอน/คืน บันทึกแบบต่อท้ายบน Server (trAck / trComment / trDecide / trGet)
 // ───────────────────────────────────────────────────────────────
 // ใช้โค้ดไฟล์นี้ชุดเดียวกันทั้ง 3 โปรเจกต์ (Asset / Ticket / Transfer)
 //
@@ -175,14 +176,8 @@ function checkWrite(role, action, sheet, row, key) {
   if (kind === 'ticket') return action === 'add';
   if (kind === 'transfer') {
     if (action === 'add') return String(row[10] || 'pending') === 'pending';  // สร้างใหม่ต้องเป็น "รออนุมัติ"
-    if (action === 'update') {
-      var cur = findRowByKey(sheet, key);
-      if (!cur) return false;
-      // ห้าม staff เปลี่ยนสถานะอนุมัติ / ผู้อนุมัติ / เวลาอนุมัติ
-      return String(cur.values[10]) === String(row[10]) &&
-             String(cur.values[13] || '') === String(row[13] || '') &&
-             String(cur.values[14] || '') === String(row[14] || '');
-    }
+    // staff แก้ได้ แต่ Server จะคงค่า สถานะ / ผู้อนุมัติ / เวลาอนุมัติ เดิมไว้เสมอ (ดู mergeTransferRow)
+    if (action === 'update') return !!findRowByKey(sheet, key);
   }
   return false;
 }
@@ -241,6 +236,11 @@ function main(e) {
     var sheet = sheetName ? ss.getSheetByName(sheetName) : ss.getActiveSheet();
     if (!sheet) return out({ status: 'error', msg: 'Sheet not found: ' + sheetName }, cb);
 
+    // ── ใบเบิก/โอน: ลงนาม / ความเห็น / อนุมัติ แบบ "ต่อท้าย" บน Server (ลายเซ็นไม่หาย ไม่ทับกัน) ──
+    if (action === 'trGet' || action === 'trAck' || action === 'trComment' || action === 'trDecide') {
+      return out(handleTransferOp(action, param, role, sheet), cb);
+    }
+
     if (action === 'getAll') {
       var lastRow = sheet.getLastRow();
       if (lastRow < 2) return out({ status: 'ok', rows: [] }, cb);
@@ -274,6 +274,7 @@ function main(e) {
           sheet.getRange(target, 1, 1, row.length).setValues([row]);
         } else if (action === 'update') {
           if (!found) return out({ status: 'error', msg: 'key not found: ' + key }, cb);
+          if (sheetKind(sheet.getName()) === 'transfer') row = mergeTransferRow(found.values, row, role, param.replaceAcks === '1');
           sheet.getRange(found.row, 1, 1, row.length).setValues([row]);
         } else {
           if (!found) return out({ status: 'error', msg: 'key not found: ' + key }, cb);
@@ -289,6 +290,127 @@ function main(e) {
     return out({ status: 'error', msg: 'unknown action: ' + action }, cb);
   } catch (err) {
     return out({ status: 'error', msg: err.message || String(err) }, cb);
+  }
+}
+
+// ═══════════════════ TRANSFER: ลายเซ็น / ความเห็น / อนุมัติ ═══════════════════
+// คอลัมน์: K(10) status | L(11) updated | M(12) comments | N(13) decidedBy | O(14) decidedAt | P(15) acks
+var TR_APPROVER_ROLES = ['ผู้อนุมัติ', 'ผู้อนุมัติเบิก'];   // ลายเซ็นบทบาทนี้ต้องเป็น admin / manager
+var TR_CELL_MAX = 49000;                                   // ขีดจำกัดเซลล์ Google Sheets = 50,000 ตัวอักษร
+
+function trParse(v) {
+  if (Array.isArray(v)) return v;
+  if (v === null || v === undefined || v === '') return [];
+  try { var x = JSON.parse(String(v)); return Array.isArray(x) ? x : []; } catch (e) { return []; }
+}
+function trItemKey(x) {
+  return [x.at || '', x.name || x.by || '', x.role || '', x.kind || ''].map(String).join('|');
+}
+// รวมรายการ 2 ชุด (ไม่ซ้ำ) เรียงตามเวลา
+function trMerge(a, b) {
+  var seen = {}, res = [];
+  a.concat(b).forEach(function (x) {
+    if (!x || typeof x !== 'object') return;
+    var k = trItemKey(x);
+    if (seen[k]) return;
+    seen[k] = 1; res.push(x);
+  });
+  res.sort(function (p, q) { return String(p.at || '') < String(q.at || '') ? -1 : String(p.at || '') > String(q.at || '') ? 1 : 0; });
+  return res;
+}
+function trIso(v) {
+  if (v instanceof Date) return v.toISOString();
+  return v === null || v === undefined ? '' : String(v);
+}
+// เวลาที่ Client ส่งมา (ใช้ได้ถ้าห่างจากเวลา Server ไม่เกิน 2 วัน — ใช้เป็น key กันซ้ำ)
+function trAt(v) {
+  var d = new Date(String(v || ''));
+  if (isNaN(d.getTime()) || Math.abs(d.getTime() - Date.now()) > 2 * 864e5) d = new Date();
+  return d.toISOString();
+}
+function trCleanAck(raw, role) {
+  var a = raw;
+  if (typeof raw === 'string') { try { a = JSON.parse(raw); } catch (e) { a = null; } }
+  if (!a || typeof a !== 'object') throw new Error('ข้อมูลลายเซ็นไม่ถูกต้อง');
+  var name = String(a.name || '').trim().slice(0, 120);
+  var r = String(a.role || '').trim().slice(0, 60);
+  var sig = String(a.sig || '');
+  if (!name) throw new Error('กรุณาระบุชื่อผู้ลงนาม');
+  if (!r) throw new Error('กรุณาระบุบทบาทผู้ลงนาม');
+  if (!sig || sig.length > 9000 || !/^[MLml0-9 .,\-]+$/.test(sig)) throw new Error('ลายเซ็นไม่ถูกต้องหรือยาวเกินไป');
+  if (TR_APPROVER_ROLES.indexOf(r) > -1 && !isMgr(role)) {
+    var e = new Error('ลายเซ็นในฐานะ "' + r + '" ต้องเข้าสู่ระบบด้วยสิทธิ์ผู้จัดการ/แอดมิน'); e.code = 'forbidden'; throw e;
+  }
+  return { name: name, role: r, at: trAt(a.at), sig: sig, sys: role };   // sys = สิทธิ์ที่ใช้ลงนามจริง (ตรวจจาก Token)
+}
+
+// ใช้ตอน update ทั้งแถว: รวมความเห็น/ลายเซ็นกับของเดิม และกัน staff เปลี่ยนผลอนุมัติ
+function mergeTransferRow(cur, row, role, replaceAcks) {
+  row = row.slice();
+  while (row.length < 16) row.push('');
+  row[12] = JSON.stringify(trMerge(trParse(cur[12]), trParse(row[12])));
+  if (!(replaceAcks && isMgr(role))) row[15] = JSON.stringify(trMerge(trParse(cur[15]), trParse(row[15])));
+  if (!isMgr(role)) { row[10] = cur[10]; row[13] = cur[13]; row[14] = trIso(cur[14]); }
+  return row;
+}
+
+function handleTransferOp(action, param, role, sheet) {
+  if (sheetKind(sheet.getName()) !== 'transfer') return { status: 'error', msg: 'ชีตนี้ไม่ใช่ชีตเบิก/โอน' };
+  var key = String(param.key || '');
+  if (!key) return { status: 'error', msg: 'missing key' };
+
+  if (action === 'trGet') {
+    var f0 = findRowByKey(sheet, key);
+    if (!f0) return { status: 'error', msg: 'key not found: ' + key };
+    return { status: 'ok', row: f0.values.map(trIso) };
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var f = findRowByKey(sheet, key);
+    if (!f) return { status: 'error', msg: 'key not found: ' + key };
+    var v = f.values.map(trIso);
+    while (v.length < 16) v.push('');
+    var comments = trParse(v[12]), acks = trParse(v[15]);
+
+    try {
+      if (action === 'trAck') {
+        acks = trMerge(acks, [trCleanAck(param.ack, role)]);
+      } else if (action === 'trComment') {
+        var c = {};
+        try { c = JSON.parse(param.c || '{}'); } catch (e) {}
+        var text = String(c.text || '').trim().slice(0, 2000), by = String(c.by || '').trim().slice(0, 120);
+        if (!text || !by) return { status: 'error', msg: 'ข้อมูลความเห็นไม่ครบ' };
+        comments = trMerge(comments, [{ by: by, role: String(c.role || '').slice(0, 60), at: trAt(c.at), text: text, kind: 'comment' }]);
+      } else if (action === 'trDecide') {
+        if (!isMgr(role)) return { status: 'error', code: 'forbidden', msg: 'เฉพาะผู้จัดการ/แอดมินเท่านั้นที่อนุมัติได้' };
+        var st = String(param.st || '');
+        if (st !== 'approved' && st !== 'rejected') return { status: 'error', msg: 'สถานะไม่ถูกต้อง' };
+        var dby = String(param.by || '').trim().slice(0, 120);
+        if (!dby) return { status: 'error', msg: 'กรุณาระบุชื่อผู้อนุมัติ' };
+        var at = trAt(param.at);
+        var dtext = String(param.text || '').trim().slice(0, 2000) || (st === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ');
+        if (st === 'rejected' && !String(param.text || '').trim()) return { status: 'error', msg: 'กรุณาระบุเหตุผลที่ไม่อนุมัติ' };
+        v[10] = st; v[13] = dby; v[14] = at;
+        comments = trMerge(comments, [{ by: dby, role: String(param.roleLabel || '').slice(0, 60), at: at, text: dtext, kind: st === 'approved' ? 'approve' : 'reject' }]);
+        if (param.ack) acks = trMerge(acks, [trCleanAck(param.ack, role)]);
+      }
+    } catch (err) {
+      return { status: 'error', code: err.code || '', msg: err.message || String(err) };
+    }
+
+    var jc = JSON.stringify(comments), ja = JSON.stringify(acks);
+    if (ja.length > TR_CELL_MAX || jc.length > TR_CELL_MAX) return { status: 'error', msg: 'พื้นที่เก็บลายเซ็น/ความเห็นของใบนี้เต็มแล้ว' };
+    v[11] = new Date().toLocaleDateString('th-TH');
+    v[12] = jc; v[15] = ja;
+    var rg = sheet.getRange(f.row, 11, 1, 6);          // K..P
+    rg.setNumberFormat('@');                            // เก็บเป็นข้อความ (กัน Sheets แปลงเวลาเป็น Date)
+    rg.setValues([[v[10], v[11], v[12], v[13], v[14], v[15]]]);
+    SpreadsheetApp.flush();
+    return { status: 'ok', row: v };
+  } finally {
+    lock.releaseLock();
   }
 }
 
