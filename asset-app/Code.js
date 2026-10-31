@@ -2,6 +2,7 @@
 // IT Asset Management — Apps Script Backend (RuamsinthaiGroup)
 // เวอร์ชันความปลอดภัย v5 : PIN ตรวจที่ Server + Token (HMAC-SHA256)
 // v5.1 : ลายเซ็นเบิก/โอน/คืน บันทึกแบบต่อท้ายบน Server (trAck / trComment / trDecide / trGet)
+// v5.3 : เชื่อม SiteAsset-Tracker — อนุมัติ/ไม่อนุมัติใบคืนจากสาขา อัปเดตชีตสาขาอัตโนมัติ (siteSyncDecision_)
 // v5.2 : อ่าน/เขียนไฟล์ใน SHEET_FILES โดยตรง (IT Assets / IT Tickets / IT Transfers) — หลังวางโค้ดให้ Run checkFiles 1 ครั้ง
 // ───────────────────────────────────────────────────────────────
 // ใช้โค้ดไฟล์นี้ชุดเดียวกันทั้ง 3 โปรเจกต์ (Asset / Ticket / Transfer)
@@ -272,6 +273,12 @@ function main(e) {
       return out(handleTransferOp(action, param, role, sheet), cb);
     }
 
+    // ── ย้ายข้อมูล (Admin เท่านั้น): ส่งแถวเป็นชิ้น ๆ เพื่อไม่ให้ URL ยาวเกิน แล้วประกอบที่ Server ──
+    if (action === 'importChunk') {
+      if (role !== 'admin') return out({ status: 'error', code: 'forbidden', msg: 'เฉพาะ IT Admin เท่านั้น' }, cb);
+      return out(handleImportChunk(param, sheet), cb);
+    }
+
     if (action === 'getAll') {
       var lastRow = sheet.getLastRow();
       if (lastRow < 2) return out({ status: 'ok', rows: [] }, cb);
@@ -307,6 +314,10 @@ function main(e) {
           if (!found) return out({ status: 'error', msg: 'key not found: ' + key }, cb);
           if (sheetKind(sheet.getName()) === 'transfer') row = mergeTransferRow(found.values, row, role, param.replaceAcks === '1');
           sheet.getRange(found.row, 1, 1, row.length).setValues([row]);
+          if (sheetKind(sheet.getName()) === 'transfer' && String(found.values[10]) !== String(row[10])) {
+            var vv = row.slice(); while (vv.length < 21) vv.push(''); vv[20] = found.values[20];
+            siteSyncDecision_(sheet, found.row, vv);
+          }
         } else {
           if (!found) return out({ status: 'error', msg: 'key not found: ' + key }, cb);
           sheet.deleteRow(found.row);
@@ -322,6 +333,98 @@ function main(e) {
   } catch (err) {
     return out({ status: 'error', msg: err.message || String(err) }, cb);
   }
+}
+
+// ═══════════════════ เชื่อมกับ SiteAsset-Tracker (ใบคืนที่สาขาแจ้งเข้ามา) ═══════════════════
+// ใบคืนจากสาขามีข้อมูลต้นทางในคอลัมน์ U (JSON: app='site', assetId, origId, fromBranch, qty ...)
+// เมื่อสำนักงานใหญ่ "อนุมัติ" → ชีตสาขาเปลี่ยนสถานะเป็น "รับคืนแล้ว"
+// เมื่อ "ไม่อนุมัติ" → คืนสาขาเดิม / รวมจำนวนกลับแถวเดิม (กรณีแจ้งคืนบางส่วน)
+var SITE_SYNC = {
+  FILE_ID: '1J8W9s20WIwSOnteSyVg-OywoXqycKKbp578hoE4nhLU',   // ระบบบันทึกสินทรัพย์สาขา
+  SHEET: 'Assets', HQ: 'สำนักงานใหญ่',
+  ST_DONE: 'รับคืนแล้ว', ST_BACK: 'ปกติ'
+};
+function siteSyncDecision_(trSheet, rowNum, v) {
+  var src;
+  try { src = JSON.parse(String(v[20] || '')); } catch (e) { return; }
+  if (!src || src.app !== 'site') return;
+  var st = String(v[10]);
+  if ((st !== 'approved' && st !== 'rejected') || src.done === st) return;
+  try {
+    var sh = SpreadsheetApp.openById(SITE_SYNC.FILE_ID).getSheetByName(SITE_SYNC.SHEET);
+    var data = sh.getDataRange().getValues(), H = {};
+    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+    var find = function (id) { for (var i = 1; i < data.length; i++) if (String(data[i][H.assetId]) === String(id)) return i; return -1; };
+    var r = find(src.assetId);
+    var stamp = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm');
+    var who = String(v[13] || '');
+    var addNote = function (row, txt) {
+      if (H.note === undefined) return;
+      var old = String(data[row][H.note] || '').trim();
+      sh.getRange(row + 1, H.note + 1).setValue(old ? old + '\n' + txt : txt);
+    };
+    if (r < 0) { src.done = st; src.err = 'ไม่พบรายการ ' + src.assetId + ' ในชีตสาขา'; }
+    else if (st === 'approved') {
+      sh.getRange(r + 1, H.branch + 1).setValue(SITE_SYNC.HQ);
+      sh.getRange(r + 1, H.status + 1).setValue(SITE_SYNC.ST_DONE);
+      addNote(r, '[สนญ. รับคืนแล้ว ' + stamp + ' โดย ' + who + ' · ใบ ' + v[1] + ']');
+      src.done = st;
+    } else {   // rejected
+      var o = src.origId && src.origId !== src.assetId ? find(src.origId) : -1;
+      if (o > -1) {   // แจ้งคืนบางส่วน → รวมจำนวนกลับแถวเดิม แล้วลบแถวที่แยกออกมา
+        var q = (parseInt(data[o][H.quantity], 10) || 0) + (parseInt(data[r][H.quantity], 10) || 0);
+        sh.getRange(o + 1, H.quantity + 1).setValue(q);
+        addNote(o, '[สนญ. ไม่อนุมัติการคืน ' + stamp + ' · ใบ ' + v[1] + ']');
+        sh.deleteRow(r + 1);
+      } else {
+        sh.getRange(r + 1, H.branch + 1).setValue(src.fromBranch || '');
+        sh.getRange(r + 1, H.status + 1).setValue(SITE_SYNC.ST_BACK);
+        addNote(r, '[สนญ. ไม่อนุมัติการคืน ' + stamp + ' · ใบ ' + v[1] + ']');
+      }
+      src.done = st;
+    }
+    SpreadsheetApp.flush();
+  } catch (err) {
+    src.err = err.message || String(err);
+  }
+  v[20] = JSON.stringify(src);
+  trSheet.getRange(rowNum, 21).setNumberFormat('@').setValue(v[20]);
+}
+
+// ═══════════════════ IMPORT (ย้ายข้อมูลจากระบบเดิม) ═══════════════════
+// param: id (รหัสงาน), i (ลำดับชิ้น 0..n-1), n (จำนวนชิ้น), part (ข้อความ), mode ('missing' = เพิ่มเฉพาะที่ยังไม่มี | 'overwrite')
+function handleImportChunk(param, sheet) {
+  var id = String(param.id || '').replace(/[^\w-]/g, '').slice(0, 40);
+  var i = parseInt(param.i, 10), n = parseInt(param.n, 10);
+  if (!id || isNaN(i) || isNaN(n) || n < 1 || n > 60 || i < 0 || i >= n) return { status: 'error', msg: 'bad chunk' };
+  var cache = CacheService.getScriptCache();
+  cache.put('IMP_' + id + '_' + i, String(param.part || ''), 900);
+  if (i < n - 1) return { status: 'ok', partial: true };
+  var keys = [], parts;
+  for (var k = 0; k < n; k++) keys.push('IMP_' + id + '_' + k);
+  parts = cache.getAll(keys);
+  var json = '';
+  for (var k2 = 0; k2 < n; k2++) {
+    if (parts[keys[k2]] === undefined || parts[keys[k2]] === null) return { status: 'error', msg: 'missing chunk ' + k2 };
+    json += parts[keys[k2]];
+  }
+  cache.removeAll(keys);
+  var row;
+  try { row = JSON.parse(json); } catch (e) { return { status: 'error', msg: 'bad json' }; }
+  if (!Array.isArray(row) || !row.length || !String(row[0] || '').trim()) return { status: 'error', msg: 'empty row' };
+  row = row.map(function (v) { return v === null || v === undefined ? '' : (typeof v === 'object' ? JSON.stringify(v) : v); });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var found = findRowByKey(sheet, row[0]);
+    if (found && param.mode !== 'overwrite') return { status: 'ok', skipped: true };
+    var target = found ? found.row : sheet.getLastRow() + 1;
+    sheet.getRange(target, 1, 1, Math.min(2, row.length)).setNumberFormat('@');
+    if (sheetKind(sheet.getName()) === 'transfer' && row.length > 15) sheet.getRange(target, 11, 1, 6).setNumberFormat('@');
+    sheet.getRange(target, 1, 1, row.length).setValues([row]);
+    SpreadsheetApp.flush();
+    return { status: 'ok', written: true, row: target };
+  } finally { lock.releaseLock(); }
 }
 
 // ═══════════════════ TRANSFER: ลายเซ็น / ความเห็น / อนุมัติ ═══════════════════
@@ -439,6 +542,7 @@ function handleTransferOp(action, param, role, sheet) {
     rg.setNumberFormat('@');                            // เก็บเป็นข้อความ (กัน Sheets แปลงเวลาเป็น Date)
     rg.setValues([[v[10], v[11], v[12], v[13], v[14], v[15]]]);
     SpreadsheetApp.flush();
+    if (action === 'trDecide') siteSyncDecision_(sheet, f.row, v);
     return { status: 'ok', row: v };
   } finally {
     lock.releaseLock();

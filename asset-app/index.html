@@ -2248,6 +2248,7 @@ function applyTransferRows(rows){
         ref:      String(r[17]||'') || (local && local.ref) || '',
         cond:     String(r[18]||'') || (local && local.cond) || '',
         due:      String(r[19]||'').slice(0,10) || (local && local.due) || '',
+        src:      parseSrcCell(r[20]),
         synced:true,
       });
     });
@@ -2725,6 +2726,11 @@ let trStatusFilter = '';
 let tdKey = null;
 
 function escH(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// คอลัมน์ U: ข้อมูลต้นทางของใบที่สร้างจากระบบอื่น (เช่น SiteAsset-Tracker)
+function parseSrcCell(v){
+  if(!v) return null;
+  try{ const o = typeof v === 'string' ? JSON.parse(v) : v; return o && typeof o === 'object' ? o : null; }catch(e){ return null; }
+}
 function parseJSONCell(v){
   if(Array.isArray(v)) return v;
   if(v == null || v === '') return [];
@@ -2804,6 +2810,7 @@ function mergeByKey(a, b){
 function applyServerTransferRow(tr, r, keepLocal){
   if(!Array.isArray(r)) return;
   const sAcks = parseJSONCell(r[15]), sCmts = parseJSONCell(r[12]);
+  if(r[20]) tr.src = parseSrcCell(r[20]) || tr.src;
   tr.acks     = keepLocal ? mergeByKey(sAcks, tr.acks)     : sAcks;
   tr.comments = keepLocal ? mergeByKey(sCmts, tr.comments) : sCmts;
   const ss = String(r[10]||'pending');
@@ -2935,6 +2942,7 @@ function renderTransfers(){
         ${nC ? `<span class="tr-meta-ico" title="ความเห็น ${nC} รายการ">💬${nC}</span>` : ''}
         ${nA ? `<span class="tr-meta-ico" title="ลงนามรับทราบ ${nA} คน">✍️${nA}</span>` : ''}
         ${loanTag(tr)}
+        ${tr.src && tr.src.app === 'site' ? '<span class="loan-tag"><span class="badge b-issue" style="font-size:9px;" title="แจ้งคืนจากระบบสินทรัพย์สาขา">📤 จากสาขา</span></span>' : ''}
       </td>
       <td onclick="event.stopPropagation()"><div class="acts">
         <button class="ib vw" data-k="${k}" onclick="openTransferDetail(this.dataset.k)" title="ดูรายละเอียด"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg></button>
@@ -2984,6 +2992,15 @@ function sigSVG(d){
 function detailItemsHTML(tr){
   const box = (k, html) => `<div class="td-cell full"><div class="td-k">${k}</div><div class="td-v">${html}</div></div>`;
   let h = '';
+  if(tr.src && tr.src.app === 'site'){
+    const sc = tr.src;
+    h += box('📤 แจ้งคืนจากระบบสินทรัพย์สาขา (SiteAsset-Tracker)',
+      `<b>${escH(sc.assetName || sc.assetId)}</b> จำนวน <b>${escH(sc.qty)}</b> ชิ้น · จาก ${escH(sc.fromBranch || '-')} · แจ้งโดย ${escH(sc.requester || '-')}` +
+      (sc.origId && sc.origId !== sc.assetId ? `<br><span style="font-size:11px;color:var(--text3)">แยกจากรายการ ${escH(sc.origId)} (คืนบางส่วน)</span>` : '') +
+      `<br><span style="font-size:11px;color:${sc.err ? 'var(--red)' : 'var(--text3)'}">${sc.err ? '⚠ อัปเดตชีตสาขาไม่สำเร็จ: ' + escH(sc.err)
+        : sc.done === 'approved' ? '✓ ชีตสาขาอัปเดตเป็น "รับคืนแล้ว"' : sc.done === 'rejected' ? '↩ ชีตสาขาคืนค่าเดิมแล้ว'
+        : 'เมื่ออนุมัติ ระบบจะอัปเดตชีตสาขาเป็น "รับคืนแล้ว" ให้อัตโนมัติ'}</span>`);
+  }
   if(tr.items.length || tr.cond)
     h += box(tr.type === 'return' ? 'อุปกรณ์ที่รับคืน' : 'อุปกรณ์ที่ส่งมอบ',
              (itemChips(tr.items, tr.type === 'return' ? 'ok' : '') || '—') + (tr.cond ? ` <span class="loan-m">· สภาพ: ${escH(tr.cond)}</span>` : ''));
