@@ -4756,7 +4756,7 @@
                 `<table class="pf-fu-table"><thead><tr><th style="width:26px;">#</th><th style="width:72px;">วันที่</th><th style="width:90px;">ประเภท</th>` +
                 `<th>รายละเอียด</th><th style="width:72px;">นัดครั้งต่อไป</th><th style="width:90px;">ผู้ติดตาม</th></tr></thead><tbody>` +
                 sorted.map((e, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(printFollowupDate_(e.date))}</td><td>${escapeHtml(e.followupType || '-')}</td>` +
-                    `<td class="pf-fu-note">${e.statusTo ? '[สถานะ: ' + escapeHtml(e.statusFrom || '-') + ' → ' + escapeHtml(e.statusTo) + '] ' : ''}${escapeHtml(e.note || '-')}</td><td>${escapeHtml(e.nextFollowUpDate ? printFollowupDate_(e.nextFollowUpDate) : '-')}</td>` +
+                    `<td class="pf-fu-note">${e.statusTo ? '[สถานะ: ' + escapeHtml(e.statusFrom || '-') + ' → ' + escapeHtml(e.statusTo) + '] ' : ''}${escapeHtml(reorderDupNote_(e.note) || '-')}</td><td>${escapeHtml(e.nextFollowUpDate ? printFollowupDate_(e.nextFollowUpDate) : '-')}</td>` +
                     `<td>${escapeHtml(e.by || '-')}</td></tr>`).join('') +
                 `</tbody></table>`;
         }
@@ -5770,6 +5770,42 @@
             };
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
         })();
+        // (r65) บันทึกที่ระบบสร้างให้ตอน "คีย์ลูกค้าซ้ำ" จากหน้าเพิ่มลูกค้า — ข้อความยาวและสิ่งที่เซลล์พิมพ์จริงไปอยู่ท้ายสุด
+        // แยกส่วนแล้วเอา "หมายเหตุที่เซลล์กรอก" ขึ้นก่อน ตามด้วยสินค้า แล้วค่อยเป็นข้อความระบบ (ไม่แก้ข้อมูลจริง แค่การแสดงผล)
+        function parseDupNote_(note) {
+            const s = String(note || '');
+            const web = s.match(/^มีการบันทึกลูกค้ารายนี้เข้ามาซ้ำจากหน้าเว็บโดย (.*?) \(พบซ้ำจาก: ([^)]*)\)/);
+            const mc = !web && /^ลูกค้าส่งข้อมูลมาอีกรอบผ่าน Facebook\/ManyChat/.test(s);
+            if (!web && !mc) return null;
+            const ri = s.indexOf('หมายเหตุที่กรอก: ');
+            const remark = ri === -1 ? '' : s.slice(ri + 'หมายเหตุที่กรอก: '.length).trim().replace(/^[-–—\s]+/, '');
+            const head = ri === -1 ? s : s.slice(0, ri);
+            const pick = re => { const m = head.match(re); return m ? m[1].trim() : ''; };
+            return {
+                byWeb: !!web, by: web ? web[1] : '', match: web ? web[2] : pick(/พบซ้ำจาก: ([^)]*)\)/),
+                phone: pick(/เบอร์ที่ส่งมาล่าสุด: ([^—]*)/), facebook: pick(/Facebook: ([^—]*)/),
+                product: pick(/สินค้าที่สนใจ: ([^—]*)/), remark: remark
+            };
+        }
+        function dupNoteSysText_(p) {
+            return (p.byWeb ? 'คีย์ลูกค้าซ้ำจากหน้าเพิ่มลูกค้า' + (p.by ? ' โดย ' + p.by : '') : 'ลูกค้าส่งข้อมูลซ้ำผ่าน Facebook/ManyChat') +
+                (p.match ? ' (ซ้ำจาก' + p.match + ')' : '') + (p.phone ? ' · เบอร์ล่าสุด ' + p.phone : '') + (p.facebook ? ' · FB ' + p.facebook : '');
+        }
+        // ข้อความล้วน (ใบพิมพ์ / ตารางรายละเอียด)
+        function reorderDupNote_(note) {
+            const p = parseDupNote_(note);
+            if (!p) return note;
+            return [p.remark, p.product ? 'สินค้าที่สนใจ: ' + p.product : '', '[' + dupNoteSysText_(p) + ']'].filter(Boolean).join(' · ');
+        }
+        // HTML (ไทม์ไลน์ประวัติการติดตาม)
+        function dupNoteHtml_(note) {
+            const p = parseDupNote_(note);
+            if (!p) return escapeHtml(note || '');
+            return (p.remark ? `<div style="font-weight:600; color:#0f172a;">${escapeHtml(p.remark)}</div>` : '') +
+                (p.product ? `<div>🚜 สินค้าที่สนใจ: ${escapeHtml(p.product)}</div>` : '') +
+                `<div style="font-size:11px; color:#94a3b8; margin-top:2px;">ℹ️ ${escapeHtml(dupNoteSysText_(p))}</div>`;
+        }
+        window.reorderDupNote_ = reorderDupNote_;
         function escapeHtml(v) {
             return (v === undefined || v === null ? '' : String(v))
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -5828,12 +5864,13 @@
                 container.innerHTML = '<div class="timeline-empty">ยังไม่มีบันทึกการติดตามลูกค้ารายนี้</div>';
                 return;
             }
-            const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            // (r65) วันเดียวกัน → บันทึกล่าสุดขึ้นก่อน (ตามเวลาที่บันทึกจริง)
+            const sorted = historyModalEntries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.loggedAt || '').localeCompare(String(a.loggedAt || '')));
             container.innerHTML = sorted.map(e => `
                 <div class="timeline-item">
                     <div class="timeline-date">📅 ${escapeHtml(e.date)}${e.followupType ? `<span class="timeline-type"${e.initial ? ' style="background:#ecfdf5; color:#047857;"' : ''}>${escapeHtml(e.followupType)}</span>` : ''}${e.by ? `<span style="float:right; font-size:10.5px; color:#94a3b8; font-weight:normal;">👤 ${escapeHtml(e.by)}</span>` : ''}</div>
                     ${e.statusTo ? `<div style="font-size:11px; color:#0369a1; margin:2px 0;">🔄 เปลี่ยนสถานะ: ${escapeHtml(e.statusFrom || '-')} → <b>${escapeHtml(e.statusTo)}</b></div>` : ''}
-                    <div class="timeline-note">${escapeHtml(e.note || '')}</div>
+                    <div class="timeline-note">${dupNoteHtml_(e.note)}</div>
                 </div>
             `).join('');
         }
@@ -7508,7 +7545,7 @@
                             `<td><span class="report-customer-link" onclick="openKpiCustomerDetail(${idx})">${escapeHtml(x.name || '-')}</span></td>` +
                             `<td>${escapeHtml(x.phone || '-')}</td><td>${escapeHtml(x.type || '-')}</td><td>${escapeHtml(leadSourceText_(x) || '-')}</td>` +
                             `<td>${escapeHtml(prodTxt)}</td><td>${escapeHtml(x.metricPerson || '-')}</td>` +
-                            `<td class="kpi-note">${x.metricType ? `<span class="timeline-type">${escapeHtml(x.metricType)}</span> ` : ''}${escapeHtml(x.metricNote || '')}</td>` +
+                            `<td class="kpi-note">${x.metricType ? `<span class="timeline-type">${escapeHtml(x.metricType)}</span> ` : ''}${escapeHtml(reorderDupNote_(x.metricNote) || '')}</td>` +
                             `<td style="white-space:nowrap;"><button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openKpiCustomerDetail(${idx})">👤 ดูข้อมูลครบ</button> ` +
                             `<button type="button" class="btn btn-secondary" style="padding:3px 7px; font-size:10px;" onclick="openKpiCustomerHistory(${idx})">📞 ประวัติติดตาม</button></td></tr>`;
                     }).join('') + '</tbody></table>';
