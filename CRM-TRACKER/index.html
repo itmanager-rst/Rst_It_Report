@@ -1774,6 +1774,7 @@
             .catch(() => {})
             .finally(() => {
                 localStorage.removeItem(authTokenKey);
+                if (typeof rpSwrClearAll_ === 'function') rpSwrClearAll_(); // (r59)
                 currentRole = 'user';
                 currentUserInfo = null;
                 document.getElementById('current-user-badge').style.display = 'none';
@@ -2673,21 +2674,18 @@
             const scopeEl = document.getElementById('funnel-scope-label');
             if (scopeEl) scopeEl.textContent = allTime ? '(ภาพรวมลูกค้าทั้งหมด · สถานะปัจจุบัน)' : `(ลูกค้าที่บันทึก ${range.start === range.end ? range.start : range.start + ' ถึง ' + range.end} · สถานะปัจจุบัน)`;
             const seq = ++funnelSeq_;
-            fetch(WEB_APP_URL, {
+            rpSwr_('getDashboardSummary', filters, () => fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({ action: 'getDashboardSummary', payload: { filters: filters, noCache: !!(opts && opts.noCache === true) }, token: localStorage.getItem(authTokenKey) || '' })
-            })
-            .then(res => res.json())
-            .then(resData => {
+            }).then(res => res.json()), resData => {
                 if (seq !== funnelSeq_) return; // มีคำขอใหม่กว่าแล้ว (เปลี่ยนวันที่เร็วๆ) — ทิ้งผลรอบเก่า
                 if (resData && resData.success) {
                     renderSalesFunnel(resData.typeSummary || []);
                 } else {
                     container.innerHTML = `<div style="text-align:center; color:red; padding:20px;">❌ เกิดข้อผิดพลาด: ${escapeHtml(resData ? resData.message : '')}</div>`;
                 }
-            })
-            .catch(() => {
+            }, () => {
                 if (seq !== funnelSeq_) return;
                 container.innerHTML = `<div style="text-align:center; color:red; padding:20px;">🛑 การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว</div>`;
             });
@@ -2814,13 +2812,11 @@
             const seq = ++staffDashRequestSeq;
             btn.disabled = true;
             statusEl.textContent = '⏳ กำลังโหลดสถิติ...';
-            fetch(WEB_APP_URL, {
+            rpSwr_('getStaffDashboardStats', { s: startEl.value, e: endEl.value }, () => fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({ action: 'getStaffDashboardStats', payload: { startDate: startEl.value, endDate: endEl.value, noCache: noCache } })
-            })
-            .then(res => res.json())
-            .then(resData => {
+            }).then(res => res.json()), resData => {
                 if (seq !== staffDashRequestSeq) return; // มีคำขอใหม่กว่าแล้ว ทิ้งผลรอบนี้
                 if (!resData || !resData.success) {
                     const msg = (resData && resData.message) || 'ไม่ได้รับข้อมูล';
@@ -2833,8 +2829,7 @@
                 drawStaffActivityChart_(resData.staffActivity || {});
                 drawStaffTrendChart_(resData.activityTrend || {});
                 statusEl.textContent = `ช่วงวันที่ ${startEl.value} ถึง ${endEl.value} | อัปเดตเมื่อ ${resData.generatedAt || '-'} (ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 5 นาที)`;
-            })
-            .catch(err => {
+            }, err => {
                 if (seq !== staffDashRequestSeq) return;
                 destroyAllStaffDashCharts_();
                 const msg = '❌ โหลดสถิติไม่สำเร็จ: ' + (err && err.message ? err.message : 'การเชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว');
@@ -2974,9 +2969,7 @@
                 onlyManyChat: String(payload.onlyManyChat),
                 token: localStorage.getItem(authTokenKey) || ''
             });
-            fetch(`${WEB_APP_URL}?${params.toString()}`)
-            .then(res => res.json())
-            .then(resData => {
+            rpSwr_('getDailyLeadReport', payload, () => fetch(`${WEB_APP_URL}?${params.toString()}`).then(res => res.json()), resData => {
                 if (seq !== dailyLeadSeq_) return;
                 if (typeof rpOnIntakeData_ === 'function') rpOnIntakeData_(resData && resData.success ? (resData.report || []) : null, payload.onlyManyChat);
                 if (!resData || !resData.success) {
@@ -3010,8 +3003,7 @@
                     <td style="color:#1877F2;">${renderIntakeNumLink(totalMc, true, 'manychat')}</td>
                 </tr>`;
                 tbody.innerHTML = html;
-            })
-            .catch(error => {
+            }, error => {
                 if (seq !== dailyLeadSeq_) return;
                 if (typeof rpOnIntakeData_ === 'function') rpOnIntakeData_(null);
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#ef4444;">🛑 เชื่อมต่อกับเซิร์ฟเวอร์ล้มเหลว: ' + escapeHtml(error.message || 'ลองใหม่อีกครั้ง') + '</td></tr>';
@@ -4395,6 +4387,7 @@
             editOriginalLeadSource_ = { source: '', detail: '' };
             onCustLeadSourceChange();
             applySaleEditFieldRestriction_(false); // เคลียร์การปิดฟิลด์จากรอบแก้ไขก่อนหน้า (ถ้ามี)
+            setCustTypeEditLock_(false); // (r62) ตอนเพิ่มลูกค้าใหม่เลือกกลุ่มลูกค้าได้
             editOriginalPhone = '';
             document.getElementById('form-row-index').value = '';
             document.getElementById('phone-check-msg').innerHTML = '';
@@ -4439,7 +4432,21 @@
         function updateCustTypeHint_() {
             const sel = document.getElementById('cust-type');
             const hint = document.getElementById('cust-type-hint');
-            if (sel && hint) hint.textContent = CUSTOMER_TYPE_DESC_[sel.value] || '';
+            if (!sel || !hint) return;
+            if (sel.dataset.editLock === '1') {
+                hint.innerHTML = '🔒 แก้ไขสถานะที่นี่ไม่ได้ — เปลี่ยนได้ที่ <b>📞 บันทึกการติดตาม</b> (เลือกช่องทาง + สถานะใหม่) เพื่อให้รายงานรู้ว่าเปลี่ยนจากช่องทางไหน';
+                return;
+            }
+            hint.textContent = CUSTOMER_TYPE_DESC_[sel.value] || '';
+        }
+        // (r62) ฟอร์มแก้ไขลูกค้า: ล็อกช่อง "กลุ่มลูกค้า" — สถานะเปลี่ยนได้ทางบันทึกการติดตามเท่านั้น (ตอนเพิ่มลูกค้าใหม่ยังเลือกได้ตามปกติ)
+        function setCustTypeEditLock_(locked) {
+            const sel = document.getElementById('cust-type');
+            if (!sel) return;
+            sel.dataset.editLock = locked ? '1' : '';
+            sel.disabled = !!locked;
+            sel.title = locked ? 'เปลี่ยนสถานะได้ที่ 📞 บันทึกการติดตาม' : '';
+            updateCustTypeHint_();
         }
         document.addEventListener('DOMContentLoaded', updateCustTypeHint_);
         function editCustomerByIndex(idx) {
@@ -4514,6 +4521,7 @@
             // (2026-09-19) role 'sale' แก้ได้แค่ชื่อ-นามสกุล/ที่อยู่เท่านั้น — ปิดช่องอื่นทั้งหมด
             // ไว้ก่อนเปิดฟอร์ม (เซิร์ฟเวอร์ก็ตัดฟิลด์อื่นทิ้งอยู่แล้วเป็นชั้นป้องกันที่ 2)
             applySaleEditFieldRestriction_(false); // (r52) sale แก้ได้ทุกช่องเท่าพนักงานแล้ว
+            setCustTypeEditLock_(true); // (r62) สถานะเปลี่ยนได้ทางบันทึกการติดตามเท่านั้น
 
             document.getElementById('form-title').innerText = '✏️ แก้ไขข้อมูลลูกค้า';
             document.getElementById('btn-submit').innerText = '💾 บันทึกการแก้ไข';
@@ -6541,7 +6549,9 @@
         .rp-toolbar-card .rp-toolbar { margin-top: 8px; }
         .rp-range-status { font-size: 11.5px; color: #64748b; margin-right: auto; }
         .rp-layout-note { font-size: 11.5px; color: #059669; }
-        .rp-kpi-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+        .rp-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+        .rp-kpi-days { margin-top: 10px; max-height: 260px; background: #fff; border-radius: 8px; }
+        .rp-kpi-days .sdr-table { font-size: 12px; }
         .rp-kpi-group { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; background: #f8fafc; min-width: 0; }
         .rp-kpi-group-title { font-size: 12.5px; font-weight: 700; color: #334155; margin: 0 2px 8px; }
         .rp-kpi-group-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -6574,27 +6584,82 @@
     </style>
     <script>
         /* ---------- 2) การ์ดรายงานประจำวันแยกตามเซลล์ ---------- */
-        let sdrLoadedOnce = false, sdrData = null, sdrSortKey = 'added', sdrSeq = 0, sdrPeopleSorted_ = [];
-        // (r56) เพิ่ม โทร / แชท / เปลี่ยนสถานะ / นัดในปฏิทิน — click: true = กดดูรายชื่อได้ (getSalesMetricDetail รองรับ)
-        const SDR_METRICS = [
-            { key: 'added', label: 'ลูกค้าใหม่ (เพิ่มเอง)', short: 'ลูกค้าใหม่', click: true },
-            { key: 'calls', label: 'โทร', short: 'โทร' },
-            { key: 'chats', label: 'แชท/LINE/FB', short: 'แชท' },
-            { key: 'appointments', label: 'เข้าพบ/นัดดูรถ', short: 'เข้าพบ/นัดดูรถ', click: true },
-            { key: 'followups', label: 'ติดตามรวม (ครั้ง)', short: 'ติดตามรวม', click: true },
-            { key: 'statusUp', label: 'เปลี่ยนสถานะ', short: 'เปลี่ยนสถานะ' },
-            { key: 'scheduled', label: 'นัดในปฏิทิน', short: 'นัดในปฏิทิน' },
-            { key: 'booked', label: 'จอง', short: 'จอง', click: true },
-            { key: 'closing', label: 'รอปิดการขาย', short: 'รอปิด', click: true }
-        ];
-        const SDR_PRINT_METRICS = ['added', 'calls', 'chats', 'appointments', 'followups', 'statusUp', 'scheduled'];
+        // (r61) ตารางนี้เหลือเฉพาะ "งานติดตาม" (ลูกค้าใหม่ + การติดตามแต่ละรูปแบบ + นัดในปฏิทิน)
+        //       ส่วน "สถานะลูกค้า" แยกไปการ์ด 🔄 สถานะลูกค้าแยกตามช่องทาง (stBuildCard_) — เดิมรวมกันแล้วดูยาก
+        let sdrLoadedOnce = false, sdrData = null, sdrSortKey = 'followups', sdrSeq = 0, sdrPeopleSorted_ = [];
+        const FOLLOW_TYPE_ORDER = ['โทรศัพท์', 'แชท / LINE / Facebook', 'เข้าพบลูกค้า', 'ส่งโปร / ใบเสนอราคา', 'นัดทดลองรถ / ดูสินค้า', 'อื่น ๆ'];
+        const FOLLOW_TYPE_LABEL = { 'โทรศัพท์': '📞 โทร', 'แชท / LINE / Facebook': '💬 แชท/LINE/FB', 'เข้าพบลูกค้า': '🤝 เข้าพบ',
+            'ส่งโปร / ใบเสนอราคา': '📄 ส่งโปร/ใบเสนอราคา', 'นัดทดลองรถ / ดูสินค้า': '🚜 นัดทดลอง/ดูสินค้า', 'อื่น ๆ': '🔁 อื่น ๆ', 'ไม่ระบุ': 'ไม่ระบุรูปแบบ' };
+        const STATUS_ORDER = ['ลงทะเบียน', 'สนใจ', 'เป้าหมาย', 'รอปิดการขาย', 'จอง', 'ทำสัญญา', 'ส่งมอบ', 'ปิดการขาย', 'ลูกค้าเก่าดีเลอร์', '(ไม่ระบุ)'];
+        const STATUS_COLOR = { 'ลงทะเบียน': '#64748b', 'สนใจ': '#0891b2', 'เป้าหมาย': '#0d9488', 'รอปิดการขาย': '#6b21a8', 'จอง': '#0284c7',
+            'ทำสัญญา': '#ea580c', 'ส่งมอบ': '#16a34a', 'ปิดการขาย': '#15803d', 'ลูกค้าเก่าดีเลอร์': '#a16207' };
+        const SDR_NEW_CHANNEL = 'เพิ่มลูกค้าใหม่';
+        function sdrOrdered_(present, order, always) {
+            const set = new Set(always ? order : []);
+            present.forEach(x => set.add(x));
+            const rank = x => { const i = order.indexOf(x); return i === -1 ? 999 : i; };
+            return [...set].sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b), 'th'));
+        }
+        // เติมตัวเลข "ft:<รูปแบบ>" ลงในแถวรายวัน/รายคน จาก followTypes (ทำครั้งเดียวต่อชุดข้อมูล)
+        function sdrPrepare_(data) {
+            if (!data || data._prepared) return data;
+            data._prepared = true;
+            const daily = data.daily || (data.daily = []);
+            const people = data.people || (data.people = []);
+            const dKey = (d, p) => d + '\u0001' + p;
+            const dMap = {}, pMap = {};
+            daily.forEach(r => { dMap[dKey(r.date, r.person)] = r; });
+            people.forEach(p => { pMap[p.person] = p; });
+            const types = new Set();
+            (data.followTypes || []).forEach(([d, p, t, n]) => {
+                types.add(t);
+                let c = dMap[dKey(d, p)];
+                if (!c) { c = dMap[dKey(d, p)] = { date: d, person: p }; daily.push(c); }
+                let q = pMap[p];
+                if (!q) { q = pMap[p] = { person: p }; people.push(q); }
+                c['ft:' + t] = (c['ft:' + t] || 0) + n;
+                q['ft:' + t] = (q['ft:' + t] || 0) + n;
+            });
+            daily.sort((x, y) => y.date.localeCompare(x.date) || String(x.person).localeCompare(String(y.person), 'th'));
+            data._followTypes = sdrOrdered_([...types], FOLLOW_TYPE_ORDER, true);
+            const sts = new Set(), chs = new Set();
+            (data.statusEvents || []).forEach(([d, p, c, s]) => { sts.add(s); chs.add(c); });
+            data._statuses = sdrOrdered_([...sts], STATUS_ORDER, false);
+            chs.delete(data.newCustomerChannel || SDR_NEW_CHANNEL);
+            data._channels = [data.newCustomerChannel || SDR_NEW_CHANNEL].concat(sdrOrdered_([...chs], FOLLOW_TYPE_ORDER.concat(['ไม่ระบุ']), false));
+            return data;
+        }
+        // คอลัมน์ของตารางงานติดตาม (ใช้ทั้งบนหน้าจอและใบพิมพ์)
+        function sdrMetrics_(data) {
+            sdrPrepare_(data);
+            return [{ key: 'added', label: 'ลูกค้าใหม่ (เพิ่มเอง)', short: 'ลูกค้าใหม่' }]
+                .concat(((data && data._followTypes) || FOLLOW_TYPE_ORDER).map(t => ({ key: 'ft:' + t, label: FOLLOW_TYPE_LABEL[t] || t, short: (FOLLOW_TYPE_LABEL[t] || t).replace(/^\S+\s/, '') })))
+                .concat([{ key: 'followups', label: 'ติดตามรวม (ครั้ง)', short: 'ติดตามรวม' },
+                         { key: 'scheduled', label: 'นัดในปฏิทิน', short: 'นัดในปฏิทิน', noClick: true }]);
+        }
+        // กดตัวเลข → รายชื่อลูกค้า (data-* เก็บค่าแบบ encodeURIComponent กันชื่อมีอักขระพิเศษ)
+        function sdrCellAttr_(key, person, date) {
+            return `class="num sdr-click" title="กดเพื่อดูรายชื่อลูกค้า" data-k="${encodeURIComponent(key)}" data-p="${encodeURIComponent(person || '')}" data-d="${encodeURIComponent(date || '')}" onclick="sdrCellClick(this)"`;
+        }
+        function sdrCellClick(el) {
+            const k = decodeURIComponent(el.dataset.k || ''), p = decodeURIComponent(el.dataset.p || ''), d = decodeURIComponent(el.dataset.d || '');
+            const extra = d ? { date: d } : {};
+            if (k.indexOf('ft:') === 0) openKpiDetail('followType', p, Object.assign(extra, { followType: k.slice(3) }));
+            else if (k.indexOf('st:') === 0) {
+                const parts = k.slice(3).split('\u0001');
+                if (parts[0]) extra.channel = parts[0];
+                if (parts[1]) extra.status = parts[1];
+                openKpiDetail('statusChange', p, extra);
+            }
+            else openKpiDetail(k, p, extra);
+        }
         function sdrBuildCard_() {
             const card = document.createElement('div');
             card.className = 'card';
             card.id = 'sales-daily-card';
             card.innerHTML = `
                 <div class="card-title" style="flex-wrap:wrap; row-gap:6px;">
-                    <span>👥 รายงานประจำวันแยกตามเซลล์</span>
+                    <span>👥 สรุปงานติดตามประจำวันของเซลล์</span>
                     <div class="staff-dash-controls" style="display:none;">
                         <input type="date" id="sdr-start-date" class="form-control" aria-label="วันที่เริ่ม">
                         <span class="staff-dash-sep">ถึง</span>
@@ -6617,7 +6682,7 @@
                     <label class="sdr-print-check"><input type="checkbox" id="sdr-print-pagebreak" checked> ขึ้นหน้าใหม่ทุกคน</label>
                     <button type="button" class="btn btn-primary" id="btn-sdr-print" onclick="sdrPrintDaily()">🖨️ พิมพ์สรุปรายวัน</button>
                 </div>
-                <div class="bi-section-title">🏆 สรุปรวมรายคน (กดหัวคอลัมน์เพื่อเรียง · 🏅 = สูงสุดในคอลัมน์นั้น)</div>
+                <div class="bi-section-title">🏆 สรุปรวมรายคน (กดหัวคอลัมน์เพื่อเรียง · 🏅 = สูงสุดในคอลัมน์นั้น · กดตัวเลขเพื่อดูรายชื่อ)</div>
                 <div class="table-responsive" style="max-height:45vh; margin-top:6px;" id="sdr-summary"></div>
                 <div class="bi-section-title" style="margin-top:12px;">📅 แยกรายวัน × รายคน</div>
                 <div class="table-responsive" style="max-height:55vh; margin-top:6px;" id="sdr-daily"></div>
@@ -6638,85 +6703,148 @@
             const seq = ++sdrSeq;
             btn.disabled = true;
             status.textContent = '⏳ กำลังโหลดรายงาน...';
-            fetch(WEB_APP_URL, {
+            if (typeof stRender_ === 'function') stRender_('loading');
+            rpSwr_('getSalesDailyReport', { s: s.value, e: e.value }, () => fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({ action: 'getSalesDailyReport', payload: { startDate: s.value, endDate: e.value, noCache: !!(opts && opts.noCache === true) } })
-            })
-            .then(res => res.json())
-            .then(resData => {
+            }).then(res => res.json()), resData => {
                 if (seq !== sdrSeq) return;
                 if (!resData || !resData.success) {
                     const msg = (resData && resData.message) || 'ไม่ได้รับข้อมูล';
                     throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs r54 ก่อน' : msg);
                 }
-                sdrData = resData;
+                sdrData = sdrPrepare_(resData);
                 if (typeof rpOnSalesData_ === 'function') rpOnSalesData_(resData);
                 if (resData.range) { s.value = resData.range.startDate; e.value = resData.range.endDate; }
                 status.textContent = `ช่วงวันที่ ${s.value} ถึง ${e.value} | อัปเดตเมื่อ ${resData.generatedAt || '-'}${resData.cached ? ' (แคช)' : ''} — ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 15 นาที`;
                 document.getElementById('sdr-note').innerHTML =
-                    '• <b>ลูกค้าที่เพิ่มเอง</b> = ผู้บันทึกลูกค้า ตามวันที่สร้างจริง (ไม่นับลีดจาก ManyChat และรายการจาก "นำเข้า Excel")<br>' +
-                    '• <b>เข้าพบ/นัดดูรถ</b> = บันทึกติดตามประเภท ' + escapeHtml((resData.appointmentTypes || []).join(' / ')) + ' · <b>โทร</b> / <b>แชท</b> = บันทึกติดตามประเภทนั้น · <b>ติดตามรวม</b> = ทุกประเภท<br>' +
-                    '• <b>นัดในปฏิทิน</b> = ลูกค้าที่มีวันนัดติดตามตรงกับวันนั้น (เหมือนหน้าปฏิทิน) นับให้คนที่ติดตามลูกค้ารายนั้นล่าสุด · <b>เปลี่ยนสถานะ</b> = รอบติดตามที่เปลี่ยนกลุ่มลูกค้า<br>' +
-                    '• <b>จอง / รอปิดการขาย</b> = สถานะปัจจุบันของลูกค้า นับให้คนที่ <b>บันทึกติดตามลูกค้ารายนั้นล่าสุด</b> (ถ้ายังไม่เคยติดตาม = คนที่เพิ่มลูกค้าเอง ไม่นับรายการนำเข้า Excel / ManyChat) ลงวันที่ติดตามล่าสุด · คอลัมน์ "ตอนนี้ทั้งหมด" ไม่จำกัดช่วงวันที่<br>' +
-                    '• กดตัวเลขในตารางเพื่อดูรายชื่อลูกค้าของเซลล์คนนั้น';
+                    '• <b>ลูกค้าใหม่ (เพิ่มเอง)</b> = ผู้บันทึกลูกค้า ตามวันที่สร้างจริง (ไม่นับลีดจาก ManyChat และรายการจาก "นำเข้า Excel")<br>' +
+                    '• คอลัมน์ 📞 โทร / 💬 แชท / 🤝 เข้าพบ ฯลฯ = จำนวนครั้งที่บันทึกการติดตามแต่ละรูปแบบ · <b>ติดตามรวม</b> = ทุกรูปแบบ<br>' +
+                    '• <b>นัดในปฏิทิน</b> = ลูกค้าที่มีวันนัดติดตามตรงกับวันนั้น (เหมือนหน้าปฏิทิน) นับให้คนที่ติดตามลูกค้ารายนั้นล่าสุด<br>' +
+                    '• สถานะลูกค้า (จอง / รอปิดการขาย ฯลฯ) ดูที่การ์ด <b>🔄 สถานะลูกค้าแยกตามช่องทาง</b>';
                 sdrRender_();
-            })
-            .catch(err => {
+                if (typeof stRender_ === 'function') stRender_();
+            }, err => {
                 if (seq !== sdrSeq) return;
                 if (typeof rpOnSalesData_ === 'function') rpOnSalesData_(null);
+                if (typeof stRender_ === 'function') stRender_('error', err && err.message);
                 status.textContent = '❌ โหลดรายงานไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
             })
             .finally(() => { if (seq === sdrSeq) btn.disabled = false; });
         }
-        function sdrSort(key) { sdrSortKey = key; sdrRender_(); }
+        function sdrSort(key) { sdrSortKey = decodeURIComponent(key); sdrRender_(); }
         function sdrRender_() {
             if (!sdrData) return;
             sdrFillPrintPeople_();
-            const people = (sdrData.people || []).slice();
-            const pipeNow = p => (p.pipelineBookedNow || 0) + (p.pipelineClosingNow || 0);
-            const val = (p, k) => k === 'pipelineNow' ? pipeNow(p) : (Number(p[k]) || 0);
+            const cols = sdrMetrics_(sdrData);
+            if (!cols.some(c => c.key === sdrSortKey)) sdrSortKey = 'followups';
+            const val = (p, k) => Number(p[k]) || 0;
+            const people = (sdrData.people || []).filter(p => cols.some(c => val(p, c.key) > 0));
             people.sort((a, b) => val(b, sdrSortKey) - val(a, sdrSortKey) || String(a.person).localeCompare(String(b.person), 'th'));
-            const cols = SDR_METRICS.concat([{ key: 'pipelineNow', label: 'จอง+รอปิด ตอนนี้ทั้งหมด' }]);
             const max = {};
             cols.forEach(c => { max[c.key] = Math.max(0, ...people.map(p => val(p, c.key))); });
+            const zero = '<span style="color:#cbd5e1;">0</span>';
             const fmt = (p, c) => {
                 const v = val(p, c.key);
-                const txt = c.key === 'pipelineNow' ? `${v.toLocaleString()} <span style="color:#94a3b8; font-size:11px;">(จอง ${p.pipelineBookedNow || 0} · รอปิด ${p.pipelineClosingNow || 0})</span>` : v.toLocaleString();
-                return (v > 0 && v === max[c.key]) ? `<span class="sdr-top">🏅 ${txt}</span>` : (v ? txt : '<span style="color:#cbd5e1;">0</span>');
+                return (v > 0 && v === max[c.key] && people.length > 1) ? `<span class="sdr-top">🏅 ${v.toLocaleString()}</span>` : (v ? v.toLocaleString() : zero);
             };
+            const cellOf = (row, c, person, date, html) => (val(row, c.key) && !c.noClick) ? `<td ${sdrCellAttr_(c.key, person, date)}>${html}</td>` : `<td class="num">${html}</td>`;
             sdrPeopleSorted_ = people;
             const sumBox = document.getElementById('sdr-summary');
             if (!people.length) {
-                sumBox.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">ไม่มีกิจกรรมของเซลล์ในช่วงวันที่ที่เลือก</div>';
+                sumBox.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">ไม่มีงานติดตามของเซลล์ในช่วงวันที่ที่เลือก</div>';
             } else {
+                const team = {};
+                cols.forEach(c => { team[c.key] = people.reduce((s, p) => s + val(p, c.key), 0); });
                 sumBox.innerHTML = `<table class="sdr-table"><thead><tr><th>#</th><th>เซลล์</th>${cols.map(c =>
-                    `<th class="num sortable" onclick="sdrSort('${c.key}')">${escapeHtml(c.label)}${sdrSortKey === c.key ? ' ▼' : ''}</th>`).join('')}</tr></thead><tbody>` +
-                    people.map((p, i) => `<tr><td>${i + 1}</td><td><b>${escapeHtml(p.person)}</b></td>${cols.map(c => (val(p, c.key) && c.click !== false && (c.click || c.key === 'pipelineNow'))
-                        ? `<td class="num sdr-click" title="กดเพื่อดูรายชื่อลูกค้า" onclick="openKpiDetail('${c.key}', sdrPeopleSorted_[${i}].person)">${fmt(p, c)}</td>`
-                        : `<td class="num">${fmt(p, c)}</td>`).join('')}</tr>`).join('') +
+                    `<th class="num sortable" onclick="sdrSort('${encodeURIComponent(c.key)}')">${escapeHtml(c.label)}${sdrSortKey === c.key ? ' ▼' : ''}</th>`).join('')}</tr></thead><tbody>` +
+                    people.map((p, i) => `<tr><td>${i + 1}</td><td><b>${escapeHtml(p.person)}</b></td>${cols.map(c => cellOf(p, c, p.person, '', fmt(p, c))).join('')}</tr>`).join('') +
+                    `<tr class="sdr-day-row"><td></td><td>รวมทั้งทีม</td>${cols.map(c => cellOf(team, c, '', '', team[c.key].toLocaleString())).join('')}</tr>` +
                     '</tbody></table>';
             }
             const dailyBox = document.getElementById('sdr-daily');
-            const daily = sdrData.daily || [];
+            const daily = (sdrData.daily || []).filter(d => cols.some(c => val(d, c.key) > 0));
             if (!daily.length) {
                 dailyBox.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">ไม่มีข้อมูลรายวัน</div>';
                 return;
             }
-            let html = `<table class="sdr-table"><thead><tr><th>วันที่</th><th>เซลล์</th>${SDR_METRICS.map(c => `<th class="num">${escapeHtml(c.label)}</th>`).join('')}</tr></thead><tbody>`;
+            let html = `<table class="sdr-table"><thead><tr><th>วันที่</th><th>เซลล์</th>${cols.map(c => `<th class="num">${escapeHtml(c.label)}</th>`).join('')}</tr></thead><tbody>`;
             let curDay = null;
             daily.forEach(d => {
                 if (d.date !== curDay) {
                     curDay = d.date;
                     const dayRows = daily.filter(x => x.date === curDay);
-                    const tot = k => dayRows.reduce((s, x) => s + (Number(x[k]) || 0), 0);
-                    let label = curDay;
-                    try { label = new Date(curDay + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' }); } catch (e) {}
-                    html += `<tr class="sdr-day-row"><td>${escapeHtml(label)}</td><td>รวมทั้งวัน (${dayRows.length} คน)</td>${SDR_METRICS.map(c => `<td class="num">${tot(c.key).toLocaleString()}</td>`).join('')}</tr>`;
+                    const tot = {};
+                    cols.forEach(c => { tot[c.key] = dayRows.reduce((s, x) => s + val(x, c.key), 0); });
+                    html += `<tr class="sdr-day-row"><td>${escapeHtml(sdrPrintDayLabel_(curDay))}</td><td>รวมทั้งวัน (${dayRows.length} คน)</td>${cols.map(c => cellOf(tot, c, '', curDay, tot[c.key].toLocaleString())).join('')}</tr>`;
                 }
-                html += `<tr><td></td><td>${escapeHtml(d.person)}</td>${SDR_METRICS.map(c => `<td class="num">${(Number(d[c.key]) || 0) ? Number(d[c.key]).toLocaleString() : '<span style="color:#cbd5e1;">0</span>'}</td>`).join('')}</tr>`;
+                html += `<tr><td></td><td>${escapeHtml(d.person)}</td>${cols.map(c => cellOf(d, c, d.person, d.date, val(d, c.key) ? val(d, c.key).toLocaleString() : zero)).join('')}</tr>`;
             });
             dailyBox.innerHTML = html + '</tbody></table>';
+        }
+
+        /* ---------- (r61) การ์ด "🔄 สถานะลูกค้าแยกตามช่องทาง" ----------
+           แถว = ช่องทางที่ทำให้ได้สถานะนั้น (เพิ่มลูกค้าใหม่ / โทร / แชท / เข้าพบ ...) · คอลัมน์ = สถานะที่ได้
+           ใช้ข้อมูลชุดเดียวกับการ์ดเซลล์ (sdrData.statusEvents) — ไม่ต้องดึงจากเซิร์ฟเวอร์เพิ่ม */
+        function stBuildCard_() {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = 'status-change-card';
+            card.innerHTML = `
+                <div class="card-title" style="flex-wrap:wrap; row-gap:6px;">
+                    <span>🔄 สถานะลูกค้าแยกตามช่องทาง <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span>
+                    <div style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500;">
+                        <label for="st-person">เซลล์</label>
+                        <select id="st-person" class="form-control" style="width:auto; min-width:160px;" onchange="stRender_()"><option value="">ทุกคน</option></select>
+                    </div>
+                </div>
+                <div class="table-responsive" style="margin-top:6px;" id="st-matrix"></div>
+                <div class="sdr-note" id="st-note">
+                    • <b>เพิ่มลูกค้าใหม่</b> = สถานะของลูกค้าตอนที่เซลล์เพิ่มเข้ามา (ไม่นับ ManyChat / นำเข้า Excel)<br>
+                    • ช่องทางอื่น = บันทึกติดตามที่เลือก "เปลี่ยนสถานะ" ในหน้าบันทึกการติดตาม เช่น โทรติดตามแล้วเปลี่ยนเป็นรอปิดการขาย — นับเป็นครั้ง (ลูกค้า 1 รายเปลี่ยน 2 ครั้งนับ 2)<br>
+                    • การแก้สถานะผ่านปุ่ม ✏️ แก้ไขข้อมูลลูกค้า ไม่ได้บันทึกช่องทาง จึงไม่อยู่ในตารางนี้ · กดตัวเลขเพื่อดูรายชื่อลูกค้า</div>`;
+            return card;
+        }
+        function stRender_(state, msg) {
+            const box = document.getElementById('st-matrix');
+            if (!box) return;
+            if (state === 'loading' && !sdrData) { box.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">⏳ กำลังโหลด...</div>'; return; }
+            if (state === 'error' && !sdrData) { box.innerHTML = `<div style="text-align:center; color:#ef4444; padding:20px;">❌ โหลดไม่สำเร็จ: ${escapeHtml(msg || '')}</div>`; return; }
+            if (!sdrData) return;
+            const data = sdrPrepare_(sdrData);
+            const sel = document.getElementById('st-person');
+            const keep = sel.value;
+            const names = [...new Set((data.statusEvents || []).map(x => x[1]))].sort((a, b) => String(a).localeCompare(String(b), 'th'));
+            sel.innerHTML = '<option value="">ทุกคน</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+            if (keep && names.indexOf(keep) !== -1) sel.value = keep;
+            const person = sel.value;
+            const ev = (data.statusEvents || []).filter(x => !person || x[1] === person);
+            const statuses = sdrOrdered_([...new Set(ev.map(x => x[3]))], STATUS_ORDER, false);
+            const channels = data._channels.filter(c => c === (data.newCustomerChannel || SDR_NEW_CHANNEL) || ev.some(x => x[2] === c));
+            const SEP = '\u0001';
+            const m = {};
+            ev.forEach(([d, p, c, s, n]) => { m[c + SEP + s] = (m[c + SEP + s] || 0) + n; });
+            const get = (c, s) => m[c + SEP + s] || 0;
+            const rowTot = c => statuses.reduce((a, s) => a + get(c, s), 0);
+            const colTot = s => channels.reduce((a, c) => a + get(c, s), 0);
+            const grand = statuses.reduce((a, s) => a + colTot(s), 0);
+            const cell = (n, c, s) => n ? `<td ${sdrCellAttr_('st:' + (c || '') + SEP + (s || ''), person, '')}><b>${n.toLocaleString()}</b></td>` : '<td class="num"><span style="color:#cbd5e1;">0</span></td>';
+            if (!ev.length) {
+                box.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">ยังไม่มีการเพิ่มลูกค้า / เปลี่ยนสถานะลูกค้าในช่วงวันที่ที่เลือก</div>';
+            } else {
+                const chLabel = c => c === (data.newCustomerChannel || SDR_NEW_CHANNEL) ? '➕ เพิ่มลูกค้าใหม่' : (FOLLOW_TYPE_LABEL[c] || c);
+                box.innerHTML = `<table class="sdr-table"><thead><tr><th>ช่องทาง ↓ / ได้สถานะ →</th>${statuses.map(s =>
+                        `<th class="num" style="color:${STATUS_COLOR[s] || '#334155'};">${escapeHtml(s)}</th>`).join('')}<th class="num">รวม</th></tr></thead><tbody>` +
+                    channels.map(c => `<tr><td><b>${escapeHtml(chLabel(c))}</b></td>${statuses.map(s => cell(get(c, s), c, s)).join('')}${cell(rowTot(c), c, '')}</tr>`).join('') +
+                    `<tr class="sdr-day-row"><td>รวมทุกช่องทาง</td>${statuses.map(s => cell(colTot(s), '', s)).join('')}${cell(grand, '', '')}</tr></tbody></table>`;
+            }
+            // จอง / รอปิดการขาย "ตอนนี้ทั้งหมด" (ไม่จำกัดวันที่) — ภาพรวมสถานะปัจจุบัน
+            const pp = (data.people || []).filter(p => !person || p.person === person);
+            const nowB = pp.reduce((a, p) => a + (Number(p.pipelineBookedNow) || 0), 0), nowC = pp.reduce((a, p) => a + (Number(p.pipelineClosingNow) || 0), 0);
+            box.innerHTML += `<div style="margin-top:8px; font-size:12.5px; color:#334155;">📌 ลูกค้าที่อยู่ในสถานะตอนนี้ (ไม่จำกัดวันที่${person ? ' · ' + escapeHtml(person) : ''}): ` +
+                `<b style="color:#0284c7;">จอง ${nowB.toLocaleString()}</b> · <b style="color:#6b21a8;">รอปิดการขาย ${nowC.toLocaleString()}</b> ` +
+                `<button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:11px;" onclick="openKpiDetail('pipelineNow', ${person ? `decodeURIComponent('${encodeURIComponent(person)}')` : "''"})">ดูรายชื่อ</button></div>`;
         }
 
         /* ---------- (r56) พิมพ์สรุปผลงานเซลล์รายวัน ----------
@@ -6815,7 +6943,7 @@
             const range = data.range || sdrPrintRangeDates_(sdrPrintRange);
             const days = sdrDaysInRange_(range.startDate || range.start, range.endDate || range.end);
             const single = days.length === 1;
-            const metrics = SDR_PRINT_METRICS.map(k => SDR_METRICS.find(m => m.key === k)).filter(Boolean);
+            const metrics = sdrMetrics_(data); // (r61) เฉพาะงานติดตาม (ลูกค้าใหม่ + การติดตามแต่ละรูปแบบ + นัดในปฏิทิน)
             const onlyPerson = document.getElementById('sdr-print-person').value;
             const pageBreak = document.getElementById('sdr-print-pagebreak').checked;
             const daily = data.daily || [];
@@ -6826,8 +6954,8 @@
                 `<div class="psr-meta">พิมพ์โดย ${escapeHtml(currentUserDisplayLabel_() || '-')} · ${escapeHtml(printedAt)} · ข้อมูล ณ ${escapeHtml(data.generatedAt || '-')}</div></div>`;
             const sign = `<div class="psr-sign"><div>ลงชื่อ ........................................ เซลล์<br>วันที่ ........./........./.........</div>` +
                 `<div>ลงชื่อ ........................................ หัวหน้า / ผู้ตรวจ<br>วันที่ ........./........./.........</div></div>`;
-            const legend = '<div class="psr-legend">ลูกค้าใหม่ = ลูกค้าที่เซลล์เพิ่มเอง (ไม่รวม ManyChat / นำเข้า Excel) · โทร / แชท / เข้าพบ-นัดดูรถ = จำนวนครั้งที่บันทึกการติดตามแต่ละประเภท · ' +
-                'ติดตามรวม = ทุกประเภท · เปลี่ยนสถานะ = รอบติดตามที่เลื่อนกลุ่มลูกค้า · นัดในปฏิทิน = ลูกค้าที่มีวันนัดติดตามตรงกับวันนั้น' + (single ? '' : ' · ▲▼ = เทียบกับวันก่อนหน้า') + '</div>';
+            const legend = '<div class="psr-legend">ลูกค้าใหม่ = ลูกค้าที่เซลล์เพิ่มเอง (ไม่รวม ManyChat / นำเข้า Excel) · โทร / แชท / เข้าพบ ฯลฯ = จำนวนครั้งที่บันทึกการติดตามแต่ละรูปแบบ · ' +
+                'ติดตามรวม = ทุกรูปแบบ · นัดในปฏิทิน = ลูกค้าที่มีวันนัดติดตามตรงกับวันนั้น' + (single ? '' : ' · ▲▼ = เทียบกับวันก่อนหน้า') + '</div>';
 
             const rangeName = days.length === 1 ? 'ประจำวัน' : (SDR_PRINT_RANGE_NAMES[sdrPrintRange] || '');
             const sections = [];
@@ -6839,8 +6967,8 @@
                 });
                 const names = sdrPeopleNames_(data);
                 // ตารางเทียบรายคน (รวมทั้งช่วง)
-                const ppl = (data.people || []).filter(p => names.indexOf(p.person) !== -1)
-                    .sort((a, b) => (b.followups + b.added) - (a.followups + a.added) || String(a.person).localeCompare(String(b.person), 'th'));
+                const ppl = (data.people || []).filter(p => names.indexOf(p.person) !== -1 && ((p.followups || 0) + (p.added || 0) + (p.scheduled || 0)) > 0)
+                    .sort((a, b) => ((b.followups || 0) + (b.added || 0)) - ((a.followups || 0) + (a.added || 0)) || String(a.person).localeCompare(String(b.person), 'th'));
                 const pplTable = '<table class="psr-table"><thead><tr><th style="text-align:left;">#</th><th style="text-align:left;">เซลล์</th>' +
                     metrics.map(m => `<th>${escapeHtml(m.short || m.label)}</th>`).join('') + (single ? '' : '<th>วันที่มีงาน</th>') + '</tr></thead><tbody>' +
                     ppl.map((p, i) => {
@@ -6894,7 +7022,8 @@
             ['kpi', '📌 สรุปภาพรวม', true],
             ['lead-source', '📣 ลูกค้าแยกตามช่องทางที่มา', false],
             ['funnel', '🔻 Funnel การขาย', false],
-            ['sales-daily', '👥 รายงานแยกตามเซลล์', true],
+            ['sales-daily', '👥 สรุปงานติดตามของเซลล์', true],
+            ['status-change', '🔄 สถานะลูกค้าแยกตามช่องทาง', true], // (r61)
             ['staff-dash', '📊 Dashboard พนักงาน', true]
         ];
         let rpEditing = false, rpDragId = null, rpServerDefault = null, rpPublishTimer = null;
@@ -7098,6 +7227,72 @@
                 btn.classList.toggle('active', !!p && p[0] === r.start && p[1] === r.end);
             });
         }
+        /* ---------- (r59) แสดงตัวเลขชุดล่าสุดที่เคยโหลดไว้ในเครื่องทันที แล้วค่อยอัปเดตเมื่อได้ข้อมูลใหม่ ----------
+           เดิมทุกการ์ดต้องรอเซิร์ฟเวอร์ (Apps Script + BigQuery) ตอบก่อนตัวเลขจะขึ้น — ตอนนี้ถ้าเคยเปิดช่วงวันที่นี้มาก่อน
+           จะเห็นตัวเลขเดิมทันที (มีป้าย "กำลังอัปเดต") และถูกแทนที่ด้วยตัวเลขล่าสุดภายในไม่กี่วินาที */
+        const RP_SWR_PREFIX = 'crm_rpswr_v2:'; // (r61) v2 = รายงานเซลล์มี followTypes / statusEvents
+        try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.indexOf('crm_rpswr_v1:') === 0) localStorage.removeItem(k); } } catch (e) {}
+        const RP_SWR_MAX_AGE_MS = 3 * 86400000;
+        const RP_SWR_MAX_ENTRIES = 30;
+        let rpSwrPending_ = 0;
+        function rpSwrKey_(action, params) { return RP_SWR_PREFIX + action + ':' + JSON.stringify(params || {}); }
+        function rpSwrPrune_(keepFew) {
+            try {
+                const items = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (!k || k.indexOf(RP_SWR_PREFIX) !== 0) continue;
+                    let t = 0;
+                    try { t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0; } catch (e) {}
+                    items.push({ k, t });
+                }
+                items.sort((a, b) => b.t - a.t);
+                const limit = keepFew ? 5 : RP_SWR_MAX_ENTRIES;
+                items.forEach((it, idx) => { if (idx >= limit || Date.now() - it.t > RP_SWR_MAX_AGE_MS) localStorage.removeItem(it.k); });
+            } catch (e) {}
+        }
+        function rpSwrPut_(key, data) {
+            let txt;
+            try { txt = JSON.stringify({ t: Date.now(), d: data }); } catch (e) { return; }
+            if (txt.length > 600000) return;
+            try { localStorage.setItem(key, txt); }
+            catch (e) { rpSwrPrune_(true); try { localStorage.setItem(key, txt); } catch (e2) {} }
+        }
+        function rpSwrClearAll_() {
+            try {
+                const ks = [];
+                for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(RP_SWR_PREFIX) === 0) ks.push(k); }
+                ks.forEach(k => localStorage.removeItem(k));
+            } catch (e) {}
+        }
+        function rpSwrBusy_(delta) {
+            rpSwrPending_ = Math.max(0, rpSwrPending_ + delta);
+            const el = document.getElementById('rp-updating');
+            if (el) el.style.display = rpSwrPending_ > 0 ? '' : 'none';
+        }
+        function rpSwr_(action, params, factory, onData, onError) {
+            const key = rpSwrKey_(action, params);
+            let shown = false;
+            try {
+                const hit = JSON.parse(localStorage.getItem(key) || 'null');
+                if (hit && hit.d && hit.d.success && Date.now() - (hit.t || 0) < RP_SWR_MAX_AGE_MS) {
+                    const d = hit.d;
+                    d.cached = true; d._localCache = true;
+                    try { onData(d); shown = true; } catch (e) { /* ข้อมูลในเครื่องใช้ไม่ได้ — รอข้อมูลจริง */ }
+                }
+            } catch (e) {}
+            rpSwrBusy_(1);
+            return factory()
+                .then(d => {
+                    if (d && d.success) rpSwrPut_(key, d);
+                    return onData(d);
+                })
+                .catch(err => {
+                    if (shown) { console.warn('[rpSwr] อัปเดต ' + action + ' ไม่สำเร็จ — ยังแสดงตัวเลขชุดก่อนหน้า', err); return; }
+                    return onError(err);
+                })
+                .finally(() => rpSwrBusy_(-1));
+        }
         // ดึงทุกการ์ดใหม่ตามช่วงวันที่ปัจจุบัน — noCache=true (กดปุ่ม "ดึงรายงานทั้งหมด") = ไม่ใช้แคชฝั่งเซิร์ฟเวอร์
         function rpRefreshAll(noCache) {
             const r = rpRange_();
@@ -7133,11 +7328,34 @@
         }
         function rpOnSalesData_(res) {
             if (!res) { rpKpi.sales = null; rpRenderKpi_(); return; }
-            const t = { added: 0, followups: 0, appointments: 0, booked: 0, closing: 0 };
-            (res.people || []).forEach(p => { Object.keys(t).forEach(k => { t[k] += Number(p[k]) || 0; }); });
+            // (r61) ตัวเลขรวมทั้งทีม (ไม่แยกเซลล์): การติดตามแต่ละรูปแบบ / สถานะที่ได้ — รายวัน
+            sdrPrepare_(res);
+            const t = { followups: 0, ft: {}, st: {}, ftDay: {}, stDay: {}, types: res._followTypes || FOLLOW_TYPE_ORDER, statuses: res._statuses || [] };
+            (res.people || []).forEach(p => { t.followups += Number(p.followups) || 0; });
+            (res.followTypes || []).forEach(([d, p, ty, n]) => {
+                t.ft[ty] = (t.ft[ty] || 0) + n;
+                const dd = t.ftDay[d] || (t.ftDay[d] = {}); dd[ty] = (dd[ty] || 0) + n;
+            });
+            (res.statusEvents || []).forEach(([d, p, c, st, n]) => {
+                t.st[st] = (t.st[st] || 0) + n;
+                const dd = t.stDay[d] || (t.stDay[d] = {}); dd[st] = (dd[st] || 0) + n;
+            });
+            t.range = res.range || { startDate: rpRange_().start, endDate: rpRange_().end };
             t.clamped = !!(res.range && res.range.startDate !== rpRange_().start);
             rpKpi.sales = t;
             rpRenderKpi_();
+        }
+        // (r61) ตารางเล็ก "แถว = วัน" ใต้กล่องตัวเลข (แสดงเมื่อเลือกหลายวัน) — กดตัวเลขเพื่อดูรายชื่อของวันนั้น
+        function rpKpiDayTable_(range, keys, dayMap, labelOf, clickKey) {
+            const days = sdrDaysInRange_(range.startDate, range.endDate).reverse();
+            if (days.length <= 1 || !keys.length) return '';
+            const v = (d, k) => Number((dayMap[d] || {})[k]) || 0;
+            return `<div class="table-responsive rp-kpi-days"><table class="sdr-table"><thead><tr><th>วันที่</th>${keys.map(k => `<th class="num">${escapeHtml(labelOf(k))}</th>`).join('')}<th class="num">รวม</th></tr></thead><tbody>` +
+                days.map(d => {
+                    const tot = keys.reduce((a, k) => a + v(d, k), 0);
+                    return `<tr><td>${escapeHtml(sdrPrintDayLabel_(d))}</td>${keys.map(k => v(d, k) ? `<td ${sdrCellAttr_(clickKey(k), '', d)}>${v(d, k).toLocaleString()}</td>` : '<td class="num"><span style="color:#cbd5e1;">0</span></td>').join('')}` +
+                        `<td class="num"><b>${tot ? tot.toLocaleString() : '<span style="color:#cbd5e1;">0</span>'}</b></td></tr>`;
+                }).join('') + '</tbody></table></div>';
         }
         function rpBuildKpiCard_() {
             const card = document.createElement('div');
@@ -7146,7 +7364,7 @@
             card.innerHTML = `
                 <div class="card-title"><span>📌 สรุปภาพรวม <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
                 <div class="rp-kpi-grid" id="rp-kpi-grid"></div>
-                <div class="sdr-note" id="rp-kpi-note">• กดที่กล่องเพื่อดูรายชื่อลูกค้าและรายละเอียด · ฝั่งซ้ายนับจาก log รับลีด (ทุกครั้งที่มีการส่ง/คีย์ลูกค้าเข้ามา รวมที่ซ้ำ) — ลูกค้าใหม่ = ManyChat + เซลล์เพิ่มเอง<br>• ฝั่งขวานับแบบเดียวกับรายงานแยกตามเซลล์ · จอง / รอปิดการขาย = สถานะปัจจุบันของลูกค้า นับตามวันที่ติดตามล่าสุด</div>`;
+                <div class="sdr-note" id="rp-kpi-note">• กดที่กล่องเพื่อดูรายชื่อลูกค้าและรายละเอียด · ฝั่งซ้ายนับจาก log รับลีด (ทุกครั้งที่มีการส่ง/คีย์ลูกค้าเข้ามา รวมที่ซ้ำ) — ลูกค้าใหม่ = ManyChat + เซลล์เพิ่มเอง<br>• การติดตามแต่ละรูปแบบ = จำนวนครั้งที่บันทึกการติดตาม (รวมทุกเซลล์) · สถานะลูกค้า = ลูกค้าที่เพิ่มเข้ามาด้วยสถานะนั้น + บันทึกติดตามที่เปลี่ยนเป็นสถานะนั้น (ดูแยกตามช่องทางที่การ์ด 🔄)<br>• เลือกช่วงหลายวัน จะมีตารางแยกรายวันใต้กล่องตัวเลข</div>`;
             return card;
         }
         function rpRenderKpi_() {
@@ -7179,27 +7397,37 @@
                 tile({ label: 'จาก Facebook/ManyChat', sub: 'ลีดอัตโนมัติ (รวมที่ซ้ำ)', v: plain(i, 'manychatCount'), c: '#1877F2', click: can(i) ? intakeClick('manychat') : '' }),
                 tile({ label: 'เซลล์เพิ่มลูกค้าเอง', sub: 'คีย์จากหน้าเว็บ (รวมที่ซ้ำ)', v: plain(i, 'manualCount'), c: '#0f766e', click: can(i) ? intakeClick('manual') : '' })
             ];
-            const right = [
-                { label: 'บันทึกติดตาม', sub: 'ครั้ง', v: plain(s, 'followups'), c: '#ea580c', click: can(s) ? salesClick('followups') : '' },
-                { label: 'นัดหมาย / เข้าพบ', sub: 'ครั้ง', v: plain(s, 'appointments'), c: '#7c3aed', click: can(s) ? salesClick('appointments') : '' },
-                { label: 'จอง', sub: 'ราย (HOT)', v: plain(s, 'booked'), c: '#0284c7', click: can(s) ? salesClick('booked') : '' },
-                { label: 'รอปิดการขาย', sub: 'ราย (HOT)', v: plain(s, 'closing'), c: '#6b21a8', click: can(s) ? salesClick('closing') : '' }
-            ].map(tile);
+            // (r61) แยก 2 ส่วนแบบเดียวกับตาราง: การติดตามแต่ละรูปแบบ / สถานะลูกค้าที่ได้ — รวมทั้งทีม แยกรายวัน
+            const enc = x => encodeURIComponent(x);
+            const ftTile = (t) => tile({ label: FOLLOW_TYPE_LABEL[t] || t, sub: 'ครั้ง', v: plain(s && s.ft, t), c: '#ea580c',
+                click: can(s) && (s.ft[t] || 0) ? `openKpiDetail('followType', '', { followType: decodeURIComponent('${enc(t)}') })` : '' });
+            const followTiles = [tile({ label: 'ติดตามรวมทุกรูปแบบ', sub: 'ครั้ง', v: plain(s, 'followups'), c: '#c2410c', cls: 'rp-kpi-wide', click: can(s) && s.followups ? salesClick('followups') : '' })]
+                .concat((can(s) ? s.types : FOLLOW_TYPE_ORDER).map(ftTile));
+            const stTiles = !can(s) ? [tile({ label: 'สถานะลูกค้า', sub: '', v: plain(s, 'x'), c: '#0284c7' })]
+                : (s.statuses.length ? s.statuses.map(st => tile({ label: st, sub: 'ราย (เพิ่มใหม่ / เปลี่ยนเป็นสถานะนี้)', v: (s.st[st] || 0).toLocaleString(), c: STATUS_COLOR[st] || '#334155',
+                    click: `openKpiDetail('statusChange', '', { status: decodeURIComponent('${enc(st)}') })` }))
+                  : ['<div style="color:#94a3b8; font-size:12.5px; padding:8px;">ยังไม่มีการเพิ่มลูกค้า / เปลี่ยนสถานะในช่วงนี้</div>']);
+            const ftDays = can(s) ? rpKpiDayTable_(s.range, s.types.filter(t => s.ft[t]), s.ftDay, t => (FOLLOW_TYPE_LABEL[t] || t).replace(/^\S+\s/, ''), t => 'ft:' + t) : '';
+            const stDays = can(s) ? rpKpiDayTable_(s.range, s.statuses, s.stDay, st => st, st => 'st:\u0001' + st) : '';
             box.innerHTML =
                 `<div class="rp-kpi-group"><div class="rp-kpi-group-title">📥 ได้เบอร์ / ข้อมูลใหม่${rpKpi.onlyMc ? ' (เฉพาะ ManyChat)' : ''}</div><div class="rp-kpi-group-grid">${left.join('')}</div></div>` +
-                `<div class="rp-kpi-group"><div class="rp-kpi-group-title">📞 การติดตาม / นัดหมาย / ปิดการขาย</div><div class="rp-kpi-group-grid">${right.join('')}</div></div>`;
+                `<div class="rp-kpi-group"><div class="rp-kpi-group-title">📞 การติดตามแต่ละรูปแบบ (ทั้งทีม)</div><div class="rp-kpi-group-grid">${followTiles.join('')}</div>${ftDays}</div>` +
+                `<div class="rp-kpi-group"><div class="rp-kpi-group-title">🔄 สถานะลูกค้า (ทั้งทีม)</div><div class="rp-kpi-group-grid">${stTiles.join('')}</div>${stDays}</div>`;
             const note = document.getElementById('rp-kpi-note');
             if (note && s && s.clamped) note.dataset.clamped = '1';
         }
 
         /* ---------- 4b) (r54b) กดกล่องตัวเลขของเซลล์ → รายชื่อลูกค้า (action 'getSalesMetricDetail') ---------- */
-        const KPI_METRIC_LABELS = { followups: 'บันทึกติดตาม', appointments: 'นัดหมาย / เข้าพบ', booked: 'จอง', closing: 'รอปิดการขาย', added: 'เซลล์เพิ่มลูกค้าเอง', pipelineNow: 'จอง + รอปิดการขาย ตอนนี้ทั้งหมด' };
+        const KPI_METRIC_LABELS = { followType: 'การติดตาม', statusChange: 'สถานะลูกค้า', followups: 'บันทึกติดตาม', appointments: 'นัดหมาย / เข้าพบ', booked: 'จอง', closing: 'รอปิดการขาย', added: 'เซลล์เพิ่มลูกค้าเอง', pipelineNow: 'จอง + รอปิดการขาย ตอนนี้ทั้งหมด' };
         let kpiDetailRows_ = [], kpiDetailSeq_ = 0;
         function closeKpiDetailModal() { document.getElementById('kpi-detail-modal-overlay').classList.remove('show'); }
-        function openKpiDetail(metric, person) {
+        function openKpiDetail(metric, person, extra) {
+            extra = extra || {};
             const r = rpRange_();
-            const label = KPI_METRIC_LABELS[metric] || metric;
-            const when = metric === 'pipelineNow' ? 'ไม่จำกัดวันที่' : (r.start === r.end ? r.start : r.start + ' ถึง ' + r.end);
+            let label = KPI_METRIC_LABELS[metric] || metric;
+            if (metric === 'followType') label = 'การติดตาม: ' + (FOLLOW_TYPE_LABEL[extra.followType] || extra.followType || 'ทุกรูปแบบ');
+            if (metric === 'statusChange') label = 'สถานะลูกค้า: ' + (extra.channel ? (extra.channel === SDR_NEW_CHANNEL ? 'เพิ่มลูกค้าใหม่' : (FOLLOW_TYPE_LABEL[extra.channel] || extra.channel)) + ' → ' : '') + (extra.status || 'ทุกสถานะ');
+            const when = metric === 'pipelineNow' ? 'ไม่จำกัดวันที่' : (extra.date ? extra.date : (r.start === r.end ? r.start : r.start + ' ถึง ' + r.end));
             document.getElementById('kpi-detail-title').textContent = `🔎 รายละเอียด: ${label}${person ? ' · ' + person : ''} (${when})`;
             document.getElementById('kpi-detail-summary').textContent = '';
             const body = document.getElementById('kpi-detail-body');
@@ -7209,7 +7437,7 @@
             fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'getSalesMetricDetail', payload: { startDate: r.start, endDate: r.end, metric: metric, person: person || '' } })
+                body: JSON.stringify({ action: 'getSalesMetricDetail', payload: Object.assign({ startDate: r.start, endDate: r.end, metric: metric, person: person || '' }, extra) })
             })
             .then(res => res.json())
             .then(res => {
@@ -7219,14 +7447,14 @@
                     throw new Error(msg.indexOf('Invalid Action') !== -1 ? msg + ' — ต้อง Deploy Code.gs รุ่นล่าสุดก่อน' : msg);
                 }
                 kpiDetailRows_ = res.rows || [];
-                const isLog = metric === 'followups' || metric === 'appointments';
+                const isLog = metric === 'followups' || metric === 'appointments' || metric === 'followType' || metric === 'statusChange';
                 document.getElementById('kpi-detail-summary').textContent = `พบทั้งหมด ${kpiDetailRows_.length.toLocaleString()} ${isLog ? 'ครั้ง' : 'ราย'}` +
                     (res.truncated ? ' (แสดงสูงสุด 500 รายการล่าสุด — ย่อช่วงวันที่ถ้าต้องการดูครบ)' : '') +
                     ' · ข้อมูลอาจตามหลังการบันทึกจริงได้ประมาณ 15 นาที';
                 if (!kpiDetailRows_.length) { body.innerHTML = '<div style="text-align:center; padding:24px; color:#94a3b8;">ไม่พบข้อมูล</div>'; return; }
-                const dateHead = metric === 'added' ? 'วันที่เพิ่ม' : (isLog ? 'วันที่ติดตาม' : 'ติดตามล่าสุด');
+                const dateHead = metric === 'added' ? 'วันที่เพิ่ม' : (metric === 'statusChange' ? 'วันที่' : (isLog ? 'วันที่ติดตาม' : 'ติดตามล่าสุด'));
                 if (!isLog && metric !== 'added') document.getElementById('kpi-detail-summary').textContent += ' · เซลล์ = คนที่บันทึกติดตามลูกค้ารายนี้ล่าสุด (ถ้ายังไม่เคยติดตาม = คนที่เพิ่มลูกค้าเอง)';
-                const noteHead = metric === 'added' ? 'หมายเหตุ' : (isLog ? 'ประเภท / รายละเอียดการติดตาม' : 'สถานะ / บันทึกล่าสุด');
+                const noteHead = metric === 'added' ? 'หมายเหตุ' : (metric === 'statusChange' ? 'ช่องทาง / สถานะที่เปลี่ยน' : (isLog ? 'ประเภท / รายละเอียดการติดตาม' : 'สถานะ / บันทึกล่าสุด'));
                 body.innerHTML = `<table class="sdr-table kpi-detail-table"><thead><tr><th>#</th><th>${dateHead}</th><th>ชื่อ</th><th>เบอร์โทร</th><th>กลุ่มลูกค้า</th><th>ช่องทาง</th><th>สินค้า</th><th>เซลล์</th><th>${noteHead}</th><th></th></tr></thead><tbody>` +
                     kpiDetailRows_.map((x, idx) => {
                         const prod = getRowProductParts(x);
@@ -7275,13 +7503,11 @@
             const seq = ++leadSourceSeq_;
             body.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">⏳ กำลังโหลด...</div>';
             status.textContent = '';
-            fetch(WEB_APP_URL, {
+            rpSwr_('getLeadSourceReport', { s: r.start, e: r.end }, () => fetch(WEB_APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({ action: 'getLeadSourceReport', payload: { startDate: r.start, endDate: r.end, noCache: !!(opts && opts.noCache === true) } })
-            })
-            .then(res => res.json())
-            .then(res => {
+            }).then(res => res.json()), res => {
                 if (seq !== leadSourceSeq_) return;
                 if (!res || !res.success) {
                     const msg = (res && res.message) || 'ไม่ได้รับข้อมูล';
@@ -7291,8 +7517,7 @@
                 status.textContent = `อัปเดตเมื่อ ${res.generatedAt || '-'}${res.cached ? ' (แคช)' : ''}` +
                     (res.hasLeadSourceColumn === false ? ' · ⚠️ ฐานข้อมูลรายงานยังไม่มีคอลัมน์ช่องทาง (รอ sync รอบถัดไปหลัง deploy) — ตอนนี้แยกได้แค่ Facebook/ไม่ระบุ' : '');
                 renderLeadSourceReport_();
-            })
-            .catch(err => {
+            }, err => {
                 if (seq !== leadSourceSeq_) return;
                 body.innerHTML = `<div style="text-align:center; color:#ef4444; padding:20px;">❌ โหลดรายงานไม่สำเร็จ: ${escapeHtml(err && err.message ? err.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')}</div>`;
             });
@@ -7358,7 +7583,8 @@
                 'lead-source': rpBuildLeadSourceCard_(),
                 'staff-dash': byId('staff-dash-card'),
                 'funnel': cardOf('sales-funnel-container'),
-                'sales-daily': sdrBuildCard_()
+                'sales-daily': sdrBuildCard_(),
+                'status-change': stBuildCard_()
             };
             const toolbar = document.createElement('div');
             toolbar.className = 'card rp-toolbar-card';
@@ -7379,6 +7605,7 @@
                 '</div>' +
                 '<div class="rp-toolbar">' +
                     '<span class="rp-range-status" id="rp-range-status"></span>' +
+                    '<span id="rp-updating" style="display:none; font-size:12px; color:#2563eb;">⏳ กำลังอัปเดตตัวเลขล่าสุด…</span>' +
                     '<span class="rp-hint" id="rp-hint" style="display:none;"></span>' +
                     '<span class="rp-layout-note" id="rp-layout-note"></span>' +
                     '<button type="button" class="btn btn-secondary" id="btn-rp-reset" style="display:none;" onclick="rpReset()">↩️ คืนค่าเริ่มต้น</button>' +
