@@ -1,4 +1,4 @@
-// RST GROUP - PriceLogic Procurement : Code.gs (v5.9.6)
+// RST GROUP - PriceLogic Procurement : Code.gs (v5.9.30)
 // ฐานข้อมูลของแอป = Google Sheet ที่ผูกกับสคริปต์นี้ (ชีต "Data" + "รายงาน")
 // สถานะใบขอซื้อจาก ECOUNT = อ่านจาก RST GROUP Data Hub (Google Sheet กลาง)
 var DATA_HUB_ID = "1UlBTYtHKb9SOrb41J1svuUU5-r3FRr119druz9EIx-o";
@@ -12,6 +12,10 @@ function doGet(e) {
   if (p.action === "vendorhist") return jsonOut(getVendorHistJson());
   if (p.action === "ecKeyStatus") return jsonOut(ecKeyStatusForClient());
   if (p.action === "vendormaster") return jsonOut(getVendorMasterJson());
+  if (p.action === "polinks") return jsonOut(getPOLinksJson());
+  if (p.action === "relist") return jsonOut(getReListJson());
+  if (p.action === "hubsig") return jsonOut(getHubSigJson());
+  if (p.action === "hubvalues") return jsonOut(getHubValuesJson());
   return HtmlService.createHtmlOutputFromFile("Index")
     .setTitle("RST GROUP - PriceLogic Procurement")
     .addMetaTag("viewport", "width=device-width, initial-scale=1");
@@ -28,6 +32,10 @@ function doPost(e) {
   if (req && req.action === "ecKeySave") return jsonOut(saveEcountKeyForClient(req));
   if (req && req.action === "pushVendor") return jsonOut(JSON.stringify(pushVendorMaster(req)));
   if (req && req.action === "pushLocation") return jsonOut(JSON.stringify(pushLocations(req)));
+  if (req && req.action === "dhAppend") return jsonOut(JSON.stringify(dhAppendUnique(req)));
+  if (req && req.action === "dhDedupe") return jsonOut(dhDedupeForClient(req));
+  if (req && req.action === "dhReplace") return jsonOut(JSON.stringify(dhReplaceForClient(req)));
+  if (req && req.action === "poDetail") return jsonOut(getPODetailForClient(req));
   if (req && req.action === "ecKeyTest") return jsonOut(testEcountKeyForClient(req));
   if (req && req.action) return jsonOut(JSON.stringify({ status: "error", message: "unknown action" }));
   saveDataJson(body);
@@ -102,6 +110,7 @@ function writeReadableSheet(ss, prs) {
 // ---- อ่าน "สถานะใบขอซื้อ" จาก RST GROUP Data Hub ----
 // ถ้าไม่ระบุชื่อชีต จะหาเองจากหัวคอลัมน์ (ต้องมี "เลขที่ใบขอซื้อ" และ "รหัสสินค้า")
 function getPRStatusJson(hubId, tabName) {
+  dhReplaceSafe(["DH_PR_STATUS", "ECOUNT_PR"], hubId);
   var out = { rows: [], sheet: "", error: "" };
   try {
     var ss = SpreadsheetApp.openById(hubId || DATA_HUB_ID);
@@ -119,6 +128,7 @@ function getPRStatusJson(hubId, tabName) {
         var score = 1;
         if (joined.indexOf("จำนวนขอซื้อ") > -1) score += 2;
         if (joined.indexOf("เลขที่ใบสั่งซื้อ") > -1) score -= 1;
+        if (/\|_?company\||\|บริษัท\|/i.test(joined)) score += 3; // v5.9.30: prefer the sheet that says which company each PR belongs to
         var nm = sh.getName().toUpperCase();
         if (nm.indexOf("PR") > -1 || nm.indexOf("REQUEST") > -1 || nm.indexOf("ขอซื้อ") > -1) score += 2;
         if (score > bestScore) { best = sh; bestScore = score; bestHead = r; }
@@ -489,6 +499,7 @@ function getVendorHistJson() {
       var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
       var h = v[0].map(function (x) { return String(x).trim(); });
       var c = {}; ["co", "code", "vendor", "vcode", "date", "net", "price", "qty", "po", "name", "group"].forEach(function (k) { c[k] = d[k] ? h.indexOf(d[k]) : -1; });
+      if (c.net < 0) for (var hn = 0; hn < h.length; hn++) if (/หลัง\s*(หัก)?\s*ส่วนลด/.test(h[hn])) { c.net = hn; break; }
       if (c.code < 0 || c.vendor < 0) continue;
       for (var i = 1; i < v.length; i++) {
         var r = v[i], code = String(r[c.code] || "").trim(), vendor = String(r[c.vendor] || "").trim();
@@ -666,3 +677,364 @@ function pushLocations(req) {
   return out;
 }
 function saveLocationsForClient(req) { return JSON.stringify(pushLocations(req)); }
+
+
+// ================= v5.9.30: เลขที่ PO ที่เปิดใน ECOUNT แล้ว (จับคู่ PR + รหัสสินค้า + ชื่อสินค้า) =================
+// คืน rows: [บริษัท, เลขที่ใบขอซื้อ, รหัสสินค้า, ชื่อสินค้า, เลขที่ใบสั่งซื้อ, วันที่]
+function dhHeaderIdx(h, tests) { for (var t = 0; t < tests.length; t++) for (var i = 0; i < h.length; i++) if (tests[t](h[i])) return i; return -1; }
+// RST ROBOTIC / RST ROBOTICS / ROBOTICS → ROBOTICS (same company)
+function poCoNorm(c) {
+  var u = String(c || "").trim().toUpperCase();
+  if (/ROBOTIC|โรโบ/.test(u)) return "ROBOTICS";
+  if (/ASIA|เอเชีย/.test(u)) return "ASIA";
+  if (/RUAM|รวมสิน/.test(u)) return "RUAMSINTHAI";
+  return u;
+}
+function getPOLinksJson() {
+  dhReplaceSafe(["DH_PO_STATUS", "PO_LINES"]);
+  // rows: [company, PR, itemCode, itemName, PO no., date, YDS no., vendor, qty, unit price, amount, project, status, source, due date, received qty, remaining qty]
+  var out = { rows: [], cols: {}, error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID), seen = {}, poSeen = {};
+    var tx = function (re, not) { return function (x) { return re.test(x) && !(not && not.test(x)); }; };
+    [
+      { tab: "DH_PO_STATUS", co: [function (x) { return /^_?company$/i.test(x); }], pr: [function (x) { return /ใบขอซื้อ/.test(x) && !/วันที่/.test(x); }], po: [function (x) { return /เลขที่ใบสั่งซื้อ/.test(x); }], code: [tx(/^รหัสสินค้า/)], name: [tx(/^ชื่อสินค้า/)], date: [tx(/^วันที่$/), tx(/^วันที่/, /ส่ง|ต้องการ|รับ/)],
+        yds: [tx(/^YDS/i)], vendor: [tx(/^ชื่อ\s*ลูกค้า\/ผู้ขาย/), tx(/^ลูกค้า\/ผู้ขาย/)], qty: [tx(/^จำนวน$/), tx(/^จำนวน/, /เงิน|ค้าง|รับ/)], price: [tx(/^ราคาต่อหน่วย/), tx(/^ราคา/)], amount: [tx(/^จำนวนเงิน/), tx(/^มูลค่า/)], proj: [tx(/^ชื่อโครงการ/), tx(/^โครงการ/)], status: [tx(/^สถานะ/)],
+        due: [tx(/^วันที่ส่งมอบ/), tx(/ส่งมอบ/, /สถานที่|เงื่อนไข|รูปแบบ/), tx(/กำหนด.*ส่ง|ครบกำหนด/, /สถานที่|เงื่อนไข/), tx(/^วันที่ส่ง/, /สถานที่|PR/i), tx(/due/i)], recv: [tx(/(รับ|ซื้อ)(สินค้า)?แล้ว|จำนวน.*(รับ|ซื้อ)|ดำเนินการแล้ว/, /วันที่|เลขที่|ค้าง/)], remain: [tx(/ค้าง|คงเหลือ|ยังไม่/, /วันที่|เลขที่/)], net: [tx(/หลัง\s*(หัก)?\s*ส่วนลด/)], pic: [tx(/^PIC$/i), tx(/^ชื่อ\s*PIC/i), tx(/PIC/i, /รหัส/)], wh: [tx(/^ชื่อสถานที่/), tx(/สถานที่รับ|คลัง/)] },
+    ].concat(["สถานะใบสั่งซื้อ", "ECOUNT_PO"].map(function (t) { return { tab: t, alias: 1 }; })).forEach(function (d, di, all) {
+      if (d.alias) { var base = all[0]; d = Object.keys(base).reduce(function (o, k) { o[k] = k === "tab" ? d.tab : base[k]; return o; }, {}); }
+      var sh = ss.getSheetByName(d.tab); if (!sh || sh.getLastRow() < 2) return;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var I = {}; ["co", "pr", "po", "code", "name", "date", "yds", "vendor", "qty", "price", "amount", "proj", "status", "due", "recv", "remain", "net", "pic", "wh"].forEach(function (k) { I[k] = dhHeaderIdx(h, d[k]); });
+      if (I.po === -1) return;
+      if (!out.cols.sheet) { out.cols.sheet = d.tab; ["due", "recv", "remain", "status"].forEach(function (k) { out.cols[k] = I[k] === -1 ? "" : h[I[k]]; }); }
+      var thisTab = {};
+      for (var r = 1; r < v.length; r++) {
+        var g = function (k) { return I[k] === -1 ? "" : String(v[r][I[k]]).trim(); };
+        var po = g("po"), co = poCoNorm(g("co")); if (!po || /รวม|total/i.test(po) || !/^PO/i.test(po)) continue; // PO numbers only (no month / total rows)
+        var pk = co + "|" + po;
+        if (di > 0 && poSeen[pk]) continue; // other "สถานะใบสั่งซื้อ" sheets only for POs not in DH_PO_STATUS
+        thisTab[pk] = 1;
+        var k = pk + "|" + g("pr") + "|" + g("code") + "|" + g("name") + "|" + g("qty"); if (seen[k]) continue; seen[k] = 1;
+        out.rows.push([co, g("pr"), g("code"), g("name"), po, g("date"), g("yds"), g("vendor"), g("qty"), g("price"), g("amount"), g("proj"), g("status"), d.tab, g("due"), g("recv"), g("remain"), g("net"), g("pic"), g("wh")]);
+      }
+      Object.keys(thisTab).forEach(function (x) { poSeen[x] = 1; });
+    });
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+// v5.9.30: every column of one PO from the "สถานะใบสั่งซื้อ" sheets (for the purchase-order view)
+function getPODetailForClient(req) {
+  var out = { headers: [], rows: [], error: "" };
+  try {
+    var po = String((req && req.po) || "").trim(), co = poCoNorm(req && req.company); if (!po) return JSON.stringify(out);
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID);
+    ["DH_PO_STATUS", "สถานะใบสั่งซื้อ", "ECOUNT_PO"].forEach(function (tab) {
+      if (out.rows.length) return;
+      var sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 2) return;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var iPo = dhHeaderIdx(h, [function (x) { return /เลขที่ใบสั่งซื้อ/.test(x); }]), iCo = dhHeaderIdx(h, [function (x) { return /^_?company$/i.test(x); }]);
+      if (iPo === -1) return;
+      for (var r = 1; r < v.length; r++) {
+        if (String(v[r][iPo]).trim() !== po) continue;
+        if (co && iCo > -1 && v[r][iCo] && poCoNorm(v[r][iCo]) !== co) continue;
+        out.rows.push(v[r]);
+      }
+      if (out.rows.length) out.headers = h;
+    });
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+// ================= v5.9.30: RE (ใบซื้อ / รับสินค้า) from the Data Hub — for RE vs PO checking =================
+// rows: [company, RE no., date, vendor, item code, item name, qty, unit price, amount, VAT, PO ref, PR ref, location, source sheet]
+function getReListJson() {
+  dhReplaceSafe(["DH_PURCHASE_STATUS", "ECOUNT_PURCHASE", "PURCHASE_LINES"]);
+  var out = { rows: [], cols: {}, error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID);
+    var tx = function (re, not) { return function (x) { return re.test(x) && !(not && not.test(x)); }; };
+    var spec = { co: [tx(/^_?company$/i)], re: [tx(/^หมายเลขการซื้อ/), tx(/หมายเลขการซื้อ/), tx(/เลขที่ใบซื้อ|เลขที่ใบรับ|^RE/i)],
+      date: [tx(/^วันที่$/), tx(/^วันที่\s*-/), tx(/^วันที่/, /ส่ง|ต้องการ|ครบ|PR|ใบสั่ง|ใบขอ/)], vendor: [tx(/^ชื่อ\s*ลูกค้า\/ผู้ขาย/), tx(/^ลูกค้า\/ผู้ขาย/), tx(/ผู้ขาย/, /รหัส/)],
+      code: [tx(/^รหัสสินค้า/)], name: [tx(/^ชื่อสินค้า/)], qty: [tx(/^จำนวน$/), tx(/^จำนวน/, /เงิน|ค้าง/)], net: [tx(/หลัง\s*(หัก)?\s*ส่วนลด/)], price: [tx(/^ราคาต่อหน่วย/, /หลัง\s*(หัก)?\s*ส่วนลด/), tx(/^ราคา/, /หลัง\s*(หัก)?\s*ส่วนลด|รวม/)],
+      amount: [tx(/^มูลค่า/), tx(/^จำนวนเงิน/), tx(/^ยอด/)], vat: [tx(/^ภาษี/)], po: [tx(/ใบสั่งซื้อ/, /วันที่/), tx(/^PO/i)], pr: [tx(/ใบขอซื้อ/, /วันที่/)], wh: [tx(/สถานที่|คลัง/)] };
+    var tabs = ["DH_PURCHASE_STATUS", "ECOUNT_PURCHASE", "PURCHASE_LINES"];
+    for (var t = 0; t < tabs.length; t++) {
+      var sh = ss.getSheetByName(tabs[t]); if (!sh || sh.getLastRow() < 2) continue;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); }), I = {};
+      Object.keys(spec).forEach(function (k) { I[k] = dhHeaderIdx(h, spec[k]); });
+      // RE no.: column "หมายเลขการซื้อ", otherwise the column whose values start with "RE"
+      if (I.re === -1) {
+        var best = -1, bestN = 0;
+        for (var c = 0; c < h.length; c++) { var n = 0; for (var q = 1; q < Math.min(v.length, 300); q++) if (/^RE/i.test(String(v[q][c]).trim())) n++; if (n > bestN) { bestN = n; best = c; } }
+        if (best > -1 && bestN > 0) I.re = best;
+      }
+      if (I.re === -1 || I.code === -1) continue;
+      out.cols = { sheet: tabs[t], headers: h };
+      Object.keys(I).forEach(function (k) { out.cols[k] = I[k] === -1 ? "" : h[I[k]]; });
+      for (var r = 1; r < v.length; r++) {
+        var g = function (k) { return I[k] === -1 ? "" : String(v[r][I[k]]).trim(); };
+        // RE no. must start with "RE" (skips month / total rows such as "ส.ค. 2569 รวม"); PO ref keeps only "PO…" numbers
+        var reNo = g("re"); if (!/^RE/i.test(reNo) || !g("code")) continue;
+        var poRef = (g("po").match(/PO[A-Za-z0-9\-\/]*/gi) || []).join(", ");
+        // RE price: unit price after discount; when that cell is empty or 0, the unit price
+        var reNet = g("net"), rePrice = Number(String(reNet).replace(/,/g, "")) > 0 ? reNet : g("price");
+        out.rows.push([poCoNorm(g("co")), reNo, g("date"), g("vendor"), g("code"), g("name"), g("qty"), rePrice, g("amount"), g("vat"), poRef, g("pr"), g("wh"), tabs[t]]);
+      }
+      break;
+    }
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+// ================= v5.9.30: Data Hub — no duplicate rows =================
+// Sheets that ECOUNT pulls are appended to. A row that is already in the sheet (same values in every column
+// except the pull-time columns) is not stored again.
+var DH_DEDUPE_TABS = ["DH_PR_STATUS", "DH_PO_STATUS", "DH_PURCHASE_STATUS", "DH_SALES_STATUS", "DH_STOCK_STATUS", "DH_PARTNER_MASTER", "DH_ITEM_MASTER", "ECOUNT_PR", "ECOUNT_PURCHASE", "ECOUNT_SALES", "ECOUNT_STOCK", "PO_LINES", "PURCHASE_LINES"];
+var DH_TIME_COL = /pulled|updated|_at$|timestamp|ดึงเมื่อ|เวลาที่ดึง|เวลาดึง|^_?run|^_?batch/i;
+function dhRowKey(row, skip) { var a = []; for (var i = 0; i < row.length; i++) if (!skip[i]) a.push(String(row[i] == null ? "" : row[i]).trim()); return a.join("\u0001"); }
+function dhSkipCols(head) { var s = {}; head.forEach(function (h, i) { if (DH_TIME_COL.test(String(h).trim())) s[i] = 1; }); return s; }
+// append only rows that are not in the sheet yet: {action:"dhAppend", sheet, headers?, rows}
+function dhAppendUnique(req) {
+  var out = { status: "error", added: 0, skipped: 0, sheet: String(req && req.sheet || ""), message: "" };
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID), name = out.sheet, rows = (req && req.rows) || [];
+    if (!name) { out.message = "ไม่ได้ระบุชื่อชีต"; return out; }
+    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    var head = (req.headers || []).map(function (h) { return String(h).trim(); });
+    if (sh.getLastRow() === 0 && head.length) sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight("bold");
+    var lastCol = Math.max(sh.getLastColumn(), head.length, rows.length ? rows[0].length : 0);
+    var cur = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), lastCol).getDisplayValues() : [];
+    var sheetHead = cur.length ? cur[0].map(function (h) { return String(h).trim(); }) : head;
+    // put the incoming columns in the sheet's column order when headers were sent
+    var map = head.length ? sheetHead.map(function (h) { return head.indexOf(h); }) : null;
+    var skip = dhSkipCols(sheetHead), have = {};
+    for (var r = 1; r < cur.length; r++) have[dhRowKey(cur[r], skip)] = 1;
+    var add = [];
+    rows.forEach(function (row) {
+      var line = map ? map.map(function (i) { return i === -1 ? "" : row[i]; }) : row.slice();
+      while (line.length < lastCol) line.push("");
+      var shown = line.map(function (v) { return String(v == null ? "" : v).trim(); });
+      var k = dhRowKey(shown, skip);
+      if (!shown.some(function (v) { return v !== ""; })) return;
+      if (have[k]) { out.skipped++; return; }
+      add.push(line.slice(0, lastCol));   // identical lines inside one pull are kept (a PR can list the same item twice)
+    });
+    if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, lastCol).setValues(add);
+    out.added = add.length; out.status = "ok";
+  } catch (err) { out.message = String(err); } finally { try { lock.releaseLock(); } catch (e) {} }
+  return out;
+}
+// ---- v5.9.30: duplicate lines inside one document (same PR / PO / RE no.) — shown for confirmation, deleted only on request ----
+// PR / PO: same item code + item name + quantity on the same document = duplicate
+// RE: same code + name + quantity = duplicate; same code + name with a different quantity = check (confirm or delete)
+var DH_DUP_SPEC = [
+  { kind: "PR", tabs: ["DH_PR_STATUS", "ECOUNT_PR"], doc: [/^เลขที่ใบขอซื้อ/], qty: [/^จำนวนขอซื้อ/, /^จำนวน$/] },
+  { kind: "PO", tabs: ["DH_PO_STATUS", "PO_LINES"], doc: [/^เลขที่ใบสั่งซื้อ/, /^PO_NO$/i], qty: [/^จำนวน$/, /^QTY$/i] },
+  { kind: "RE", tabs: ["DH_PURCHASE_STATUS", "ECOUNT_PURCHASE", "PURCHASE_LINES"], doc: [/^หมายเลขการซื้อ/], qty: [/^จำนวน$/, /^QTY$/i] }
+];
+function dhDupCols(h, spec, v) {
+  var f = function (res) { return dhHeaderIdx(h, res.map(function (re) { return function (x) { return re.test(x); }; })); };
+  var c = { doc: f(spec.doc), code: f([/^รหัสสินค้า/, /^ITEM_CODE$/i]), name: f([/^ชื่อสินค้า/, /^ITEM_NAME$/i]), qty: f(spec.qty), co: f([/^_?company$/i]), date: f([/^วันที่$/, /^วันที่\s*-/, /^PO_DATE$/i]), at: f([/pulled|updated|_at$/i]) };
+  if (c.doc === -1 && spec.kind === "RE") {   // RE no. = the column whose values start with "RE"
+    var best = -1, bn = 0;
+    for (var col = 0; col < h.length; col++) { var n = 0; for (var q = 1; q < Math.min(v.length, 300); q++) if (/^RE/i.test(String(v[q][col]).trim())) n++; if (n > bn) { bn = n; best = col; } }
+    if (bn > 0) c.doc = best;
+  }
+  return c;
+}
+function dhDupOkSet() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty("DH_DUP_OK") || "{}"); } catch (e) { return {}; } }
+function dhDupScan() {
+  var ss = SpreadsheetApp.openById(DATA_HUB_ID), ok = dhDupOkSet(), out = { groups: [], sheets: {} };
+  DH_DUP_SPEC.forEach(function (spec) {
+    spec.tabs.forEach(function (tab) {
+      var sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 3) return;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); }), c = dhDupCols(h, spec, v);
+      if (c.doc === -1 || c.code === -1) { out.sheets[tab] = { kind: spec.kind, error: "ไม่พบคอลัมน์เลขที่เอกสาร/รหัสสินค้า" }; return; }
+      var g = function (row, k) { return c[k] === -1 ? "" : String(row[c[k]]).trim(); };
+      var byItem = {};
+      for (var r = 1; r < v.length; r++) {
+        var doc = g(v[r], "doc"), code = g(v[r], "code");
+        if (!doc || !code || /รวม|total/i.test(doc)) continue;
+        var co = g(v[r], "co"), nm = g(v[r], "name"), k = co + "|" + doc + "|" + code + "|" + nm.replace(/\s+/g, " ");
+        (byItem[k] = byItem[k] || []).push({ r: r + 1, qty: g(v[r], "qty"), date: g(v[r], "date"), at: g(v[r], "at") });
+      }
+      var nDup = 0, nChk = 0;
+      Object.keys(byItem).forEach(function (k) {
+        var rows = byItem[k]; if (rows.length < 2) return;
+        var p = k.split("|"), byQty = {};
+        rows.forEach(function (x) { (byQty[x.qty] = byQty[x.qty] || []).push(x); });
+        var dupQty = Object.keys(byQty).filter(function (q) { return byQty[q].length > 1; });
+        var type = dupQty.length ? "dup" : (spec.kind === "RE" ? "check" : "");
+        if (!type) return;   // PR / PO: same item with different quantities is not a duplicate
+        var gk = tab + "|" + k + "|" + rows.map(function (x) { return x.qty; }).sort().join(",");
+        if (type === "check" && ok[gk]) return;   // confirmed earlier as not a duplicate
+        if (type === "dup") nDup++; else nChk++;
+        out.groups.push({ gk: gk, kind: spec.kind, sheet: tab, type: type, co: p[0], doc: p[1], code: p[2], name: p.slice(3).join("|"), rows: rows, dupQty: dupQty });
+      });
+      out.sheets[tab] = { kind: spec.kind, rows: v.length - 1, dup: nDup, check: nChk };
+    });
+  });
+  return out;
+}
+// delete rows: only when the row still holds the same document / item / quantity
+function dhDupDelete(items) {
+  var ss = SpreadsheetApp.openById(DATA_HUB_ID), done = 0, skipped = 0, bySheet = {};
+  (items || []).forEach(function (x) { (bySheet[x.sheet] = bySheet[x.sheet] || []).push(x); });
+  Object.keys(bySheet).forEach(function (tab) {
+    var spec = DH_DUP_SPEC.filter(function (s) { return s.tabs.indexOf(tab) > -1; })[0], sh = ss.getSheetByName(tab); if (!spec || !sh) return;
+    var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues(), h = v[0].map(function (x) { return String(x).trim(); }), c = dhDupCols(h, spec, v);
+    var g = function (row, k) { return c[k] === -1 ? "" : String(row[c[k]]).trim(); };
+    bySheet[tab].sort(function (a, b) { return b.r - a.r; }).forEach(function (x) {
+      var row = v[x.r - 1];
+      if (!row || g(row, "doc") !== x.doc || g(row, "code") !== x.code || g(row, "qty") !== x.qty) { skipped++; return; }
+      sh.deleteRow(x.r); done++;
+    });
+  });
+  return { deleted: done, skipped: skipped };
+}
+function dhDedupeForClient(req) {
+  var out = { status: "error", message: "" };
+  var lock = LockService.getScriptLock();
+  try {
+    req = req || {};
+    if (req.mode === "delete" || req.mode === "confirm") { var bad = ecCheckPass(req, false); if (bad) { out.message = bad; return JSON.stringify(out); } }
+    lock.waitLock(30000);
+    if (req.mode === "delete") out.result = dhDupDelete(req.items);
+    else if (req.mode === "confirm") {
+      var pr = PropertiesService.getScriptProperties(), ok = dhDupOkSet();
+      (req.keys || []).forEach(function (k) { ok[k] = new Date().toISOString().slice(0, 10) + " " + String(req.user || ""); });
+      pr.setProperty("DH_DUP_OK", JSON.stringify(ok)); out.result = { confirmed: (req.keys || []).length };
+    }
+    out.scan = dhDupScan(); out.status = "ok";
+  } catch (err) { out.message = String(err); } finally { try { lock.releaseLock(); } catch (e) {} }
+  return JSON.stringify(out);
+}
+// v5.9.24 had an hourly automatic clean-up; duplicates are now deleted only after confirmation — this removes that trigger if it was installed
+function dhDedupeHourly() { ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "dhDedupeHourly") ScriptApp.deleteTrigger(t); }); }
+function installDhDedupeTrigger() { dhDedupeHourly(); return "ยกเลิกการล้างข้อมูลอัตโนมัติแล้ว — ตรวจ/ลบข้อมูลซ้ำได้ที่แท็บตั้งค่า"; }
+// ================= v5.9.30: Data Hub — "replace by document number" =================
+// The Data Hub appends every ECOUNT pull. A PR / PO / RE no. that comes again in a later pull replaces its older lines:
+// only the newest copy of each document is kept. Documents that are not in the newer pull (e.g. ม.ค. – มิ.ย. when
+// ก.ค. – ต.ค. is pulled again) are never touched.
+//  - sheet with a pull-time column (_pulled_at / PULLED_AT / _updated …): keep the lines of the latest pull of that document
+//  - without one: an older block of the document is removed only when every line of it (code + name + qty) is in a later block
+function dhReplaceByDoc(sheetName, ss) {
+  var res = { sheet: sheetName, rows: 0, removed: 0, docs: 0, mode: "" };
+  var spec = DH_DUP_SPEC.filter(function (s) { return s.tabs.indexOf(sheetName) > -1; })[0];
+  var sh = ss.getSheetByName(sheetName); if (!spec || !sh || sh.getLastRow() < 3) return res;
+  var n = sh.getLastRow(), c = sh.getLastColumn(), rng = sh.getRange(1, 1, n, c), shown = rng.getDisplayValues();
+  var h = shown[0].map(function (x) { return String(x).trim(); }), cols = dhDupCols(h, spec, shown);
+  if (cols.doc === -1) { res.mode = "ไม่พบคอลัมน์เลขที่เอกสาร"; return res; }
+  var tcols = Object.keys(dhSkipCols(h)).map(Number), hasBatch = tcols.length > 0;
+  res.mode = hasBatch ? "batch" : "block"; res.rows = n - 1;
+  var g = function (row, k) { return cols[k] === -1 ? "" : String(row[cols[k]]).trim(); };
+  var blocks = [], cur = null, docs = {};
+  for (var r = 1; r < n; r++) {
+    var doc = g(shown[r], "doc");
+    if (!doc || /รวม|total/i.test(doc)) { cur = null; continue; }
+    var key = g(shown[r], "co") + "|" + doc, batch = hasBatch ? tcols.map(function (i) { return shown[r][i]; }).join("|") : "";
+    var line = g(shown[r], "code") + "|" + g(shown[r], "name") + "|" + g(shown[r], "qty");
+    // a new block starts when the document / pull changes, or (no pull-time column) when the document's first line comes again right after itself
+    if (!cur || cur.key !== key || cur.batch !== batch || (!hasBatch && cur.rows.length && line === cur.first)) { cur = { key: key, batch: batch, rows: [], first: line }; blocks.push(cur); (docs[key] = docs[key] || []).push(cur); }
+    cur.rows.push(r);
+  }
+  var drop = {};
+  Object.keys(docs).forEach(function (key) {
+    var bl = docs[key]; if (bl.length < 2) return;
+    res.docs++;
+    if (hasBatch) {
+      var latest = bl[bl.length - 1].batch;   // newest pull of this document = the one appended last
+      bl.forEach(function (b) { if (b.batch !== latest) b.rows.forEach(function (r) { drop[r] = 1; }); });
+    } else {
+      for (var i = 0; i < bl.length - 1; i++) {
+        var later = {};
+        for (var j = i + 1; j < bl.length; j++) bl[j].rows.forEach(function (r) { var k = g(shown[r], "code") + "|" + g(shown[r], "name") + "|" + g(shown[r], "qty"); later[k] = (later[k] || 0) + 1; });
+        var all = bl[i].rows.every(function (r) { var k = g(shown[r], "code") + "|" + g(shown[r], "name") + "|" + g(shown[r], "qty"); if (!later[k]) return false; later[k]--; return true; });
+        if (all) bl[i].rows.forEach(function (r) { drop[r] = 1; });
+      }
+    }
+  });
+  var nDrop = Object.keys(drop).length; if (!nDrop) return res;
+  if (sh.getLastRow() !== n) return res;   // the Data Hub is writing right now: try again on the next read
+  var vals = rng.getValues(), keep = [];
+  for (var q = 1; q < n; q++) if (!drop[q]) keep.push(vals[q]);
+  sh.getRange(2, 1, n - 1, c).clearContent();
+  if (keep.length) sh.getRange(2, 1, keep.length, c).setValues(keep);
+  res.removed = nDrop;
+  return res;
+}
+function dhReplaceSafe(tabs, hubId) {
+  var lock = LockService.getScriptLock(), out = [];
+  if (!lock.tryLock(20000)) return out;
+  try { var ss = SpreadsheetApp.openById(hubId || DATA_HUB_ID); tabs.forEach(function (t) { try { out.push(dhReplaceByDoc(t, ss)); } catch (e) { out.push({ sheet: t, error: String(e) }); } }); }
+  catch (err) { out.push({ error: String(err) }); } finally { lock.releaseLock(); }
+  return out;
+}
+function dhReplaceForClient(req) {
+  var tabs = [];
+  DH_DUP_SPEC.forEach(function (s) { tabs = tabs.concat(s.tabs); });
+  return { status: "ok", result: dhReplaceSafe(tabs) };
+}
+// run once from the Apps Script editor if the Data Hub should also be tidied every 30 minutes (without opening PriceLogic)
+function installDhReplaceTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "dhReplaceTimer") ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("dhReplaceTimer").timeBased().everyMinutes(30).create();
+  return "ตั้งให้จัดข้อมูล Data Hub แบบแทนที่ตามเลขที่เอกสาร ทุก 30 นาทีแล้ว";
+}
+function dhReplaceTimer() { dhReplaceForClient({}); }
+// ================= v5.9.30: has the Data Hub changed? (cheap check for live updates) =================
+// rows / columns / last line of every sheet PriceLogic reads — the page reloads its data only when this changes
+function getHubSigJson() {
+  var out = { sig: "", sheets: {}, error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID), parts = [];
+    ["DH_PR_STATUS", "ECOUNT_PR", "DH_PO_STATUS", "PO_LINES", "DH_PURCHASE_STATUS", "ECOUNT_PURCHASE", "PURCHASE_LINES", "DH_PARTNER_MASTER", "DH_LOCATION"].forEach(function (t) {
+      var sh = ss.getSheetByName(t); if (!sh) return;
+      var n = sh.getLastRow(), c = sh.getLastColumn(), last = n > 1 && c > 0 ? sh.getRange(n, 1, 1, c).getDisplayValues()[0].join("|") : "";
+      var s = n + ":" + c + ":" + last.length + ":" + last.slice(0, 200);
+      out.sheets[t] = n; parts.push(t + "=" + s);
+    });
+    out.sig = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, parts.join("\n"), Utilities.Charset.UTF_8));
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+function loadHubSigForClient() { return getHubSigJson(); }
+function loadReListForClient() { return getReListJson(); }
+function loadPOLinksForClient() { return getPOLinksJson(); }
+
+// ค่าที่ใช้ในหน้า "ตั้งค่า" ดึงจาก Data Hub: แบบ SEO / โครงการ / PIC / เงื่อนไขการชำระเงิน / ประเภทธุรกรรม
+function getHubValuesJson() {
+  var out = { seo: [], proj: [], pic: [], pay: [], tx: [], error: "" };
+  try {
+    var ss = SpreadsheetApp.openById(DATA_HUB_ID), seen = {};
+    var push = function (key, row) { var k = key + "|" + row.join("|"); if (seen[k] || !row[row.length - 1]) return; seen[k] = 1; out[key].push(row); };
+    ["DH_PO_STATUS", "DH_PURCHASE_STATUS", "DH_PR_STATUS", "DH_PARTNER_MASTER"].forEach(function (tab) {
+      var sh = ss.getSheetByName(tab); if (!sh || sh.getLastRow() < 2) return;
+      var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+      var h = v[0].map(function (x) { return String(x).trim(); });
+      var iCo = dhHeaderIdx(h, [function (x) { return /^_?company$/i.test(x); }]);
+      var iSeo = dhHeaderIdx(h, [function (x) { return /^แบบ\s*SEO/i.test(x); }]);
+      var iProj = dhHeaderIdx(h, [function (x) { return /^ชื่อโครงการ/.test(x); }]);
+      var iPjCd = dhHeaderIdx(h, [function (x) { return /^รหัสโครงการ/.test(x); }]);
+      var iPic = dhHeaderIdx(h, [function (x) { return x === "PIC" || /^ชื่อ\s*PIC/i.test(x); }]);
+      var iPicCd = dhHeaderIdx(h, [function (x) { return /^รหัส\s*PIC/i.test(x); }]);
+      var iPay = dhHeaderIdx(h, [function (x) { return /เงื่อนไข/.test(x) && /ชำระ|เครดิต|จ่าย/.test(x); }, function (x) { return tab === "DH_PARTNER_MASTER" && /เงื่อนไข/.test(x); }]);
+      var iTx = dhHeaderIdx(h, [function (x) { return /ประเภทธุรกรรม/.test(x); }]);
+      for (var r = 1; r < v.length; r++) {
+        var row = v[r], co = iCo === -1 ? "" : String(row[iCo]).trim(), val = function (i) { return i === -1 ? "" : String(row[i]).trim(); };
+        if (iSeo > -1) push("seo", [co, val(iSeo)]);
+        if (iProj > -1) push("proj", [co, val(iPjCd), val(iProj)]);
+        if (iPic > -1) push("pic", [co, val(iPicCd), val(iPic)]);
+        if (iPay > -1) push("pay", [co, val(iPay)]);
+        if (iTx > -1) push("tx", [co, "", val(iTx)]);
+      }
+    });
+  } catch (err) { out.error = String(err); }
+  return JSON.stringify(out);
+}
+function loadHubValuesForClient() { return getHubValuesJson(); }
