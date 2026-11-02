@@ -6839,6 +6839,21 @@
                     channels.map(c => `<tr><td><b>${escapeHtml(chLabel(c))}</b></td>${statuses.map(s => cell(get(c, s), c, s)).join('')}${cell(rowTot(c), c, '')}</tr>`).join('') +
                     `<tr class="sdr-day-row"><td>รวมทุกช่องทาง</td>${statuses.map(s => cell(colTot(s), '', s)).join('')}${cell(grand, '', '')}</tr></tbody></table>`;
             }
+            // (r64) แยกรายวัน (เมื่อเลือกหลายวัน): ➕ ลูกค้าใหม่ / 🔄 เปลี่ยนสถานะ / แต่ละสถานะ
+            if (ev.length && data.range && data.range.startDate !== data.range.endDate) {
+                const newCh = data.newCustomerChannel || SDR_NEW_CHANNEL;
+                const dm = {};
+                ev.forEach(([d, p, c, st, n]) => {
+                    const x = dm[d] || (dm[d] = {});
+                    x[st] = (x[st] || 0) + n;
+                    const k = c === newCh ? '__new' : '__chg';
+                    x[k] = (x[k] || 0) + n;
+                });
+                box.innerHTML += '<div class="bi-section-title" style="margin-top:12px;">📅 แยกรายวัน</div>' +
+                    rpKpiDayTable_(data.range, ['__new', '__chg'].concat(statuses), dm,
+                        k => k === '__new' ? '➕ ลูกค้าใหม่' : (k === '__chg' ? '🔄 เปลี่ยนสถานะ' : k),
+                        k => k === '__new' ? 'st:' + newCh + SEP : (k === '__chg' ? 'st:__followup' + SEP : 'st:' + SEP + k), person);
+            }
             // จอง / รอปิดการขาย "ตอนนี้ทั้งหมด" (ไม่จำกัดวันที่) — ภาพรวมสถานะปัจจุบัน
             const pp = (data.people || []).filter(p => !person || p.person === person);
             const nowB = pp.reduce((a, p) => a + (Number(p.pipelineBookedNow) || 0), 0), nowC = pp.reduce((a, p) => a + (Number(p.pipelineClosingNow) || 0), 0);
@@ -7020,11 +7035,10 @@
         // id ของการ์ด → [ชื่อที่โชว์, ค่าเริ่มต้นเต็มแถวหรือไม่]
         const RP_PANELS = [
             ['kpi', '📌 สรุปภาพรวม', true],
-            ['lead-source', '📣 ลูกค้าแยกตามช่องทางที่มา', false],
-            ['funnel', '🔻 Funnel การขาย', false],
+            ['lead-source', '📣 ลูกค้าแยกตามที่มา (สถานะตอนนี้)', true],
             ['sales-daily', '👥 สรุปงานติดตามของเซลล์', true],
             ['status-change', '🔄 สถานะลูกค้าแยกตามช่องทาง', true], // (r61)
-            ['staff-dash', '📊 Dashboard พนักงาน', true]
+            // (r64) ตัด '🔻 Funnel การขาย' และ '📊 Dashboard พนักงาน' ออก — ตัวเลขซ้ำ/ขัดกับการ์ดอื่น
         ];
         let rpEditing = false, rpDragId = null, rpServerDefault = null, rpPublishTimer = null;
         function rpBuiltInLayout_() { return RP_PANELS.map(p => ({ id: p[0], full: p[2] })); }
@@ -7308,9 +7322,7 @@
             const o = { noCache: !!noCache };
             fetchDailyLeadReport();
             fetchSalesDailyReport(o);
-            fetchSalesFunnel(o);
             fetchLeadSourceReport(o);
-            renderStaffDashboardCharts(o);
         }
         function rpOnReportOpen_() {
             rpFetchServerDefault_();
@@ -7336,24 +7348,60 @@
                 t.ft[ty] = (t.ft[ty] || 0) + n;
                 const dd = t.ftDay[d] || (t.ftDay[d] = {}); dd[ty] = (dd[ty] || 0) + n;
             });
+            // (r63) แยก 2 แหล่ง: ➕ ลูกค้าใหม่ที่เซลล์เพิ่ม (สถานะตอนเพิ่ม) / 🔄 เปลี่ยนสถานะจากการบันทึกติดตาม
+            const newCh = res.newCustomerChannel || SDR_NEW_CHANNEL;
+            t.stNew = {}; t.stChg = {}; t.newTotal = 0; t.chgTotal = 0;
             (res.statusEvents || []).forEach(([d, p, c, st, n]) => {
                 t.st[st] = (t.st[st] || 0) + n;
-                const dd = t.stDay[d] || (t.stDay[d] = {}); dd[st] = (dd[st] || 0) + n;
+                const isNew = c === newCh;
+                if (isNew) { t.stNew[st] = (t.stNew[st] || 0) + n; t.newTotal += n; }
+                else { t.stChg[st] = (t.stChg[st] || 0) + n; t.chgTotal += n; }
+                const dd = t.stDay[d] || (t.stDay[d] = {});
+                dd[st] = (dd[st] || 0) + n;
+                dd[isNew ? '__new' : '__chg'] = (dd[isNew ? '__new' : '__chg'] || 0) + n;
             });
             t.range = res.range || { startDate: rpRange_().start, endDate: rpRange_().end };
             t.clamped = !!(res.range && res.range.startDate !== rpRange_().start);
             rpKpi.sales = t;
             rpRenderKpi_();
         }
+        // (r63) ตารางสถานะในการ์ดสรุป: แถว = ที่มาของสถานะ (➕ ลูกค้าใหม่ / 🔄 เปลี่ยนจากการติดตาม / รวม) · คอลัมน์ = สถานะ
+        // + บรรทัดอธิบายว่าตัวเลข "เซลล์คีย์ลูกค้าเข้ามา" (ฝั่งซ้าย) สัมพันธ์กับแถว ➕ อย่างไร
+        function rpKpiStatusBlock_(s, i) {
+            // (r64) เหลือ 2 กล่อง (➕ ลูกค้าใหม่ / 🔄 เปลี่ยนสถานะ) — รายละเอียดแยกสถานะ/ช่องทาง/รายวัน ดูที่การ์ด 🔄
+            if (s === undefined) return '<div class="rp-kpi-loading" style="padding:8px;">…</div>';
+            if (!s || typeof s !== 'object') return '<div style="color:#cbd5e1; padding:8px;">–</div>';
+            const sts = s.statuses || [];
+            const list = m => sts.filter(st => m[st]).map(st => `<span style="color:${STATUS_COLOR[st] || '#334155'};">${escapeHtml(st)} <b>${m[st].toLocaleString()}</b></span>`).join(' · ') || 'ยังไม่มี';
+            const box = (label, n, m, ch, c) => `<div class="rp-kpi" style="--kpi-c:${c};" ${n ? `onclick="openKpiDetail('statusChange', '', { channel: '${ch}' })" role="button" tabindex="0" title="กดเพื่อดูรายชื่อลูกค้า"` : ''}>
+                <div class="rp-kpi-main"><div class="rp-kpi-label">${label}</div><div class="rp-kpi-value">${n.toLocaleString()}</div>
+                <div class="rp-kpi-sub">${list(m)}</div></div></div>`;
+            let html = `<div class="rp-kpi-group-grid">` +
+                box('➕ ลูกค้าใหม่ที่เซลล์เพิ่ม (ราย)', s.newTotal, s.stNew, SDR_NEW_CHANNEL, '#059669') +
+                box('🔄 เปลี่ยนสถานะจากการติดตาม (ครั้ง)', s.chgTotal, s.stChg, '__followup', '#0284c7') + '</div>';
+            if (i && typeof i === 'object') {
+                const keyed = i.manualCount || 0, dup = i.manualDuplicateCount || 0, fresh = Math.max(0, keyed - dup);
+                let line = `🔗 เซลล์คีย์ลูกค้าเข้ามา <b>${keyed.toLocaleString()}</b> ครั้ง = ลูกค้าใหม่ <b style="color:#059669;">${fresh.toLocaleString()}</b> + ซ้ำ <b style="color:#dc2626;">${dup.toLocaleString()}</b> ` +
+                    `(ซ้ำ = มีรายชื่ออยู่แล้ว ระบบเพิ่มเป็นการติดตามในรายชื่อเดิม จึงไม่นับเป็นลูกค้าใหม่)`;
+                if (fresh !== s.newTotal) {
+                    const diff = fresh - s.newTotal;
+                    line += `<br>⚠️ ➕ ลูกค้าใหม่นับได้ ${s.newTotal.toLocaleString()} ราย ${diff > 0 ? 'น้อยกว่า' : 'มากกว่า'} ${Math.abs(diff).toLocaleString()} ราย — ` +
+                        (diff > 0 ? 'ลูกค้าที่เพิ่งคีย์ยังไม่เข้าฐานข้อมูลรายงาน (อัปเดตทุก ~15 นาที) หรือเป็นรายการที่ไม่นับ เช่น นำเข้า Excel / ระบบอัตโนมัติ'
+                                  : 'นับตามชื่อผู้บันทึกลูกค้า บางรายถูกคีย์ก่อนช่วงวันที่นี้แต่บันทึกวันที่ไว้ในช่วงนี้');
+                }
+                html += `<div style="margin-top:8px; font-size:11.5px; color:#475569; line-height:1.55;">${line}</div>`;
+            }
+            return html;
+        }
         // (r61) ตารางเล็ก "แถว = วัน" ใต้กล่องตัวเลข (แสดงเมื่อเลือกหลายวัน) — กดตัวเลขเพื่อดูรายชื่อของวันนั้น
-        function rpKpiDayTable_(range, keys, dayMap, labelOf, clickKey) {
+        function rpKpiDayTable_(range, keys, dayMap, labelOf, clickKey, person) {
             const days = sdrDaysInRange_(range.startDate, range.endDate).reverse();
             if (days.length <= 1 || !keys.length) return '';
             const v = (d, k) => Number((dayMap[d] || {})[k]) || 0;
             return `<div class="table-responsive rp-kpi-days"><table class="sdr-table"><thead><tr><th>วันที่</th>${keys.map(k => `<th class="num">${escapeHtml(labelOf(k))}</th>`).join('')}<th class="num">รวม</th></tr></thead><tbody>` +
                 days.map(d => {
                     const tot = keys.reduce((a, k) => a + v(d, k), 0);
-                    return `<tr><td>${escapeHtml(sdrPrintDayLabel_(d))}</td>${keys.map(k => v(d, k) ? `<td ${sdrCellAttr_(clickKey(k), '', d)}>${v(d, k).toLocaleString()}</td>` : '<td class="num"><span style="color:#cbd5e1;">0</span></td>').join('')}` +
+                    return `<tr><td>${escapeHtml(sdrPrintDayLabel_(d))}</td>${keys.map(k => v(d, k) ? `<td ${sdrCellAttr_(clickKey(k), person || '', d)}>${v(d, k).toLocaleString()}</td>` : '<td class="num"><span style="color:#cbd5e1;">0</span></td>').join('')}` +
                         `<td class="num"><b>${tot ? tot.toLocaleString() : '<span style="color:#cbd5e1;">0</span>'}</b></td></tr>`;
                 }).join('') + '</tbody></table></div>';
         }
@@ -7364,7 +7412,7 @@
             card.innerHTML = `
                 <div class="card-title"><span>📌 สรุปภาพรวม <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
                 <div class="rp-kpi-grid" id="rp-kpi-grid"></div>
-                <div class="sdr-note" id="rp-kpi-note">• กดที่กล่องเพื่อดูรายชื่อลูกค้าและรายละเอียด · ฝั่งซ้ายนับจาก log รับลีด (ทุกครั้งที่มีการส่ง/คีย์ลูกค้าเข้ามา รวมที่ซ้ำ) — ลูกค้าใหม่ = ManyChat + เซลล์เพิ่มเอง<br>• การติดตามแต่ละรูปแบบ = จำนวนครั้งที่บันทึกการติดตาม (รวมทุกเซลล์) · สถานะลูกค้า = ลูกค้าที่เพิ่มเข้ามาด้วยสถานะนั้น + บันทึกติดตามที่เปลี่ยนเป็นสถานะนั้น (ดูแยกตามช่องทางที่การ์ด 🔄)<br>• เลือกช่วงหลายวัน จะมีตารางแยกรายวันใต้กล่องตัวเลข</div>`;
+                <div class="sdr-note" id="rp-kpi-note">• กดที่กล่องเพื่อดูรายชื่อลูกค้าและรายละเอียด · ฝั่งซ้ายนับจาก log รับลีด (ทุกครั้งที่มีการส่ง/คีย์ลูกค้าเข้ามา รวมที่ซ้ำ) — ลูกค้าใหม่ = ManyChat + เซลล์เพิ่มเอง<br>• การติดตามแต่ละรูปแบบ = จำนวนครั้งที่บันทึกการติดตาม รวมทุกเซลล์ (แยกรายคน/รายวัน ดูการ์ด 👥)<br>• สถานะลูกค้า = ➕ ลูกค้าใหม่ตามสถานะตอนเพิ่ม + 🔄 ลูกค้าเดิมที่ถูกเปลี่ยนสถานะตอนบันทึกติดตาม (แยกช่องทาง/รายวัน ดูการ์ด 🔄)</div>`;
             return card;
         }
         function rpRenderKpi_() {
@@ -7392,10 +7440,10 @@
                     <span class="rp-kpi-inner-label">${escapeHtml(label)}</span><span class="rp-kpi-inner-value">${v}</span></div>`;
             const totalSub = can(i) ? `รวมที่ส่งซ้ำแล้ว · <b style="color:#059669;">ใหม่ ${(i.newCount || 0).toLocaleString()}</b> · <b style="color:#dc2626;">ซ้ำ ${(i.duplicateCount || 0).toLocaleString()}</b>` : 'รวมที่ส่งซ้ำแล้ว';
             const left = [
-                tile({ label: 'ลูกค้าใหม่ (เบอร์/ข้อมูลที่ได้เข้ามา)', subHtml: totalSub, v: plain(i, 'total'), c: '#059669', cls: 'rp-kpi-wide', click: can(i) ? intakeClick('total') : '',
-                       extra: inner('ส่งซ้ำ (มีในระบบแล้ว)', plain(i, 'duplicateCount'), 'duplicate', '#dc2626') }),
+                tile({ label: 'ลูกค้าใหม่ (เบอร์/ข้อมูลที่ได้เข้ามา)', subHtml: totalSub, v: plain(i, 'total'), c: '#059669', cls: 'rp-kpi-wide', click: can(i) ? intakeClick('total') : '' }),
                 tile({ label: 'จาก Facebook/ManyChat', sub: 'ลีดอัตโนมัติ (รวมที่ซ้ำ)', v: plain(i, 'manychatCount'), c: '#1877F2', click: can(i) ? intakeClick('manychat') : '' }),
-                tile({ label: 'เซลล์เพิ่มลูกค้าเอง', sub: 'คีย์จากหน้าเว็บ (รวมที่ซ้ำ)', v: plain(i, 'manualCount'), c: '#0f766e', click: can(i) ? intakeClick('manual') : '' })
+                tile({ label: 'เซลล์คีย์ลูกค้าเข้ามา', v: plain(i, 'manualCount'), c: '#0f766e', click: can(i) ? intakeClick('manual') : '',
+                       subHtml: can(i) ? `ครั้ง · <b style="color:#059669;">ใหม่ ${Math.max(0, (i.manualCount || 0) - (i.manualDuplicateCount || 0)).toLocaleString()}</b> · <b style="color:#dc2626;">ซ้ำ ${(i.manualDuplicateCount || 0).toLocaleString()}</b>` : 'ครั้ง (รวมที่ซ้ำ)' })
             ];
             // (r61) แยก 2 ส่วนแบบเดียวกับตาราง: การติดตามแต่ละรูปแบบ / สถานะลูกค้าที่ได้ — รวมทั้งทีม แยกรายวัน
             const enc = x => encodeURIComponent(x);
@@ -7403,16 +7451,13 @@
                 click: can(s) && (s.ft[t] || 0) ? `openKpiDetail('followType', '', { followType: decodeURIComponent('${enc(t)}') })` : '' });
             const followTiles = [tile({ label: 'ติดตามรวมทุกรูปแบบ', sub: 'ครั้ง', v: plain(s, 'followups'), c: '#c2410c', cls: 'rp-kpi-wide', click: can(s) && s.followups ? salesClick('followups') : '' })]
                 .concat((can(s) ? s.types : FOLLOW_TYPE_ORDER).map(ftTile));
-            const stTiles = !can(s) ? [tile({ label: 'สถานะลูกค้า', sub: '', v: plain(s, 'x'), c: '#0284c7' })]
-                : (s.statuses.length ? s.statuses.map(st => tile({ label: st, sub: 'ราย (เพิ่มใหม่ / เปลี่ยนเป็นสถานะนี้)', v: (s.st[st] || 0).toLocaleString(), c: STATUS_COLOR[st] || '#334155',
-                    click: `openKpiDetail('statusChange', '', { status: decodeURIComponent('${enc(st)}') })` }))
-                  : ['<div style="color:#94a3b8; font-size:12.5px; padding:8px;">ยังไม่มีการเพิ่มลูกค้า / เปลี่ยนสถานะในช่วงนี้</div>']);
-            const ftDays = can(s) ? rpKpiDayTable_(s.range, s.types.filter(t => s.ft[t]), s.ftDay, t => (FOLLOW_TYPE_LABEL[t] || t).replace(/^\S+\s/, ''), t => 'ft:' + t) : '';
-            const stDays = can(s) ? rpKpiDayTable_(s.range, s.statuses, s.stDay, st => st, st => 'st:\u0001' + st) : '';
+            const stBlock = rpKpiStatusBlock_(s, i);
+            const ftDays = ''; // (r64) ตัวเลขรายวัน × รูปแบบ ดูที่การ์ด 👥 (แถว "รวมทั้งวัน")
+            const stDays = ''; // (r64) รายวันย้ายไปการ์ด 🔄
             box.innerHTML =
                 `<div class="rp-kpi-group"><div class="rp-kpi-group-title">📥 ได้เบอร์ / ข้อมูลใหม่${rpKpi.onlyMc ? ' (เฉพาะ ManyChat)' : ''}</div><div class="rp-kpi-group-grid">${left.join('')}</div></div>` +
                 `<div class="rp-kpi-group"><div class="rp-kpi-group-title">📞 การติดตามแต่ละรูปแบบ (ทั้งทีม)</div><div class="rp-kpi-group-grid">${followTiles.join('')}</div>${ftDays}</div>` +
-                `<div class="rp-kpi-group"><div class="rp-kpi-group-title">🔄 สถานะลูกค้า (ทั้งทีม)</div><div class="rp-kpi-group-grid">${stTiles.join('')}</div>${stDays}</div>`;
+                `<div class="rp-kpi-group"><div class="rp-kpi-group-title">🔄 สถานะลูกค้า (ทั้งทีม)</div>${stBlock}${stDays}</div>`;
             const note = document.getElementById('rp-kpi-note');
             if (note && s && s.clamped) note.dataset.clamped = '1';
         }
@@ -7426,7 +7471,7 @@
             const r = rpRange_();
             let label = KPI_METRIC_LABELS[metric] || metric;
             if (metric === 'followType') label = 'การติดตาม: ' + (FOLLOW_TYPE_LABEL[extra.followType] || extra.followType || 'ทุกรูปแบบ');
-            if (metric === 'statusChange') label = 'สถานะลูกค้า: ' + (extra.channel ? (extra.channel === SDR_NEW_CHANNEL ? 'เพิ่มลูกค้าใหม่' : (FOLLOW_TYPE_LABEL[extra.channel] || extra.channel)) + ' → ' : '') + (extra.status || 'ทุกสถานะ');
+            if (metric === 'statusChange') label = 'สถานะลูกค้า: ' + (extra.channel ? (extra.channel === SDR_NEW_CHANNEL ? 'เพิ่มลูกค้าใหม่' : (extra.channel === '__followup' ? 'เปลี่ยนจากการติดตาม' : (FOLLOW_TYPE_LABEL[extra.channel] || extra.channel))) + ' → ' : '') + (extra.status || 'ทุกสถานะ');
             const when = metric === 'pipelineNow' ? 'ไม่จำกัดวันที่' : (extra.date ? extra.date : (r.start === r.end ? r.start : r.start + ' ถึง ' + r.end));
             document.getElementById('kpi-detail-title').textContent = `🔎 รายละเอียด: ${label}${person ? ' · ' + person : ''} (${when})`;
             document.getElementById('kpi-detail-summary').textContent = '';
@@ -7488,7 +7533,7 @@
             card.className = 'card';
             card.id = 'lead-source-card';
             card.innerHTML = `
-                <div class="card-title"><span>📣 ลูกค้าแยกตามช่องทางที่มา <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
+                <div class="card-title"><span>📣 ลูกค้าที่บันทึกในช่วงนี้ แยกตามที่มา <span style="font-size:12px; font-weight:500; color:#64748b;">(สถานะตอนนี้)</span> <span class="rp-range-tag" style="font-size:12px; font-weight:500; color:#64748b;"></span></span></div>
                 <div id="lead-source-status" class="staff-dash-status"></div>
                 <div class="table-responsive" id="lead-source-body" style="max-height:60vh;"></div>
                 <div class="sdr-note">• นับลูกค้าตาม "วันที่บันทึก" ในช่วงที่เลือก (ไม่รวมรายการจาก "นำเข้า Excel") · คอลัมน์สถานะ = สถานะปัจจุบันของลูกค้า<br>
@@ -7581,8 +7626,6 @@
             const found = {
                 'kpi': rpBuildKpiCard_(),
                 'lead-source': rpBuildLeadSourceCard_(),
-                'staff-dash': byId('staff-dash-card'),
-                'funnel': cardOf('sales-funnel-container'),
                 'sales-daily': sdrBuildCard_(),
                 'status-change': stBuildCard_()
             };
@@ -7616,6 +7659,8 @@
             grid.className = 'report-grid';
             // (r54d) ตัดการ์ด "📅 รายงานจำนวนลีดที่เข้ามาต่อวัน" ออกจากหน้ารายงาน — ซ่อนไว้แต่ยังดึงข้อมูลอยู่
             // เพราะการ์ด "สรุปภาพรวม" ใช้ตัวเลขลูกค้าใหม่ / ลีดอัตโนมัติ / ส่งซ้ำ จากรายงานนี้
+            // (r64) ซ่อนการ์ดที่เอาออกจากหน้ารายงาน
+            [byId('staff-dash-card'), cardOf('sales-funnel-container')].forEach(el => { if (el) el.style.display = 'none'; });
             const dailyLeadCard = cardOf('daily-report-table');
             if (dailyLeadCard) dailyLeadCard.style.display = 'none';
             page.insertBefore(toolbar, page.firstChild);
