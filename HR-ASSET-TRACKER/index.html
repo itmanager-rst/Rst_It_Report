@@ -15,18 +15,33 @@
       height: 20px;
       animation: spin 1s linear infinite;
       display: inline-block;
+      vertical-align: middle;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    
+
+    .sig-pad { touch-action: none; }
+    .role-hidden { display: none !important; }
+    .viz-root { --series-1: #2a78d6; }   /* สีกราฟ (ฟ้า) — ใช้สีเดียวสำหรับยอดเบิก */
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    input[type="search"]::-webkit-search-cancel-button { display: none; }
+
+    /* 🔐 Login */
+    #loginScreen { background: radial-gradient(circle at 20% 20%, rgba(79,142,247,.25), transparent 45%),
+                               radial-gradient(circle at 80% 80%, rgba(34,211,238,.18), transparent 45%),
+                               linear-gradient(135deg, #060810 0%, #0d1224 55%, #111a35 100%); }
+    .login-box { background: rgba(14,17,23,.82); backdrop-filter: blur(18px); }
+
+    /* 🖨️ พิมพ์เฉพาะเอกสารที่ถูกเลือก (.print-active) — ใช้ได้ทั้งใบ PR และใบเบิก */
     @media print {
-      body * { visibility: hidden; }
-      #prPrintTemplate, #prPrintTemplate * { visibility: visible; }
-      #prPrintTemplate { 
-        position: absolute; 
-        left: 0; 
-        top: 0; 
-        width: 100%; 
+      @page { size: A4; margin: 12mm; }
+      body { padding: 0 !important; background: #fff !important; }
+      body > *:not(.print-active) { display: none !important; }
+      .print-active {
         display: block !important;
+        position: static !important;
+        width: 100%;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
       .no-print { display: none !important; }
       tr { page-break-inside: avoid; }
@@ -35,19 +50,66 @@
 </head>
 <body class="bg-slate-100 min-h-screen py-6 px-4">
 
-  <div class="max-w-7xl mx-auto space-y-6">
-    
+  <!-- ═══════════════════ 🔐 LOGIN ═══════════════════ -->
+  <div id="loginScreen" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <form onsubmit="doLogin(event)" class="login-box w-full max-w-sm rounded-3xl border border-white/10 shadow-2xl p-8 text-white">
+      <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-2xl font-black shadow-lg mb-5">HR</div>
+      <div class="text-[11px] tracking-[.14em] uppercase text-cyan-300/80 font-semibold">RuamsinthaiGroup</div>
+      <h1 class="text-xl font-bold mt-1">HR SiteAsset Tracker</h1>
+      <p class="text-xs text-slate-400 mt-1 mb-6">เข้าสู่ระบบด้วยบัญชีผู้ใช้เพื่อใช้งาน</p>
+
+      <label class="block text-xs text-slate-300 mb-1" for="loginUser">ชื่อผู้ใช้ (Username)</label>
+      <input id="loginUser" autocomplete="username" required class="w-full mb-4 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="เช่น somchai.k">
+
+      <label class="block text-xs text-slate-300 mb-1" for="loginPass">รหัสผ่าน</label>
+      <div class="relative mb-3">
+        <input id="loginPass" type="password" autocomplete="current-password" required class="w-full px-3.5 py-2.5 pr-11 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••">
+        <button type="button" onclick="togglePw('loginPass', this)" class="absolute right-2 inset-y-0 my-auto h-8 w-8 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer" aria-label="แสดงรหัสผ่าน">👁</button>
+      </div>
+
+      <label class="flex items-center gap-2 text-xs text-slate-400 mb-5 cursor-pointer select-none">
+        <input type="checkbox" id="loginRemember" checked class="rounded"> จดจำการเข้าสู่ระบบบนเครื่องนี้
+      </label>
+
+      <div id="loginMsg" class="min-h-[18px] text-xs text-rose-300 mb-3"></div>
+
+      <button id="loginBtn" type="submit" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:opacity-90 font-bold text-sm shadow-lg cursor-pointer">เข้าสู่ระบบ</button>
+
+      <div class="mt-6 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+        <span class="conn-dot w-2 h-2 rounded-full bg-amber-400"></span><span class="conn-text">กำลังตรวจสอบการเชื่อมต่อ...</span>
+      </div>
+    </form>
+  </div>
+
+  <div id="appRoot" class="max-w-7xl mx-auto space-y-6 hidden">
+
     <!-- Header Banner -->
-    <div class="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-6 rounded-2xl text-white shadow-lg flex flex-col md:flex-row justify-between items-center gap-4">
+    <div class="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-6 rounded-2xl text-white shadow-lg flex flex-col lg:flex-row justify-between lg:items-center gap-4">
       <div>
         <div class="text-2xl font-black tracking-wide flex items-center gap-2">
           <span>📦</span> HR SITEASSET TRACKER & ANALYTICS
         </div>
         <p class="text-xs text-blue-200 mt-1 font-light">ระบบบริหารจัดการ ตรวจสอบยอดคงเหลือจริง และรายงานการเบิกจ่ายอุปกรณ์สำนักงาน</p>
+        <!-- 🟢 สถานะการเชื่อมต่อ Server -->
+        <div class="mt-3 inline-flex items-center gap-2 text-[11px] font-semibold px-3 py-1.5 rounded-full bg-white/10 border border-white/20" title="ตรวจสอบอัตโนมัติทุก 30 วินาที">
+          <span class="conn-dot w-2.5 h-2.5 rounded-full bg-amber-400"></span><span class="conn-text">กำลังตรวจสอบ...</span>
+        </div>
       </div>
-      <button onclick="loadData()" class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold py-2.5 px-4 rounded-xl backdrop-blur-md shadow-sm transition-all cursor-pointer flex items-center gap-2">
-        🔄 อัปเดตข้อมูล Real-time
-      </button>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div class="flex items-center gap-3 bg-white/10 border border-white/15 rounded-xl px-3 py-2">
+          <div id="userAvatar" class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-black">?</div>
+          <div class="leading-tight">
+            <div id="userName" class="text-sm font-bold">-</div>
+            <div class="text-[11px] text-blue-200"><span id="userRole">-</span> · <span id="userBranch">-</span></div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="loadData()" class="bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold py-2 px-3 rounded-xl cursor-pointer">🔄 อัปเดต</button>
+          <button data-roles="ADMIN" onclick="openMembers()" class="bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold py-2 px-3 rounded-xl cursor-pointer">👥 จัดการสมาชิก</button>
+          <button onclick="togglePwModal(true)" class="bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold py-2 px-3 rounded-xl cursor-pointer">🔑 เปลี่ยนรหัสผ่าน</button>
+          <button onclick="logout()" class="bg-rose-500/80 hover:bg-rose-500 text-xs font-bold py-2 px-3 rounded-xl cursor-pointer">🚪 ออกจากระบบ</button>
+        </div>
+      </div>
     </div>
 
     <!-- 📊 HR Executive KPI Dashboard -->
@@ -60,7 +122,6 @@
         </div>
         <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-xl font-bold">📁</div>
       </div>
-
       <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
         <div>
           <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">คงเหลือในคลังพร้อมใช้</p>
@@ -69,7 +130,6 @@
         </div>
         <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-xl font-bold">✅</div>
       </div>
-
       <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
         <div>
           <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">ยอดเบิกจ่ายสะสม</p>
@@ -78,7 +138,6 @@
         </div>
         <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl font-bold">📤</div>
       </div>
-
       <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
         <div>
           <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">สต็อกต้องเฝ้าระวัง</p>
@@ -95,47 +154,120 @@
       </div>
     </div>
 
-    <!-- ฟอร์มเบิกจ่ายอุปกรณ์ -->
-    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
-      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-        <div class="flex items-center space-x-2 text-blue-900 font-bold">
-          <span>📋</span> <h2 class="text-base font-bold">บันทึกการเบิกอุปกรณ์สำนักงาน / ตัดสต็อก</h2>
+    <!-- 📊 Executive & Branch Consumption Dashboard (ADMIN / MANAGER) -->
+    <div id="dashSection" data-roles="ADMIN,MANAGER" class="viz-root bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="p-5 bg-gradient-to-r from-slate-900 to-blue-950 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+        <div>
+          <div class="flex items-center gap-2 font-bold text-base"><span>📊</span><h2>Dashboard สรุปการเบิกจ่ายรายสาขา (Executive Report)</h2></div>
+          <p class="text-xs text-slate-300 mt-0.5">ยอดที่อนุมัติและตัดสต็อกแล้ว · <span id="dashPeriodLabel">-</span></p>
         </div>
-        <button onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5">
+        <div class="flex gap-2">
+          <button onclick="exportDashboardCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-xl cursor-pointer">🟢 Export Excel (.csv)</button>
+          <button onclick="printDashboard()" class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold py-2 px-3 rounded-xl cursor-pointer">🖨️ พิมพ์รายงาน</button>
+        </div>
+      </div>
+
+      <!-- ตัวกรอง: แถวเดียวเหนือกราฟ -->
+      <div class="p-4 bg-slate-50 border-b border-slate-200/80 flex flex-wrap gap-2 items-center">
+        <div class="inline-flex rounded-xl border border-slate-300 bg-white p-0.5" role="group" aria-label="ช่วงเวลา">
+          <button data-dash-period="MTD" onclick="setDashPeriod('MTD')">MTD เดือนนี้</button>
+          <button data-dash-period="YTD" onclick="setDashPeriod('YTD')">YTD ปีนี้</button>
+          <button data-dash-period="D30" onclick="setDashPeriod('D30')">30 วันล่าสุด</button>
+          <button data-dash-period="ALL" onclick="setDashPeriod('ALL')">ทั้งหมด</button>
+          <button data-dash-period="CUSTOM" onclick="setDashPeriod('CUSTOM')">กำหนดเอง</button>
+        </div>
+        <div id="dashCustomRange" class="hidden items-center gap-1 text-xs">
+          <input type="date" id="dashFrom" onchange="renderDashboard()" class="px-2 py-1.5 border border-slate-300 rounded-lg bg-white">
+          <span class="text-slate-400">ถึง</span>
+          <input type="date" id="dashTo" onchange="renderDashboard()" class="px-2 py-1.5 border border-slate-300 rounded-lg bg-white">
+        </div>
+        <select id="dashBranch" onchange="renderDashboard()" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs"></select>
+        <select id="dashCategory" onchange="renderDashboard()" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs"><option value="ALL">-- ทุกหมวดหมู่ --</option></select>
+      </div>
+
+      <div id="dashReport" class="p-5 space-y-5">
+        <!-- KPI tiles -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="dashTiles"></div>
+        <!-- สถานะใบเบิกในช่วงเวลา -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="dashReqStatus"></div>
+        <!-- กราฟ -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div class="border border-slate-200 rounded-2xl p-4">
+            <h3 class="text-sm font-bold text-slate-800">ยอดเบิก (ชิ้น) แยกตามสาขา</h3>
+            <p class="text-[11px] text-slate-500 mb-3">เรียงจากมากไปน้อย · แสดงทุกสาขา</p>
+            <div id="dashBranchChart"></div>
+          </div>
+          <div class="border border-slate-200 rounded-2xl p-4">
+            <h3 class="text-sm font-bold text-slate-800">แนวโน้มยอดเบิก (ชิ้น) <span id="dashTrendUnit" class="font-normal text-slate-500"></span></h3>
+            <p class="text-[11px] text-slate-500 mb-3">ชี้ที่แท่งเพื่อดูรายละเอียด</p>
+            <div id="dashTrendChart"></div>
+          </div>
+        </div>
+        <!-- ตารางสรุปรายสาขา -->
+        <div class="border border-slate-200 rounded-2xl overflow-hidden">
+          <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 text-sm font-bold text-slate-800">📋 ตารางสรุปการเบิกจ่ายรายสาขา</div>
+          <div class="overflow-x-auto"><table class="w-full text-xs text-slate-600" id="dashBranchTable"></table></div>
+        </div>
+        <!-- Top 10 อุปกรณ์ -->
+        <div class="border border-slate-200 rounded-2xl overflow-hidden">
+          <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 text-sm font-bold text-slate-800">🏆 อุปกรณ์ที่ถูกเบิกมากที่สุด 10 อันดับ</div>
+          <div class="overflow-x-auto"><table class="w-full text-xs text-slate-600" id="dashTopTable"></table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 📋 ฟอร์มขอเบิกอุปกรณ์ -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/80">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 gap-2">
+        <div class="flex items-center space-x-2 text-blue-900 font-bold">
+          <span>📋</span> <h2 class="text-base font-bold">ขอเบิกอุปกรณ์สำนักงาน (ส่งขออนุมัติ → อนุมัติแล้วจึงตัดสต็อก)</h2>
+        </div>
+        <button data-roles="ADMIN" onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
           <span>➕</span> เพิ่มอุปกรณ์ใหม่เข้าคลัง
         </button>
       </div>
 
       <form id="assetForm" onsubmit="handleSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">เลือกอุปกรณ์สำนักงานที่ต้องการเบิก <span class="text-red-500">*</span></label>
-          <select id="assetSelect" required class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-            <option value="">-- กำลังเรียกดูรายการอุปกรณ์... --</option>
-          </select>
+        <!-- 🔍 ช่องค้นหาสินค้าในการเบิก (Asset Picker) -->
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="assetSearch">ค้นหาอุปกรณ์ที่ต้องการเบิก <span class="text-red-500">*</span></label>
+          <div id="assetPicker" class="relative">
+            <input type="hidden" id="assetSelect">
+            <div class="relative">
+              <span style="pointer-events:none" class="absolute left-3 inset-y-0 flex items-center text-slate-400">🔍</span>
+              <input id="assetSearch" type="search" autocomplete="off" role="combobox" aria-controls="assetResults"
+                     placeholder="พิมพ์ค้นหา รหัส / ชื่อ / หมวดหมู่ ... (↑ ↓ เลือก, Enter ยืนยัน)"
+                     oninput="searchPickerAssets(this.value)" onfocus="searchPickerAssets(this.value)" onkeydown="handlePickerKey(event)"
+                     class="w-full pl-9 pr-9 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+              <button type="button" id="assetPickerClear" onclick="clearPickerAsset(true)" class="hidden absolute right-2 inset-y-0 my-auto h-6 w-6 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer" aria-label="ล้างอุปกรณ์ที่เลือก">×</button>
+            </div>
+            <div id="assetResults" role="listbox" class="hidden absolute z-30 left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl"></div>
+            <div id="assetSelected" class="hidden mt-2"></div>
+          </div>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">จำนวนที่เบิก <span class="text-red-500">*</span></label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="quantity">จำนวนที่เบิก <span class="text-red-500">*</span></label>
           <input type="number" id="quantity" min="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ใส่จำนวน">
+          <p id="qtyHint" class="text-[11px] text-slate-400 mt-1"></p>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อผู้บันทึกข้อมูล/ผู้เบิก <span class="text-red-500">*</span></label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="staffName">ชื่อผู้เบิก <span class="text-red-500">*</span></label>
           <input type="text" id="staffName" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ระบุชื่อ-นามสกุล">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">แผนก <span class="text-red-500">*</span></label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="department">แผนก <span class="text-red-500">*</span></label>
           <input type="text" id="department" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น IT, HR">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">สาขา <span class="text-red-500">*</span></label>
-          <input type="text" id="branch" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น สำนักงานใหญ่">
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="branch">สาขา <span class="text-red-500">*</span></label>
+          <select id="branch" required class="branch-select w-full px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-600"></select>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">อัปโหลดรูปภาพหลักฐานการเบิก <span class="text-red-500">*</span></label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="assetImage">อัปโหลดรูปภาพหลักฐานการเบิก <span class="text-red-500">*</span></label>
           <input type="file" id="assetImage" accept="image/*" required class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50">
         </div>
-        
-        <div class="md:col-span-3">
-          <label class="block text-xs font-semibold text-slate-600 mb-1">เหตุผลการเบิก / หมายเหตุเพิ่มเติม</label>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="requisitionNotes">เหตุผลการเบิก / หมายเหตุเพิ่มเติม</label>
           <input type="text" id="requisitionNotes" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="เช่น ใช้สำหรับเปิดสาขาใหม่, เบิกทดแทนของเดิมที่ชำรุด">
         </div>
 
@@ -144,78 +276,113 @@
           <span class="text-xs text-emerald-600 font-medium">✓ แนบรูปภาพหลักฐานเรียบร้อย (คลิกเพื่อซูม)</span>
         </div>
 
+        <!-- ✍️ ลายเซ็นผู้ขอเบิก -->
+        <div class="md:col-span-3">
+          <div class="flex items-center justify-between mb-1 max-w-md">
+            <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้ขอเบิก <span class="text-red-500">*</span></label>
+            <button type="button" onclick="sigPads.requester.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+          </div>
+          <div class="relative max-w-md">
+            <canvas id="requesterSigPad" class="sig-pad w-full h-36 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-crosshair"></canvas>
+            <span id="requesterSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">เซ็นชื่อในกรอบนี้ (ใช้นิ้วหรือเมาส์)</span>
+          </div>
+        </div>
+
         <div class="md:col-span-3 pt-2">
           <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-md transition-all cursor-pointer">
-            <span id="btnText">💾 บันทึกข้อมูลและตัดยอดสต็อก</span>
+            <span id="btnText">📨 ส่งคำขอเบิก (รออนุมัติ)</span>
           </button>
+          <span class="text-[11px] text-slate-400 ml-2">* สต็อกจะถูกตัดเมื่อผู้อนุมัติเซ็นอนุมัติแล้วเท่านั้น</span>
         </div>
       </form>
     </div>
 
-    <!-- 🔍 ตารางรายการอุปกรณ์สำนักงาน + Smart Search & Action Bar -->
+    <!-- ✅ ใบขอเบิก & การอนุมัติ -->
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
-      <!-- Header Section -->
+      <div class="p-5 bg-indigo-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+        <div>
+          <div class="flex items-center gap-2 font-bold text-base"><span>✍️</span><h2>ใบขอเบิก &amp; การอนุมัติ (Approval Workflow)</h2></div>
+          <p id="reqSubtitle" class="text-xs text-indigo-200 mt-0.5">พนักงานส่งคำขอ → ผู้จัดการเซ็นอนุมัติ → พนักงานพิมพ์ใบเบิกไปรับของ / HR ดูรายการในแอปแล้วจ่ายของ</p>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button data-req-tab="PENDING" onclick="setReqStatus('PENDING')">⏳ รออนุมัติ (<span class="cnt">0</span>)</button>
+          <button data-req-tab="APPROVED" onclick="setReqStatus('APPROVED')">✅ อนุมัติแล้ว · รอรับของ (<span class="cnt">0</span>)</button>
+          <button data-req-tab="ISSUED" onclick="setReqStatus('ISSUED')">📦 จ่ายของแล้ว (<span class="cnt">0</span>)</button>
+          <button data-req-tab="REJECTED" onclick="setReqStatus('REJECTED')">❌ ไม่อนุมัติ (<span class="cnt">0</span>)</button>
+          <button data-req-tab="ALL" onclick="setReqStatus('ALL')">ทั้งหมด (<span class="cnt">0</span>)</button>
+        </div>
+      </div>
+      <div class="p-3 bg-slate-50 border-b border-slate-200/80 flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
+        <div class="relative w-full sm:w-80">
+          <span style="pointer-events:none" class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
+          <input type="search" id="reqSearch" oninput="reqPage=1; renderRequests()" placeholder="ค้นหาเลขที่ใบเบิก / ผู้เบิก / อุปกรณ์ / สาขา..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+        <button onclick="loadRequests()" class="text-xs font-bold bg-white border border-slate-300 hover:bg-slate-100 px-3 py-2 rounded-xl cursor-pointer">🔄 รีเฟรชใบเบิก</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs text-slate-600">
+          <thead>
+            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider">
+              <th class="p-3">เลขที่ใบเบิก</th>
+              <th class="p-3">วันที่ขอ</th>
+              <th class="p-3">อุปกรณ์</th>
+              <th class="p-3 text-center">จำนวน</th>
+              <th class="p-3">ผู้ขอเบิก (แผนก)</th>
+              <th class="p-3">สาขา</th>
+              <th class="p-3 text-center">สถานะ</th>
+              <th class="p-3">ผู้อนุมัติ</th>
+              <th class="p-3 text-center">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="reqTableBody">
+            <tr><td colspan="9" class="p-6 text-center text-slate-400">กำลังดึงข้อมูลใบขอเบิก...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="reqPagination" class="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500"></div>
+    </div>
+
+    <!-- 📦 ตารางสต็อกอุปกรณ์ + Smart Search -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
       <div class="p-5 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div class="flex items-center space-x-2 font-bold text-base">
             <span>📦</span> <h2>รายงานสถานะสต็อกอุปกรณ์คงเหลือจริง (HR Inventory Master)</h2>
           </div>
-          <p class="text-xs text-slate-400 mt-0.5">ตรวจสอบยอดคงเหลือ ติ๊กเลือกรายการเพื่อออกใบขออนุมัติจัดซื้อเสนอผู้บริหาร</p>
+          <p class="text-xs text-slate-400 mt-0.5">ตรวจสอบยอดคงเหลือ<span data-roles="ADMIN,MANAGER"> · ติ๊กเลือกรายการเพื่อออกใบขออนุมัติจัดซื้อเสนอผู้บริหาร</span></p>
         </div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <button onclick="autoSelectNeedPurchase()" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl shadow-xs transition-all cursor-pointer">
-            ⚡ เลือกรายการใกล้หมด/หมดคลัง
-          </button>
-          <!-- ⚡ ปุ่มล้างตัวเลือกที่ติ๊กเลือกไว้ทั้งหมด -->
-          <button onclick="clearAllSelections()" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-3 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1">
-            🧹 เคลียร์ที่เลือก
-          </button>
-          <button onclick="preparePRModal()" class="bg-emerald-500 hover:bg-emerald-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1">
-            📄 พิมพ์ใบขออนุมัติจัดซื้อ (<span id="selectedCountBadge">0</span>)
-          </button>
+        <div data-roles="ADMIN,MANAGER" class="flex items-center gap-2 flex-wrap">
+          <button onclick="autoSelectNeedPurchase()" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl transition-all cursor-pointer">⚡ เลือกรายการใกล้หมด/หมดคลัง</button>
+          <button onclick="clearAllSelections()" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-3 rounded-xl transition-all cursor-pointer">🧹 เคลียร์ที่เลือก</button>
+          <button onclick="preparePRModal()" class="bg-emerald-500 hover:bg-emerald-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl transition-all cursor-pointer">📄 พิมพ์ใบขออนุมัติจัดซื้อ (<span id="selectedCountBadge">0</span>)</button>
         </div>
       </div>
 
-      <!-- Filter Controls Bar -->
       <div class="p-4 bg-slate-50 border-b border-slate-200/80 grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
-        <div class="relative sm:col-span-1">
-          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">🔍</span>
-          <input type="text" id="searchInput" oninput="applyFilters()" placeholder="ค้นหารหัส หรือชื่ออุปกรณ์..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        <div class="relative">
+          <span style="pointer-events:none" class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
+          <input type="search" id="searchInput" oninput="debouncedFilter()" placeholder="ค้นหารหัส ชื่อ หมวดหมู่ (หลายคำได้)..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
         </div>
-
-        <div>
-          <select id="statusFilter" onchange="applyFilters()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
-            <option value="ALL">-- สถานะทั้งหมด --</option>
-            <option value="NORMAL">🟢 ปกติ (พร้อมเบิก)</option>
-            <option value="LOW">🟡 สต็อกต่ำ (<= 2 ชิ้น)</option>
-            <option value="OUT">🔴 ของหมดคลัง (0 ชิ้น)</option>
-          </select>
-        </div>
-
-        <div>
-          <select id="categoryFilter" onchange="applyFilters()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
-            <option value="ALL">-- หมวดหมู่ทั้งหมด --</option>
-          </select>
-        </div>
-
-        <!-- ⚡ ปุ่มล้างค่าค้นหา/ตัวกรอง -->
-        <div>
-          <button onclick="clearSearchFilters()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1">
-            🔄 รีเซ็ตตัวกรอง
-          </button>
-        </div>
+        <select id="statusFilter" onchange="applyFilters()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <option value="ALL">-- สถานะทั้งหมด --</option>
+          <option value="NORMAL">🟢 ปกติ (พร้อมเบิก)</option>
+          <option value="LOW">🟡 สต็อกต่ำ (<= 2 ชิ้น)</option>
+          <option value="OUT">🔴 ของหมดคลัง (0 ชิ้น)</option>
+        </select>
+        <select id="categoryFilter" onchange="applyFilters()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <option value="ALL">-- หมวดหมู่ทั้งหมด --</option>
+        </select>
+        <button onclick="clearSearchFilters()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl transition-all cursor-pointer">🔄 รีเซ็ตตัวกรอง</button>
       </div>
 
-      <!-- Live Search Stock Result Box -->
-      <div id="searchResultCard" class="hidden p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 border-b border-indigo-100 transition-all"></div>
+      <div id="searchResultCard" class="hidden p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 border-b border-indigo-100"></div>
 
-      <!-- Inventory Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse text-sm text-slate-600">
           <thead>
             <tr class="bg-slate-100/70 border-b border-slate-200 text-slate-700 font-semibold text-xs uppercase tracking-wider">
-              <th class="p-3 text-center w-10">
-                <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer">
+              <th data-roles="ADMIN,MANAGER" class="p-3 text-center w-10" title="เลือกทั้งหน้านี้">
+                <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" class="rounded cursor-pointer">
               </th>
               <th class="p-3">รหัสอุปกรณ์</th>
               <th class="p-3 text-center">รูปภาพ</th>
@@ -225,31 +392,25 @@
               <th class="p-3 text-center">ยอดทั้งหมด</th>
               <th class="p-3 text-center w-36">สถานะสต็อกคงเหลือจริง</th>
               <th class="p-3 text-center">สถานะ</th>
-              <th class="p-3 text-center">จัดการ</th>
+              <th data-roles="ADMIN" class="p-3 text-center">จัดการ</th>
             </tr>
           </thead>
           <tbody id="assetTableBody">
-            <tr>
-              <td colspan="10" class="p-8 text-center text-slate-400">กำลังดึงข้อมูลสต็อกสินค้า...</td>
-            </tr>
+            <tr><td colspan="10" class="p-8 text-center text-slate-400">กำลังดึงข้อมูลสต็อกสินค้า...</td></tr>
           </tbody>
         </table>
       </div>
+      <div id="invPagination" class="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500"></div>
     </div>
 
-    <!-- ตารางรายงานประวัติ -->
-    <div id="printArea" class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+    <!-- 📜 ประวัติการเบิกจ่าย -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
       <div class="p-4 bg-slate-800 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div class="flex items-center space-x-2 font-bold">
           <span>📜</span> <h2>รายงานประวัติการเบิกจ่ายอุปกรณ์สำนักงานล่าสุด</h2>
         </div>
-        <div class="flex items-center gap-2 no-print">
-          <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl shadow-sm cursor-pointer text-white flex items-center font-bold gap-1">
-            🟢 Export Excel (.csv)
-          </button>
-        </div>
+        <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl cursor-pointer text-white font-bold">🟢 Export Excel (.csv)</button>
       </div>
-
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse text-xs text-slate-600">
           <thead>
@@ -261,70 +422,49 @@
               <th class="p-3">ผู้เบิก (แผนก)</th>
               <th class="p-3">สาขา</th>
               <th class="p-3">เหตุผล/หมายเหตุ</th>
-              <th class="p-3 no-print">หลักฐาน</th>
+              <th class="p-3">หลักฐาน</th>
             </tr>
           </thead>
           <tbody id="logTableBody">
-            <tr>
-              <td colspan="8" class="p-6 text-center text-slate-400">กำลังดึงข้อมูลรายงานประวัติ...</td>
-            </tr>
+            <tr><td colspan="8" class="p-6 text-center text-slate-400">กำลังดึงข้อมูลรายงานประวัติ...</td></tr>
           </tbody>
         </table>
       </div>
+      <div id="logPagination" class="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500"></div>
     </div>
 
   </div>
 
-  <!-- 🛒 Modal สำหรับกำหนดรายละเอียดใบเสนอขอสั่งซื้อ (PR Form Modal) -->
+  <!-- 🛒 Modal ใบขออนุมัติจัดซื้อ (PR) -->
   <div id="prFormModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
     <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
       <div class="flex justify-between items-center border-b border-slate-100 pb-3">
-        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <span>📄</span> กำหนดรายละเอียดใบขออนุมัติจัดซื้อ (Purchase Requisition)
-        </h3>
+        <h3 class="text-lg font-bold text-slate-800">📄 กำหนดรายละเอียดใบขออนุมัติจัดซื้อ (Purchase Requisition)</h3>
         <button onclick="togglePRModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
       </div>
-
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">เลขที่ใบเสนอซื้อ (PR No.)</label>
-          <input type="text" id="prNumber" class="w-full px-3 py-2 border rounded-xl font-mono text-slate-800" readonly>
-        </div>
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">วันที่ออกเอกสาร</label>
-          <input type="text" id="prDate" class="w-full px-3 py-2 border rounded-xl text-slate-800" readonly>
-        </div>
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">ผู้ขอสั่งซื้อ / แผนก</label>
-          <input type="text" id="prRequester" value="ฝ่ายทรัพยากรบุคคล (HR)" class="w-full px-3 py-2 border rounded-xl text-slate-800">
-        </div>
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">วัตถุประสงค์การสั่งซื้อ</label>
-          <input type="text" id="prPurpose" value="จัดซื้อพัสดุอุปกรณ์สำนักงานทดแทนสต็อกที่หมด/ใกล้หมด" class="w-full px-3 py-2 border rounded-xl text-slate-800">
-        </div>
+        <div><label class="block font-semibold text-slate-600 mb-1">เลขที่ใบเสนอซื้อ (PR No.)</label><input type="text" id="prNumber" class="w-full px-3 py-2 border rounded-xl font-mono text-slate-800" readonly></div>
+        <div><label class="block font-semibold text-slate-600 mb-1">วันที่ออกเอกสาร</label><input type="text" id="prDate" class="w-full px-3 py-2 border rounded-xl text-slate-800" readonly></div>
+        <div><label class="block font-semibold text-slate-600 mb-1">ผู้ขอสั่งซื้อ / แผนก</label><input type="text" id="prRequester" value="ฝ่ายทรัพยากรบุคคล (HR)" class="w-full px-3 py-2 border rounded-xl text-slate-800"></div>
+        <div><label class="block font-semibold text-slate-600 mb-1">วัตถุประสงค์การสั่งซื้อ</label><input type="text" id="prPurpose" value="จัดซื้อพัสดุอุปกรณ์สำนักงานทดแทนสต็อกที่หมด/ใกล้หมด" class="w-full px-3 py-2 border rounded-xl text-slate-800"></div>
       </div>
-
       <div class="border-t border-slate-100 pt-3">
         <h4 class="text-xs font-bold text-slate-700 mb-2">ระบุจำนวนที่ต้องการสั่งซื้อเพิ่มสำหรับแต่ละรายการ:</h4>
         <div id="prItemsList" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
       </div>
-
       <div class="flex justify-end space-x-2 pt-3 border-t border-slate-100">
         <button type="button" onclick="togglePRModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
-        <button type="button" onclick="generateAndPrintPR()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-md">
-          🖨️ พิมพ์ใบขอเสนอสั่งซื้อ (PR)
-        </button>
+        <button type="button" onclick="generateAndPrintPR()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">🖨️ พิมพ์ใบขอเสนอสั่งซื้อ (PR)</button>
       </div>
     </div>
   </div>
 
-  <!-- 🖨️ 🔥 [EXCLUSIVE PRINT TEMPLATE] เอกสารใบขอเสนอซื้อพัสดุ (สำหรับพิมพ์ติดแนบ) -->
+  <!-- 🖨️ [PRINT TEMPLATE] ใบขอเสนอซื้อ -->
   <div id="prPrintTemplate" class="hidden p-8 bg-white text-slate-900 leading-relaxed">
     <div class="text-center border-b-2 border-slate-900 pb-4 mb-6">
       <h1 class="text-2xl font-black uppercase tracking-wide">ใบขออนุมัติจัดซื้อพัสดุ / อุปกรณ์สำนักงาน</h1>
       <p class="text-sm font-semibold text-slate-600 mt-1">PURCHASE REQUISITION FORM (HR SITEASSET MANAGEMENT)</p>
     </div>
-
     <div class="grid grid-cols-2 gap-4 text-xs mb-6 bg-slate-50 p-4 rounded-lg border border-slate-300">
       <div>
         <p><strong>เลขที่เอกสาร (PR No.):</strong> <span id="printPRNo"></span></p>
@@ -335,7 +475,6 @@
         <p class="mt-1"><strong>วัตถุประสงค์:</strong> <span id="printPRPurpose"></span></p>
       </div>
     </div>
-
     <table class="w-full text-xs text-left border-collapse border border-slate-400 mb-8">
       <thead>
         <tr class="bg-slate-200 text-slate-900 border-b border-slate-400 font-bold">
@@ -350,71 +489,217 @@
       </thead>
       <tbody id="printPRTableBody"></tbody>
     </table>
-
-    <!-- ลายเซ็นอนุมัติ 3 ฝ่าย -->
     <div class="grid grid-cols-3 gap-6 text-center text-xs mt-12 pt-6">
-      <div class="border border-slate-300 p-4 rounded-lg">
-        <p class="font-bold mb-10">ผู้ขออนุมัติจัดซื้อ</p>
-        <p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p>
-        <p>(..........................................................)</p>
-        <p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: เจ้าหน้าที่ HR / ผู้ดูแลคลัง</p>
-        <p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p>
-      </div>
+      <div class="border border-slate-300 p-4 rounded-lg"><p class="font-bold mb-10">ผู้ขออนุมัติจัดซื้อ</p><p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p><p>(..........................................................)</p><p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: เจ้าหน้าที่ HR / ผู้ดูแลคลัง</p><p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p></div>
+      <div class="border border-slate-300 p-4 rounded-lg"><p class="font-bold mb-10">ผู้ตรวจสอบรายการ</p><p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p><p>(..........................................................)</p><p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: หัวหน้าแผนก / ผู้จัดการ HR</p><p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p></div>
+      <div class="border border-slate-300 p-4 rounded-lg"><p class="font-bold mb-10">ผู้อนุมัติการจัดซื้อ</p><p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p><p>(..........................................................)</p><p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: ผู้บริหาร / ผู้อำนวยการ</p><p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p></div>
+    </div>
+  </div>
 
-      <div class="border border-slate-300 p-4 rounded-lg">
-        <p class="font-bold mb-10">ผู้ตรวจสอบรายการ</p>
-        <p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p>
-        <p>(..........................................................)</p>
-        <p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: หัวหน้าแผนก / ผู้จัดการ HR</p>
-        <p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p>
+  <!-- ✍️ Modal พิจารณาอนุมัติใบเบิก -->
+  <div id="approveModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">✍️ พิจารณาอนุมัติใบเบิก <span id="apvReqId" class="font-mono text-indigo-700 text-base"></span></h3>
+        <button onclick="toggleApproveModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
       </div>
-
-      <div class="border border-slate-300 p-4 rounded-lg">
-        <p class="font-bold mb-10">ผู้อนุมัติการจัดซื้อ</p>
-        <p class="border-b border-slate-400 w-3/4 mx-auto mb-1"></p>
-        <p>(..........................................................)</p>
-        <p class="text-[10px] text-slate-500 mt-1">ตำแหน่ง: ผู้บริหาร / ผู้อำนวยการ</p>
-        <p class="text-[10px] text-slate-500">วันที่: ......./......./.......</p>
+      <div id="apvDetail"></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs border-t border-slate-100 pt-4">
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">ผู้อนุมัติ (ตามบัญชีที่เข้าสู่ระบบ)</label>
+          <input type="text" id="apvName" readonly class="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-100 text-slate-700">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">ตำแหน่ง</label>
+          <select id="apvPositionSel" onchange="onPositionChange()" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+            <option value="">-- เลือกตำแหน่ง --</option>
+            <option>ผู้จัดการสาขา</option>
+            <option>ผู้ช่วยผู้จัดการสาขา</option>
+            <option>หัวหน้าแผนก</option>
+            <option>ผู้จัดการฝ่ายทรัพยากรบุคคล (HR Manager)</option>
+            <option>เจ้าหน้าที่ฝ่ายทรัพยากรบุคคล (HR)</option>
+            <option>ผู้จัดการเขต / ผู้จัดการภาค</option>
+            <option>ผู้จัดการทั่วไป</option>
+            <option>ผู้บริหาร / กรรมการผู้จัดการ</option>
+            <option value="__other">อื่น ๆ (ระบุเอง)</option>
+          </select>
+          <input type="text" id="apvPositionOther" class="hidden w-full mt-2 px-3 py-2 border border-slate-300 rounded-xl" placeholder="ระบุตำแหน่ง">
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้อนุมัติ <span class="text-red-500">*</span> <span class="font-normal text-slate-400">(จำเป็นเมื่อกดอนุมัติ)</span></label>
+          <button type="button" onclick="sigPads.approver.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+        </div>
+        <div class="relative">
+          <canvas id="approverSigPad" class="sig-pad w-full h-40 bg-white border-2 border-dashed border-indigo-300 rounded-xl cursor-crosshair"></canvas>
+          <span id="approverSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">เซ็นชื่อผู้อนุมัติในกรอบนี้</span>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">เหตุผลกรณีไม่อนุมัติ</label>
+        <input type="text" id="apvRejectReason" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs" placeholder="ระบุเหตุผล (จำเป็นเมื่อกดไม่อนุมัติ)">
+      </div>
+      <div class="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="toggleApproveModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="button" id="apvRejectBtn" onclick="submitDecision(false)" class="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">❌ ไม่อนุมัติ</button>
+        <button type="button" id="apvApproveBtn" onclick="submitDecision(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">✅ เซ็นอนุมัติ &amp; ตัดสต็อก</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal สำหรับเพิ่ม/แก้ไขอุปกรณ์ -->
+  <!-- 🖨️ [PRINT TEMPLATE] ใบเบิกพัสดุ (สร้างโดย JS) -->
+  <div id="reqPrintTemplate" class="hidden bg-white text-slate-900"></div>
+
+  <!-- 📦 Modal HR จ่ายของ + ลายเซ็นผู้จ่าย / ผู้รับ -->
+  <div id="issueModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-lg font-bold text-slate-800">📦 จ่ายของตามใบเบิก <span id="issReqId" class="font-mono text-indigo-700 text-base"></span></h3>
+        <button onclick="toggleIssueModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+      <div id="issDetail" class="text-xs bg-slate-50 border border-slate-200 rounded-xl p-4"></div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้จ่ายพัสดุ (HR) <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
+          <button type="button" onclick="sigPads.issuer.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+        </div>
+        <div class="relative">
+          <canvas id="issuerSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-400 rounded-xl cursor-crosshair"></canvas>
+          <span id="issuerSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">HR เซ็นชื่อผู้จ่ายพัสดุในกรอบนี้</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">ชื่อผู้รับพัสดุ</label>
+          <input type="text" id="issReceiverName" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="ชื่อ-นามสกุล ผู้มารับของ">
+        </div>
+        <p class="text-[11px] text-slate-400 self-end">ถ้าผู้รับมารับของที่ HR ให้เซ็นในกรอบด้านล่างได้เลย · ถ้าไม่ได้มาด้วยตัวเอง เว้นว่างไว้แล้วให้เซ็นบนใบที่พิมพ์</p>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้รับพัสดุ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+          <button type="button" onclick="sigPads.receiver.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+        </div>
+        <div class="relative">
+          <canvas id="receiverSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-crosshair"></canvas>
+          <span id="receiverSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับพัสดุเซ็นชื่อในกรอบนี้</span>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="toggleIssueModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="button" id="issSaveBtn" onclick="submitIssue(false)" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">📦 บันทึกจ่ายของ</button>
+        <button type="button" id="issSavePrintBtn" onclick="submitIssue(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">📦 บันทึก &amp; 🖨️ พิมพ์ใบเบิก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 👥 Modal จัดการสมาชิก (ADMIN) -->
+  <div id="membersModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-lg font-bold text-slate-800">👥 จัดการสมาชิก (Member Management)</h3>
+        <button onclick="toggleEl('membersModal', false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2 justify-between">
+        <input type="search" id="userSearch" oninput="renderUsers()" placeholder="ค้นหา username / ชื่อ / สาขา..." class="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        <button onclick="openUserForm()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-4 rounded-xl cursor-pointer">➕ เพิ่มสมาชิก</button>
+      </div>
+      <div class="overflow-x-auto border border-slate-200 rounded-xl">
+        <table class="w-full text-left text-xs text-slate-600">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 font-semibold">
+              <th class="p-3">Username</th><th class="p-3">ชื่อ-นามสกุล</th><th class="p-3">สิทธิ์</th>
+              <th class="p-3">สาขา</th><th class="p-3 text-center">สถานะ</th><th class="p-3">เข้าใช้ล่าสุด</th><th class="p-3 text-center">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody"></tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-slate-400">💡 รหัสผ่านถูกเข้ารหัส (hash) ก่อนเก็บในชีต Users · ปิดใช้งานบัญชีแทนการลบ เพื่อคงประวัติการเบิก</p>
+    </div>
+  </div>
+
+  <!-- 👤 Modal เพิ่ม/แก้ไขสมาชิก -->
+  <div id="userFormModal" class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center hidden p-4">
+    <form onsubmit="submitUserForm(event)" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-3 text-xs">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 id="userFormTitle" class="text-base font-bold text-slate-800">➕ เพิ่มสมาชิก</h3>
+        <button type="button" onclick="toggleEl('userFormModal', false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+      <input type="hidden" id="ufMode" value="add">
+      <div><label class="block font-semibold text-slate-600 mb-1">Username <span class="text-red-500">*</span></label>
+        <input id="ufUsername" required pattern="[a-zA-Z0-9._\-]{3,30}" class="w-full px-3 py-2 border border-slate-300 rounded-xl disabled:bg-slate-100" placeholder="a-z 0-9 . _ - (3-30 ตัว)"></div>
+      <div><label class="block font-semibold text-slate-600 mb-1">ชื่อ-นามสกุล <span class="text-red-500">*</span></label>
+        <input id="ufFullName" required class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block font-semibold text-slate-600 mb-1">สิทธิ์ (Role) <span class="text-red-500">*</span></label>
+          <select id="ufRole" onchange="onUfRoleChange()" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+            <option value="BRANCH">พนักงานสาขา (BRANCH)</option>
+            <option value="MANAGER">ผู้อนุมัติ/ผู้บริหาร (MANAGER)</option>
+            <option value="ADMIN">HR Admin (ADMIN)</option>
+          </select></div>
+        <div><label class="block font-semibold text-slate-600 mb-1">สาขา</label>
+          <select id="ufBranch" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"></select></div>
+      </div>
+      <div><label class="block font-semibold text-slate-600 mb-1">รหัสผ่าน <span id="ufPwReq" class="text-red-500">*</span></label>
+        <div class="relative">
+          <input id="ufPassword" type="password" autocomplete="new-password" minlength="6" class="w-full px-3 py-2 pr-10 border border-slate-300 rounded-xl" placeholder="อย่างน้อย 6 ตัวอักษร">
+          <button type="button" onclick="togglePw('ufPassword', this)" class="absolute right-1.5 inset-y-0 my-auto h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 cursor-pointer">👁</button>
+        </div>
+        <p id="ufPwHint" class="text-[10px] text-slate-400 mt-1"></p></div>
+      <label class="flex items-center gap-2 font-semibold text-slate-600 cursor-pointer"><input type="checkbox" id="ufActive" checked class="rounded"> เปิดใช้งานบัญชี</label>
+      <div id="ufMsg" class="text-rose-600 min-h-[16px]"></div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="toggleEl('userFormModal', false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="submit" id="ufSaveBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl cursor-pointer">💾 บันทึก</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 🔑 Modal เปลี่ยนรหัสผ่าน -->
+  <div id="pwModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <form onsubmit="submitChangePw(event)" class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-3 text-xs">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-base font-bold text-slate-800">🔑 เปลี่ยนรหัสผ่าน</h3>
+        <button type="button" onclick="togglePwModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+      <div><label class="block font-semibold text-slate-600 mb-1">รหัสผ่านเดิม</label><input id="pwOld" type="password" required autocomplete="current-password" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+      <div><label class="block font-semibold text-slate-600 mb-1">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)</label><input id="pwNew" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+      <div><label class="block font-semibold text-slate-600 mb-1">ยืนยันรหัสผ่านใหม่</label><input id="pwNew2" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+      <div id="pwMsg" class="text-rose-600 min-h-[16px]"></div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="togglePwModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="submit" id="pwSaveBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl cursor-pointer">บันทึก</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ➕ Modal เพิ่ม/แก้ไขอุปกรณ์ (ADMIN) -->
   <div id="addAssetModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
     <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl mx-4">
       <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
         <h3 id="modalTitle" class="text-lg font-bold text-slate-800">➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง</h3>
         <button onclick="toggleModal(false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
       </div>
-      
       <form id="newAssetForm" onsubmit="handleAssetSubmit(event)" class="space-y-4">
         <input type="hidden" id="formAction" value="addAsset">
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">รหัสอุปกรณ์สำนักงาน (Asset ID) <span class="text-red-500">*</span></label>
-          <input type="text" id="newAssetId" placeholder="เช่น Asset 001" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่ออุปกรณ์สำนักงาน <span class="text-red-500">*</span></label>
-          <input type="text" id="newAssetName" placeholder="เช่น Printer Brother, กล้อง CCTV" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">หมวดหมู่ / ประเภท <span class="text-red-500">*</span></label>
-          <input type="text" id="newAssetCategory" placeholder="เช่น อุปกรณ์สำนักงาน, ไอที" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-        </div>
-        <div>
-          <label id="totalLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span></label>
-          <input type="number" id="newAssetTotal" min="1" placeholder="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">หมายเหตุประจำอุปกรณ์ (ข้อมูลเพิ่มเติม/สถานที่เก็บ)</label>
-          <input type="text" id="newAssetNotes" placeholder="เช่น เก็บไว้ที่ห้องควบคุม, ประกันหมดปี 2027" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">อัปโหลดรูปภาพจริง <span id="imgOptionalNote" class="text-slate-400 font-normal"></span></label>
-          <input type="file" id="newAssetImage" accept="image/*" class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50">
-        </div>
-        
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">รหัสอุปกรณ์สำนักงาน (Asset ID) <span class="text-red-500">*</span></label>
+          <input type="text" id="newAssetId" placeholder="เช่น Asset 001" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">ชื่ออุปกรณ์สำนักงาน <span class="text-red-500">*</span></label>
+          <input type="text" id="newAssetName" placeholder="เช่น Printer Brother, กล้อง CCTV" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">หมวดหมู่ / ประเภท <span class="text-red-500">*</span></label>
+          <input type="text" id="newAssetCategory" list="categoryList" placeholder="เช่น อุปกรณ์สำนักงาน, ไอที" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <datalist id="categoryList"></datalist></div>
+        <div><label id="totalLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span></label>
+          <input type="number" id="newAssetTotal" min="1" placeholder="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">หมายเหตุประจำอุปกรณ์ (ข้อมูลเพิ่มเติม/สถานที่เก็บ)</label>
+          <input type="text" id="newAssetNotes" placeholder="เช่น เก็บไว้ที่ห้องควบคุม" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">อัปโหลดรูปภาพจริง <span id="imgOptionalNote" class="text-slate-400 font-normal"></span></label>
+          <input type="file" id="newAssetImage" accept="image/*" class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50"></div>
         <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
           <button type="button" onclick="toggleModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
           <button type="submit" id="addBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-4 rounded-xl cursor-pointer">บันทึกข้อมูล</button>
@@ -423,8 +708,8 @@
     </div>
   </div>
 
-  <!-- Zoom Modal -->
-  <div id="imageZoomModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden p-4 transition-all" onclick="closeZoomModal()">
+  <!-- 🔍 Zoom Modal -->
+  <div id="imageZoomModal" class="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center hidden p-4" onclick="closeZoomModal()">
     <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onclick="event.stopPropagation()">
       <button onclick="closeZoomModal()" class="absolute -top-10 right-0 text-white text-3xl font-bold hover:text-slate-300 cursor-pointer">&times;</button>
       <img id="zoomedImage" src="" class="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-2 border-white/20">
@@ -434,636 +719,1573 @@
   <script>
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_uYDpb36YpqlKDJ5tznO-8Hm5oGrtLPRgoqtbktoi723SNg-a4WK3QGrN7GTjxacF/exec";
 
+    const BRANCHES = ["สาขาขุขันธ์", "สาขาเบญจลักษณ์", "สาขากุฉินารายณ์", "เดชอุดม", "ตระการพืชผล", "ศรีเมืองใหม่", "อำนาจเจริญ", "สำนักงานใหญ่"];
+    const ROLE_INFO = {
+      ADMIN:   { label: "HR Admin",            badge: "bg-rose-100 text-rose-700" },
+      MANAGER: { label: "ผู้อนุมัติ/ผู้บริหาร", badge: "bg-indigo-100 text-indigo-700" },
+      BRANCH:  { label: "พนักงานสาขา",         badge: "bg-sky-100 text-sky-700" }
+    };
+    const SESSION_KEY = "hrat_session";
+    const INV_PAGE_SIZE = 25, LOG_PAGE_SIZE = 30, REQ_PAGE_SIZE = 20;
+
+    let session = null;
     let compressedBase64 = "";
     let newAssetBase64 = "";
-    let globalLogData = []; 
-    let cachedAssets = []; 
+    let globalLogData = [];
+    let cachedAssets = [];
     let selectedAssetsForPR = new Set();
+    let invFiltered = [], invPage = 1, logPage = 1;
 
-    window.onload = function() {
-      loadData();
+    const $ = id => document.getElementById(id);
+    const role = () => (session && session.user && session.user.role) || "";
+    const hasRole = (...rs) => rs.includes(role());
+    const canManageAssets = () => hasRole("ADMIN");
+    const canApprove = () => hasRole("ADMIN", "MANAGER");
+    const canPurchase = () => hasRole("ADMIN", "MANAGER");
+    const canIssue = () => hasRole("ADMIN");                 // HR เป็นผู้จ่ายของ
+
+    /* =========================================================
+       🚀 เริ่มต้นระบบ
+       ========================================================= */
+    window.onload = function () {
+      sigPads.requester = createSignaturePad("requesterSigPad");
+      sigPads.approver = createSignaturePad("approverSigPad");
+      sigPads.issuer = createSignaturePad("issuerSigPad");
+      sigPads.receiver = createSignaturePad("receiverSigPad");
+      fillBranchSelect($("branch"), false);
       setupImageListeners();
-    };
 
-    function openZoomModal(imgSrc) {
-      if(!imgSrc) return;
-      document.getElementById("zoomedImage").src = imgSrc;
-      document.getElementById("imageZoomModal").classList.remove("hidden");
-    }
+      pingServer();
+      setInterval(pingServer, 30000);
+      window.addEventListener("online", pingServer);
+      window.addEventListener("offline", () => setConn("down"));
 
-    function closeZoomModal() {
-      document.getElementById("imageZoomModal").classList.add("hidden");
-      document.getElementById("zoomedImage").src = "";
-    }
-
-    document.addEventListener('keydown', function(event) {
-      if (event.key === "Escape") {
-        closeZoomModal();
-        toggleModal(false);
-        togglePRModal(false);
+      session = loadSession();
+      if (session) {
+        enterApp();
+        apiGet("me").then(r => {             // ดึง role/สาขาล่าสุดจาก Server
+          if (r && r.status === "success") { session.user = r.user; persistSession(); applyRoleUI(); }
+        }).catch(() => {});
+      } else {
+        showLogin();
       }
+    };
+    window.addEventListener("resize", () => Object.values(sigPads).forEach(p => p.ensureSize()));
+
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      closeZoomModal(); toggleModal(false); togglePRModal(false); toggleApproveModal(false);
+      toggleEl("userFormModal", false); togglePwModal(false); toggleIssueModal(false);
     });
 
-    function toggleModal(show) {
-      const modal = document.getElementById("addAssetModal");
-      if(show) modal.classList.remove("hidden");
-      else {
-        modal.classList.add("hidden");
-        document.getElementById("newAssetForm").reset();
-        newAssetBase64 = "";
-      }
-    }
-
-    function openAddModal() {
-      document.getElementById("modalTitle").innerText = "➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง";
-      document.getElementById("formAction").value = "addAsset";
-      document.getElementById("newAssetId").disabled = false;
-      document.getElementById("totalLabel").innerHTML = 'จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span>';
-      document.getElementById("imgOptionalNote").innerText = "";
-      toggleModal(true);
-    }
-
-    function openEditModal(id) {
-      const asset = cachedAssets.find(a => a.id === id);
-      if(!asset) return;
-
-      document.getElementById("modalTitle").innerText = "✏️ แก้ไขข้อมูล / เพิ่มจำนวนสต็อกสินค้า";
-      document.getElementById("formAction").value = "editAsset";
-      document.getElementById("newAssetId").value = asset.id;
-      document.getElementById("newAssetId").disabled = true;
-      document.getElementById("newAssetName").value = asset.name;
-      document.getElementById("newAssetCategory").value = asset.category;
-      document.getElementById("newAssetTotal").value = asset.total;
-      document.getElementById("newAssetNotes").value = asset.notes === "-" ? "" : asset.notes;
-      document.getElementById("totalLabel").innerHTML = 'ปรับปรุงยอดจำนวนทั้งหมดในคลัง <span class="text-blue-600">(เพิ่มยอดรวมที่นี่)</span> <span class="text-red-500">*</span>';
-      document.getElementById("imgOptionalNote").innerText = "(ปล่อยว่างได้หากไม่ต้องการเปลี่ยนรูปภาพ)";
-      toggleModal(true);
-    }
-
-    async function loadData() {
-      const tableBody = document.getElementById("assetTableBody");
-      const logTableBody = document.getElementById("logTableBody");
-
+    /* =========================================================
+       🔐 Session / Login
+       ========================================================= */
+    function loadSession() {
       try {
-        const [assetsRes, logsRes] = await Promise.all([
-          fetch(`${WEB_APP_URL}?action=getAssets`),
-          fetch(`${WEB_APP_URL}?action=getLogs`)
-        ]);
+        const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const s = JSON.parse(raw);
+        if (!s.token || !s.exp || Date.now() > s.exp) { clearSession(); return null; }
+        return s;
+      } catch (e) { return null; }
+    }
+    function persistSession() {
+      try { (session.remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {}
+    }
+    function clearSession() {
+      try { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+    }
 
-        const assets = await assetsRes.json();
-        const logs = await logsRes.json();
+    function showLogin(msg) {
+      $("appRoot").classList.add("hidden");
+      $("loginScreen").classList.remove("hidden");
+      $("loginMsg").innerText = msg || "";
+      $("loginPass").value = "";
+      setTimeout(() => ($("loginUser").value ? $("loginPass") : $("loginUser")).focus(), 50);
+    }
 
-        globalLogData = logs || [];
-        cachedAssets = assets || [];
-
-        let totalRemainingCount = 0;
-        let totalBorrowedCount = 0;
-        let lowStockCount = 0;
-        let outOfStockCount = 0;
-        const categoriesSet = new Set();
-
-        cachedAssets.forEach(asset => {
-          let rem = parseInt(asset.remaining);
-          if(isNaN(rem)) rem = parseInt(asset.total) || 0;
-          if(rem < 0) rem = 0;
-
-          const tot = parseInt(asset.total) || 0;
-          const borrowed = tot - rem > 0 ? tot - rem : 0;
-
-          totalRemainingCount += rem;
-          totalBorrowedCount += borrowed;
-
-          if(rem === 0) outOfStockCount++;
-          else if(rem <= 2) lowStockCount++;
-
-          if(asset.category) categoriesSet.add(asset.category);
-        });
-
-        document.getElementById("kpiTotalTypes").innerText = cachedAssets.length;
-        document.getElementById("kpiTotalRemaining").innerText = totalRemainingCount.toLocaleString();
-        document.getElementById("kpiTotalBorrowed").innerText = totalBorrowedCount.toLocaleString();
-        document.getElementById("kpiLowStock").innerText = lowStockCount;
-        document.getElementById("kpiOutOfStock").innerText = outOfStockCount;
-
-        const categoryFilter = document.getElementById("categoryFilter");
-        categoryFilter.innerHTML = '<option value="ALL">-- หมวดหมู่ทั้งหมด --</option>';
-        categoriesSet.forEach(cat => {
-          const opt = document.createElement("option");
-          opt.value = cat;
-          opt.innerText = cat;
-          categoryFilter.appendChild(opt);
-        });
-
-        renderAssetTable(cachedAssets);
-
-        logTableBody.innerHTML = '';
-        if (globalLogData.length === 0) {
-          logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
-        } else {
-          globalLogData.forEach((log, index) => {
-            const proofImg = log.image 
-              ? `<img src="${log.image}" onclick="openZoomModal('${log.image}')" class="h-10 w-10 object-cover rounded-lg border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all" title="คลิกเพื่อขยายรูปภาพ">` 
-              : `<span class="text-slate-400 text-[10px]">ไม่มีรูป</span>`;
-
-            const row = `
-              <tr class="border-b border-slate-100 hover:bg-slate-50">
-                <td class="p-3 text-center font-semibold text-slate-500">${index + 1}</td>
-                <td class="p-3 text-slate-500 whitespace-nowrap">${log.timestamp}</td>
-                <td class="p-3">
-                  <div class="font-bold text-slate-800">${log.assetName}</div>
-                  <div class="text-[10px] text-slate-400 font-mono">${log.assetId}</div>
-                </td>
-                <td class="p-3 text-center font-bold text-slate-900">${log.quantity}</td>
-                <td class="p-3">
-                  <div class="font-medium">${log.staffName}</div>
-                  <div class="text-[10px] text-slate-400">แผนก: ${log.department}</div>
-                </td>
-                <td class="p-3 text-slate-700">${log.branch}</td>
-                <td class="p-3 text-slate-600 max-w-[200px] break-words">${log.notes || '-'}</td>
-                <td class="p-3 no-print">${proofImg}</td>
-              </tr>
-            `;
-            logTableBody.insertAdjacentHTML('beforeend', row);
-          });
-        }
-
+    async function doLogin(e) {
+      e.preventDefault();
+      const btn = $("loginBtn");
+      $("loginMsg").innerText = "";
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader mr-1"></span> กำลังตรวจสอบ...';
+      try {
+        const r = await apiPost({ action: "login", username: $("loginUser").value.trim(), password: $("loginPass").value });
+        if (r.status !== "success") throw new Error(r.message || "เข้าสู่ระบบไม่สำเร็จ");
+        session = { token: r.token, exp: r.exp, user: r.user, remember: $("loginRemember").checked };
+        persistSession();
+        enterApp();
       } catch (err) {
-        tableBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-red-500">เรียกข้อมูลอุปกรณ์สำนักงานไม่สำเร็จ</td></tr>';
-        logTableBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-red-500">ไม่สามารถเรียกรายงานประวัติได้</td></tr>';
-        console.error(err);
+        $("loginMsg").innerText = "⚠️ " + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "เข้าสู่ระบบ";
       }
     }
 
-    function renderAssetTable(assetsToDisplay) {
-      const select = document.getElementById("assetSelect");
-      const tableBody = document.getElementById("assetTableBody");
+    function enterApp() {
+      $("loginScreen").classList.add("hidden");
+      $("appRoot").classList.remove("hidden");
+      applyRoleUI();
+      applyFormDefaults();
+      requestAnimationFrame(() => sigPads.requester.setup());
+      loadData();
+    }
 
-      const lastBorrowMap = {};
-      globalLogData.forEach(log => {
-        const aId = String(log.assetId);
-        if (!lastBorrowMap[aId]) {
-          lastBorrowMap[aId] = {
-            staffName: log.staffName || "-",
-            branch: log.branch || "-"
-          };
-        }
+    function logout(msg) {
+      clearSession();
+      session = null;
+      cachedAssets = []; globalLogData = []; globalRequests = [];
+      selectedAssetsForPR.clear();
+      showLogin(msg);
+    }
+
+    let authKicked = false;
+    function handleAuthExpired(msg) {
+      if (authKicked || !session) return;
+      authKicked = true;
+      logout("⏰ " + (msg || "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"));
+      setTimeout(() => authKicked = false, 1000);
+    }
+
+    /** ซ่อน/แสดงส่วนต่าง ๆ ตามสิทธิ์ (data-roles="ADMIN,MANAGER") */
+    function applyRoleUI() {
+      const u = (session && session.user) || {};
+      document.querySelectorAll("[data-roles]").forEach(el => {
+        el.classList.toggle("role-hidden", !el.dataset.roles.split(",").includes(u.role));
       });
+      $("userName").innerText = u.fullName || u.username || "-";
+      $("userAvatar").innerText = (u.fullName || u.username || "?").trim().charAt(0).toUpperCase();
+      $("userRole").innerText = (ROLE_INFO[u.role] || {}).label || u.role || "-";
+      $("userBranch").innerText = u.branch || "ทุกสาขา";
+      $("reqSubtitle").innerText = u.role === "BRANCH"
+        ? `ใบเบิกของ ${u.branch || "สาขาคุณ"} · เมื่อสถานะเป็น "อนุมัติแล้ว" ให้กด 🖨️ พิมพ์ใบเบิก แล้วนำไปรับของที่ฝ่าย HR`
+        : u.role === "ADMIN"
+          ? "HR: ดูแท็บ \"อนุมัติแล้ว · รอรับของ\" → จัดของตามรายการ แล้วกด 📦 จ่ายของแล้ว"
+          : "พนักงานส่งคำขอ → ผู้จัดการเซ็นอนุมัติ → พนักงานพิมพ์ใบเบิกไปรับของ / HR ดูรายการในแอปแล้วจ่ายของ";
+      if (cachedAssets.length) renderInventoryPage();
+      if (globalRequests.length) renderRequests();
+    }
 
-      select.innerHTML = '<option value="">-- กรุณาเลือกอุปกรณ์สำนักงาน--</option>';
-      tableBody.innerHTML = '';
+    function applyFormDefaults() {
+      const u = (session && session.user) || {};
+      const br = $("branch");
+      if (u.role === "BRANCH" && u.branch) { br.value = u.branch; br.disabled = true; }
+      else { br.disabled = false; if (!br.value && BRANCHES.includes(u.branch)) br.value = u.branch; }
+      if (!$("staffName").value) $("staffName").value = u.fullName || "";
+    }
 
-      if (assetsToDisplay.length === 0) {
-        select.innerHTML = '<option value="">ไม่พบข้อมูลอุปกรณ์สำนักงาน</option>';
-        tableBody.innerHTML = '<tr><td colspan="10" class="p-8 text-center text-slate-400">ไม่พบรายการอุปกรณ์ที่ตรงกับเงื่อนไขการค้นหา</td></tr>';
+    function fillBranchSelect(sel, allowAll) {
+      sel.innerHTML = (allowAll ? '<option value="">— ทุกสาขา (ไม่ระบุ) —</option>' : '<option value="">-- เลือกสาขา --</option>') +
+        BRANCHES.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+    }
+
+    /* =========================================================
+       🌐 API + สถานะการเชื่อมต่อ Server
+       ========================================================= */
+    function fetchWithTimeout(url, opts, ms) {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), ms);
+      return fetch(url, Object.assign({}, opts, { signal: ctl.signal })).finally(() => clearTimeout(t));
+    }
+
+    async function apiGet(action, params) {
+      const qs = new URLSearchParams(Object.assign({ action: action }, params || {}, { token: session ? session.token : "" }));
+      let res;
+      try { res = await fetchWithTimeout(`${WEB_APP_URL}?${qs}`, {}, 45000); }
+      catch (e) { setConn("down"); throw new Error("เชื่อมต่อ Server ไม่ได้ (เปิด WEB_APP_URL?action=diag ในเบราว์เซอร์เพื่อตรวจสอบ)"); }
+      setConn("ok");
+      const data = await res.json();
+      if (data && data.status === "error" && data.code === "auth") { handleAuthExpired(data.message); throw new Error(data.message); }
+      return data;
+    }
+
+    async function apiPost(payload) {
+      const body = JSON.stringify(Object.assign({}, payload, { token: session ? session.token : "" }));
+      let res;
+      try { res = await fetchWithTimeout(WEB_APP_URL, { method: "POST", body: body }, 90000); }   // text/plain → ไม่ติด CORS preflight
+      catch (e) { setConn("down"); throw new Error("เชื่อมต่อ Server ไม่ได้"); }
+      setConn("ok");
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch (e) { return { status: "success", raw: text }; }   // ระบบเดิมบางคำสั่งไม่ตอบ JSON
+      if (data && data.status === "error" && data.code === "auth") { handleAuthExpired(data.message); throw new Error(data.message); }
+      return data;
+    }
+
+    async function pingServer() {
+      if (!navigator.onLine) { setConn("down"); return; }
+      const t0 = performance.now();
+      try {
+        const res = await fetchWithTimeout(`${WEB_APP_URL}?action=ping&_=${Date.now()}`, {}, 12000);
+        await res.text();
+        setConn(res.ok ? "ok" : "down", Math.round(performance.now() - t0));
+      } catch (e) { setConn("down"); }
+    }
+
+    let lastPingMs = 0;
+    function setConn(state, ms) {
+      if (state === "ok") { if (ms) lastPingMs = ms; else ms = lastPingMs; }
+      const map = {
+        ok:   { dot: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,.25)]", text: "เชื่อมต่อ Server สำเร็จ" + (ms ? ` · ${ms} ms` : "") },
+        down: { dot: "bg-rose-500 animate-pulse", text: "ขาดการเชื่อมต่อ Server" },
+        checking: { dot: "bg-amber-400 animate-pulse", text: "กำลังตรวจสอบ..." }
+      };
+      const s = map[state] || map.checking;
+      document.querySelectorAll(".conn-dot").forEach(d => d.className = "conn-dot w-2.5 h-2.5 rounded-full " + s.dot);
+      document.querySelectorAll(".conn-text").forEach(t => t.innerText = s.text);
+    }
+
+    /* =========================================================
+       📥 โหลดข้อมูล
+       ========================================================= */
+    async function loadData() {
+      if (!session) return;
+      loadRequests();
+      try {
+        const [assets, logs] = await Promise.all([apiGet("getAssets"), apiGet("getLogs")]);
+        [assets, logs].forEach(x => { if (x && x.status === "error") throw new Error(x.message); });
+        cachedAssets = Array.isArray(assets) ? assets : (assets.data || []);
+        globalLogData = Array.isArray(logs) ? logs : (logs.data || []);
+        cachedAssets.forEach(a => { a.id = String(a.id); });
+
+        let totalRemaining = 0, totalBorrowed = 0, low = 0, out = 0;
+        const cats = new Set();
+        cachedAssets.forEach(a => {
+          const rem = getRemaining(a.id), tot = parseInt(a.total) || 0;
+          totalRemaining += rem;
+          totalBorrowed += Math.max(0, tot - rem);
+          if (rem === 0) out++; else if (rem <= 2) low++;
+          if (a.category) cats.add(a.category);
+        });
+        $("kpiTotalTypes").innerText = cachedAssets.length.toLocaleString();
+        $("kpiTotalRemaining").innerText = totalRemaining.toLocaleString();
+        $("kpiTotalBorrowed").innerText = totalBorrowed.toLocaleString();
+        $("kpiLowStock").innerText = low;
+        $("kpiOutOfStock").innerText = out;
+
+        const cf = $("categoryFilter"), keep = cf.value;
+        cf.innerHTML = '<option value="ALL">-- หมวดหมู่ทั้งหมด --</option>' + [...cats].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+        cf.value = [...cats].includes(keep) ? keep : "ALL";
+        $("categoryList").innerHTML = [...cats].map(c => `<option value="${esc(c)}">`).join("");
+
+        buildLastBorrowMap();
+        applyFilters(true);
+        logPage = 1;
+        renderLogs();
+        renderDashboard();
+        refreshPickerSelection();
+      } catch (err) {
+        console.error(err);
+        const why = esc(err.message || "");
+        $("assetTableBody").innerHTML = `<tr><td colspan="10" class="p-4 text-center text-red-500">เรียกข้อมูลอุปกรณ์สำนักงานไม่สำเร็จ<div class="text-xs mt-1">${why}</div></td></tr>`;
+        $("logTableBody").innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">ไม่สามารถเรียกรายงานประวัติได้<div class="text-xs mt-1">${why}</div></td></tr>`;
+      }
+    }
+
+    /* =========================================================
+       🔍 Asset Picker — ช่องค้นหาสินค้าในการเบิก
+       ========================================================= */
+    let pickList = [], pickIdx = -1;
+
+    function assetMatches(a, q) {
+      if (!q) return true;
+      const hay = [a.id, a.name, a.category, a.notes].map(v => String(v == null ? "" : v).toLowerCase()).join(" | ");
+      return q.split(/\s+/).filter(Boolean).every(t => hay.includes(t));   // หลายคำ = ต้องตรงทุกคำ
+    }
+    const pickerLabel = a => `${a.id} - ${a.name}`;
+
+    function searchPickerAssets(q) {
+      const hid = $("assetSelect");
+      let query = (q || "").trim().toLowerCase();
+      if (hid.value) {
+        const cur = findAsset(hid.value);
+        if (cur && pickerLabel(cur) === q) query = "";        // เพิ่งเลือก/โฟกัสกลับ → แสดงทั้งหมด
+        else setPickerSelected(null, true);                    // พิมพ์ใหม่ = ยกเลิกที่เลือก
+      }
+      const all = cachedAssets.filter(a => assetMatches(a, query))
+        .sort((a, b) => (getRemaining(b.id) > 0) - (getRemaining(a.id) > 0));   // มีของขึ้นก่อน
+      pickList = all.slice(0, 50);
+      pickIdx = pickList.findIndex(a => getRemaining(a.id) > 0);
+
+      const box = $("assetResults");
+      if (!cachedAssets.length) {
+        box.innerHTML = '<div class="p-4 text-center text-xs text-slate-400"><span class="loader mr-1"></span> กำลังโหลดรายการอุปกรณ์...</div>';
+      } else if (!pickList.length) {
+        box.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">ไม่พบอุปกรณ์ที่ตรงกับคำค้นหา</div>';
+      } else {
+        box.innerHTML =
+          `<div class="px-3 py-1.5 text-[10px] text-slate-400 border-b border-slate-100 sticky top-0 bg-white">พบ ${all.length} รายการ${all.length > 50 ? " (แสดง 50 รายการแรก — พิมพ์เพิ่มเพื่อกรอง)" : ""}</div>` +
+          pickList.map((a, i) => {
+            const rem = getRemaining(a.id), out = rem <= 0;
+            const badge = out ? "bg-rose-100 text-rose-700" : rem <= 2 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
+            return `<button type="button" data-i="${i}" ${out ? 'aria-disabled="true"' : ""} onmousedown="event.preventDefault()" onclick="pickAsset(${i})"
+                      class="picker-item w-full text-left px-3 py-2 border-b border-slate-100 last:border-0 ${i === pickIdx ? "bg-blue-50" : ""} ${out ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-50 cursor-pointer"}">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="font-mono font-bold text-blue-700 shrink-0">${esc(a.id)}</span>
+                  <span class="font-semibold text-slate-800 truncate">${esc(a.name)}</span>
+                  <span class="ml-auto shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md ${badge}">${out ? "หมด" : "คงเหลือ " + rem}</span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5 truncate">${esc(a.category || "-")}${a.notes && a.notes !== "-" ? " • " + esc(a.notes) : ""}</div>
+              </button>`;
+          }).join("");
+      }
+      box.classList.remove("hidden");
+    }
+
+    function pickAsset(i) {
+      const a = pickList[i];
+      if (!a || getRemaining(a.id) <= 0) return;
+      setPickerSelected(a);
+      $("assetResults").classList.add("hidden");
+      $("quantity").focus();
+    }
+
+    function setPickerSelected(a, keepText) {
+      $("assetSelect").value = a ? a.id : "";
+      if (!keepText) $("assetSearch").value = a ? pickerLabel(a) : "";
+      $("assetPickerClear").classList.toggle("hidden", !a);
+      const sel = $("assetSelected"), q = $("quantity");
+      if (!a) { sel.classList.add("hidden"); sel.innerHTML = ""; q.removeAttribute("max"); $("qtyHint").innerText = ""; return; }
+      const rem = getRemaining(a.id);
+      q.max = rem;
+      $("qtyHint").innerText = `เบิกได้สูงสุด ${rem} ชิ้น`;
+      sel.innerHTML = `
+        <div class="flex items-center gap-3 p-2.5 rounded-xl bg-blue-50 border border-blue-100">
+          ${a.image ? `<img src="${esc(a.image)}" onclick="openZoomModal(this.src)" class="h-11 w-11 object-cover rounded-lg border cursor-pointer">` : '<div class="h-11 w-11 rounded-lg bg-white border flex items-center justify-center text-lg">📦</div>'}
+          <div class="flex-1 min-w-0 text-xs">
+            <div class="font-bold text-slate-800 truncate">${esc(a.name)}</div>
+            <div class="text-[11px] text-slate-500 truncate">หมวดหมู่: ${esc(a.category || "-")} · สถานที่เก็บ: ${esc(a.notes || "-")}</div>
+          </div>
+          <div class="text-right shrink-0"><div class="text-[10px] text-slate-400">คงเหลือ</div><div class="text-lg font-black ${rem > 2 ? "text-emerald-600" : "text-amber-600"}">${rem}</div></div>
+        </div>`;
+      sel.classList.remove("hidden");
+    }
+
+    function clearPickerAsset(focus) {
+      setPickerSelected(null);
+      $("assetResults").classList.add("hidden");
+      if (focus) { $("assetSearch").focus(); searchPickerAssets(""); }
+    }
+
+    function refreshPickerSelection() {
+      const id = $("assetSelect").value;
+      if (id) { const a = findAsset(id); a && getRemaining(id) > 0 ? setPickerSelected(a) : clearPickerAsset(false); }
+    }
+
+    function handlePickerKey(e) {
+      const box = $("assetResults");
+      if (e.key === "Escape") { box.classList.add("hidden"); return; }
+      const items = box.querySelectorAll(".picker-item");
+      if (!items.length) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        box.classList.remove("hidden");
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        for (let n = 0; n < items.length; n++) {                   // ข้ามรายการที่ของหมด
+          pickIdx = (pickIdx + step + items.length) % items.length;
+          if (getRemaining(pickList[pickIdx].id) > 0) break;
+        }
+        items.forEach((it, i) => it.classList.toggle("bg-blue-50", i === pickIdx));
+        items[pickIdx].scrollIntoView({ block: "nearest" });
+      } else if (e.key === "Enter" && !box.classList.contains("hidden")) {
+        e.preventDefault();
+        pickAsset(pickIdx);
+      }
+    }
+
+    document.addEventListener("click", e => {
+      const pk = $("assetPicker");
+      if (pk && !pk.contains(e.target)) $("assetResults").classList.add("hidden");
+    });
+
+    /* =========================================================
+       📦 ตารางสต็อก (Pagination 25 รายการ/หน้า)
+       ========================================================= */
+    let lastBorrowMap = {};
+    function buildLastBorrowMap() {
+      lastBorrowMap = {};
+      globalLogData.forEach(log => {
+        const k = String(log.assetId);
+        if (!lastBorrowMap[k]) lastBorrowMap[k] = { staffName: log.staffName || "-", branch: log.branch || "-" };
+      });
+    }
+
+    let filterTimer = null;
+    function debouncedFilter() { clearTimeout(filterTimer); filterTimer = setTimeout(() => applyFilters(), 150); }
+
+    function applyFilters(keepPage) {
+      const q = $("searchInput").value.toLowerCase().trim();
+      const statusVal = $("statusFilter").value, catVal = $("categoryFilter").value;
+      invFiltered = cachedAssets.filter(a => {
+        const rem = getRemaining(a.id);
+        let st = true;
+        if (statusVal === "NORMAL") st = rem > 2;
+        else if (statusVal === "LOW") st = rem > 0 && rem <= 2;
+        else if (statusVal === "OUT") st = rem === 0;
+        return st && (catVal === "ALL" || a.category === catVal) && assetMatches(a, q);
+      });
+      if (!keepPage) invPage = 1;
+      renderSearchCard(q);
+      renderInventoryPage();
+    }
+
+    function renderSearchCard(q) {
+      const card = $("searchResultCard");
+      if (!q) { card.classList.add("hidden"); return; }
+      card.classList.remove("hidden");
+      if (invFiltered.length !== 1) {
+        card.innerHTML = `<div class="text-xs text-slate-600 font-medium">🔍 ผลการค้นหา "<strong>${esc(q)}</strong>": พบทั้งหมด <strong>${invFiltered.length}</strong> รายการ</div>`;
         return;
       }
-
-      cachedAssets.forEach(asset => {
-        let remaining = parseInt(asset.remaining);
-        if (isNaN(remaining)) remaining = parseInt(asset.total) || 0;
-        if (remaining < 0) remaining = 0;
-
-        const option = document.createElement("option");
-        option.value = asset.id;
-        option.text = `${asset.name} (คงเหลือ: ${remaining})`;
-        if (remaining <= 0) { 
-          option.disabled = true; 
-          option.text += " [ของหมด]"; 
-        }
-        select.appendChild(option);
-      });
-
-      assetsToDisplay.forEach((asset, index) => {
-        const aId = String(asset.id);
-        const total = parseInt(asset.total) || 0;
-        
-        let remaining = parseInt(asset.remaining);
-        if (isNaN(remaining)) remaining = total;
-        if (remaining < 0) remaining = 0;
-
-        const lastBorrow = lastBorrowMap[aId] || {
-          staffName: asset.lastBorrower || "-",
-          branch: asset.lastBranch || "-"
-        };
-
-        const imgHtml = asset.image 
-          ? `<img src="${asset.image}" onclick="openZoomModal('${asset.image}')" class="h-12 w-12 object-cover rounded-xl border shadow-xs cursor-pointer hover:scale-105 hover:opacity-80 transition-all mx-auto" title="คลิกเพื่อขยายรูปภาพ">` 
-          : `<div class="h-12 w-12 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 rounded-xl border mx-auto">ไม่มีรูป</div>`;
-
-        const stockPercent = total > 0 ? Math.min(100, Math.round((remaining / total) * 100)) : 0;
-        
-        let progressBg = "bg-emerald-500";
-        let statusBadge = `<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-lg">ปกติ</span>`;
-        
-        if (remaining === 0) {
-          progressBg = "bg-rose-500";
-          statusBadge = `<span class="bg-rose-100 text-rose-800 text-xs font-semibold px-2.5 py-1 rounded-lg">ของหมดคลัง</span>`;
-        } else if (remaining <= 2) {
-          progressBg = "bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-lg";
-          statusBadge = `<span class="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-lg">สต็อกต่ำ</span>`;
-        }
-
-        const isChecked = selectedAssetsForPR.has(aId) ? 'checked' : '';
-
-        const row = `
-          <tr class="border-b border-slate-100 hover:bg-slate-50/80 transition-colors">
-            <td class="p-3 text-center">
-              <input type="checkbox" value="${asset.id}" ${isChecked} onchange="toggleItemSelection('${asset.id}', this.checked)" class="asset-checkbox rounded text-blue-600 focus:ring-blue-500 cursor-pointer">
-            </td>
-            <td class="p-3 font-mono font-bold text-slate-900 text-xs">${asset.id}</td>
-            <td class="p-3 text-center">${imgHtml}</td>
-            <td class="p-3">
-              <div class="font-bold text-slate-800 text-sm">${asset.name}</div>
-              <div class="text-xs text-slate-400 mt-0.5">หมวดหมู่: ${asset.category}</div>
-            </td>
-            <td class="p-3 text-slate-600 text-xs max-w-[140px] break-words">${asset.notes || '-'}</td>
-            <td class="p-3 text-xs">
-              <div class="font-medium text-slate-800">${lastBorrow.staffName}</div>
-              <div class="text-[10px] text-slate-400">${lastBorrow.branch}</div>
-            </td>
-            <td class="p-3 text-center font-bold text-slate-700 text-sm">${total}</td>
-            <td class="p-3">
-              <div class="flex items-center justify-between text-xs font-bold mb-1">
-                <span class="${remaining > 0 ? 'text-slate-800' : 'text-rose-600'}">${remaining} ชิ้น</span>
-                <span class="text-[10px] text-slate-400 font-normal">${stockPercent}%</span>
-              </div>
-              <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                <div class="${progressBg} h-2 rounded-full transition-all duration-500" style="width: ${stockPercent}%"></div>
-              </div>
-            </td>
-            <td class="p-3 text-center whitespace-nowrap">${statusBadge}</td>
-            <td class="p-3 text-center whitespace-nowrap">
-              <button onclick="openEditModal('${asset.id}')" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs py-1 px-2.5 rounded-lg shadow-xs transition-all cursor-pointer mr-1 font-bold">✏️ แก้ไข</button>
-              <button onclick="handleDeleteAsset('${asset.id}', '${asset.name}')" class="bg-rose-500 hover:bg-rose-600 text-white text-xs py-1 px-2.5 rounded-lg shadow-xs transition-all cursor-pointer">🗑️ ลบ</button>
-            </td>
-          </tr>
-        `;
-        tableBody.insertAdjacentHTML('beforeend', row);
-      });
-
-      updateBadge();
+      const it = invFiltered[0], total = parseInt(it.total) || 0, rem = getRemaining(it.id);
+      const pct = total > 0 ? Math.min(100, Math.round(rem / total * 100)) : 0;
+      card.innerHTML = `
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            ${it.image ? `<img src="${esc(it.image)}" onclick="openZoomModal(this.src)" class="h-14 w-14 object-cover rounded-xl border shadow-sm cursor-pointer">` : '<div class="h-14 w-14 bg-slate-200 rounded-xl flex items-center justify-center text-xs text-slate-500">ไม่มีรูป</div>'}
+            <div>
+              <span class="font-mono text-xs bg-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">${esc(it.id)}</span>
+              <h4 class="text-base font-black text-slate-900 mt-0.5">${esc(it.name)}</h4>
+              <p class="text-xs text-slate-500">หมวดหมู่: ${esc(it.category)} | สถานที่เก็บ: ${esc(it.notes || "-")}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-6 bg-white p-3 rounded-xl border border-slate-200 w-full md:w-auto justify-around">
+            <div class="text-center"><p class="text-[10px] font-semibold text-slate-400">ทั้งหมด</p><p class="text-base font-black text-slate-700">${total}</p></div>
+            <div class="text-center"><p class="text-[10px] font-semibold text-slate-400">เบิกแล้ว</p><p class="text-base font-black text-indigo-600">${Math.max(0, total - rem)}</p></div>
+            <div class="text-center px-2"><p class="text-[10px] font-bold text-emerald-600">คงเหลือจริง</p><p class="text-2xl font-black ${rem > 0 ? "text-emerald-600" : "text-rose-600"}">${rem} <span class="text-xs font-normal">(${pct}%)</span></p></div>
+          </div>
+        </div>`;
     }
 
-    function toggleItemSelection(id, isChecked) {
-      if(isChecked) selectedAssetsForPR.add(id);
-      else selectedAssetsForPR.delete(id);
+    function renderInventoryPage() {
+      const tbody = $("assetTableBody");
+      const showCheck = canPurchase(), showActions = canManageAssets();
+      const cols = 8 + (showCheck ? 1 : 0) + (showActions ? 1 : 0);
+      const pages = Math.max(1, Math.ceil(invFiltered.length / INV_PAGE_SIZE));
+      if (invPage > pages) invPage = pages;
+      const pageItems = invFiltered.slice((invPage - 1) * INV_PAGE_SIZE, invPage * INV_PAGE_SIZE);
+
+      if (!pageItems.length) {
+        tbody.innerHTML = `<tr><td colspan="${cols}" class="p-8 text-center text-slate-400">ไม่พบรายการอุปกรณ์ที่ตรงกับเงื่อนไขการค้นหา</td></tr>`;
+      } else {
+        tbody.innerHTML = pageItems.map(a => {
+          const total = parseInt(a.total) || 0, rem = getRemaining(a.id);
+          const pct = total > 0 ? Math.min(100, Math.round(rem / total * 100)) : 0;
+          const lb = lastBorrowMap[a.id] || { staffName: a.lastBorrower || "-", branch: a.lastBranch || "-" };
+          let bar = "bg-emerald-500", badge = '<span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-lg">ปกติ</span>';
+          if (rem === 0) { bar = "bg-rose-500"; badge = '<span class="bg-rose-100 text-rose-800 text-xs font-semibold px-2.5 py-1 rounded-lg">ของหมดคลัง</span>'; }
+          else if (rem <= 2) { bar = "bg-amber-500"; badge = '<span class="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-lg">สต็อกต่ำ</span>'; }
+          const img = a.image
+            ? `<img src="${esc(a.image)}" loading="lazy" onclick="openZoomModal(this.src)" class="h-12 w-12 object-cover rounded-xl border cursor-pointer hover:scale-105 transition-all mx-auto">`
+            : '<div class="h-12 w-12 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 rounded-xl border mx-auto">ไม่มีรูป</div>';
+          return `
+            <tr class="border-b border-slate-100 hover:bg-slate-50/80">
+              ${showCheck ? `<td class="p-3 text-center"><input type="checkbox" data-id="${esc(a.id)}" ${selectedAssetsForPR.has(a.id) ? "checked" : ""} onchange="toggleItemSelection(this.dataset.id, this.checked)" class="asset-checkbox rounded cursor-pointer"></td>` : ""}
+              <td class="p-3 font-mono font-bold text-slate-900 text-xs">${esc(a.id)}</td>
+              <td class="p-3 text-center">${img}</td>
+              <td class="p-3"><div class="font-bold text-slate-800 text-sm">${esc(a.name)}</div><div class="text-xs text-slate-400 mt-0.5">หมวดหมู่: ${esc(a.category)}</div></td>
+              <td class="p-3 text-slate-600 text-xs max-w-[140px] break-words">${esc(a.notes || "-")}</td>
+              <td class="p-3 text-xs"><div class="font-medium text-slate-800">${esc(lb.staffName)}</div><div class="text-[10px] text-slate-400">${esc(lb.branch)}</div></td>
+              <td class="p-3 text-center font-bold text-slate-700 text-sm">${total}</td>
+              <td class="p-3">
+                <div class="flex items-center justify-between text-xs font-bold mb-1"><span class="${rem > 0 ? "text-slate-800" : "text-rose-600"}">${rem} ชิ้น</span><span class="text-[10px] text-slate-400 font-normal">${pct}%</span></div>
+                <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div class="${bar} h-2 rounded-full" style="width:${pct}%"></div></div>
+              </td>
+              <td class="p-3 text-center whitespace-nowrap">${badge}</td>
+              ${showActions ? `<td class="p-3 text-center whitespace-nowrap">
+                <button data-id="${esc(a.id)}" onclick="openEditModal(this.dataset.id)" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs py-1 px-2.5 rounded-lg cursor-pointer mr-1 font-bold">✏️ แก้ไข</button>
+                <button data-id="${esc(a.id)}" onclick="handleDeleteAsset(this.dataset.id)" class="bg-rose-500 hover:bg-rose-600 text-white text-xs py-1 px-2.5 rounded-lg cursor-pointer">🗑️ ลบ</button>
+              </td>` : ""}
+            </tr>`;
+        }).join("");
+      }
+      renderPager("invPagination", invPage, invFiltered.length, INV_PAGE_SIZE, "gotoInvPage");
+      const sa = $("selectAllCheckbox");
+      if (sa) sa.checked = pageItems.length > 0 && pageItems.every(a => selectedAssetsForPR.has(a.id));
       updateBadge();
     }
+    function gotoInvPage(p) { invPage = p; renderInventoryPage(); }
 
-    function toggleSelectAll(masterCheckbox) {
-      const checkboxes = document.querySelectorAll('.asset-checkbox');
-      checkboxes.forEach(cb => {
-        cb.checked = masterCheckbox.checked;
-        if(masterCheckbox.checked) selectedAssetsForPR.add(cb.value);
-        else selectedAssetsForPR.delete(cb.value);
-      });
-      updateBadge();
+    function renderPager(elId, page, total, size, fn) {
+      const el = $(elId);
+      if (!total) { el.innerHTML = ""; return; }
+      const pages = Math.ceil(total / size), s = (page - 1) * size;
+      const btn = "px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-default cursor-pointer";
+      el.innerHTML = `
+        <span>แสดง ${s + 1}-${Math.min(s + size, total)} จาก ${total.toLocaleString()} รายการ</span>
+        <div class="flex items-center gap-1">
+          <button ${page <= 1 ? "disabled" : ""} onclick="${fn}(1)" class="${btn}">«</button>
+          <button ${page <= 1 ? "disabled" : ""} onclick="${fn}(${page - 1})" class="${btn}">‹ ก่อนหน้า</button>
+          <span class="px-2 font-bold text-slate-700">${page}/${pages}</span>
+          <button ${page >= pages ? "disabled" : ""} onclick="${fn}(${page + 1})" class="${btn}">ถัดไป ›</button>
+          <button ${page >= pages ? "disabled" : ""} onclick="${fn}(${pages})" class="${btn}">»</button>
+        </div>`;
     }
 
-    /* ⚡ ฟังก์ชันเพิ่มเติม: ล้างตัวเลือกที่ติ๊กไว้ทั้งหมด */
-    function clearAllSelections() {
-      selectedAssetsForPR.clear();
-      const masterCheckbox = document.getElementById("selectAllCheckbox");
-      if(masterCheckbox) masterCheckbox.checked = false;
-      
-      const checkboxes = document.querySelectorAll('.asset-checkbox');
-      checkboxes.forEach(cb => cb.checked = false);
-      
+    function toggleItemSelection(id, checked) {
+      checked ? selectedAssetsForPR.add(id) : selectedAssetsForPR.delete(id);
       updateBadge();
     }
-
-    /* ⚡ ฟังก์ชันเพิ่มเติม: รีเซ็ตค่าการค้นหาและ Filter ทั้งหมด */
+    function toggleSelectAll(master) {
+      document.querySelectorAll(".asset-checkbox").forEach(cb => { cb.checked = master.checked; toggleItemSelection(cb.dataset.id, master.checked); });
+    }
+    function clearAllSelections() { selectedAssetsForPR.clear(); renderInventoryPage(); }
     function clearSearchFilters() {
-      document.getElementById("searchInput").value = "";
-      document.getElementById("statusFilter").value = "ALL";
-      document.getElementById("categoryFilter").value = "ALL";
+      $("searchInput").value = ""; $("statusFilter").value = "ALL"; $("categoryFilter").value = "ALL";
       applyFilters();
     }
-
     function autoSelectNeedPurchase() {
       selectedAssetsForPR.clear();
-      cachedAssets.forEach(asset => {
-        let remaining = parseInt(asset.remaining);
-        if (isNaN(remaining)) remaining = parseInt(asset.total) || 0;
-        if (remaining <= 2) {
-          selectedAssetsForPR.add(asset.id);
-        }
-      });
-      applyFilters(); // แสดงผลตารางใหม่ตามที่ติ๊กเลือก
+      cachedAssets.forEach(a => { if (getRemaining(a.id) <= 2) selectedAssetsForPR.add(a.id); });
+      $("statusFilter").value = "ALL";
+      applyFilters();
+      alert(`⚡ เลือกรายการใกล้หมด/หมดคลังแล้ว ${selectedAssetsForPR.size} รายการ`);
     }
+    function updateBadge() { $("selectedCountBadge").innerText = selectedAssetsForPR.size; }
 
-    function updateBadge() {
-      document.getElementById("selectedCountBadge").innerText = selectedAssetsForPR.size;
-    }
-
-    function togglePRModal(show) {
-      const modal = document.getElementById("prFormModal");
-      if(show) modal.classList.remove("hidden");
-      else modal.classList.add("hidden");
-    }
-
-    function preparePRModal() {
-      if(selectedAssetsForPR.size === 0) {
-        alert("กรุณาติ๊กเลือกอุปกรณ์ที่ต้องการขออนุมัติจัดซื้ออย่างน้อย 1 รายการครับ");
+    /* =========================================================
+       📜 ประวัติการเบิก (Pagination 30 รายการ/หน้า)
+       ========================================================= */
+    function renderLogs() {
+      const tbody = $("logTableBody");
+      if (!globalLogData.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
+        $("logPagination").innerHTML = "";
         return;
       }
+      const start = (logPage - 1) * LOG_PAGE_SIZE;
+      tbody.innerHTML = globalLogData.slice(start, start + LOG_PAGE_SIZE).map((log, i) => `
+        <tr class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="p-3 text-center font-semibold text-slate-500">${start + i + 1}</td>
+          <td class="p-3 text-slate-500 whitespace-nowrap">${esc(log.timestamp)}</td>
+          <td class="p-3"><div class="font-bold text-slate-800">${esc(log.assetName)}</div><div class="text-[10px] text-slate-400 font-mono">${esc(log.assetId)}</div></td>
+          <td class="p-3 text-center font-bold text-slate-900">${esc(log.quantity)}</td>
+          <td class="p-3"><div class="font-medium">${esc(log.staffName)}</div><div class="text-[10px] text-slate-400">แผนก: ${esc(log.department)}</div></td>
+          <td class="p-3 text-slate-700">${esc(log.branch)}</td>
+          <td class="p-3 text-slate-600 max-w-[220px] break-words">${esc(log.notes || "-")}</td>
+          <td class="p-3">${log.image ? `<img src="${esc(log.image)}" loading="lazy" onclick="openZoomModal(this.src)" class="h-10 w-10 object-cover rounded-lg border cursor-pointer hover:scale-105 transition-all">` : '<span class="text-slate-400 text-[10px]">ไม่มีรูป</span>'}</td>
+        </tr>`).join("");
+      renderPager("logPagination", logPage, globalLogData.length, LOG_PAGE_SIZE, "gotoLogPage");
+    }
+    function gotoLogPage(p) { logPage = p; renderLogs(); }
 
-      const today = new Date();
-      const dateStr = today.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-      const prNo = "PR-HR-" + today.getFullYear() + String(today.getMonth()+1).padStart(2, '0') + String(today.getDate()).padStart(2, '0') + "-" + Math.floor(100 + Math.random() * 900);
+    function exportToCSV() {
+      if (!globalLogData.length) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
+      const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+      let csv = "﻿ลำดับ,วัน-เวลา,รหัสอุปกรณ์สำนักงาน,ชื่ออุปกรณ์สำนักงาน,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
+      globalLogData.forEach((l, i) => {
+        csv += [i + 1, q(l.timestamp), q(l.assetId), q(l.assetName), l.quantity, q(l.staffName), q(l.department), q(l.branch), q(l.notes)].join(",") + "\n";
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      link.download = `รายงานการเบิกจ่ายอุปกรณ์สำนักงาน_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.csv`;
+      document.body.appendChild(link); link.click(); link.remove();
+    }
 
-      document.getElementById("prNumber").value = prNo;
-      document.getElementById("prDate").value = dateStr;
+    /* =========================================================
+       ➕ เพิ่ม / แก้ไข / ลบ อุปกรณ์ (ADMIN)
+       ========================================================= */
+    function toggleModal(show) {
+      $("addAssetModal").classList.toggle("hidden", !show);
+      if (!show) { $("newAssetForm").reset(); newAssetBase64 = ""; }
+    }
+    function openAddModal() {
+      $("modalTitle").innerText = "➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง";
+      $("formAction").value = "addAsset";
+      $("newAssetId").disabled = false;
+      $("totalLabel").innerHTML = 'จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span>';
+      $("imgOptionalNote").innerText = "";
+      toggleModal(true);
+    }
+    function openEditModal(id) {
+      const a = findAsset(id);
+      if (!a) return;
+      $("modalTitle").innerText = "✏️ แก้ไขข้อมูล / เพิ่มจำนวนสต็อกสินค้า";
+      $("formAction").value = "editAsset";
+      $("newAssetId").value = a.id; $("newAssetId").disabled = true;
+      $("newAssetName").value = a.name;
+      $("newAssetCategory").value = a.category;
+      $("newAssetTotal").value = a.total;
+      $("newAssetNotes").value = a.notes === "-" ? "" : (a.notes || "");
+      $("totalLabel").innerHTML = 'ปรับปรุงยอดจำนวนทั้งหมดในคลัง <span class="text-blue-600">(เพิ่มยอดรวมที่นี่)</span> <span class="text-red-500">*</span>';
+      $("imgOptionalNote").innerText = "(ปล่อยว่างได้หากไม่ต้องการเปลี่ยนรูปภาพ)";
+      toggleModal(true);
+    }
 
-      const itemsList = document.getElementById("prItemsList");
-      itemsList.innerHTML = "";
+    async function handleAssetSubmit(e) {
+      e.preventDefault();
+      const btn = $("addBtn"), action = $("formAction").value;
+      btn.disabled = true; btn.innerText = "กำลังบันทึกข้อมูล...";
+      try {
+        const r = await apiPost({
+          action: action,
+          id: $("newAssetId").value.trim(),
+          name: $("newAssetName").value.trim(),
+          category: $("newAssetCategory").value.trim(),
+          total: $("newAssetTotal").value,
+          notes: $("newAssetNotes").value.trim() || "-",
+          image: newAssetBase64
+        });
+        if (r.status === "error") throw new Error(r.message);
+        alert(action === "addAsset" ? "🎉 เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!" : "✏️ อัปเดตข้อมูลพัสดุเรียบร้อย!");
+        toggleModal(false);
+        loadData();
+      } catch (err) {
+        alert("❌ บันทึกไม่สำเร็จ: " + err.message);
+      } finally {
+        btn.disabled = false; btn.innerText = "บันทึกข้อมูล";
+      }
+    }
 
-      selectedAssetsForPR.forEach(id => {
-        const item = cachedAssets.find(a => a.id === id);
-        if(!item) return;
+    async function handleDeleteAsset(id) {
+      const a = findAsset(id);
+      if (!confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบอุปกรณ์สำนักงานรายการนี้ออกจากคลัง?\n[${id}] - ${a ? a.name : ""}`)) return;
+      try {
+        const r = await apiPost({ action: "deleteAsset", assetId: id });
+        if (r.status === "error") throw new Error(r.message);
+        selectedAssetsForPR.delete(id);
+        alert("🗑️ ลบข้อมูลสำเร็จ");
+        loadData();
+      } catch (err) { alert("❌ ลบไม่สำเร็จ: " + err.message); }
+    }
 
-        let remaining = parseInt(item.remaining);
-        if (isNaN(remaining)) remaining = parseInt(item.total) || 0;
+    /* =========================================================
+       📄 ใบขออนุมัติจัดซื้อ (PR)
+       ========================================================= */
+    function togglePRModal(show) { $("prFormModal").classList.toggle("hidden", !show); }
 
-        const row = `
+    function preparePRModal() {
+      if (!selectedAssetsForPR.size) { alert("กรุณาติ๊กเลือกอุปกรณ์ที่ต้องการขออนุมัติจัดซื้ออย่างน้อย 1 รายการครับ"); return; }
+      const d = new Date();
+      $("prNumber").value = "PR-HR-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + Math.floor(100 + Math.random() * 900);
+      $("prDate").value = d.toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" });
+      $("prItemsList").innerHTML = [...selectedAssetsForPR].map(id => {
+        const it = findAsset(id); if (!it) return "";
+        return `
           <div class="flex items-center justify-between p-2.5 bg-slate-50 border rounded-xl gap-2 text-xs">
             <div class="flex-1">
-              <div class="font-bold text-slate-800">${item.name} <span class="font-mono text-slate-400 font-normal">(${item.id})</span></div>
-              <div class="text-[11px] text-slate-500">คงเหลือในคลัง: <span class="font-bold text-rose-600">${remaining}</span> ชิ้น</div>
+              <div class="font-bold text-slate-800">${esc(it.name)} <span class="font-mono text-slate-400 font-normal">(${esc(it.id)})</span></div>
+              <div class="text-[11px] text-slate-500">คงเหลือในคลัง: <span class="font-bold text-rose-600">${getRemaining(id)}</span> ชิ้น</div>
             </div>
             <div class="flex items-center gap-1">
               <label class="font-semibold text-slate-600">จำนวนที่เสนอซื้อ:</label>
-              <input type="number" id="prQty_${item.id}" value="5" min="1" class="w-16 px-2 py-1 border rounded-lg text-center font-bold text-blue-900 bg-white">
+              <input type="number" data-pr-qty="${esc(it.id)}" value="5" min="1" class="w-16 px-2 py-1 border rounded-lg text-center font-bold text-blue-900 bg-white">
               <span class="text-slate-500">ชิ้น</span>
             </div>
-          </div>
-        `;
-        itemsList.insertAdjacentHTML('beforeend', row);
-      });
-
+          </div>`;
+      }).join("");
       togglePRModal(true);
     }
 
     function generateAndPrintPR() {
-      document.getElementById("printPRNo").innerText = document.getElementById("prNumber").value;
-      document.getElementById("printPRDate").innerText = document.getElementById("prDate").value;
-      document.getElementById("printPRRequester").innerText = document.getElementById("prRequester").value;
-      document.getElementById("printPRPurpose").innerText = document.getElementById("prPurpose").value;
-
-      const printBody = document.getElementById("printPRTableBody");
-      printBody.innerHTML = "";
-
-      let count = 1;
-      selectedAssetsForPR.forEach(id => {
-        const item = cachedAssets.find(a => a.id === id);
-        if(!item) return;
-
-        let remaining = parseInt(item.remaining);
-        if (isNaN(remaining)) remaining = parseInt(item.total) || 0;
-
-        const buyQtyInput = document.getElementById(`prQty_${item.id}`);
-        const buyQty = buyQtyInput ? buyQtyInput.value : 1;
-
-        const tr = `
+      $("printPRNo").innerText = $("prNumber").value;
+      $("printPRDate").innerText = $("prDate").value;
+      $("printPRRequester").innerText = $("prRequester").value;
+      $("printPRPurpose").innerText = $("prPurpose").value;
+      const qtyOf = id => { const el = [...document.querySelectorAll("[data-pr-qty]")].find(x => x.dataset.prQty === id); return el ? el.value : 1; };
+      let n = 1;
+      $("printPRTableBody").innerHTML = [...selectedAssetsForPR].map(id => {
+        const it = findAsset(id); if (!it) return "";
+        return `
           <tr class="border-b border-slate-300">
-            <td class="border border-slate-400 p-2 text-center">${count++}</td>
-            <td class="border border-slate-400 p-2 font-mono font-bold">${item.id}</td>
-            <td class="border border-slate-400 p-2 font-bold">${item.name}</td>
-            <td class="border border-slate-400 p-2 text-center">${item.category}</td>
-            <td class="border border-slate-400 p-2 text-center">${remaining} ชิ้น</td>
-            <td class="border border-slate-400 p-2 text-center font-black text-slate-900 bg-slate-100">${buyQty} ชิ้น</td>
-            <td class="border border-slate-400 p-2 text-slate-600">${item.notes || '-'}</td>
-          </tr>
-        `;
-        printBody.insertAdjacentHTML('beforeend', tr);
-      });
-
+            <td class="border border-slate-400 p-2 text-center">${n++}</td>
+            <td class="border border-slate-400 p-2 font-mono font-bold">${esc(it.id)}</td>
+            <td class="border border-slate-400 p-2 font-bold">${esc(it.name)}</td>
+            <td class="border border-slate-400 p-2 text-center">${esc(it.category)}</td>
+            <td class="border border-slate-400 p-2 text-center">${getRemaining(id)} ชิ้น</td>
+            <td class="border border-slate-400 p-2 text-center font-black text-slate-900 bg-slate-100">${esc(qtyOf(id))} ชิ้น</td>
+            <td class="border border-slate-400 p-2 text-slate-600">${esc(it.notes || "-")}</td>
+          </tr>`;
+      }).join("");
       togglePRModal(false);
-      window.print();
+      printElement("prPrintTemplate");
     }
 
-    function applyFilters() {
-      const searchVal = document.getElementById("searchInput").value.toLowerCase().trim();
-      const statusVal = document.getElementById("statusFilter").value;
-      const categoryVal = document.getElementById("categoryFilter").value;
-      const searchCard = document.getElementById("searchResultCard");
+    /* =========================================================
+       ✍️ ส่งคำขอเบิก (สถานะรออนุมัติ — ยังไม่ตัดสต็อก)
+       ========================================================= */
+    async function handleSubmit(e) {
+      e.preventDefault();
+      const assetId = $("assetSelect").value;
+      const asset = findAsset(assetId);
+      const qty = parseInt($("quantity").value) || 0;
 
-      const filtered = cachedAssets.filter(asset => {
-        const matchesSearch = asset.name.toLowerCase().includes(searchVal) || asset.id.toLowerCase().includes(searchVal);
-        const matchesCategory = categoryVal === "ALL" || asset.category === categoryVal;
+      if (!asset) { alert("🔍 กรุณาค้นหาและเลือกอุปกรณ์ที่ต้องการเบิกจากรายการ"); $("assetSearch").focus(); return; }
+      if (qty > getRemaining(assetId)) { alert(`⚠️ จำนวนที่ขอเบิก (${qty}) มากกว่ายอดคงเหลือ (${getRemaining(assetId)})`); return; }
+      if (!$("branch").value) { alert("กรุณาเลือกสาขา"); return; }
+      if (!compressedBase64) { alert("กรุณาแนบรูปภาพหลักฐาน หรือรอระบบโหลดรูปภาพสักครู่"); return; }
+      if (sigPads.requester.isEmpty) { alert("✍️ กรุณาเซ็นลายเซ็นผู้ขอเบิกก่อนส่งคำขอ"); return; }
 
-        let remaining = parseInt(asset.remaining);
-        if (isNaN(remaining)) remaining = parseInt(asset.total) || 0;
-        if (remaining < 0) remaining = 0;
-
-        let matchesStatus = true;
-        if (statusVal === "NORMAL") matchesStatus = remaining > 2;
-        else if (statusVal === "LOW") matchesStatus = remaining > 0 && remaining <= 2;
-        else if (statusVal === "OUT") matchesStatus = remaining === 0;
-
-        return matchesSearch && matchesCategory && matchesStatus;
-      });
-
-      if (searchVal !== "") {
-        searchCard.classList.remove("hidden");
-        if (filtered.length === 1) {
-          const item = filtered[0];
-          const total = parseInt(item.total) || 0;
-          let remaining = parseInt(item.remaining);
-          if (isNaN(remaining)) remaining = total;
-          const borrowed = total - remaining > 0 ? total - remaining : 0;
-          const stockPercent = total > 0 ? Math.min(100, Math.round((remaining / total) * 100)) : 0;
-
-          searchCard.innerHTML = `
-            <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div class="flex items-center gap-3">
-                ${item.image ? `<img src="${item.image}" onclick="openZoomModal('${item.image}')" class="h-14 w-14 object-cover rounded-xl border shadow-sm cursor-pointer">` : `<div class="h-14 w-14 bg-slate-200 rounded-xl flex items-center justify-center text-xs text-slate-500">ไม่มีรูป</div>`}
-                <div>
-                  <div class="flex items-center gap-2">
-                    <span class="font-mono text-xs bg-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">${item.id}</span>
-                  </div>
-                  <h4 class="text-base font-black text-slate-900 mt-0.5">${item.name}</h4>
-                  <p class="text-xs text-slate-500">หมวดหมู่: ${item.category} | สถานที่เก็บ: ${item.notes || '-'}</p>
-                </div>
-              </div>
-              <div class="flex items-center gap-6 bg-white p-3 rounded-xl border border-slate-200 shadow-xs w-full md:w-auto justify-around">
-                <div class="text-center"><p class="text-[10px] font-semibold text-slate-400">ทั้งหมด</p><p class="text-base font-black text-slate-700">${total}</p></div>
-                <div class="h-8 w-[1px] bg-slate-200"></div>
-                <div class="text-center"><p class="text-[10px] font-semibold text-slate-400">เบิกแล้ว</p><p class="text-base font-black text-indigo-600">${borrowed}</p></div>
-                <div class="h-8 w-[1px] bg-slate-200"></div>
-                <div class="text-center px-2"><p class="text-[10px] font-bold text-emerald-600">คงเหลือจริง</p><p class="text-2xl font-black ${remaining > 0 ? 'text-emerald-600' : 'text-rose-600'}">${remaining} <span class="text-xs font-normal">(${stockPercent}%)</span></p></div>
-              </div>
-            </div>
-          `;
-        } else {
-          searchCard.innerHTML = `<div class="text-xs text-slate-600 font-medium">🔍 ผลการค้นหาสำหรับ "<strong>${searchVal}</strong>": พบทั้งหมด <strong>${filtered.length}</strong> รายการ</div>`;
-        }
-      } else {
-        searchCard.classList.add("hidden");
+      const btn = $("submitBtn");
+      btn.disabled = true;
+      $("btnText").innerHTML = '<span class="loader mr-1"></span> กำลังส่งคำขอ...';
+      try {
+        const r = await apiPost({
+          action: "createRequest",
+          staffName: $("staffName").value.trim(),
+          department: $("department").value.trim(),
+          branch: $("branch").value,
+          assetId: asset.id, assetName: asset.name, category: asset.category || "",
+          quantity: qty,
+          notes: $("requisitionNotes").value.trim() || "-",
+          imageBase64: compressedBase64,
+          requesterSig: sigPads.requester.toDataURL()
+        });
+        if (r.status !== "success") throw new Error(r.message || "ไม่ทราบสาเหตุ");
+        alert(`✅ ส่งคำขอเบิกเรียบร้อย\nเลขที่ใบเบิก: ${r.requestId}\nสถานะ: รออนุมัติ`);
+        $("assetForm").reset();
+        clearPickerAsset(false);
+        compressedBase64 = "";
+        $("previewContainer").classList.add("hidden");
+        sigPads.requester.clear();
+        applyFormDefaults();
+        reqStatusFilter = "PENDING";
+        loadRequests();
+      } catch (err) {
+        alert("❌ ส่งคำขอไม่สำเร็จ: " + err.message);
+      } finally {
+        btn.disabled = false;
+        $("btnText").innerText = "📨 ส่งคำขอเบิก (รออนุมัติ)";
       }
-
-      renderAssetTable(filtered);
     }
 
-    function exportToCSV() {
-      if(globalLogData.length === 0) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
-      let csvContent = "\uFEFF"; 
-      csvContent += "ลำดับ,วัน-เวลา,รหัสอุปกรณ์สำนักงาน,ชื่ออุปกรณ์สำนักงาน,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
-      
-      globalLogData.forEach((log, index) => {
-        let row = [
-          index + 1,
-          `"${log.timestamp}"`,
-          `"${log.assetId}"`,
-          `"${(log.assetName || '').replace(/"/g, '""')}"`,
-          log.quantity,
-          `"${(log.staffName || '').replace(/"/g, '""')}"`,
-          `"${log.department}"`,
-          `"${(log.branch || '').replace(/"/g, '""')}"`,
-          `"${(log.notes || '').replace(/"/g, '""')}"`
-        ];
-        csvContent += row.join(",") + "\n";
+    /* =========================================================
+       📋 รายการใบขอเบิก
+       ========================================================= */
+    let globalRequests = [];
+    let reqStatusFilter = "PENDING";
+    let reqPage = 1;
+    const reqDetailCache = {};
+    let currentApproveId = null;
+
+    async function loadRequests() {
+      try {
+        const data = await apiGet("getRequests");
+        globalRequests = Array.isArray(data) ? data : (data.data || []);
+        renderRequests();
+        if (cachedAssets.length) renderDashboard();
+      } catch (err) {
+        console.error(err);
+        $("reqTableBody").innerHTML = '<tr><td colspan="9" class="p-4 text-center text-red-500">โหลดใบขอเบิกไม่สำเร็จ</td></tr>';
+      }
+    }
+    function setReqStatus(s) { reqStatusFilter = s; reqPage = 1; renderRequests(); }
+    function gotoReqPage(p) { reqPage = p; renderRequests(); }
+
+    function statusBadge(s) {
+      if (s === "APPROVED") return '<span class="bg-emerald-100 text-emerald-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">✅ อนุมัติแล้ว · รอรับของ</span>';
+      if (s === "ISSUED") return '<span class="bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">📦 จ่ายของแล้ว</span>';
+      if (s === "REJECTED") return '<span class="bg-rose-100 text-rose-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">❌ ไม่อนุมัติ</span>';
+      if (s === "PROCESSING") return '<span class="bg-sky-100 text-sky-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⚙️ กำลังดำเนินการ</span>';
+      return '<span class="bg-amber-100 text-amber-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⏳ รออนุมัติ</span>';
+    }
+
+    function renderRequests() {
+      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, REJECTED: 0, ALL: globalRequests.length };
+      globalRequests.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+      document.querySelectorAll("[data-req-tab]").forEach(btn => {
+        const s = btn.dataset.reqTab;
+        btn.querySelector(".cnt").innerText = counts[s] || 0;
+        btn.className = "text-xs font-bold py-1.5 px-3 rounded-xl cursor-pointer transition-all " +
+          (s === reqStatusFilter ? "bg-white text-indigo-900 shadow" : "bg-white/10 hover:bg-white/20 text-white border border-white/20");
       });
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `รายงานการเบิกจ่ายอุปกรณ์สำนักงาน_${new Date().toLocaleDateString('th-TH')}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+
+      const q = $("reqSearch").value.toLowerCase().trim();
+      const list = globalRequests.filter(r =>
+        (reqStatusFilter === "ALL" || r.status === reqStatusFilter) &&
+        (!q || [r.requestId, r.staffName, r.assetName, r.assetId, r.branch, r.department].join(" ").toLowerCase().includes(q)));
+      const pages = Math.max(1, Math.ceil(list.length / REQ_PAGE_SIZE));
+      if (reqPage > pages) reqPage = pages;
+      const pageItems = list.slice((reqPage - 1) * REQ_PAGE_SIZE, reqPage * REQ_PAGE_SIZE);
+
+      $("reqTableBody").innerHTML = !pageItems.length
+        ? '<tr><td colspan="9" class="p-6 text-center text-slate-400">ไม่มีใบขอเบิกในสถานะนี้</td></tr>'
+        : pageItems.map(r => {
+            const id = esc(r.requestId);
+            let act = '<span class="text-slate-300">-</span>';
+            if (r.status === "PENDING") act = canApprove()
+              ? `<button data-id="${id}" onclick="openApproveModal(this.dataset.id)" class="bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer">✍️ พิจารณา</button>`
+              : '<span class="text-amber-600 text-[11px] font-semibold">รอผู้อนุมัติ</span>';
+            else if (r.status === "APPROVED" || r.status === "ISSUED") {
+              act = `<button data-id="${id}" onclick="printRequisition(this.dataset.id)" class="bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer">🖨️ พิมพ์ใบเบิก</button>`;
+              if (r.status === "ISSUED" && !r.hasIssuerSig && canIssue())
+                act += ` <button data-id="${id}" onclick="issueRequest(this.dataset.id)" class="bg-amber-500 hover:bg-amber-600 text-slate-900 py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1" title="ใบนี้จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR">✍️ เซ็นผู้จ่าย</button>`;
+              if (r.status === "APPROVED" && canIssue())
+                act += ` <button data-id="${id}" onclick="issueRequest(this.dataset.id)" class="bg-slate-800 hover:bg-slate-900 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1">📦 จ่ายของแล้ว</button>`;
+            }
+            const reason = r.status === "REJECTED" && r.rejectReason ? `<div class="text-[10px] text-rose-500 mt-1 max-w-[160px] mx-auto break-words">${esc(r.rejectReason)}</div>` : "";
+            return `
+              <tr class="border-b border-slate-100 hover:bg-slate-50">
+                <td class="p-3 font-mono font-bold text-indigo-900 whitespace-nowrap">${id}</td>
+                <td class="p-3 text-slate-500 whitespace-nowrap">${esc(r.timestamp)}</td>
+                <td class="p-3"><div class="font-bold text-slate-800">${esc(r.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.assetId)}</div></td>
+                <td class="p-3 text-center font-black text-slate-900">${esc(r.quantity)}</td>
+                <td class="p-3"><div class="font-medium">${esc(r.staffName)}</div><div class="text-[10px] text-slate-400">แผนก: ${esc(r.department)}</div></td>
+                <td class="p-3 text-slate-700">${esc(r.branch)}</td>
+                <td class="p-3 text-center">${statusBadge(r.status)}${reason}</td>
+                <td class="p-3"><div>${esc(r.approverName || "-")}</div><div class="text-[10px] text-slate-400">${esc(r.actionAt || "")}</div>${r.status === "ISSUED" ? `<div class="text-[10px] text-slate-500 mt-1">📦 จ่ายโดย ${esc(r.issuedByName || "-")} · ${esc(r.issuedAt || "")}</div>` : ""}</td>
+                <td class="p-3 text-center whitespace-nowrap">${act}</td>
+              </tr>`;
+          }).join("");
+      renderPager("reqPagination", reqPage, list.length, REQ_PAGE_SIZE, "gotoReqPage");
+    }
+
+    async function fetchRequestDetail(id, force) {
+      if (!force && reqDetailCache[id]) return reqDetailCache[id];
+      const j = await apiGet("getRequest", { id: id });
+      if (j.status !== "success") throw new Error(j.message || "ไม่พบข้อมูลใบเบิก");
+      return (reqDetailCache[id] = j.data);
+    }
+
+    /* =========================================================
+       ✅ Modal อนุมัติ / ไม่อนุมัติ
+       ========================================================= */
+    function toggleApproveModal(show) { $("approveModal").classList.toggle("hidden", !show); }
+
+    async function openApproveModal(id) {
+      if (!canApprove()) return;
+      currentApproveId = id;
+      $("apvReqId").innerText = id;
+      $("apvRejectReason").value = "";
+      $("apvName").value = session.user.fullName || session.user.username;
+      let lastPos = "";
+      try { lastPos = localStorage.getItem("hr_apv_pos") || ""; } catch (_) {}
+      setPosition(lastPos);
+      const box = $("apvDetail");
+      box.innerHTML = '<div class="p-6 text-center text-slate-400 text-xs"><span class="loader mr-1"></span> กำลังโหลดรายละเอียด...</div>';
+      toggleApproveModal(true);
+      sigPads.approver.setup();
+
+      try {
+        const r = await fetchRequestDetail(id, true);
+        const qty = parseInt(r.quantity) || 0, a = findAsset(r.assetId), rem = a ? getRemaining(a.id) : null;
+        const stock = rem === null
+          ? '<div class="p-2.5 rounded-xl bg-slate-100 text-slate-600 text-xs">ไม่พบอุปกรณ์นี้ในคลัง (อาจถูกลบไปแล้ว)</div>'
+          : rem >= qty
+            ? `<div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">🟢 สต็อกเพียงพอ: คงเหลือ ${rem} ชิ้น → หลังอนุมัติเหลือ ${rem - qty} ชิ้น</div>`
+            : `<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">🔴 สต็อกไม่พอ: คงเหลือ ${rem} ชิ้น แต่ขอเบิก ${qty} ชิ้น</div>`;
+        const f = (l, v) => `<div><p class="text-[10px] text-slate-400">${l}</p><p class="font-bold text-slate-800">${esc(v || "-")}</p></div>`;
+        box.innerHTML = `
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-50 border border-slate-200 rounded-xl p-4">
+              ${f("วันที่ขอเบิก", r.timestamp)}${f("ผู้ขอเบิก", r.staffName)}${f("แผนก", r.department)}
+              ${f("สาขา", r.branch)}${f("อุปกรณ์", `${r.assetName} (${r.assetId})`)}${f("จำนวนที่ขอเบิก", qty + " ชิ้น")}
+              <div class="col-span-full"><p class="text-[10px] text-slate-400">เหตุผลการเบิก</p><p class="text-slate-700">${esc(r.notes || "-")}</p></div>
+            </div>
+            ${stock}
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div class="border border-slate-200 rounded-xl p-2 text-center"><p class="text-[10px] text-slate-400 mb-1">รูปหลักฐาน</p>
+                ${r.imageUrl ? `<img src="${esc(r.imageUrl)}" onclick="openZoomModal(this.src)" class="h-28 mx-auto object-contain rounded-lg cursor-pointer">` : '<div class="h-28 flex items-center justify-center text-slate-300">ไม่มีรูป</div>'}</div>
+              <div class="border border-slate-200 rounded-xl p-2 text-center"><p class="text-[10px] text-slate-400 mb-1">ลายเซ็นผู้ขอเบิก</p>
+                ${r.requesterSig ? `<img src="${esc(r.requesterSig)}" class="h-28 mx-auto object-contain">` : '<div class="h-28 flex items-center justify-center text-slate-300">ไม่มีลายเซ็น</div>'}</div>
+            </div>
+          </div>`;
+      } catch (err) {
+        box.innerHTML = `<div class="p-4 text-center text-red-500 text-xs">โหลดรายละเอียดไม่สำเร็จ: ${esc(err.message)}</div>`;
+      }
+    }
+
+    async function submitDecision(isApprove) {
+      const id = currentApproveId;
+      const position = getPosition();
+      const reason = $("apvRejectReason").value.trim();
+      if (isApprove) {
+        if (sigPads.approver.isEmpty) { alert("✍️ กรุณาเซ็นลายเซ็นผู้อนุมัติก่อนกดอนุมัติ"); return; }
+        const r = reqDetailCache[id], rem = r ? getRemaining(r.assetId) : null;
+        if (r && (parseInt(r.quantity) || 0) > rem && !confirm("⚠️ สต็อกไม่พอสำหรับใบเบิกนี้ ต้องการอนุมัติต่อหรือไม่?")) return;
+
+      } else {
+        if (!reason) { alert("กรุณาระบุเหตุผลที่ไม่อนุมัติ"); $("apvRejectReason").focus(); return; }
+        if (!confirm(`ยืนยัน "ไม่อนุมัติ" ใบเบิก ${id}?`)) return;
+      }
+      try { localStorage.setItem("hr_apv_pos", position); } catch (_) {}
+
+      const btn = $(isApprove ? "apvApproveBtn" : "apvRejectBtn"), old = btn.innerHTML;
+      $("apvApproveBtn").disabled = $("apvRejectBtn").disabled = true;
+      btn.innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
+      try {
+        const r = await apiPost({
+          action: isApprove ? "approveRequest" : "rejectRequest",
+          requestId: id, approverPosition: position, rejectReason: reason,
+          approverSig: sigPads.approver.isEmpty ? "" : sigPads.approver.toDataURL()
+        });
+        if (r.status !== "success") throw new Error(r.message || "ไม่ทราบสาเหตุ");
+        delete reqDetailCache[id];
+        toggleApproveModal(false);
+        await loadData();
+        showToast(isApprove
+          ? `✅ อนุมัติใบเบิก ${id} แล้ว — ผู้ขอเบิกพิมพ์ใบเบิกไปรับของ หรือ HR จ่ายของจากรายการในแอปได้เลย`
+          : `บันทึก "ไม่อนุมัติ" ใบเบิก ${id} แล้ว`, isApprove ? "ok" : "warn");
+      } catch (err) {
+        alert("❌ ดำเนินการไม่สำเร็จ: " + err.message);
+      } finally {
+        $("apvApproveBtn").disabled = $("apvRejectBtn").disabled = false;
+        btn.innerHTML = old;
+      }
+    }
+
+    /* =========================================================
+       🖨️ พิมพ์ใบเบิกพัสดุ (นำไปรับของที่ HR)
+       ========================================================= */
+    async function printRequisition(id) {
+      let r;
+      try { r = await fetchRequestDetail(id, true); }
+      catch (err) { alert("โหลดข้อมูลใบเบิกไม่สำเร็จ: " + err.message); return; }
+      if (r.status !== "APPROVED" && r.status !== "ISSUED") { alert("พิมพ์ได้เฉพาะใบเบิกที่ได้รับการอนุมัติแล้ว"); return; }
+
+      const asset = findAsset(r.assetId) || {};
+      const sig = src => src ? `<img src="${esc(src)}" style="height:58px;max-width:100%;object-fit:contain;display:block;margin:0 auto;">` : '<div style="height:58px;"></div>';
+      const box = (title, s, name, pos, date) => `
+        <div style="border:1px solid #94a3b8;border-radius:8px;padding:10px 8px;text-align:center;font-size:11px;">
+          <div style="font-weight:800;margin-bottom:4px;">${title}</div>${sig(s)}
+          <div style="border-top:1px dotted #475569;margin:4px 10px;"></div>
+          <div>( ${name ? esc(name) : "......................................"} )</div>
+          <div style="color:#64748b;font-size:10px;margin-top:2px;">${pos ? esc(pos) : "ตำแหน่ง ............................"}</div>
+          <div style="color:#64748b;font-size:10px;">วันที่ ${date ? esc(date) : "......../......../........"}</div>
+        </div>`;
+      const td = "border:1px solid #64748b;padding:7px;";
+      const printedAt = new Date().toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+      const printedBy = session ? (session.user.fullName || session.user.username) : "";
+
+      const tpl = $("reqPrintTemplate");
+      tpl.innerHTML = `
+        <div style="font-family:Sarabun,sans-serif;color:#0f172a;font-size:12.5px;line-height:1.5;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:20px;font-weight:900;">ใบเบิกพัสดุ / อุปกรณ์สำนักงาน</div>
+              <div style="font-size:11px;color:#475569;letter-spacing:.5px;">MATERIAL REQUISITION SLIP · HR SITEASSET TRACKER</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:10px;color:#475569;">เลขที่ใบเบิก</div>
+              <div style="font-family:monospace;font-size:16px;font-weight:900;">${esc(r.requestId)}</div>
+              <div style="display:inline-block;margin-top:6px;border:2px solid #059669;color:#059669;font-weight:900;padding:2px 12px;border-radius:6px;transform:rotate(-4deg);">${r.status === "ISSUED" ? "✔ จ่ายของแล้ว" : "✔ อนุมัติแล้ว"}</div>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;">
+            <tr><td style="padding:3px 0;width:50%;"><b>วันที่ขอเบิก:</b> ${esc(r.timestamp)}</td><td style="padding:3px 0;"><b>สาขา:</b> ${esc(r.branch)}</td></tr>
+            <tr><td style="padding:3px 0;"><b>ผู้ขอเบิก:</b> ${esc(r.staffName)}</td><td style="padding:3px 0;"><b>แผนก:</b> ${esc(r.department)}</td></tr>
+            <tr><td style="padding:3px 0;"><b>ผู้อนุมัติ:</b> ${esc(r.approverName)}${r.approverPosition ? " (" + esc(r.approverPosition) + ")" : ""}</td><td style="padding:3px 0;"><b>วันที่อนุมัติ:</b> ${esc(r.actionAt)}</td></tr>
+          </table>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
+            <thead><tr style="background:#e2e8f0;font-weight:800;">
+              <th style="${td}width:40px;text-align:center;">ลำดับ</th><th style="${td}width:110px;">รหัสอุปกรณ์</th><th style="${td}">รายการพัสดุ / อุปกรณ์</th>
+              <th style="${td}width:90px;text-align:center;">หมวดหมู่</th><th style="${td}width:80px;text-align:center;">จำนวนขอเบิก</th><th style="${td}width:80px;text-align:center;">จำนวนจ่ายจริง</th>
+            </tr></thead>
+            <tbody><tr>
+              <td style="${td}text-align:center;">1</td><td style="${td}font-family:monospace;font-weight:700;">${esc(r.assetId)}</td><td style="${td}font-weight:700;">${esc(r.assetName)}</td>
+              <td style="${td}text-align:center;">${esc(r.category || asset.category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${r.status === "ISSUED" ? esc(r.quantity) : ""}</td>
+            </tr></tbody>
+          </table>
+          <div style="margin-bottom:22px;"><b>เหตุผลการเบิก:</b> ${esc(r.notes || "-")}</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+            ${box("ผู้ขอเบิก", r.requesterSig, r.staffName, r.department ? "แผนก " + r.department : "", String(r.timestamp || "").split(" ")[0])}
+            ${box("ผู้อนุมัติ", r.approverSig, r.approverName, r.approverPosition, String(r.actionAt || "").split(" ")[0])}
+            ${box("ผู้จ่ายพัสดุ (HR)", r.issuerSig, r.issuedByName || "", r.issuedByName ? "ฝ่ายทรัพยากรบุคคล" : "", String(r.issuedAt || "").split(" ")[0])}
+            ${box("ผู้รับพัสดุ", r.receiverSig, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", r.receiverSig ? String(r.issuedAt || "").split(" ")[0] : "")}
+          </div>
+          <div style="margin-top:18px;padding:8px 10px;background:#f1f5f9;border-radius:6px;font-size:11px;color:#334155;">
+            📌 โปรดนำใบเบิกฉบับนี้ติดต่อรับพัสดุที่ฝ่ายทรัพยากรบุคคล (HR) · HR ลงนามผู้จ่ายและผู้รับลงนามเมื่อได้รับของครบถ้วน
+          </div>
+          <div style="margin-top:6px;text-align:right;font-size:9px;color:#94a3b8;">พิมพ์โดย ${esc(printedBy)} · ${esc(printedAt)}</div>
+        </div>`;
+      await waitImages(tpl);
+      printElement("reqPrintTemplate");
+    }
+
+    /* =========================================================
+       👥 จัดการสมาชิก (ADMIN)
+       ========================================================= */
+    let usersCache = [];
+    function toggleEl(id, show) { $(id).classList.toggle("hidden", !show); }
+
+    async function openMembers() {
+      if (!hasRole("ADMIN")) return;
+      toggleEl("membersModal", true);
+      $("userTableBody").innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400"><span class="loader mr-1"></span> กำลังโหลดรายชื่อสมาชิก...</td></tr>';
+      try {
+        const r = await apiGet("listUsers");
+        if (r.status !== "success") throw new Error(r.message);
+        usersCache = r.data || [];
+        renderUsers();
+      } catch (err) {
+        $("userTableBody").innerHTML = `<tr><td colspan="7" class="p-6 text-center text-red-500">โหลดไม่สำเร็จ: ${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    function renderUsers() {
+      const q = $("userSearch").value.toLowerCase().trim();
+      const list = usersCache.filter(u => !q || [u.username, u.fullName, u.branch, u.role].join(" ").toLowerCase().includes(q));
+      $("userTableBody").innerHTML = !list.length
+        ? '<tr><td colspan="7" class="p-6 text-center text-slate-400">ไม่พบสมาชิก</td></tr>'
+        : list.map(u => `
+          <tr class="border-t border-slate-100 hover:bg-slate-50 ${u.active ? "" : "opacity-60"}">
+            <td class="p-3 font-mono font-bold text-slate-800">${esc(u.username)}</td>
+            <td class="p-3">${esc(u.fullName)}</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded-md font-semibold ${(ROLE_INFO[u.role] || {}).badge || ""}">${esc((ROLE_INFO[u.role] || {}).label || u.role)}</span></td>
+            <td class="p-3">${esc(u.branch || "ทุกสาขา")}</td>
+            <td class="p-3 text-center">${u.active ? '<span class="text-emerald-600 font-semibold">● ใช้งาน</span>' : '<span class="text-slate-400 font-semibold">○ ปิดใช้งาน</span>'}</td>
+            <td class="p-3 text-slate-500 whitespace-nowrap">${esc(u.lastLogin || "-")}</td>
+            <td class="p-3 text-center"><button data-u="${esc(u.username)}" onclick="openUserForm(this.dataset.u)" class="bg-amber-500 hover:bg-amber-600 text-slate-900 py-1 px-2.5 rounded-lg font-bold cursor-pointer">✏️ แก้ไข</button></td>
+          </tr>`).join("");
+    }
+
+    function openUserForm(username) {
+      const u = username ? usersCache.find(x => x.username === username) : null;
+      fillBranchSelect($("ufBranch"), true);
+      $("ufMode").value = u ? "edit" : "add";
+      $("userFormTitle").innerText = u ? `✏️ แก้ไขสมาชิก: ${u.username}` : "➕ เพิ่มสมาชิก";
+      $("ufUsername").value = u ? u.username : "";
+      $("ufUsername").disabled = !!u;
+      $("ufFullName").value = u ? u.fullName : "";
+      $("ufRole").value = u ? u.role : "BRANCH";
+      $("ufBranch").value = u ? (u.branch || "") : "";
+      $("ufPassword").value = "";
+      $("ufPassword").required = !u;
+      $("ufPwReq").classList.toggle("hidden", !!u);
+      $("ufPwHint").innerText = u ? "เว้นว่างไว้ = ไม่เปลี่ยนรหัสผ่าน · กรอกใหม่ = รีเซ็ตรหัสผ่านให้ผู้ใช้" : "ผู้ใช้สามารถเปลี่ยนรหัสผ่านเองได้หลังเข้าสู่ระบบ";
+      $("ufActive").checked = u ? !!u.active : true;
+      $("ufMsg").innerText = "";
+      onUfRoleChange();
+      toggleEl("userFormModal", true);
+      setTimeout(() => (u ? $("ufFullName") : $("ufUsername")).focus(), 50);
+    }
+
+    function onUfRoleChange() {
+      const isBranch = $("ufRole").value === "BRANCH";
+      $("ufBranch").options[0].disabled = isBranch;               // พนักงานสาขาต้องมีสาขา
+      if (isBranch && !$("ufBranch").value) $("ufBranch").selectedIndex = 1;
+    }
+
+    async function submitUserForm(e) {
+      e.preventDefault();
+      const btn = $("ufSaveBtn");
+      $("ufMsg").innerText = "";
+      btn.disabled = true; btn.innerText = "กำลังบันทึก...";
+      try {
+        const r = await apiPost({
+          action: "saveUser",
+          mode: $("ufMode").value,
+          username: $("ufUsername").value.trim().toLowerCase(),
+          fullName: $("ufFullName").value.trim(),
+          role: $("ufRole").value,
+          branch: $("ufBranch").value,
+          password: $("ufPassword").value,
+          active: $("ufActive").checked
+        });
+        if (r.status !== "success") throw new Error(r.message || "บันทึกไม่สำเร็จ");
+        toggleEl("userFormModal", false);
+        await openMembers();
+      } catch (err) {
+        $("ufMsg").innerText = "⚠️ " + err.message;
+      } finally {
+        btn.disabled = false; btn.innerText = "💾 บันทึก";
+      }
+    }
+
+    /* 🔑 เปลี่ยนรหัสผ่านตัวเอง */
+    function togglePwModal(show) {
+      toggleEl("pwModal", show);
+      if (show) { ["pwOld", "pwNew", "pwNew2"].forEach(id => $(id).value = ""); $("pwMsg").innerText = ""; setTimeout(() => $("pwOld").focus(), 50); }
+    }
+    async function submitChangePw(e) {
+      e.preventDefault();
+      if ($("pwNew").value !== $("pwNew2").value) { $("pwMsg").innerText = "⚠️ รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน"; return; }
+      const btn = $("pwSaveBtn");
+      btn.disabled = true;
+      try {
+        const r = await apiPost({ action: "changePassword", oldPassword: $("pwOld").value, newPassword: $("pwNew").value });
+        if (r.status !== "success") throw new Error(r.message);
+        togglePwModal(false);
+        alert("✅ เปลี่ยนรหัสผ่านเรียบร้อย");
+      } catch (err) { $("pwMsg").innerText = "⚠️ " + err.message; }
+      finally { btn.disabled = false; }
+    }
+
+    function togglePw(id, btn) {
+      const el = $(id);
+      el.type = el.type === "password" ? "text" : "password";
+      btn.innerText = el.type === "password" ? "👁" : "🙈";
+    }
+
+    /* =========================================================
+       📊 Executive & Branch Consumption Dashboard
+       ========================================================= */
+    let dashPeriod = "MTD";
+    const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+    const fmtN = n => Number(n || 0).toLocaleString("th-TH");
+    const thDate = d => `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+    const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    /** แปลง "dd/MM/yyyy HH:mm" (รองรับปี พ.ศ.) → Date */
+    function parseTs(v) {
+      if (v instanceof Date) return v;
+      const m = String(v || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+      if (m) {
+        let y = +m[3]; if (y > 2400) y -= 543;
+        return new Date(y, +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+      }
+      const d = new Date(v);
+      return isNaN(d) ? null : d;
+    }
+
+    function setDashPeriod(p) {
+      dashPeriod = p;
+      $("dashCustomRange").classList.toggle("hidden", p !== "CUSTOM");
+      $("dashCustomRange").classList.toggle("flex", p === "CUSTOM");
+      if (p === "CUSTOM" && !$("dashFrom").value) {
+        const t = new Date(), f = new Date(t.getFullYear(), t.getMonth(), 1);
+        const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        $("dashFrom").value = iso(f); $("dashTo").value = iso(t);
+      }
+      renderDashboard();
+    }
+
+    /** ช่วงเวลาปัจจุบัน + ช่วงก่อนหน้า (ไว้เทียบ) + ความละเอียดของกราฟแนวโน้ม */
+    function dashRange() {
+      const now = new Date(), today = dayStart(now), endOfToday = new Date(today.getTime() + 864e5 - 1);
+      let from, to = endOfToday, prevFrom = null, prevTo = null, label;
+      if (dashPeriod === "MTD") {
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+        prevFrom = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        prevTo = new Date(Math.min(new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59), new Date(now.getFullYear(), now.getMonth() - 1, now.getDate(), 23, 59, 59)));
+        label = `MTD: ${thDate(from)} – ${thDate(today)}`;
+      } else if (dashPeriod === "YTD") {
+        from = new Date(now.getFullYear(), 0, 1);
+        prevFrom = new Date(now.getFullYear() - 1, 0, 1);
+        prevTo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 23, 59, 59);
+        label = `YTD: ${thDate(from)} – ${thDate(today)}`;
+      } else if (dashPeriod === "D30") {
+        from = new Date(today.getTime() - 29 * 864e5);
+        prevFrom = new Date(from.getTime() - 30 * 864e5); prevTo = new Date(from.getTime() - 1);
+        label = `30 วันล่าสุด: ${thDate(from)} – ${thDate(today)}`;
+      } else if (dashPeriod === "CUSTOM") {
+        const f = $("dashFrom").value, t = $("dashTo").value;
+        from = f ? new Date(f + "T00:00:00") : new Date(0);
+        to = t ? new Date(t + "T23:59:59") : endOfToday;
+        if (from > to) [from, to] = [dayStart(to), new Date(from.getTime() + 864e5 - 1)];
+        const len = to - from;
+        prevTo = new Date(from.getTime() - 1); prevFrom = new Date(from.getTime() - len - 1);
+        label = `กำหนดเอง: ${thDate(from)} – ${thDate(to)}`;
+      } else {
+        const dates = globalLogData.map(l => parseTs(l.timestamp)).filter(Boolean);
+        from = dates.length ? dayStart(new Date(Math.min(...dates))) : today;
+        label = "ข้อมูลทั้งหมด" + (dates.length ? `: ${thDate(from)} – ${thDate(today)}` : "");
+      }
+      const days = (to - from) / 864e5;
+      return { from, to, prevFrom, prevTo, label, daily: days <= 62 };
+    }
+
+    function dashRows(from, to) {
+      const br = $("dashBranch").value, cat = $("dashCategory").value;
+      return globalLogData.map(l => {
+        const a = findAsset(l.assetId);
+        return { ...l, _d: parseTs(l.timestamp), _qty: parseInt(l.quantity) || 0, _cat: (a && a.category) || "-", _branch: BRANCHES.includes(l.branch) ? l.branch : "อื่น ๆ" };
+      }).filter(l => l._d && l._d >= from && l._d <= to &&
+        (br === "ALL" || l._branch === br) && (cat === "ALL" || l._cat === cat));
+    }
+
+    function renderDashboard() {
+      if (!canPurchase() || !$("dashSection")) return;
+      // ตัวกรองสาขา/หมวด (สร้างครั้งแรก + คงค่าเดิม)
+      const bs = $("dashBranch"), bv = bs.value || "ALL";
+      bs.innerHTML = '<option value="ALL">-- ทุกสาขา --</option>' + BRANCHES.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+      bs.value = bv;
+      const cs = $("dashCategory"), cv = cs.value || "ALL";
+      const cats = [...new Set(cachedAssets.map(a => a.category).filter(Boolean))];
+      cs.innerHTML = '<option value="ALL">-- ทุกหมวดหมู่ --</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+      cs.value = cats.includes(cv) ? cv : "ALL";
+      document.querySelectorAll("[data-dash-period]").forEach(b => {
+        b.className = "text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer " + (b.dataset.dashPeriod === dashPeriod ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100");
+      });
+
+      const R = dashRange();
+      $("dashPeriodLabel").innerText = R.label;
+      const rows = dashRows(R.from, R.to);
+      const prevRows = R.prevFrom ? dashRows(R.prevFrom, R.prevTo) : null;
+      const totalQty = rows.reduce((s, l) => s + l._qty, 0);
+      const prevQty = prevRows ? prevRows.reduce((s, l) => s + l._qty, 0) : null;
+
+      // ---- สรุปรายสาขา ----
+      const branchKeys = [...BRANCHES, ...(rows.some(l => l._branch === "อื่น ๆ") ? ["อื่น ๆ"] : [])];
+      const byBranch = {};
+      branchKeys.forEach(b => byBranch[b] = { branch: b, qty: 0, count: 0, items: {}, last: null });
+      rows.forEach(l => {
+        const x = byBranch[l._branch]; x.qty += l._qty; x.count++;
+        x.items[l.assetName || l.assetId] = (x.items[l.assetName || l.assetId] || 0) + l._qty;
+        if (!x.last || l._d > x.last) x.last = l._d;
+      });
+      const branchList = Object.values(byBranch).sort((a, b) => b.qty - a.qty);
+      branchList.forEach(x => { const t = Object.entries(x.items).sort((a, b) => b[1] - a[1])[0]; x.topItem = t ? `${t[0]} (${fmtN(t[1])})` : "-"; });
+
+      // ---- Top อุปกรณ์ ----
+      const byItem = {};
+      rows.forEach(l => {
+        const k = String(l.assetId);
+        const x = byItem[k] || (byItem[k] = { id: k, name: l.assetName, cat: l._cat, qty: 0, count: 0, branches: new Set() });
+        x.qty += l._qty; x.count++; x.branches.add(l._branch);
+      });
+      const topItems = Object.values(byItem).sort((a, b) => b.qty - a.qty).slice(0, 10);
+
+      // ---- KPI tiles ----
+      const delta = prevQty === null ? "" : prevQty === 0
+        ? (totalQty ? '<span class="text-slate-500">ช่วงก่อนหน้าไม่มียอดเบิก</span>' : "")
+        : (() => { const pct = Math.round((totalQty - prevQty) / prevQty * 100);
+            return `<span class="${pct > 0 ? "text-rose-600" : pct < 0 ? "text-emerald-700" : "text-slate-500"}">${pct > 0 ? "▲" : pct < 0 ? "▼" : "■"} ${Math.abs(pct)}%</span> <span class="text-slate-500">เทียบช่วงก่อนหน้า (${fmtN(prevQty)})</span>`; })();
+      const topB = branchList.find(x => x.branch !== "อื่น ๆ" && x.qty) || null;   // ไม่นับข้อมูลสาขาเก่า/ปิดแล้ว
+      const tile = (label, value, sub) => `
+        <div class="rounded-2xl border border-slate-200 p-4">
+          <p class="text-[11px] font-semibold text-slate-500">${label}</p>
+          <p class="text-2xl font-black text-slate-900 mt-1 truncate">${value}</p>
+          <p class="text-[11px] mt-0.5 truncate">${sub || "&nbsp;"}</p>
+        </div>`;
+      $("dashTiles").innerHTML =
+        tile("ยอดเบิกรวม (ชิ้น)", fmtN(totalQty), delta) +
+        tile("จำนวนครั้งที่เบิก", fmtN(rows.length), `<span class="text-slate-500">เฉลี่ย ${rows.length ? (totalQty / rows.length).toFixed(1) : 0} ชิ้น/ครั้ง</span>`) +
+        tile("สาขาที่เบิกมากที่สุด", topB ? esc(topB.branch) : "-", topB ? `<span class="text-slate-500">${fmtN(topB.qty)} ชิ้น · ${totalQty ? Math.round(topB.qty / totalQty * 100) : 0}% ของทั้งหมด</span>` : "") +
+        tile("อุปกรณ์ที่ถูกเบิกมากที่สุด", topItems[0] ? esc(topItems[0].name) : "-", topItems[0] ? `<span class="text-slate-500">${fmtN(topItems[0].qty)} ชิ้น · ${topItems[0].count} ครั้ง</span>` : "");
+
+      // ---- สถานะใบเบิกในช่วงเวลา ----
+      const br = $("dashBranch").value;
+      const reqIn = globalRequests.filter(r => { const d = parseTs(r.timestamp); return d && d >= R.from && d <= R.to && (br === "ALL" || r.branch === br); });
+      const cnt = s => reqIn.filter(r => r.status === s).length;
+      const st = (icon, label, n, tab) => `
+        <button onclick="setReqStatus('${tab}'); document.getElementById('reqTableBody').scrollIntoView({behavior:'smooth',block:'center'})"
+          class="text-left rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-3 cursor-pointer">
+          <p class="text-[11px] text-slate-500">${icon} ${label}</p><p class="text-lg font-black text-slate-900">${fmtN(n)} <span class="text-[11px] font-normal text-slate-500">ใบ</span></p>
+        </button>`;
+      $("dashReqStatus").innerHTML =
+        st("⏳", "ใบเบิกรออนุมัติ", cnt("PENDING"), "PENDING") +
+        st("✅", "อนุมัติแล้ว · รอรับของ", cnt("APPROVED"), "APPROVED") +
+        st("📦", "จ่ายของแล้ว", cnt("ISSUED"), "ISSUED") +
+        st("❌", "ไม่อนุมัติ", cnt("REJECTED"), "REJECTED");
+
+      // ---- กราฟแท่งแนวนอน: รายสาขา ----
+      const maxB = Math.max(1, ...branchList.map(x => x.qty));
+      $("dashBranchChart").innerHTML = branchList.map(x => {
+        const pct = x.qty / maxB * 100, share = totalQty ? Math.round(x.qty / totalQty * 100) : 0;
+        return `
+          <div class="dash-hit grid grid-cols-[110px_1fr] items-center gap-2 py-1 rounded-md hover:bg-slate-50"
+               data-tip="<b>${esc(x.branch)}</b><br>${fmtN(x.qty)} ชิ้น · ${fmtN(x.count)} ครั้ง<br>สัดส่วน ${share}%">
+            <span class="text-xs text-slate-700 truncate">${esc(x.branch)}</span>
+            <div class="flex items-center gap-2 h-[18px]">
+              ${x.qty ? `<div class="h-[18px] rounded-r-[4px]" style="width:${Math.max(pct, 1)}%;background:var(--series-1)"></div>` : ""}
+              <span class="text-[11px] ${x.qty ? "text-slate-800 font-semibold" : "text-slate-400"} whitespace-nowrap">${fmtN(x.qty)}${x.qty ? ` <span class="font-normal text-slate-500">(${share}%)</span>` : ""}</span>
+            </div>
+          </div>`;
+      }).join("") + `<div class="grid grid-cols-[110px_1fr] gap-2"><span></span><div class="border-t border-slate-300 mt-1"></div></div>`;
+
+      // ---- กราฟแท่งแนวตั้ง: แนวโน้ม ----
+      const buckets = [];
+      if (R.daily) {
+        for (let d = dayStart(R.from); d <= R.to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1))
+          buckets.push({ key: d.toDateString(), label: `${d.getDate()}`, full: thDate(d), qty: 0 });
+      } else {
+        for (let d = new Date(R.from.getFullYear(), R.from.getMonth(), 1); d <= R.to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1))
+          buckets.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: TH_MONTHS[d.getMonth()], full: `${TH_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`, qty: 0 });
+      }
+      const bIdx = Object.fromEntries(buckets.map((b, i) => [b.key, i]));
+      rows.forEach(l => {
+        const k = R.daily ? dayStart(l._d).toDateString() : `${l._d.getFullYear()}-${l._d.getMonth()}`;
+        if (bIdx[k] !== undefined) buckets[bIdx[k]].qty += l._qty;
+      });
+      $("dashTrendUnit").innerText = R.daily ? "· รายวัน" : "· รายเดือน";
+      const maxT = Math.max(1, ...buckets.map(b => b.qty));
+      const peak = buckets.reduce((m, b, i) => b.qty > (buckets[m] || {}).qty ? i : m, 0);
+      const every = Math.ceil(buckets.length / 12);                 // ลดป้ายแกน X ไม่ให้ชนกัน
+      $("dashTrendChart").innerHTML = !buckets.length ? '<p class="text-xs text-slate-400 py-10 text-center">ไม่มีข้อมูล</p>' : `
+        <div class="flex items-end gap-[2px] h-48 border-b border-slate-300 pt-5">
+          ${buckets.map((b, i) => `
+            <div class="dash-hit relative flex-1 h-full flex flex-col justify-end items-center"
+                 data-tip="<b>${esc(b.full)}</b><br>${fmtN(b.qty)} ชิ้น">
+              ${i === peak && b.qty ? `<span class="absolute text-[10px] font-semibold text-slate-700 whitespace-nowrap" style="bottom:calc(${b.qty / maxT * 100}% + 2px)">${fmtN(b.qty)}</span>` : ""}
+              ${b.qty ? `<div class="w-full max-w-[24px] rounded-t-[4px]" style="height:${Math.max(b.qty / maxT * 100, 1.5)}%;background:var(--series-1)"></div>` : ""}
+            </div>`).join("")}
+        </div>
+        <div class="flex gap-[2px] mt-1">
+          ${buckets.map((b, i) => `<span class="flex-1 text-center text-[10px] text-slate-500">${i % every === 0 ? esc(b.label) : ""}</span>`).join("")}
+        </div>`;
+
+      // ---- ตารางสรุปรายสาขา ----
+      const th = "p-3 font-semibold text-slate-700 bg-slate-100 whitespace-nowrap";
+      $("dashBranchTable").innerHTML = `
+        <thead><tr><th class="${th} text-left">สาขา</th><th class="${th} text-right">จำนวนครั้ง</th><th class="${th} text-right">จำนวนชิ้น</th>
+          <th class="${th} text-left w-48">สัดส่วน</th><th class="${th} text-left">อุปกรณ์ที่เบิกมากสุด</th><th class="${th} text-left">เบิกล่าสุด</th></tr></thead>
+        <tbody>${branchList.map(x => {
+          const share = totalQty ? x.qty / totalQty * 100 : 0;
+          return `<tr class="border-t border-slate-100">
+            <td class="p-3 font-semibold text-slate-800">${esc(x.branch)}</td>
+            <td class="p-3 text-right tabular-nums">${fmtN(x.count)}</td>
+            <td class="p-3 text-right tabular-nums font-bold text-slate-900">${fmtN(x.qty)}</td>
+            <td class="p-3"><div class="flex items-center gap-2"><div class="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-2 rounded-full" style="width:${share}%;background:var(--series-1)"></div></div><span class="w-10 text-right tabular-nums">${share.toFixed(1)}%</span></div></td>
+            <td class="p-3">${esc(x.topItem)}</td>
+            <td class="p-3 whitespace-nowrap text-slate-500">${x.last ? thDate(x.last) : "-"}</td></tr>`;
+        }).join("")}</tbody>
+        <tfoot><tr class="border-t-2 border-slate-300 bg-slate-50 font-bold text-slate-900">
+          <td class="p-3">รวมทั้งหมด</td><td class="p-3 text-right tabular-nums">${fmtN(rows.length)}</td><td class="p-3 text-right tabular-nums">${fmtN(totalQty)}</td>
+          <td class="p-3">100%</td><td class="p-3"></td><td class="p-3"></td></tr></tfoot>`;
+
+      // ---- Top 10 ----
+      $("dashTopTable").innerHTML = !topItems.length
+        ? '<tbody><tr><td class="p-6 text-center text-slate-400">ไม่มีการเบิกในช่วงเวลานี้</td></tr></tbody>'
+        : `<thead><tr><th class="${th} text-center w-12">อันดับ</th><th class="${th} text-left">อุปกรณ์</th><th class="${th} text-left">หมวดหมู่</th>
+            <th class="${th} text-right">จำนวนชิ้น</th><th class="${th} text-right">จำนวนครั้ง</th><th class="${th} text-left">สาขาที่เบิก</th><th class="${th} text-right">คงเหลือปัจจุบัน</th></tr></thead>
+          <tbody>${topItems.map((x, i) => `<tr class="border-t border-slate-100">
+            <td class="p-3 text-center font-bold text-slate-500">${i + 1}</td>
+            <td class="p-3"><span class="font-semibold text-slate-800">${esc(x.name)}</span> <span class="font-mono text-[10px] text-slate-400">${esc(x.id)}</span></td>
+            <td class="p-3">${esc(x.cat)}</td>
+            <td class="p-3 text-right tabular-nums font-bold text-slate-900">${fmtN(x.qty)}</td>
+            <td class="p-3 text-right tabular-nums">${fmtN(x.count)}</td>
+            <td class="p-3 text-slate-500">${esc([...x.branches].join(", "))}</td>
+            <td class="p-3 text-right tabular-nums">${findAsset(x.id) ? fmtN(getRemaining(x.id)) : "-"}</td></tr>`).join("")}</tbody>`;
+
+      window._dash = { R, rows, branchList, topItems, totalQty };
+    }
+
+    /* Tooltip ร่วมของกราฟ */
+    document.addEventListener("mousemove", e => {
+      const hit = e.target.closest && e.target.closest(".dash-hit");
+      let tip = $("dashTip");
+      if (!hit) { if (tip) tip.style.display = "none"; return; }
+      if (!tip) {
+        tip = document.createElement("div"); tip.id = "dashTip";
+        tip.className = "fixed z-[95] pointer-events-none bg-slate-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg leading-relaxed";
+        document.body.appendChild(tip);
+      }
+      tip.innerHTML = hit.dataset.tip;
+      tip.style.display = "block";
+      const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+      tip.style.left = x + "px"; tip.style.top = (e.clientY - tip.offsetHeight - 10) + "px";
+    });
+
+    function exportDashboardCSV() {
+      const D = window._dash; if (!D) return;
+      const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+      const br = $("dashBranch").value, cat = $("dashCategory").value;
+      let csv = "﻿" + [
+        q("รายงานสรุปการเบิกจ่ายรายสาขา - HR SiteAsset Tracker"),
+        q("ช่วงเวลา: " + D.R.label),
+        q("สาขา: " + (br === "ALL" ? "ทุกสาขา" : br) + " | หมวดหมู่: " + (cat === "ALL" ? "ทุกหมวดหมู่" : cat)),
+        q("ออกรายงานเมื่อ: " + new Date().toLocaleString("th-TH")), ""].join("\n") + "\n";
+      csv += "สรุปรายสาขา\nสาขา,จำนวนครั้ง,จำนวนชิ้น,สัดส่วน (%),อุปกรณ์ที่เบิกมากสุด,เบิกล่าสุด\n";
+      D.branchList.forEach(x => csv += [q(x.branch), x.count, x.qty, D.totalQty ? (x.qty / D.totalQty * 100).toFixed(1) : 0, q(x.topItem), q(x.last ? thDate(x.last) : "-")].join(",") + "\n");
+      csv += [q("รวม"), D.rows.length, D.totalQty, 100, "", ""].join(",") + "\n\n";
+      csv += "อุปกรณ์ที่ถูกเบิกมากที่สุด 10 อันดับ\nอันดับ,รหัส,อุปกรณ์,หมวดหมู่,จำนวนชิ้น,จำนวนครั้ง,สาขาที่เบิก\n";
+      D.topItems.forEach((x, i) => csv += [i + 1, q(x.id), q(x.name), q(x.cat), x.qty, x.count, q([...x.branches].join(", "))].join(",") + "\n");
+      csv += "\nรายละเอียดการเบิกในช่วงเวลา\nวัน-เวลา,รหัส,อุปกรณ์,หมวดหมู่,จำนวน,ผู้เบิก,แผนก,สาขา,หมายเหตุ\n";
+      [...D.rows].sort((a, b) => a._d - b._d).forEach(l =>
+        csv += [q(l.timestamp), q(l.assetId), q(l.assetName), q(l._cat), l._qty, q(l.staffName), q(l.department), q(l.branch), q(l.notes)].join(",") + "\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      a.download = `รายงานเบิกจ่ายรายสาขา_${dashPeriod}_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    function printDashboard() {
+      const D = window._dash; if (!D) return;
+      let tpl = $("dashPrintTemplate");
+      if (!tpl) { tpl = document.createElement("div"); tpl.id = "dashPrintTemplate"; tpl.className = "hidden viz-root bg-white"; document.body.appendChild(tpl); }
+      const br = $("dashBranch").value, cat = $("dashCategory").value;
+      tpl.innerHTML = `
+        <div style="border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:14px;font-family:Sarabun,sans-serif;">
+          <div style="font-size:20px;font-weight:900;">รายงานสรุปการเบิกจ่ายรายสาขา</div>
+          <div style="font-size:12px;color:#475569;">${esc(D.R.label)} · สาขา: ${esc(br === "ALL" ? "ทุกสาขา" : br)} · หมวดหมู่: ${esc(cat === "ALL" ? "ทุกหมวดหมู่" : cat)}</div>
+          <div style="font-size:10px;color:#94a3b8;">พิมพ์โดย ${esc(session.user.fullName || session.user.username)} · ${esc(new Date().toLocaleString("th-TH"))}</div>
+        </div><div class="space-y-5">` + $("dashReport").innerHTML + "</div>";
+      printElement("dashPrintTemplate");
+    }
+
+    /* 📌 ตำแหน่งผู้อนุมัติ (dropdown + อื่น ๆ) */
+    function onPositionChange() {
+      const other = $("apvPositionSel").value === "__other";
+      $("apvPositionOther").classList.toggle("hidden", !other);
+      if (other) $("apvPositionOther").focus();
+    }
+    function setPosition(v) {
+      const sel = $("apvPositionSel");
+      const has = [...sel.options].some(o => o.value === v && v);
+      sel.value = has ? v : (v ? "__other" : "");
+      $("apvPositionOther").value = has ? "" : v;
+      onPositionChange();
+    }
+    function getPosition() {
+      const v = $("apvPositionSel").value;
+      return v === "__other" ? $("apvPositionOther").value.trim() : v;
+    }
+
+    /* 📦 HR กดจ่ายของ (ปิดงานใบเบิก) */
+    let currentIssueId = null;
+    function toggleIssueModal(show) { $("issueModal").classList.toggle("hidden", !show); }
+
+    async function issueRequest(id) {
+      if (!canIssue()) return;
+      currentIssueId = id;
+      const r = globalRequests.find(x => x.requestId === id) || {};
+      $("issReqId").innerText = id;
+      $("issIssuerName").innerText = session.user.fullName || session.user.username;
+      $("issReceiverName").value = r.receiverName || r.staffName || "";
+      $("issDetail").innerHTML = `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div><p class="text-[10px] text-slate-400">อุปกรณ์</p><p class="font-bold text-slate-800">${esc(r.assetName)} <span class="font-mono font-normal text-slate-400">(${esc(r.assetId)})</span></p></div>
+          <div><p class="text-[10px] text-slate-400">จำนวนที่ต้องจ่าย</p><p class="font-black text-lg text-slate-900">${esc(r.quantity)} ชิ้น</p></div>
+          <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก / สาขา</p><p class="font-bold text-slate-800">${esc(r.staffName)} · ${esc(r.branch)}</p></div>
+          <div><p class="text-[10px] text-slate-400">อนุมัติโดย</p><p class="font-bold text-slate-800">${esc(r.approverName || "-")}</p></div>
+        </div>
+        ${r.status === "ISSUED" ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — เซ็นลายเซ็นย้อนหลังเพื่อให้ใบเบิกที่พิมพ์มีลายเซ็นครบ</p>' : ""}`;
+      toggleIssueModal(true);
+      sigPads.issuer.setup();
+      sigPads.receiver.setup();
+    }
+
+    async function submitIssue(andPrint) {
+      const id = currentIssueId;
+      if (sigPads.issuer.isEmpty) { showToast("✍️ กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุ (HR) ก่อนบันทึก", "warn"); return; }
+      const btns = [$("issSaveBtn"), $("issSavePrintBtn")], olds = btns.map(b => b.innerHTML);
+      btns.forEach(b => b.disabled = true);
+      (andPrint ? btns[1] : btns[0]).innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
+      try {
+        const res = await apiPost({
+          action: "issueRequest", requestId: id,
+          issuerSig: sigPads.issuer.toDataURL(),
+          receiverName: $("issReceiverName").value.trim(),
+          receiverSig: sigPads.receiver.isEmpty ? "" : sigPads.receiver.toDataURL()
+        });
+        if (res.status !== "success") throw new Error(res.message);
+        delete reqDetailCache[id];
+        toggleIssueModal(false);
+        showToast(`📦 บันทึกจ่ายของใบเบิก ${id} เรียบร้อย`, "ok");
+        loadRequests();
+        if (andPrint) printRequisition(id);
+      } catch (err) {
+        showToast("❌ บันทึกไม่สำเร็จ: " + err.message, "error");
+      } finally {
+        btns.forEach((b, i) => { b.disabled = false; b.innerHTML = olds[i]; });
+      }
+    }
+
+    /* 🔔 Toast แจ้งเตือนแบบไม่ต้องกดปิด */
+    function showToast(msg, type) {
+      let wrap = $("toastWrap");
+      if (!wrap) {
+        wrap = document.createElement("div");
+        wrap.id = "toastWrap";
+        wrap.className = "fixed bottom-5 right-5 z-[90] flex flex-col gap-2 max-w-sm";
+        document.body.appendChild(wrap);
+      }
+      const color = type === "error" ? "bg-rose-600" : type === "warn" ? "bg-amber-600" : "bg-emerald-600";
+      const t = document.createElement("div");
+      t.className = `${color} text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl transition-opacity duration-500`;
+      t.textContent = msg;
+      wrap.appendChild(t);
+      setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 600); }, 4500);
+    }
+
+    /* =========================================================
+       🔧 Helpers
+       ========================================================= */
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    function findAsset(id) { return cachedAssets.find(a => String(a.id) === String(id)); }
+    function getRemaining(id) {
+      const a = findAsset(id);
+      if (!a) return 0;
+      let r = parseInt(a.remaining);
+      if (isNaN(r)) r = parseInt(a.total) || 0;
+      return Math.max(0, r);
+    }
+
+    function openZoomModal(src) { if (!src) return; $("zoomedImage").src = src; $("imageZoomModal").classList.remove("hidden"); }
+    function closeZoomModal() { $("imageZoomModal").classList.add("hidden"); $("zoomedImage").src = ""; }
+
+    function printElement(id) {
+      const el = $(id);
+      el.classList.add("print-active");
+      const cleanup = () => { el.classList.remove("print-active"); window.removeEventListener("afterprint", cleanup); };
+      window.addEventListener("afterprint", cleanup);
+      setTimeout(() => window.print(), 300);
+    }
+    function waitImages(el) {
+      return Promise.all([...el.querySelectorAll("img")].map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 4000); })));
     }
 
     function setupImageListeners() {
-      document.getElementById("assetImage").addEventListener('change', function(e) {
-        compressImage(e.target.files[0], base64 => {
-          compressedBase64 = base64;
-          document.getElementById("imagePreview").src = base64;
-          document.getElementById("previewContainer").classList.remove('hidden');
-        });
-      });
-
-      document.getElementById("newAssetImage").addEventListener('change', function(e) {
-        compressImage(e.target.files[0], base64 => {
-          newAssetBase64 = base64;
-        });
-      });
+      $("assetImage").addEventListener("change", e => compressImage(e.target.files[0], b64 => {
+        compressedBase64 = b64;
+        $("imagePreview").src = b64;
+        $("previewContainer").classList.remove("hidden");
+      }));
+      $("newAssetImage").addEventListener("change", e => compressImage(e.target.files[0], b64 => { newAssetBase64 = b64; }));
     }
-
-    function compressImage(file, callback) {
+    function compressImage(file, cb) {
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = function(event) {
+      reader.onload = ev => {
         const img = new Image();
-        img.onload = function() {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 400;
-          const scaleSize = MAX_WIDTH / img.width;
-          canvas.width = MAX_WIDTH;
-          canvas.height = img.height * scaleSize;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          callback(canvas.toDataURL('image/jpeg', 0.7));
+        img.onload = () => {
+          const c = document.createElement("canvas"), W = Math.min(400, img.width);   // 400px เหมือนเดิม (ระบบเดิมเก็บรูปลงเซลล์)
+          c.width = W; c.height = img.height * (W / img.width);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          cb(c.toDataURL("image/jpeg", 0.7));
         };
-        img.src = event.target.result;
+        img.src = ev.target.result;
       };
       reader.readAsDataURL(file);
     }
 
-    async function handleAssetSubmit(event) {
-      event.preventDefault();
-      const addBtn = document.getElementById("addBtn");
-      const actionType = document.getElementById("formAction").value;
-      
-      addBtn.disabled = true;
-      addBtn.innerText = "กำลังบันทึกข้อมูล...";
-
-      const assetData = {
-        action: actionType,
-        id: document.getElementById("newAssetId").value,
-        name: document.getElementById("newAssetName").value,
-        category: document.getElementById("newAssetCategory").value,
-        total: document.getElementById("newAssetTotal").value,
-        notes: document.getElementById("newAssetNotes").value || "-",
-        image: newAssetBase64
+    /* =========================================================
+       ✍️ Signature Pad (เมาส์ / นิ้ว / ปากกา)
+       ========================================================= */
+    const sigPads = {};
+    function createSignaturePad(canvasId) {
+      const canvas = $(canvasId), ctx = canvas.getContext("2d"), hint = $(canvasId + "Hint");
+      const pad = { isEmpty: true };
+      let drawing = false, last = null, cssW = 0;
+      const setHint = () => { if (hint) hint.style.display = pad.isEmpty ? "flex" : "none"; };
+      function setup() {
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width) return;
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        cssW = rect.width;
+        canvas.width = Math.round(rect.width * ratio);
+        canvas.height = Math.round(rect.height * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.strokeStyle = ctx.fillStyle = "#0b1f5c";
+        pad.isEmpty = true; setHint();
+      }
+      const pt = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      canvas.addEventListener("pointerdown", e => {
+        e.preventDefault();
+        if (!cssW) setup();
+        drawing = true;
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        last = pt(e);
+        ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2); ctx.fill();
+        pad.isEmpty = false; setHint();
+      });
+      canvas.addEventListener("pointermove", e => {
+        if (!drawing) return;
+        e.preventDefault();
+        const p = pt(e);
+        ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        last = p;
+      });
+      ["pointerup", "pointercancel", "pointerleave"].forEach(t => canvas.addEventListener(t, () => { drawing = false; }));
+      pad.setup = pad.clear = setup;
+      pad.ensureSize = () => {                       // ไม่รีเซ็ตถ้าเซ็นแล้ว (กันหายตอนคีย์บอร์ดมือถือเด้ง)
+        const w = canvas.getBoundingClientRect().width;
+        if (w && Math.abs(w - cssW) > 1 && pad.isEmpty) setup();
       };
-
-      try {
-        await fetch(WEB_APP_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify(assetData)
-        });
-        alert(actionType === "addAsset" ? "🎉 เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!" : "✏️ อัปเดตข้อมูลพัสดุเรียบร้อย!");
-      } catch (err) {
-        alert("🎉 ดำเนินการบันทึกข้อมูลสำเร็จ");
-      } finally {
-        toggleModal(false);
-        addBtn.disabled = false;
-        addBtn.innerText = "บันทึกข้อมูล";
-        loadData();
-      }
-    }
-
-    async function handleDeleteAsset(id, name) {
-      if(confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบอุปกรณ์สำนักงานรายการนี้ออกจากคลัง?\n[${id}] - ${name}`)) {
-        const deleteData = { action: "deleteAsset", assetId: id };
-
-        try {
-          await fetch(WEB_APP_URL, {
-            method: "POST",
-            mode: "no-cors",
-            headers: { "Content-Type": "text/plain" },
-            body: JSON.stringify(deleteData)
-          });
-          alert("🗑️ ลบข้อมูลสำเร็จ");
-        } catch (err) {
-          alert("ดำเนินการลบข้อมูลเรียบร้อย");
-        } finally {
-          loadData();
-        }
-      }
-    }
-
-    async function handleSubmit(event) {
-      event.preventDefault();
-      const submitBtn = document.getElementById("submitBtn");
-      const btnText = document.getElementById("btnText");
-      
-      if(!compressedBase64) { alert("กรุณารอระบบโหลดรูปภาพสักครู่"); return; }
-      submitBtn.disabled = true;
-      btnText.innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
-
-      const formData = {
-        staffName: document.getElementById("staffName").value,
-        department: document.getElementById("department").value,
-        branch: document.getElementById("branch").value,
-        assetId: document.getElementById("assetSelect").value,
-        quantity: document.getElementById("quantity").value,
-        requisitionNotes: document.getElementById("requisitionNotes").value || "-",
-        imageBase64: compressedBase64
+      pad.toDataURL = () => {                        // PNG กว้าง 500px → เล็กพอเก็บในเซลล์ Sheet
+        const out = document.createElement("canvas");
+        out.width = 500; out.height = Math.round(500 * canvas.height / canvas.width);
+        out.getContext("2d").drawImage(canvas, 0, 0, out.width, out.height);
+        return out.toDataURL("image/png");
       };
-
-      try {
-        await fetch(WEB_APP_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify(formData)
-        });
-        alert("🎉 บันทึกการเบิกอุปกรณ์สำนักงานและตัดสต็อกเรียบร้อย");
-      } catch (err) {
-        alert("🎉 บันทึกการเบิกอุปกรณ์สำนักงานและตัดสต็อกเรียบร้อย");
-      } finally {
-        document.getElementById("assetForm").reset();
-        compressedBase64 = "";
-        document.getElementById("previewContainer").classList.add('hidden');
-        submitBtn.disabled = false;
-        btnText.innerText = "💾 บันทึกข้อมูลและตัดยอดสต็อก";
-        loadData();
-      }
+      return pad;
     }
   </script>
 </body>
