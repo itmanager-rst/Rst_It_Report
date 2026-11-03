@@ -6562,6 +6562,22 @@
         .psr-legend { font-size: 9px; color: #475569; margin-top: 8px; line-height: 1.5; }
         .psr-empty { padding: 10px; color: #64748b; }
         .psr-lines span { display: block; border-bottom: 1px dotted #000; height: 20px; }
+        /* (r67) พิมพ์รายงานทั้งหน้า (A4 แนวตั้ง) */
+        .rpp .psr-table { font-size: 10px; }
+        .rpp .psr-table th, .rpp .psr-table td { padding: 2.5px 5px; }
+        .rpp .rpp-wrap th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+        .rpp .rpp-name { text-align: left !important; white-space: normal !important; }
+        .rpp .rpp-s { font-size: 8.5px; color: #475569; font-weight: normal; }
+        .rpp .rpp-h3 { font-size: 10.5px; font-weight: 700; margin: 0 0 3px; }
+        .rpp .rpp-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: start; }
+        .rpp .rpp-kv td:first-child { white-space: normal; }
+        .rpp .rpp-block { margin-bottom: 9px; }
+        .rpp .rpp-keep { break-inside: avoid; page-break-inside: avoid; }
+        .rpp .rpp-wrap .rpp-name { width: 27%; }
+        .rpp .psr-table.rpp-kv td { padding: 2px 5px; }
+        .rpp .psr-legend { font-size: 8.5px; margin-top: 4px; line-height: 1.4; }
+        .rpp .psr-h2 { border-left: 4px solid #000; padding-left: 6px; break-after: avoid; page-break-after: avoid; }
+        .rpp thead { display: table-header-group; }
         .psr-sign { display: flex; justify-content: space-around; margin-top: 22px; font-size: 11px; line-height: 2; text-align: center; page-break-inside: avoid; }
         @media print {
             body.print-sdr > *:not(#print-sdr-area) { display: none !important; }
@@ -7570,6 +7586,246 @@
             openHistoryModal(currentRenderedData.length - 1);
         }
 
+        /* ---------- (r67) 🖨️ พิมพ์รายงาน (ทั้งหน้า) — A4 แนวตั้ง ----------
+
+           สร้างหน้ากระดาษใหม่จากข้อมูลชุดเดียวกับที่เห็นบนจอ (ไม่ได้พิมพ์หน้าจอตรงๆ) ให้พอดีกระดาษและอ่านง่าย:
+
+           ตารางขอบชัด ตัวเลขชิดขวา หัวคอลัมน์สั้น ไม่มีปุ่ม/กราฟ · ใช้กลไกพิมพ์เดียวกับ "พิมพ์สรุปรายวัน" (#print-sdr-area) */
+
+        function rpPrintReport() {
+
+            const i = rpKpi.intake, s = rpKpi.sales;
+
+            if (i === undefined || s === undefined || !sdrData || !leadSourceData_) {
+
+                alert('⏳ ข้อมูลรายงานยังโหลดไม่ครบ รอสักครู่แล้วกดพิมพ์อีกครั้ง');
+
+                return;
+
+            }
+
+            const data = sdrPrepare_(sdrData);
+
+            const r = rpRange_();
+
+            const days = sdrDaysInRange_(r.start, r.end);
+
+            const multi = days.length > 1;
+
+            const rangeTxt = multi ? `${sdrPrintDayLabel_(r.start)} ถึง ${sdrPrintDayLabel_(r.end)} (${days.length} วัน)` : sdrPrintDayLabel_(r.start);
+
+            const printedAt = new Date().toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+            const N = v => { const n = Number(v) || 0; return n ? n.toLocaleString() : '<span class="psr-zero">0</span>'; };
+
+            const ok = o => o && typeof o === 'object';
+
+            const kv = (rows) => '<table class="psr-table rpp-kv"><tbody>' + rows.map(([k, v, cls]) =>
+
+                `<tr${cls ? ` class="${cls}"` : ''}><td style="text-align:left;">${k}</td><td>${v}</td></tr>`).join('') + '</tbody></table>';
+
+            const sec = [];
+
+
+
+            // ---- 1) สรุปภาพรวม (3 กล่องเรียงกัน) ----
+
+            const keyed = ok(i) ? (i.manualCount || 0) : 0, kDup = ok(i) ? (i.manualDuplicateCount || 0) : 0;
+
+            const boxIntake = ok(i) ? kv([
+
+                ['เบอร์/ข้อมูลที่ได้เข้ามา <span class="rpp-s">(รวมที่ซ้ำ)</span>', `<b>${N(i.total)}</b>`, 'psr-total'],
+
+                ['&nbsp;&nbsp;• ใหม่', N(i.newCount)], ['&nbsp;&nbsp;• ซ้ำ (มีในระบบแล้ว)', N(i.duplicateCount)],
+
+                ['จาก Facebook/ManyChat', N(i.manychatCount)],
+
+                ['เซลล์คีย์ลูกค้าเข้ามา', N(keyed)], ['&nbsp;&nbsp;• ใหม่ / ซ้ำ', `${N(Math.max(0, keyed - kDup))} / ${N(kDup)}`]
+
+            ]) : '<div class="psr-empty">โหลดไม่สำเร็จ</div>';
+
+            const boxFollow = ok(s) ? kv([['ติดตามรวมทุกรูปแบบ', `<b>${N(s.followups)}</b>`, 'psr-total']]
+
+                .concat(s.types.map(t => [(FOLLOW_TYPE_LABEL[t] || t).replace(/^\S+\s/, ''), N(s.ft[t])]))) : '<div class="psr-empty">โหลดไม่สำเร็จ</div>';
+
+            const stLines = m => (s.statuses || []).filter(st => m[st]).map(st => [`&nbsp;&nbsp;• ${escapeHtml(st)}`, N(m[st])]);
+
+            const boxStatus = ok(s) ? kv([['➕ ลูกค้าใหม่ที่เซลล์เพิ่ม <span class="rpp-s">(ราย)</span>', `<b>${N(s.newTotal)}</b>`, 'psr-total']].concat(stLines(s.stNew))
+
+                .concat([['🔄 เปลี่ยนสถานะจากการติดตาม <span class="rpp-s">(ครั้ง)</span>', `<b>${N(s.chgTotal)}</b>`, 'psr-total']]).concat(stLines(s.stChg))) : '<div class="psr-empty">โหลดไม่สำเร็จ</div>';
+
+            sec.push(`<div class="rpp-block rpp-keep"><div class="psr-h2">1. สรุปภาพรวม (ทั้งทีม)</div><div class="rpp-grid3">` +
+
+                `<div><div class="rpp-h3">📥 ได้เบอร์ / ข้อมูลใหม่</div>${boxIntake}</div>` +
+
+                `<div><div class="rpp-h3">📞 การติดตาม (ครั้ง)</div>${boxFollow}</div>` +
+
+                `<div><div class="rpp-h3">🔄 สถานะลูกค้า</div>${boxStatus}</div></div>` +
+
+                (ok(i) && ok(s) ? `<div class="psr-legend">เซลล์คีย์ลูกค้าเข้ามา ${keyed.toLocaleString()} ครั้ง = ลูกค้าใหม่ ${Math.max(0, keyed - kDup).toLocaleString()} + ซ้ำ ${kDup.toLocaleString()} (ซ้ำ = มีรายชื่ออยู่แล้ว ระบบเพิ่มเป็นการติดตามในรายชื่อเดิม)` +
+
+                    (Math.max(0, keyed - kDup) !== s.newTotal ? ` · ลูกค้าใหม่ในข้อมูลรายงานนับได้ ${s.newTotal.toLocaleString()} ราย (ข้อมูลรายงานอัปเดตทุก ~15 นาที / ไม่นับรายการนำเข้า Excel)` : '') + '</div>' : '') +
+
+                '</div>');
+
+
+
+            // ---- 2) งานติดตามรายคน ----
+
+            const metrics = sdrMetrics_(data);
+
+            const val = (p, k) => Number(p[k]) || 0;
+
+            const ppl = (data.people || []).filter(p => metrics.some(m => val(p, m.key) > 0))
+
+                .sort((a, b) => val(b, 'followups') - val(a, 'followups') || val(b, 'added') - val(a, 'added') || String(a.person).localeCompare(String(b.person), 'th'));
+
+            const head = '<tr><th style="width:18px;">#</th><th class="rpp-name">เซลล์</th>' + metrics.map(m => `<th>${escapeHtml(m.short || m.label)}</th>`).join('') + '</tr>';
+
+            let pplHtml = ppl.length ? `<table class="psr-table rpp-wrap"><thead>${head}</thead><tbody>` +
+
+                ppl.map((p, idx) => `<tr><td>${idx + 1}</td><td class="rpp-name">${escapeHtml(p.person)}</td>${metrics.map(m => `<td>${N(val(p, m.key))}</td>`).join('')}</tr>`).join('') +
+
+                `<tr class="psr-total"><td></td><td class="rpp-name">รวมทั้งทีม (${ppl.length} คน)</td>${metrics.map(m => `<td>${N(ppl.reduce((a, p) => a + val(p, m.key), 0))}</td>`).join('')}</tr></tbody></table>`
+
+                : '<div class="psr-empty">ไม่มีงานติดตามของเซลล์ในช่วงนี้</div>';
+
+            if (multi) {
+
+                const teamMap = {};
+
+                (data.daily || []).forEach(d => { const t = teamMap[d.date] || (teamMap[d.date] = {}); metrics.forEach(m => { t[m.key] = (t[m.key] || 0) + val(d, m.key); }); });
+
+                pplHtml += `<div class="${days.length <= 16 ? 'rpp-keep' : ''}"><div class="rpp-h3" style="margin-top:8px;">📅 ทั้งทีม แยกรายวัน (▲▼ เทียบวันก่อนหน้า)</div><div class="rpp-wrap">${sdrPrintDayTable_(days, teamMap, metrics, true)}</div></div>`;
+
+            }
+
+            sec.push(`<div class="rpp-block"><div class="psr-h2">2. งานติดตามของเซลล์ (จำนวนครั้ง · ลูกค้าใหม่ = ราย)</div>${pplHtml}</div>`);
+
+
+
+            // ---- 3) สถานะลูกค้าแยกตามช่องทาง ----
+
+            const SEP = '\u0001', newCh = data.newCustomerChannel || SDR_NEW_CHANNEL;
+
+            const ev = data.statusEvents || [];
+
+            let stHtml = '<div class="psr-empty">ยังไม่มีการเพิ่มลูกค้า / เปลี่ยนสถานะในช่วงนี้</div>';
+
+            if (ev.length) {
+
+                const sts = sdrOrdered_([...new Set(ev.map(x => x[3]))], STATUS_ORDER, false);
+
+                const chs = data._channels.filter(c => c === newCh || ev.some(x => x[2] === c));
+
+                const mm = {}; ev.forEach(([d, p, c, st, n]) => { mm[c + SEP + st] = (mm[c + SEP + st] || 0) + n; });
+
+                const g = (c, st) => mm[c + SEP + st] || 0;
+
+                const chLabel = c => c === newCh ? '➕ เพิ่มลูกค้าใหม่' : (FOLLOW_TYPE_LABEL[c] || c).replace(/^\S+\s/, '🔄 ');
+
+                stHtml = `<table class="psr-table rpp-wrap"><thead><tr><th class="rpp-name">ช่องทาง ↓ / ได้สถานะ →</th>${sts.map(st => `<th>${escapeHtml(st)}</th>`).join('')}<th>รวม</th></tr></thead><tbody>` +
+
+                    chs.map(c => `<tr><td class="rpp-name">${escapeHtml(chLabel(c))}</td>${sts.map(st => `<td>${N(g(c, st))}</td>`).join('')}<td><b>${N(sts.reduce((a, st) => a + g(c, st), 0))}</b></td></tr>`).join('') +
+
+                    `<tr class="psr-total"><td class="rpp-name">รวมทุกช่องทาง</td>${sts.map(st => `<td>${N(chs.reduce((a, c) => a + g(c, st), 0))}</td>`).join('')}<td>${N(ev.reduce((a, x) => a + x[4], 0))}</td></tr></tbody></table>`;
+
+                if (multi) {
+
+                    const dm = {};
+
+                    ev.forEach(([d, p, c, st, n]) => { const x = dm[d] || (dm[d] = {}); x[st] = (x[st] || 0) + n; const k = c === newCh ? '__new' : '__chg'; x[k] = (x[k] || 0) + n; });
+
+                    const cols = [{ key: '__new', short: '➕ ใหม่' }, { key: '__chg', short: '🔄 เปลี่ยน' }].concat(sts.map(st => ({ key: st, short: st })));
+
+                    stHtml += `<div class="${days.length <= 16 ? 'rpp-keep' : ''}"><div class="rpp-h3" style="margin-top:8px;">📅 แยกรายวัน</div><div class="rpp-wrap">${sdrPrintDayTable_(days, dm, cols, false)}</div></div>`;
+
+                }
+
+            }
+
+            const nowB = (data.people || []).reduce((a, p) => a + (Number(p.pipelineBookedNow) || 0), 0);
+
+            const nowC = (data.people || []).reduce((a, p) => a + (Number(p.pipelineClosingNow) || 0), 0);
+
+            stHtml += `<div class="psr-legend">ลูกค้าที่อยู่ในสถานะตอนนี้ (ไม่จำกัดวันที่): จอง ${nowB.toLocaleString()} ราย · รอปิดการขาย ${nowC.toLocaleString()} ราย</div>`;
+
+            sec.push(`<div class="rpp-block${multi ? '' : ' rpp-keep'}"><div class="psr-h2">3. สถานะลูกค้าแยกตามช่องทาง (➕ = ราย · 🔄 = ครั้ง)</div>${stHtml}</div>`);
+
+
+
+            // ---- 4) ลูกค้าแยกตามที่มา ----
+
+            const lrows = (leadSourceData_.data || []).filter(x => Number(x.total) > 0);
+
+            const lsum = k => lrows.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+
+            const lt = lsum('total');
+
+            const pct = (a, b) => b ? (Math.round(a / b * 1000) / 10) + '%' : '-';
+
+            const lsHtml = lrows.length ? `<table class="psr-table rpp-wrap"><thead><tr><th class="rpp-name">ที่มา</th><th>ลูกค้า</th><th>สัดส่วน</th><th>รอปิดการขาย</th><th>จอง</th><th>ทำสัญญา/ส่งมอบ</th><th>HOT ขึ้นไป</th></tr></thead><tbody>` +
+
+                lrows.map(x => { const hot = (Number(x.closing) || 0) + (Number(x.booked) || 0) + (Number(x.won) || 0);
+
+                    return `<tr><td class="rpp-name">${escapeHtml(x.source)}${x.otherDetails ? `<div class="rpp-s">${escapeHtml(x.otherDetails)}</div>` : ''}</td><td><b>${N(x.total)}</b></td><td>${pct(x.total, lt)}</td><td>${N(x.closing)}</td><td>${N(x.booked)}</td><td>${N(x.won)}</td><td>${pct(hot, x.total)}</td></tr>`; }).join('') +
+
+                `<tr class="psr-total"><td class="rpp-name">รวม</td><td>${N(lt)}</td><td>100%</td><td>${N(lsum('closing'))}</td><td>${N(lsum('booked'))}</td><td>${N(lsum('won'))}</td><td>${pct(lsum('closing') + lsum('booked') + lsum('won'), lt)}</td></tr></tbody></table>`
+
+                : '<div class="psr-empty">ไม่มีลูกค้าที่บันทึกในช่วงนี้</div>';
+
+            sec.push(`<div class="rpp-block rpp-keep"><div class="psr-h2">4. ลูกค้าที่บันทึกในช่วงนี้ แยกตามที่มา (สถานะตอนนี้)</div>${lsHtml}</div>`);
+
+
+
+            const legend = '<div class="psr-legend"><b>หมายเหตุ</b> · ข้อ 1 "ได้เบอร์/ข้อมูลใหม่" นับจากบันทึกการรับลีด (ทุกครั้งที่มีเบอร์ส่ง/คีย์เข้ามา) · ข้อ 1–3 ส่วนอื่นนับจากข้อมูลลูกค้า (อัปเดตทุก ~15 นาที) · ' +
+
+                'ลูกค้าใหม่ = ลูกค้าที่เซลล์เพิ่มเอง ไม่รวม ManyChat / นำเข้า Excel · 🔄 = บันทึกติดตามที่เปลี่ยนสถานะลูกค้า · ข้อ 4 แสดงสถานะ "ตอนนี้" ของลูกค้าที่บันทึกในช่วงวันที่นี้ ไม่รวมนำเข้า Excel</div>';
+
+            const html = `<div class="psr-section rpp"><div class="psr-head"><div class="psr-title">📈 รายงานสรุป CRM — ${multi ? 'ช่วงวันที่' : 'ประจำวัน'}</div>` +
+
+                `<div class="psr-sub">${escapeHtml(rangeTxt)}</div>` +
+
+                `<div class="psr-meta">พิมพ์โดย ${escapeHtml(currentUserDisplayLabel_() || '-')} · ${escapeHtml(printedAt)} · ข้อมูล ณ ${escapeHtml(data.generatedAt || '-')}</div></div>` +
+
+                sec.join('') + legend + '</div>';
+
+
+
+            let area = document.getElementById('print-sdr-area');
+
+            if (!area) { area = document.createElement('div'); area.id = 'print-sdr-area'; document.body.appendChild(area); }
+
+            area.className = '';
+
+            area.innerHTML = html;
+
+            document.body.classList.add('print-sdr');
+
+            let pageStyle = document.getElementById('psr-page-style');
+
+            if (!pageStyle) { pageStyle = document.createElement('style'); pageStyle.id = 'psr-page-style'; document.head.appendChild(pageStyle); }
+
+            pageStyle.textContent = '@page { size: A4 portrait; margin: 10mm 9mm; }';
+
+            const done = () => {
+
+                document.body.classList.remove('print-sdr');
+
+                const ps = document.getElementById('psr-page-style'); if (ps) ps.textContent = '';
+
+                window.removeEventListener('afterprint', done);
+
+            };
+
+            window.addEventListener('afterprint', done);
+
+            setTimeout(() => { window.print(); setTimeout(done, 1000); }, 50);
+
+        }
+
+
+
         /* ---------- 5) (r54) การ์ด "📣 ลูกค้าแยกตามช่องทางที่มา" — action 'getLeadSourceReport' ---------- */
         let leadSourceSeq_ = 0, leadSourceData_ = null, leadSourceRows_ = [];
         function rpBuildLeadSourceCard_() {
@@ -7689,6 +7945,7 @@
                         '<button type="button" class="rp-preset" data-preset="lastmonth" onclick="rpSetPreset(\'lastmonth\')">เดือนที่แล้ว</button>' +
                     '</div>' +
                     '<button type="button" class="btn btn-primary" onclick="rpRefreshAll(true)" title="ดึงข้อมูลล่าสุดทุกการ์ด (ไม่ใช้แคช)">🔄 ดึงรายงานทั้งหมด</button>' +
+                    '<button type="button" class="btn btn-secondary" onclick="rpPrintReport()" title="พิมพ์รายงานทั้งหน้าลงกระดาษ A4">🖨️ พิมพ์รายงาน</button>' +
                 '</div>' +
                 '<div class="rp-toolbar">' +
                     '<span class="rp-range-status" id="rp-range-status"></span>' +
