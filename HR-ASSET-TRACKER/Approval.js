@@ -18,8 +18,14 @@
  *  MANAGER = ผู้อนุมัติ/ผู้บริหาร : ดูทุกสาขา + อนุมัติ/ไม่อนุมัติ + พิมพ์ PR
  *  BRANCH  = พนักงานสาขา : ดูสต็อก + ส่งคำขอเบิก (เฉพาะสาขาตัวเอง) + พิมพ์ใบเบิกที่อนุมัติแล้ว
  *
- * สถานะใบเบิก: PENDING (รออนุมัติ) → APPROVED (อนุมัติแล้ว·รอรับของ, ตัดสต็อกแล้ว) → ISSUED (HR จ่ายของแล้ว)
- *                              ↘ REJECTED (ไม่อนุมัติ)
+ * สถานะใบเบิก:
+ *   PENDING (รออนุมัติ)
+ *     → APPROVED (อนุมัติแล้ว · รอ HR จ่ายของ, ตัดสต็อกแล้ว)
+ *     → ISSUED   (HR จ่ายของแล้ว · รอฝากส่งไปสาขา)
+ *     → SHIPPED  (ฝากส่งแล้ว · กำลังส่งไปสาขา — ฝากฝ่ายบริการ / ฝ่ายขาย / อื่น ๆ)
+ *     → RECEIVED (สาขาได้รับของแล้ว · ปิดงาน)
+ *   ↘ REJECTED (ไม่อนุมัติ)
+ *   * ถ้าผู้รับมารับของเองที่ HR → ISSUED ข้ามไป RECEIVED ได้ทันที
  ******************************************************************************/
 
 const APP_CONFIG = {
@@ -44,8 +50,12 @@ const REQ_HEADERS = [
   'staffName', 'department', 'branch', 'notes', 'imageUrl', 'imageFileId',
   'requesterSig', 'status', 'approverName', 'approverPosition', 'approverSig',
   'actionAt', 'rejectReason', 'requestedBy', 'approvedBy',
-  'issuedBy', 'issuedByName', 'issuedAt', 'issuerSig', 'receiverName', 'receiverSig'
+  'issuedBy', 'issuedByName', 'issuedAt', 'issuerSig', 'receiverName', 'receiverSig',
+  // ขั้นตอนจัดส่งไปสาขา (เพิ่มคอลัมน์ให้อัตโนมัติในชีตเดิม)
+  'deliveryMethod', 'shipVia', 'shipCarrier', 'shipNote', 'shippedBy', 'shippedByName', 'shippedAt',
+  'receivedBy', 'receivedAt', 'receiveNote'
 ];
+const SHIP_VIA = ['ฝ่ายบริการ', 'ฝ่ายขาย', 'อื่น ๆ'];
 const USER_HEADERS = [
   'username', 'password', 'passwordHash', 'salt', 'fullName', 'role', 'branch',
   'active', 'createdAt', 'updatedAt', 'lastLogin'
@@ -117,6 +127,8 @@ function doPost(e) {
       case 'approveRequest': requireRole_(user, ['ADMIN', 'MANAGER']); return jsonOut_(decideRequest_(data, true, user));
       case 'rejectRequest':  requireRole_(user, ['ADMIN', 'MANAGER']); return jsonOut_(decideRequest_(data, false, user));
       case 'issueRequest':   requireRole_(user, ['ADMIN']); return jsonOut_(issueRequest_(data, user));
+      case 'shipRequest':    requireRole_(user, ['ADMIN']); return jsonOut_(shipRequest_(data, user));
+      case 'receiveRequest': return jsonOut_(receiveRequest_(data, user));   // ตรวจสิทธิ์ตามสาขาในฟังก์ชัน
       case 'saveUser':       requireRole_(user, ['ADMIN']); return jsonOut_(saveUser_(data, user));
       case 'changePassword': return jsonOut_(changePassword_(data, user));
       case undefined:
@@ -361,7 +373,9 @@ function listRequests_(user) {
     .reverse()
     .map(r => {
       const o = Object.assign({}, r);
+      o.status = effStatus_(r);
       o.hasIssuerSig = !!o.issuerSig;
+      o.hasReceiverSig = !!o.receiverSig;
       delete o._row; delete o.requesterSig; delete o.approverSig; delete o.issuerSig; delete o.receiverSig;
       return o;
     });
@@ -373,6 +387,7 @@ function getRequestDetail_(id, user) {
     return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + id };
   }
   const o = Object.assign({}, r); delete o._row;
+  o.status = effStatus_(r);
   return { status: 'success', data: o };
 }
 
@@ -462,31 +477,128 @@ function decideRequest_(d, approve, user) {
   return { status: 'success', requestId: r.requestId };
 }
 
-/** HR จ่ายของตามใบเบิกที่อนุมัติแล้ว → สถานะ ISSUED (ปิดงาน) */
+/**
+ * สถานะจริงของใบเบิก — ใบเก่า (ก่อนมีขั้นตอนจัดส่ง) ที่เป็น ISSUED และผู้รับเซ็นรับที่ HR แล้ว
+ * ถือว่า "ได้รับของแล้ว" (RECEIVED) ไม่ต้องไล่แก้ข้อมูลในชีต
+ */
+function effStatus_(r) {
+  const s = String(r.status || '');
+  if (s === 'ISSUED' && r.receiverSig && !r.deliveryMethod) return 'RECEIVED';
+  return s;
+}
+
+/**
+ * ขั้นที่ 3 — HR จ่ายของตามใบเบิกที่อนุมัติแล้ว
+ *   deliveryMethod = 'SHIP'   → ISSUED (รอฝากส่งไปสาขา)  [ค่าเริ่มต้น]
+ *   deliveryMethod = 'PICKUP' → RECEIVED (ผู้รับมารับเองที่ HR ต้องมีลายเซ็นผู้รับ)
+ * ใบที่จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR → เซ็นย้อนหลังได้ (ไม่เปลี่ยนสถานะ)
+ */
 function issueRequest_(d, user) {
+  if (!d.issuerSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุ (HR)' };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const t = readTable_(reqSheet_());
     const r = t.rows.find(x => String(x.requestId) === String(d.requestId));
     if (!r) return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
-    // จ่ายของครั้งแรก (APPROVED) หรือ เซ็นย้อนหลังให้ใบที่จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR (ISSUED)
-    const lateSign = r.status === 'ISSUED' && !r.issuerSig;
-    if (r.status !== 'APPROVED' && !lateSign) {
-      return { status: 'error', message: 'จ่ายของได้เฉพาะใบเบิกที่อนุมัติแล้ว (สถานะปัจจุบัน: ' + r.status + ')' };
+    const st = effStatus_(r);
+    const lateSign = ['ISSUED', 'SHIPPED', 'RECEIVED'].indexOf(st) >= 0 && !r.issuerSig;
+    if (st !== 'APPROVED' && !lateSign) {
+      return { status: 'error', message: 'จ่ายของได้เฉพาะใบเบิกที่อนุมัติแล้ว (สถานะปัจจุบัน: ' + st + ')' };
     }
-    if (!d.issuerSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุ (HR)' };
 
-    if (!lateSign || !r.issuedBy) {
-      setCell_(t, r._row, 'issuedBy', user.username);
-      setCell_(t, r._row, 'issuedByName', user.fullName || user.username);
-      setCell_(t, r._row, 'issuedAt', nowStr_());
+    if (lateSign) {                                   // เซ็นย้อนหลังอย่างเดียว
+      if (!r.issuedBy) {
+        setCell_(t, r._row, 'issuedBy', user.username);
+        setCell_(t, r._row, 'issuedByName', user.fullName || user.username);
+        setCell_(t, r._row, 'issuedAt', nowStr_());
+      }
+      setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
+      return { status: 'success', requestId: r.requestId, newStatus: st };
     }
+
+    const pickup = d.deliveryMethod === 'PICKUP';
+    const receiverName = String(d.receiverName || '').trim();
+    if (pickup && (!receiverName || !d.receiverSig)) {
+      return { status: 'error', message: 'รับของเองที่ HR: กรุณาระบุชื่อและลายเซ็นผู้รับพัสดุ' };
+    }
+    const now = nowStr_();
+    setCell_(t, r._row, 'issuedBy', user.username);
+    setCell_(t, r._row, 'issuedByName', user.fullName || user.username);
+    setCell_(t, r._row, 'issuedAt', now);
     setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
-    setCell_(t, r._row, 'receiverName', String(d.receiverName || r.staffName || ''));
-    if (d.receiverSig) setCell_(t, r._row, 'receiverSig', storeSig_(d.receiverSig, r.requestId + '_receiver'));
-    setCell_(t, r._row, 'status', 'ISSUED');
-    return { status: 'success', requestId: r.requestId };
+    setCell_(t, r._row, 'deliveryMethod', pickup ? 'PICKUP' : 'SHIP');
+    if (pickup) {
+      setCell_(t, r._row, 'receiverName', receiverName);
+      setCell_(t, r._row, 'receiverSig', storeSig_(d.receiverSig, r.requestId + '_receiver'));
+      setCell_(t, r._row, 'receivedBy', user.username);
+      setCell_(t, r._row, 'receivedAt', now);
+      setCell_(t, r._row, 'receiveNote', 'รับของเองที่ HR');
+    }
+    const newStatus = pickup ? 'RECEIVED' : 'ISSUED';
+    setCell_(t, r._row, 'status', newStatus);
+    return { status: 'success', requestId: r.requestId, newStatus: newStatus };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ขั้นที่ 4 — HR บันทึกการฝากส่งของไปสาขา (ฝากฝ่ายบริการ / ฝ่ายขาย / อื่น ๆ) → SHIPPED */
+function shipRequest_(d, user) {
+  const via = String(d.shipVia || '').trim();
+  const carrier = String(d.shipCarrier || '').trim();
+  if (SHIP_VIA.indexOf(via) < 0) return { status: 'error', message: 'กรุณาเลือกช่องทางที่ฝากส่ง' };
+  if (!carrier) return { status: 'error', message: 'กรุณาระบุชื่อผู้นำส่ง' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const t = readTable_(reqSheet_());
+    const r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    if (!r) return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
+    const st = effStatus_(r);
+    // ISSUED = ฝากส่งครั้งแรก · SHIPPED = แก้ไขข้อมูลผู้นำส่ง (เช่น เปลี่ยนคนฝาก)
+    if (st !== 'ISSUED' && st !== 'SHIPPED') {
+      return { status: 'error', message: 'บันทึกฝากส่งได้เฉพาะใบที่ HR จ่ายของแล้ว (สถานะปัจจุบัน: ' + st + ')' };
+    }
+    setCell_(t, r._row, 'deliveryMethod', 'SHIP');
+    setCell_(t, r._row, 'shipVia', via);
+    setCell_(t, r._row, 'shipCarrier', carrier);
+    setCell_(t, r._row, 'shipNote', String(d.shipNote || '').trim());
+    setCell_(t, r._row, 'shippedBy', user.username);
+    setCell_(t, r._row, 'shippedByName', user.fullName || user.username);
+    setCell_(t, r._row, 'shippedAt', nowStr_());
+    setCell_(t, r._row, 'status', 'SHIPPED');
+    return { status: 'success', requestId: r.requestId, newStatus: 'SHIPPED' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ขั้นที่ 5 — สาขายืนยันได้รับของ (พนักงานสาขาเดียวกัน / ADMIN / MANAGER) → RECEIVED */
+function receiveRequest_(d, user) {
+  const receiverName = String(d.receiverName || '').trim();
+  if (!receiverName) return { status: 'error', message: 'กรุณาระบุชื่อผู้รับพัสดุ' };
+  if (!d.receiverSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้รับพัสดุ' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const t = readTable_(reqSheet_());
+    const r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    if (!r || (user.role === 'BRANCH' && String(r.branch) !== user.branch)) {
+      return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
+    }
+    const st = effStatus_(r);
+    if (st !== 'SHIPPED' && st !== 'ISSUED') {
+      return { status: 'error', message: 'ยืนยันรับของได้เฉพาะใบที่ HR จ่าย/ฝากส่งแล้ว (สถานะปัจจุบัน: ' + st + ')' };
+    }
+    setCell_(t, r._row, 'receiverName', receiverName);
+    setCell_(t, r._row, 'receiverSig', storeSig_(d.receiverSig, r.requestId + '_receiver'));
+    setCell_(t, r._row, 'receivedBy', user.username);
+    setCell_(t, r._row, 'receivedAt', nowStr_());
+    setCell_(t, r._row, 'receiveNote', String(d.receiveNote || '').trim());
+    if (!r.deliveryMethod) setCell_(t, r._row, 'deliveryMethod', 'SHIP');
+    setCell_(t, r._row, 'status', 'RECEIVED');
+    return { status: 'success', requestId: r.requestId, newStatus: 'RECEIVED' };
   } finally {
     lock.releaseLock();
   }

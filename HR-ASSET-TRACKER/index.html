@@ -270,7 +270,7 @@
         <!-- KPI tiles -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="dashTiles"></div>
         <!-- สถานะใบเบิกในช่วงเวลา -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="dashReqStatus"></div>
+        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" id="dashReqStatus"></div>
         <!-- กราฟ -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div class="border border-slate-200 rounded-2xl p-4">
@@ -383,12 +383,14 @@
       <div class="p-5 bg-indigo-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
           <div class="flex items-center gap-2 font-bold text-base"><span>✍️</span><h2>ใบขอเบิก &amp; การอนุมัติ (Approval Workflow)</h2></div>
-          <p id="reqSubtitle" class="text-xs text-indigo-200 mt-0.5">พนักงานส่งคำขอ → ผู้จัดการเซ็นอนุมัติ → พนักงานพิมพ์ใบเบิกไปรับของ / HR ดูรายการในแอปแล้วจ่ายของ</p>
+          <p id="reqSubtitle" class="text-xs text-indigo-200 mt-0.5">ขอเบิก → อนุมัติ → HR จ่ายของ → ฝากส่งไปสาขา → สาขายืนยันรับของ</p>
         </div>
         <div class="flex items-center gap-1.5 flex-wrap m-tabs">
           <button data-req-tab="PENDING" onclick="setReqStatus('PENDING')">⏳ รออนุมัติ (<span class="cnt">0</span>)</button>
-          <button data-req-tab="APPROVED" onclick="setReqStatus('APPROVED')">✅ อนุมัติแล้ว · รอรับของ (<span class="cnt">0</span>)</button>
-          <button data-req-tab="ISSUED" onclick="setReqStatus('ISSUED')">📦 จ่ายของแล้ว (<span class="cnt">0</span>)</button>
+          <button data-req-tab="APPROVED" onclick="setReqStatus('APPROVED')">✅ อนุมัติแล้ว · รอจ่ายของ (<span class="cnt">0</span>)</button>
+          <button data-req-tab="ISSUED" onclick="setReqStatus('ISSUED')">📦 รอฝากส่ง (<span class="cnt">0</span>)</button>
+          <button data-req-tab="SHIPPED" onclick="setReqStatus('SHIPPED')">🚚 กำลังส่งไปสาขา (<span class="cnt">0</span>)</button>
+          <button data-req-tab="RECEIVED" onclick="setReqStatus('RECEIVED')">🏁 สาขารับของแล้ว (<span class="cnt">0</span>)</button>
           <button data-req-tab="REJECTED" onclick="setReqStatus('REJECTED')">❌ ไม่อนุมัติ (<span class="cnt">0</span>)</button>
           <button data-req-tab="ALL" onclick="setReqStatus('ALL')">ทั้งหมด (<span class="cnt">0</span>)</button>
         </div>
@@ -659,21 +661,35 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+      <div id="issDeliveryBox" class="space-y-3">
         <div>
-          <label class="block font-semibold text-slate-600 mb-1">ชื่อผู้รับพัสดุ</label>
-          <input type="text" id="issReceiverName" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="ชื่อ-นามสกุล ผู้มารับของ">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">วิธีส่งมอบของ <span class="text-red-500">*</span></label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <label class="flex items-start gap-2 border border-slate-300 rounded-xl p-3 cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+              <input type="radio" name="issMethod" value="SHIP" checked onchange="onIssMethodChange()" class="mt-0.5">
+              <span><b>🚚 รอฝากส่งไปสาขา</b><br><span class="text-slate-500">ฝากฝ่ายบริการ / ฝ่ายขาย ที่มีเส้นทางผ่าน · สาขาเซ็นรับเมื่อของถึง</span></span>
+            </label>
+            <label class="flex items-start gap-2 border border-slate-300 rounded-xl p-3 cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+              <input type="radio" name="issMethod" value="PICKUP" onchange="onIssMethodChange()" class="mt-0.5">
+              <span><b>🙋 ผู้รับมารับเองที่ HR</b><br><span class="text-slate-500">ผู้รับเซ็นรับของทันที → ปิดงาน</span></span>
+            </label>
+          </div>
         </div>
-        <p class="text-[11px] text-slate-400 self-end">ถ้าผู้รับมารับของที่ HR ให้เซ็นในกรอบด้านล่างได้เลย · ถ้าไม่ได้มาด้วยตัวเอง เว้นว่างไว้แล้วให้เซ็นบนใบที่พิมพ์</p>
-      </div>
-      <div>
-        <div class="flex items-center justify-between mb-1">
-          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้รับพัสดุ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-          <button type="button" onclick="sigPads.receiver.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
-        </div>
-        <div class="relative">
-          <canvas id="receiverSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-crosshair"></canvas>
-          <span id="receiverSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับพัสดุเซ็นชื่อในกรอบนี้</span>
+        <div id="issPickupBox" class="hidden space-y-3">
+          <div class="text-xs">
+            <label class="block font-semibold text-slate-600 mb-1">ชื่อผู้รับพัสดุ <span class="text-red-500">*</span></label>
+            <input type="text" id="issReceiverName" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="ชื่อ-นามสกุล ผู้มารับของ">
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้รับพัสดุ <span class="text-red-500">*</span></label>
+              <button type="button" onclick="sigPads.receiver.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+            </div>
+            <div class="relative">
+              <canvas id="receiverSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-crosshair"></canvas>
+              <span id="receiverSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับพัสดุเซ็นชื่อในกรอบนี้</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -681,6 +697,75 @@
         <button type="button" onclick="toggleIssueModal(false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
         <button type="button" id="issSaveBtn" onclick="submitIssue(false)" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">📦 บันทึกจ่ายของ</button>
         <button type="button" id="issSavePrintBtn" onclick="submitIssue(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">📦 บันทึก &amp; 🖨️ พิมพ์ใบเบิก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🚚 Modal HR บันทึกฝากส่งของไปสาขา -->
+  <div id="shipModal" class="m-sheet fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-lg font-bold text-slate-800">🚚 ฝากส่งของไปสาขา <span id="shpReqId" class="font-mono text-indigo-700 text-base"></span></h3>
+        <button onclick="toggleEl('shipModal', false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+      <div id="shpDetail" class="text-xs bg-slate-50 border border-slate-200 rounded-xl p-4"></div>
+      <div class="text-xs">
+        <label class="block font-semibold text-slate-600 mb-1">ฝากส่งกับ <span class="text-red-500">*</span></label>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="flex items-center justify-center gap-1.5 border border-slate-300 rounded-xl py-2.5 cursor-pointer font-bold has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50 has-[:checked]:text-indigo-800"><input type="radio" name="shpVia" value="ฝ่ายบริการ" class="sr-only">🛠️ ฝ่ายบริการ</label>
+          <label class="flex items-center justify-center gap-1.5 border border-slate-300 rounded-xl py-2.5 cursor-pointer font-bold has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50 has-[:checked]:text-indigo-800"><input type="radio" name="shpVia" value="ฝ่ายขาย" class="sr-only">💼 ฝ่ายขาย</label>
+          <label class="flex items-center justify-center gap-1.5 border border-slate-300 rounded-xl py-2.5 cursor-pointer font-bold has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50 has-[:checked]:text-indigo-800"><input type="radio" name="shpVia" value="อื่น ๆ" class="sr-only">📦 อื่น ๆ</label>
+        </div>
+      </div>
+      <div class="text-xs">
+        <label class="block font-semibold text-slate-600 mb-1">ชื่อผู้นำส่ง <span class="text-red-500">*</span></label>
+        <input type="text" id="shpCarrier" list="shpCarrierList" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="เช่น นายสมชาย (ช่างบริการ สายอุบลฯ)">
+        <datalist id="shpCarrierList"></datalist>
+      </div>
+      <div class="text-xs">
+        <label class="block font-semibold text-slate-600 mb-1">หมายเหตุ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+        <input type="text" id="shpNote" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="เช่น ไปถึงสาขาประมาณวันศุกร์ / ทะเบียนรถ / เบอร์โทรผู้นำส่ง">
+      </div>
+      <p class="text-[11px] text-slate-400">💡 แนะนำให้พิมพ์ใบเบิกแนบไปกับของ ให้ผู้รับที่สาขาเซ็นรับ — หรือให้สาขากด “📥 ยืนยันรับของ” ในแอปเมื่อของมาถึง</p>
+      <div class="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="toggleEl('shipModal', false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="button" id="shpSaveBtn" onclick="submitShip(false)" class="bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">🚚 บันทึกฝากส่ง</button>
+        <button type="button" id="shpSavePrintBtn" onclick="submitShip(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">🚚 บันทึก &amp; 🖨️ พิมพ์ใบแนบของ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📥 Modal สาขายืนยันได้รับของ -->
+  <div id="receiveModal" class="m-sheet fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="text-lg font-bold text-slate-800">📥 ยืนยันได้รับของ <span id="rcvReqId" class="font-mono text-indigo-700 text-base"></span></h3>
+        <button onclick="toggleEl('receiveModal', false)" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+      </div>
+      <div id="rcvDetail" class="text-xs bg-slate-50 border border-slate-200 rounded-xl p-4"></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">ชื่อผู้รับพัสดุ <span class="text-red-500">*</span></label>
+          <input type="text" id="rcvName" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="ชื่อ-นามสกุล ผู้รับของที่สาขา">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">หมายเหตุ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+          <input type="text" id="rcvNote" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="เช่น ได้รับครบ สภาพดี / กล่องบุบ">
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้รับพัสดุ <span class="text-red-500">*</span></label>
+          <button type="button" onclick="sigPads.rcv.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+        </div>
+        <div class="relative">
+          <canvas id="rcvSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-400 rounded-xl cursor-crosshair"></canvas>
+          <span id="rcvSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับของที่สาขาเซ็นชื่อในกรอบนี้</span>
+        </div>
+      </div>
+      <div class="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="toggleEl('receiveModal', false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
+        <button type="button" id="rcvSaveBtn" onclick="submitReceive()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">📥 ยืนยันได้รับของครบถ้วน</button>
       </div>
     </div>
   </div>
@@ -830,7 +915,10 @@
     const canManageAssets = () => hasRole("ADMIN");
     const canApprove = () => hasRole("ADMIN", "MANAGER");
     const canPurchase = () => hasRole("ADMIN", "MANAGER");
-    const canIssue = () => hasRole("ADMIN");                 // HR เป็นผู้จ่ายของ
+    const canIssue = () => hasRole("ADMIN");                 // HR เป็นผู้จ่ายของ / บันทึกฝากส่ง
+    const canReceive = r => hasRole("ADMIN", "MANAGER") ||   // สาขาเจ้าของใบเบิกยืนยันรับของ
+      (hasRole("BRANCH") && session && r && r.branch === session.user.branch);
+    const ISSUED_PLUS = ["ISSUED", "SHIPPED", "RECEIVED"];
 
     /* =========================================================
        🚀 เริ่มต้นระบบ
@@ -840,6 +928,7 @@
       sigPads.approver = createSignaturePad("approverSigPad");
       sigPads.issuer = createSignaturePad("issuerSigPad");
       sigPads.receiver = createSignaturePad("receiverSigPad");
+      sigPads.rcv = createSignaturePad("rcvSigPad");
       fillBranchSelect($("branch"), false);
       setupImageListeners();
 
@@ -864,6 +953,7 @@
       if (e.key !== "Escape") return;
       closeZoomModal(); toggleModal(false); togglePRModal(false); toggleApproveModal(false);
       toggleEl("userFormModal", false); togglePwModal(false); toggleIssueModal(false);
+      toggleEl("shipModal", false); toggleEl("receiveModal", false);
     });
 
     /* =========================================================
@@ -949,10 +1039,10 @@
       $("userRole").innerText = (ROLE_INFO[u.role] || {}).label || u.role || "-";
       $("userBranch").innerText = u.branch || "ทุกสาขา";
       $("reqSubtitle").innerText = u.role === "BRANCH"
-        ? `ใบเบิกของ ${u.branch || "สาขาคุณ"} · เมื่อสถานะเป็น "อนุมัติแล้ว" ให้กด 🖨️ พิมพ์ใบเบิก แล้วนำไปรับของที่ฝ่าย HR`
+        ? `ใบเบิกของ ${u.branch || "สาขาคุณ"} · เมื่อของมาถึงสาขา (แท็บ 🚚 กำลังส่งไปสาขา) ให้กด 📥 ยืนยันรับของ แล้วเซ็นรับ`
         : u.role === "ADMIN"
-          ? "HR: ดูแท็บ \"อนุมัติแล้ว · รอรับของ\" → จัดของตามรายการ แล้วกด 📦 จ่ายของแล้ว"
-          : "พนักงานส่งคำขอ → ผู้จัดการเซ็นอนุมัติ → พนักงานพิมพ์ใบเบิกไปรับของ / HR ดูรายการในแอปแล้วจ่ายของ";
+          ? "HR: ✅ รอจ่ายของ → กด 📦 จ่ายของ · 📦 รอฝากส่ง → กด 🚚 ฝากส่ง (ฝ่ายบริการ/ฝ่ายขาย) · สาขาเซ็นรับเมื่อของถึง"
+          : "ขอเบิก → อนุมัติ → HR จ่ายของ → ฝากส่งไปสาขา → สาขายืนยันรับของ";
       if (cachedAssets.length) renderInventoryPage();
       if (globalRequests.length) renderRequests();
     }
@@ -1554,6 +1644,10 @@
         const data = await apiGet("getRequests");
         globalRequests = Array.isArray(data) ? data : (data.data || []);
         renderRequests();
+        if (!window._incomingNotified && hasRole("BRANCH")) {
+          const n = globalRequests.filter(r => r.status === "SHIPPED").length;
+          if (n) { window._incomingNotified = true; showToast(`🚚 มีของกำลังส่งมาที่สาขา ${n} รายการ — ของถึงแล้วกด 📥 ยืนยันรับของ (แท็บ "กำลังส่งไปสาขา")`, "warn"); }
+        }
         if (cachedAssets.length) renderDashboard();
       } catch (err) {
         console.error(err);
@@ -1564,15 +1658,17 @@
     function gotoReqPage(p) { reqPage = p; renderRequests(); }
 
     function statusBadge(s) {
-      if (s === "APPROVED") return '<span class="bg-emerald-100 text-emerald-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">✅ อนุมัติแล้ว · รอรับของ</span>';
-      if (s === "ISSUED") return '<span class="bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">📦 จ่ายของแล้ว</span>';
+      if (s === "APPROVED") return '<span class="bg-emerald-100 text-emerald-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">✅ อนุมัติแล้ว · รอจ่ายของ</span>';
+      if (s === "ISSUED") return '<span class="bg-orange-100 text-orange-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">📦 จ่ายแล้ว · รอฝากส่ง</span>';
+      if (s === "SHIPPED") return '<span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🚚 กำลังส่งไปสาขา</span>';
+      if (s === "RECEIVED") return '<span class="bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🏁 สาขารับของแล้ว</span>';
       if (s === "REJECTED") return '<span class="bg-rose-100 text-rose-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">❌ ไม่อนุมัติ</span>';
       if (s === "PROCESSING") return '<span class="bg-sky-100 text-sky-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⚙️ กำลังดำเนินการ</span>';
       return '<span class="bg-amber-100 text-amber-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⏳ รออนุมัติ</span>';
     }
 
     function renderRequests() {
-      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, REJECTED: 0, ALL: globalRequests.length };
+      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, SHIPPED: 0, RECEIVED: 0, REJECTED: 0, ALL: globalRequests.length };
       globalRequests.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
       document.querySelectorAll("[data-req-tab]").forEach(btn => {
         const s = btn.dataset.reqTab;
@@ -1597,12 +1693,21 @@
             if (r.status === "PENDING") act = canApprove()
               ? `<button data-id="${id}" onclick="openApproveModal(this.dataset.id)" class="bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer">✍️ พิจารณา</button>`
               : '<span class="text-amber-600 text-[11px] font-semibold">รอผู้อนุมัติ</span>';
-            else if (r.status === "APPROVED" || r.status === "ISSUED") {
-              act = `<button data-id="${id}" onclick="printRequisition(this.dataset.id)" class="bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer">🖨️ พิมพ์ใบเบิก</button>`;
-              if (r.status === "ISSUED" && !r.hasIssuerSig && canIssue())
-                act += ` <button data-id="${id}" onclick="issueRequest(this.dataset.id)" class="bg-amber-500 hover:bg-amber-600 text-slate-900 py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1" title="ใบนี้จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR">✍️ เซ็นผู้จ่าย</button>`;
+            else if (r.status === "APPROVED" || ISSUED_PLUS.includes(r.status)) {
+              const B = (fn, cls, label, title) => ` <button data-id="${id}" onclick="${fn}(this.dataset.id)" class="${cls} py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1 mt-1"${title ? ` title="${title}"` : ""}>${label}</button>`;
+              act = `<button data-id="${id}" onclick="printRequisition(this.dataset.id)" class="bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer mt-1">🖨️ พิมพ์</button>`;
               if (r.status === "APPROVED" && canIssue())
-                act += ` <button data-id="${id}" onclick="issueRequest(this.dataset.id)" class="bg-slate-800 hover:bg-slate-900 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1">📦 จ่ายของแล้ว</button>`;
+                act += B("issueRequest", "bg-slate-800 hover:bg-slate-900 text-white", "📦 จ่ายของ");
+              if (r.status === "ISSUED" && canIssue())
+                act += B("openShipModal", "bg-indigo-700 hover:bg-indigo-800 text-white", "🚚 ฝากส่ง");
+              if (r.status === "SHIPPED" && canIssue())
+                act += B("openShipModal", "bg-slate-200 hover:bg-slate-300 text-slate-700", "✏️", "แก้ไขข้อมูลผู้นำส่ง");
+              if ((r.status === "SHIPPED" || (r.status === "ISSUED" && canIssue())) && canReceive(r))
+                act += B("openReceiveModal", "bg-blue-600 hover:bg-blue-700 text-white", "📥 ยืนยันรับของ");
+              if (r.status === "ISSUED" && !canIssue())
+                act += ' <div class="text-[10px] text-orange-600 font-semibold mt-1">รอ HR ฝากส่ง</div>';
+              if (ISSUED_PLUS.includes(r.status) && !r.hasIssuerSig && canIssue())
+                act += B("issueRequest", "bg-amber-500 hover:bg-amber-600 text-slate-900", "✍️ เซ็นผู้จ่าย", "ใบนี้จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR");
             }
             const reason = r.status === "REJECTED" && r.rejectReason ? `<div class="text-[10px] text-rose-500 mt-1 max-w-[160px] mx-auto break-words">${esc(r.rejectReason)}</div>` : "";
             return `
@@ -1614,11 +1719,21 @@
                 <td class="p-3"><div class="font-medium">${esc(r.staffName)}</div><div class="text-[10px] text-slate-400">แผนก: ${esc(r.department)}</div></td>
                 <td class="p-3 text-slate-700">${esc(r.branch)}</td>
                 <td class="p-3 text-center">${statusBadge(r.status)}${reason}</td>
-                <td class="p-3"><div>${esc(r.approverName || "-")}</div><div class="text-[10px] text-slate-400">${esc(r.actionAt || "")}</div>${r.status === "ISSUED" ? `<div class="text-[10px] text-slate-500 mt-1">📦 จ่ายโดย ${esc(r.issuedByName || "-")} · ${esc(r.issuedAt || "")}</div>` : ""}</td>
+                <td class="p-3"><div>${esc(r.approverName || "-")}</div><div class="text-[10px] text-slate-400">${esc(r.actionAt || "")}</div>${trackInfo(r)}</td>
                 <td class="p-3 text-center whitespace-nowrap">${act}</td>
               </tr>`;
           }).join("");
       renderPager("reqPagination", reqPage, list.length, REQ_PAGE_SIZE, "gotoReqPage");
+    }
+
+    /** ข้อมูลติดตามการจัดส่ง (แสดงใต้ชื่อผู้อนุมัติ) */
+    function trackInfo(r) {
+      const line = (t) => `<div class="text-[10px] text-slate-500 mt-1">${t}</div>`;
+      let h = "";
+      if (ISSUED_PLUS.includes(r.status) && (r.issuedByName || r.issuedAt)) h += line(`📦 จ่ายโดย ${esc(r.issuedByName || "-")} · ${esc(r.issuedAt || "")}`);
+      if (r.shipVia) h += line(`🚚 ฝาก${esc(r.shipVia)}: <b>${esc(r.shipCarrier || "-")}</b> · ${esc(r.shippedAt || "")}${r.shipNote ? `<br><span class="text-slate-400">${esc(r.shipNote)}</span>` : ""}`);
+      if (r.status === "RECEIVED") h += line(`🏁 รับโดย ${esc(r.receiverName || "-")}${r.deliveryMethod === "PICKUP" ? " (รับเองที่ HR)" : ""} · ${esc(r.receivedAt || r.issuedAt || "")}${r.receiveNote && r.deliveryMethod !== "PICKUP" ? `<br><span class="text-slate-400">${esc(r.receiveNote)}</span>` : ""}`);
+      return h;
     }
 
     async function fetchRequestDetail(id, force) {
@@ -1705,7 +1820,7 @@
         toggleApproveModal(false);
         await loadData();
         showToast(isApprove
-          ? `✅ อนุมัติใบเบิก ${id} แล้ว — ผู้ขอเบิกพิมพ์ใบเบิกไปรับของ หรือ HR จ่ายของจากรายการในแอปได้เลย`
+          ? `✅ อนุมัติใบเบิก ${id} แล้ว — HR จ่ายของแล้วฝากส่งไปสาขาได้จากแท็บ "รอจ่ายของ"`
           : `บันทึก "ไม่อนุมัติ" ใบเบิก ${id} แล้ว`, isApprove ? "ok" : "warn");
       } catch (err) {
         alert("❌ ดำเนินการไม่สำเร็จ: " + err.message);
@@ -1722,7 +1837,9 @@
       let r;
       try { r = await fetchRequestDetail(id, true); }
       catch (err) { alert("โหลดข้อมูลใบเบิกไม่สำเร็จ: " + err.message); return; }
-      if (r.status !== "APPROVED" && r.status !== "ISSUED") { alert("พิมพ์ได้เฉพาะใบเบิกที่ได้รับการอนุมัติแล้ว"); return; }
+      if (r.status !== "APPROVED" && !ISSUED_PLUS.includes(r.status)) { alert("พิมพ์ได้เฉพาะใบเบิกที่ได้รับการอนุมัติแล้ว"); return; }
+      const issued = ISSUED_PLUS.includes(r.status);
+      const stamp = { APPROVED: "✔ อนุมัติแล้ว", ISSUED: "✔ จ่ายของแล้ว", SHIPPED: "🚚 ส่งไปสาขาแล้ว", RECEIVED: "✔ สาขารับของแล้ว" }[r.status];
 
       const asset = findAsset(r.assetId) || {};
       const sig = src => src ? `<img src="${esc(src)}" style="height:58px;max-width:100%;object-fit:contain;display:block;margin:0 auto;">` : '<div style="height:58px;"></div>';
@@ -1749,7 +1866,7 @@
             <div style="text-align:right;">
               <div style="font-size:10px;color:#475569;">เลขที่ใบเบิก</div>
               <div style="font-family:monospace;font-size:16px;font-weight:900;">${esc(r.requestId)}</div>
-              <div style="display:inline-block;margin-top:6px;border:2px solid #059669;color:#059669;font-weight:900;padding:2px 12px;border-radius:6px;transform:rotate(-4deg);">${r.status === "ISSUED" ? "✔ จ่ายของแล้ว" : "✔ อนุมัติแล้ว"}</div>
+              <div style="display:inline-block;margin-top:6px;border:2px solid #059669;color:#059669;font-weight:900;padding:2px 12px;border-radius:6px;transform:rotate(-4deg);">${stamp}</div>
             </div>
           </div>
           <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;">
@@ -1764,18 +1881,21 @@
             </tr></thead>
             <tbody><tr>
               <td style="${td}text-align:center;">1</td><td style="${td}font-family:monospace;font-weight:700;">${esc(r.assetId)}</td><td style="${td}font-weight:700;">${esc(r.assetName)}</td>
-              <td style="${td}text-align:center;">${esc(r.category || asset.category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${r.status === "ISSUED" ? esc(r.quantity) : ""}</td>
+              <td style="${td}text-align:center;">${esc(r.category || asset.category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(r.quantity) : ""}</td>
             </tr></tbody>
           </table>
-          <div style="margin-bottom:22px;"><b>เหตุผลการเบิก:</b> ${esc(r.notes || "-")}</div>
+          <div style="margin-bottom:${r.shipVia || r.deliveryMethod === "PICKUP" ? 8 : 22}px;"><b>เหตุผลการเบิก:</b> ${esc(r.notes || "-")}</div>
+          ${r.shipVia ? `<div style="margin-bottom:22px;padding:6px 10px;border:1px dashed #64748b;border-radius:6px;"><b>🚚 การจัดส่ง:</b> ฝากส่งกับ${esc(r.shipVia)} — ผู้นำส่ง <b>${esc(r.shipCarrier || "-")}</b> · วันที่ฝาก ${esc(r.shippedAt || "-")} · ส่งถึง <b>${esc(r.branch)}</b>${r.shipNote ? " · " + esc(r.shipNote) : ""}</div>`
+            : r.deliveryMethod === "PICKUP" ? '<div style="margin-bottom:22px;"><b>การส่งมอบ:</b> ผู้รับมารับของเองที่ฝ่าย HR</div>' : ""}
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
             ${box("ผู้ขอเบิก", r.requesterSig, r.staffName, r.department ? "แผนก " + r.department : "", String(r.timestamp || "").split(" ")[0])}
             ${box("ผู้อนุมัติ", r.approverSig, r.approverName, r.approverPosition, String(r.actionAt || "").split(" ")[0])}
             ${box("ผู้จ่ายพัสดุ (HR)", r.issuerSig, r.issuedByName || "", r.issuedByName ? "ฝ่ายทรัพยากรบุคคล" : "", String(r.issuedAt || "").split(" ")[0])}
-            ${box("ผู้รับพัสดุ", r.receiverSig, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", r.receiverSig ? String(r.issuedAt || "").split(" ")[0] : "")}
+            ${box("ผู้รับพัสดุ (สาขา)", r.receiverSig, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", r.receiverSig ? String(r.receivedAt || r.issuedAt || "").split(" ")[0] : "")}
           </div>
           <div style="margin-top:18px;padding:8px 10px;background:#f1f5f9;border-radius:6px;font-size:11px;color:#334155;">
-            📌 โปรดนำใบเบิกฉบับนี้ติดต่อรับพัสดุที่ฝ่ายทรัพยากรบุคคล (HR) · HR ลงนามผู้จ่ายและผู้รับลงนามเมื่อได้รับของครบถ้วน
+            📌 ${r.shipVia ? "ใบนี้แนบไปกับพัสดุ — ผู้รับที่สาขาตรวจนับของให้ครบ แล้วลงนามผู้รับ และกด 📥 ยืนยันรับของ ในระบบ"
+              : "HR ลงนามผู้จ่าย → ฝากส่งไปสาขา (ฝ่ายบริการ / ฝ่ายขาย) → ผู้รับที่สาขาลงนามเมื่อได้รับของครบถ้วน"}
           </div>
           <div style="margin-top:6px;text-align:right;font-size:9px;color:#94a3b8;">พิมพ์โดย ${esc(printedBy)} · ${esc(printedAt)}</div>
         </div>`;
@@ -2046,8 +2166,10 @@
         </button>`;
       $("dashReqStatus").innerHTML =
         st("⏳", "ใบเบิกรออนุมัติ", cnt("PENDING"), "PENDING") +
-        st("✅", "อนุมัติแล้ว · รอรับของ", cnt("APPROVED"), "APPROVED") +
-        st("📦", "จ่ายของแล้ว", cnt("ISSUED"), "ISSUED") +
+        st("✅", "อนุมัติแล้ว · รอจ่ายของ", cnt("APPROVED"), "APPROVED") +
+        st("📦", "จ่ายแล้ว · รอฝากส่ง", cnt("ISSUED"), "ISSUED") +
+        st("🚚", "กำลังส่งไปสาขา", cnt("SHIPPED"), "SHIPPED") +
+        st("🏁", "สาขารับของแล้ว", cnt("RECEIVED"), "RECEIVED") +
         st("❌", "ไม่อนุมัติ", cnt("REJECTED"), "REJECTED");
 
       // ---- กราฟแท่งแนวนอน: รายสาขา ----
@@ -2213,7 +2335,11 @@
       const r = globalRequests.find(x => x.requestId === id) || {};
       $("issReqId").innerText = id;
       $("issIssuerName").innerText = session.user.fullName || session.user.username;
-      $("issReceiverName").value = r.receiverName || r.staffName || "";
+      $("issReceiverName").value = r.staffName || "";
+      const late = ISSUED_PLUS.includes(r.status);
+      $("issDeliveryBox").classList.toggle("hidden", late);
+      document.querySelector('input[name="issMethod"][value="SHIP"]').checked = true;
+      onIssMethodChange();
       $("issDetail").innerHTML = `
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div><p class="text-[10px] text-slate-400">อุปกรณ์</p><p class="font-bold text-slate-800">${esc(r.assetName)} <span class="font-mono font-normal text-slate-400">(${esc(r.assetId)})</span></p></div>
@@ -2221,15 +2347,27 @@
           <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก / สาขา</p><p class="font-bold text-slate-800">${esc(r.staffName)} · ${esc(r.branch)}</p></div>
           <div><p class="text-[10px] text-slate-400">อนุมัติโดย</p><p class="font-bold text-slate-800">${esc(r.approverName || "-")}</p></div>
         </div>
-        ${r.status === "ISSUED" ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — เซ็นลายเซ็นย้อนหลังเพื่อให้ใบเบิกที่พิมพ์มีลายเซ็นครบ</p>' : ""}`;
+        ${late ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — เซ็นลายเซ็นย้อนหลังเพื่อให้ใบเบิกที่พิมพ์มีลายเซ็นครบ</p>' : ""}`;
       toggleIssueModal(true);
       sigPads.issuer.setup();
       sigPads.receiver.setup();
     }
 
+    function issMethod() { const el = document.querySelector('input[name="issMethod"]:checked'); return el ? el.value : "SHIP"; }
+    function onIssMethodChange() {
+      const pickup = issMethod() === "PICKUP";
+      $("issPickupBox").classList.toggle("hidden", !pickup);
+      if (pickup) setTimeout(() => sigPads.receiver.setup(), 30);
+    }
+
     async function submitIssue(andPrint) {
       const id = currentIssueId;
+      const late = $("issDeliveryBox").classList.contains("hidden");
+      const method = late ? "" : issMethod();
       if (sigPads.issuer.isEmpty) { showToast("✍️ กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุ (HR) ก่อนบันทึก", "warn"); return; }
+      if (method === "PICKUP" && (!$("issReceiverName").value.trim() || sigPads.receiver.isEmpty)) {
+        showToast("🙋 รับของเองที่ HR: กรุณาระบุชื่อและให้ผู้รับเซ็นชื่อ", "warn"); return;
+      }
       const btns = [$("issSaveBtn"), $("issSavePrintBtn")], olds = btns.map(b => b.innerHTML);
       btns.forEach(b => b.disabled = true);
       (andPrint ? btns[1] : btns[0]).innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
@@ -2237,19 +2375,107 @@
         const res = await apiPost({
           action: "issueRequest", requestId: id,
           issuerSig: sigPads.issuer.toDataURL(),
-          receiverName: $("issReceiverName").value.trim(),
-          receiverSig: sigPads.receiver.isEmpty ? "" : sigPads.receiver.toDataURL()
+          deliveryMethod: method,
+          receiverName: method === "PICKUP" ? $("issReceiverName").value.trim() : "",
+          receiverSig: method === "PICKUP" && !sigPads.receiver.isEmpty ? sigPads.receiver.toDataURL() : ""
         });
         if (res.status !== "success") throw new Error(res.message);
         delete reqDetailCache[id];
         toggleIssueModal(false);
-        showToast(`📦 บันทึกจ่ายของใบเบิก ${id} เรียบร้อย`, "ok");
+        showToast(late ? `✍️ บันทึกลายเซ็นผู้จ่าย ${id} แล้ว`
+          : method === "PICKUP" ? `🏁 ${id} ส่งมอบของเรียบร้อย (รับเองที่ HR) — ปิดงานแล้ว`
+          : `📦 จ่ายของ ${id} แล้ว — อยู่ในแท็บ "รอฝากส่ง" กด 🚚 ฝากส่ง เมื่อมีคนผ่านเส้นทางสาขา`, "ok");
         loadRequests();
         if (andPrint) printRequisition(id);
       } catch (err) {
         showToast("❌ บันทึกไม่สำเร็จ: " + err.message, "error");
       } finally {
         btns.forEach((b, i) => { b.disabled = false; b.innerHTML = olds[i]; });
+      }
+    }
+
+    /* 🚚 HR บันทึกฝากส่งของไปสาขา */
+    let currentShipId = null;
+    function reqSummaryHtml(r) {
+      return `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div><p class="text-[10px] text-slate-400">อุปกรณ์</p><p class="font-bold text-slate-800">${esc(r.assetName)} <span class="font-mono font-normal text-slate-400">(${esc(r.assetId)})</span></p></div>
+          <div><p class="text-[10px] text-slate-400">จำนวน</p><p class="font-black text-lg text-slate-900">${esc(r.quantity)} ชิ้น</p></div>
+          <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก</p><p class="font-bold text-slate-800">${esc(r.staffName)}</p></div>
+          <div><p class="text-[10px] text-slate-400">ส่งไปสาขา</p><p class="font-bold text-indigo-800">${esc(r.branch)}</p></div>
+        </div>`;
+    }
+    function openShipModal(id) {
+      if (!canIssue()) return;
+      currentShipId = id;
+      const r = globalRequests.find(x => x.requestId === id) || {};
+      $("shpReqId").innerText = id;
+      $("shpDetail").innerHTML = reqSummaryHtml(r) + (r.issuedByName ? `<p class="mt-2 text-slate-500">📦 HR จ่ายของโดย ${esc(r.issuedByName)} · ${esc(r.issuedAt || "")}</p>` : "");
+      document.querySelectorAll('input[name="shpVia"]').forEach(x => x.checked = x.value === (r.shipVia || ""));
+      $("shpCarrier").value = r.shipCarrier || "";
+      $("shpNote").value = r.shipNote || "";
+      // รายชื่อผู้นำส่งที่เคยใช้ (กดเลือกได้เร็ว)
+      const names = [...new Set(globalRequests.map(x => x.shipCarrier).filter(Boolean))].slice(0, 30);
+      $("shpCarrierList").innerHTML = names.map(n => `<option value="${esc(n)}">`).join("");
+      toggleEl("shipModal", true);
+    }
+    async function submitShip(andPrint) {
+      const id = currentShipId;
+      const via = (document.querySelector('input[name="shpVia"]:checked') || {}).value || "";
+      const carrier = $("shpCarrier").value.trim();
+      if (!via) { showToast("กรุณาเลือกว่าฝากส่งกับฝ่ายไหน", "warn"); return; }
+      if (!carrier) { showToast("กรุณาระบุชื่อผู้นำส่ง", "warn"); $("shpCarrier").focus(); return; }
+      const btns = [$("shpSaveBtn"), $("shpSavePrintBtn")], olds = btns.map(b => b.innerHTML);
+      btns.forEach(b => b.disabled = true);
+      (andPrint ? btns[1] : btns[0]).innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
+      try {
+        const res = await apiPost({ action: "shipRequest", requestId: id, shipVia: via, shipCarrier: carrier, shipNote: $("shpNote").value.trim() });
+        if (res.status !== "success") throw new Error(res.message);
+        delete reqDetailCache[id];
+        toggleEl("shipModal", false);
+        showToast(`🚚 ${id} ฝาก${via} (${carrier}) ไปสาขาแล้ว — รอสาขายืนยันรับของ`, "ok");
+        loadRequests();
+        if (andPrint) printRequisition(id);
+      } catch (err) {
+        showToast("❌ บันทึกไม่สำเร็จ: " + err.message, "error");
+      } finally {
+        btns.forEach((b, i) => { b.disabled = false; b.innerHTML = olds[i]; });
+      }
+    }
+
+    /* 📥 สาขายืนยันได้รับของ */
+    let currentReceiveId = null;
+    function openReceiveModal(id) {
+      const r = globalRequests.find(x => x.requestId === id) || {};
+      if (!canReceive(r)) return;
+      currentReceiveId = id;
+      $("rcvReqId").innerText = id;
+      $("rcvDetail").innerHTML = reqSummaryHtml(r) +
+        (r.shipVia ? `<p class="mt-2 text-blue-700 font-semibold">🚚 ฝากมากับ${esc(r.shipVia)}: ${esc(r.shipCarrier || "-")} · ${esc(r.shippedAt || "")}</p>` : "") +
+        '<p class="mt-2 text-slate-500">ตรวจนับของให้ครบตามจำนวนก่อนเซ็นรับ</p>';
+      $("rcvName").value = hasRole("BRANCH") ? (session.user.fullName || "") : (r.staffName || "");
+      $("rcvNote").value = "";
+      toggleEl("receiveModal", true);
+      sigPads.rcv.setup();
+    }
+    async function submitReceive() {
+      const id = currentReceiveId;
+      const name = $("rcvName").value.trim();
+      if (!name) { showToast("กรุณาระบุชื่อผู้รับพัสดุ", "warn"); $("rcvName").focus(); return; }
+      if (sigPads.rcv.isEmpty) { showToast("✍️ กรุณาเซ็นลายเซ็นผู้รับพัสดุ", "warn"); return; }
+      const btn = $("rcvSaveBtn"), old = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
+      try {
+        const res = await apiPost({ action: "receiveRequest", requestId: id, receiverName: name, receiveNote: $("rcvNote").value.trim(), receiverSig: sigPads.rcv.toDataURL() });
+        if (res.status !== "success") throw new Error(res.message);
+        delete reqDetailCache[id];
+        toggleEl("receiveModal", false);
+        showToast(`🏁 ยืนยันรับของ ${id} เรียบร้อย — ปิดงานแล้ว`, "ok");
+        loadRequests();
+      } catch (err) {
+        showToast("❌ บันทึกไม่สำเร็จ: " + err.message, "error");
+      } finally {
+        btn.disabled = false; btn.innerHTML = old;
       }
     }
 
