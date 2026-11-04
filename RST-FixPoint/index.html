@@ -440,24 +440,34 @@ function hasRole(...roles) { return currentUser && roles.includes(currentUser.ro
 function isAllBranch() { return currentUser && (currentUser.role === 'admin' || !currentUser.branch || currentUser.branch.toUpperCase() === 'ALL'); }
 
 // ---------------- API ----------------
-async function api(action, data = {}) {
+const READ_ACTIONS = ['me', 'getBranches', 'listTickets', 'getTicket', 'dashboard', 'getImage', 'getImages', 'counts', 'printTickets', 'listUsers', 'getAllBranches'];
+const API_TIMEOUT_MS = 25000;
+
+async function apiOnce(action, data) {
     if (!GAS_WEB_APP_URL || GAS_WEB_APP_URL.indexOf('script.google.com') === -1) {
         throw new Error('ยังไม่ได้ตั้งค่า GAS_WEB_APP_URL ในไฟล์ index.html');
     }
     const body = Object.assign({ action }, data);
     if (action !== 'login') body.token = load(LS_TOKEN);
-    let res;
+    const ctrl = ('AbortController' in window) ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), API_TIMEOUT_MS) : null;
+    let res, text;
     try {
         res = await fetch(GAS_WEB_APP_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // ห้ามเปลี่ยนเป็น application/json (จะติด CORS)
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: ctrl ? ctrl.signal : undefined
         });
+        text = await res.text();
     } catch (e) {
-        setServer({ state: 'down', latency: null, lastCheck: new Date(), error: 'เชื่อมต่อ Server ไม่ได้: ' + e.message });
-        throw new Error('ไม่สามารถเชื่อมต่อ Server ได้ — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่');
-    }
-    const text = await res.text();
+        const err = new Error(e && e.name === 'AbortError'
+            ? 'Server ตอบช้าเกินไป — กำลังลองใหม่'
+            : 'ไม่สามารถเชื่อมต่อ Server ได้ — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่');
+        err.retryable = true;
+        setServer({ state: 'down', latency: null, lastCheck: new Date(), error: 'เชื่อมต่อ Server ไม่ได้: ' + (e && e.message || e) });
+        throw err;
+    } finally { if (timer) clearTimeout(timer); }
     let json;
     try { json = JSON.parse(text); }
     catch (e) {
@@ -473,6 +483,18 @@ async function api(action, data = {}) {
     return json.data;
 }
 
+// อ่านข้อมูลอย่างเดียว (READ_ACTIONS) ลองใหม่อัตโนมัติ 1 ครั้งเมื่อเน็ตหลุด/ช้า; งานเขียนไม่ retry เพื่อกันบันทึกซ้ำ
+async function api(action, data = {}) {
+    try { return await apiOnce(action, data); }
+    catch (e) {
+        if (READ_ACTIONS.indexOf(action) > -1 && e && e.retryable) {
+            await new Promise(r => setTimeout(r, 800));
+            return apiOnce(action, data);
+        }
+        throw e;
+    }
+}
+
 // แปลหน้า HTML ที่ Google ส่งกลับมาแทน JSON ให้เป็นข้อความที่แก้ไขได้
 function htmlErrorHint(text) {
     const t = String(text || '');
@@ -486,12 +508,30 @@ function htmlErrorHint(text) {
 
 // ---------------- Images (ดึงผ่านแอป ไม่ต้องแชร์ Drive) ----------------
 const imgCache = {};
-async function getImageData(url) {
-    if (!url) return '';
-    if (url in imgCache) return imgCache[url];
-    try { imgCache[url] = (await api('getImage', { url })).data || ''; }
-    catch (e) { imgCache[url] = ''; }
-    return imgCache[url];
+let imgQueue = [], imgTimer = null;
+// รวมคำขอรูปที่เกิดภายใน 30ms เป็นชุดเดียว (getImages) — เฉพาะที่โหลดสำเร็จเท่านั้นที่ cache
+function getImageData(url) {
+    if (!url) return Promise.resolve('');
+    if (imgCache[url]) return Promise.resolve(imgCache[url]);
+    return new Promise(resolve => {
+        imgQueue.push({ url, resolve });
+        if (!imgTimer) imgTimer = setTimeout(flushImages, 30);
+    });
+}
+async function flushImages() {
+    imgTimer = null;
+    const items = imgQueue.splice(0);
+    const urls = [...new Set(items.map(i => i.url))];
+    const got = {};
+    for (let i = 0; i < urls.length; i += 12) {
+        try { Object.assign(got, (await api('getImages', { urls: urls.slice(i, i + 12) })).images || {}); }
+        catch (e) { /* ไม่ cache — จะลองใหม่เมื่อเปิดหน้าอีกครั้ง */ }
+    }
+    items.forEach(it => {
+        const d = got[it.url] || '';
+        if (d) imgCache[it.url] = d;
+        it.resolve(d);
+    });
 }
 const imgObserver = ('IntersectionObserver' in window) ? new IntersectionObserver(entries => {
     entries.forEach(en => { if (en.isIntersecting) { imgObserver.unobserve(en.target); fillImage(en.target); } });
@@ -573,7 +613,7 @@ $('loginForm').addEventListener('submit', async (e) => {
         store(LS_TOKEN, r.token);
         store(LS_USER, JSON.stringify(r.user));
         $('loginPass').value = '';
-        await startApp(r.user);
+        await startApp(r.user, r.branches);
     } catch (err) {
         $('loginError').textContent = err.message;
         $('loginError').classList.remove('hidden');
@@ -604,7 +644,7 @@ function logout(expired) {
 }
 $('btnLogout').onclick = () => logout(false);
 
-async function startApp(user) {
+async function startApp(user, preBranches) {
     currentUser = user;
     $('loginView').classList.add('hidden');
     $('appView').classList.remove('hidden');
@@ -617,8 +657,7 @@ async function startApp(user) {
     document.querySelectorAll('#dbRangeBtns button').forEach(x => x.classList.toggle('db-range-active', x.dataset.range === 'mtd'));
     $('dbCustom').classList.add('hidden');
     try {
-        const r = await api('getBranches');
-        branches = r.branches || [];
+        branches = preBranches || (await api('getBranches')).branches || [];
     } catch (e) { toast(e.message, 'err'); }
     fillBranchSelects();
     fillStatusSelects();
@@ -706,14 +745,9 @@ function setBadge(id, n) {
 
 async function refreshBadges() {
     try {
-        if (hasRole('manager', 'admin')) {
-            const r = await api('listTickets', { filter: { scope: 'approvals', limit: 1 } });
-            setBadge('approvals', r.total);
-        }
-        if (hasRole('technician', 'admin')) {
-            const r = await api('listTickets', { filter: { scope: 'jobs', status: 'Approved', limit: 1 } });
-            setBadge('jobs', r.total);
-        }
+        const r = await api('counts');
+        if (hasRole('manager', 'admin')) setBadge('approvals', r.approvals);
+        if (hasRole('technician', 'admin')) setBadge('jobs', r.jobs);
     } catch (e) { /* ignore */ }
 }
 
@@ -1251,7 +1285,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r08';
+const EXPECTED_BACKEND = 'r09';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -1607,6 +1641,10 @@ $('btnChangePw').onclick = () => {
 };
 
 // ---------------- Boot ----------------
+window.addEventListener('unhandledrejection', e => {
+    try { toast('เกิดข้อผิดพลาด: ' + ((e.reason && e.reason.message) || e.reason), 'err'); } catch (_) {}
+});
+
 (async function boot() {
     renderServer();
     pingServer();
@@ -1616,7 +1654,7 @@ $('btnChangePw').onclick = () => {
     try {
         const r = await api('me');
         store(LS_USER, JSON.stringify(r.user));
-        await startApp(r.user);
+        await startApp(r.user, r.branches);
     } catch (e) {
         /* token หมดอายุ -> อยู่หน้า login */
     }
