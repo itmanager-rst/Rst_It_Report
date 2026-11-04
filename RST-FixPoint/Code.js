@@ -2,7 +2,7 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r05-2026-11-04-fix-drive-access-denied
+ * CODE_VERSION: r07-2026-11-04-approver-signature
  *
  * ฟีเจอร์:
  *  - Login / Session token (CacheService, อายุ 6 ชม.)
@@ -11,6 +11,8 @@
  *  - Workflow: Pending -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
+ *  - r07: ลายเซ็นดิจิทัลของผู้อนุมัติ (บังคับตอนอนุมัติ) บันทึกเป็น ApproverSignURL และพิมพ์ในใบแจ้งซ่อม
+ *  - r06: รูปแสดงผ่าน Web App (action getImage / printTickets withImages) — ไม่ต้องแชร์ Drive ออกนอกองค์กร
  *  - r05: แก้ "Access denied: DriveApp" — แชร์รูปแบบ fallback (Anyone > ภายในองค์กร > ไม่แชร์),
  *         อัปโหลดรูปไม่ผ่านก็ยังบันทึกงานได้, เพิ่มฟังก์ชัน diagnose() สำหรับตรวจสิทธิ์
  *  - r04: ตรวจสิทธิ์โฟลเดอร์รูปใน checkStatus, ตั้งชื่อไฟล์รูป <TicketID>_before/after_<วันเวลา>.jpg
@@ -20,7 +22,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r05-2026-11-04-fix-drive-access-denied';
+const CODE_VERSION = 'r07-2026-11-04-approver-signature';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -46,7 +48,7 @@ const SHEETS = {
     name: 'Tickets',
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
-      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt']
+      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL']
   },
   LOGS: {
     name: 'TicketLogs',
@@ -84,6 +86,7 @@ const ROUTES = {
   listTickets:     { roles: ALL_ROLES, fn: listTickets_ },
   getTicket:       { roles: ALL_ROLES, fn: getTicket_ },
   printTickets:    { roles: ALL_ROLES, fn: printTickets_ },
+  getImage:        { roles: ALL_ROLES, fn: getImage_ },
   cancelTicket:    { roles: ALL_ROLES, fn: cancelTicket_, write: true },
 
   approveTicket:   { roles: MGR, fn: approveTicket_, write: true },
@@ -554,14 +557,47 @@ function printTickets_(u, req) {
   ids.forEach(id => {
     const t = all.find(x => String(x.TicketID) === id);
     if (!t || !canSee_(u, t)) return;
-    out.push({
+    const item = {
       ticket: clean_(t),
       logs: logs.filter(l => String(l.TicketID) === id)
         .sort((a, b) => (toDate_(a.Timestamp) || 0) - (toDate_(b.Timestamp) || 0)).map(clean_)
-    });
+    };
+    item.signImg = imageData_(t.ApproverSignURL);
+    if (req.withImages) {
+      item.beforeImg = imageData_(t.ImageURL);
+      item.afterImg = imageData_(t.AfterImageURL);
+    }
+    out.push(item);
   });
   if (!out.length) throw new Error('ไม่พบรายการที่มีสิทธิ์พิมพ์');
   return { items: out, printedBy: u.FullName || u.Username, printedAt: new Date().toISOString() };
+}
+
+/** ส่งรูปของงานให้ผู้ที่มีสิทธิ์ดูงานนั้น (ไม่ต้องแชร์ไฟล์ใน Drive) */
+function getImage_(u, req) {
+  const id = fileIdFromUrl_(req.url);
+  if (!id) throw new Error('ลิงก์รูปไม่ถูกต้อง');
+  const t = readAll_(SHEETS.TICKETS).find(x => [x.ImageURL, x.AfterImageURL, x.ApproverSignURL].some(v => fileIdFromUrl_(v) === id));
+  if (!t || !canSee_(u, t)) throw new Error('ไม่มีสิทธิ์ดูรูปนี้');
+  return { data: imageData_(req.url) };
+}
+
+function fileIdFromUrl_(url) {
+  const m = String(url || '').match(/\/d\/([\w-]{10,})/) || String(url || '').match(/[?&]id=([\w-]{10,})/);
+  return m ? m[1] : '';
+}
+
+/** อ่านไฟล์รูปจาก Drive แล้วคืนเป็น data URL (ทำงานได้แม้องค์กรห้ามแชร์ลิงก์) */
+function imageData_(url) {
+  const id = fileIdFromUrl_(url);
+  if (!id) return '';
+  try {
+    const blob = DriveApp.getFileById(id).getBlob();
+    return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
+  } catch (e) {
+    Logger.log('imageData_ error: ' + e);
+    return '';
+  }
 }
 
 function transition_(u, t, toStatus, action, note, extra) {
@@ -582,7 +618,10 @@ function approveTicket_(u, req) {
   const t = getTicketRow_(req.ticketId);
   if (!inScope_(u, t.Branch)) throw new Error('รายการนี้ไม่อยู่ในสาขาที่คุณดูแล');
   requireStatus_(t, [ST.PENDING]);
-  const extra = { ApprovedBy: u.FullName || u.Username, ApprovedAt: new Date(), ManagerNote: String(req.note || '') };
+  if (!req.signature || String(req.signature).indexOf('data:image/') !== 0) throw new Error('กรุณาเซ็นลายเซ็นก่อนอนุมัติ');
+  const sig = saveImage_({ base64: req.signature, type: 'image/png', name: 'signature.png' }, t.TicketID + '_sign_approve');
+  if (!sig.url) throw new Error('บันทึกลายเซ็นไม่สำเร็จ — ' + (sig.warning || 'ลองใหม่อีกครั้ง'));
+  const extra = { ApprovedBy: u.FullName || u.Username, ApprovedAt: new Date(), ManagerNote: String(req.note || ''), ApproverSignURL: sig.url };
   if (req.technician) {
     const tech = findUser_(req.technician);
     if (!tech || tech.Role !== 'technician') throw new Error('ไม่พบช่างที่เลือก');

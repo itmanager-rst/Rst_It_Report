@@ -484,6 +484,78 @@ function htmlErrorHint(text) {
     return 'Server ไม่ได้ตอบกลับเป็น JSON — ตรวจสอบ Web App URL และ Who has access = "Anyone"';
 }
 
+// ---------------- Images (ดึงผ่านแอป ไม่ต้องแชร์ Drive) ----------------
+const imgCache = {};
+async function getImageData(url) {
+    if (!url) return '';
+    if (url in imgCache) return imgCache[url];
+    try { imgCache[url] = (await api('getImage', { url })).data || ''; }
+    catch (e) { imgCache[url] = ''; }
+    return imgCache[url];
+}
+const imgObserver = ('IntersectionObserver' in window) ? new IntersectionObserver(entries => {
+    entries.forEach(en => { if (en.isIntersecting) { imgObserver.unobserve(en.target); fillImage(en.target); } });
+}, { rootMargin: '200px' }) : null;
+function hydrateImages(root = document) {
+    root.querySelectorAll('[data-gimg]:not([data-watch])').forEach(el => {
+        el.dataset.watch = '1';
+        if (imgObserver) imgObserver.observe(el); else fillImage(el);
+    });
+}
+async function fillImage(el) {
+    const data = await getImageData(el.dataset.gimg);
+    if (!el.isConnected) return;
+    if (!data) {
+        const f = document.createElement('div');
+        f.className = el.dataset.cls + ' flex items-center justify-center text-xs text-slate-400';
+        f.textContent = 'โหลดรูปไม่ได้';
+        el.replaceWith(f);
+        return;
+    }
+    const img = document.createElement('img');
+    img.src = data; img.alt = ''; img.className = el.dataset.cls;
+    el.replaceWith(img);
+}
+function gimg(url, cls) {
+    return url ? `<div data-gimg="${esc(url)}" data-cls="${esc(cls)}" class="${esc(cls)} bg-slate-100 animate-pulse"></div>` : '';
+}
+// ---------------- ลายเซ็นดิจิทัลผู้อนุมัติ ----------------
+let sigState = null;
+function initSignPad(c) {
+    c.dataset.init = '1';
+    const ctx = c.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const r = c.getBoundingClientRect();
+    c.width = Math.max(1, r.width * dpr); c.height = Math.max(1, r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0f172a';
+    let drawing = false, last = null, ink = false;
+    const pos = e => { const b = c.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+    c.addEventListener('pointerdown', e => { drawing = true; last = pos(e); c.setPointerCapture(e.pointerId); e.preventDefault(); });
+    c.addEventListener('pointermove', e => {
+        if (!drawing) return;
+        const p = pos(e);
+        ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        last = p; ink = true; e.preventDefault();
+    });
+    const end = () => { drawing = false; };
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    sigState = {
+        canvas: c,
+        hasInk: () => ink && c.isConnected,
+        clear: () => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.restore(); ink = false; },
+        toDataURL: () => c.toDataURL('image/png')
+    };
+}
+function sigClear() { if (sigState && sigState.canvas.isConnected) sigState.clear(); }
+
+new MutationObserver(() => {
+    hydrateImages();
+    const c = document.getElementById('sigPad');
+    if (c && !c.dataset.init) initSignPad(c);
+}).observe(document.body, { childList: true, subtree: true });
+
 // ---------------- Auth ----------------
 $('togglePass').onclick = () => {
     const p = $('loginPass');
@@ -733,7 +805,7 @@ $('repairForm').addEventListener('submit', async (e) => {
 
 // ---------------- Ticket lists ----------------
 function ticketCard(t) {
-    const img = t.ImageURL ? `<img src="${esc(driveThumb(t.ImageURL, 200))}" class="w-16 h-16 object-cover rounded-lg border shrink-0" loading="lazy" alt="" onerror="this.remove()">` : '';
+    const img = t.ImageURL ? gimg(t.ImageURL, 'w-16 h-16 object-cover rounded-lg border shrink-0') : '';
     return `
     <button onclick="openTicket('${esc(t.TicketID)}')" class="text-left w-full bg-white rounded-xl shadow-sm p-4 hover:shadow-md hover:ring-1 hover:ring-sky-200 transition flex gap-3">
         ${img}
@@ -885,9 +957,9 @@ async function openTicket(id) {
             techOpts = techs.map(x => `<option value="${esc(x.username)}" ${x.username === t.Technician ? 'selected' : ''}>${esc(x.fullName)} (${esc(x.branch)})</option>`).join('');
         }
         const row = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div class="text-sm">${v}</div></div>`;
-        const img = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="block">
+        const img = (url, label) => url ? `<div>
             <div class="text-xs text-slate-500 mb-1">${label}</div>
-            <img src="${esc(driveThumb(url))}" class="w-full max-h-64 object-contain bg-slate-50 rounded-lg border" alt="${label}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'text-sky-700 underline text-sm',textContent:'เปิดดูรูปภาพ'}))"></a>` : '';
+            ${gimg(url, 'w-full h-48 object-contain bg-slate-50 rounded-lg border')}</div>` : '';
 
         openModal(`
             <div class="pr-8">
@@ -908,6 +980,7 @@ async function openTicket(id) {
                 ${t.CompletedAt ? row('ปิดงานเมื่อ', fmtDate(t.CompletedAt)) : ''}
             </div>
             ${t.Description ? `<div class="mt-3"><div class="text-xs text-slate-500">รายละเอียด</div><p class="text-sm whitespace-pre-line">${esc(t.Description)}</p></div>` : ''}
+            ${t.ApproverSignURL ? `<div class="mt-3"><div class="text-xs text-slate-500 mb-1">ลายเซ็นผู้อนุมัติ${t.ApprovedAt ? ' · ' + fmtDate(t.ApprovedAt) : ''}</div>${gimg(t.ApproverSignURL, 'h-24 w-60 object-contain bg-white rounded-lg border')}</div>` : ''}
             ${t.ManagerNote ? `<div class="mt-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3"><b>หมายเหตุผู้จัดการ:</b> ${esc(t.ManagerNote)}</div>` : ''}
             ${t.TechNote ? `<div class="mt-3 text-sm bg-indigo-50 border border-indigo-200 rounded-lg p-3"><b>บันทึกช่าง:</b> ${esc(t.TechNote)}</div>` : ''}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">${img(t.ImageURL, 'รูปก่อนซ่อม')}${img(t.AfterImageURL, 'รูปหลังซ่อม')}</div>
@@ -939,6 +1012,13 @@ function actionPanel(t, techOpts) {
             <div><label class="lbl">มอบหมายช่าง (ไม่บังคับ)</label>
                 <select id="actTech" class="inp"><option value="">-- ให้ช่างกดรับงานเอง --</option>${techOpts}</select></div>
             <div><label class="lbl">หมายเหตุ / เหตุผล</label><textarea id="actNote" rows="2" class="inp" placeholder="จำเป็นต้องระบุเมื่อไม่อนุมัติ"></textarea></div>
+            <div>
+                <div class="flex justify-between items-end mb-1">
+                    <label class="lbl mb-0">ลายเซ็นผู้อนุมัติ * <span class="text-xs font-normal text-slate-500">(เซ็นในกรอบ — ใช้นิ้วหรือปากกาสไตลัส)</span></label>
+                    <button type="button" onclick="sigClear()" class="text-xs text-sky-700 underline">ล้าง</button>
+                </div>
+                <canvas id="sigPad" class="w-full h-36 rounded-lg border-2 border-dashed border-slate-300 bg-white" style="touch-action:none"></canvas>
+            </div>
             <div class="flex gap-2">
                 <button class="btn flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onclick="doAction(this,'approveTicket','${esc(t.TicketID)}')">✓ อนุมัติ</button>
                 <button class="btn flex-1 bg-rose-600 hover:bg-rose-700 text-white" onclick="doAction(this,'rejectTicket','${esc(t.TicketID)}')">✕ ไม่อนุมัติ</button>
@@ -977,7 +1057,11 @@ function actionPanel(t, techOpts) {
 
 async function doAction(btn, action, ticketId) {
     const payload = { ticketId, note: ($('actNote') || {}).value || '' };
-    if (action === 'approveTicket') payload.technician = $('actTech').value;
+    if (action === 'approveTicket') {
+        payload.technician = $('actTech').value;
+        if (!sigState || !sigState.hasInk()) { toast('❌ กรุณาเซ็นลายเซ็นในกรอบก่อนอนุมัติ', 'err'); return; }
+        payload.signature = sigState.toDataURL();
+    }
     if (action === 'assignTechnician') {
         payload.technician = $('actAssign').value;
         if (!payload.technician) { toast('กรุณาเลือกช่าง', 'err'); return; }
@@ -1167,7 +1251,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r05';
+const EXPECTED_BACKEND = 'r08';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -1238,7 +1322,7 @@ function showServerInfo() {
             ${row('Backend version', esc(srv.version || '-'))}
             ${row('ฐานข้อมูล (Google Sheets)', srv.db === 'ok' ? '✓ เชื่อมต่อได้' + (srv.tickets !== null ? ` · ${srv.tickets} รายการ` : '') : esc(srv.db || '-'))}
             ${row('โฟลเดอร์เก็บรูป (Drive)', srv.drive === 'ok' ? '✓ ' + esc(srv.folderName) : esc(srv.drive || '-'))}
-            ${srv.sharing ? row('การแชร์รูป', { anyone: 'ทุกคนที่มีลิงก์', domain: 'เฉพาะบัญชีในองค์กร (ต้อง login Google องค์กรจึงเห็นรูป)', private: 'ไม่แชร์ (เห็นเฉพาะผู้มีสิทธิ์ในโฟลเดอร์)' }[srv.sharing] || esc(srv.sharing)) : ''}
+            ${row('การแสดงรูป', 'ผ่านแอป FixPoint (ไม่ต้องแชร์ Google Drive)')}
             ${row('อินเทอร์เน็ตของเครื่องนี้', navigator.onLine ? '✓ ออนไลน์' : '✕ ออฟไลน์')}
             ${row('Web App URL', `<span class="font-mono text-xs">${esc(url)}</span>`)}
             ${row('ตรวจสอบล่าสุด', srv.lastCheck ? fmtDate(srv.lastCheck) : '-')}
@@ -1275,8 +1359,8 @@ async function doPrint(ids, btn) {
     const opts = { images: $('poImg').checked, history: $('poHist').checked, sign: $('poSign').checked };
     setBusy(btn, true, 'กำลังเตรียมเอกสาร...');
     try {
-        const r = await api('printTickets', { ticketIds: ids });
-        $('printArea').innerHTML = r.items.map(it => workOrderHtml(it.ticket, it.logs, r, opts)).join('');
+        const r = await api('printTickets', { ticketIds: ids, withImages: opts.images });
+        $('printArea').innerHTML = r.items.map(it => workOrderHtml(Object.assign({}, it.ticket, { signImg: it.signImg, beforeImg: it.beforeImg, afterImg: it.afterImg }), it.logs, r, opts)).join('');
         await waitImages($('printArea'), 10000);
         closeModal();
         window.print();
@@ -1305,15 +1389,15 @@ function durationText(a, b) {
 function workOrderHtml(t, logs, meta, opts) {
     const v = x => esc(x || '-');
     const st = STATUS[t.Status] || { th: t.Status };
-    const img = (url, label) => `<td style="width:50%;text-align:center;height:200px">
+    const img = (url, label, data) => `<td style="width:50%;text-align:center;height:200px">
         <div style="font-size:11px;color:#475569;margin-bottom:4px">${label}</div>
-        ${url ? `<img src="${esc(driveThumb(url, 800))}" style="max-width:100%;max-height:180px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('(โหลดรูปไม่ได้)'))">` : '<span style="color:#94a3b8">— ไม่มีรูป —</span>'}</td>`;
-    const sign = label => `<div style="flex:1;text-align:center;font-size:11px">
-        <div style="height:42px"></div>
-        <div>ลงชื่อ ..................................................</div>
-        <div style="margin-top:4px">( .................................................. )</div>
+        ${url ? (data ? `<img src="${data}" style="max-width:100%;max-height:180px;object-fit:contain">` : '<span style="color:#94a3b8">(โหลดรูปไม่ได้)</span>') : '<span style="color:#94a3b8">— ไม่มีรูป —</span>'}</td>`;
+    const sign = (label, imgData, name, date) => `<div style="flex:1;text-align:center;font-size:11px">
+        <div style="height:46px;display:flex;align-items:flex-end;justify-content:center">${imgData ? `<img src="${imgData}" style="max-height:44px;max-width:100%">` : ''}</div>
+        <div>ลงชื่อ ${imgData ? '' : '..................................................'}</div>
+        <div style="margin-top:4px">( ${name ? esc(name) : '..................................................'} )</div>
         <div style="margin-top:4px;font-weight:600">${label}</div>
-        <div style="margin-top:2px;color:#475569">วันที่ ........./........./.............</div></div>`;
+        <div style="margin-top:2px;color:#475569">วันที่ ${date || '........./........./.............'}</div></div>`;
     return `
     <div class="print-page pr">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0c4a6e;padding-bottom:8px;margin-bottom:8px">
@@ -1356,7 +1440,7 @@ function workOrderHtml(t, logs, meta, opts) {
 
         ${opts.images && (t.ImageURL || t.AfterImageURL) ? `
         <div class="sec">5. รูปภาพประกอบ</div>
-        <table><tr>${img(t.ImageURL, 'ก่อนซ่อม')}${img(t.AfterImageURL, 'หลังซ่อม')}</tr></table>` : ''}
+        <table><tr>${img(t.ImageURL, 'ก่อนซ่อม', t.beforeImg)}${img(t.AfterImageURL, 'หลังซ่อม', t.afterImg)}</tr></table>` : ''}
 
         ${opts.history && logs.length ? `
         <div class="sec">ประวัติการดำเนินงาน</div>
@@ -1365,7 +1449,7 @@ function workOrderHtml(t, logs, meta, opts) {
             ${logs.map(l => `<tr><td>${fmtDate(l.Timestamp)}</td><td>${v(l.Action)}</td><td>${v(l.ByName)}</td><td>${esc(l.Note || '')}</td></tr>`).join('')}
         </table>` : ''}
 
-        ${opts.sign ? `<div style="display:flex;gap:8px;margin-top:18px">${sign('ผู้แจ้งซ่อม')}${sign('ผู้อนุมัติ')}${sign('ช่างผู้ปฏิบัติงาน')}${sign('ผู้ตรวจรับงาน')}</div>` : ''}
+        ${opts.sign ? `<div style="display:flex;gap:8px;margin-top:18px">${sign('ผู้แจ้งซ่อม')}${sign('ผู้อนุมัติ', t.signImg, t.signImg ? t.ApprovedBy : '', t.signImg && t.ApprovedAt ? fmtDate(t.ApprovedAt, false) : '')}${sign('ช่างผู้ปฏิบัติงาน')}${sign('ผู้ตรวจรับงาน')}</div>` : ''}
 
         <div style="margin-top:14px;border-top:1px solid #cbd5e1;padding-top:4px;font-size:10px;color:#64748b;display:flex;justify-content:space-between">
             <span>พิมพ์โดย ${esc(meta.printedBy)} เมื่อ ${fmtDate(meta.printedAt)}</span><span>RST FixPoint</span>
