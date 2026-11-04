@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0c4a6e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="FixPoint">
+    <title>RST FixPoint - ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; }
+        .nav-btn.active { background: #fff; color: #0c4a6e; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { scrollbar-width: none; }
+        .inp { width: 100%; padding: .5rem .75rem; border: 1px solid #cbd5e1; border-radius: .5rem; background: #fff; }
+        .inp:focus { outline: none; box-shadow: 0 0 0 2px #0ea5e9; border-color: #0ea5e9; }
+        .lbl { display: block; font-size: .875rem; font-weight: 500; color: #334155; margin-bottom: .25rem; }
+        .btn { padding: .55rem 1rem; border-radius: .5rem; font-weight: 500; font-size: .875rem; transition: .15s; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .spinner { width: 1.1rem; height: 1.1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .dot { width: .6rem; height: .6rem; border-radius: 9999px; display: inline-block; flex-shrink: 0; }
+        .db-range-active { background: #0c4a6e !important; color: #fff !important; border-color: #0c4a6e !important; }
+        #printArea { display: none; }
+        .pr { font-family: 'Prompt', sans-serif; color: #0f172a; font-size: 12px; }
+        .pr table { width: 100%; border-collapse: collapse; }
+        .pr td, .pr th { border: 1px solid #94a3b8; padding: 4px 6px; vertical-align: top; text-align: left; }
+        .pr th { background: #f1f5f9; width: 17%; font-weight: 600; }
+        .pr .sec { font-weight: 600; font-size: 13px; margin: 10px 0 4px; color: #0c4a6e; }
+        @media print {
+            @page { size: A4; margin: 10mm; }
+            body { background: #fff !important; padding: 0 !important; }
+            body > *:not(#printArea) { display: none !important; }
+            #printArea { display: block !important; }
+            .print-page { break-after: page; page-break-after: always; }
+            .print-page:last-child { break-after: auto; page-break-after: auto; }
+            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+        /* ===== Mobile (อัตโนมัติเมื่อจอกว้าง < 768px) ===== */
+        @media (max-width: 767px) {
+            .inp { font-size: 16px; }            /* กัน iOS ซูมเมื่อแตะช่องกรอก */
+            .btn { padding: .65rem 1rem; }       /* ปุ่มใหญ่ขึ้น กดง่าย */
+            main { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important; }
+            header { padding-top: env(safe-area-inset-top); }
+        }
+        .bnav-btn { color: #64748b; }
+        .bnav-btn.active { color: #0c4a6e; }
+        .bnav-btn.active .bnav-ico { background: #e0f2fe; }
+        .step-dot { width: 2rem; height: 2rem; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+<!-- ===================== LOGIN ===================== -->
+<section id="loginView" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-sky-900 text-white p-6 text-center">
+            <h1 class="text-2xl font-bold tracking-wide">RST FixPoint</h1>
+            <p class="text-sky-200 text-sm mt-1">ระบบแจ้งซ่อมอาคารสถานที่ และอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป</p>
+        </div>
+        <form id="loginForm" class="p-6 space-y-4">
+            <div>
+                <label class="lbl" for="loginUser">ชื่อผู้ใช้ (Username)</label>
+                <input id="loginUser" class="inp" autocomplete="username" required autofocus>
+            </div>
+            <div>
+                <label class="lbl" for="loginPass">รหัสผ่าน</label>
+                <div class="relative">
+                    <input id="loginPass" type="password" class="inp pr-16" autocomplete="current-password" required>
+                    <button type="button" id="togglePass" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-sky-700 px-2 py-1">แสดง</button>
+                </div>
+            </div>
+            <button id="loginBtn" class="btn w-full bg-sky-800 hover:bg-sky-900 text-white py-2.5 shadow-md">เข้าสู่ระบบ</button>
+            <p id="loginError" class="hidden text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3"></p>
+            <button type="button" data-srv class="w-full flex items-center justify-center gap-2 text-xs text-slate-500 hover:text-slate-800">
+                <span class="dot bg-slate-400"></span><span class="srv-text">กำลังตรวจสอบการเชื่อมต่อ Server...</span>
+            </button>
+            <div class="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 leading-relaxed">
+                <b>สิทธิ์การใช้งาน:</b> พนักงาน = แจ้งซ่อม/ติดตามงาน · ช่าง = รับงาน/อัปเดตสถานะ ·
+                ผู้จัดการ = อนุมัติงาน/ดู Dashboard · Admin = จัดการผู้ใช้และสาขา
+            </div>
+        </form>
+    </div>
+</section>
+
+<!-- ===================== APP ===================== -->
+<section id="appView" class="hidden min-h-screen">
+    <header class="bg-sky-900 text-white">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <h1 class="text-lg md:text-xl font-bold tracking-wide whitespace-nowrap">RST FixPoint</h1>
+                <p class="text-sky-200 text-xs hidden sm:block">ระบบแจ้งซ่อมอาคารสถานที่ และอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป</p>
+            </div>
+            <div class="flex items-center gap-2 text-right">
+                <button data-srv class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full bg-sky-800 hover:bg-sky-700 text-sky-100">
+                    <span class="dot bg-slate-400"></span><span class="srv-text hidden md:inline">กำลังตรวจสอบ...</span>
+                </button>
+                <div class="min-w-0">
+                    <div id="hdrName" class="text-sm font-medium truncate max-w-[110px] sm:max-w-[200px] md:max-w-none"></div>
+                    <div class="text-xs text-sky-200 truncate max-w-[110px] sm:max-w-none"><span id="hdrRole"></span><span class="hidden sm:inline"> · <span id="hdrBranch"></span></span></div>
+                </div>
+                <button id="btnChangePw" title="เปลี่ยนรหัสผ่าน" class="p-2 rounded-lg hover:bg-sky-800">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </button>
+                <button id="btnLogout" title="ออกจากระบบ" class="p-2 rounded-lg hover:bg-sky-800">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                </button>
+            </div>
+        </div>
+        <nav class="bg-sky-800/60 hidden md:block">
+            <div id="navBar" class="max-w-6xl mx-auto px-2 py-2 flex gap-1 overflow-x-auto no-scrollbar"></div>
+        </nav>
+    </header>
+
+    <main class="max-w-6xl mx-auto p-4 md:p-6">
+
+        <!-- Dashboard -->
+        <div id="page-dashboard" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-end gap-3 bg-white rounded-xl shadow-sm p-4">
+                <div>
+                    <label class="lbl">สาขา</label>
+                    <select id="dbBranch" class="inp branch-filter"></select>
+                </div>
+                <div>
+                    <label class="lbl">ช่วงเวลา</label>
+                    <div id="dbRangeBtns" class="flex flex-wrap gap-1">
+                        <button data-range="mtd" class="btn border bg-white hover:bg-slate-50 db-range-active">MTD</button>
+                        <button data-range="ytd" class="btn border bg-white hover:bg-slate-50">YTD</button>
+                        <button data-range="lastMonth" class="btn border bg-white hover:bg-slate-50">เดือนที่แล้ว</button>
+                        <button data-range="lastYear" class="btn border bg-white hover:bg-slate-50">ปีที่แล้ว</button>
+                        <button data-range="all" class="btn border bg-white hover:bg-slate-50">ทั้งหมด</button>
+                        <button data-range="custom" class="btn border bg-white hover:bg-slate-50">กำหนดเอง</button>
+                    </div>
+                </div>
+                <div id="dbCustom" class="hidden flex gap-2">
+                    <div><label class="lbl">ตั้งแต่</label><input id="dbFrom" type="date" class="inp"></div>
+                    <div><label class="lbl">ถึง</label><input id="dbTo" type="date" class="inp"></div>
+                </div>
+                <button id="dbRefresh" class="btn bg-sky-800 hover:bg-sky-900 text-white">รีเฟรช</button>
+                <span id="dbUpdated" class="text-xs text-slate-500 ml-auto"></span>
+                <div id="dbPeriod" class="w-full text-sm text-slate-600"></div>
+            </div>
+            <div id="dbKpis" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="bg-white rounded-xl shadow-sm p-4">
+                    <h3 class="font-semibold mb-3">สัดส่วนสถานะงาน</h3>
+                    <div class="h-64"><canvas id="chStatus"></canvas></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 lg:col-span-2">
+                    <h3 id="chTrendTitle" class="font-semibold mb-3">แนวโน้ม (แจ้งเข้า vs ปิดงาน)</h3>
+                    <div class="h-64"><canvas id="chMonthly"></canvas></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 lg:col-span-2">
+                    <h3 class="font-semibold mb-3">งานซ่อมแยกตามสาขา</h3>
+                    <div class="h-72"><canvas id="chBranch"></canvas></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4">
+                    <h3 class="font-semibold mb-3">แยกตามหมวดหมู่</h3>
+                    <div class="h-72"><canvas id="chCategory"></canvas></div>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl shadow-sm p-4">
+                    <h3 class="font-semibold mb-3">ผลงานช่าง</h3>
+                    <div id="dbTechs" class="overflow-x-auto"></div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4">
+                    <h3 class="font-semibold mb-3">งานด่วนที่ยังไม่ปิด</h3>
+                    <div id="dbUrgent" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- New ticket -->
+        <div id="page-new" class="page hidden">
+            <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div class="px-6 pt-6"><h2 class="text-lg font-semibold">แจ้งซ่อมใหม่</h2>
+                    <p class="text-sm text-slate-500">รายการจะถูกส่งให้ผู้จัดการสาขาอนุมัติก่อนส่งต่อให้ช่าง</p></div>
+                <form id="repairForm" class="p-6 space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="lbl">ชื่อผู้แจ้งซ่อม *</label>
+                            <input id="fRequester" required class="inp">
+                        </div>
+                        <div>
+                            <label class="lbl">สาขา *</label>
+                            <select id="fBranch" required class="inp"></select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="lbl">แผนก / ฝ่าย *</label>
+                            <select id="fDepartment" required class="inp">
+                                <option value="">-- เลือกแผนก --</option>
+                                <option value="Accounting">ฝ่ายบัญชี / การเงิน</option>
+                                <option value="HR">ฝ่ายทรัพยากรบุคคล (HR)</option>
+                                <option value="Sales">ฝ่ายขาย / การตลาด</option>
+                                <option value="Warehouse">ฝ่ายคลังสินค้า / จัดส่ง</option>
+                                <option value="Purchasing">ฝ่ายจัดซื้อ</option>
+                                <option value="Management">ฝ่ายบริหาร</option>
+                                <option value="IT">ฝ่าย IT</option>
+                                <option value="Maintenance">ฝ่ายซ่อมบำรุง</option>
+                                <option value="Other">อื่นๆ</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="lbl">หมวดหมู่งานซ่อม *</label>
+                            <select id="fCategory" required class="inp"></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">สถานที่ / ตำแหน่งที่เสีย *</label>
+                        <input id="fLocation" required class="inp" placeholder="เช่น ชั้น 2 ห้องประชุม A, หน้าห้องบัญชี">
+                    </div>
+                    <div>
+                        <label class="lbl">อุปกรณ์ / หัวข้อเรื่อง *</label>
+                        <input id="fTitle" required class="inp" placeholder="เช่น หลอดไฟ LED กระพริบ, ขาเก้าอี้หัก, แอร์มีน้ำหยด">
+                    </div>
+                    <div>
+                        <label class="lbl">รายละเอียดอาการเพิ่มเติม</label>
+                        <textarea id="fDescription" rows="3" class="inp" placeholder="ระบุรายละเอียดเพิ่มเติมเพื่อความรวดเร็วในการเตรียมอุปกรณ์ซ่อม..."></textarea>
+                    </div>
+                    <div>
+                        <label class="lbl">ระดับความเร่งด่วน</label>
+                        <div class="flex gap-4 mt-1">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-sm"><input type="radio" name="priority" value="ปกติ" checked> ปกติ</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-sm text-amber-600"><input type="radio" name="priority" value="ด่วน"> ด่วน</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-sm text-red-600 font-medium"><input type="radio" name="priority" value="ด่วนมาก"> ด่วนมาก</label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="lbl">แนบรูปภาพอุปกรณ์ที่ชำรุด</label>
+                        <input type="file" id="fImage" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
+                        <img id="fPreview" class="hidden mt-2 max-h-48 rounded-lg border" alt="ตัวอย่างรูป">
+                    </div>
+                    <button id="submitBtn" class="btn w-full bg-sky-800 hover:bg-sky-900 text-white py-2.5 shadow-md">ส่งข้อมูลแจ้งซ่อม</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- My tickets -->
+        <div id="page-mine" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">งานที่ฉันแจ้ง</h2>
+                <div id="mineChips" class="flex flex-wrap gap-1"></div>
+                <button class="btn bg-white border hover:bg-slate-50" onclick="loadMine()">รีเฟรช</button>
+            </div>
+            <div id="mineList" class="grid gap-3"></div>
+        </div>
+
+        <!-- Approvals -->
+        <div id="page-approvals" class="page hidden space-y-4">
+            <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">รายการรออนุมัติ</h2>
+                <button class="btn bg-white border hover:bg-slate-50" onclick="loadApprovals()">รีเฟรช</button>
+            </div>
+            <div id="approvalList" class="grid gap-3"></div>
+        </div>
+
+        <!-- Technician jobs -->
+        <div id="page-jobs" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">งานช่างซ่อมบำรุง</h2>
+                <div id="jobChips" class="flex flex-wrap gap-1"></div>
+                <button class="btn bg-white border hover:bg-slate-50" onclick="loadJobs()">รีเฟรช</button>
+            </div>
+            <div id="jobList" class="grid gap-3"></div>
+        </div>
+
+        <!-- All tickets -->
+        <div id="page-all" class="page hidden space-y-4">
+            <div class="bg-white rounded-xl shadow-sm p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                <div class="col-span-2"><label class="lbl">ค้นหา</label><input id="allQ" class="inp" placeholder="รหัส, หัวข้อ, สถานที่, ผู้แจ้ง..."></div>
+                <div><label class="lbl">สาขา</label><select id="allBranch" class="inp branch-filter"></select></div>
+                <div><label class="lbl">สถานะ</label><select id="allStatus" class="inp status-filter"></select></div>
+                <div><label class="lbl">ตั้งแต่</label><input id="allFrom" type="date" class="inp"></div>
+                <div><label class="lbl">ถึง</label><input id="allTo" type="date" class="inp"></div>
+                <div class="col-span-2 md:col-span-6 flex flex-wrap gap-2">
+                    <button class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="loadAll()">ค้นหา</button>
+                    <button class="btn bg-white border hover:bg-slate-50" onclick="exportCsv()">Export CSV</button>
+                    <button class="btn md:hidden bg-white border hover:bg-slate-50" onclick="$('allChk').click()">เลือกทั้งหมด</button>
+                    <button class="btn bg-white border hover:bg-slate-50" onclick="openPrintDialog(selectedIds())">🖨 พิมพ์ใบแจ้งซ่อมที่เลือก (<span id="selCount">0</span>)</button>
+                    <span id="allCount" class="text-sm text-slate-500 self-center ml-auto"></span>
+                </div>
+            </div>
+            <div id="allCards" class="md:hidden grid gap-3"></div>
+            <div class="hidden md:block bg-white rounded-xl shadow-sm overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-600 text-left">
+                        <tr><th class="p-3 w-8"><input type="checkbox" id="allChk" title="เลือกทั้งหมด"></th><th class="p-3">รหัส</th><th class="p-3">วันที่แจ้ง</th><th class="p-3">หัวข้อ</th><th class="p-3">สาขา</th>
+                            <th class="p-3">ผู้แจ้ง</th><th class="p-3">ความเร่งด่วน</th><th class="p-3">ช่าง</th><th class="p-3">สถานะ</th></tr>
+                    </thead>
+                    <tbody id="allTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Admin -->
+        <div id="page-admin" class="page hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm p-4">
+                <div class="flex items-center mb-3">
+                    <h2 class="text-lg font-semibold mr-auto">ผู้ใช้งาน</h2>
+                    <button class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="openUserForm()">+ เพิ่มผู้ใช้</button>
+                </div>
+                <div id="userCards" class="md:hidden grid gap-2"></div>
+                <div class="hidden md:block overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-left">
+                            <tr><th class="p-3">Username</th><th class="p-3">ชื่อ-นามสกุล</th><th class="p-3">บทบาท</th><th class="p-3">สาขา</th>
+                                <th class="p-3">แผนก</th><th class="p-3">สถานะ</th><th class="p-3">เข้าใช้ล่าสุด</th><th class="p-3"></th></tr>
+                        </thead>
+                        <tbody id="userTable"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4">
+                <h2 class="text-lg font-semibold mb-3">สาขา</h2>
+                <form id="branchForm" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-4">
+                    <div><label class="lbl">รหัสสาขา</label><input id="bCode" class="inp" placeholder="เช่น BR03" required></div>
+                    <div class="md:col-span-2"><label class="lbl">ชื่อสาขา</label><input id="bName" class="inp" placeholder="เช่น สาขาบางนา" required></div>
+                    <button class="btn bg-sky-800 hover:bg-sky-900 text-white">บันทึกสาขา</button>
+                </form>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-left"><tr><th class="p-3">รหัส</th><th class="p-3">ชื่อสาขา</th><th class="p-3">สถานะ</th><th class="p-3"></th></tr></thead>
+                        <tbody id="branchTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</section>
+
+<!-- Bottom navigation (มือถือ) -->
+<nav id="bottomNav" class="hidden md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-2px_10px_rgba(0,0,0,.06)]" style="padding-bottom: env(safe-area-inset-bottom)">
+    <div id="bottomBar" class="flex"></div>
+</nav>
+
+<!-- Modal -->
+<div id="modal" class="hidden fixed inset-0 z-40 bg-slate-900/50 flex items-end md:items-center justify-center md:p-4">
+    <div id="modalPanel" class="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] md:max-h-[90vh] overflow-y-auto relative" style="padding-bottom: env(safe-area-inset-bottom)">
+        <div class="sticky top-0 z-10 flex items-center justify-end bg-white/95 backdrop-blur px-3 pt-2 h-10">
+            <div class="md:hidden absolute left-1/2 -translate-x-1/2 top-2 w-10 h-1.5 rounded-full bg-slate-300"></div>
+            <button onclick="closeModal()" class="p-1 text-slate-400 hover:text-slate-700" aria-label="ปิด">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+        </div>
+        <div id="modalBody" class="px-5 pb-6 md:px-6"></div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-24 md:bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-[90vw]"></div>
+
+<div id="printArea"></div>
+
+<script>
+// 📌 ใส่ Web App URL จาก Google Apps Script ตรงนี้ (คัดลอกจาก Deploy > Manage deployments เท่านั้น ห้ามพิมพ์เอง)
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzGiDh0j56QmqeCyQqwlmzAzdKboB1rRp9YxidfiwVy7y3WSqSu3pBqcJvgD2Fsqurj/exec";
+
+const LS_TOKEN = 'rst_fixpoint_token';
+const LS_USER = 'rst_fixpoint_user';
+
+const ROLE_TH = { employee: 'พนักงาน', technician: 'ช่างซ่อมบำรุง', manager: 'ผู้จัดการ', admin: 'ผู้ดูแลระบบ' };
+const STATUS = {
+    'Pending':     { th: 'รออนุมัติ',          cls: 'bg-amber-100 text-amber-800',     color: '#f59e0b' },
+    'Approved':    { th: 'อนุมัติแล้ว / รอช่าง', cls: 'bg-sky-100 text-sky-800',         color: '#0ea5e9' },
+    'In Progress': { th: 'กำลังดำเนินการ',     cls: 'bg-indigo-100 text-indigo-800',   color: '#6366f1' },
+    'Completed':   { th: 'เสร็จสิ้น',           cls: 'bg-emerald-100 text-emerald-800', color: '#10b981' },
+    'Rejected':    { th: 'ไม่อนุมัติ',          cls: 'bg-rose-100 text-rose-800',       color: '#f43f5e' },
+    'Cancelled':   { th: 'ยกเลิก',             cls: 'bg-slate-200 text-slate-700',     color: '#94a3b8' }
+};
+const PRIORITY_CLS = { 'ปกติ': 'text-slate-600', 'ด่วน': 'text-amber-600 font-medium', 'ด่วนมาก': 'text-red-600 font-semibold' };
+const CATEGORIES = [
+    ['ระบบไฟฟ้า/แสงสว่าง', 'ระบบไฟฟ้า / หลอดไฟ / ปลั๊กไฟ'],
+    ['โต๊ะ/เก้าอี้/เฟอร์นิเจอร์', 'โต๊ะ / เก้าอี้ / ตู้ / เฟอร์นิเจอร์'],
+    ['เครื่องปรับอากาศ', 'เครื่องปรับอากาศ (แอร์)'],
+    ['ระบบประปา/ห้องน้ำ', 'ระบบประปา / ห้องน้ำ / สุขภัณฑ์'],
+    ['อาคารสถานที่/ประตู/กระจก', 'งานอาคาร / ประตู / เพดาน / กระจก'],
+    ['อื่นๆ', 'อื่นๆ']
+];
+const NAV = [
+    { id: 'dashboard', label: 'Dashboard',       roles: ['manager', 'admin'] },
+    { id: 'new',       label: 'แจ้งซ่อม',          roles: ['employee', 'technician', 'manager', 'admin'] },
+    { id: 'mine',      label: 'งานที่ฉันแจ้ง',       roles: ['employee', 'technician', 'manager', 'admin'] },
+    { id: 'approvals', label: 'รออนุมัติ',          roles: ['manager', 'admin'], badge: true },
+    { id: 'jobs',      label: 'งานช่าง',           roles: ['technician', 'admin'], badge: true },
+    { id: 'all',       label: 'งานซ่อมทั้งหมด',     roles: ['manager', 'admin'] },
+    { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
+];
+
+let currentUser = null;
+let branches = [];
+let technicians = null;
+let charts = {};
+let mineData = [], jobsData = [], allData = [], usersData = [];
+let mineFilter = '', jobFilter = 'Approved';
+const loaded = {};
+
+// ---------------- Utilities ----------------
+const $ = (id) => document.getElementById(id);
+function store(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function fmtDate(v, withTime = true) {
+    if (!v) return '-';
+    const d = new Date(v);
+    if (isNaN(d)) return esc(v);
+    return d.toLocaleString('th-TH', withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' });
+}
+function statusBadge(s) {
+    const st = STATUS[s] || { th: s || '-', cls: 'bg-slate-100 text-slate-700' };
+    return `<span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${st.cls}">${esc(st.th)}</span>`;
+}
+function driveThumb(url, size = 1000) {
+    const m = String(url || '').match(/\/d\/([\w-]+)/) || String(url || '').match(/[?&]id=([\w-]+)/);
+    return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w${size}` : url;
+}
+function toast(msg, type = 'ok') {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'fixed bottom-24 md:bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-[90vw] ' +
+        (type === 'ok' ? 'bg-emerald-600 text-white' : type === 'warn' ? 'bg-amber-500 text-white' : 'bg-rose-600 text-white');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.add('hidden'), type === 'warn' ? 8000 : 4000);
+}
+function setBusy(btn, busy, text) {
+    if (!btn) return;
+    if (busy) { btn._txt = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${text || 'กำลังดำเนินการ...'}`; }
+    else { btn.disabled = false; if (btn._txt) btn.innerHTML = btn._txt; }
+}
+function loadingHtml() { return `<div class="text-center text-slate-500 py-10"><span class="spinner"></span> กำลังโหลด...</div>`; }
+function emptyHtml(msg) { return `<div class="text-center text-slate-400 py-10 bg-white rounded-xl">${esc(msg)}</div>`; }
+function hasRole(...roles) { return currentUser && roles.includes(currentUser.role); }
+function isAllBranch() { return currentUser && (currentUser.role === 'admin' || !currentUser.branch || currentUser.branch.toUpperCase() === 'ALL'); }
+
+// ---------------- API ----------------
+async function api(action, data = {}) {
+    if (!GAS_WEB_APP_URL || GAS_WEB_APP_URL.indexOf('script.google.com') === -1) {
+        throw new Error('ยังไม่ได้ตั้งค่า GAS_WEB_APP_URL ในไฟล์ index.html');
+    }
+    const body = Object.assign({ action }, data);
+    if (action !== 'login') body.token = load(LS_TOKEN);
+    let res;
+    try {
+        res = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // ห้ามเปลี่ยนเป็น application/json (จะติด CORS)
+            body: JSON.stringify(body)
+        });
+    } catch (e) {
+        setServer({ state: 'down', latency: null, lastCheck: new Date(), error: 'เชื่อมต่อ Server ไม่ได้: ' + e.message });
+        throw new Error('ไม่สามารถเชื่อมต่อ Server ได้ — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่');
+    }
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); }
+    catch (e) {
+        const msg = htmlErrorHint(text);
+        setServer({ state: 'down', latency: null, lastCheck: new Date(), error: msg });
+        throw new Error(msg);
+    }
+    if (srv.state === 'down') pingServer();
+    if (json.status !== 'success') {
+        if (json.code === 'AUTH') { logout(true); }
+        throw new Error(json.message || 'เกิดข้อผิดพลาด');
+    }
+    return json.data;
+}
+
+// แปลหน้า HTML ที่ Google ส่งกลับมาแทน JSON ให้เป็นข้อความที่แก้ไขได้
+function htmlErrorHint(text) {
+    const t = String(text || '');
+    if (/access denied|ไม่มีสิทธิ์|you need access|need permission|ServiceLogin|accounts\.google\.com/i.test(t)) {
+        return 'Access denied: Web App ไม่อนุญาตให้เข้าถึง — ใน Apps Script ไปที่ Deploy > Manage deployments > ✏️ ตั้ง Execute as = "Me" และ Who has access = "Anyone" แล้วเลือก New version > Deploy';
+    }
+    if (/script function not found|doPost/i.test(t)) return 'ไม่พบฟังก์ชัน doPost — ตรวจว่าวาง Code.gs ครบและ Deploy เป็น New version แล้ว';
+    if (/<!doctype|<html/i.test(t)) return 'Server ส่งหน้าเว็บกลับมาแทน JSON — ตรวจ Web App URL (คัดลอกจากปุ่ม Copy) และ Who has access = "Anyone"';
+    return 'Server ไม่ได้ตอบกลับเป็น JSON — ตรวจสอบ Web App URL และ Who has access = "Anyone"';
+}
+
+// ---------------- Auth ----------------
+$('togglePass').onclick = () => {
+    const p = $('loginPass');
+    p.type = p.type === 'password' ? 'text' : 'password';
+    $('togglePass').textContent = p.type === 'password' ? 'แสดง' : 'ซ่อน';
+};
+
+$('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('loginBtn');
+    $('loginError').classList.add('hidden');
+    setBusy(btn, true, 'กำลังเข้าสู่ระบบ...');
+    try {
+        const r = await api('login', { username: $('loginUser').value.trim(), password: $('loginPass').value });
+        store(LS_TOKEN, r.token);
+        store(LS_USER, JSON.stringify(r.user));
+        $('loginPass').value = '';
+        await startApp(r.user);
+    } catch (err) {
+        $('loginError').textContent = err.message;
+        $('loginError').classList.remove('hidden');
+    } finally {
+        setBusy(btn, false);
+    }
+});
+
+function logout(expired) {
+    const token = load(LS_TOKEN);
+    if (token && !expired) api('logout').catch(() => {});
+    store(LS_TOKEN, null);
+    store(LS_USER, null);
+    currentUser = null;
+    technicians = null;
+    Object.keys(loaded).forEach(k => delete loaded[k]);
+    Object.values(charts).forEach(c => c.destroy());
+    charts = {};
+    closeModal();
+    $('toast').classList.add('hidden');
+    $('bottomNav').classList.add('hidden');
+    $('appView').classList.add('hidden');
+    $('loginView').classList.remove('hidden');
+    if (expired) {
+        $('loginError').textContent = 'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่';
+        $('loginError').classList.remove('hidden');
+    }
+}
+$('btnLogout').onclick = () => logout(false);
+
+async function startApp(user) {
+    currentUser = user;
+    $('loginView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    $('hdrName').textContent = user.fullName;
+    $('hdrRole').textContent = ROLE_TH[user.role] || user.role;
+    $('hdrBranch').textContent = isAllBranch() ? 'ทุกสาขา' : user.branch;
+
+    renderNav();
+    dbRange = 'mtd';
+    document.querySelectorAll('#dbRangeBtns button').forEach(x => x.classList.toggle('db-range-active', x.dataset.range === 'mtd'));
+    $('dbCustom').classList.add('hidden');
+    try {
+        const r = await api('getBranches');
+        branches = r.branches || [];
+    } catch (e) { toast(e.message, 'err'); }
+    fillBranchSelects();
+    fillStatusSelects();
+    resetNewForm();
+
+    const first = hasRole('manager', 'admin') ? 'dashboard' : hasRole('technician') ? 'jobs' : 'new';
+    switchPage(first);
+    refreshBadges();
+}
+
+// ---------------- Navigation ----------------
+function renderNav() {
+    $('navBar').innerHTML = NAV.filter(n => n.roles.includes(currentUser.role)).map(n => `
+        <button class="nav-btn whitespace-nowrap px-3 py-1.5 rounded-lg text-sm text-sky-100 hover:bg-sky-700/60 flex items-center gap-1.5" data-page="${n.id}">
+            ${esc(n.label)}${n.badge ? `<span data-badge="${n.id}" class="hidden bg-rose-500 text-white text-[10px] leading-none px-1.5 py-1 rounded-full"></span>` : ''}
+        </button>`).join('');
+    $('navBar').querySelectorAll('.nav-btn').forEach(b => b.onclick = () => switchPage(b.dataset.page));
+    renderBottomNav();
+}
+
+// ---------------- Mobile bottom navigation ----------------
+const NAV_ICON = {
+    dashboard: '<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/>',
+    new: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+    mine: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>',
+    approvals: '<path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/>',
+    jobs: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
+    all: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    admin: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
+    more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
+};
+const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', more: 'เพิ่มเติม' };
+const MOBILE_PRIORITY = ['dashboard', 'approvals', 'jobs', 'new', 'mine', 'all', 'admin'];
+let moreItems = [];
+
+function bnavBtn(id, badge) {
+    return `<button class="bnav-btn flex-1 flex flex-col items-center gap-0.5 pt-1.5 pb-1.5 text-[11px] relative" data-page="${id}">
+        <span class="bnav-ico px-4 py-1 rounded-full"><svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">${NAV_ICON[id]}</svg></span>
+        <span>${MOBILE_SHORT[id]}</span>
+        ${badge ? `<span data-badge="${badge}" class="hidden absolute top-0.5 left-1/2 ml-2 bg-rose-500 text-white text-[10px] leading-none px-1.5 py-1 rounded-full"></span>` : ''}
+    </button>`;
+}
+
+function renderBottomNav() {
+    const items = MOBILE_PRIORITY.filter(id => NAV.find(n => n.id === id && n.roles.includes(currentUser.role)));
+    const main = items.length > 5 ? items.slice(0, 4) : items;
+    moreItems = items.length > 5 ? items.slice(4) : [];
+    $('bottomBar').innerHTML = main.map(id => bnavBtn(id, (NAV.find(n => n.id === id) || {}).badge ? id : '')).join('') +
+        (moreItems.length ? bnavBtn('more', '') : '');
+    $('bottomBar').querySelectorAll('.bnav-btn').forEach(b => b.onclick = () => b.dataset.page === 'more' ? openMoreMenu() : switchPage(b.dataset.page));
+    $('bottomNav').classList.remove('hidden');
+}
+
+function openMoreMenu() {
+    openModal(`<h3 class="text-lg font-semibold mb-3">เมนูเพิ่มเติม</h3>
+        <div class="grid gap-2">${moreItems.map(id => `
+            <button onclick="closeModal();switchPage('${id}')" class="flex items-center gap-3 p-3 border rounded-xl text-left hover:bg-slate-50">
+                <svg class="w-6 h-6 text-sky-800" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">${NAV_ICON[id]}</svg>
+                <span>${esc((NAV.find(n => n.id === id) || {}).label)}</span>
+            </button>`).join('')}
+            <button onclick="closeModal();$('btnChangePw').click()" class="flex items-center gap-3 p-3 border rounded-xl text-left hover:bg-slate-50">🔒 <span>เปลี่ยนรหัสผ่าน</span></button>
+            <button onclick="closeModal();logout(false)" class="flex items-center gap-3 p-3 border rounded-xl text-left text-rose-700 hover:bg-rose-50">⎋ <span>ออกจากระบบ</span></button>
+        </div>`);
+}
+
+function switchPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+    $('page-' + name).classList.remove('hidden');
+    document.querySelectorAll('.nav-btn, .bnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+    const moreBtn = document.querySelector('.bnav-btn[data-page="more"]');
+    if (moreBtn) moreBtn.classList.toggle('active', moreItems.includes(name));
+    window.scrollTo(0, 0);
+    if (!loaded[name]) {
+        loaded[name] = true;
+        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, admin: loadAdmin }[name] || (() => {}))();
+    }
+}
+
+function setBadge(id, n) {
+    document.querySelectorAll(`[data-badge="${id}"]`).forEach(el => {
+        el.textContent = n > 99 ? '99+' : n;
+        el.classList.toggle('hidden', !n);
+    });
+}
+
+async function refreshBadges() {
+    try {
+        if (hasRole('manager', 'admin')) {
+            const r = await api('listTickets', { filter: { scope: 'approvals', limit: 1 } });
+            setBadge('approvals', r.total);
+        }
+        if (hasRole('technician', 'admin')) {
+            const r = await api('listTickets', { filter: { scope: 'jobs', status: 'Approved', limit: 1 } });
+            setBadge('jobs', r.total);
+        }
+    } catch (e) { /* ignore */ }
+}
+
+function fillBranchSelects() {
+    const opts = branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
+    document.querySelectorAll('.branch-filter').forEach(s => {
+        if (isAllBranch()) { s.innerHTML = `<option value="">ทุกสาขา</option>` + opts; s.disabled = false; }
+        else { s.innerHTML = `<option value="${esc(currentUser.branch)}">${esc(currentUser.branch)}</option>`; s.disabled = true; }
+    });
+    const fb = $('fBranch');
+    if (isAllBranch()) { fb.innerHTML = `<option value="">-- เลือกสาขา --</option>` + opts; fb.disabled = false; }
+    else { fb.innerHTML = `<option value="${esc(currentUser.branch)}">${esc(currentUser.branch)}</option>`; fb.disabled = true; }
+    $('fCategory').innerHTML = `<option value="">-- เลือกหมวดหมู่ --</option>` +
+        CATEGORIES.map(c => `<option value="${esc(c[0])}">${esc(c[1])}</option>`).join('');
+}
+
+function fillStatusSelects() {
+    document.querySelectorAll('.status-filter').forEach(s => {
+        s.innerHTML = `<option value="">ทุกสถานะ</option>` +
+            Object.keys(STATUS).map(k => `<option value="${esc(k)}">${esc(STATUS[k].th)}</option>`).join('');
+    });
+}
+
+// ---------------- New ticket ----------------
+function resetNewForm() {
+    $('repairForm').reset();
+    $('fRequester').value = currentUser.fullName || '';
+    if (currentUser.department) $('fDepartment').value = currentUser.department;
+    if (!isAllBranch()) $('fBranch').value = currentUser.branch;
+    $('fPreview').classList.add('hidden');
+}
+
+$('fImage').addEventListener('change', () => {
+    const f = $('fImage').files[0];
+    if (!f) { $('fPreview').classList.add('hidden'); return; }
+    $('fPreview').src = URL.createObjectURL(f);
+    $('fPreview').classList.remove('hidden');
+});
+
+function compressImage(file, max = 1280, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        const img = new Image();
+        reader.onload = () => { img.src = reader.result; };
+        reader.onerror = reject;
+        img.onload = () => {
+            const scale = Math.min(1, max / Math.max(img.width, img.height));
+            const c = document.createElement('canvas');
+            c.width = Math.round(img.width * scale);
+            c.height = Math.round(img.height * scale);
+            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            resolve({ name: file.name.replace(/\.[^.]+$/, '') + '.jpg', type: 'image/jpeg', base64: c.toDataURL('image/jpeg', quality) });
+        };
+        img.onerror = () => reject(new Error('ไม่สามารถอ่านไฟล์รูปภาพได้'));
+        reader.readAsDataURL(file);
+    });
+}
+
+$('repairForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('submitBtn');
+    setBusy(btn, true, 'กำลังบันทึกข้อมูล...');
+    try {
+        const file = $('fImage').files[0];
+        const ticket = {
+            requester: $('fRequester').value.trim(),
+            branch: $('fBranch').value,
+            department: $('fDepartment').value,
+            category: $('fCategory').value,
+            location: $('fLocation').value.trim(),
+            title: $('fTitle').value.trim(),
+            description: $('fDescription').value.trim(),
+            priority: document.querySelector('input[name="priority"]:checked').value,
+            image: file ? await compressImage(file) : null
+        };
+        const r = await api('createTicket', { ticket });
+        if (r.warning) toast(`${r.message} (รหัส: ${r.ticketId}) — ⚠️ ${r.warning}`, 'warn');
+        else toast(`${r.message} (รหัส: ${r.ticketId})`);
+        resetNewForm();
+        loaded.mine = false; loaded.all = false; loaded.dashboard = false;
+        refreshBadges();
+        switchPage('mine');
+    } catch (err) {
+        toast('❌ ' + err.message, 'err');
+    } finally {
+        setBusy(btn, false);
+    }
+});
+
+// ---------------- Ticket lists ----------------
+function ticketCard(t) {
+    const img = t.ImageURL ? `<img src="${esc(driveThumb(t.ImageURL, 200))}" class="w-16 h-16 object-cover rounded-lg border shrink-0" loading="lazy" alt="" onerror="this.remove()">` : '';
+    return `
+    <button onclick="openTicket('${esc(t.TicketID)}')" class="text-left w-full bg-white rounded-xl shadow-sm p-4 hover:shadow-md hover:ring-1 hover:ring-sky-200 transition flex gap-3">
+        ${img}
+        <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2 mb-1">
+                <span class="text-xs font-mono text-slate-500">${esc(t.TicketID)}</span>
+                ${statusBadge(t.Status)}
+                <span class="text-xs ${PRIORITY_CLS[t.Priority] || ''}">${esc(t.Priority)}</span>
+            </div>
+            <div class="font-medium truncate">${esc(t.Title)}</div>
+            <div class="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                <span>📍 ${esc(t.Branch)} · ${esc(t.Location)}</span>
+                <span>👤 ${esc(t.Requester)}</span>
+                <span>🕒 ${fmtDate(t.CreatedAt)}</span>
+                ${t.TechnicianName ? `<span>🔧 ${esc(t.TechnicianName)}</span>` : ''}
+            </div>
+        </div>
+    </button>`;
+}
+
+function renderChips(containerId, items, active, onPick) {
+    $(containerId).innerHTML = items.map(([val, label, n]) => `
+        <button data-v="${esc(val)}" class="px-3 py-1 rounded-full text-xs border ${val === active ? 'bg-sky-800 text-white border-sky-800' : 'bg-white hover:bg-slate-50'}">
+            ${esc(label)}${n !== undefined ? ` (${n})` : ''}</button>`).join('');
+    $(containerId).querySelectorAll('button').forEach(b => b.onclick = () => onPick(b.dataset.v));
+}
+
+async function loadMine() {
+    $('mineList').innerHTML = loadingHtml();
+    try {
+        const r = await api('listTickets', { filter: { scope: 'mine' } });
+        mineData = r.tickets;
+        renderMine();
+    } catch (e) { $('mineList').innerHTML = emptyHtml(e.message); }
+}
+function renderMine() {
+    const count = s => mineData.filter(t => !s || t.Status === s).length;
+    renderChips('mineChips', [['', 'ทั้งหมด', count('')], ...Object.keys(STATUS).map(k => [k, STATUS[k].th, count(k)])],
+        mineFilter, v => { mineFilter = v; renderMine(); });
+    const list = mineData.filter(t => !mineFilter || t.Status === mineFilter);
+    $('mineList').innerHTML = list.length ? list.map(ticketCard).join('') : emptyHtml('ยังไม่มีรายการ');
+}
+
+async function loadApprovals() {
+    $('approvalList').innerHTML = loadingHtml();
+    try {
+        const r = await api('listTickets', { filter: { scope: 'approvals' } });
+        setBadge('approvals', r.total);
+        $('approvalList').innerHTML = r.tickets.length ? r.tickets.map(ticketCard).join('') : emptyHtml('ไม่มีรายการรออนุมัติ 🎉');
+    } catch (e) { $('approvalList').innerHTML = emptyHtml(e.message); }
+}
+
+async function loadJobs() {
+    $('jobList').innerHTML = loadingHtml();
+    try {
+        const r = await api('listTickets', { filter: { scope: 'jobs' } });
+        jobsData = r.tickets;
+        renderJobs();
+    } catch (e) { $('jobList').innerHTML = emptyHtml(e.message); }
+}
+function renderJobs() {
+    const count = s => jobsData.filter(t => t.Status === s).length;
+    setBadge('jobs', count('Approved'));
+    renderChips('jobChips', [['Approved', 'รอรับงาน', count('Approved')], ['In Progress', 'กำลังทำ', count('In Progress')], ['Completed', 'เสร็จแล้ว', count('Completed')]],
+        jobFilter, v => { jobFilter = v; renderJobs(); });
+    const list = jobsData.filter(t => t.Status === jobFilter);
+    $('jobList').innerHTML = list.length ? list.map(ticketCard).join('') : emptyHtml('ไม่มีรายการ');
+}
+
+async function loadAll() {
+    $('allTable').innerHTML = `<tr><td colspan="9">${loadingHtml()}</td></tr>`;
+    $('allCards').innerHTML = loadingHtml();
+    try {
+        const r = await api('listTickets', { filter: {
+            q: $('allQ').value.trim(), branch: $('allBranch').value, status: $('allStatus').value,
+            dateFrom: $('allFrom').value, dateTo: $('allTo').value, limit: 2000
+        } });
+        allData = r.tickets;
+        $('allCount').textContent = `พบ ${r.total} รายการ`;
+        $('allTable').innerHTML = allData.length ? allData.map(t => `
+            <tr class="border-t hover:bg-sky-50 cursor-pointer" onclick="openTicket('${esc(t.TicketID)}')">
+                <td class="p-3" onclick="event.stopPropagation()"><input type="checkbox" class="rowChk" value="${esc(t.TicketID)}"></td>
+                <td class="p-3 font-mono text-xs whitespace-nowrap">${esc(t.TicketID)}</td>
+                <td class="p-3 whitespace-nowrap">${fmtDate(t.CreatedAt)}</td>
+                <td class="p-3">${esc(t.Title)}<div class="text-xs text-slate-500">${esc(t.Category)}</div></td>
+                <td class="p-3">${esc(t.Branch)}</td>
+                <td class="p-3">${esc(t.Requester)}</td>
+                <td class="p-3 ${PRIORITY_CLS[t.Priority] || ''}">${esc(t.Priority)}</td>
+                <td class="p-3">${esc(t.TechnicianName || '-')}</td>
+                <td class="p-3">${statusBadge(t.Status)}</td>
+            </tr>`).join('') : `<tr><td colspan="9" class="p-6 text-center text-slate-400">ไม่พบข้อมูล</td></tr>`;
+        $('allCards').innerHTML = allData.length ? allData.map(t => `
+            <div class="flex items-stretch gap-2">
+                <label class="flex items-center px-1"><input type="checkbox" class="rowChk w-5 h-5" value="${esc(t.TicketID)}"></label>
+                <div class="flex-1 min-w-0">${ticketCard(t)}</div>
+            </div>`).join('') : emptyHtml('ไม่พบข้อมูล');
+        updateSelCount();
+    } catch (e) {
+        $('allTable').innerHTML = `<tr><td colspan="9" class="p-6 text-center text-rose-600">${esc(e.message)}</td></tr>`;
+        $('allCards').innerHTML = emptyHtml(e.message);
+    }
+}
+$('allQ').addEventListener('keydown', e => { if (e.key === 'Enter') loadAll(); });
+
+function exportCsv() {
+    if (!allData.length) { toast('ไม่มีข้อมูลให้ Export', 'err'); return; }
+    const cols = ['TicketID', 'CreatedAt', 'Branch', 'Department', 'Requester', 'Location', 'Category', 'Title', 'Description',
+        'Priority', 'Status', 'ApprovedBy', 'ApprovedAt', 'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'ImageURL'];
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '﻿' + [cols.join(','), ...allData.map(t => cols.map(c => q(t[c])).join(','))].join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `RST-FixPoint_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+}
+
+// ---------------- Ticket detail ----------------
+function openModal(html) { $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); $('modalPanel').scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function closeModal() { $('modal').classList.add('hidden'); document.body.style.overflow = ''; }
+$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function stepper(status) {
+    const steps = ['Pending', 'Approved', 'In Progress', 'Completed'];
+    if (status === 'Rejected' || status === 'Cancelled') {
+        return `<div class="rounded-lg p-3 text-sm ${STATUS[status].cls}">รายการนี้ถูก${esc(STATUS[status].th)}</div>`;
+    }
+    const idx = steps.indexOf(status);
+    const labels = ['รออนุมัติ', 'อนุมัติแล้ว', 'กำลังซ่อม', 'เสร็จสิ้น'];
+    return `<div class="flex items-center">${steps.map((s, i) => `
+        <div class="flex flex-col items-center gap-1 shrink-0">
+            <div class="step-dot ${i <= idx ? 'bg-sky-700 text-white' : 'bg-slate-200 text-slate-500'}">${i < idx ? '✓' : i + 1}</div>
+            <div class="text-[11px] ${i <= idx ? 'text-sky-800 font-medium' : 'text-slate-400'}">${labels[i]}</div>
+        </div>${i < steps.length - 1 ? `<div class="flex-1 h-0.5 mb-5 ${i < idx ? 'bg-sky-700' : 'bg-slate-200'}"></div>` : ''}`).join('')}</div>`;
+}
+
+async function getTechnicians() {
+    if (!technicians) technicians = (await api('listTechnicians')).technicians;
+    return technicians;
+}
+
+async function openTicket(id) {
+    openModal(loadingHtml());
+    try {
+        const { ticket: t, logs } = await api('getTicket', { ticketId: id });
+        let techOpts = '';
+        if (hasRole('manager', 'admin') && ['Pending', 'Approved', 'In Progress'].includes(t.Status)) {
+            const techs = (await getTechnicians()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
+            techOpts = techs.map(x => `<option value="${esc(x.username)}" ${x.username === t.Technician ? 'selected' : ''}>${esc(x.fullName)} (${esc(x.branch)})</option>`).join('');
+        }
+        const row = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div class="text-sm">${v}</div></div>`;
+        const img = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="block">
+            <div class="text-xs text-slate-500 mb-1">${label}</div>
+            <img src="${esc(driveThumb(url))}" class="w-full max-h-64 object-contain bg-slate-50 rounded-lg border" alt="${label}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'text-sky-700 underline text-sm',textContent:'เปิดดูรูปภาพ'}))"></a>` : '';
+
+        openModal(`
+            <div class="pr-8">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="font-mono text-sm text-slate-500">${esc(t.TicketID)}</span>${statusBadge(t.Status)}
+                    <span class="text-sm ${PRIORITY_CLS[t.Priority] || ''}">${esc(t.Priority)}</span>
+                </div>
+                <h3 class="text-lg font-semibold">${esc(t.Title)}</h3>
+                <button class="btn mt-2 !py-1 text-xs bg-white border hover:bg-slate-50" onclick="openPrintDialog(['${esc(t.TicketID)}'])">🖨 พิมพ์ใบแจ้งซ่อม</button>
+            </div>
+            <div class="my-4">${stepper(t.Status)}</div>
+            <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3">
+                ${row('ผู้แจ้ง', esc(t.Requester))}${row('แผนก', esc(t.Department))}
+                ${row('สาขา', esc(t.Branch))}${row('สถานที่', esc(t.Location))}
+                ${row('หมวดหมู่', esc(t.Category))}${row('วันที่แจ้ง', fmtDate(t.CreatedAt))}
+                ${t.ApprovedBy ? row(t.Status === 'Rejected' ? 'ไม่อนุมัติโดย' : 'อนุมัติโดย', esc(t.ApprovedBy) + ' · ' + fmtDate(t.ApprovedAt)) : ''}
+                ${t.TechnicianName ? row('ช่างผู้รับผิดชอบ', esc(t.TechnicianName)) : ''}
+                ${t.CompletedAt ? row('ปิดงานเมื่อ', fmtDate(t.CompletedAt)) : ''}
+            </div>
+            ${t.Description ? `<div class="mt-3"><div class="text-xs text-slate-500">รายละเอียด</div><p class="text-sm whitespace-pre-line">${esc(t.Description)}</p></div>` : ''}
+            ${t.ManagerNote ? `<div class="mt-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3"><b>หมายเหตุผู้จัดการ:</b> ${esc(t.ManagerNote)}</div>` : ''}
+            ${t.TechNote ? `<div class="mt-3 text-sm bg-indigo-50 border border-indigo-200 rounded-lg p-3"><b>บันทึกช่าง:</b> ${esc(t.TechNote)}</div>` : ''}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">${img(t.ImageURL, 'รูปก่อนซ่อม')}${img(t.AfterImageURL, 'รูปหลังซ่อม')}</div>
+            ${actionPanel(t, techOpts)}
+            <div class="mt-5">
+                <h4 class="font-semibold text-sm mb-2">ประวัติการดำเนินงาน</h4>
+                <ol class="border-l-2 border-slate-200 ml-2 space-y-3">
+                    ${logs.map(l => `<li class="ml-4 relative">
+                        <span class="absolute -left-[1.4rem] top-1.5 w-2.5 h-2.5 rounded-full" style="background:${(STATUS[l.ToStatus] || {}).color || '#94a3b8'}"></span>
+                        <div class="text-sm"><b>${esc(l.Action)}</b> — ${esc(l.ByName)}</div>
+                        <div class="text-xs text-slate-500">${fmtDate(l.Timestamp)}</div>
+                        ${l.Note ? `<div class="text-xs text-slate-600 mt-0.5">${esc(l.Note)}</div>` : ''}
+                    </li>`).join('') || '<li class="ml-4 text-sm text-slate-400">ไม่มีประวัติ</li>'}
+                </ol>
+            </div>`);
+    } catch (e) {
+        openModal(`<div class="text-rose-600 py-6 text-center">${esc(e.message)}</div>`);
+    }
+}
+
+function actionPanel(t, techOpts) {
+    const me = currentUser.username;
+    const blocks = [];
+    const isMine = (t.Technician || '').toLowerCase() === me.toLowerCase();
+
+    if (hasRole('manager', 'admin') && t.Status === 'Pending') {
+        blocks.push(`
+            <h4 class="font-semibold text-sm">การอนุมัติ (ผู้จัดการ)</h4>
+            <div><label class="lbl">มอบหมายช่าง (ไม่บังคับ)</label>
+                <select id="actTech" class="inp"><option value="">-- ให้ช่างกดรับงานเอง --</option>${techOpts}</select></div>
+            <div><label class="lbl">หมายเหตุ / เหตุผล</label><textarea id="actNote" rows="2" class="inp" placeholder="จำเป็นต้องระบุเมื่อไม่อนุมัติ"></textarea></div>
+            <div class="flex gap-2">
+                <button class="btn flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onclick="doAction(this,'approveTicket','${esc(t.TicketID)}')">✓ อนุมัติ</button>
+                <button class="btn flex-1 bg-rose-600 hover:bg-rose-700 text-white" onclick="doAction(this,'rejectTicket','${esc(t.TicketID)}')">✕ ไม่อนุมัติ</button>
+            </div>`);
+    }
+    if (hasRole('manager', 'admin') && ['Approved', 'In Progress'].includes(t.Status)) {
+        blocks.push(`
+            <h4 class="font-semibold text-sm">มอบหมาย / เปลี่ยนช่าง</h4>
+            <div class="flex gap-2">
+                <select id="actAssign" class="inp"><option value="">-- เลือกช่าง --</option>${techOpts}</select>
+                <button class="btn bg-sky-800 hover:bg-sky-900 text-white whitespace-nowrap" onclick="doAction(this,'assignTechnician','${esc(t.TicketID)}')">มอบหมาย</button>
+            </div>`);
+    }
+    if (hasRole('technician', 'admin') && t.Status === 'Approved' && (!t.Technician || isMine || hasRole('admin'))) {
+        blocks.push(`
+            <h4 class="font-semibold text-sm">รับงานซ่อม</h4>
+            <textarea id="actNote" rows="2" class="inp" placeholder="หมายเหตุ เช่น จะเข้าไปดูหน้างานช่วงบ่าย (ไม่บังคับ)"></textarea>
+            <button class="btn w-full bg-indigo-600 hover:bg-indigo-700 text-white" onclick="doAction(this,'acceptTicket','${esc(t.TicketID)}')">🔧 รับงาน / เริ่มดำเนินการ</button>`);
+    }
+    if (hasRole('technician', 'admin') && t.Status === 'In Progress' && (isMine || hasRole('admin'))) {
+        blocks.push(`
+            <h4 class="font-semibold text-sm">อัปเดตงานซ่อม</h4>
+            <textarea id="actNote" rows="2" class="inp" placeholder="รายละเอียดการซ่อม / ความคืบหน้า / อะไหล่ที่ใช้"></textarea>
+            <div><label class="lbl">รูปหลังซ่อม (แนบเมื่อปิดงาน)</label>
+                <input type="file" id="actImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700"></div>
+            <div class="flex gap-2">
+                <button class="btn flex-1 bg-white border hover:bg-slate-50" onclick="doAction(this,'updateProgress','${esc(t.TicketID)}')">บันทึกความคืบหน้า</button>
+                <button class="btn flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onclick="doAction(this,'completeTicket','${esc(t.TicketID)}')">✓ ปิดงาน (เสร็จสิ้น)</button>
+            </div>`);
+    }
+    if (t.Status === 'Pending' && (t.Username || '').toLowerCase() === me.toLowerCase()) {
+        blocks.push(`<button class="btn w-full bg-white border border-rose-300 text-rose-700 hover:bg-rose-50" onclick="doAction(this,'cancelTicket','${esc(t.TicketID)}')">ยกเลิกการแจ้งซ่อมนี้</button>`);
+    }
+    return blocks.length ? `<div class="mt-4 space-y-3 border-t pt-4">${blocks.join('<hr class="my-2">')}</div>` : '';
+}
+
+async function doAction(btn, action, ticketId) {
+    const payload = { ticketId, note: ($('actNote') || {}).value || '' };
+    if (action === 'approveTicket') payload.technician = $('actTech').value;
+    if (action === 'assignTechnician') {
+        payload.technician = $('actAssign').value;
+        if (!payload.technician) { toast('กรุณาเลือกช่าง', 'err'); return; }
+    }
+    if (action === 'rejectTicket' && !payload.note.trim()) { toast('กรุณาระบุเหตุผลที่ไม่อนุมัติ', 'err'); $('actNote').focus(); return; }
+    if (action === 'updateProgress' && !payload.note.trim()) { toast('กรุณาระบุความคืบหน้า', 'err'); $('actNote').focus(); return; }
+    if (action === 'cancelTicket' && !confirmInline(btn)) return;
+
+    setBusy(btn, true);
+    try {
+        if (action === 'completeTicket' && $('actImage') && $('actImage').files[0]) {
+            payload.image = await compressImage($('actImage').files[0]);
+        }
+        const r = await api(action, payload);
+        if (r.warning) toast(`${r.message || 'บันทึกเรียบร้อย'} — ⚠️ ${r.warning}`, 'warn');
+        else toast(r.message || 'บันทึกเรียบร้อย');
+        ['mine', 'approvals', 'jobs', 'all', 'dashboard'].forEach(k => loaded[k] = false);
+        const visible = document.querySelector('.page:not(.hidden)').id.replace('page-', '');
+        loaded[visible] = true;
+        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll }[visible] || (() => {}))();
+        refreshBadges();
+        openTicket(ticketId);
+    } catch (e) {
+        toast('❌ ' + e.message, 'err');
+        setBusy(btn, false);
+    }
+}
+
+// กดครั้งแรกเพื่อยืนยัน (หลีกเลี่ยง confirm() ของเบราว์เซอร์)
+function confirmInline(btn) {
+    if (btn.dataset.confirm) return true;
+    btn.dataset.confirm = '1';
+    btn.textContent = 'กดอีกครั้งเพื่อยืนยันการยกเลิก';
+    setTimeout(() => { delete btn.dataset.confirm; btn.textContent = 'ยกเลิกการแจ้งซ่อมนี้'; }, 4000);
+    return false;
+}
+
+// ---------------- Dashboard (MTD / YTD) ----------------
+let dbRange = 'mtd';
+const isoDate = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const fmtD = d => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+
+function periodFor(range) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const y = today.getFullYear(), m = today.getMonth(), day = today.getDate();
+    const clamp = (yy, mm, dd) => new Date(yy, mm, Math.min(dd, new Date(yy, mm + 1, 0).getDate()));
+    switch (range) {
+        case 'mtd': return { label: 'MTD (ต้นเดือนถึงวันนี้)', from: new Date(y, m, 1), to: today,
+            prevFrom: new Date(y, m - 1, 1), prevTo: clamp(y, m - 1, day), prevLabel: 'ช่วงเดียวกันของเดือนก่อน', gran: 'day' };
+        case 'ytd': return { label: 'YTD (ต้นปีถึงวันนี้)', from: new Date(y, 0, 1), to: today,
+            prevFrom: new Date(y - 1, 0, 1), prevTo: clamp(y - 1, m, day), prevLabel: 'ช่วงเดียวกันของปีก่อน', gran: 'month' };
+        case 'lastMonth': return { label: 'เดือนที่แล้ว', from: new Date(y, m - 1, 1), to: new Date(y, m, 0),
+            prevFrom: new Date(y, m - 2, 1), prevTo: new Date(y, m - 1, 0), prevLabel: 'เดือนก่อนหน้า', gran: 'day' };
+        case 'lastYear': return { label: 'ปีที่แล้ว', from: new Date(y - 1, 0, 1), to: new Date(y - 1, 11, 31),
+            prevFrom: new Date(y - 2, 0, 1), prevTo: new Date(y - 2, 11, 31), prevLabel: 'ปีก่อนหน้า', gran: 'month' };
+        case 'custom': {
+            const f = $('dbFrom').value, t = $('dbTo').value;
+            if (!f || !t) return null;
+            const from = new Date(f + 'T00:00:00'), to = new Date(t + 'T00:00:00');
+            if (to < from) return null;
+            const days = Math.round((to - from) / 864e5) + 1;
+            return { label: 'กำหนดเอง', from, to, prevFrom: new Date(from.getFullYear(), from.getMonth(), from.getDate() - days),
+                prevTo: new Date(from.getFullYear(), from.getMonth(), from.getDate() - 1), prevLabel: `${days} วันก่อนหน้า`, gran: days <= 62 ? 'day' : 'month' };
+        }
+        default: return { label: 'ทั้งหมด (แนวโน้ม 6 เดือนล่าสุด)', gran: 'month' };
+    }
+}
+
+document.querySelectorAll('#dbRangeBtns button').forEach(b => b.onclick = () => {
+    dbRange = b.dataset.range;
+    document.querySelectorAll('#dbRangeBtns button').forEach(x => x.classList.toggle('db-range-active', x === b));
+    $('dbCustom').classList.toggle('hidden', dbRange !== 'custom');
+    if (dbRange !== 'custom' || periodFor('custom')) loadDashboard();
+});
+$('dbRefresh').onclick = loadDashboard;
+$('dbBranch').onchange = loadDashboard;
+$('dbFrom').onchange = $('dbTo').onchange = () => { if (periodFor('custom')) loadDashboard(); };
+
+function kpi(label, value, sub, color) {
+    return `<div class="bg-white rounded-xl shadow-sm p-4 border-t-4" style="border-color:${color}">
+        <div class="text-xs text-slate-500">${label}</div>
+        <div class="text-2xl font-bold mt-1">${value}</div>
+        ${sub ? `<div class="text-xs text-slate-400 mt-0.5">${sub}</div>` : ''}</div>`;
+}
+
+// mode: 'up' = เพิ่มขึ้นดี, 'down' = ลดลงดี, 'neutral' = ไม่ตัดสินดี/แย่
+function delta(cur, prev, mode, fmt = v => v) {
+    if (prev === null || prev === undefined || cur === null || cur === undefined) return '';
+    const vs = `<span class="text-slate-400"> vs ${fmt(prev)}</span>`;
+    if (prev === 0) return (cur === 0 ? '<span class="text-slate-500">= เท่าเดิม</span>' : '<span class="text-slate-500">▲ ใหม่</span>') + vs;
+    const pct = Math.round((cur - prev) / prev * 100);
+    if (pct === 0) return '<span class="text-slate-500">= เท่าเดิม</span>' + vs;
+    const good = mode === 'up' ? pct > 0 : mode === 'down' ? pct < 0 : null;
+    const cls = good === null ? 'text-slate-600' : good ? 'text-emerald-600' : 'text-rose-600';
+    return `<span class="${cls} font-medium">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%</span>` + vs;
+}
+
+function makeChart(id, config) {
+    if (charts[id]) charts[id].destroy();
+    if (typeof Chart === 'undefined') return;
+    charts[id] = new Chart($(id), config);
+}
+
+async function loadDashboard() {
+    const p = periodFor(dbRange);
+    if (!p) { toast('กรุณาเลือกช่วงวันที่ให้ถูกต้อง', 'err'); return; }
+    $('dbKpis').innerHTML = `<div class="col-span-full">${loadingHtml()}</div>`;
+    const filter = { branch: $('dbBranch').value, granularity: p.gran };
+    if (p.from) { filter.dateFrom = isoDate(p.from); filter.dateTo = isoDate(p.to); }
+    if (p.prevFrom) { filter.prevFrom = isoDate(p.prevFrom); filter.prevTo = isoDate(p.prevTo); }
+    $('dbPeriod').innerHTML = `<b class="text-sky-900">${esc(p.label)}</b>` +
+        (p.from ? ` : ${fmtD(p.from)} – ${fmtD(p.to)}` : '') +
+        (p.prevFrom ? ` <span class="text-slate-400">· เทียบกับ${esc(p.prevLabel)} (${fmtD(p.prevFrom)} – ${fmtD(p.prevTo)})</span>` : '');
+    try {
+        const d = await api('dashboard', { filter });
+        const s = d.byStatus;
+        const cur = d.current || {};
+        const pv = d.prev;
+        const hrs = h => h === null || h === undefined ? '-' : h < 24 ? `${h} ชม.` : `${Math.round(h / 24 * 10) / 10} วัน`;
+        $('dbKpis').innerHTML =
+            kpi('แจ้งซ่อมเข้า', d.total, pv ? delta(d.total, pv.total, 'neutral') : `เปิดอยู่ ${d.open} งาน`, '#0c4a6e') +
+            kpi('ปิดงานในช่วงนี้', d.closedInPeriod, pv ? delta(d.closedInPeriod, pv.closedInPeriod, 'up') : `อัตราปิดงาน ${d.completionRate}%`, STATUS['Completed'].color) +
+            kpi('รออนุมัติ', s['Pending'] || 0, '', STATUS['Pending'].color) +
+            kpi('รอช่างรับงาน', s['Approved'] || 0, '', STATUS['Approved'].color) +
+            kpi('กำลังดำเนินการ', s['In Progress'] || 0, `ไม่อนุมัติ ${s['Rejected'] || 0} · ยกเลิก ${s['Cancelled'] || 0}`, STATUS['In Progress'].color) +
+            kpi('เวลาซ่อมเฉลี่ย', hrs(cur.avgResolveHours), pv ? delta(cur.avgResolveHours, pv.avgResolveHours, 'down', hrs) : `อนุมัติเฉลี่ย ${hrs(d.avgApproveHours)}`, '#64748b');
+        $('dbUpdated').textContent = 'อัปเดต ' + fmtDate(d.generatedAt);
+
+        const statusKeys = Object.keys(STATUS).filter(k => s[k]);
+        makeChart('chStatus', {
+            type: 'doughnut',
+            data: { labels: statusKeys.map(k => STATUS[k].th), datasets: [{ data: statusKeys.map(k => s[k]), backgroundColor: statusKeys.map(k => STATUS[k].color), borderWidth: 2 }] },
+            options: { maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Prompt' }, boxWidth: 12 } } } }
+        });
+
+        const trend = d.trend || d.monthly || [];
+        const isDay = d.granularity === 'day';
+        const labelOf = k => {
+            const [yy, mm, dd] = k.split('-').map(Number);
+            return isDay ? String(dd) : new Date(yy, mm - 1, 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
+        };
+        $('chTrendTitle').textContent = isDay ? 'แนวโน้มรายวัน (แจ้งเข้า vs ปิดงาน)' : 'แนวโน้มรายเดือน (แจ้งเข้า vs ปิดงาน)';
+        makeChart('chMonthly', {
+            type: 'bar',
+            data: { labels: trend.map(m => labelOf(m.key)), datasets: [
+                { label: 'แจ้งเข้า', data: trend.map(m => m.created), backgroundColor: '#0ea5e9', borderRadius: 3 },
+                { label: 'ปิดงาน', data: trend.map(m => m.completed), backgroundColor: '#10b981', borderRadius: 3 }
+            ] },
+            options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } },
+                plugins: { legend: { labels: { font: { family: 'Prompt' } } },
+                    tooltip: { callbacks: { title: items => isDay ? new Date(trend[items[0].dataIndex].key + 'T00:00:00').toLocaleDateString('th-TH', { dateStyle: 'medium' }) : items[0].label } } } }
+        });
+
+        const bNames = Object.keys(d.byBranch).sort((a, b) => d.byBranch[b].total - d.byBranch[a].total);
+        makeChart('chBranch', {
+            type: 'bar',
+            data: { labels: bNames, datasets: Object.keys(STATUS).map(k => ({
+                label: STATUS[k].th, data: bNames.map(b => d.byBranch[b][k] || 0), backgroundColor: STATUS[k].color
+            })).filter(ds => ds.data.some(Boolean)) },
+            options: { indexAxis: 'y', maintainAspectRatio: false, scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }, y: { stacked: true } },
+                plugins: { legend: { position: 'bottom', labels: { font: { family: 'Prompt' }, boxWidth: 12 } } } }
+        });
+
+        const cats = Object.entries(d.byCategory).sort((a, b) => b[1] - a[1]);
+        makeChart('chCategory', {
+            type: 'bar',
+            data: { labels: cats.map(c => c[0]), datasets: [{ label: 'จำนวนงาน', data: cats.map(c => c[1]), backgroundColor: '#0c4a6e', borderRadius: 4 }] },
+            options: { indexAxis: 'y', maintainAspectRatio: false, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } }
+        });
+
+        $('dbTechs').innerHTML = d.technicians.length ? `<table class="w-full text-sm">
+            <thead class="text-left text-slate-500"><tr><th class="py-2">ช่าง</th><th class="py-2 text-right">กำลังทำ</th><th class="py-2 text-right">ปิดงาน</th><th class="py-2 text-right">เวลาเฉลี่ย</th></tr></thead>
+            <tbody>${d.technicians.map(t => `<tr class="border-t"><td class="py-2">${esc(t.name)}</td><td class="py-2 text-right">${t.inProgress}</td>
+                <td class="py-2 text-right font-medium">${t.completed}</td><td class="py-2 text-right">${hrs(t.avgHours)}</td></tr>`).join('')}</tbody></table>`
+            : '<div class="text-sm text-slate-400">ยังไม่มีข้อมูลในช่วงนี้</div>';
+
+        $('dbUrgent').innerHTML = d.urgentOpen.length ? d.urgentOpen.map(t => `
+            <button onclick="openTicket('${esc(t.TicketID)}')" class="w-full text-left flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 border">
+                <span class="text-xs ${PRIORITY_CLS[t.Priority]}">${esc(t.Priority)}</span>
+                <span class="text-sm truncate flex-1">${esc(t.Title)} <span class="text-xs text-slate-500">· ${esc(t.Branch)}</span></span>
+                ${statusBadge(t.Status)}
+            </button>`).join('') : '<div class="text-sm text-slate-400">ไม่มีงานด่วนค้าง 👍</div>';
+    } catch (e) {
+        $('dbKpis').innerHTML = `<div class="col-span-full">${emptyHtml(e.message)}</div>`;
+    }
+}
+
+// ---------------- Server status ----------------
+const EXPECTED_BACKEND = 'r05';
+const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
+
+function renderServer() {
+    const map = {
+        ok: ['bg-emerald-400', 'เชื่อมต่อ Server แล้ว'],
+        warn: ['bg-amber-400', 'เชื่อมต่อได้ (มีคำเตือน)'],
+        down: ['bg-rose-500', 'Server ออฟไลน์'],
+        checking: ['bg-slate-400 animate-pulse', 'กำลังตรวจสอบ...']
+    };
+    const [cls, label] = map[srv.state];
+    document.querySelectorAll('[data-srv]').forEach(el => {
+        el.querySelector('.dot').className = 'dot ' + cls;
+        el.querySelector('.srv-text').textContent = label + (srv.state === 'ok' && srv.latency !== null ? ` · ${srv.latency} ms` : '');
+        el.title = [label, srv.version && 'Backend: ' + srv.version, srv.error].filter(Boolean).join('\n');
+    });
+}
+function setServer(patch) {
+    if (patch.state === 'down') Object.assign(srv, { db: '', drive: '', folderName: '', tickets: null, version: '' });
+    Object.assign(srv, patch);
+    renderServer();
+}
+function isConfigured() { return GAS_WEB_APP_URL && GAS_WEB_APP_URL.indexOf('script.google.com') > -1; }
+
+async function pingServer() {
+    if (!isConfigured()) { setServer({ state: 'down', error: 'ยังไม่ได้ตั้งค่า GAS_WEB_APP_URL ในไฟล์ index.html', lastCheck: new Date() }); return; }
+    if (!navigator.onLine) { setServer({ state: 'down', latency: null, error: 'อุปกรณ์ไม่ได้เชื่อมต่ออินเทอร์เน็ต', lastCheck: new Date() }); return; }
+    if (srv.state !== 'ok') setServer({ state: 'checking' });
+    const t0 = performance.now();
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
+    try {
+        const res = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'checkStatus' }), signal: ctl.signal
+        });
+        const raw = await res.text();
+        let j;
+        try { j = JSON.parse(raw); } catch (pe) { throw new Error(htmlErrorHint(raw)); }
+        const d = j.data || {};
+        const warn = [];
+        if (j.status !== 'success') warn.push(j.message || 'Server ตอบกลับผิดพลาด');
+        if (d.db && d.db !== 'ok') warn.push('ฐานข้อมูล: ' + d.db);
+        if (d.drive && d.drive !== 'ok') warn.push('โฟลเดอร์รูป: ' + d.drive);
+        if (!String(d.codeVersion || '').startsWith(EXPECTED_BACKEND)) {
+            warn.push(`Backend เวอร์ชัน ${d.codeVersion || '?'} ไม่ตรงกับหน้าเว็บ (ต้องการ ${EXPECTED_BACKEND}) — กรุณา Deploy > Manage deployments > New version`);
+        }
+        setServer({ state: warn.length ? 'warn' : 'ok', version: d.codeVersion || '', db: d.db || '', drive: d.drive || '', sharing: d.sharing || '', folderName: d.folderName || '', tickets: d.tickets ?? null,
+            latency: Math.round(performance.now() - t0), lastCheck: new Date(), error: warn.join(' | ') });
+    } catch (e) {
+        setServer({ state: 'down', latency: null, lastCheck: new Date(),
+            error: e.name === 'AbortError' ? 'Server ไม่ตอบสนองภายใน 15 วินาที'
+                : e instanceof TypeError ? 'เชื่อมต่อไม่ได้ (เครือข่าย / CORS) — ตรวจ Web App URL และ Who has access = "Anyone"'
+                : e.message });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function showServerInfo() {
+    const row = (k, v) => `<tr class="border-t"><td class="py-2 pr-4 text-slate-500 whitespace-nowrap">${k}</td><td class="py-2 break-all">${v}</td></tr>`;
+    const stateTH = { ok: '🟢 ปกติ', warn: '🟡 เชื่อมต่อได้ แต่มีคำเตือน', down: '🔴 เชื่อมต่อไม่ได้', checking: '⚪ กำลังตรวจสอบ' }[srv.state];
+    const url = isConfigured() ? GAS_WEB_APP_URL.replace(/(\/s\/.{6}).+(.{6}\/exec)/, '$1…$2') : '(ยังไม่ได้ตั้งค่า)';
+    openModal(`
+        <h3 class="text-lg font-semibold mb-3">สถานะการเชื่อมต่อ Server</h3>
+        <table class="w-full text-sm">
+            ${row('สถานะ', stateTH)}
+            ${row('ความเร็วตอบสนอง', srv.latency !== null ? srv.latency + ' ms' : '-')}
+            ${row('Backend version', esc(srv.version || '-'))}
+            ${row('ฐานข้อมูล (Google Sheets)', srv.db === 'ok' ? '✓ เชื่อมต่อได้' + (srv.tickets !== null ? ` · ${srv.tickets} รายการ` : '') : esc(srv.db || '-'))}
+            ${row('โฟลเดอร์เก็บรูป (Drive)', srv.drive === 'ok' ? '✓ ' + esc(srv.folderName) : esc(srv.drive || '-'))}
+            ${srv.sharing ? row('การแชร์รูป', { anyone: 'ทุกคนที่มีลิงก์', domain: 'เฉพาะบัญชีในองค์กร (ต้อง login Google องค์กรจึงเห็นรูป)', private: 'ไม่แชร์ (เห็นเฉพาะผู้มีสิทธิ์ในโฟลเดอร์)' }[srv.sharing] || esc(srv.sharing)) : ''}
+            ${row('อินเทอร์เน็ตของเครื่องนี้', navigator.onLine ? '✓ ออนไลน์' : '✕ ออฟไลน์')}
+            ${row('Web App URL', `<span class="font-mono text-xs">${esc(url)}</span>`)}
+            ${row('ตรวจสอบล่าสุด', srv.lastCheck ? fmtDate(srv.lastCheck) : '-')}
+        </table>
+        ${srv.error ? `<div class="mt-3 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3">${esc(srv.error)}</div>` : ''}
+        <p class="text-xs text-slate-500 mt-3">ระบบตรวจสอบอัตโนมัติทุก 60 วินาที และทุกครั้งที่กลับมาเปิดหน้านี้</p>
+        <button id="btnRecheck" class="btn w-full mt-3 bg-sky-800 hover:bg-sky-900 text-white">ทดสอบการเชื่อมต่ออีกครั้ง</button>`);
+    $('btnRecheck').onclick = async () => { setBusy($('btnRecheck'), true, 'กำลังทดสอบ...'); await pingServer(); showServerInfo(); };
+}
+
+document.querySelectorAll('[data-srv]').forEach(el => el.addEventListener('click', showServerInfo));
+window.addEventListener('online', pingServer);
+window.addEventListener('offline', () => setServer({ state: 'down', latency: null, error: 'อุปกรณ์ไม่ได้เชื่อมต่ออินเทอร์เน็ต', lastCheck: new Date() }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pingServer(); });
+setInterval(() => { if (!document.hidden) pingServer(); }, 60000);
+
+// ---------------- Print work orders ----------------
+function openPrintDialog(ids) {
+    if (!ids.length) { toast('กรุณาเลือกรายการที่จะพิมพ์', 'err'); return; }
+    openModal(`
+        <h3 class="text-lg font-semibold mb-1">พิมพ์ใบแจ้งซ่อม</h3>
+        <p class="text-sm text-slate-500 mb-4">${ids.length} รายการ · 1 รายการต่อ 1 หน้า A4</p>
+        <div class="space-y-2 text-sm">
+            <label class="flex items-center gap-2"><input type="checkbox" id="poImg" checked> แสดงรูปภาพก่อน / หลังซ่อม</label>
+            <label class="flex items-center gap-2"><input type="checkbox" id="poHist" checked> แสดงประวัติการดำเนินงาน</label>
+            <label class="flex items-center gap-2"><input type="checkbox" id="poSign" checked> แสดงช่องลงนาม (ผู้แจ้ง / ผู้อนุมัติ / ช่าง / ผู้ตรวจรับ)</label>
+        </div>
+        <div class="text-xs text-slate-500 mt-3 font-mono break-all">${ids.map(esc).join(', ')}</div>
+        <button id="btnDoPrint" class="btn w-full mt-4 bg-sky-800 hover:bg-sky-900 text-white">🖨 พิมพ์ / บันทึกเป็น PDF</button>`);
+    $('btnDoPrint').onclick = () => doPrint(ids, $('btnDoPrint'));
+}
+
+async function doPrint(ids, btn) {
+    const opts = { images: $('poImg').checked, history: $('poHist').checked, sign: $('poSign').checked };
+    setBusy(btn, true, 'กำลังเตรียมเอกสาร...');
+    try {
+        const r = await api('printTickets', { ticketIds: ids });
+        $('printArea').innerHTML = r.items.map(it => workOrderHtml(it.ticket, it.logs, r, opts)).join('');
+        await waitImages($('printArea'), 10000);
+        closeModal();
+        window.print();
+    } catch (e) {
+        toast('❌ ' + e.message, 'err');
+        setBusy(btn, false);
+    }
+}
+window.addEventListener('afterprint', () => { $('printArea').innerHTML = ''; });
+
+function waitImages(el, ms) {
+    const imgs = [...el.querySelectorAll('img')];
+    return Promise.race([
+        Promise.all(imgs.map(i => i.complete ? 1 : new Promise(res => { i.addEventListener('load', res); i.addEventListener('error', res); }))),
+        new Promise(res => setTimeout(res, ms))
+    ]);
+}
+
+function durationText(a, b) {
+    if (!a || !b) return '-';
+    const h = (new Date(b) - new Date(a)) / 36e5;
+    if (!(h >= 0)) return '-';
+    return h < 24 ? `${h.toFixed(1)} ชม.` : `${(h / 24).toFixed(1)} วัน`;
+}
+
+function workOrderHtml(t, logs, meta, opts) {
+    const v = x => esc(x || '-');
+    const st = STATUS[t.Status] || { th: t.Status };
+    const img = (url, label) => `<td style="width:50%;text-align:center;height:200px">
+        <div style="font-size:11px;color:#475569;margin-bottom:4px">${label}</div>
+        ${url ? `<img src="${esc(driveThumb(url, 800))}" style="max-width:100%;max-height:180px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('(โหลดรูปไม่ได้)'))">` : '<span style="color:#94a3b8">— ไม่มีรูป —</span>'}</td>`;
+    const sign = label => `<div style="flex:1;text-align:center;font-size:11px">
+        <div style="height:42px"></div>
+        <div>ลงชื่อ ..................................................</div>
+        <div style="margin-top:4px">( .................................................. )</div>
+        <div style="margin-top:4px;font-weight:600">${label}</div>
+        <div style="margin-top:2px;color:#475569">วันที่ ........./........./.............</div></div>`;
+    return `
+    <div class="print-page pr">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0c4a6e;padding-bottom:8px;margin-bottom:8px">
+            <div>
+                <div style="font-size:20px;font-weight:700;color:#0c4a6e">ใบแจ้งซ่อม / ใบสั่งงานซ่อม</div>
+                <div style="font-size:12px;color:#475569">RST FixPoint · รวมสินไทยกรุ๊ป · ${v(t.Branch)}</div>
+            </div>
+            <div style="text-align:right;font-size:12px;line-height:1.5">
+                <div style="font-size:16px;font-weight:700;font-family:monospace">${v(t.TicketID)}</div>
+                <div>สถานะ: <b>${esc(st.th)}</b></div>
+                <div>ความเร่งด่วน: <b>${v(t.Priority)}</b></div>
+            </div>
+        </div>
+
+        <div class="sec">1. ข้อมูลผู้แจ้งซ่อม</div>
+        <table>
+            <tr><th>ผู้แจ้ง</th><td>${v(t.Requester)}</td><th>แผนก / ฝ่าย</th><td>${v(t.Department)}</td></tr>
+            <tr><th>สาขา</th><td>${v(t.Branch)}</td><th>วันที่แจ้ง</th><td>${fmtDate(t.CreatedAt)}</td></tr>
+        </table>
+
+        <div class="sec">2. รายละเอียดงานซ่อม</div>
+        <table>
+            <tr><th>หมวดหมู่</th><td>${v(t.Category)}</td><th>สถานที่</th><td>${v(t.Location)}</td></tr>
+            <tr><th>อุปกรณ์ / หัวข้อ</th><td colspan="3"><b>${v(t.Title)}</b></td></tr>
+            <tr><th>รายละเอียดอาการ</th><td colspan="3" style="height:44px;white-space:pre-line">${v(t.Description)}</td></tr>
+        </table>
+
+        <div class="sec">3. การพิจารณาอนุมัติ</div>
+        <table>
+            <tr><th>${t.Status === 'Rejected' ? 'ผู้ไม่อนุมัติ' : 'ผู้อนุมัติ'}</th><td>${v(t.ApprovedBy)}</td><th>วันที่</th><td>${t.ApprovedAt ? fmtDate(t.ApprovedAt) : '-'}</td></tr>
+            <tr><th>หมายเหตุ</th><td colspan="3">${v(t.ManagerNote)}</td></tr>
+        </table>
+
+        <div class="sec">4. การดำเนินงานซ่อม</div>
+        <table>
+            <tr><th>ช่างผู้รับผิดชอบ</th><td>${v(t.TechnicianName)}</td><th>วันที่รับงาน</th><td>${t.AcceptedAt ? fmtDate(t.AcceptedAt) : '-'}</td></tr>
+            <tr><th>วันที่ปิดงาน</th><td>${t.CompletedAt ? fmtDate(t.CompletedAt) : '-'}</td><th>ระยะเวลารวม</th><td>${durationText(t.CreatedAt, t.CompletedAt)}</td></tr>
+            <tr><th>บันทึกการซ่อม</th><td colspan="3" style="height:44px;white-space:pre-line">${v(t.TechNote)}</td></tr>
+        </table>
+
+        ${opts.images && (t.ImageURL || t.AfterImageURL) ? `
+        <div class="sec">5. รูปภาพประกอบ</div>
+        <table><tr>${img(t.ImageURL, 'ก่อนซ่อม')}${img(t.AfterImageURL, 'หลังซ่อม')}</tr></table>` : ''}
+
+        ${opts.history && logs.length ? `
+        <div class="sec">ประวัติการดำเนินงาน</div>
+        <table>
+            <tr><th style="width:24%">วันเวลา</th><th style="width:24%">การดำเนินการ</th><th style="width:20%">โดย</th><th>หมายเหตุ</th></tr>
+            ${logs.map(l => `<tr><td>${fmtDate(l.Timestamp)}</td><td>${v(l.Action)}</td><td>${v(l.ByName)}</td><td>${esc(l.Note || '')}</td></tr>`).join('')}
+        </table>` : ''}
+
+        ${opts.sign ? `<div style="display:flex;gap:8px;margin-top:18px">${sign('ผู้แจ้งซ่อม')}${sign('ผู้อนุมัติ')}${sign('ช่างผู้ปฏิบัติงาน')}${sign('ผู้ตรวจรับงาน')}</div>` : ''}
+
+        <div style="margin-top:14px;border-top:1px solid #cbd5e1;padding-top:4px;font-size:10px;color:#64748b;display:flex;justify-content:space-between">
+            <span>พิมพ์โดย ${esc(meta.printedBy)} เมื่อ ${fmtDate(meta.printedAt)}</span><span>RST FixPoint</span>
+        </div>
+    </div>`;
+}
+
+function selectedIds() { return [...new Set([...document.querySelectorAll('#allTable .rowChk:checked')].map(c => c.value))]; }
+function updateSelCount() {
+    const n = selectedIds().length;
+    $('selCount').textContent = n;
+    const all = document.querySelectorAll('#allTable .rowChk');
+    $('allChk').checked = all.length > 0 && n === all.length;
+    $('allChk').indeterminate = n > 0 && n < all.length;
+}
+$('allChk').addEventListener('change', () => {
+    document.querySelectorAll('#page-all .rowChk').forEach(c => c.checked = $('allChk').checked);
+    updateSelCount();
+});
+$('page-all').addEventListener('change', e => {
+    if (!e.target.classList.contains('rowChk')) return;
+    document.querySelectorAll('#page-all .rowChk').forEach(c => { if (c.value === e.target.value) c.checked = e.target.checked; });
+    updateSelCount();
+});
+
+// ---------------- Admin ----------------
+async function loadAdmin() {
+    $('userTable').innerHTML = `<tr><td colspan="8">${loadingHtml()}</td></tr>`;
+    try {
+        const [u, b] = await Promise.all([api('listUsers'), api('getAllBranches')]);
+        usersData = u.users;
+        renderUsers();
+        renderBranches(b.branches);
+    } catch (e) { $('userTable').innerHTML = `<tr><td colspan="8" class="p-4 text-rose-600">${esc(e.message)}</td></tr>`; }
+}
+
+function renderUsers() {
+    $('userCards').innerHTML = usersData.map((u, i) => `
+        <button onclick="openUserForm(${i})" class="text-left w-full border rounded-xl p-3 flex items-center gap-3 ${u.active ? '' : 'opacity-60'}">
+            <div class="w-10 h-10 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-semibold shrink-0">${esc((u.fullName || u.username).slice(0, 1))}</div>
+            <div class="min-w-0 flex-1">
+                <div class="font-medium truncate">${esc(u.fullName)} <span class="text-xs font-mono text-slate-500">@${esc(u.username)}</span></div>
+                <div class="text-xs text-slate-500">${esc(ROLE_TH[u.role] || u.role)} · ${esc(u.branch.toUpperCase() === 'ALL' ? 'ทุกสาขา' : u.branch)}${u.active ? '' : ' · ปิดใช้งาน'}</div>
+            </div>
+            <span class="text-sky-700 text-sm">แก้ไข</span>
+        </button>`).join('');
+    $('userTable').innerHTML = usersData.map((u, i) => `
+        <tr class="border-t">
+            <td class="p-3 font-mono text-xs">${esc(u.username)}</td>
+            <td class="p-3">${esc(u.fullName)}</td>
+            <td class="p-3">${esc(ROLE_TH[u.role] || u.role)}</td>
+            <td class="p-3">${esc(u.branch.toUpperCase() === 'ALL' ? 'ทุกสาขา' : u.branch)}</td>
+            <td class="p-3">${esc(u.department)}</td>
+            <td class="p-3">${u.active ? '<span class="text-emerald-700">ใช้งาน</span>' : '<span class="text-slate-400">ปิดใช้งาน</span>'}</td>
+            <td class="p-3 text-xs">${fmtDate(u.lastLogin)}</td>
+            <td class="p-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button></td>
+        </tr>`).join('');
+}
+
+function renderBranches(list) {
+    branches = list.filter(b => b.active);
+    fillBranchSelects();
+    $('branchTable').innerHTML = list.map(b => `
+        <tr class="border-t">
+            <td class="p-3 font-mono text-xs">${esc(b.code)}</td>
+            <td class="p-3">${esc(b.name)}</td>
+            <td class="p-3">${b.active ? '<span class="text-emerald-700">เปิดใช้งาน</span>' : '<span class="text-slate-400">ปิด</span>'}</td>
+            <td class="p-3 space-x-3 whitespace-nowrap">
+                <button class="text-sky-700 hover:underline" onclick="editBranch('${esc(b.code)}','${esc(b.name)}')">แก้ไขชื่อ</button>
+                <button class="text-slate-600 hover:underline" onclick="toggleBranch(this,'${esc(b.code)}','${esc(b.name)}',${!b.active})">${b.active ? 'ปิด' : 'เปิด'}</button>
+            </td>
+        </tr>`).join('');
+}
+
+function editBranch(code, name) { $('bCode').value = code; $('bName').value = name; $('bName').focus(); }
+
+async function toggleBranch(btn, code, name, active) {
+    setBusy(btn, true, '');
+    try { const r = await api('saveBranch', { branch: { code, name, active } }); toast(r.message); loadAdmin(); }
+    catch (e) { toast(e.message, 'err'); setBusy(btn, false); }
+}
+
+$('branchForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.submitter;
+    setBusy(btn, true);
+    try {
+        const r = await api('saveBranch', { branch: { code: $('bCode').value, name: $('bName').value, active: true } });
+        toast(r.message);
+        $('branchForm').reset();
+        loadAdmin();
+    } catch (err) { toast(err.message, 'err'); }
+    finally { setBusy(btn, false); }
+});
+
+function openUserForm(i) {
+    const u = i !== undefined ? usersData[i] : null;
+    const bOpts = `<option value="ALL">ทุกสาขา (ALL)</option>` + branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
+    openModal(`
+        <h3 class="text-lg font-semibold mb-4">${u ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้ใหม่'}</h3>
+        <form id="userForm" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><label class="lbl">Username *</label><input id="uUsername" class="inp ${u ? 'bg-slate-100' : ''}" required ${u ? 'readonly' : ''} value="${esc(u ? u.username : '')}" placeholder="a-z, 0-9"></div>
+            <div><label class="lbl">ชื่อ-นามสกุล *</label><input id="uFullName" class="inp" required value="${esc(u ? u.fullName : '')}"></div>
+            <div><label class="lbl">บทบาท *</label><select id="uRole" class="inp">${Object.keys(ROLE_TH).map(r => `<option value="${r}">${ROLE_TH[r]}</option>`).join('')}</select></div>
+            <div><label class="lbl">สาขา *</label><select id="uBranch" class="inp">${bOpts}</select></div>
+            <div><label class="lbl">แผนก</label><input id="uDepartment" class="inp" value="${esc(u ? u.department : '')}"></div>
+            <div><label class="lbl">อีเมล</label><input id="uEmail" type="email" class="inp" value="${esc(u ? u.email : '')}"></div>
+            <div><label class="lbl">${u ? 'รีเซ็ตรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่าน *'}</label><input id="uPassword" type="text" class="inp" ${u ? '' : 'required'} autocomplete="new-password"></div>
+            <div class="flex items-center gap-2 mt-6"><input id="uActive" type="checkbox" ${!u || u.active ? 'checked' : ''}><label for="uActive" class="text-sm">เปิดใช้งาน</label></div>
+            <div class="md:col-span-2 flex gap-2 mt-2">
+                <button class="btn flex-1 bg-sky-800 hover:bg-sky-900 text-white">บันทึก</button>
+                <button type="button" class="btn bg-white border" onclick="closeModal()">ยกเลิก</button>
+            </div>
+        </form>`);
+    if (u) { $('uRole').value = u.role; $('uBranch').value = u.branch.toUpperCase() === 'ALL' ? 'ALL' : u.branch; }
+    $('userForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.submitter;
+        setBusy(btn, true);
+        try {
+            const r = await api('saveUser', { user: {
+                username: $('uUsername').value, fullName: $('uFullName').value, role: $('uRole').value,
+                branch: $('uBranch').value, department: $('uDepartment').value, email: $('uEmail').value,
+                password: $('uPassword').value, active: $('uActive').checked
+            } });
+            toast(r.message);
+            technicians = null;
+            closeModal();
+            loadAdmin();
+        } catch (err) { toast(err.message, 'err'); setBusy(btn, false); }
+    });
+}
+
+// ---------------- Change password ----------------
+$('btnChangePw').onclick = () => {
+    openModal(`
+        <h3 class="text-lg font-semibold mb-4">เปลี่ยนรหัสผ่าน</h3>
+        <form id="pwForm" class="space-y-3">
+            <div><label class="lbl">รหัสผ่านเดิม</label><input id="pwOld" type="password" class="inp" required autocomplete="current-password"></div>
+            <div><label class="lbl">รหัสผ่านใหม่ (อย่างน้อย 4 ตัว)</label><input id="pwNew" type="password" class="inp" required minlength="4" autocomplete="new-password"></div>
+            <div><label class="lbl">ยืนยันรหัสผ่านใหม่</label><input id="pwNew2" type="password" class="inp" required autocomplete="new-password"></div>
+            <button class="btn w-full bg-sky-800 hover:bg-sky-900 text-white">บันทึก</button>
+        </form>`);
+    $('pwForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if ($('pwNew').value !== $('pwNew2').value) { toast('รหัสผ่านใหม่ไม่ตรงกัน', 'err'); return; }
+        const btn = e.submitter;
+        setBusy(btn, true);
+        try {
+            const r = await api('changePassword', { oldPassword: $('pwOld').value, newPassword: $('pwNew').value });
+            toast(r.message);
+            closeModal();
+        } catch (err) { toast(err.message, 'err'); setBusy(btn, false); }
+    });
+};
+
+// ---------------- Boot ----------------
+(async function boot() {
+    renderServer();
+    pingServer();
+    const token = load(LS_TOKEN);
+    const cached = load(LS_USER);
+    if (!token || !cached) return;
+    try {
+        const r = await api('me');
+        store(LS_USER, JSON.stringify(r.user));
+        await startApp(r.user);
+    } catch (e) {
+        /* token หมดอายุ -> อยู่หน้า login */
+    }
+})();
+</script>
+</body>
+</html>
