@@ -1238,6 +1238,9 @@ async function openEditTicket() {
             <div><label class="lbl">บันทึกช่าง</label><textarea id="eTechNote" rows="2" class="inp">${esc(t.TechNote)}</textarea></div>
             <div class="md:col-span-2"><label class="lbl">เปลี่ยนรูปก่อนซ่อม (ไม่บังคับ)</label>
                 <input type="file" id="eImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700"></div>
+            <div class="md:col-span-2"><label class="lbl">เพิ่ม / เปลี่ยนรูปหลังซ่อม (ไม่บังคับ)</label>
+                <input type="file" id="eAfterImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700">
+                ${t.AfterImageURL ? '<div class="text-xs text-slate-500 mt-1">มีรูปหลังซ่อมอยู่แล้ว — เลือกไฟล์ใหม่เพื่อเปลี่ยน</div>' : '<div class="text-xs text-slate-400 mt-1">ยังไม่มีรูปหลังซ่อม</div>'}</div>
             <div><label class="lbl">ค่าใช้จ่าย (บาท)</label><input id="eCost" type="number" min="0" step="0.01" class="inp" value="${t.Cost !== undefined && t.Cost !== '' ? esc(t.Cost) : ''}"></div>
             <div class="md:col-span-2"><label class="lbl">เหตุผลการแก้ไข (แนะนำให้ระบุ)</label><input id="eReason" class="inp" placeholder="เช่น ผู้แจ้งเลือกสาขาผิด"></div>
             <div class="md:col-span-2 flex gap-2 mt-2">
@@ -1252,6 +1255,7 @@ async function openEditTicket() {
         setBusy(btn, true, 'กำลังบันทึก...');
         try {
             const file = $('eImage').files[0];
+            const afterFile = $('eAfterImage').files[0];
             const r = await api('updateTicket', {
                 ticketId: t.TicketID,
                 reason: $('eReason').value.trim(),
@@ -1260,7 +1264,8 @@ async function openEditTicket() {
                     category: $('eCategory').value, location: $('eLocation').value.trim(), title: $('eTitle').value.trim(),
                     description: $('eDescription').value.trim(), priority: $('ePriority').value, status: $('eStatus').value,
                     technician: $('eTechnician').value, managerNote: $('eManagerNote').value.trim(), techNote: $('eTechNote').value.trim(), cost: $('eCost').value,
-                    image: file ? await compressImage(file) : null
+                    image: file ? await compressImage(file) : null,
+                    afterImage: afterFile ? await compressImage(afterFile) : null
                 }
             });
             toast(r.warning ? `${r.message} — ⚠️ ${r.warning}` : r.message, r.warning ? 'warn' : 'ok');
@@ -1460,7 +1465,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r14';
+const EXPECTED_BACKEND = 'r15';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {

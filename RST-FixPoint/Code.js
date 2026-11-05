@@ -2,7 +2,7 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r14-2026-11-05-delete-user
+ * CODE_VERSION: r15-2026-11-05-after-photo-admin
  *
  * ฟีเจอร์:
  *  - Login / Session token (CacheService, อายุ 6 ชม.)
@@ -11,6 +11,7 @@
  *  - Workflow: Pending -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
+ *  - r15: Admin เพิ่ม/เปลี่ยนรูปหลังซ่อมได้ในหน้าแก้ไขรายการ (updateTicket.afterImage)
  *  - r14: Admin ลบผู้ใช้ได้ (deleteUser) — เก็บประวัติไว้ที่ชีต DeletedUsers (ไม่เก็บรหัสผ่าน/รูประบุตัวตน),
  *         ลบรูปโปรไฟล์และรูประบุตัวตนออกจาก Drive, ห้ามลบตัวเอง/admin คนสุดท้าย/ช่างที่มีงานค้าง
  *  - r13: รูปโปรไฟล์ของผู้แจ้งแสดงให้ทุกคนที่ login เห็น (รายการงาน / ตารางทั้งหมด / ใบแจ้งซ่อม) — รูประบุตัวตนยังจำกัดเจ้าของ+admin
@@ -34,7 +35,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r14-2026-11-05-delete-user';
+const CODE_VERSION = 'r15-2026-11-05-after-photo-admin';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -1050,6 +1051,11 @@ function updateTicket_(u, req) {
     const img = saveImage_(d.image, t.TicketID + '_before');
     if (img.url) { patch.ImageURL = img.url; changes.push('เปลี่ยนรูปก่อนซ่อม'); }
     else warning = img.warning;
+  }
+  if (d.afterImage && d.afterImage.base64) { // r15: Admin แนบ/เปลี่ยนรูปหลังซ่อม
+    const img2 = saveImage_(d.afterImage, t.TicketID + '_after');
+    if (img2.url) { patch.AfterImageURL = img2.url; changes.push('เปลี่ยนรูปหลังซ่อม'); }
+    else warning = warning || img2.warning;
   }
 
   if (!changes.length) {
