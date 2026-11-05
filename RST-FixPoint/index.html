@@ -1460,7 +1460,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r13';
+const EXPECTED_BACKEND = 'r14';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -1799,7 +1799,7 @@ function renderUsers() {
             <td class="p-3">${esc(u.department)}</td>
             <td class="p-3">${u.active ? '<span class="text-emerald-700">ใช้งาน</span>' : '<span class="text-slate-400">ปิดใช้งาน</span>'}</td>
             <td class="p-3 text-xs">${fmtDate(u.lastLogin)}</td>
-            <td class="p-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button></td>
+            <td class="p-3 whitespace-nowrap space-x-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button>${u.username !== currentUser.username ? `<button class="text-rose-600 hover:underline" onclick="openDeleteUserDialog('${esc(u.username)}')">ลบ</button>` : ''}</td>
         </tr>`).join('');
 }
 
@@ -1839,6 +1839,37 @@ $('branchForm').addEventListener('submit', async (e) => {
     finally { setBusy(btn, false); }
 });
 
+function openDeleteUserDialog(username) {
+    if (!hasRole('admin')) return;
+    if (username === currentUser.username) { toast('ไม่สามารถลบบัญชีของตัวเองได้', 'err'); return; }
+    const u = usersData.find(x => x.username === username);
+    openModal(`
+        <h3 class="text-lg font-semibold text-rose-700">ลบผู้ใช้</h3>
+        <p class="text-sm text-slate-500 mb-3">ผู้ใช้ <b>${esc(u ? u.fullName : username)}</b> <span class="font-mono">@${esc(username)}</span> จะเข้าสู่ระบบไม่ได้อีก · ประวัติงานซ่อมยังคงอยู่ · รูปโปรไฟล์และรูประบุตัวตนจะถูกลบ</p>
+        <div class="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2 mb-3">
+            ถ้าผู้ใช้นี้เป็นช่างที่มีงานค้าง ระบบจะไม่ให้ลบ ต้องมอบหมายงานให้คนอื่นก่อน</div>
+        <div><label class="lbl">เหตุผลการลบ *</label><textarea id="duReason" rows="2" class="inp" placeholder="เช่น ลาออกจากบริษัท"></textarea></div>
+        <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" id="duConfirm"> ยืนยันการลบผู้ใช้นี้</label>
+        <div class="flex gap-2 mt-4">
+            <button id="btnDoDeleteUser" class="btn flex-1 bg-rose-600 hover:bg-rose-700 text-white" disabled>🗑 ลบผู้ใช้</button>
+            <button class="btn bg-white border" onclick="closeModal()">ยกเลิก</button>
+        </div>`);
+    const check = () => { $('btnDoDeleteUser').disabled = !($('duConfirm').checked && $('duReason').value.trim()); };
+    $('duConfirm').onchange = check;
+    $('duReason').oninput = check;
+    $('btnDoDeleteUser').onclick = async () => {
+        const btn = $('btnDoDeleteUser');
+        setBusy(btn, true, 'กำลังลบ...');
+        try {
+            const r = await api('deleteUser', { username, reason: $('duReason').value.trim() });
+            toast(r.message);
+            technicians = null;
+            closeModal();
+            loadAdmin();
+        } catch (e) { toast('❌ ' + e.message, 'err'); setBusy(btn, false); }
+    };
+}
+
 function openUserForm(i) {
     const u = i !== undefined ? usersData[i] : null;
     const bOpts = `<option value="ALL">ทุกสาขา (ALL)</option>` + branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
@@ -1858,7 +1889,8 @@ function openUserForm(i) {
                 <button type="button" class="btn bg-white border" onclick="closeModal()">ยกเลิก</button>
             </div>
         </form>
-        ${u ? photoBoxShell('uPhoto') : ''}`);
+        ${u ? photoBoxShell('uPhoto') : ''}
+        ${u && u.username !== currentUser.username ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-rose-300 text-rose-700 hover:bg-rose-50" onclick="openDeleteUserDialog('${esc(u.username)}')">🗑 ลบผู้ใช้นี้</button></div>` : ''}`);
     if (u) loadPhotoPanel(u.username, 'uPhoto');
     if (u) { $('uRole').value = u.role; $('uBranch').value = u.branch.toUpperCase() === 'ALL' ? 'ALL' : u.branch; }
     $('userForm').addEventListener('submit', async (e) => {

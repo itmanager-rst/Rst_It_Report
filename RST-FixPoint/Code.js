@@ -2,7 +2,7 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r13-2026-11-05-avatars
+ * CODE_VERSION: r14-2026-11-05-delete-user
  *
  * ฟีเจอร์:
  *  - Login / Session token (CacheService, อายุ 6 ชม.)
@@ -11,6 +11,8 @@
  *  - Workflow: Pending -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
+ *  - r14: Admin ลบผู้ใช้ได้ (deleteUser) — เก็บประวัติไว้ที่ชีต DeletedUsers (ไม่เก็บรหัสผ่าน/รูประบุตัวตน),
+ *         ลบรูปโปรไฟล์และรูประบุตัวตนออกจาก Drive, ห้ามลบตัวเอง/admin คนสุดท้าย/ช่างที่มีงานค้าง
  *  - r13: รูปโปรไฟล์ของผู้แจ้งแสดงให้ทุกคนที่ login เห็น (รายการงาน / ตารางทั้งหมด / ใบแจ้งซ่อม) — รูประบุตัวตนยังจำกัดเจ้าของ+admin
  *  - r12: การมองเห็นข้อมูลตามบทบาท (ticketView_ / logVisible_) — พนักงานไม่เห็นหมายเหตุ/ค่าใช้จ่าย,
  *         ช่างเห็นสรุปคะแนนเท่านั้น, ผู้จัดการ/admin เห็นทั้งหมด • เพิ่มค่าใช้จ่าย (Cost) และการประเมินช่าง (rateTicket)
@@ -32,7 +34,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r13-2026-11-05-avatars';
+const CODE_VERSION = 'r14-2026-11-05-delete-user';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -71,6 +73,11 @@ const SHEETS = {
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL',
       'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt',
+      'DeletedAt', 'DeletedBy', 'DeleteReason']
+  },
+  DELETED_USERS: {
+    name: 'DeletedUsers',
+    headers: ['Username', 'FullName', 'Role', 'Branch', 'Department', 'Email', 'Active', 'CreatedAt', 'LastLogin',
       'DeletedAt', 'DeletedBy', 'DeleteReason']
   },
   LOGS: {
@@ -133,7 +140,8 @@ const ROUTES = {
   listUsers:       { roles: ADMIN, fn: () => ({ users: readAll_(SHEETS.USERS).map(publicUser_) }) },
   saveUser:        { roles: ADMIN, fn: saveUser_, write: true },
   getAllBranches:  { roles: ADMIN, fn: () => ({ branches: getBranches_(true) }) },
-  saveBranch:      { roles: ADMIN, fn: saveBranch_, write: true }
+  saveBranch:      { roles: ADMIN, fn: saveBranch_, write: true },
+  deleteUser:      { roles: ADMIN, fn: deleteUser_, write: true }  // r14
 };
 
 function doPost(e) {
@@ -1270,6 +1278,57 @@ function saveUser_(u, req) {
   rec.CreatedAt = new Date();
   appendObj_(SHEETS.USERS, rec);
   return { message: 'เพิ่มผู้ใช้ ' + username + ' แล้ว' };
+}
+
+/**
+ * r14: ลบผู้ใช้ (admin เท่านั้น)
+ * - ห้ามลบตัวเอง, ห้ามลบ admin คนสุดท้าย
+ * - ห้ามลบถ้าผู้ใช้เป็นช่างที่มีงานสถานะ Approved / In Progress ค้างอยู่ (ต้องมอบหมายงานให้คนอื่นก่อน)
+ * - เก็บข้อมูลพื้นฐานไว้ที่ DeletedUsers (ไม่เก็บรหัสผ่าน) และลบรูปโปรไฟล์ + รูประบุตัวตนออกจาก Drive
+ * - ประวัติงานซ่อมที่ผู้ใช้เคยแจ้ง/ดำเนินการยังอยู่ (เก็บชื่อผู้ใช้เป็นข้อความ)
+ */
+function deleteUser_(u, req) {
+  requireAdmin_(u);
+  const username = norm_(req.username);
+  const reason = String(req.reason || '').trim();
+  if (!username) throw new Error('ไม่พบชื่อผู้ใช้ที่จะลบ');
+  if (!reason) throw new Error('กรุณาระบุเหตุผลการลบ');
+  if (username === norm_(u.Username)) throw new Error('ไม่สามารถลบบัญชีของตัวเองได้');
+
+  const users = readAll_(SHEETS.USERS);
+  const target = users.find(x => norm_(x.Username) === username);
+  if (!target) throw new Error('ไม่พบผู้ใช้ ' + username + ' (อาจถูกลบไปแล้ว กรุณารีเฟรช)');
+
+  if (String(target.Role) === 'admin') {
+    const activeAdmins = users.filter(x => String(x.Role) === 'admin' && isActive_(x.Active)).length;
+    if (activeAdmins <= 1) throw new Error('ไม่สามารถลบ admin คนสุดท้ายของระบบได้');
+  }
+
+  const openJobs = readAll_(SHEETS.TICKETS).filter(t =>
+    norm_(t.Technician) === username && [ST.APPROVED, ST.IN_PROGRESS].indexOf(String(t.Status)) > -1);
+  if (openJobs.length) {
+    throw new Error('ผู้ใช้นี้มีงานค้าง ' + openJobs.length + ' รายการ (' + openJobs.map(t => t.TicketID).join(', ') +
+      ') กรุณามอบหมายงานให้ช่างคนอื่นก่อนลบ');
+  }
+
+  // 1) เก็บสำเนาข้อมูลพื้นฐาน (ไม่เก็บรหัสผ่านและรูประบุตัวตน)
+  const now = new Date();
+  appendObj_(SHEETS.DELETED_USERS, {
+    Username: target.Username, FullName: target.FullName, Role: target.Role, Branch: target.Branch,
+    Department: target.Department, Email: target.Email, Active: target.Active, CreatedAt: target.CreatedAt,
+    LastLogin: target.LastLogin, DeletedAt: now, DeletedBy: u.FullName || u.Username, DeleteReason: reason
+  });
+
+  // 2) ลบไฟล์รูปออกจาก Drive
+  trashFileByUrl_(target.ProfilePhotoURL);
+  trashFileByUrl_(target.IdPhotoURL);
+
+  // 3) ลบแถวผู้ใช้ — session ของผู้ใช้นี้จะใช้งานไม่ได้ทันที (getSessionUser_ ไม่พบผู้ใช้)
+  sheet_(SHEETS.USERS).deleteRow(target._row);
+  delete MEMO.rows[SHEETS.USERS.name];
+  delete MEMO.photos;
+
+  return { message: 'ลบผู้ใช้ ' + target.Username + ' แล้ว (ประวัติเก็บไว้ที่ชีต DeletedUsers)' };
 }
 
 function saveBranch_(u, req) {
