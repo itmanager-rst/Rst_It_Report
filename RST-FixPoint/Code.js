@@ -2,7 +2,7 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r07-2026-11-04-approver-signature
+ * CODE_VERSION: r10-2026-11-05-admin-edit-delete
  *
  * ฟีเจอร์:
  *  - Login / Session token (CacheService, อายุ 6 ชม.)
@@ -11,6 +11,12 @@
  *  - Workflow: Pending -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
+ *  - r10: Admin แก้ไข / ลบ รายการแจ้งซ่อมได้ (updateTicket / deleteTickets) — เฉพาะ role admin
+ *         · ทุกการแก้ไขบันทึกค่าเดิม → ค่าใหม่ ลงประวัติ (TicketLogs)
+ *         · รายการที่ลบถูกย้ายสำเนาไปชีต "DeletedTickets" (กู้คืนได้ด้วย restoreDeletedTicket)
+ *  - r09: เร็วขึ้นและเสถียรขึ้น — memo การอ่าน Sheet ต่อคำขอ, me/login ส่ง branches มาด้วย,
+ *         counts (badge) รวมเป็นคำขอเดียว, getImages ดึงรูปเป็นชุด
+ *  - r08: ย้ายที่เก็บรูปไปโฟลเดอร์ "Image" (17LfuEDEVzi5Q7TdWgVoKuHhZJ8L-DbPw) ภายใน RST-FixPoint
  *  - r07: ลายเซ็นดิจิทัลของผู้อนุมัติ (บังคับตอนอนุมัติ) บันทึกเป็น ApproverSignURL และพิมพ์ในใบแจ้งซ่อม
  *  - r06: รูปแสดงผ่าน Web App (action getImage / printTickets withImages) — ไม่ต้องแชร์ Drive ออกนอกองค์กร
  *  - r05: แก้ "Access denied: DriveApp" — แชร์รูปแบบ fallback (Anyone > ภายในองค์กร > ไม่แชร์),
@@ -22,14 +28,14 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r07-2026-11-04-approver-signature';
+const CODE_VERSION = 'r10-2026-11-05-admin-edit-delete';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
 
 // 📌 ID ของโฟลเดอร์ Google Drive เก็บรูป (ใส่เฉพาะ ID ไม่ใช่ URL ทั้งเส้น)
-//    = โฟลเดอร์ "RST-FixPoint" https://drive.google.com/drive/folders/1zeldR0MkzazzzK3X4HMfdeh5hWKW5o_I
-const FOLDER_ID = '1zeldR0MkzazzzK3X4HMfdeh5hWKW5o_I';
+//    = โฟลเดอร์ "Image" (อยู่ใน RST-FixPoint) https://drive.google.com/drive/folders/17LfuEDEVzi5Q7TdWgVoKuHhZJ8L-DbPw
+const FOLDER_ID = '17LfuEDEVzi5Q7TdWgVoKuHhZJ8L-DbPw';
 
 const TZ = 'Asia/Bangkok';
 const SESSION_SECONDS = 21600; // 6 ชม. (สูงสุดของ CacheService)
@@ -49,6 +55,13 @@ const SHEETS = {
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL']
+  },
+  DELETED: {
+    name: 'DeletedTickets',
+    headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
+      'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
+      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL',
+      'DeletedAt', 'DeletedBy', 'DeleteReason']
   },
   LOGS: {
     name: 'TicketLogs',
@@ -77,16 +90,18 @@ const TECH = ['technician', 'admin'];
 const ADMIN = ['admin'];
 
 const ROUTES = {
-  me:              { roles: ALL_ROLES, fn: (u) => ({ user: publicUser_(u) }) },
+  me:              { roles: ALL_ROLES, fn: (u) => ({ user: publicUser_(u), branches: getBranches_(false) }) },
   logout:          { roles: ALL_ROLES, fn: (u, r) => { CacheService.getScriptCache().remove('sess_' + r.token); return {}; } },
   changePassword:  { roles: ALL_ROLES, fn: changePassword_, write: true },
   getBranches:     { roles: ALL_ROLES, fn: () => ({ branches: getBranches_(false) }) },
+  counts:          { roles: ALL_ROLES, fn: counts_ },
 
   createTicket:    { roles: ALL_ROLES, fn: createTicket_, write: true },
   listTickets:     { roles: ALL_ROLES, fn: listTickets_ },
   getTicket:       { roles: ALL_ROLES, fn: getTicket_ },
   printTickets:    { roles: ALL_ROLES, fn: printTickets_ },
   getImage:        { roles: ALL_ROLES, fn: getImage_ },
+  getImages:       { roles: ALL_ROLES, fn: getImages_ },
   cancelTicket:    { roles: ALL_ROLES, fn: cancelTicket_, write: true },
 
   approveTicket:   { roles: MGR, fn: approveTicket_, write: true },
@@ -99,6 +114,9 @@ const ROUTES = {
   updateProgress:  { roles: TECH, fn: updateProgress_, write: true },
   completeTicket:  { roles: TECH, fn: completeTicket_, write: true },
 
+  updateTicket:    { roles: ADMIN, fn: updateTicket_, write: true },   // r10: แก้ไขรายการ (admin เท่านั้น)
+  deleteTickets:   { roles: ADMIN, fn: deleteTickets_, write: true },  // r10: ลบรายการ (admin เท่านั้น)
+
   listUsers:       { roles: ADMIN, fn: () => ({ users: readAll_(SHEETS.USERS).map(publicUser_) }) },
   saveUser:        { roles: ADMIN, fn: saveUser_, write: true },
   getAllBranches:  { roles: ADMIN, fn: () => ({ branches: getBranches_(true) }) },
@@ -106,6 +124,7 @@ const ROUTES = {
 };
 
 function doPost(e) {
+  resetMemo_();
   try {
     const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const action = req.action;
@@ -183,13 +202,20 @@ function err_(message, code) {
 // Sheet helpers
 // ---------------------------------------------------------------------------
 
+// ---- memo ต่อคำขอ (ลดการอ่าน Sheet ซ้ำในคำขอเดียว) — ล้างทุกครั้งที่เริ่มคำขอใหม่ ----
+let MEMO = { ss: null, sheets: {}, rows: {}, headers: {} };
+function resetMemo_() { MEMO = { ss: null, sheets: {}, rows: {}, headers: {} }; }
+
 function ss_() {
+  if (MEMO.ss) return MEMO.ss;
   const ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('ไม่พบ Google Sheet — กรุณาใส่ SPREADSHEET_ID ใน Code.gs');
+  MEMO.ss = ss;
   return ss;
 }
 
 function sheet_(def) {
+  if (MEMO.sheets[def.name]) return MEMO.sheets[def.name];
   const ss = ss_();
   let sh = ss.getSheetByName(def.name);
   if (!sh) {
@@ -205,8 +231,10 @@ function sheet_(def) {
     if (missing.length) {
       sh.getRange(1, current.filter(String).length + 1, 1, missing.length).setValues([missing])
         .setFontWeight('bold').setBackground('#0c4a6e').setFontColor('#ffffff');
+      delete MEMO.headers[def.name];
     }
   }
+  MEMO.sheets[def.name] = sh;
   return sh;
 }
 
@@ -214,35 +242,53 @@ function headers_(sh) {
   return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
 }
 
+function headerOf_(def) {
+  if (!MEMO.headers[def.name]) MEMO.headers[def.name] = headers_(sheet_(def));
+  return MEMO.headers[def.name];
+}
+
 function readAll_(def) {
+  if (MEMO.rows[def.name]) return MEMO.rows[def.name];
   const sh = sheet_(def);
   const values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
-  const h = values[0].map(String);
   const out = [];
-  for (let i = 1; i < values.length; i++) {
-    const r = values[i];
-    if (r.every(c => c === '' || c === null)) continue;
-    const o = { _row: i + 1 };
-    h.forEach((k, j) => { if (k) o[k] = r[j]; });
-    out.push(o);
+  if (values.length >= 2) {
+    const h = values[0].map(String);
+    for (let i = 1; i < values.length; i++) {
+      const r = values[i];
+      if (r.every(c => c === '' || c === null)) continue;
+      const o = { _row: i + 1 };
+      h.forEach((k, j) => { if (k) o[k] = r[j]; });
+      out.push(o);
+    }
   }
+  MEMO.rows[def.name] = out;
   return out;
 }
 
 function appendObj_(def, obj) {
+  appendObjs_(def, [obj]);
+}
+
+/** เพิ่มหลายแถวในครั้งเดียว (เร็วกว่า appendRow ทีละแถว) */
+function appendObjs_(def, objs) {
+  if (!objs.length) return;
   const sh = sheet_(def);
-  const h = headers_(sh);
-  sh.appendRow(h.map(k => (obj[k] !== undefined && obj[k] !== null ? obj[k] : '')));
+  const h = headerOf_(def);
+  const rows = objs.map(obj => h.map(k => (obj[k] !== undefined && obj[k] !== null ? obj[k] : '')));
+  if (rows.length === 1) sh.appendRow(rows[0]);
+  else sh.getRange(sh.getLastRow() + 1, 1, rows.length, h.length).setValues(rows);
+  delete MEMO.rows[def.name];
 }
 
 function updateRow_(def, row, patch) {
   const sh = sheet_(def);
-  const h = headers_(sh);
+  const h = headerOf_(def);
   const rng = sh.getRange(row, 1, 1, h.length);
   const vals = rng.getValues()[0];
   h.forEach((k, i) => { if (Object.prototype.hasOwnProperty.call(patch, k)) vals[i] = patch[k]; });
   rng.setValues([vals]);
+  delete MEMO.rows[def.name];
 }
 
 function toDate_(v) {
@@ -328,7 +374,7 @@ function login_(req) {
   const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
   CacheService.getScriptCache().put('sess_' + token, norm_(u.Username), SESSION_SECONDS);
 
-  return { token: token, user: publicUser_(u), codeVersion: CODE_VERSION };
+  return { token: token, user: publicUser_(u), branches: getBranches_(false), codeVersion: CODE_VERSION };
 }
 
 function getSessionUser_(token) {
@@ -431,7 +477,7 @@ function driveHint_(e) {
 function nextTicketId_(tickets) {
   const prefix = 'FIX-' + Utilities.formatDate(new Date(), TZ, 'yyMMdd') + '-';
   let max = 0;
-  tickets.forEach(t => {
+  tickets.concat(readAll_(SHEETS.DELETED)).forEach(t => { // r10: นับรวมรายการที่ถูกลบ กันรหัสซ้ำ
     const id = String(t.TicketID);
     if (id.indexOf(prefix) === 0) {
       const n = parseInt(id.slice(prefix.length), 10);
@@ -582,6 +628,35 @@ function getImage_(u, req) {
   return { data: imageData_(req.url) };
 }
 
+/** ดึงรูปหลายรูปในคำขอเดียว (เฉพาะรูปของงานที่ผู้ใช้มีสิทธิ์ดู) */
+function getImages_(u, req) {
+  const urls = (req.urls || []).slice(0, 12);
+  const tickets = readAll_(SHEETS.TICKETS);
+  const images = {};
+  urls.forEach(url => {
+    const id = fileIdFromUrl_(url);
+    if (!id) return;
+    const t = tickets.find(x => [x.ImageURL, x.AfterImageURL, x.ApproverSignURL].some(v => fileIdFromUrl_(v) === id));
+    if (!t || !canSee_(u, t)) return;
+    images[url] = imageData_(url);
+  });
+  return { images: images };
+}
+
+/** จำนวนงานที่รอดำเนินการของผู้ใช้ (ใช้แสดง badge เมนู) */
+function counts_(u) {
+  const all = readAll_(SHEETS.TICKETS);
+  const out = { approvals: 0, jobs: 0 };
+  if (MGR.indexOf(u.Role) > -1) {
+    out.approvals = all.filter(t => t.Status === ST.PENDING && inScope_(u, t.Branch)).length;
+  }
+  if (TECH.indexOf(u.Role) > -1) {
+    out.jobs = all.filter(t => t.Status === ST.APPROVED && inScope_(u, t.Branch) &&
+      (u.Role === 'admin' || !t.Technician || norm_(t.Technician) === norm_(u.Username))).length;
+  }
+  return out;
+}
+
 function fileIdFromUrl_(url) {
   const m = String(url || '').match(/\/d\/([\w-]{10,})/) || String(url || '').match(/[?&]id=([\w-]{10,})/);
   return m ? m[1] : '';
@@ -696,6 +771,135 @@ function cancelTicket_(u, req) {
   if (norm_(t.Username) !== norm_(u.Username) && u.Role !== 'admin') throw new Error('ยกเลิกได้เฉพาะรายการที่คุณแจ้งเอง');
   requireStatus_(t, [ST.PENDING]);
   return transition_(u, t, ST.CANCELLED, 'ยกเลิกการแจ้งซ่อม', req.note);
+}
+
+// ---------------------------------------------------------------------------
+// r10: Admin แก้ไข / ลบ รายการแจ้งซ่อม (route จำกัด role = admin แล้ว — ตรวจซ้ำอีกชั้นเพื่อความปลอดภัย)
+// ---------------------------------------------------------------------------
+
+const PRIORITIES = ['ปกติ', 'ด่วน', 'ด่วนมาก'];
+
+function requireAdmin_(u) {
+  if (u.Role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่แก้ไข/ลบรายการได้');
+}
+
+function updateTicket_(u, req) {
+  requireAdmin_(u);
+  const t = getTicketRow_(req.ticketId);
+  const d = req.ticket || {};
+  const patch = {}, changes = [];
+  const txt = v => (v instanceof Date ? v.toISOString() : String(v === undefined || v === null ? '' : v)).trim();
+  const set = (col, val, label) => {
+    const nv = txt(val), ov = txt(t[col]);
+    if (nv === ov) return;
+    patch[col] = nv;
+    changes.push(label + ': ' + (ov || '-') + ' → ' + (nv || '-'));
+  };
+  const has = k => Object.prototype.hasOwnProperty.call(d, k);
+
+  ['title', 'location', 'category', 'requester'].forEach(k => {
+    if (has(k) && !txt(d[k])) throw new Error('ห้ามเว้นว่าง (' + k + ')');
+  });
+  if (has('requester')) set('Requester', d.requester, 'ผู้แจ้ง');
+  if (has('branch')) {
+    const b = txt(d.branch);
+    if (!b) throw new Error('กรุณาเลือกสาขา');
+    if (b !== txt(t.Branch) && !getBranches_(true).some(x => x.name === b)) throw new Error('ไม่พบสาขา ' + b);
+    set('Branch', b, 'สาขา');
+  }
+  if (has('department')) set('Department', d.department, 'แผนก');
+  if (has('location')) set('Location', d.location, 'สถานที่');
+  if (has('category')) set('Category', d.category, 'หมวดหมู่');
+  if (has('title')) set('Title', d.title, 'หัวข้อ');
+  if (has('description')) set('Description', d.description, 'รายละเอียด');
+  if (has('priority')) {
+    if (PRIORITIES.indexOf(txt(d.priority)) === -1) throw new Error('ระดับความเร่งด่วนไม่ถูกต้อง');
+    set('Priority', d.priority, 'ความเร่งด่วน');
+  }
+  if (has('managerNote')) set('ManagerNote', d.managerNote, 'หมายเหตุผู้จัดการ');
+  if (has('techNote')) set('TechNote', d.techNote, 'บันทึกช่าง');
+
+  if (has('technician') && norm_(d.technician) !== norm_(t.Technician)) {
+    if (!txt(d.technician)) {
+      patch.Technician = ''; patch.TechnicianName = '';
+      changes.push('ช่าง: ' + (t.TechnicianName || t.Technician) + ' → -');
+    } else {
+      const tech = findUser_(d.technician);
+      if (!tech || tech.Role !== 'technician') throw new Error('ไม่พบช่างที่เลือก');
+      patch.Technician = tech.Username;
+      patch.TechnicianName = tech.FullName || tech.Username;
+      changes.push('ช่าง: ' + (t.TechnicianName || t.Technician || '-') + ' → ' + patch.TechnicianName);
+    }
+  }
+
+  const from = String(t.Status);
+  if (has('status') && txt(d.status) !== from) {
+    const to = txt(d.status);
+    if (ALL_STATUS.indexOf(to) === -1) throw new Error('สถานะไม่ถูกต้อง');
+    patch.Status = to;
+    changes.push('สถานะ: ' + from + ' → ' + to);
+    // ปรับวันที่ให้สอดคล้อง เพื่อให้ Dashboard คำนวณถูก
+    if (to === ST.COMPLETED && !t.CompletedAt) patch.CompletedAt = new Date();
+    if (to !== ST.COMPLETED && t.CompletedAt) patch.CompletedAt = '';
+    if (to === ST.IN_PROGRESS && !t.AcceptedAt) patch.AcceptedAt = new Date();
+    if (to === ST.PENDING) { patch.ApprovedBy = ''; patch.ApprovedAt = ''; patch.AcceptedAt = ''; patch.ApproverSignURL = ''; }
+  }
+
+  let warning = '';
+  if (d.image && d.image.base64) {
+    const img = saveImage_(d.image, t.TicketID + '_before');
+    if (img.url) { patch.ImageURL = img.url; changes.push('เปลี่ยนรูปก่อนซ่อม'); }
+    else warning = img.warning;
+  }
+
+  if (!changes.length) {
+    if (warning) throw new Error(warning);
+    return { ticketId: t.TicketID, message: 'ไม่มีข้อมูลที่เปลี่ยนแปลง' };
+  }
+  patch.UpdatedAt = new Date();
+  updateRow_(SHEETS.TICKETS, t._row, patch);
+  const reason = txt(req.reason);
+  addLog_(t.TicketID, 'แก้ไขข้อมูล (Admin)', u, from, patch.Status || from,
+    (reason ? 'เหตุผล: ' + reason + ' | ' : '') + changes.join(' | ').slice(0, 45000));
+  return { ticketId: t.TicketID, message: 'แก้ไขรายการ ' + t.TicketID + ' แล้ว (' + changes.length + ' จุด)', warning: warning };
+}
+
+function deleteTickets_(u, req) {
+  requireAdmin_(u);
+  const ids = (req.ticketIds || []).map(String).filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 300);
+  if (!ids.length) throw new Error('กรุณาเลือกรายการที่จะลบ');
+  const reason = String(req.reason || '').trim();
+  if (!reason) throw new Error('กรุณาระบุเหตุผลการลบ');
+
+  const targets = readAll_(SHEETS.TICKETS).filter(t => ids.indexOf(String(t.TicketID)) > -1);
+  if (!targets.length) throw new Error('ไม่พบรายการที่จะลบ (อาจถูกลบไปแล้ว กรุณารีเฟรช)');
+
+  // 1) เก็บสำเนาไว้ที่ชีต DeletedTickets ก่อนลบ (กู้คืนได้)
+  const now = new Date();
+  const by = (u.FullName || u.Username) + ' (' + u.Username + ')';
+  appendObjs_(SHEETS.DELETED, targets.map(t => Object.assign({}, t, { DeletedAt: now, DeletedBy: by, DeleteReason: reason })));
+
+  // 2) ลบแถวจากล่างขึ้นบน รวมแถวที่ติดกันเป็นช่วงเดียว
+  const sh = sheet_(SHEETS.TICKETS);
+  const rows = targets.map(t => t._row).sort((a, b) => b - a);
+  for (let i = 0; i < rows.length;) {
+    let j = i;
+    while (j + 1 < rows.length && rows[j + 1] === rows[j] - 1) j++;
+    sh.deleteRows(rows[j], i === j ? 1 : rows[i] - rows[j] + 1);
+    i = j + 1;
+  }
+  delete MEMO.rows[SHEETS.TICKETS.name];
+
+  // 3) บันทึกประวัติ (ประวัติเดิมของรายการยังอยู่ใน TicketLogs)
+  appendObjs_(SHEETS.LOGS, targets.map(t => ({
+    Timestamp: now, TicketID: t.TicketID, Action: 'ลบรายการ (Admin)', ByUser: u.Username,
+    ByName: u.FullName || u.Username, FromStatus: t.Status, ToStatus: 'Deleted', Note: reason
+  })));
+
+  return {
+    deleted: targets.map(t => String(t.TicketID)),
+    message: 'ลบแล้ว ' + targets.length + ' รายการ (สำเนาเก็บไว้ที่ชีต DeletedTickets)'
+  };
 }
 
 function listTechnicians_(u) {
@@ -925,6 +1129,23 @@ function diagnose() {
   try { f.setTrashed(true); log(true, 'ลบไฟล์ทดสอบแล้ว'); } catch (e) { log(false, 'ลบไฟล์ทดสอบไม่ได้ (ลบเองได้): ' + e); }
   CacheService.getScriptCache().remove('drive_check');
   Logger.log('เสร็จสิ้น — ถ้าทุกข้อ ✅ แล้วยังขึ้น Access denied ในหน้าเว็บ ให้ตรวจ Deploy: Execute as = Me, Who has access = Anyone และกด New version');
+}
+
+/**
+ * ▶️ (r10) กู้คืนรายการที่ถูกลบ — แก้ ID ด้านล่าง แล้วเลือก restoreDeletedTicket กด Run
+ */
+function restoreDeletedTicket(ticketId) {
+  ticketId = ticketId || 'FIX-YYMMDD-001'; // ← ใส่รหัสที่ต้องการกู้คืน
+  const del = readAll_(SHEETS.DELETED).filter(t => String(t.TicketID) === String(ticketId));
+  if (!del.length) { Logger.log('ไม่พบ ' + ticketId + ' ในชีต DeletedTickets'); return; }
+  if (readAll_(SHEETS.TICKETS).some(t => String(t.TicketID) === String(ticketId))) { Logger.log(ticketId + ' มีอยู่ในชีต Tickets แล้ว'); return; }
+  const rec = del[del.length - 1];
+  appendObj_(SHEETS.TICKETS, Object.assign({}, rec, { UpdatedAt: new Date() }));
+  sheet_(SHEETS.DELETED).deleteRow(rec._row);
+  delete MEMO.rows[SHEETS.DELETED.name];
+  appendObj_(SHEETS.LOGS, { Timestamp: new Date(), TicketID: ticketId, Action: 'กู้คืนรายการ (Admin)',
+    ByUser: Session.getEffectiveUser().getEmail(), ByName: 'Apps Script', FromStatus: 'Deleted', ToStatus: rec.Status, Note: '' });
+  Logger.log('✅ กู้คืน ' + ticketId + ' แล้ว');
 }
 
 function setupDatabase() {

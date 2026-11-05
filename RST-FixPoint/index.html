@@ -285,6 +285,7 @@
                     <button class="btn bg-white border hover:bg-slate-50" onclick="exportCsv()">Export CSV</button>
                     <button class="btn md:hidden bg-white border hover:bg-slate-50" onclick="$('allChk').click()">เลือกทั้งหมด</button>
                     <button class="btn bg-white border hover:bg-slate-50" onclick="openPrintDialog(selectedIds())">🖨 พิมพ์ใบแจ้งซ่อมที่เลือก (<span id="selCount">0</span>)</button>
+                    <button id="btnBulkDel" class="btn hidden bg-white border border-rose-300 text-rose-700 hover:bg-rose-50" onclick="openDeleteDialog(selectedIds())">🗑 ลบที่เลือก (<span id="delCount">0</span>)</button>
                     <span id="allCount" class="text-sm text-slate-500 self-center ml-auto"></span>
                 </div>
             </div>
@@ -653,6 +654,7 @@ async function startApp(user, preBranches) {
     $('hdrBranch').textContent = isAllBranch() ? 'ทุกสาขา' : user.branch;
 
     renderNav();
+    $('btnBulkDel').classList.toggle('hidden', !hasRole('admin'));
     dbRange = 'mtd';
     document.querySelectorAll('#dbRangeBtns button').forEach(x => x.classList.toggle('db-range-active', x.dataset.range === 'mtd'));
     $('dbCustom').classList.add('hidden');
@@ -985,6 +987,7 @@ async function openTicket(id) {
     openModal(loadingHtml());
     try {
         const { ticket: t, logs } = await api('getTicket', { ticketId: id });
+        currentTicket = t;
         let techOpts = '';
         if (hasRole('manager', 'admin') && ['Pending', 'Approved', 'In Progress'].includes(t.Status)) {
             const techs = (await getTechnicians()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
@@ -1002,7 +1005,12 @@ async function openTicket(id) {
                     <span class="text-sm ${PRIORITY_CLS[t.Priority] || ''}">${esc(t.Priority)}</span>
                 </div>
                 <h3 class="text-lg font-semibold">${esc(t.Title)}</h3>
-                <button class="btn mt-2 !py-1 text-xs bg-white border hover:bg-slate-50" onclick="openPrintDialog(['${esc(t.TicketID)}'])">🖨 พิมพ์ใบแจ้งซ่อม</button>
+                <div class="flex flex-wrap gap-2 mt-2">
+                    <button class="btn !py-1 text-xs bg-white border hover:bg-slate-50" onclick="openPrintDialog(['${esc(t.TicketID)}'])">🖨 พิมพ์ใบแจ้งซ่อม</button>
+                    ${hasRole('admin') ? `
+                    <button class="btn !py-1 text-xs bg-white border border-amber-300 text-amber-800 hover:bg-amber-50" onclick="openEditTicket()">✏️ แก้ไข (Admin)</button>
+                    <button class="btn !py-1 text-xs bg-white border border-rose-300 text-rose-700 hover:bg-rose-50" onclick="openDeleteDialog(['${esc(t.TicketID)}'])">🗑 ลบ (Admin)</button>` : ''}
+                </div>
             </div>
             <div class="my-4">${stepper(t.Status)}</div>
             <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3">
@@ -1112,16 +1120,117 @@ async function doAction(btn, action, ticketId) {
         const r = await api(action, payload);
         if (r.warning) toast(`${r.message || 'บันทึกเรียบร้อย'} — ⚠️ ${r.warning}`, 'warn');
         else toast(r.message || 'บันทึกเรียบร้อย');
-        ['mine', 'approvals', 'jobs', 'all', 'dashboard'].forEach(k => loaded[k] = false);
-        const visible = document.querySelector('.page:not(.hidden)').id.replace('page-', '');
-        loaded[visible] = true;
-        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll }[visible] || (() => {}))();
-        refreshBadges();
+        refreshAfterChange();
         openTicket(ticketId);
     } catch (e) {
         toast('❌ ' + e.message, 'err');
         setBusy(btn, false);
     }
+}
+
+// โหลดรายการในหน้าที่เปิดอยู่ใหม่ และให้หน้าอื่นโหลดใหม่เมื่อเปิด
+function refreshAfterChange() {
+    ['mine', 'approvals', 'jobs', 'all', 'dashboard'].forEach(k => loaded[k] = false);
+    const visible = document.querySelector('.page:not(.hidden)').id.replace('page-', '');
+    loaded[visible] = true;
+    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll }[visible] || (() => {}))();
+    refreshBadges();
+}
+
+// ---------------- Admin: แก้ไข / ลบ รายการแจ้งซ่อม (r10) ----------------
+let currentTicket = null;
+const PRIORITIES = ['ปกติ', 'ด่วน', 'ด่วนมาก'];
+
+async function openEditTicket() {
+    if (!hasRole('admin') || !currentTicket) return;
+    const t = currentTicket;
+    const opt = (v, label, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
+    const withCur = (list, cur) => cur && !list.some(x => x[0] === cur) ? [[cur, cur + ' (ค่าเดิม)'], ...list] : list;
+    const branchList = withCur(branches.map(b => [b.name, b.name]), t.Branch);
+    const deptList = withCur([...$('fDepartment').options].filter(o => o.value).map(o => [o.value, o.textContent]), t.Department);
+    const catList = withCur(CATEGORIES, t.Category);
+    let techs = [];
+    try { techs = await getTechnicians(); } catch (e) { /* แสดงเฉพาะค่าเดิม */ }
+    const techList = withCur(techs.map(x => [x.username, `${x.fullName} (${x.branch})`]), t.Technician);
+
+    openModal(`
+        <h3 class="text-lg font-semibold">แก้ไขรายการแจ้งซ่อม <span class="font-mono text-sm text-slate-500">${esc(t.TicketID)}</span></h3>
+        <p class="text-xs text-slate-500 mb-4">เฉพาะผู้ดูแลระบบ · ทุกการแก้ไขจะบันทึกค่าเดิม → ค่าใหม่ ไว้ในประวัติ</p>
+        <form id="editForm" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><label class="lbl">ชื่อผู้แจ้ง *</label><input id="eRequester" class="inp" required value="${esc(t.Requester)}"></div>
+            <div><label class="lbl">สาขา *</label><select id="eBranch" class="inp" required>${branchList.map(b => opt(b[0], b[1], t.Branch)).join('')}</select></div>
+            <div><label class="lbl">แผนก / ฝ่าย</label><select id="eDepartment" class="inp"><option value="">-</option>${deptList.map(d => opt(d[0], d[1], t.Department)).join('')}</select></div>
+            <div><label class="lbl">หมวดหมู่ *</label><select id="eCategory" class="inp" required>${catList.map(c => opt(c[0], c[1], t.Category)).join('')}</select></div>
+            <div class="md:col-span-2"><label class="lbl">สถานที่ *</label><input id="eLocation" class="inp" required value="${esc(t.Location)}"></div>
+            <div class="md:col-span-2"><label class="lbl">อุปกรณ์ / หัวข้อ *</label><input id="eTitle" class="inp" required value="${esc(t.Title)}"></div>
+            <div class="md:col-span-2"><label class="lbl">รายละเอียด</label><textarea id="eDescription" rows="3" class="inp">${esc(t.Description)}</textarea></div>
+            <div><label class="lbl">ความเร่งด่วน</label><select id="ePriority" class="inp">${PRIORITIES.map(p => opt(p, p, t.Priority)).join('')}</select></div>
+            <div><label class="lbl">สถานะ</label><select id="eStatus" class="inp">${Object.keys(STATUS).map(k => opt(k, STATUS[k].th, t.Status)).join('')}</select></div>
+            <div id="eStatusWarn" class="hidden md:col-span-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2">
+                ⚠️ การเปลี่ยนสถานะโดยตรงจะข้ามขั้นตอนอนุมัติ/รับงานตามปกติ (ระบบจะปรับวันที่ปิดงานให้อัตโนมัติ)</div>
+            <div class="md:col-span-2"><label class="lbl">ช่างผู้รับผิดชอบ</label><select id="eTechnician" class="inp"><option value="">-- ไม่ระบุ --</option>${techList.map(x => opt(x[0], x[1], t.Technician)).join('')}</select></div>
+            <div><label class="lbl">หมายเหตุผู้จัดการ</label><textarea id="eManagerNote" rows="2" class="inp">${esc(t.ManagerNote)}</textarea></div>
+            <div><label class="lbl">บันทึกช่าง</label><textarea id="eTechNote" rows="2" class="inp">${esc(t.TechNote)}</textarea></div>
+            <div class="md:col-span-2"><label class="lbl">เปลี่ยนรูปก่อนซ่อม (ไม่บังคับ)</label>
+                <input type="file" id="eImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700"></div>
+            <div class="md:col-span-2"><label class="lbl">เหตุผลการแก้ไข (แนะนำให้ระบุ)</label><input id="eReason" class="inp" placeholder="เช่น ผู้แจ้งเลือกสาขาผิด"></div>
+            <div class="md:col-span-2 flex gap-2 mt-2">
+                <button class="btn flex-1 bg-amber-600 hover:bg-amber-700 text-white">💾 บันทึกการแก้ไข</button>
+                <button type="button" class="btn bg-white border" onclick="openTicket('${esc(t.TicketID)}')">ยกเลิก</button>
+            </div>
+        </form>`);
+    $('eStatus').onchange = () => $('eStatusWarn').classList.toggle('hidden', $('eStatus').value === t.Status);
+    $('editForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.submitter;
+        setBusy(btn, true, 'กำลังบันทึก...');
+        try {
+            const file = $('eImage').files[0];
+            const r = await api('updateTicket', {
+                ticketId: t.TicketID,
+                reason: $('eReason').value.trim(),
+                ticket: {
+                    requester: $('eRequester').value.trim(), branch: $('eBranch').value, department: $('eDepartment').value,
+                    category: $('eCategory').value, location: $('eLocation').value.trim(), title: $('eTitle').value.trim(),
+                    description: $('eDescription').value.trim(), priority: $('ePriority').value, status: $('eStatus').value,
+                    technician: $('eTechnician').value, managerNote: $('eManagerNote').value.trim(), techNote: $('eTechNote').value.trim(),
+                    image: file ? await compressImage(file) : null
+                }
+            });
+            toast(r.warning ? `${r.message} — ⚠️ ${r.warning}` : r.message, r.warning ? 'warn' : 'ok');
+            refreshAfterChange();
+            openTicket(t.TicketID);
+        } catch (err) { toast('❌ ' + err.message, 'err'); setBusy(btn, false); }
+    });
+}
+
+function openDeleteDialog(ids) {
+    if (!hasRole('admin')) return;
+    if (!ids || !ids.length) { toast('กรุณาเลือกรายการที่จะลบ', 'err'); return; }
+    openModal(`
+        <h3 class="text-lg font-semibold text-rose-700">ลบรายการแจ้งซ่อม ${ids.length} รายการ</h3>
+        <p class="text-sm text-slate-500 mb-3">รายการจะหายจากระบบทันที · สำเนาจะถูกเก็บไว้ที่ชีต <b>DeletedTickets</b> (กู้คืนได้โดยผู้ดูแล Apps Script)</p>
+        <div class="text-xs font-mono bg-slate-50 border rounded-lg p-2 max-h-28 overflow-y-auto break-all">${ids.map(esc).join(', ')}</div>
+        <div class="mt-3"><label class="lbl">เหตุผลการลบ *</label><textarea id="delReason" rows="2" class="inp" placeholder="เช่น แจ้งซ้ำ, ข้อมูลทดสอบ"></textarea></div>
+        <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" id="delConfirm"> ยืนยันว่าต้องการลบ ${ids.length} รายการนี้</label>
+        <div class="flex gap-2 mt-4">
+            <button id="btnDoDelete" class="btn flex-1 bg-rose-600 hover:bg-rose-700 text-white" disabled>🗑 ลบรายการ</button>
+            <button class="btn bg-white border" onclick="closeModal()">ยกเลิก</button>
+        </div>`);
+    const check = () => { $('btnDoDelete').disabled = !($('delConfirm').checked && $('delReason').value.trim()); };
+    $('delConfirm').onchange = check;
+    $('delReason').oninput = check;
+    $('btnDoDelete').onclick = async () => {
+        const btn = $('btnDoDelete');
+        setBusy(btn, true, 'กำลังลบ...');
+        try {
+            const r = await api('deleteTickets', { ticketIds: ids, reason: $('delReason').value.trim() });
+            toast(r.message);
+            currentTicket = null;
+            closeModal();
+            refreshAfterChange();
+        } catch (e) { toast('❌ ' + e.message, 'err'); setBusy(btn, false); }
+    };
 }
 
 // กดครั้งแรกเพื่อยืนยัน (หลีกเลี่ยง confirm() ของเบราว์เซอร์)
@@ -1285,7 +1394,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r09';
+const EXPECTED_BACKEND = 'r10';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -1495,6 +1604,7 @@ function selectedIds() { return [...new Set([...document.querySelectorAll('#allT
 function updateSelCount() {
     const n = selectedIds().length;
     $('selCount').textContent = n;
+    $('delCount').textContent = n;
     const all = document.querySelectorAll('#allTable .rowChk');
     $('allChk').checked = all.length > 0 && n === all.length;
     $('allChk').indeterminate = n > 0 && n < all.length;
