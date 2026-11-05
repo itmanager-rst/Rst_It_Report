@@ -235,7 +235,9 @@
                     </div>
                     <div>
                         <label class="lbl">แนบรูปภาพอุปกรณ์ที่ชำรุด</label>
-                        <input type="file" id="fImage" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
+                        <input type="file" id="fImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
+                        <label class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer mt-2">📷 ถ่ายรูป
+                            <input type="file" id="fImageCam" accept="image/*" capture="environment" class="hidden" onchange="photoPicked(this)"></label>
                         <img id="fPreview" class="hidden mt-2 max-h-48 rounded-lg border" alt="ตัวอย่างรูป">
                     </div>
                     <button id="submitBtn" class="btn w-full bg-sky-800 hover:bg-sky-900 text-white py-2.5 shadow-md">ส่งข้อมูลแจ้งซ่อม</button>
@@ -792,12 +794,29 @@ function resetNewForm() {
     $('fPreview').classList.add('hidden');
 }
 
-$('fImage').addEventListener('change', () => {
-    const f = $('fImage').files[0];
+['fImage', 'fImageCam'].forEach(id => $(id).addEventListener('change', () => {
+    const f = pickedFile('fImage');
     if (!f) { $('fPreview').classList.add('hidden'); return; }
     $('fPreview').src = URL.createObjectURL(f);
     $('fPreview').classList.remove('hidden');
-});
+}));
+
+// ---------------- เลือกรูป: ถ่ายรูป (กล้อง) หรือเลือกจากเครื่อง ----------------
+// ช่องถ่ายรูปคือ <input id="{id}Cam" capture> ควบคู่กับช่องเดิม <input id="{id}"> — ใช้ตัวที่ผู้ใช้เลือกล่าสุด
+function photoPicked(el) {
+    const isCam = el.id.endsWith('Cam');
+    const base = isCam ? el.id.slice(0, -3) : el.id;
+    const other = isCam ? $(base) : $(base + 'Cam');
+    if (other && el.files[0]) other.value = '';
+}
+function pickedFile(id) {
+    const cam = $(id + 'Cam'), gal = $(id);
+    return (cam && cam.files[0]) || (gal && gal.files[0]) || null;
+}
+function camButtonHtml(id, label = 'ถ่ายรูป') {
+    return `<label class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer mt-2">📷 ${label}
+        <input type="file" id="${id}Cam" accept="image/*" capture="environment" class="hidden" onchange="photoPicked(this)"></label>`;
+}
 
 function compressImage(file, max = 1280, quality = 0.8) {
     return new Promise((resolve, reject) => {
@@ -823,7 +842,7 @@ $('repairForm').addEventListener('submit', async (e) => {
     const btn = $('submitBtn');
     setBusy(btn, true, 'กำลังบันทึกข้อมูล...');
     try {
-        const file = $('fImage').files[0];
+        const file = pickedFile('fImage');
         const ticket = {
             requester: $('fRequester').value.trim(),
             branch: $('fBranch').value,
@@ -1109,7 +1128,7 @@ function actionPanel(t, techOpts) {
             <textarea id="actNote" rows="2" class="inp" placeholder="รายละเอียดการซ่อม / ความคืบหน้า / อะไหล่ที่ใช้"></textarea>
             <div><label class="lbl">ค่าใช้จ่ายในการซ่อม (บาท)</label><input type="number" id="actCost" min="0" step="0.01" class="inp" value="${t.Cost !== undefined && t.Cost !== '' ? esc(t.Cost) : ''}" placeholder="ไม่บังคับ"></div>
             <div><label class="lbl">รูปหลังซ่อม (แนบเมื่อปิดงาน)</label>
-                <input type="file" id="actImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700"></div>
+                <input type="file" id="actImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700">${camButtonHtml('actImage')}</div>
             <div class="flex gap-2">
                 <button class="btn flex-1 bg-white border hover:bg-slate-50" onclick="doAction(this,'updateProgress','${esc(t.TicketID)}')">บันทึกความคืบหน้า</button>
                 <button class="btn flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onclick="doAction(this,'completeTicket','${esc(t.TicketID)}')">✓ ปิดงาน (เสร็จสิ้น)</button>
@@ -1139,8 +1158,8 @@ async function doAction(btn, action, ticketId) {
 
     setBusy(btn, true);
     try {
-        if (action === 'completeTicket' && $('actImage') && $('actImage').files[0]) {
-            payload.image = await compressImage($('actImage').files[0]);
+        if (action === 'completeTicket' && pickedFile('actImage')) {
+            payload.image = await compressImage(pickedFile('actImage'));
         }
         const r = await api(action, payload);
         if (r.warning) toast(`${r.message || 'บันทึกเรียบร้อย'} — ⚠️ ${r.warning}`, 'warn');
@@ -1237,9 +1256,9 @@ async function openEditTicket() {
             <div><label class="lbl">หมายเหตุผู้จัดการ</label><textarea id="eManagerNote" rows="2" class="inp">${esc(t.ManagerNote)}</textarea></div>
             <div><label class="lbl">บันทึกช่าง</label><textarea id="eTechNote" rows="2" class="inp">${esc(t.TechNote)}</textarea></div>
             <div class="md:col-span-2"><label class="lbl">เปลี่ยนรูปก่อนซ่อม (ไม่บังคับ)</label>
-                <input type="file" id="eImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700"></div>
+                <input type="file" id="eImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700">${camButtonHtml('eImage')}</div>
             <div class="md:col-span-2"><label class="lbl">เพิ่ม / เปลี่ยนรูปหลังซ่อม (ไม่บังคับ)</label>
-                <input type="file" id="eAfterImage" accept="image/*" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700">
+                <input type="file" id="eAfterImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700">${camButtonHtml('eAfterImage')}
                 ${t.AfterImageURL ? '<div class="text-xs text-slate-500 mt-1">มีรูปหลังซ่อมอยู่แล้ว — เลือกไฟล์ใหม่เพื่อเปลี่ยน</div>' : '<div class="text-xs text-slate-400 mt-1">ยังไม่มีรูปหลังซ่อม</div>'}</div>
             <div><label class="lbl">ค่าใช้จ่าย (บาท)</label><input id="eCost" type="number" min="0" step="0.01" class="inp" value="${t.Cost !== undefined && t.Cost !== '' ? esc(t.Cost) : ''}"></div>
             <div class="md:col-span-2"><label class="lbl">เหตุผลการแก้ไข (แนะนำให้ระบุ)</label><input id="eReason" class="inp" placeholder="เช่น ผู้แจ้งเลือกสาขาผิด"></div>
@@ -1254,8 +1273,8 @@ async function openEditTicket() {
         const btn = e.submitter;
         setBusy(btn, true, 'กำลังบันทึก...');
         try {
-            const file = $('eImage').files[0];
-            const afterFile = $('eAfterImage').files[0];
+            const file = pickedFile('eImage');
+            const afterFile = pickedFile('eAfterImage');
             const r = await api('updateTicket', {
                 ticketId: t.TicketID,
                 reason: $('eReason').value.trim(),
@@ -1728,12 +1747,12 @@ function photoPanelHtml(p, prefix) {
         </div>
         <div>
             <label class="lbl">เปลี่ยนรูปโปรไฟล์</label>
-            <input type="file" id="${prefix}ProfFile" accept="image/*" class="${fileCls}">
+            <input type="file" id="${prefix}ProfFile" accept="image/*" onchange="photoPicked(this)" class="${fileCls}">${camButtonHtml(prefix + 'ProfFile')}
         </div>
         <div class="border-t pt-4 space-y-2">
             <div class="lbl mb-0">รูประบุตัวตน (บัตรพนักงาน / บัตรประชาชน) <span class="text-xs font-normal text-slate-500">— ไม่บังคับ</span></div>
             ${idImg}
-            <input type="file" id="${prefix}IdFile" accept="image/*" class="${fileCls}">
+            <input type="file" id="${prefix}IdFile" accept="image/*" onchange="photoPicked(this)" class="${fileCls}">${camButtonHtml(prefix + 'IdFile')}
             <p class="text-xs text-slate-500">รูปนี้เก็บแบบส่วนตัว ไม่สร้างลิงก์แชร์ และแสดงให้เฉพาะเจ้าของและ Admin เท่านั้น</p>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -1744,7 +1763,7 @@ function photoPanelHtml(p, prefix) {
 }
 
 async function savePhotos(prefix, username, btn) {
-    const pf = $(prefix + 'ProfFile').files[0], idf = $(prefix + 'IdFile').files[0];
+    const pf = pickedFile(prefix + 'ProfFile'), idf = pickedFile(prefix + 'IdFile');
     if (!pf && !idf) { toast('กรุณาเลือกรูปก่อนบันทึก', 'err'); return; }
     setBusy(btn, true, 'กำลังบันทึก...');
     try {
