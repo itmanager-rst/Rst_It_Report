@@ -9,7 +9,74 @@
 
 var STOCK_SHEET = "Assets_Stock";
 var LOG_SHEET = "Requisition_Log";
+var MOVE_SHEET = "Stock_Movements";          // ประวัติการเคลื่อนไหวสต็อกทุกประเภท (สร้างให้อัตโนมัติ)
 var LEGACY_TZ = "Asia/Bangkok";
+
+/* ======================= ประวัติการเคลื่อนไหวสต็อก =======================
+ * ทุกครั้งที่ยอดคงเหลือเปลี่ยน จะบันทึก 1 แถวในชีต Stock_Movements:
+ *   NEW        เพิ่มอุปกรณ์ใหม่เข้าคลัง
+ *   IN         รับของเข้าเพิ่ม (เติมสต็อก)
+ *   ADJUST     ปรับยอดตามการนับจริง / แก้ยอดทั้งหมดผ่านหน้าเว็บ
+ *   OUT        เบิกออก (ตัดสต็อกเมื่ออนุมัติใบเบิก)
+ *   CANCEL     ยกเลิกใบเบิก → คืนยอดเข้าคลัง
+ *   RETURN     ลบประวัติการเบิก (ที่ไม่ผูกกับใบเบิก) → คืนยอดเข้าคลัง
+ *   DELETE     ลบอุปกรณ์ออกจากคลัง
+ *   SHEET_EDIT มีคนแก้ยอดตรงในชีต Assets_Stock
+ * ชีตนี้ตั้งค่าเตือนเมื่อมีคนพยายามแก้ด้วยมือ (กันแก้ประวัติโดยไม่ตั้งใจ)
+ */
+var MOVE_HEADERS = ["moveId", "timestamp", "type", "assetId", "assetName", "qtyChange",
+  "remBefore", "remAfter", "totalBefore", "totalAfter", "refId", "note", "byUser", "byName"];
+var MOVE_ACTOR_ = null;                        // ผู้ใช้ที่ Login — Approval.js ตั้งค่าให้ทุกครั้งที่มีคำสั่งเข้ามา
+
+function moveSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(MOVE_SHEET);
+  if (sh) return sh;
+  sh = ss.insertSheet(MOVE_SHEET);
+  sh.getRange("A:N").setNumberFormat("@");
+  sh.getRange(1, 1, 1, MOVE_HEADERS.length).setValues([MOVE_HEADERS]).setFontWeight("bold").setBackground("#dcfce7");
+  sh.setFrozenRows(1);
+  try { sh.protect().setDescription("ประวัติสต็อก — ห้ามแก้ไขด้วยมือ").setWarningOnly(true); } catch (e) {}
+  return sh;
+}
+
+/** บันทึกการเคลื่อนไหว 1 รายการ — ถ้าบันทึกไม่สำเร็จจะไม่ทำให้คำสั่งหลักล้ม (คืนข้อความเตือนแทน) */
+function logMovement_(m) {
+  try {
+    var a = MOVE_ACTOR_ || {};
+    var now = new Date();
+    moveSheet_().appendRow([
+      "MV-" + now.getTime() + "-" + Math.floor(Math.random() * 1000),
+      Utilities.formatDate(now, LEGACY_TZ, "dd/MM/yyyy HH:mm:ss"),
+      m.type, String(m.assetId || ""), String(m.assetName || ""),
+      Number(m.remAfter || 0) - Number(m.remBefore || 0),
+      m.remBefore, m.remAfter, m.totalBefore, m.totalAfter,
+      String(m.refId || ""), String(m.note || ""),
+      m.byUser || a.username || "", m.byName || a.fullName || a.username || ""
+    ]);
+    return "";
+  } catch (e) {
+    return " (⚠️ บันทึกประวัติสต็อกไม่สำเร็จ: " + e + ")";
+  }
+}
+
+/** ประวัติการเคลื่อนไหว ใหม่ → เก่า (สูงสุด 3,000 รายการล่าสุด) */
+function getStockMovements() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MOVE_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getDataRange().getValues();
+  var head = v[0].map(String), out = [];
+  for (var i = v.length - 1; i >= 1 && out.length < 3000; i--) {
+    if (v[i][0] === "" || v[i][0] === null) continue;
+    var o = {};
+    head.forEach(function (h, c) {
+      var x = v[i][c];
+      o[h] = x instanceof Date ? Utilities.formatDate(x, LEGACY_TZ, "dd/MM/yyyy HH:mm:ss") : x;
+    });
+    out.push(o);
+  }
+  return out;
+}
 
 function doGetLegacy(e) {
   var action = e && e.parameter ? e.parameter.action : "";
@@ -178,7 +245,9 @@ function addAsset(data) {
       toImageCell_(data.image, "asset_" + id),
       data.notes || "-"
     ]);
-    return { status: "success", message: "เพิ่มอุปกรณ์ใหม่เข้าระบบสำเร็จ" };
+    var warn = logMovement_({ type: "NEW", assetId: id, assetName: data.name, remBefore: 0, remAfter: totalQty,
+      totalBefore: 0, totalAfter: totalQty, note: "เพิ่มอุปกรณ์ใหม่เข้าคลัง" });
+    return { status: "success", message: "เพิ่มอุปกรณ์ใหม่เข้าระบบสำเร็จ" + warn };
   } catch (error) {
     return { status: "error", message: error.toString() };
   } finally {
@@ -190,8 +259,8 @@ function addAsset(data) {
 //    [แก้บั๊ก] เดิมคิดยอดคงเหลือจาก "ส่วนต่างของยอดทั้งหมด" เท่านั้น
 //    → ถ้า HR กรอกจำนวนที่รับเข้า/จำนวนที่มีจริง (ซึ่งไม่มากกว่ายอดทั้งหมดเดิม) คงเหลือจะยังเป็น 0 = "ของหมด"
 //    ตอนนี้รองรับ 2 แบบ (คำนวณจากค่าล่าสุดในชีตใต้ Lock):
-//      • addQty       = รับเข้าเพิ่ม X ชิ้น      → คงเหลือ +X, ยอดทั้งหมด +X
-//      • setRemaining = นับสต็อกได้จริง N ชิ้น   → คงเหลือ = N, ยอดทั้งหมดปรับตามส่วนต่าง (ยอดที่เบิกไปแล้วคงเดิม)
+//      • addQty       = รับเข้าเพิ่ม X ชิ้น      → คงเหลือ +X, ยอดทั้งหมด +X                       (บันทึกเป็น IN)
+//      • setRemaining = นับสต็อกได้จริง N ชิ้น   → คงเหลือ = N, ยอดที่เบิกไปแล้วคงเดิม           (บันทึกเป็น ADJUST)
 //    ถ้าไม่ส่งทั้งสองค่า จะใช้วิธีเดิม (แก้ยอดทั้งหมด → คงเหลือปรับตามส่วนต่าง)
 function editAsset(data) {
   if (data.addQty !== undefined || data.setRemaining !== undefined) return editAssetStock_(data);
@@ -217,7 +286,12 @@ function editAsset(data) {
       sheet.getRange(row, 7).setValue(data.notes || "-");
       if (data.image) sheet.getRange(row, 6).setValue(toImageCell_(data.image, "asset_" + assetId));
 
-      return { status: "success", message: "อัปเดตข้อมูลสำเร็จ (คงเหลือ " + newRem + " / " + newTotal + ")" };
+      var warn = "";
+      if (newRem !== oldRem || newTotal !== oldTotal) {
+        warn = logMovement_({ type: "ADJUST", assetId: assetId, assetName: data.name, remBefore: oldRem, remAfter: newRem,
+          totalBefore: oldTotal, totalAfter: newTotal, note: "แก้ยอดทั้งหมดผ่านหน้าเว็บ" });
+      }
+      return { status: "success", message: "อัปเดตข้อมูลสำเร็จ (คงเหลือ " + newRem + " / " + newTotal + ")" + warn };
     }
     return { status: "error", message: "ไม่พบรหัสอุปกรณ์" };
   } catch (error) {
@@ -238,6 +312,7 @@ function editAssetStock_(data) {
     var addQty = parseInt(data.addQty) || 0;
     var hasCount = data.setRemaining !== undefined && data.setRemaining !== null && String(data.setRemaining) !== "";
     var count = hasCount ? parseInt(data.setRemaining) : NaN;
+    var stockNote = String(data.stockNote || "").trim();
     if (addQty < 0) return { status: "error", message: "จำนวนรับเข้าต้องไม่ติดลบ" };
     if (hasCount && (isNaN(count) || count < 0)) return { status: "error", message: "ยอดคงเหลือที่นับได้ไม่ถูกต้อง" };
 
@@ -251,14 +326,23 @@ function editAssetStock_(data) {
 
       var newRem = hasCount ? count : oldRem + addQty;
       var newTotal = Math.max(newRem, oldTotal + (newRem - oldRem));   // ยอดที่เบิกไปแล้ว (total - rem) คงเดิม
+      var name = data.name || stockData[i][1];
 
-      sheet.getRange(row, 2, 1, 4).setValues([[data.name || stockData[i][1], data.category || stockData[i][2], newTotal, newRem]]);
+      sheet.getRange(row, 2, 1, 4).setValues([[name, data.category || stockData[i][2], newTotal, newRem]]);
       if (data.notes !== undefined) sheet.getRange(row, 7).setValue(data.notes || "-");
       if (data.image) sheet.getRange(row, 6).setValue(toImageCell_(data.image, "asset_" + assetId));
 
+      var warn = "";
+      if (newRem !== oldRem) {
+        warn = logMovement_({
+          type: hasCount ? "ADJUST" : "IN", assetId: assetId, assetName: name,
+          remBefore: oldRem, remAfter: newRem, totalBefore: oldTotal, totalAfter: newTotal,
+          note: (hasCount ? "ปรับยอดตามการนับจริง" : "รับของเข้าเพิ่ม") + (stockNote ? " · " + stockNote : "")
+        });
+      }
       return {
         status: "success", remaining: newRem, total: newTotal,
-        message: "อัปเดตสต็อกสำเร็จ (คงเหลือ " + oldRem + " → " + newRem + " / ทั้งหมด " + newTotal + ")"
+        message: "อัปเดตสต็อกสำเร็จ (คงเหลือ " + oldRem + " → " + newRem + " / ทั้งหมด " + newTotal + ")" + warn
       };
     }
     return { status: "error", message: "ไม่พบรหัสอุปกรณ์" };
@@ -270,28 +354,54 @@ function editAssetStock_(data) {
 }
 
 /**
- * HR แก้ "ยอดทั้งหมด" (คอลัมน์ D) ตรงในชีต Assets_Stock → ปรับ "คงเหลือ" (คอลัมน์ E) ตามส่วนต่างให้อัตโนมัติ
- * (เดิมแก้ D อย่างเดียว E ยังเป็น 0 → หน้าเว็บขึ้นว่าของหมด)
- * เป็น simple trigger ไม่ต้องตั้งค่าอะไรเพิ่ม · ทำงานเฉพาะการแก้ทีละเซลล์
+ * มีคนแก้ยอดตรงในชีต Assets_Stock (simple trigger ไม่ต้องตั้งค่าเพิ่ม · ทำงานเมื่อแก้ทีละเซลล์)
+ *   • แก้ "ยอดทั้งหมด" (D) → ปรับ "คงเหลือ" (E) ตามส่วนต่างให้อัตโนมัติ
+ *   • แก้ "คงเหลือ" (E) ตรง ๆ → คงค่าตามที่แก้
+ *   ทั้งสองกรณีบันทึกลง Stock_Movements เป็น SHEET_EDIT (ย้อนดูได้ว่าใครแก้)
  */
 function onEdit(e) {
   try {
     if (!e || !e.range) return;
     var sh = e.range.getSheet();
-    if (sh.getName() !== STOCK_SHEET || e.range.getColumn() !== 4 || e.range.getRow() < 2) return;
+    if (sh.getName() !== STOCK_SHEET || e.range.getRow() < 2) return;
     if (e.range.getNumRows() !== 1 || e.range.getNumColumns() !== 1) return;
-    var oldTotal = parseInt(e.oldValue), newTotal = parseInt(e.value);
-    if (isNaN(newTotal)) return;
-    var remCell = sh.getRange(e.range.getRow(), 5);
-    var rem = parseInt(remCell.getValue());
-    if (isNaN(oldTotal)) {                       // แถวใหม่ / ไม่เคยมียอด → คงเหลือ = ยอดทั้งหมด
-      if (isNaN(rem)) remCell.setValue(newTotal);
-      return;
+    var col = e.range.getColumn();
+    if (col !== 4 && col !== 5) return;
+
+    var r = e.range.getRow();
+    var rowVals = sh.getRange(r, 1, 1, 5).getValues()[0];
+    var who = "";
+    try { who = (e.user && e.user.getEmail()) || Session.getActiveUser().getEmail() || ""; } catch (x) {}
+    var actor = { byUser: who || "sheet", byName: (who || "แก้ในชีต") + " (แก้ในชีต)" };
+    var oldV = parseInt(e.oldValue), newV = parseInt(e.value);
+    if (isNaN(newV)) return;
+
+    if (col === 4) {                                   // แก้ยอดทั้งหมด
+      var remCell = sh.getRange(r, 5);
+      var rem = parseInt(rowVals[4]);
+      if (isNaN(oldV)) {                               // แถวใหม่ / ไม่เคยมียอด → คงเหลือ = ยอดทั้งหมด
+        if (isNaN(rem)) {
+          remCell.setValue(newV);
+          logMovement_(merge_({ type: "SHEET_EDIT", assetId: rowVals[0], assetName: rowVals[1], remBefore: 0, remAfter: newV,
+            totalBefore: 0, totalAfter: newV, note: "กรอกยอดทั้งหมดในชีต (แถวใหม่)" }, actor));
+        }
+        return;
+      }
+      if (isNaN(rem)) rem = oldV;
+      var newRem = Math.max(0, Math.min(newV, rem + (newV - oldV)));
+      remCell.setValue(newRem);
+      logMovement_(merge_({ type: "SHEET_EDIT", assetId: rowVals[0], assetName: rowVals[1], remBefore: rem, remAfter: newRem,
+        totalBefore: oldV, totalAfter: newV, note: "แก้ยอดทั้งหมดในชีต " + oldV + " → " + newV }, actor));
+    } else {                                           // แก้คงเหลือตรง ๆ
+      var tot = parseInt(rowVals[3]) || 0;
+      var before = isNaN(oldV) ? tot : oldV;
+      if (before === newV) return;
+      logMovement_(merge_({ type: "SHEET_EDIT", assetId: rowVals[0], assetName: rowVals[1], remBefore: before, remAfter: newV,
+        totalBefore: tot, totalAfter: tot, note: "แก้ยอดคงเหลือในชีต " + before + " → " + newV }, actor));
     }
-    if (isNaN(rem)) rem = oldTotal;
-    remCell.setValue(Math.max(0, Math.min(newTotal, rem + (newTotal - oldTotal))));
   } catch (err) {}
 }
+function merge_(a, b) { for (var k in b) a[k] = b[k]; return a; }
 
 // 5. ลบอุปกรณ์ออกจากคลัง
 function deleteAsset(assetId) {
@@ -304,8 +414,12 @@ function deleteAsset(assetId) {
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][0].toString().trim() === String(assetId).trim()) {
+        var tot = parseInt(data[i][3]) || 0, rem = parseInt(data[i][4]);
+        if (isNaN(rem)) rem = tot;
         sheet.deleteRow(i + 1);
-        return { status: "success", message: "ลบอุปกรณ์สำเร็จ" };
+        var warn = logMovement_({ type: "DELETE", assetId: assetId, assetName: data[i][1], remBefore: rem, remAfter: 0,
+          totalBefore: tot, totalAfter: 0, note: "ลบอุปกรณ์ออกจากคลัง" });
+        return { status: "success", message: "ลบอุปกรณ์สำเร็จ" + warn };
       }
     }
     return { status: "error", message: "ไม่พบรหัสอุปกรณ์" };
@@ -316,7 +430,30 @@ function deleteAsset(assetId) {
   }
 }
 
+/** ดึงเลขที่ใบเบิกจากหมายเหตุในประวัติการเบิก เช่น "... [ใบเบิก RQ-261105-001 อนุมัติโดย ...]" */
+function reqIdFromNote_(note) {
+  var m = String(note || "").match(/\[ใบเบิก (RQ-\S+) /);
+  return m ? m[1] : "";
+}
+
+/** คืนยอดเข้าคลัง (ไม่จำกัดที่ยอดทั้งหมด: ถ้าข้อมูลเดิมเพี้ยน จะขยายยอดทั้งหมดแทนการทิ้งของ) */
+function restoreStock_(stockSheet, assetId, qty) {
+  var stockData = stockSheet.getDataRange().getValues();
+  for (var k = 1; k < stockData.length; k++) {
+    if (stockData[k][0].toString().trim() !== String(assetId).trim()) continue;
+    var total = parseInt(stockData[k][3]) || 0;
+    var cur = parseInt(stockData[k][4]);
+    if (isNaN(cur)) cur = total;
+    var rem = cur + qty, newTotal = Math.max(total, rem);
+    stockSheet.getRange(k + 1, 4, 1, 2).setValues([[newTotal, rem]]);
+    return { found: true, name: stockData[k][1], remBefore: cur, remAfter: rem, totalBefore: total, totalAfter: newTotal };
+  }
+  return { found: false };
+}
+
 // 6. ลบประวัติการเบิก (คืนยอดเข้าคลัง)
+//    [ปิดช่องโหว่] ประวัติที่มาจากใบเบิก (ผ่านการอนุมัติ) ห้ามลบตรง ๆ — ต้อง "ยกเลิกใบเบิก" แทน
+//    เพื่อให้สถานะใบเบิก ยอดสต็อก และประวัติ ตรงกันเสมอ
 function deleteLog(txId) {
   var lock = LockService.getScriptLock();
   try {
@@ -327,33 +464,69 @@ function deleteLog(txId) {
     if (!logSheet || !stockSheet) return { status: "error", message: "ไม่พบชีทประวัติหรือสต็อก" };
 
     var logData = logSheet.getDataRange().getValues();
-    var assetId = "", qtyToRestore = 0, logRowIndex = -1;
+    var row = null, logRowIndex = -1;
     for (var i = 1; i < logData.length; i++) {
-      if (logData[i][0].toString() === String(txId)) {
-        assetId = logData[i][2];
-        qtyToRestore = parseInt(logData[i][4]) || 0;
-        logRowIndex = i + 1;
-        break;
-      }
+      if (logData[i][0].toString() === String(txId)) { row = logData[i]; logRowIndex = i + 1; break; }
     }
     if (logRowIndex === -1) return { status: "error", message: "ไม่พบรายการประวัตินี้ในระบบ" };
 
+    var linkedReq = reqIdFromNote_(row[9]);
+    if (linkedReq) {
+      return { status: "error", message: "ประวัตินี้มาจากใบเบิก " + linkedReq + " — ลบตรงไม่ได้ ให้ใช้ปุ่ม 🚫 ยกเลิกใบเบิก แทน (ระบบจะคืนยอดและบันทึกประวัติให้)" };
+    }
+
+    var assetId = row[2], qtyToRestore = parseInt(row[4]) || 0;
     logSheet.deleteRow(logRowIndex);
 
+    var warn = "";
     if (assetId !== "" && qtyToRestore > 0) {
-      var stockData = stockSheet.getDataRange().getValues();
-      for (var k = 1; k < stockData.length; k++) {
-        if (stockData[k][0].toString() === assetId.toString()) {
-          var total = parseInt(stockData[k][3]) || 0;
-          var cur = parseInt(stockData[k][4]) || 0;
-          stockSheet.getRange(k + 1, 5).setValue(Math.min(total || Infinity, cur + qtyToRestore));
-          break;
-        }
+      var s = restoreStock_(stockSheet, assetId, qtyToRestore);
+      if (s.found) {
+        warn = logMovement_({ type: "RETURN", assetId: assetId, assetName: s.name, remBefore: s.remBefore, remAfter: s.remAfter,
+          totalBefore: s.totalBefore, totalAfter: s.totalAfter, refId: txId,
+          note: "ลบประวัติการเบิก (" + (row[5] || "-") + " / " + (row[7] || "-") + ") คืนยอดเข้าคลัง" });
       }
     }
-    return { status: "success", message: "ลบประวัติและคืนยอดเข้าคลังสำเร็จ" };
+    return { status: "success", message: "ลบประวัติและคืนยอดเข้าคลังสำเร็จ" + warn };
   } catch (error) {
     return { status: "error", message: error.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ยกเลิกใบเบิกที่ตัดสต็อกไปแล้ว (เรียกจาก Approval.js → cancelRequest_)
+ *   ลบแถวประวัติการเบิกของใบนั้น (ยอดเบิกใน Dashboard จะไม่นับซ้ำ) + คืนยอดเข้าคลัง + บันทึก CANCEL
+ *   ถ้าไม่พบประวัติ (เคยถูกลบและคืนยอดไปแล้ว) → ไม่คืนยอดซ้ำ
+ */
+function reverseRequisition_(requestId, txId, reason) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName(LOG_SHEET);
+    var stockSheet = ss.getSheetByName(STOCK_SHEET);
+    if (!logSheet || !stockSheet) return { status: "error", message: "ไม่พบชีทประวัติหรือสต็อก" };
+
+    var logData = logSheet.getDataRange().getValues();
+    var idx = -1;
+    for (var i = logData.length - 1; i >= 1; i--) {
+      if ((txId && String(logData[i][0]) === String(txId)) || reqIdFromNote_(logData[i][9]) === String(requestId)) { idx = i; break; }
+    }
+    if (idx < 0) return { status: "success", restored: 0, logFound: false };
+
+    var row = logData[idx];
+    var qty = parseInt(row[4]) || 0;
+    logSheet.deleteRow(idx + 1);
+    var s = restoreStock_(stockSheet, row[2], qty);
+    var warn = "";
+    if (s.found) {
+      warn = logMovement_({ type: "CANCEL", assetId: row[2], assetName: s.name, remBefore: s.remBefore, remAfter: s.remAfter,
+        totalBefore: s.totalBefore, totalAfter: s.totalAfter, refId: requestId,
+        note: "ยกเลิกใบเบิก คืนยอดเข้าคลัง · เหตุผล: " + reason });
+    }
+    return { status: "success", restored: s.found ? qty : 0, logFound: true, assetFound: s.found, warn: warn };
   } finally {
     lock.releaseLock();
   }
@@ -374,12 +547,13 @@ function processRequisition(data) {
     if (!(qty > 0)) return { status: "error", message: "จำนวนที่เบิกไม่ถูกต้อง" };
 
     var stockData = stockSheet.getDataRange().getValues();
-    var row = -1, assetName = "", currentRemaining = 0;
+    var row = -1, assetName = "", currentRemaining = 0, total = 0;
     for (var i = 1; i < stockData.length; i++) {
       if (stockData[i][0].toString().trim() === assetId) {
         assetName = stockData[i][1];
+        total = parseInt(stockData[i][3]) || 0;
         currentRemaining = parseInt(stockData[i][4]);
-        if (isNaN(currentRemaining)) currentRemaining = parseInt(stockData[i][3]) || 0;
+        if (isNaN(currentRemaining)) currentRemaining = total;
         row = i + 1;
         break;
       }
@@ -390,8 +564,9 @@ function processRequisition(data) {
     }
 
     // บันทึก Log ก่อน แล้วค่อยตัดสต็อก → ถ้าบันทึก Log ล้มเหลว สต็อกจะไม่ถูกตัดทิ้งไว้ฟรี ๆ
+    var txId = "TX-" + new Date().getTime();
     logSheet.appendRow([
-      "TX-" + new Date().getTime(),
+      txId,
       new Date(),
       assetId,
       assetName,
@@ -404,7 +579,10 @@ function processRequisition(data) {
     ]);
     stockSheet.getRange(row, 5).setValue(currentRemaining - qty);
 
-    return { status: "success", message: "บันทึกการเบิกและตัดสต็อกสำเร็จ" };
+    var warn = logMovement_({ type: "OUT", assetId: assetId, assetName: assetName, remBefore: currentRemaining,
+      remAfter: currentRemaining - qty, totalBefore: total, totalAfter: total, refId: data.requestId || txId,
+      note: "เบิกออก: " + (data.staffName || "-") + " / " + (data.branch || "-") });
+    return { status: "success", txId: txId, message: "บันทึกการเบิกและตัดสต็อกสำเร็จ" + warn };
   } catch (error) {
     return { status: "error", message: error.toString() };
   } finally {

@@ -392,6 +392,7 @@
           <button data-req-tab="SHIPPED" onclick="setReqStatus('SHIPPED')">🚚 กำลังส่งไปสาขา (<span class="cnt">0</span>)</button>
           <button data-req-tab="RECEIVED" onclick="setReqStatus('RECEIVED')">🏁 สาขารับของแล้ว (<span class="cnt">0</span>)</button>
           <button data-req-tab="REJECTED" onclick="setReqStatus('REJECTED')">❌ ไม่อนุมัติ (<span class="cnt">0</span>)</button>
+          <button data-req-tab="CANCELLED" onclick="setReqStatus('CANCELLED')">🚫 ยกเลิก (<span class="cnt">0</span>)</button>
           <button data-req-tab="ALL" onclick="setReqStatus('ALL')">ทั้งหมด (<span class="cnt">0</span>)</button>
         </div>
       </div>
@@ -514,6 +515,57 @@
         </table>
       </div>
       <div id="logPagination" class="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500"></div>
+    </div>
+
+    <!-- 🔁 ประวัติการเคลื่อนไหวสต็อก (รับเข้า / เบิกออก / ปรับยอด / ยกเลิก) -->
+    <div id="secMovements" data-roles="ADMIN,MANAGER" class="scroll-mt-3 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="p-4 bg-emerald-900 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div>
+          <div class="flex items-center space-x-2 font-bold"><span>🔁</span> <h2>ประวัติการเคลื่อนไหวสต็อก (Stock Movements)</h2></div>
+          <p class="text-xs text-emerald-200 mt-0.5">ทุกครั้งที่ยอดคงเหลือเปลี่ยน: รับเข้า · เบิกออก · ปรับยอดนับจริง · ยกเลิกใบเบิก · แก้ในชีต — ใคร ทำเมื่อไร</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="loadMovements()" class="text-xs bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-xl cursor-pointer font-bold">🔄 รีเฟรช</button>
+          <button onclick="exportMovementsCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl cursor-pointer text-white font-bold">🟢 Export Excel (.csv)</button>
+        </div>
+      </div>
+      <div class="p-3 bg-slate-50 border-b border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div class="relative">
+          <span style="pointer-events:none" class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
+          <input type="search" id="mvSearch" oninput="mvPage=1; renderMovements()" placeholder="ค้นหารหัส / ชื่ออุปกรณ์ / เลขใบเบิก / ผู้ทำรายการ..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <select id="mvType" onchange="mvPage=1; renderMovements()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+          <option value="ALL">-- ทุกประเภท --</option>
+          <option value="IN">➕ รับเข้า</option>
+          <option value="OUT">➖ เบิกออก</option>
+          <option value="ADJUST">📋 ปรับยอด</option>
+          <option value="CANCEL">🚫 ยกเลิกใบเบิก (คืนคลัง)</option>
+          <option value="RETURN">↩️ ลบประวัติ (คืนคลัง)</option>
+          <option value="SHEET_EDIT">⚠️ แก้ในชีตโดยตรง</option>
+          <option value="NEW">🆕 เพิ่มอุปกรณ์ใหม่</option>
+          <option value="DELETE">🗑️ ลบอุปกรณ์</option>
+        </select>
+        <div id="mvSummary" class="text-xs text-slate-500 flex items-center"></div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="m-cards w-full text-left border-collapse text-xs text-slate-600">
+          <thead>
+            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider">
+              <th class="p-3">วัน-เวลา</th>
+              <th class="p-3">ประเภท</th>
+              <th class="p-3">อุปกรณ์</th>
+              <th class="p-3 text-center">เปลี่ยนแปลง</th>
+              <th class="p-3 text-center">คงเหลือ</th>
+              <th class="p-3">อ้างอิง / หมายเหตุ</th>
+              <th class="p-3">ผู้ทำรายการ</th>
+            </tr>
+          </thead>
+          <tbody id="mvTableBody">
+            <tr><td colspan="7" class="p-6 text-center text-slate-400">กำลังดึงประวัติสต็อก...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="mvPagination" class="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500"></div>
     </div>
 
     <!-- 📱 แถบเมนูด้านล่าง (แสดงเฉพาะมือถือ) -->
@@ -883,6 +935,10 @@
             <label id="stockQtyLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนที่รับเข้าเพิ่ม (ชิ้น)</label>
             <input type="number" id="stockQty" min="0" placeholder="0" oninput="updateStockPreview()" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
           </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">อ้างอิง / หมายเหตุการรับเข้า <span class="text-slate-400 font-normal">(เช่น เลขใบสั่งซื้อ, ผู้ขาย, เหตุผลที่ยอดไม่ตรง)</span></label>
+            <input type="text" id="stockNote" maxlength="200" placeholder="เช่น PO-6811-012 / ร้าน ABC" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
           <p id="stockPreview" class="text-xs text-blue-700 font-semibold"></p>
         </div>
         <div><label class="block text-xs font-semibold text-slate-600 mb-1">หมายเหตุประจำอุปกรณ์ (ข้อมูลเพิ่มเติม/สถานที่เก็บ)</label>
@@ -1138,6 +1194,7 @@
     async function loadData() {
       if (!session) return;
       loadRequests();
+      if (hasRole("ADMIN", "MANAGER")) loadMovements();
       try {
         const [assets, logs] = await Promise.all([apiGet("getAssets"), apiGet("getLogs")]);
         [assets, logs].forEach(x => { if (x && x.status === "error") throw new Error(x.message); });
@@ -1466,6 +1523,81 @@
     }
     function gotoLogPage(p) { logPage = p; renderLogs(); }
 
+    /* =========================================================
+       🔁 ประวัติการเคลื่อนไหวสต็อก (ADMIN / MANAGER)
+       ========================================================= */
+    let movements = [], mvPage = 1;
+    const MV_PAGE_SIZE = 30;
+    const MV_TYPE = {
+      IN: ["➕ รับเข้า", "bg-emerald-100 text-emerald-800"],
+      OUT: ["➖ เบิกออก", "bg-indigo-100 text-indigo-800"],
+      ADJUST: ["📋 ปรับยอด", "bg-amber-100 text-amber-800"],
+      CANCEL: ["🚫 ยกเลิกใบเบิก", "bg-rose-100 text-rose-700"],
+      RETURN: ["↩️ ลบประวัติ", "bg-rose-100 text-rose-700"],
+      SHEET_EDIT: ["⚠️ แก้ในชีต", "bg-orange-100 text-orange-800"],
+      NEW: ["🆕 อุปกรณ์ใหม่", "bg-sky-100 text-sky-800"],
+      DELETE: ["🗑️ ลบอุปกรณ์", "bg-slate-200 text-slate-700"]
+    };
+    async function loadMovements() {
+      if (!hasRole("ADMIN", "MANAGER")) return;
+      try {
+        const j = await apiGet("getMovements");
+        if (j.status !== "success") throw new Error(j.message || "โหลดไม่สำเร็จ");
+        movements = j.data || [];
+        renderMovements();
+      } catch (err) {
+        $("mvTableBody").innerHTML = `<tr><td colspan="7" class="p-4 text-center text-red-500">โหลดประวัติสต็อกไม่สำเร็จ: ${esc(err.message)}</td></tr>`;
+      }
+    }
+    function mvFiltered() {
+      const q = $("mvSearch").value.toLowerCase().trim(), type = $("mvType").value;
+      return movements.filter(m => (type === "ALL" || m.type === type) &&
+        (!q || [m.assetId, m.assetName, m.refId, m.note, m.byName, m.byUser].join(" ").toLowerCase().includes(q)));
+    }
+    function gotoMvPage(p) { mvPage = p; renderMovements(); }
+    function renderMovements() {
+      const list = mvFiltered();
+      const inQ = list.reduce((s, m) => s + Math.max(0, Number(m.qtyChange) || 0), 0);
+      const outQ = list.reduce((s, m) => s + Math.min(0, Number(m.qtyChange) || 0), 0);
+      $("mvSummary").innerHTML = list.length
+        ? `${list.length.toLocaleString()} รายการ · <span class="text-emerald-700 font-bold ml-1">+${inQ.toLocaleString()}</span><span class="text-rose-600 font-bold ml-1">${outQ.toLocaleString()}</span>`
+        : "";
+      const pages = Math.max(1, Math.ceil(list.length / MV_PAGE_SIZE));
+      if (mvPage > pages) mvPage = pages;
+      const items = list.slice((mvPage - 1) * MV_PAGE_SIZE, mvPage * MV_PAGE_SIZE);
+      $("mvTableBody").innerHTML = !items.length
+        ? '<tr><td colspan="7" class="p-6 text-center text-slate-400">ยังไม่มีประวัติการเคลื่อนไหว (จะเริ่มบันทึกตั้งแต่ติดตั้งเวอร์ชันนี้)</td></tr>'
+        : items.map(m => {
+            const t = MV_TYPE[m.type] || [m.type, "bg-slate-100 text-slate-700"];
+            const q = Number(m.qtyChange) || 0;
+            const qCls = q > 0 ? "text-emerald-700" : q < 0 ? "text-rose-600" : "text-slate-400";
+            return `<tr class="border-b border-slate-100 hover:bg-slate-50">
+              <td class="p-3 whitespace-nowrap text-slate-500">${esc(m.timestamp)}</td>
+              <td class="p-3"><span class="${t[1]} font-semibold px-2 py-1 rounded-lg whitespace-nowrap">${t[0]}</span></td>
+              <td class="p-3"><div class="font-bold text-slate-800">${esc(m.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(m.assetId)}</div></td>
+              <td class="p-3 text-center font-black ${qCls}">${q > 0 ? "+" : ""}${q}</td>
+              <td class="p-3 text-center whitespace-nowrap">${esc(m.remBefore)} ➜ <b class="text-slate-800">${esc(m.remAfter)}</b><div class="text-[10px] text-slate-400">ทั้งหมด ${esc(m.totalAfter)}</div></td>
+              <td class="p-3">${m.refId ? `<div class="font-mono text-indigo-900 font-bold">${esc(m.refId)}</div>` : ""}<div class="text-slate-500 break-words max-w-[260px]">${esc(m.note)}</div></td>
+              <td class="p-3">${esc(m.byName || m.byUser || "-")}</td>
+            </tr>`;
+          }).join("");
+      renderPager("mvPagination", mvPage, list.length, MV_PAGE_SIZE, "gotoMvPage");
+    }
+    function exportMovementsCSV() {
+      const list = mvFiltered();
+      if (!list.length) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
+      const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+      let csv = "﻿วัน-เวลา,ประเภท,รหัสอุปกรณ์,ชื่ออุปกรณ์,เปลี่ยนแปลง,คงเหลือก่อน,คงเหลือหลัง,ยอดทั้งหมดก่อน,ยอดทั้งหมดหลัง,อ้างอิง,หมายเหตุ,ผู้ทำรายการ\n";
+      list.forEach(m => {
+        csv += [q(m.timestamp), q((MV_TYPE[m.type] || [m.type])[0]), q(m.assetId), q(m.assetName), m.qtyChange, m.remBefore, m.remAfter,
+          m.totalBefore, m.totalAfter, q(m.refId), q(m.note), q(m.byName || m.byUser)].join(",") + "\n";
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      link.download = `ประวัติการเคลื่อนไหวสต็อก_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.csv`;
+      document.body.appendChild(link); link.click(); link.remove();
+    }
+
     function exportToCSV() {
       if (!globalLogData.length) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
       const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
@@ -1501,7 +1633,8 @@
       $("newAssetTotal").required = !edit;
       $("stockWrap").classList.toggle("hidden", !edit);
       $("stockQty").value = "";
-      const r = document.querySelector('input[name="stockMode"][value="add"]'); if (r) r.checked = true;
+      $("stockNote").value = "";
+      const r =document.querySelector('input[name="stockMode"][value="add"]'); if (r) r.checked = true;
       updateStockPreview();
     }
     function updateStockPreview() {
@@ -1555,6 +1688,9 @@
           if (v !== "" && (isNaN(n) || n < 0)) throw new Error("จำนวนสต็อกไม่ถูกต้อง");
           if (mode === "count" && v !== "") payload.setRemaining = n;
           else payload.addQty = v === "" ? 0 : n;
+          payload.stockNote = $("stockNote").value.trim();
+          if (mode === "count" && v !== "" && n !== editStock.rem && !payload.stockNote)
+            throw new Error("ปรับยอดตามการนับจริง กรุณาระบุเหตุผลในช่อง 'อ้างอิง / หมายเหตุ' (เช่น ของชำรุด, นับตกหล่น)");
           // สำรองให้ Server เวอร์ชันเก่า (ที่ยังคิดจากยอดทั้งหมด) ก็ได้ผลถูกต้อง
           const newRem = payload.setRemaining !== undefined ? n : editStock.rem + payload.addQty;
           payload.total = Math.max(newRem, editStock.total + (newRem - editStock.rem), 1);
@@ -1708,6 +1844,35 @@
       }
     }
     function setReqStatus(s) { reqStatusFilter = s; reqPage = 1; renderRequests(); }
+
+    /** ยกเลิกใบเบิก: รออนุมัติ = ผู้ขอ/ผู้อนุมัติ · อนุมัติแล้ว/รอฝากส่ง = HR Admin (คืนยอดเข้าคลัง) */
+    function canCancel(r) {
+      const u = (session && session.user) || {};
+      if (r.status === "PENDING") return canApprove() || String(r.requestedBy || "") === u.username;
+      if (r.status === "APPROVED" || r.status === "ISSUED") return canIssue();
+      return false;
+    }
+    async function cancelRequest(id) {
+      const r = globalRequests.find(x => String(x.requestId) === String(id));
+      if (!r || !canCancel(r)) return;
+      const back = r.status !== "PENDING";
+      const extra = back
+        ? `\n\n⚠️ ระบบจะคืนยอด ${r.quantity} ชิ้น เข้าคลัง` + (r.status === "ISSUED" ? "\n(ใบนี้ HR จ่ายของไปแล้ว — ต้องได้ของคืนมาที่ HR ก่อน)" : "")
+        : "";
+      const reason = prompt(`🚫 ยกเลิกใบเบิก ${id}\n${r.assetName} × ${r.quantity} · ${r.branch}${extra}\n\nกรุณาระบุเหตุผลที่ยกเลิก:`, "");
+      if (reason === null) return;
+      if (!reason.trim()) { alert("กรุณาระบุเหตุผลที่ยกเลิก"); return; }
+      try {
+        const j = await apiPost({ action: "cancelRequest", requestId: id, cancelReason: reason.trim() });
+        if (j.status !== "success") throw new Error(j.message || "ยกเลิกไม่สำเร็จ");
+        delete reqDetailCache[id];
+        showToast("✅ " + (j.message || "ยกเลิกใบเบิกแล้ว"));
+        if (back) loadData(); else loadRequests();
+        if (back && hasRole("ADMIN", "MANAGER")) loadMovements();
+      } catch (err) {
+        alert("❌ " + err.message);
+      }
+    }
     function gotoReqPage(p) { reqPage = p; renderRequests(); }
 
     function statusBadge(s) {
@@ -1716,12 +1881,13 @@
       if (s === "SHIPPED") return '<span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🚚 กำลังส่งไปสาขา</span>';
       if (s === "RECEIVED") return '<span class="bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🏁 สาขารับของแล้ว</span>';
       if (s === "REJECTED") return '<span class="bg-rose-100 text-rose-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">❌ ไม่อนุมัติ</span>';
-      if (s === "PROCESSING") return '<span class="bg-sky-100 text-sky-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⚙️ กำลังดำเนินการ</span>';
+      if (s === "CANCELLED") return '<span class="bg-slate-100 text-slate-500 font-semibold px-2 py-1 rounded-lg whitespace-nowrap line-through decoration-slate-400">🚫 ยกเลิกแล้ว</span>';
+      if (s === "PROCESSING" || s === "CANCELLING") return '<span class="bg-sky-100 text-sky-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⚙️ กำลังดำเนินการ</span>';
       return '<span class="bg-amber-100 text-amber-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">⏳ รออนุมัติ</span>';
     }
 
     function renderRequests() {
-      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, SHIPPED: 0, RECEIVED: 0, REJECTED: 0, ALL: globalRequests.length };
+      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, SHIPPED: 0, RECEIVED: 0, REJECTED: 0, CANCELLED: 0, ALL: globalRequests.length };
       globalRequests.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
       document.querySelectorAll("[data-req-tab]").forEach(btn => {
         const s = btn.dataset.reqTab;
@@ -1762,7 +1928,10 @@
               if (ISSUED_PLUS.includes(r.status) && !r.hasIssuerSig && canIssue())
                 act += B("issueRequest", "bg-amber-500 hover:bg-amber-600 text-slate-900", "✍️ เซ็นผู้จ่าย", "ใบนี้จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR");
             }
-            const reason = r.status === "REJECTED" && r.rejectReason ? `<div class="text-[10px] text-rose-500 mt-1 max-w-[160px] mx-auto break-words">${esc(r.rejectReason)}</div>` : "";
+            if (canCancel(r))
+              act += ` <button data-id="${id}" onclick="cancelRequest(this.dataset.id)" class="bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1 mt-1" title="ยกเลิกใบเบิก${r.status === "PENDING" ? "" : " และคืนยอดเข้าคลัง"}">🚫 ยกเลิก</button>`;
+            let reason = r.status === "REJECTED" && r.rejectReason ? `<div class="text-[10px] text-rose-500 mt-1 max-w-[160px] mx-auto break-words">${esc(r.rejectReason)}</div>` : "";
+            if (r.status === "CANCELLED") reason = `<div class="text-[10px] text-slate-500 mt-1 max-w-[180px] mx-auto break-words">โดย ${esc(r.cancelledByName || "-")} · ${esc(r.cancelledAt || "")}${r.cancelReason ? `<br><span class="text-rose-500">${esc(r.cancelReason)}</span>` : ""}</div>`;
             return `
               <tr class="border-b border-slate-100 hover:bg-slate-50">
                 <td class="p-3 font-mono font-bold text-indigo-900 whitespace-nowrap">${id}</td>

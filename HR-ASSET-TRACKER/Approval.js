@@ -25,7 +25,11 @@
  *     → SHIPPED  (ฝากส่งแล้ว · กำลังส่งไปสาขา — ฝากฝ่ายบริการ / ฝ่ายขาย / อื่น ๆ)
  *     → RECEIVED (สาขาได้รับของแล้ว · ปิดงาน)
  *   ↘ REJECTED (ไม่อนุมัติ)
+ *   ↘ CANCELLED (ยกเลิก) — PENDING: ผู้ขอ/ผู้อนุมัติ/ADMIN ยกเลิกได้
+ *                         APPROVED / ISSUED: ADMIN ยกเลิกได้ → คืนยอดเข้าคลัง + บันทึกประวัติสต็อก
  *   * ถ้าผู้รับมารับของเองที่ HR → ISSUED ข้ามไป RECEIVED ได้ทันที
+ *
+ * ประวัติการเคลื่อนไหวสต็อก (รับเข้า/เบิกออก/ปรับยอด/ยกเลิก) → ชีต Stock_Movements (ดูใน Code.js)
  ******************************************************************************/
 
 const APP_CONFIG = {
@@ -53,7 +57,9 @@ const REQ_HEADERS = [
   'issuedBy', 'issuedByName', 'issuedAt', 'issuerSig', 'receiverName', 'receiverSig',
   // ขั้นตอนจัดส่งไปสาขา (เพิ่มคอลัมน์ให้อัตโนมัติในชีตเดิม)
   'deliveryMethod', 'shipVia', 'shipCarrier', 'shipNote', 'shippedBy', 'shippedByName', 'shippedAt',
-  'receivedBy', 'receivedAt', 'receiveNote'
+  'receivedBy', 'receivedAt', 'receiveNote',
+  // เชื่อมกับประวัติการเบิก + การยกเลิกใบเบิก
+  'txId', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'cancelReason'
 ];
 const SHIP_VIA = ['ฝ่ายบริการ', 'ฝ่ายขาย', 'อื่น ๆ'];
 const USER_HEADERS = [
@@ -77,6 +83,10 @@ function doGet(e) {
       case 'getRequests': return jsonOut_(listRequests_(user));
       case 'getRequest':  return jsonOut_(getRequestDetail_(p.id, user));
       case 'listUsers':   requireRole_(user, ['ADMIN']); return jsonOut_(listUsers_());
+      case 'getMovements':
+        requireRole_(user, ['ADMIN', 'MANAGER']);
+        if (typeof getStockMovements !== 'function') throw new Error(LEGACY_MISSING_MSG_);
+        return jsonOut_({ status: 'success', data: getStockMovements() });
       case 'getLogs':
         if (user.role === 'BRANCH') return jsonOut_(filterLegacyByBranch_(legacyGet_(e), user.branch));
         break;
@@ -121,6 +131,7 @@ function doPost(e) {
 
     const user = auth_(data.token);
     if (!user) return jsonOut_({ status: 'error', code: 'auth', message: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่' });
+    MOVE_ACTOR_ = { username: user.username, fullName: user.fullName };   // ผู้ทำรายการ → ประวัติสต็อก (Code.js)
 
     switch (data.action) {
       case 'createRequest':  return jsonOut_(createRequest_(data, user));
@@ -129,6 +140,7 @@ function doPost(e) {
       case 'issueRequest':   requireRole_(user, ['ADMIN']); return jsonOut_(issueRequest_(data, user));
       case 'shipRequest':    requireRole_(user, ['ADMIN']); return jsonOut_(shipRequest_(data, user));
       case 'receiveRequest': return jsonOut_(receiveRequest_(data, user));   // ตรวจสิทธิ์ตามสาขาในฟังก์ชัน
+      case 'cancelRequest':  return jsonOut_(cancelRequest_(data, user));    // ตรวจสิทธิ์ตามสถานะในฟังก์ชัน
       case 'saveUser':       requireRole_(user, ['ADMIN']); return jsonOut_(saveUser_(data, user));
       case 'changePassword': return jsonOut_(changePassword_(data, user));
       case undefined:
@@ -449,6 +461,7 @@ function decideRequest_(d, approve, user) {
     try {
       // ส่งลิงก์รูปใน Drive (ไม่ส่ง base64) → เร็วกว่า และไม่ชนลิมิต 50,000 ตัวอักษรต่อเซลล์ของชีต Log
       const contents = JSON.stringify({
+        requestId: r.requestId,
         staffName: r.staffName, department: r.department, branch: r.branch,
         assetId: r.assetId, quantity: Number(r.quantity),
         requisitionNotes: (r.notes || '-') + ' [ใบเบิก ' + r.requestId + ' อนุมัติโดย ' + approverName + ']',
@@ -460,6 +473,7 @@ function decideRequest_(d, approve, user) {
       if (j && (j.status === 'error' || j.success === false || j.result === 'error')) {
         throw new Error(j.message || j.error || 'ระบบเดิมแจ้งข้อผิดพลาด');
       }
+      if (j && j.txId) setCell_(t, r._row, 'txId', j.txId);     // ผูกใบเบิกกับแถวประวัติ → ใช้ตอนยกเลิก
     } catch (err) {
       setCell_(t, r._row, 'status', 'PENDING');
       return { status: 'error', message: 'ตัดสต็อกไม่สำเร็จ: ' + (err.message || err) };
@@ -602,6 +616,65 @@ function receiveRequest_(d, user) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * ยกเลิกใบเบิก
+ *   PENDING            → CANCELLED (ยังไม่ตัดสต็อก) · ผู้ขอเอง / ADMIN / MANAGER
+ *   APPROVED / ISSUED  → CANCELLED + คืนยอดเข้าคลัง · ADMIN เท่านั้น (ISSUED = ของต้องกลับมาอยู่ที่ HR แล้ว)
+ *   SHIPPED / RECEIVED → ยกเลิกไม่ได้ (ของออกจาก HR ไปแล้ว)
+ */
+function cancelRequest_(d, user) {
+  const reason = String(d.cancelReason || '').trim();
+  if (!reason) return { status: 'error', message: 'กรุณาระบุเหตุผลที่ยกเลิก' };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let t, r, st, rawStatus, stockBack;
+  try {
+    t = readTable_(reqSheet_());
+    r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    if (!r || (user.role === 'BRANCH' && String(r.branch) !== user.branch)) {
+      return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
+    }
+    st = effStatus_(r);
+    rawStatus = String(r.status || '');
+    stockBack = st === 'APPROVED' || st === 'ISSUED';
+    if (st === 'PENDING') {
+      const own = String(r.requestedBy || '') === user.username;
+      if (!own && user.role === 'BRANCH') return { status: 'error', message: 'ยกเลิกได้เฉพาะใบเบิกที่คุณเป็นผู้ขอ' };
+    } else if (stockBack) {
+      if (user.role !== 'ADMIN') return { status: 'error', message: 'ใบที่อนุมัติแล้ว ยกเลิกได้เฉพาะ HR Admin (ต้องคืนยอดเข้าคลัง)' };
+    } else {
+      return { status: 'error', message: 'ยกเลิกได้เฉพาะใบที่รออนุมัติ / อนุมัติแล้ว / รอฝากส่ง (สถานะปัจจุบัน: ' + st + ')' };
+    }
+    setCell_(t, r._row, 'status', stockBack ? 'CANCELLING' : 'CANCELLED');   // จองสถานะ กันกดซ้ำ
+  } finally {
+    lock.releaseLock();
+  }
+
+  let note = '';
+  if (stockBack) {
+    try {
+      if (typeof reverseRequisition_ !== 'function') throw new Error(LEGACY_MISSING_MSG_);
+      const res = reverseRequisition_(r.requestId, r.txId, reason);
+      if (!res || res.status !== 'success') throw new Error((res && res.message) || 'คืนยอดไม่สำเร็จ');
+      note = res.logFound
+        ? (res.assetFound ? ' · คืนยอดเข้าคลัง ' + res.restored + ' ชิ้น' : ' · ไม่พบอุปกรณ์ในคลัง (อาจถูกลบไปแล้ว) จึงไม่คืนยอด')
+        : ' · ไม่พบประวัติการเบิก (เคยถูกลบและคืนยอดไปแล้ว) จึงไม่คืนยอดซ้ำ';
+      note += res.warn || '';
+    } catch (err) {
+      setCell_(t, r._row, 'status', rawStatus);                              // คืนสถานะเดิม
+      return { status: 'error', message: 'ยกเลิกไม่สำเร็จ: ' + (err.message || err) };
+    }
+  }
+
+  setCell_(t, r._row, 'cancelledBy', user.username);
+  setCell_(t, r._row, 'cancelledByName', user.fullName || user.username);
+  setCell_(t, r._row, 'cancelledAt', nowStr_());
+  setCell_(t, r._row, 'cancelReason', reason);
+  setCell_(t, r._row, 'status', 'CANCELLED');
+  return { status: 'success', requestId: r.requestId, newStatus: 'CANCELLED', message: 'ยกเลิกใบเบิก ' + r.requestId + ' แล้ว' + note };
 }
 
 function filterLegacyByBranch_(out, branch) {
