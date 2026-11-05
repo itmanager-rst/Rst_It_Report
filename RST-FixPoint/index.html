@@ -850,6 +850,13 @@ $('repairForm').addEventListener('submit', async (e) => {
 });
 
 // ---------------- Ticket lists ----------------
+/** รูปโปรไฟล์ผู้แจ้ง (ถ้าไม่มีรูปแสดงตัวอักษรแรกของชื่อ) */
+function avatarHtml(name, url, cls = 'w-9 h-9') {
+    const base = `${cls} rounded-full border shrink-0`;
+    if (url) return gimg(url, `${base} object-cover`);
+    return `<div class="${base} bg-sky-100 text-sky-800 flex items-center justify-center text-sm font-semibold" title="${esc(name)}">${esc(String(name || '?').slice(0, 1))}</div>`;
+}
+
 function ticketCard(t) {
     const img = t.ImageURL ? gimg(t.ImageURL, 'w-16 h-16 object-cover rounded-lg border shrink-0') : '';
     return `
@@ -864,7 +871,7 @@ function ticketCard(t) {
             <div class="font-medium truncate">${esc(t.Title)}</div>
             <div class="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                 <span>📍 ${esc(t.Branch)} · ${esc(t.Location)}</span>
-                <span>👤 ${esc(t.Requester)}</span>
+                <span class="inline-flex items-center gap-1.5">${avatarHtml(t.Requester, t.requesterPhotoUrl, 'w-5 h-5')}${esc(t.Requester)}</span>
                 <span>🕒 ${fmtDate(t.CreatedAt)}</span>
                 ${t.TechnicianName ? `<span>🔧 ${esc(t.TechnicianName)}</span>` : ''}
             </div>
@@ -938,7 +945,7 @@ async function loadAll() {
                 <td class="p-3 whitespace-nowrap">${fmtDate(t.CreatedAt)}</td>
                 <td class="p-3">${esc(t.Title)}<div class="text-xs text-slate-500">${esc(t.Category)}</div></td>
                 <td class="p-3">${esc(t.Branch)}</td>
-                <td class="p-3">${esc(t.Requester)}</td>
+                <td class="p-3"><div class="flex items-center gap-2">${avatarHtml(t.Requester, t.requesterPhotoUrl, 'w-7 h-7')}<span>${esc(t.Requester)}</span></div></td>
                 <td class="p-3 ${PRIORITY_CLS[t.Priority] || ''}">${esc(t.Priority)}</td>
                 <td class="p-3">${esc(t.TechnicianName || '-')}</td>
                 <td class="p-3">${statusBadge(t.Status)}</td>
@@ -1453,7 +1460,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r12';
+const EXPECTED_BACKEND = 'r13';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -1562,7 +1569,7 @@ async function doPrint(ids, btn) {
     setBusy(btn, true, 'กำลังเตรียมเอกสาร...');
     try {
         const r = await api('printTickets', { ticketIds: ids, withImages: opts.images });
-        $('printArea').innerHTML = r.items.map(it => workOrderHtml(Object.assign({}, it.ticket, { signImg: it.signImg, beforeImg: it.beforeImg, afterImg: it.afterImg }), it.logs, r, opts)).join('');
+        $('printArea').innerHTML = r.items.map(it => workOrderHtml(Object.assign({}, it.ticket, { signImg: it.signImg, beforeImg: it.beforeImg, afterImg: it.afterImg, requesterImg: it.requesterImg }), it.logs, r, opts)).join('');
         await waitImages($('printArea'), 10000);
         closeModal();
         window.print();
@@ -1616,7 +1623,7 @@ function workOrderHtml(t, logs, meta, opts) {
 
         <div class="sec">1. ข้อมูลผู้แจ้งซ่อม</div>
         <table>
-            <tr><th>ผู้แจ้ง</th><td>${v(t.Requester)}</td><th>แผนก / ฝ่าย</th><td>${v(t.Department)}</td></tr>
+            <tr><th>ผู้แจ้ง</th><td><div style="display:flex;align-items:center;gap:8px">${t.requesterImg ? `<img src="${t.requesterImg}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid #cbd5e1">` : ''}<span>${v(t.Requester)}</span></div></td><th>แผนก / ฝ่าย</th><td>${v(t.Department)}</td></tr>
             <tr><th>สาขา</th><td>${v(t.Branch)}</td><th>วันที่แจ้ง</th><td>${fmtDate(t.CreatedAt)}</td></tr>
         </table>
 

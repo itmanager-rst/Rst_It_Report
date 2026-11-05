@@ -2,7 +2,7 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r10-2026-11-05-admin-edit-delete
+ * CODE_VERSION: r13-2026-11-05-avatars
  *
  * ฟีเจอร์:
  *  - Login / Session token (CacheService, อายุ 6 ชม.)
@@ -11,6 +11,7 @@
  *  - Workflow: Pending -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
+ *  - r13: รูปโปรไฟล์ของผู้แจ้งแสดงให้ทุกคนที่ login เห็น (รายการงาน / ตารางทั้งหมด / ใบแจ้งซ่อม) — รูประบุตัวตนยังจำกัดเจ้าของ+admin
  *  - r12: การมองเห็นข้อมูลตามบทบาท (ticketView_ / logVisible_) — พนักงานไม่เห็นหมายเหตุ/ค่าใช้จ่าย,
  *         ช่างเห็นสรุปคะแนนเท่านั้น, ผู้จัดการ/admin เห็นทั้งหมด • เพิ่มค่าใช้จ่าย (Cost) และการประเมินช่าง (rateTicket)
  *  - r11: โปรไฟล์ผู้ใช้ — รูปโปรไฟล์ + รูประบุตัวตน (ไฟล์ส่วนตัว ไม่สร้างลิงก์แชร์, เห็นได้เฉพาะเจ้าของและ admin)
@@ -31,7 +32,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r12-2026-11-05-visibility';
+const CODE_VERSION = 'r13-2026-11-05-avatars';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -216,7 +217,16 @@ function err_(message, code) {
 
 // ---- memo ต่อคำขอ (ลดการอ่าน Sheet ซ้ำในคำขอเดียว) — ล้างทุกครั้งที่เริ่มคำขอใหม่ ----
 let MEMO = { ss: null, sheets: {}, rows: {}, headers: {} };
-function resetMemo_() { MEMO = { ss: null, sheets: {}, rows: {}, headers: {} }; }
+function resetMemo_() { MEMO = { ss: null, sheets: {}, rows: {}, headers: {}, photos: null }; }
+
+/** รูปโปรไฟล์ของผู้ใช้ (ทุกคนดูได้) — อ่านชีต Users ครั้งเดียวต่อคำขอ */
+function profilePhotoOf_(username) {
+  if (!MEMO.photos) {
+    MEMO.photos = {};
+    readAll_(SHEETS.USERS).forEach(x => { MEMO.photos[norm_(x.Username)] = String(x.ProfilePhotoURL || ''); });
+  }
+  return MEMO.photos[norm_(username)] || '';
+}
 
 function ss_() {
   if (MEMO.ss) return MEMO.ss;
@@ -627,6 +637,7 @@ function printTickets_(u, req) {
         .sort((a, b) => (toDate_(a.Timestamp) || 0) - (toDate_(b.Timestamp) || 0)).map(clean_)
     };
     item.signImg = imageData_(t.ApproverSignURL);
+    item.requesterImg = imageData_(profilePhotoOf_(t.Username)); // r13: รูปผู้แจ้งในใบแจ้งซ่อม
     if (req.withImages) {
       item.beforeImg = imageData_(t.ImageURL);
       item.afterImg = imageData_(t.AfterImageURL);
@@ -784,8 +795,7 @@ function techSummary_(name) {
 function ticketView_(u, t) {
   const out = clean_(t);
   const owner = norm_(t.Username) === norm_(u.Username);
-  const requester = readAll_(SHEETS.USERS).find(x => norm_(x.Username) === norm_(t.Username));
-  out.requesterPhotoUrl = requester ? String(requester.ProfilePhotoURL || '') : '';
+  out.requesterPhotoUrl = profilePhotoOf_(t.Username); // r13: ทุกบทบาทเห็นรูปโปรไฟล์ผู้แจ้ง
 
   // ฟิลด์ดิบของการประเมินไม่ส่งออกไปตรงๆ — ส่งเฉพาะผ่าน evaluation / techSummary
   delete out.Rating; delete out.RatingComment; delete out.RatedBy; delete out.RatedAt;
