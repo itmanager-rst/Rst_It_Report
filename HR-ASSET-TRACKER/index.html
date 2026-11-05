@@ -867,8 +867,24 @@
         <div><label class="block text-xs font-semibold text-slate-600 mb-1">หมวดหมู่ / ประเภท <span class="text-red-500">*</span></label>
           <input type="text" id="newAssetCategory" list="categoryList" placeholder="เช่น อุปกรณ์สำนักงาน, ไอที" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
           <datalist id="categoryList"></datalist></div>
-        <div><label id="totalLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span></label>
+        <div id="totalWrap"><label id="totalLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span></label>
           <input type="number" id="newAssetTotal" min="1" placeholder="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
+        <!-- เติมสต็อก (เฉพาะโหมดแก้ไข) -->
+        <div id="stockWrap" class="hidden rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
+          <div class="flex justify-between text-xs text-slate-600">
+            <span>คงเหลือปัจจุบัน: <strong id="stockCurRem" class="text-slate-800">0</strong> ชิ้น</span>
+            <span>ทั้งหมด: <strong id="stockCurTotal" class="text-slate-800">0</strong> · เบิกไปแล้ว: <strong id="stockCurUsed" class="text-slate-800">0</strong></span>
+          </div>
+          <div class="grid grid-cols-2 gap-1 text-xs font-semibold">
+            <label class="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2 py-1.5 cursor-pointer"><input type="radio" name="stockMode" value="add" checked onchange="updateStockPreview()"> ➕ รับของเข้าเพิ่ม</label>
+            <label class="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2 py-1.5 cursor-pointer"><input type="radio" name="stockMode" value="count" onchange="updateStockPreview()"> 📋 นับสต็อกจริง</label>
+          </div>
+          <div>
+            <label id="stockQtyLabel" class="block text-xs font-semibold text-slate-600 mb-1">จำนวนที่รับเข้าเพิ่ม (ชิ้น)</label>
+            <input type="number" id="stockQty" min="0" placeholder="0" oninput="updateStockPreview()" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <p id="stockPreview" class="text-xs text-blue-700 font-semibold"></p>
+        </div>
         <div><label class="block text-xs font-semibold text-slate-600 mb-1">หมายเหตุประจำอุปกรณ์ (ข้อมูลเพิ่มเติม/สถานที่เก็บ)</label>
           <input type="text" id="newAssetNotes" placeholder="เช่น เก็บไว้ที่ห้องควบคุม" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
         <div><label class="block text-xs font-semibold text-slate-600 mb-1">อัปโหลดรูปภาพจริง <span id="imgOptionalNote" class="text-slate-400 font-normal"></span></label>
@@ -1476,7 +1492,26 @@
       $("newAssetId").disabled = false;
       $("totalLabel").innerHTML = 'จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span>';
       $("imgOptionalNote").innerText = "";
+      setStockMode(false);
       toggleModal(true);
+    }
+    let editStock = { rem: 0, total: 0 };
+    function setStockMode(edit) {
+      $("totalWrap").classList.toggle("hidden", edit);
+      $("newAssetTotal").required = !edit;
+      $("stockWrap").classList.toggle("hidden", !edit);
+      $("stockQty").value = "";
+      const r = document.querySelector('input[name="stockMode"][value="add"]'); if (r) r.checked = true;
+      updateStockPreview();
+    }
+    function updateStockPreview() {
+      const mode = (document.querySelector('input[name="stockMode"]:checked') || {}).value || "add";
+      $("stockQtyLabel").innerText = mode === "add" ? "จำนวนที่รับเข้าเพิ่ม (ชิ้น)" : "ยอดคงเหลือที่นับได้จริงตอนนี้ (ชิ้น)";
+      const v = $("stockQty").value, n = parseInt(v);
+      if (v === "" || isNaN(n) || n < 0) { $("stockPreview").innerText = mode === "add" ? "เว้นว่าง = ไม่เปลี่ยนจำนวนสต็อก" : ""; return; }
+      const newRem = mode === "add" ? editStock.rem + n : n;
+      const newTotal = Math.max(newRem, editStock.total + (newRem - editStock.rem));
+      $("stockPreview").innerText = `หลังบันทึก → คงเหลือ ${editStock.rem} ➜ ${newRem} ชิ้น · ยอดทั้งหมด ${newTotal}`;
     }
     function openEditModal(id) {
       const a = findAsset(id);
@@ -1490,6 +1525,11 @@
       $("newAssetNotes").value = a.notes === "-" ? "" : (a.notes || "");
       $("totalLabel").innerHTML = 'ปรับปรุงยอดจำนวนทั้งหมดในคลัง <span class="text-blue-600">(เพิ่มยอดรวมที่นี่)</span> <span class="text-red-500">*</span>';
       $("imgOptionalNote").innerText = "(ปล่อยว่างได้หากไม่ต้องการเปลี่ยนรูปภาพ)";
+      editStock = { rem: getRemaining(a.id), total: parseInt(a.total) || 0 };
+      $("stockCurRem").innerText = editStock.rem;
+      $("stockCurTotal").innerText = editStock.total;
+      $("stockCurUsed").innerText = Math.max(0, editStock.total - editStock.rem);
+      setStockMode(true);
       toggleModal(true);
     }
 
@@ -1498,17 +1538,30 @@
       const btn = $("addBtn"), action = $("formAction").value;
       btn.disabled = true; btn.innerText = "กำลังบันทึกข้อมูล...";
       try {
-        const r = await apiPost({
+        const payload = {
           action: action,
           id: $("newAssetId").value.trim(),
           name: $("newAssetName").value.trim(),
           category: $("newAssetCategory").value.trim(),
-          total: $("newAssetTotal").value,
           notes: $("newAssetNotes").value.trim() || "-",
           image: newAssetBase64
-        });
+        };
+        if (action === "addAsset") {
+          payload.total = $("newAssetTotal").value;
+        } else {
+          // เติมสต็อก: ส่ง "จำนวนรับเข้า" หรือ "ยอดนับจริง" ให้ Server คำนวณจากค่าล่าสุดในชีต
+          const mode = (document.querySelector('input[name="stockMode"]:checked') || {}).value || "add";
+          const v = $("stockQty").value, n = parseInt(v);
+          if (v !== "" && (isNaN(n) || n < 0)) throw new Error("จำนวนสต็อกไม่ถูกต้อง");
+          if (mode === "count" && v !== "") payload.setRemaining = n;
+          else payload.addQty = v === "" ? 0 : n;
+          // สำรองให้ Server เวอร์ชันเก่า (ที่ยังคิดจากยอดทั้งหมด) ก็ได้ผลถูกต้อง
+          const newRem = payload.setRemaining !== undefined ? n : editStock.rem + payload.addQty;
+          payload.total = Math.max(newRem, editStock.total + (newRem - editStock.rem), 1);
+        }
+        const r = await apiPost(payload);
         if (r.status === "error") throw new Error(r.message);
-        alert(action === "addAsset" ? "🎉 เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!" : "✏️ อัปเดตข้อมูลพัสดุเรียบร้อย!");
+        alert(action === "addAsset" ? "🎉 เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!" : "✏️ " + (r.message || "อัปเดตข้อมูลพัสดุเรียบร้อย!"));
         toggleModal(false);
         loadData();
       } catch (err) {

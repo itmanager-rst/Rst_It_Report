@@ -186,10 +186,15 @@ function addAsset(data) {
   }
 }
 
-// 4. แก้ไขข้อมูลพัสดุ
-//    ยอดคงเหลือปรับตาม "ส่วนต่าง" ของยอดทั้งหมด (เดิมรีเซ็ตเป็นยอดใหม่ → ยอดที่เบิกไปแล้วหายจากสต็อก)
-//    เช่น ทั้งหมด 10 คงเหลือ 4 → แก้ทั้งหมดเป็น 15 → คงเหลือ 9
+// 4. แก้ไขข้อมูลพัสดุ + เติมสต็อก
+//    [แก้บั๊ก] เดิมคิดยอดคงเหลือจาก "ส่วนต่างของยอดทั้งหมด" เท่านั้น
+//    → ถ้า HR กรอกจำนวนที่รับเข้า/จำนวนที่มีจริง (ซึ่งไม่มากกว่ายอดทั้งหมดเดิม) คงเหลือจะยังเป็น 0 = "ของหมด"
+//    ตอนนี้รองรับ 2 แบบ (คำนวณจากค่าล่าสุดในชีตใต้ Lock):
+//      • addQty       = รับเข้าเพิ่ม X ชิ้น      → คงเหลือ +X, ยอดทั้งหมด +X
+//      • setRemaining = นับสต็อกได้จริง N ชิ้น   → คงเหลือ = N, ยอดทั้งหมดปรับตามส่วนต่าง (ยอดที่เบิกไปแล้วคงเดิม)
+//    ถ้าไม่ส่งทั้งสองค่า จะใช้วิธีเดิม (แก้ยอดทั้งหมด → คงเหลือปรับตามส่วนต่าง)
 function editAsset(data) {
+  if (data.addQty !== undefined || data.setRemaining !== undefined) return editAssetStock_(data);
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
@@ -220,6 +225,72 @@ function editAsset(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function editAssetStock_(data) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(STOCK_SHEET);
+    if (!sheet) return { status: "error", message: "ไม่พบชีท " + STOCK_SHEET };
+
+    var assetId = String(data.id || "").trim();
+    var addQty = parseInt(data.addQty) || 0;
+    var hasCount = data.setRemaining !== undefined && data.setRemaining !== null && String(data.setRemaining) !== "";
+    var count = hasCount ? parseInt(data.setRemaining) : NaN;
+    if (addQty < 0) return { status: "error", message: "จำนวนรับเข้าต้องไม่ติดลบ" };
+    if (hasCount && (isNaN(count) || count < 0)) return { status: "error", message: "ยอดคงเหลือที่นับได้ไม่ถูกต้อง" };
+
+    var stockData = sheet.getDataRange().getValues();
+    for (var i = 1; i < stockData.length; i++) {
+      if (stockData[i][0].toString().trim() !== assetId) continue;
+      var row = i + 1;
+      var oldTotal = parseInt(stockData[i][3]) || 0;
+      var oldRem = parseInt(stockData[i][4]);
+      if (isNaN(oldRem)) oldRem = oldTotal;
+
+      var newRem = hasCount ? count : oldRem + addQty;
+      var newTotal = Math.max(newRem, oldTotal + (newRem - oldRem));   // ยอดที่เบิกไปแล้ว (total - rem) คงเดิม
+
+      sheet.getRange(row, 2, 1, 4).setValues([[data.name || stockData[i][1], data.category || stockData[i][2], newTotal, newRem]]);
+      if (data.notes !== undefined) sheet.getRange(row, 7).setValue(data.notes || "-");
+      if (data.image) sheet.getRange(row, 6).setValue(toImageCell_(data.image, "asset_" + assetId));
+
+      return {
+        status: "success", remaining: newRem, total: newTotal,
+        message: "อัปเดตสต็อกสำเร็จ (คงเหลือ " + oldRem + " → " + newRem + " / ทั้งหมด " + newTotal + ")"
+      };
+    }
+    return { status: "error", message: "ไม่พบรหัสอุปกรณ์" };
+  } catch (error) {
+    return { status: "error", message: error.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * HR แก้ "ยอดทั้งหมด" (คอลัมน์ D) ตรงในชีต Assets_Stock → ปรับ "คงเหลือ" (คอลัมน์ E) ตามส่วนต่างให้อัตโนมัติ
+ * (เดิมแก้ D อย่างเดียว E ยังเป็น 0 → หน้าเว็บขึ้นว่าของหมด)
+ * เป็น simple trigger ไม่ต้องตั้งค่าอะไรเพิ่ม · ทำงานเฉพาะการแก้ทีละเซลล์
+ */
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sh = e.range.getSheet();
+    if (sh.getName() !== STOCK_SHEET || e.range.getColumn() !== 4 || e.range.getRow() < 2) return;
+    if (e.range.getNumRows() !== 1 || e.range.getNumColumns() !== 1) return;
+    var oldTotal = parseInt(e.oldValue), newTotal = parseInt(e.value);
+    if (isNaN(newTotal)) return;
+    var remCell = sh.getRange(e.range.getRow(), 5);
+    var rem = parseInt(remCell.getValue());
+    if (isNaN(oldTotal)) {                       // แถวใหม่ / ไม่เคยมียอด → คงเหลือ = ยอดทั้งหมด
+      if (isNaN(rem)) remCell.setValue(newTotal);
+      return;
+    }
+    if (isNaN(rem)) rem = oldTotal;
+    remCell.setValue(Math.max(0, Math.min(newTotal, rem + (newTotal - oldTotal))));
+  } catch (err) {}
 }
 
 // 5. ลบอุปกรณ์ออกจากคลัง
