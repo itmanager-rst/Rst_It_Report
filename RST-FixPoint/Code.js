@@ -2,9 +2,15 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r15-2026-11-05-after-photo-admin
+ * CODE_VERSION: r16-2026-11-05-security-multiphoto-expense
  *
  * ฟีเจอร์:
+ *  - r16: [ความปลอดภัย] ปิดบัญชี (soft delete) แทนการลบแถวจริง • ลบรูประบุตัวตนอัตโนมัติหลังปิดบัญชี 30 วัน
+ *         (ตั้ง trigger ด้วย installIdCleanupTrigger) • ล็อกบัญชีชั่วคราวหลังใส่รหัสผิด 5 ครั้ง (15 นาที)
+ *         • รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร • ประวัติการจัดการผู้ใช้ (ชีต UserLogs) ให้ admin ดูได้
+ *         [รูปหลายรูปต่องาน] แนบได้สูงสุด 6 รูปต่อประเภท (ก่อน/หลังซ่อม) • แสดงรูปในรายการงาน • Admin เพิ่ม/ลบรูปได้
+ *         [ค่าใช้จ่าย] รายงานค่าใช้จ่ายรายการ (expenseReport) กรองตามช่วงวันที่/สาขา/สถานะ สรุปตามสาขา ช่าง หมวดหมู่ เดือน
+
  *  - Login / Session token (CacheService, อายุ 6 ชม.)
  *  - Role: employee / technician / manager / admin
  *  - สาขา (Branches) — ผู้ใช้ผูกกับสาขา, manager/technician เห็นเฉพาะสาขาตัวเอง (ยกเว้น Branch = ALL)
@@ -12,7 +18,7 @@
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
  *  - r15: Admin เพิ่ม/เปลี่ยนรูปหลังซ่อมได้ในหน้าแก้ไขรายการ (updateTicket.afterImage)
- *  - r14: Admin ลบผู้ใช้ได้ (deleteUser) — เก็บประวัติไว้ที่ชีต DeletedUsers (ไม่เก็บรหัสผ่าน/รูประบุตัวตน),
+ *  - r14: Admin ลบผู้ใช้ได้ (ในรุ่น r16 เปลี่ยนเป็นการปิดบัญชีแบบ soft delete) — เดิมเก็บประวัติไว้ที่ชีต DeletedUsers,
  *         ลบรูปโปรไฟล์และรูประบุตัวตนออกจาก Drive, ห้ามลบตัวเอง/admin คนสุดท้าย/ช่างที่มีงานค้าง
  *  - r13: รูปโปรไฟล์ของผู้แจ้งแสดงให้ทุกคนที่ login เห็น (รายการงาน / ตารางทั้งหมด / ใบแจ้งซ่อม) — รูประบุตัวตนยังจำกัดเจ้าของ+admin
  *  - r12: การมองเห็นข้อมูลตามบทบาท (ticketView_ / logVisible_) — พนักงานไม่เห็นหมายเหตุ/ค่าใช้จ่าย,
@@ -35,7 +41,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r15-2026-11-05-after-photo-admin';
+const CODE_VERSION = 'r16-2026-11-05-security-multiphoto-expense';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -51,12 +57,18 @@ const ID_FOLDER_ID = '';
 const TZ = 'Asia/Bangkok';
 const SESSION_SECONDS = 21600; // 6 ชม. (สูงสุดของ CacheService)
 const PW_SALT = 'RST-FixPoint-v1';
+const PW_MIN_LENGTH = 8;            // r16: รหัสผ่านใหม่ขั้นต่ำ 8 ตัวอักษร
+const LOGIN_MAX_FAILS = 5;          // r16: ใส่รหัสผิดกี่ครั้งจึงล็อก
+const LOGIN_LOCK_MINUTES = 15;      // r16: ระยะเวลาล็อกชั่วคราว
+const ID_RETENTION_DAYS = 30;       // r16: เก็บรูประบุตัวตนหลังปิดบัญชีกี่วัน
+const MAX_PHOTOS_PER_KIND = 6;      // r16: รูปสูงสุดต่อประเภท (ก่อนซ่อม / หลังซ่อม) ต่อ 1 งาน
 
 const SHEETS = {
   USERS: {
     name: 'Users',
     headers: ['Username', 'PasswordHash', 'FullName', 'Role', 'Branch', 'Department', 'Email', 'Active', 'CreatedAt', 'LastLogin',
-      'ProfilePhotoURL', 'IdPhotoURL', 'ProfileUpdatedAt']
+      'ProfilePhotoURL', 'IdPhotoURL', 'ProfileUpdatedAt',
+      'DeactivatedAt', 'DeactivatedBy', 'FailedLogins', 'LockedUntil'] // r16
   },
   BRANCHES: {
     name: 'Branches',
@@ -66,20 +78,19 @@ const SHEETS = {
     name: 'Tickets',
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
-      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL', 'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt']
+      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL', 'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos'] // r16: รูปเพิ่มเติม (JSON)
   },
   DELETED: {
     name: 'DeletedTickets',
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL',
-      'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt',
+      'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos',
       'DeletedAt', 'DeletedBy', 'DeleteReason']
   },
-  DELETED_USERS: {
-    name: 'DeletedUsers',
-    headers: ['Username', 'FullName', 'Role', 'Branch', 'Department', 'Email', 'Active', 'CreatedAt', 'LastLogin',
-      'DeletedAt', 'DeletedBy', 'DeleteReason']
+  USER_LOG: {  // r16: ประวัติการจัดการผู้ใช้ (ไม่เก็บรหัสผ่าน)
+    name: 'UserLogs',
+    headers: ['Timestamp', 'Actor', 'Action', 'Target', 'Detail']
   },
   LOGS: {
     name: 'TicketLogs',
@@ -142,7 +153,10 @@ const ROUTES = {
   saveUser:        { roles: ADMIN, fn: saveUser_, write: true },
   getAllBranches:  { roles: ADMIN, fn: () => ({ branches: getBranches_(true) }) },
   saveBranch:      { roles: ADMIN, fn: saveBranch_, write: true },
-  deleteUser:      { roles: ADMIN, fn: deleteUser_, write: true }  // r14
+  deactivateUser:  { roles: ADMIN, fn: deactivateUser_, write: true }, // r16: ปิดบัญชี (แทนการลบ)
+  reactivateUser:  { roles: ADMIN, fn: reactivateUser_, write: true }, // r16: เปิดใช้งานบัญชีอีกครั้ง
+  listUserLogs:    { roles: ADMIN, fn: listUserLogs_ },                // r16
+  expenseReport:   { roles: ADMIN, fn: expenseReport_ }                // r16: รายงานค่าใช้จ่าย
 };
 
 function doPost(e) {
@@ -310,6 +324,7 @@ function appendObjs_(def, objs) {
   if (rows.length === 1) sh.appendRow(rows[0]);
   else sh.getRange(sh.getLastRow() + 1, 1, rows.length, h.length).setValues(rows);
   delete MEMO.rows[def.name];
+  if (def.name === SHEETS.USERS.name) MEMO.photos = null;
 }
 
 function updateRow_(def, row, patch) {
@@ -320,6 +335,7 @@ function updateRow_(def, row, patch) {
   h.forEach((k, i) => { if (Object.prototype.hasOwnProperty.call(patch, k)) vals[i] = patch[k]; });
   rng.setValues([vals]);
   delete MEMO.rows[def.name];
+  if (def.name === SHEETS.USERS.name) MEMO.photos = null;
 }
 
 function toDate_(v) {
@@ -376,8 +392,29 @@ function publicUser_(u) {
     active: isActive_(u.Active),
     lastLogin: u.LastLogin instanceof Date ? u.LastLogin.toISOString() : String(u.LastLogin || ''),
     profilePhotoUrl: String(u.ProfilePhotoURL || ''),
-    hasIdPhoto: !!String(u.IdPhotoURL || '')
+    hasIdPhoto: !!String(u.IdPhotoURL || ''),
+    deactivatedAt: isoOf_(u.DeactivatedAt),
+    // r16: วันที่รูประบุตัวตนจะถูกลบอัตโนมัติ (เฉพาะบัญชีที่ปิดแล้วและยังมีรูป)
+    idPurgeAt: purgeAtOf_(u)
   };
+}
+
+/** r16: วันที่รูประบุตัวตนของบัญชีที่ปิดแล้วจะถูกลบ (ว่างถ้าไม่เกี่ยวข้อง) */
+function purgeAtOf_(u) {
+  const da = toDate_(u.DeactivatedAt);
+  if (isActive_(u.Active) || !da || !String(u.IdPhotoURL || '')) return '';
+  return new Date(da.getTime() + ID_RETENTION_DAYS * 864e5).toISOString();
+}
+
+/** r16: บันทึกประวัติการจัดการผู้ใช้ (ไม่บันทึกรหัสผ่าน) */
+function addUserLog_(actor, action, target, detail) {
+  appendObj_(SHEETS.USER_LOG, {
+    Timestamp: new Date(),
+    Actor: String(actor || 'ระบบ'),
+    Action: action,
+    Target: String(target || ''),
+    Detail: String(detail || '').slice(0, 2000)
+  });
 }
 
 function findUser_(username) {
@@ -393,14 +430,30 @@ function login_(req) {
   const u = findUser_(username);
   if (!u || !isActive_(u.Active)) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
 
+  // r16: ตรวจการล็อกชั่วคราว (ใส่รหัสผิดหลายครั้ง)
+  const lockedUntil = toDate_(u.LockedUntil);
+  if (lockedUntil && lockedUntil.getTime() > Date.now()) {
+    const mins = Math.ceil((lockedUntil.getTime() - Date.now()) / 60000);
+    throw new Error('บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผิดหลายครั้ง กรุณารอ ' + mins + ' นาทีแล้วลองใหม่ หรือแจ้งผู้ดูแลระบบ');
+  }
+
   const stored = String(u.PasswordHash || '');
   // รองรับกรณีแอดมินพิมพ์รหัสผ่านแบบตัวอักษรธรรมดาในชีต -> จะถูกแปลงเป็น hash อัตโนมัติเมื่อ login สำเร็จครั้งแรก
   const okPw = isHash_(stored) ? stored === hash_(password, username) : stored === password;
-  if (!okPw) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  if (!okPw) {
+    const fails = (Number(u.FailedLogins) || 0) + 1;
+    if (fails >= LOGIN_MAX_FAILS) {
+      updateRow_(SHEETS.USERS, u._row, { FailedLogins: 0, LockedUntil: new Date(Date.now() + LOGIN_LOCK_MINUTES * 60000) });
+      addUserLog_('ระบบ', 'ล็อกบัญชีชั่วคราว', u.Username, 'ใส่รหัสผิด ' + LOGIN_MAX_FAILS + ' ครั้ง ล็อก ' + LOGIN_LOCK_MINUTES + ' นาที');
+      throw new Error('ใส่รหัสผ่านผิดหลายครั้ง บัญชีถูกล็อกชั่วคราว ' + LOGIN_LOCK_MINUTES + ' นาที');
+    }
+    updateRow_(SHEETS.USERS, u._row, { FailedLogins: fails });
+    throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  }
 
   if (ROLES.indexOf(String(u.Role)) === -1) throw new Error('บทบาทผู้ใช้ไม่ถูกต้อง (' + u.Role + ') กรุณาติดต่อผู้ดูแลระบบ');
 
-  const patch = { LastLogin: new Date() };
+  const patch = { LastLogin: new Date(), FailedLogins: 0, LockedUntil: '' };
   if (!isHash_(stored)) patch.PasswordHash = hash_(password, username);
   updateRow_(SHEETS.USERS, u._row, patch);
 
@@ -425,11 +478,12 @@ function getSessionUser_(token) {
 function changePassword_(u, req) {
   const oldPw = String(req.oldPassword || '');
   const newPw = String(req.newPassword || '');
-  if (newPw.length < 4) throw new Error('รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร');
+  if (newPw.length < PW_MIN_LENGTH) throw new Error('รหัสผ่านใหม่ต้องมีอย่างน้อย ' + PW_MIN_LENGTH + ' ตัวอักษร');
   const stored = String(u.PasswordHash || '');
   const okPw = isHash_(stored) ? stored === hash_(oldPw, u.Username) : stored === oldPw;
   if (!okPw) throw new Error('รหัสผ่านเดิมไม่ถูกต้อง');
   updateRow_(SHEETS.USERS, u._row, { PasswordHash: hash_(newPw, u.Username) });
+  addUserLog_(u.Username, 'เปลี่ยนรหัสผ่านของตนเอง', u.Username, '');
   return { message: 'เปลี่ยนรหัสผ่านเรียบร้อย' };
 }
 
@@ -552,6 +606,98 @@ function getTicketRow_(id) {
   return t;
 }
 
+// ---------------------------------------------------------------------------
+// r16: รูปหลายรูปต่องาน
+//   ImageURL / AfterImageURL = รูปหลัก (ก่อน/หลังซ่อม) • ExtraPhotos = JSON รูปเพิ่มเติม [{kind, url, by, at}]
+// ---------------------------------------------------------------------------
+
+function extraPhotosOf_(t) {
+  try {
+    const a = JSON.parse(String(t.ExtraPhotos || '[]'));
+    return Array.isArray(a) ? a.filter(p => p && p.url) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** รูปทั้งหมดของงานตามลำดับ: ก่อนซ่อม (หลัก + เพิ่มเติม) แล้วตามด้วยหลังซ่อม (หลัก + เพิ่มเติม) */
+function photosOf_(t) {
+  const extra = extraPhotosOf_(t);
+  const out = [];
+  if (String(t.ImageURL || '')) out.push({ kind: 'before', url: String(t.ImageURL) });
+  extra.filter(p => p.kind === 'before').forEach(p => out.push({ kind: 'before', url: String(p.url) }));
+  if (String(t.AfterImageURL || '')) out.push({ kind: 'after', url: String(t.AfterImageURL) });
+  extra.filter(p => p.kind === 'after').forEach(p => out.push({ kind: 'after', url: String(p.url) }));
+  return out;
+}
+
+function ticketFileIds_(t) {
+  return [t.ImageURL, t.AfterImageURL, t.ApproverSignURL].concat(extraPhotosOf_(t).map(p => p.url))
+    .map(fileIdFromUrl_).filter(String);
+}
+
+function checkPhotoLimit_(t, kind, n) {
+  const cur = photosOf_(t).filter(p => p.kind === kind).length;
+  if (cur + n > MAX_PHOTOS_PER_KIND) {
+    throw new Error('รูป' + (kind === 'before' ? 'ก่อนซ่อม' : 'หลังซ่อม') + 'ของรายการนี้มีได้สูงสุด ' +
+      MAX_PHOTOS_PER_KIND + ' รูป (ปัจจุบัน ' + cur + ' รูป)');
+  }
+}
+
+/** บันทึกรูปหลายรูป (สูงสุด 5 รูปต่อครั้ง) คืน urls และ warning ของรูปที่อัปโหลดไม่สำเร็จ */
+function saveImages_(images, prefix) {
+  const list = (Array.isArray(images) ? images : []).filter(i => i && i.base64).slice(0, 5);
+  const urls = [];
+  let warning = '';
+  list.forEach((img, i) => {
+    const r = saveImage_(img, prefix + (list.length > 1 ? '-' + (i + 1) : ''));
+    if (r.url) urls.push(r.url);
+    else warning = warning || r.warning;
+  });
+  return { urls: urls, warning: warning };
+}
+
+/** แพตช์ที่ต้องเขียนลงแถวเมื่อเพิ่มรูป: รูปแรกของประเภทนั้นที่ยังไม่มีรูปหลัก → รูปหลัก ที่เหลือ → ExtraPhotos */
+function addPhotoPatch_(base, kind, urls, actor) {
+  const patch = {};
+  const rest = urls.slice();
+  const now = new Date().toISOString();
+  if (kind === 'before' && !String(base.ImageURL || '') && rest.length) patch.ImageURL = rest.shift();
+  if (kind === 'after' && !String(base.AfterImageURL || '') && rest.length) patch.AfterImageURL = rest.shift();
+  if (rest.length) {
+    const extra = extraPhotosOf_(base);
+    rest.forEach(url => extra.push({ kind: kind, url: url, by: String(actor || ''), at: now }));
+    patch.ExtraPhotos = JSON.stringify(extra);
+  }
+  return patch;
+}
+
+/** แพตช์สำหรับลบรูปตาม fileId — ถ้าลบรูปหลัก จะเลื่อนรูปเพิ่มเติมประเภทเดียวกันขึ้นมาแทน */
+function removePhotoPatch_(t, fileIds) {
+  const gone = url => fileIds.indexOf(fileIdFromUrl_(url)) > -1;
+  const trash = [];
+  let count = 0;
+  let before = String(t.ImageURL || '');
+  let after = String(t.AfterImageURL || '');
+  if (before && gone(before)) { trash.push(before); before = ''; count++; }
+  if (after && gone(after)) { trash.push(after); after = ''; count++; }
+  const kept = extraPhotosOf_(t).filter(p => {
+    if (gone(p.url)) { trash.push(p.url); count++; return false; }
+    return true;
+  });
+  const promote = kind => {
+    const i = kept.findIndex(p => p.kind === kind);
+    return i > -1 ? kept.splice(i, 1)[0].url : '';
+  };
+  if (!before) before = promote('before');
+  if (!after) after = promote('after');
+  return {
+    count: count,
+    trash: trash,
+    patch: { ImageURL: before, AfterImageURL: after, ExtraPhotos: kept.length ? JSON.stringify(kept) : '' }
+  };
+}
+
 function createTicket_(u, req) {
   const d = req.ticket || {};
   ['title', 'location', 'category'].forEach(k => {
@@ -562,13 +708,17 @@ function createTicket_(u, req) {
   if (!isAllBranch_(u)) branch = String(u.Branch); // ผู้ใช้สาขาหนึ่งแจ้งได้เฉพาะสาขาตัวเอง
   if (!branch) throw new Error('กรุณาเลือกสาขา');
 
+  const images = Array.isArray(d.images) ? d.images : (d.image ? [d.image] : []);
+  if (images.length > 5) throw new Error('แนบรูปได้ไม่เกิน 5 รูปต่อครั้ง');
+  checkPhotoLimit_({}, 'before', images.filter(i => i && i.base64).length);
+
   const tickets = readAll_(SHEETS.TICKETS);
   const id = nextTicketId_(tickets);
-  const img = saveImage_(d.image, id + '_before');
-  const imageUrl = img.url;
+  const saved = saveImages_(images, id + '_before');
   const now = new Date();
+  const patch = addPhotoPatch_({}, 'before', saved.urls, u.Username);
 
-  appendObj_(SHEETS.TICKETS, {
+  appendObj_(SHEETS.TICKETS, Object.assign({
     TicketID: id,
     CreatedAt: now,
     Username: u.Username,
@@ -581,12 +731,11 @@ function createTicket_(u, req) {
     Description: String(d.description || ''),
     Priority: String(d.priority || 'ปกติ'),
     Status: ST.PENDING,
-    ImageURL: imageUrl,
     UpdatedAt: now
-  });
-  addLog_(id, 'สร้างรายการแจ้งซ่อม', u, '', ST.PENDING, d.title);
+  }, patch));
+  addLog_(id, 'สร้างรายการแจ้งซ่อม', u, '', ST.PENDING, d.title + (saved.urls.length > 1 ? ' (รูป ' + saved.urls.length + ' รูป)' : ''));
 
-  return { ticketId: id, message: 'บันทึกข้อมูลแจ้งซ่อมเรียบร้อยแล้ว', warning: img.warning };
+  return { ticketId: id, message: 'บันทึกข้อมูลแจ้งซ่อมเรียบร้อยแล้ว', warning: saved.warning };
 }
 
 function listTickets_(u, req) {
@@ -648,8 +797,12 @@ function printTickets_(u, req) {
     item.signImg = imageData_(t.ApproverSignURL);
     item.requesterImg = imageData_(profilePhotoOf_(t.Username)); // r13: รูปผู้แจ้งในใบแจ้งซ่อม
     if (req.withImages) {
-      item.beforeImg = imageData_(t.ImageURL);
-      item.afterImg = imageData_(t.AfterImageURL);
+      // r16: ส่งรูปทั้งหมด (สูงสุด 6 รูปต่อประเภท) — beforeImg/afterImg = รูปแรกเพื่อความเข้ากันได้
+      const photos = photosOf_(t);
+      item.beforeImgs = photos.filter(p => p.kind === 'before').slice(0, MAX_PHOTOS_PER_KIND).map(p => imageData_(p.url));
+      item.afterImgs = photos.filter(p => p.kind === 'after').slice(0, MAX_PHOTOS_PER_KIND).map(p => imageData_(p.url));
+      item.beforeImg = item.beforeImgs[0] || '';
+      item.afterImg = item.afterImgs[0] || '';
     }
     out.push(item);
   });
@@ -701,7 +854,7 @@ function counts_(u) {
 function imageAccess_(u, url) {
   const id = fileIdFromUrl_(url);
   if (!id) return false;
-  const t = readAll_(SHEETS.TICKETS).find(x => [x.ImageURL, x.AfterImageURL, x.ApproverSignURL].some(v => fileIdFromUrl_(v) === id));
+  const t = readAll_(SHEETS.TICKETS).find(x => ticketFileIds_(x).indexOf(id) > -1);
   if (t) return canSee_(u, t);
   const users = readAll_(SHEETS.USERS);
   if (users.some(x => fileIdFromUrl_(x.ProfilePhotoURL) === id)) return true; // รูปโปรไฟล์ — ผู้ใช้ที่ login แล้วดูได้
@@ -771,6 +924,7 @@ function updateProfile_(u, req) {
   if (!done.length) throw new Error('ไม่มีรูปที่จะบันทึก');
   patch.ProfileUpdatedAt = new Date();
   updateRow_(SHEETS.USERS, row._row, patch);
+  addUserLog_(u.Username, 'แก้ไขรูปโปรไฟล์', target, done.join(', ')); // r16
   return { message: 'บันทึก' + done.join(' และ') + 'ของ ' + target + ' แล้ว' };
 }
 
@@ -805,6 +959,8 @@ function ticketView_(u, t) {
   const out = clean_(t);
   const owner = norm_(t.Username) === norm_(u.Username);
   out.requesterPhotoUrl = profilePhotoOf_(t.Username); // r13: ทุกบทบาทเห็นรูปโปรไฟล์ผู้แจ้ง
+  out.photos = photosOf_(t);                            // r16: รูปทั้งหมดของงาน (ใช้แสดงในรายการ)
+  delete out.ExtraPhotos;
 
   // ฟิลด์ดิบของการประเมินไม่ส่งออกไปตรงๆ — ส่งเฉพาะผ่าน evaluation / techSummary
   delete out.Rating; delete out.RatingComment; delete out.RatedBy; delete out.RatedAt;
@@ -956,13 +1112,16 @@ function completeTicket_(u, req) {
   const t = getTicketRow_(req.ticketId);
   requireStatus_(t, [ST.IN_PROGRESS]);
   if (u.Role !== 'admin' && norm_(t.Technician) !== norm_(u.Username)) throw new Error('งานนี้ไม่ใช่งานของคุณ');
-  const afterImg = saveImage_(req.image, t.TicketID + '_after');
-  const after = afterImg.url;
-  const extra = { CompletedAt: new Date(), TechNote: String(req.note || t.TechNote || '') };
+  // r16: รองรับรูปหลังซ่อมหลายรูป (req.images) — req.image ยังใช้ได้เพื่อความเข้ากันได้
+  const imgs = Array.isArray(req.images) ? req.images : (req.image ? [req.image] : []);
+  if (imgs.length > 5) throw new Error('แนบรูปได้ไม่เกิน 5 รูปต่อครั้ง');
+  checkPhotoLimit_(t, 'after', imgs.filter(i => i && i.base64).length);
+  const saved = saveImages_(imgs, t.TicketID + '_after');
+  const extra = Object.assign({ CompletedAt: new Date(), TechNote: String(req.note || t.TechNote || '') },
+    addPhotoPatch_(t, 'after', saved.urls, u.Username));
   if (req.cost !== undefined && req.cost !== '') extra.Cost = toCost_(req.cost);
-  if (after) extra.AfterImageURL = after;
   const res = transition_(u, t, ST.COMPLETED, 'ปิดงานซ่อม (เสร็จสิ้น)', req.note, extra);
-  res.warning = afterImg.warning;
+  res.warning = saved.warning;
   return res;
 }
 
@@ -1046,16 +1205,33 @@ function updateTicket_(u, req) {
     if (to === ST.PENDING) { patch.ApprovedBy = ''; patch.ApprovedAt = ''; patch.AcceptedAt = ''; patch.ApproverSignURL = ''; }
   }
 
+  // r16: รูปหลายรูป — ลบรูปที่ระบุ (removePhotos) แล้วเพิ่มรูปใหม่ (addBefore / addAfter)
   let warning = '';
-  if (d.image && d.image.base64) {
-    const img = saveImage_(d.image, t.TicketID + '_before');
-    if (img.url) { patch.ImageURL = img.url; changes.push('เปลี่ยนรูปก่อนซ่อม'); }
-    else warning = img.warning;
+  const trash = [];
+  const removeIds = (Array.isArray(d.removePhotos) ? d.removePhotos : []).map(fileIdFromUrl_).filter(String);
+  if (removeIds.length) {
+    const rp = removePhotoPatch_(t, removeIds);
+    if (rp.count) {
+      Object.assign(patch, rp.patch);
+      trash.push.apply(trash, rp.trash);
+      changes.push('ลบรูป ' + rp.count + ' รูป');
+    }
   }
-  if (d.afterImage && d.afterImage.base64) { // r15: Admin แนบ/เปลี่ยนรูปหลังซ่อม
-    const img2 = saveImage_(d.afterImage, t.TicketID + '_after');
-    if (img2.url) { patch.AfterImageURL = img2.url; changes.push('เปลี่ยนรูปหลังซ่อม'); }
-    else warning = warning || img2.warning;
+  const base = Object.assign({}, t, patch);
+  const addBefore = (Array.isArray(d.addBefore) ? d.addBefore : []).filter(i => i && i.base64);
+  const addAfter = (Array.isArray(d.addAfter) ? d.addAfter : []).filter(i => i && i.base64);
+  if (addBefore.length > 5 || addAfter.length > 5) throw new Error('เพิ่มรูปได้ไม่เกิน 5 รูปต่อครั้ง');
+  if (addBefore.length) checkPhotoLimit_(base, 'before', addBefore.length);
+  if (addAfter.length) checkPhotoLimit_(base, 'after', addAfter.length);
+  if (addBefore.length) {
+    const sv = saveImages_(addBefore, t.TicketID + '_before');
+    warning = warning || sv.warning;
+    if (sv.urls.length) { Object.assign(patch, addPhotoPatch_(base, 'before', sv.urls, u.Username)); Object.assign(base, patch); changes.push('เพิ่มรูปก่อนซ่อม ' + sv.urls.length + ' รูป'); }
+  }
+  if (addAfter.length) {
+    const sv2 = saveImages_(addAfter, t.TicketID + '_after');
+    warning = warning || sv2.warning;
+    if (sv2.urls.length) { Object.assign(patch, addPhotoPatch_(base, 'after', sv2.urls, u.Username)); Object.assign(base, patch); changes.push('เพิ่มรูปหลังซ่อม ' + sv2.urls.length + ' รูป'); }
   }
 
   if (!changes.length) {
@@ -1064,6 +1240,7 @@ function updateTicket_(u, req) {
   }
   patch.UpdatedAt = new Date();
   updateRow_(SHEETS.TICKETS, t._row, patch);
+  trash.forEach(trashFileByUrl_); // ลบไฟล์หลังบันทึกสำเร็จเท่านั้น
   const reason = txt(req.reason);
   addLog_(t.TicketID, 'แก้ไขข้อมูล (Admin)', u, from, patch.Status || from,
     (reason ? 'เหตุผล: ' + reason + ' | ' : '') + changes.join(' | ').slice(0, 45000));
@@ -1269,72 +1446,210 @@ function saveUser_(u, req) {
     Email: String(d.email || ''),
     Active: d.active === false ? 'FALSE' : 'TRUE'
   };
+  const actor = u.Username;
 
   if (existing) {
     if (norm_(existing.Username) === norm_(u.Username) && (rec.Role !== 'admin' || rec.Active === 'FALSE')) {
       throw new Error('ไม่สามารถลดสิทธิ์หรือปิดบัญชีของตัวเองได้');
     }
-    if (d.password) rec.PasswordHash = hash_(d.password, username);
+    if (d.password && String(d.password).length < PW_MIN_LENGTH) throw new Error('รหัสผ่านต้องมีอย่างน้อย ' + PW_MIN_LENGTH + ' ตัวอักษร');
+
+    const wasActive = isActive_(existing.Active);
+    const nowActive = rec.Active !== 'FALSE';
+    if (wasActive && !nowActive) {
+      // r16: การปิดใช้งานผ่านฟอร์มผู้ใช้ = ปิดบัญชี (เก็บข้อมูล) — ใช้กฎเดียวกับ deactivateUser
+      assertCanDeactivate_(readAll_(SHEETS.USERS), existing);
+      rec.DeactivatedAt = new Date();
+      rec.DeactivatedBy = actor;
+    }
+    if (!wasActive && nowActive) { rec.DeactivatedAt = ''; rec.DeactivatedBy = ''; }
+
+    const changes = [];
+    if (String(existing.FullName || '') !== rec.FullName) changes.push('ชื่อ: ' + (existing.FullName || '-') + ' → ' + rec.FullName);
+    if (String(existing.Role) !== rec.Role) changes.push('บทบาท: ' + existing.Role + ' → ' + rec.Role);
+    if (String(existing.Branch || '') !== rec.Branch) changes.push('สาขา: ' + (existing.Branch || '-') + ' → ' + rec.Branch);
+    if (wasActive !== nowActive) changes.push(nowActive ? 'เปิดใช้งาน' : 'ปิดบัญชี');
+
+    if (d.password) {
+      rec.PasswordHash = hash_(d.password, username);
+      rec.FailedLogins = 0;   // ตั้งรหัสใหม่ = ปลดล็อกบัญชีด้วย
+      rec.LockedUntil = '';
+      changes.push('ตั้งรหัสผ่านใหม่');
+    }
     updateRow_(SHEETS.USERS, existing._row, rec);
+    if (changes.length) addUserLog_(actor, 'แก้ไขผู้ใช้', username, changes.join(' | '));
     return { message: 'อัปเดตผู้ใช้ ' + username + ' แล้ว' };
   }
 
-  if (!d.password || String(d.password).length < 4) throw new Error('ผู้ใช้ใหม่ต้องตั้งรหัสผ่านอย่างน้อย 4 ตัวอักษร');
+  if (!d.password || String(d.password).length < PW_MIN_LENGTH) throw new Error('ผู้ใช้ใหม่ต้องตั้งรหัสผ่านอย่างน้อย ' + PW_MIN_LENGTH + ' ตัวอักษร');
   rec.PasswordHash = hash_(d.password, username);
   rec.CreatedAt = new Date();
+  rec.FailedLogins = 0;
+  rec.LockedUntil = '';
   appendObj_(SHEETS.USERS, rec);
+  addUserLog_(actor, 'เพิ่มผู้ใช้', username, 'บทบาท: ' + rec.Role + ' | สาขา: ' + rec.Branch);
   return { message: 'เพิ่มผู้ใช้ ' + username + ' แล้ว' };
 }
 
+/** r16: กฎก่อนปิดบัญชี — ห้ามปิด admin คนสุดท้าย และห้ามปิดช่างที่มีงาน Approved / In Progress ค้างอยู่ */
+function assertCanDeactivate_(users, target) {
+  if (String(target.Role) === 'admin') {
+    const activeAdmins = users.filter(x => String(x.Role) === 'admin' && isActive_(x.Active)).length;
+    if (activeAdmins <= 1) throw new Error('ไม่สามารถปิดบัญชี admin คนสุดท้ายของระบบได้');
+  }
+  const openJobs = readAll_(SHEETS.TICKETS).filter(t =>
+    norm_(t.Technician) === norm_(target.Username) && [ST.APPROVED, ST.IN_PROGRESS].indexOf(String(t.Status)) > -1);
+  if (openJobs.length) {
+    throw new Error('ผู้ใช้นี้มีงานค้าง ' + openJobs.length + ' รายการ (' + openJobs.map(t => t.TicketID).join(', ') +
+      ') กรุณามอบหมายงานให้ช่างคนอื่นก่อนปิดบัญชี');
+  }
+}
+
 /**
- * r14: ลบผู้ใช้ (admin เท่านั้น)
- * - ห้ามลบตัวเอง, ห้ามลบ admin คนสุดท้าย
- * - ห้ามลบถ้าผู้ใช้เป็นช่างที่มีงานสถานะ Approved / In Progress ค้างอยู่ (ต้องมอบหมายงานให้คนอื่นก่อน)
- * - เก็บข้อมูลพื้นฐานไว้ที่ DeletedUsers (ไม่เก็บรหัสผ่าน) และลบรูปโปรไฟล์ + รูประบุตัวตนออกจาก Drive
- * - ประวัติงานซ่อมที่ผู้ใช้เคยแจ้ง/ดำเนินการยังอยู่ (เก็บชื่อผู้ใช้เป็นข้อความ)
+ * r16: ปิดบัญชี (soft delete) — ไม่ลบแถวผู้ใช้ ประวัติงานซ่อมและรูปโปรไฟล์ยังอยู่
+ * - รูประบุตัวตน (IdPhotoURL) เก็บไว้ได้ไม่เกิน ID_RETENTION_DAYS วัน แล้วลบอัตโนมัติด้วย cleanupExpiredIdPhotos
+ * - เปิดใช้งานคืนได้ด้วย reactivateUser ก่อนรูปถูกลบ
  */
-function deleteUser_(u, req) {
+function deactivateUser_(u, req) {
   requireAdmin_(u);
   const username = norm_(req.username);
   const reason = String(req.reason || '').trim();
-  if (!username) throw new Error('ไม่พบชื่อผู้ใช้ที่จะลบ');
-  if (!reason) throw new Error('กรุณาระบุเหตุผลการลบ');
-  if (username === norm_(u.Username)) throw new Error('ไม่สามารถลบบัญชีของตัวเองได้');
+  if (!username) throw new Error('ไม่พบชื่อผู้ใช้ที่จะปิดบัญชี');
+  if (!reason) throw new Error('กรุณาระบุเหตุผลการปิดบัญชี');
+  if (username === norm_(u.Username)) throw new Error('ไม่สามารถปิดบัญชีของตัวเองได้');
 
   const users = readAll_(SHEETS.USERS);
   const target = users.find(x => norm_(x.Username) === username);
-  if (!target) throw new Error('ไม่พบผู้ใช้ ' + username + ' (อาจถูกลบไปแล้ว กรุณารีเฟรช)');
+  if (!target) throw new Error('ไม่พบผู้ใช้ ' + username + ' (กรุณารีเฟรช)');
+  if (!isActive_(target.Active)) throw new Error('บัญชีนี้ถูกปิดอยู่แล้ว');
+  assertCanDeactivate_(users, target);
 
-  if (String(target.Role) === 'admin') {
-    const activeAdmins = users.filter(x => String(x.Role) === 'admin' && isActive_(x.Active)).length;
-    if (activeAdmins <= 1) throw new Error('ไม่สามารถลบ admin คนสุดท้ายของระบบได้');
-  }
+  updateRow_(SHEETS.USERS, target._row, { Active: 'FALSE', DeactivatedAt: new Date(), DeactivatedBy: u.Username });
+  addUserLog_(u.Username, 'ปิดบัญชี', target.Username,
+    'เหตุผล: ' + reason + ' | รูประบุตัวตนจะถูกลบอัตโนมัติหลัง ' + ID_RETENTION_DAYS + ' วัน');
+  return { message: 'ปิดบัญชี ' + target.Username + ' แล้ว (ประวัติงานซ่อมยังอยู่ · รูประบุตัวตนจะถูกลบอัตโนมัติหลัง ' + ID_RETENTION_DAYS + ' วัน)' };
+}
 
-  const openJobs = readAll_(SHEETS.TICKETS).filter(t =>
-    norm_(t.Technician) === username && [ST.APPROVED, ST.IN_PROGRESS].indexOf(String(t.Status)) > -1);
-  if (openJobs.length) {
-    throw new Error('ผู้ใช้นี้มีงานค้าง ' + openJobs.length + ' รายการ (' + openJobs.map(t => t.TicketID).join(', ') +
-      ') กรุณามอบหมายงานให้ช่างคนอื่นก่อนลบ');
-  }
+/** r16: เปิดใช้งานบัญชีที่ถูกปิดอีกครั้ง (และปลดล็อกการใส่รหัสผิด) */
+function reactivateUser_(u, req) {
+  requireAdmin_(u);
+  const username = norm_(req.username);
+  const target = readAll_(SHEETS.USERS).find(x => norm_(x.Username) === username);
+  if (!target) throw new Error('ไม่พบผู้ใช้ ' + username + ' (กรุณารีเฟรช)');
+  if (isActive_(target.Active)) throw new Error('บัญชีนี้ใช้งานอยู่แล้ว');
 
-  // 1) เก็บสำเนาข้อมูลพื้นฐาน (ไม่เก็บรหัสผ่านและรูประบุตัวตน)
-  const now = new Date();
-  appendObj_(SHEETS.DELETED_USERS, {
-    Username: target.Username, FullName: target.FullName, Role: target.Role, Branch: target.Branch,
-    Department: target.Department, Email: target.Email, Active: target.Active, CreatedAt: target.CreatedAt,
-    LastLogin: target.LastLogin, DeletedAt: now, DeletedBy: u.FullName || u.Username, DeleteReason: reason
+  updateRow_(SHEETS.USERS, target._row, { Active: 'TRUE', DeactivatedAt: '', DeactivatedBy: '', FailedLogins: 0, LockedUntil: '' });
+  addUserLog_(u.Username, 'เปิดใช้งานบัญชี', target.Username, '');
+  return { message: 'เปิดใช้งานบัญชี ' + target.Username + ' แล้ว' };
+}
+
+/** r16: ประวัติการจัดการผู้ใช้ (admin) */
+function listUserLogs_(u, req) {
+  requireAdmin_(u);
+  const limit = Math.min(Number(req.limit) || 100, 300);
+  const logs = readAll_(SHEETS.USER_LOG)
+    .sort((a, b) => (toDate_(b.Timestamp) || 0) - (toDate_(a.Timestamp) || 0))
+    .slice(0, limit)
+    .map(clean_);
+  return { logs: logs };
+}
+
+/**
+ * ▶️ r16: ลบรูประบุตัวตนของบัญชีที่ปิดเกิน ID_RETENTION_DAYS วัน
+ * ถูกเรียกอัตโนมัติทุกวันโดย trigger (ตั้งด้วย installIdCleanupTrigger) หรือกด Run เองได้
+ */
+function cleanupExpiredIdPhotos() {
+  resetMemo_();
+  const cutoff = Date.now() - ID_RETENTION_DAYS * 864e5;
+  let purged = 0;
+  readAll_(SHEETS.USERS).forEach(x => {
+    if (isActive_(x.Active) || !String(x.IdPhotoURL || '')) return;
+    const at = toDate_(x.DeactivatedAt);
+    if (!at) { // ปิดบัญชีก่อนมีระบบนี้ — เริ่มนับวันตั้งแต่ตอนนี้
+      updateRow_(SHEETS.USERS, x._row, { DeactivatedAt: new Date() });
+      return;
+    }
+    if (at.getTime() > cutoff) return;
+    trashFileByUrl_(x.IdPhotoURL);
+    updateRow_(SHEETS.USERS, x._row, { IdPhotoURL: '' });
+    addUserLog_('ระบบ', 'ลบรูประบุตัวตนอัตโนมัติ', x.Username, 'ปิดบัญชีมาเกิน ' + ID_RETENTION_DAYS + ' วัน');
+    purged++;
+  });
+  Logger.log('✅ ลบรูประบุตัวตนที่หมดอายุแล้ว ' + purged + ' รายการ');
+  return purged;
+}
+
+/** ▶️ r16: ตั้ง trigger ให้ลบรูประบุตัวตนที่หมดอายุทุกวันเวลา 02:00 (กด Run หนึ่งครั้ง) */
+function installIdCleanupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'cleanupExpiredIdPhotos') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('cleanupExpiredIdPhotos').timeBased().everyDays(1).atHour(2).create();
+  Logger.log('✅ ตั้งเวลาลบรูประบุตัวตนอัตโนมัติทุกวัน 02:00 แล้ว');
+}
+
+/**
+ * r16: รายงานค่าใช้จ่าย (admin) — เฉพาะรายการที่กรอกค่าใช้จ่ายแล้ว
+ * filter: dateFrom, dateTo (YYYY-MM-DD), dateBy ('created' | 'completed'), branch, status, category
+ */
+function expenseReport_(u, req) {
+  requireAdmin_(u);
+  const f = req.filter || {};
+  const from = f.dateFrom ? new Date(f.dateFrom + 'T00:00:00+07:00') : null;
+  const to = f.dateTo ? new Date(f.dateTo + 'T23:59:59+07:00') : null;
+  const dateField = f.dateBy === 'completed' ? 'CompletedAt' : 'CreatedAt';
+
+  let list = readAll_(SHEETS.TICKETS).filter(t =>
+    t.Cost !== '' && t.Cost !== null && t.Cost !== undefined && !isNaN(Number(t.Cost)));
+  if (f.branch) list = list.filter(t => String(t.Branch) === String(f.branch));
+  if (f.status) list = list.filter(t => String(t.Status) === String(f.status));
+  if (f.category) list = list.filter(t => String(t.Category) === String(f.category));
+  list = list.filter(t => {
+    const d = toDate_(t[dateField]);
+    if (!d) return !from && !to;
+    return (!from || d >= from) && (!to || d <= to);
   });
 
-  // 2) ลบไฟล์รูปออกจาก Drive
-  trashFileByUrl_(target.ProfilePhotoURL);
-  trashFileByUrl_(target.IdPhotoURL);
+  const rows = list.map(t => ({
+    ticketId: String(t.TicketID),
+    date: isoOf_(toDate_(t[dateField]) || t.CreatedAt),
+    createdAt: isoOf_(t.CreatedAt),
+    completedAt: isoOf_(t.CompletedAt),
+    branch: String(t.Branch || '-'),
+    title: String(t.Title || ''),
+    category: String(t.Category || 'อื่นๆ'),
+    requester: String(t.Requester || t.Username || ''),
+    technician: String(t.TechnicianName || t.Technician || ''),
+    status: String(t.Status || ''),
+    cost: Math.round(Number(t.Cost) * 100) / 100
+  })).sort((a, b) => (toDate_(b.date) || 0) - (toDate_(a.date) || 0));
 
-  // 3) ลบแถวผู้ใช้ — session ของผู้ใช้นี้จะใช้งานไม่ได้ทันที (getSessionUser_ ไม่พบผู้ใช้)
-  sheet_(SHEETS.USERS).deleteRow(target._row);
-  delete MEMO.rows[SHEETS.USERS.name];
-  delete MEMO.photos;
+  const sum = rows.reduce((a, r) => a + r.cost, 0);
+  const group = keyFn => {
+    const m = {};
+    rows.forEach(r => {
+      const k = keyFn(r);
+      m[k] = m[k] || { name: k, amount: 0, count: 0 };
+      m[k].amount += r.cost;
+      m[k].count++;
+    });
+    return Object.keys(m).map(k => ({ name: k, amount: Math.round(m[k].amount * 100) / 100, count: m[k].count }))
+      .sort((a, b) => b.amount - a.amount);
+  };
 
-  return { message: 'ลบผู้ใช้ ' + target.Username + ' แล้ว (ประวัติเก็บไว้ที่ชีต DeletedUsers)' };
+  return {
+    rows: rows,
+    totals: {
+      amount: Math.round(sum * 100) / 100,
+      count: rows.length,
+      average: rows.length ? Math.round(sum / rows.length * 100) / 100 : 0
+    },
+    byBranch: group(r => r.branch),
+    byTechnician: group(r => r.technician || '(ยังไม่มอบหมายช่าง)'),
+    byCategory: group(r => r.category),
+    byMonth: group(r => Utilities.formatDate(toDate_(r.date) || new Date(), TZ, 'yyyy-MM')).sort((a, b) => a.name < b.name ? -1 : 1),
+    generatedAt: new Date().toISOString()
+  };
 }
 
 function saveBranch_(u, req) {

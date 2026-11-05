@@ -234,11 +234,8 @@
                         </div>
                     </div>
                     <div>
-                        <label class="lbl">แนบรูปภาพอุปกรณ์ที่ชำรุด</label>
-                        <input type="file" id="fImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
-                        <label class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer mt-2">📷 ถ่ายรูป
-                            <input type="file" id="fImageCam" accept="image/*" capture="environment" class="hidden" onchange="photoPicked(this)"></label>
-                        <img id="fPreview" class="hidden mt-2 max-h-48 rounded-lg border" alt="ตัวอย่างรูป">
+                        <label class="lbl">แนบรูปภาพอุปกรณ์ที่ชำรุด (แนบได้หลายรูป)</label>
+                        <div id="newPicker"></div>
                     </div>
                     <button id="submitBtn" class="btn w-full bg-sky-800 hover:bg-sky-900 text-white py-2.5 shadow-md">ส่งข้อมูลแจ้งซ่อม</button>
                 </form>
@@ -311,6 +308,33 @@
             </div>
         </div>
 
+        <!-- Expenses (admin, r16) -->
+        <div id="page-expenses" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">รายการค่าใช้จ่ายซ่อมบำรุง</h2>
+                <button class="btn bg-white border hover:bg-slate-50" onclick="exportExpenseCsv()">⬇ ส่งออก CSV</button>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                <div><label class="lbl">ตั้งแต่วันที่</label><input type="date" id="exFrom" class="inp"></div>
+                <div><label class="lbl">ถึงวันที่</label><input type="date" id="exTo" class="inp"></div>
+                <div><label class="lbl">อ้างอิงวันที่</label><select id="exBy" class="inp"><option value="completed">วันที่ปิดงาน</option><option value="created">วันที่แจ้ง</option></select></div>
+                <div><label class="lbl">สาขา</label><select id="exBranch" class="inp"></select></div>
+                <div><label class="lbl">หมวดหมู่</label><select id="exCategory" class="inp"></select></div>
+                <div><label class="lbl">สถานะ</label><select id="exStatus" class="inp"></select></div>
+                <div class="col-span-2 md:col-span-6 flex gap-2">
+                    <button class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="loadExpenses()">🔍 ค้นหา</button>
+                    <button class="btn bg-white border hover:bg-slate-50" onclick="resetExpenseFilter()">ล้างตัวกรอง</button>
+                </div>
+            </div>
+            <div id="exKpi" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="bg-white rounded-xl shadow-sm p-4"><h3 class="font-semibold text-sm mb-3">ตามสาขา</h3><div id="exBranchBox"></div></div>
+                <div class="bg-white rounded-xl shadow-sm p-4"><h3 class="font-semibold text-sm mb-3">ตามช่าง</h3><div id="exTechBox"></div></div>
+                <div class="bg-white rounded-xl shadow-sm p-4"><h3 class="font-semibold text-sm mb-3">ตามหมวดหมู่</h3><div id="exCatBox"></div></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4"><h3 class="font-semibold text-sm mb-3">รายการ</h3><div id="exRows"></div></div>
+        </div>
+
         <!-- Admin -->
         <div id="page-admin" class="page hidden space-y-6">
             <div class="bg-white rounded-xl shadow-sm p-4">
@@ -328,6 +352,13 @@
                         <tbody id="userTable"></tbody>
                     </table>
                 </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4">
+                <div class="flex items-center mb-3">
+                    <h2 class="text-lg font-semibold mr-auto">ประวัติการจัดการผู้ใช้ <span class="text-xs font-normal text-slate-500">(ล่าสุด 100 รายการ · ไม่บันทึกรหัสผ่าน)</span></h2>
+                    <button class="btn bg-white border hover:bg-slate-50" onclick="loadUserLogs()">รีเฟรช</button>
+                </div>
+                <div id="userLogBox"></div>
             </div>
             <div class="bg-white rounded-xl shadow-sm p-4">
                 <h2 class="text-lg font-semibold mb-3">สาขา</h2>
@@ -403,6 +434,7 @@ const NAV = [
     { id: 'jobs',      label: 'งานช่าง',           roles: ['technician', 'admin'], badge: true },
     { id: 'all',       label: 'งานซ่อมทั้งหมด',     roles: ['manager', 'admin'] },
     { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'manager', 'admin'] },
+    { id: 'expenses',  label: 'ค่าใช้จ่าย',          roles: ['admin'] },
     { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
 ];
 
@@ -701,9 +733,10 @@ const NAV_ICON = {
     all: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
     admin: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
     profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    expenses: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
     more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
 };
-const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', more: 'เพิ่มเติม' };
+const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', more: 'เพิ่มเติม' };
 const MOBILE_PRIORITY = ['dashboard', 'approvals', 'jobs', 'new', 'mine', 'all', 'profile', 'admin'];
 let moreItems = [];
 
@@ -746,7 +779,7 @@ function switchPage(name) {
     window.scrollTo(0, 0);
     if (!loaded[name]) {
         loaded[name] = true;
-        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile }[name] || (() => {}))();
+        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses }[name] || (() => {}))();
     }
 }
 
@@ -791,15 +824,68 @@ function resetNewForm() {
     $('fRequester').value = currentUser.fullName || '';
     if (currentUser.department) $('fDepartment').value = currentUser.department;
     if (!isAllBranch()) $('fBranch').value = currentUser.branch;
-    $('fPreview').classList.add('hidden');
+    clearPicks('new');
 }
 
-['fImage', 'fImageCam'].forEach(id => $(id).addEventListener('change', () => {
-    const f = pickedFile('fImage');
-    if (!f) { $('fPreview').classList.add('hidden'); return; }
-    $('fPreview').src = URL.createObjectURL(f);
-    $('fPreview').classList.remove('hidden');
-}));
+// ---------------- r16: รูปหลายรูปต่องาน (เลือกจากเครื่อง + ถ่ายรูป) ----------------
+// PICKS[key] = รูปที่เลือกไว้ในฟอร์ม (ยังไม่ส่ง) — ย่อขนาดแล้วตั้งแต่ตอนเลือก
+const PICKS = {};
+const PICK_MAX = {};
+function pickerHtml(key, max = 5, hint = '') {
+    PICK_MAX[key] = max;
+    PICKS[key] = PICKS[key] || [];
+    const btn = (label, cam) => `<label class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 cursor-pointer">${label}
+        <input type="file" accept="image/*" ${cam ? 'capture="environment"' : 'multiple'} class="hidden" onchange="pickMany('${key}', this)"></label>`;
+    return `<div>
+        <div class="flex flex-wrap gap-2">${btn('🖼️ เลือกรูป (เลือกได้หลายรูป)', false)}${btn('📷 ถ่ายรูป', true)}</div>
+        <div id="pk_${key}" class="flex flex-wrap gap-2 mt-2"></div>
+        <div class="text-xs text-slate-400 mt-1">${esc(hint || `เพิ่มได้อีกสูงสุด ${max} รูป · รูปจะถูกย่อขนาดอัตโนมัติ`)}</div>
+    </div>`;
+}
+async function pickMany(key, input) {
+    const files = [...input.files];
+    input.value = '';
+    if (!files.length) return;
+    const list = PICKS[key] || (PICKS[key] = []);
+    const max = PICK_MAX[key] ?? 5;
+    for (const f of files) {
+        if (list.length >= max) { toast(max ? `เลือกรูปได้สูงสุด ${max} รูป` : 'ถึงจำนวนรูปสูงสุดของรายการนี้แล้ว', 'warn'); break; }
+        try {
+            const c = await compressImage(f);
+            list.push({ name: c.name, type: c.type, base64: c.base64, preview: c.base64 });
+        } catch (e) { toast('❌ ' + e.message, 'err'); }
+    }
+    renderPicks(key);
+}
+function renderPicks(key) {
+    const el = $('pk_' + key);
+    if (!el) return;
+    el.innerHTML = (PICKS[key] || []).map((p, i) => `
+        <div class="relative">
+            <img src="${p.preview}" alt="" class="w-16 h-16 object-cover rounded-lg border">
+            <button type="button" onclick="removePick('${key}', ${i})" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs leading-none">×</button>
+        </div>`).join('');
+}
+function removePick(key, i) { (PICKS[key] || []).splice(i, 1); renderPicks(key); }
+/** อ่านรูปที่เลือกไว้เพื่อส่งขึ้นเซิร์ฟเวอร์ (ยังไม่ล้าง — ล้างเมื่อบันทึกสำเร็จเท่านั้น) */
+function peekPicks(key) { return (PICKS[key] || []).map(p => ({ name: p.name, type: p.type, base64: p.base64 })); }
+function clearPicks(key) { PICKS[key] = []; renderPicks(key); }
+$('newPicker').innerHTML = pickerHtml('new', 5);
+
+function photosOfKind(t, kind) { return (t.photos || []).filter(p => p.kind === kind).length; }
+
+/** แสดงรูปทั้งหมดของงาน (ก่อนซ่อม / หลังซ่อม) พร้อมจำนวน */
+function photoGalleryHtml(t) {
+    const photos = t.photos || [];
+    const group = (kind, label) => {
+        const list = photos.filter(p => p.kind === kind);
+        if (!list.length) return `<div><div class="text-xs text-slate-500 mb-1">${label}</div>
+            <div class="text-xs text-slate-400 border rounded-lg p-4 text-center">— ไม่มีรูป —</div></div>`;
+        return `<div><div class="text-xs text-slate-500 mb-1">${label} (${list.length} รูป)</div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${list.map(p => gimg(p.url, 'w-full h-32 object-contain bg-slate-50 rounded-lg border')).join('')}</div></div>`;
+    };
+    return `<div class="grid grid-cols-1 gap-3 mt-3">${group('before', 'รูปก่อนซ่อม')}${group('after', 'รูปหลังซ่อม')}</div>`;
+}
 
 // ---------------- เลือกรูป: ถ่ายรูป (กล้อง) หรือเลือกจากเครื่อง ----------------
 // ช่องถ่ายรูปคือ <input id="{id}Cam" capture> ควบคู่กับช่องเดิม <input id="{id}"> — ใช้ตัวที่ผู้ใช้เลือกล่าสุด
@@ -842,7 +928,6 @@ $('repairForm').addEventListener('submit', async (e) => {
     const btn = $('submitBtn');
     setBusy(btn, true, 'กำลังบันทึกข้อมูล...');
     try {
-        const file = pickedFile('fImage');
         const ticket = {
             requester: $('fRequester').value.trim(),
             branch: $('fBranch').value,
@@ -852,7 +937,7 @@ $('repairForm').addEventListener('submit', async (e) => {
             title: $('fTitle').value.trim(),
             description: $('fDescription').value.trim(),
             priority: document.querySelector('input[name="priority"]:checked').value,
-            image: file ? await compressImage(file) : null
+            images: peekPicks('new')
         };
         const r = await api('createTicket', { ticket });
         if (r.warning) toast(`${r.message} (รหัส: ${r.ticketId}) — ⚠️ ${r.warning}`, 'warn');
@@ -877,7 +962,11 @@ function avatarHtml(name, url, cls = 'w-9 h-9') {
 }
 
 function ticketCard(t) {
-    const img = t.ImageURL ? gimg(t.ImageURL, 'w-16 h-16 object-cover rounded-lg border shrink-0') : '';
+    // r16: แสดงรูปแรก (ก่อนซ่อม ถ้ามี) + จำนวนรูปทั้งหมดของงาน
+    const photos = t.photos || [];
+    const first = photos.find(p => p.kind === 'before') || photos[0];
+    const img = first ? `<div class="relative w-16 h-16 shrink-0">${gimg(first.url, 'w-16 h-16 object-cover rounded-lg border')}${photos.length > 1
+        ? `<span class="absolute bottom-0.5 right-0.5 text-[10px] leading-none bg-black/60 text-white rounded px-1 py-0.5">📷${photos.length}</span>` : ''}</div>` : '';
     return `
     <button onclick="openTicket('${esc(t.TicketID)}')" class="text-left w-full bg-white rounded-xl shadow-sm p-4 hover:shadow-md hover:ring-1 hover:ring-sky-200 transition flex gap-3">
         ${img}
@@ -982,6 +1071,89 @@ async function loadAll() {
 }
 $('allQ').addEventListener('keydown', e => { if (e.key === 'Enter') loadAll(); });
 
+// ---------------- r16: รายงานค่าใช้จ่าย (admin) ----------------
+let expData = null;
+let expFilled = false, expDefaulted = false;
+const baht = v => '฿' + Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function fillExpenseFilters() {
+    if (expFilled) return;
+    expFilled = true;
+    $('exBranch').innerHTML = `<option value="">ทุกสาขา</option>` + branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
+    $('exCategory').innerHTML = `<option value="">ทุกหมวดหมู่</option>` + CATEGORIES.map(c => `<option value="${esc(c[0])}">${esc(c[1])}</option>`).join('');
+    $('exStatus').innerHTML = `<option value="">ทุกสถานะ</option>` + Object.keys(STATUS).map(k => `<option value="${esc(k)}">${esc(STATUS[k].th)}</option>`).join('');
+}
+function expenseFilter() {
+    return { dateFrom: $('exFrom').value, dateTo: $('exTo').value, dateBy: $('exBy').value,
+        branch: $('exBranch').value, category: $('exCategory').value, status: $('exStatus').value };
+}
+function resetExpenseFilter() {
+    const now = new Date();
+    $('exFrom').value = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+    $('exTo').value = ymd(now);
+    $('exBy').value = 'completed';
+    $('exBranch').value = ''; $('exCategory').value = ''; $('exStatus').value = '';
+    loadExpenses();
+}
+async function loadExpenses() {
+    fillExpenseFilters();
+    if (!expDefaulted) { expDefaulted = true; resetExpenseFilter(); return; }
+    ['exKpi', 'exBranchBox', 'exTechBox', 'exCatBox', 'exRows'].forEach(id => $(id).innerHTML = loadingHtml());
+    try {
+        expData = await api('expenseReport', { filter: expenseFilter() });
+        renderExpenses();
+    } catch (e) { $('exRows').innerHTML = emptyHtml(e.message); }
+}
+function renderExpenses() {
+    const d = expData;
+    const kpi = (label, value, sub) => `<div class="bg-white rounded-xl shadow-sm p-4">
+        <div class="text-xs text-slate-500">${label}</div><div class="text-2xl font-semibold mt-1">${value}</div>
+        <div class="text-xs text-slate-400 mt-0.5">${sub}</div></div>`;
+    const maxOne = Math.max(0, ...d.rows.map(r => r.cost));
+    $('exKpi').innerHTML = kpi('ค่าใช้จ่ายรวม', baht(d.totals.amount), `${d.totals.count} รายการ`)
+        + kpi('เฉลี่ยต่อรายการ', baht(d.totals.average), 'จากรายการที่กรอกค่าใช้จ่าย')
+        + kpi('รายการที่สูงสุด', baht(maxOne), 'ค่าใช้จ่ายต่อ 1 รายการ');
+    const bars = list => {
+        if (!list.length) return '<div class="text-sm text-slate-400">ไม่มีข้อมูล</div>';
+        const max = Math.max(...list.map(x => x.amount), 1);
+        return list.map(x => `<div class="mb-3 text-sm">
+            <div class="flex justify-between gap-2"><span class="truncate">${esc(x.name)}</span>
+                <span class="whitespace-nowrap font-medium">${baht(x.amount)} <span class="text-xs text-slate-400">(${x.count})</span></span></div>
+            <div class="h-1.5 bg-slate-100 rounded mt-1"><div class="h-1.5 bg-sky-700 rounded" style="width:${Math.round(x.amount / max * 100)}%"></div></div>
+        </div>`).join('');
+    };
+    $('exBranchBox').innerHTML = bars(d.byBranch);
+    $('exTechBox').innerHTML = bars(d.byTechnician);
+    $('exCatBox').innerHTML = bars(d.byCategory);
+    $('exRows').innerHTML = d.rows.length ? `<div class="overflow-x-auto"><table class="w-full text-sm">
+        <thead class="bg-slate-50 text-slate-600 text-left"><tr>
+            <th class="p-2">รหัส</th><th class="p-2">วันที่</th><th class="p-2">สาขา</th><th class="p-2">หัวข้อ</th>
+            <th class="p-2">ช่าง</th><th class="p-2">สถานะ</th><th class="p-2 text-right">ค่าใช้จ่าย</th></tr></thead>
+        <tbody>${d.rows.map(r => `<tr class="border-t hover:bg-sky-50 cursor-pointer" onclick="openTicket('${esc(r.ticketId)}')">
+            <td class="p-2 font-mono text-xs">${esc(r.ticketId)}</td>
+            <td class="p-2 whitespace-nowrap">${fmtDate(r.date, false)}</td>
+            <td class="p-2">${esc(r.branch)}</td>
+            <td class="p-2">${esc(r.title)}</td>
+            <td class="p-2">${esc(r.technician || '-')}</td>
+            <td class="p-2">${statusBadge(r.status)}</td>
+            <td class="p-2 text-right whitespace-nowrap font-medium">${baht(r.cost)}</td></tr>`).join('')}
+        </tbody>
+        <tfoot><tr class="border-t-2 font-semibold"><td class="p-2" colspan="6">รวม ${d.totals.count} รายการ</td><td class="p-2 text-right">${baht(d.totals.amount)}</td></tr></tfoot>
+    </table></div>` : emptyHtml('ไม่พบรายการตามตัวกรอง');
+}
+function exportExpenseCsv() {
+    if (!expData || !expData.rows.length) { toast('ไม่มีข้อมูลให้ส่งออก', 'err'); return; }
+    const cols = ['ticketId', 'date', 'branch', 'title', 'category', 'requester', 'technician', 'status', 'cost'];
+    const head = ['รหัส', 'วันที่', 'สาขา', 'หัวข้อ', 'หมวดหมู่', 'ผู้แจ้ง', 'ช่าง', 'สถานะ', 'ค่าใช้จ่าย (บาท)'];
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '﻿' + [head.join(','), ...expData.rows.map(r => cols.map(c => q(c === 'date' ? fmtDate(r[c], false) : r[c])).join(','))].join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `RST-FixPoint_ค่าใช้จ่าย_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+}
+
 function exportCsv() {
     if (!allData.length) { toast('ไม่มีข้อมูลให้ Export', 'err'); return; }
     const cols = ['TicketID', 'CreatedAt', 'Branch', 'Department', 'Requester', 'Location', 'Category', 'Title', 'Description',
@@ -1024,16 +1196,13 @@ async function openTicket(id) {
     try {
         const { ticket: t, logs } = await api('getTicket', { ticketId: id });
         currentTicket = t;
+        PICKS.act = []; // r16: ล้างรูปที่เลือกค้างจากรายการก่อนหน้า
         let techOpts = '';
         if (hasRole('manager', 'admin') && ['Pending', 'Approved', 'In Progress'].includes(t.Status)) {
             const techs = (await getTechnicians()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
             techOpts = techs.map(x => `<option value="${esc(x.username)}" ${x.username === t.Technician ? 'selected' : ''}>${esc(x.fullName)} (${esc(x.branch)})</option>`).join('');
         }
         const row = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div class="text-sm">${v}</div></div>`;
-        const img = (url, label) => url ? `<div>
-            <div class="text-xs text-slate-500 mb-1">${label}</div>
-            ${gimg(url, 'w-full h-48 object-contain bg-slate-50 rounded-lg border')}</div>` : '';
-
         openModal(`
             <div class="pr-8">
                 <div class="flex flex-wrap items-center gap-2 mb-1">
@@ -1066,7 +1235,7 @@ async function openTicket(id) {
             ${t.ApproverSignURL ? `<div class="mt-3"><div class="text-xs text-slate-500 mb-1">ลายเซ็นผู้อนุมัติ${t.ApprovedAt ? ' · ' + fmtDate(t.ApprovedAt) : ''}</div>${gimg(t.ApproverSignURL, 'h-24 w-60 object-contain bg-white rounded-lg border')}</div>` : ''}
             ${t.ManagerNote ? `<div class="mt-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3"><b>หมายเหตุผู้จัดการ:</b> ${esc(t.ManagerNote)}</div>` : ''}
             ${t.TechNote ? `<div class="mt-3 text-sm bg-indigo-50 border border-indigo-200 rounded-lg p-3"><b>บันทึกช่าง:</b> ${esc(t.TechNote)}</div>` : ''}
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">${img(t.ImageURL, 'รูปก่อนซ่อม')}${img(t.AfterImageURL, 'รูปหลังซ่อม')}</div>
+            ${photoGalleryHtml(t)}
             ${evaluationHtml(t)}
             ${actionPanel(t, techOpts)}
             <div class="mt-5">
@@ -1127,8 +1296,8 @@ function actionPanel(t, techOpts) {
             <h4 class="font-semibold text-sm">อัปเดตงานซ่อม</h4>
             <textarea id="actNote" rows="2" class="inp" placeholder="รายละเอียดการซ่อม / ความคืบหน้า / อะไหล่ที่ใช้"></textarea>
             <div><label class="lbl">ค่าใช้จ่ายในการซ่อม (บาท)</label><input type="number" id="actCost" min="0" step="0.01" class="inp" value="${t.Cost !== undefined && t.Cost !== '' ? esc(t.Cost) : ''}" placeholder="ไม่บังคับ"></div>
-            <div><label class="lbl">รูปหลังซ่อม (แนบเมื่อปิดงาน)</label>
-                <input type="file" id="actImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700">${camButtonHtml('actImage')}</div>
+            <div><label class="lbl">รูปหลังซ่อม (แนบเมื่อปิดงาน ไม่บังคับ · แนบได้หลายรูป)</label>
+                ${pickerHtml('act', Math.max(0, 6 - photosOfKind(t, 'after')))}</div>
             <div class="flex gap-2">
                 <button class="btn flex-1 bg-white border hover:bg-slate-50" onclick="doAction(this,'updateProgress','${esc(t.TicketID)}')">บันทึกความคืบหน้า</button>
                 <button class="btn flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onclick="doAction(this,'completeTicket','${esc(t.TicketID)}')">✓ ปิดงาน (เสร็จสิ้น)</button>
@@ -1158,12 +1327,14 @@ async function doAction(btn, action, ticketId) {
 
     setBusy(btn, true);
     try {
-        if (action === 'completeTicket' && pickedFile('actImage')) {
-            payload.image = await compressImage(pickedFile('actImage'));
+        if (action === 'completeTicket') {
+            const imgs = peekPicks('act');
+            if (imgs.length) payload.images = imgs;
         }
         const r = await api(action, payload);
         if (r.warning) toast(`${r.message || 'บันทึกเรียบร้อย'} — ⚠️ ${r.warning}`, 'warn');
         else toast(r.message || 'บันทึกเรียบร้อย');
+        clearPicks('act');
         refreshAfterChange();
         openTicket(ticketId);
     } catch (e) {
@@ -1174,11 +1345,31 @@ async function doAction(btn, action, ticketId) {
 
 // โหลดรายการในหน้าที่เปิดอยู่ใหม่ และให้หน้าอื่นโหลดใหม่เมื่อเปิด
 function refreshAfterChange() {
-    ['mine', 'approvals', 'jobs', 'all', 'dashboard'].forEach(k => loaded[k] = false);
+    ['mine', 'approvals', 'jobs', 'all', 'dashboard', 'expenses'].forEach(k => loaded[k] = false);
     const visible = document.querySelector('.page:not(.hidden)').id.replace('page-', '');
     loaded[visible] = true;
-    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll }[visible] || (() => {}))();
+    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, expenses: loadExpenses }[visible] || (() => {}))();
     refreshBadges();
+}
+
+// ---------------- r16: รูปที่มีอยู่แล้วในรายการ (แก้ไขโดย Admin) ----------------
+let EDIT_REMOVE = [];
+function editPhotosHtml(t) {
+    const photos = t.photos || [];
+    if (!photos.length) return '<div class="text-xs text-slate-400">ยังไม่มีรูปในรายการนี้</div>';
+    return `<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">${photos.map(p => `
+        <button type="button" data-url="${esc(p.url)}" onclick="toggleEditRemove(this)" class="relative rounded-lg border-2 border-transparent overflow-hidden" title="แตะเพื่อเลือกลบ">
+            ${gimg(p.url, 'w-full h-20 object-cover bg-slate-50')}
+            <span class="absolute bottom-0.5 left-0.5 text-[10px] px-1 rounded text-white ${p.kind === 'before' ? 'bg-sky-700' : 'bg-emerald-700'}">${p.kind === 'before' ? 'ก่อน' : 'หลัง'}</span>
+            <span class="rm-mark hidden absolute inset-0 bg-rose-600/70 text-white text-xs font-semibold flex items-center justify-center">จะลบ</span>
+        </button>`).join('')}</div>
+        <div class="text-xs text-slate-500 mt-1">แตะรูปเพื่อเลือกลบ (แตะซ้ำเพื่อยกเลิก) — จะมีผลเมื่อกดบันทึกการแก้ไข</div>`;
+}
+function toggleEditRemove(btn) {
+    const url = btn.dataset.url;
+    const i = EDIT_REMOVE.indexOf(url);
+    if (i > -1) EDIT_REMOVE.splice(i, 1); else EDIT_REMOVE.push(url);
+    btn.querySelector('.rm-mark').classList.toggle('hidden', i > -1);
 }
 
 // ---------------- ประเมินช่าง (r12) ----------------
@@ -1236,6 +1427,9 @@ async function openEditTicket() {
     let techs = [];
     try { techs = await getTechnicians(); } catch (e) { /* แสดงเฉพาะค่าเดิม */ }
     const techList = withCur(techs.map(x => [x.username, `${x.fullName} (${x.branch})`]), t.Technician);
+    EDIT_REMOVE = [];
+    PICKS.eBefore = [];
+    PICKS.eAfter = [];
 
     openModal(`
         <h3 class="text-lg font-semibold">แก้ไขรายการแจ้งซ่อม <span class="font-mono text-sm text-slate-500">${esc(t.TicketID)}</span></h3>
@@ -1255,11 +1449,9 @@ async function openEditTicket() {
             <div class="md:col-span-2"><label class="lbl">ช่างผู้รับผิดชอบ</label><select id="eTechnician" class="inp"><option value="">-- ไม่ระบุ --</option>${techList.map(x => opt(x[0], x[1], t.Technician)).join('')}</select></div>
             <div><label class="lbl">หมายเหตุผู้จัดการ</label><textarea id="eManagerNote" rows="2" class="inp">${esc(t.ManagerNote)}</textarea></div>
             <div><label class="lbl">บันทึกช่าง</label><textarea id="eTechNote" rows="2" class="inp">${esc(t.TechNote)}</textarea></div>
-            <div class="md:col-span-2"><label class="lbl">เปลี่ยนรูปก่อนซ่อม (ไม่บังคับ)</label>
-                <input type="file" id="eImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700">${camButtonHtml('eImage')}</div>
-            <div class="md:col-span-2"><label class="lbl">เพิ่ม / เปลี่ยนรูปหลังซ่อม (ไม่บังคับ)</label>
-                <input type="file" id="eAfterImage" accept="image/*" onchange="photoPicked(this)" class="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700">${camButtonHtml('eAfterImage')}
-                ${t.AfterImageURL ? '<div class="text-xs text-slate-500 mt-1">มีรูปหลังซ่อมอยู่แล้ว — เลือกไฟล์ใหม่เพื่อเปลี่ยน</div>' : '<div class="text-xs text-slate-400 mt-1">ยังไม่มีรูปหลังซ่อม</div>'}</div>
+            <div class="md:col-span-2"><label class="lbl">รูปภาพในรายการ (แตะเพื่อเลือกลบ)</label>${editPhotosHtml(t)}</div>
+            <div class="md:col-span-2"><label class="lbl">เพิ่มรูปก่อนซ่อม (ไม่บังคับ)</label>${pickerHtml('eBefore', Math.max(0, 6 - photosOfKind(t, 'before')))}</div>
+            <div class="md:col-span-2"><label class="lbl">เพิ่มรูปหลังซ่อม (ไม่บังคับ)</label>${pickerHtml('eAfter', Math.max(0, 6 - photosOfKind(t, 'after')))}</div>
             <div><label class="lbl">ค่าใช้จ่าย (บาท)</label><input id="eCost" type="number" min="0" step="0.01" class="inp" value="${t.Cost !== undefined && t.Cost !== '' ? esc(t.Cost) : ''}"></div>
             <div class="md:col-span-2"><label class="lbl">เหตุผลการแก้ไข (แนะนำให้ระบุ)</label><input id="eReason" class="inp" placeholder="เช่น ผู้แจ้งเลือกสาขาผิด"></div>
             <div class="md:col-span-2 flex gap-2 mt-2">
@@ -1273,8 +1465,6 @@ async function openEditTicket() {
         const btn = e.submitter;
         setBusy(btn, true, 'กำลังบันทึก...');
         try {
-            const file = pickedFile('eImage');
-            const afterFile = pickedFile('eAfterImage');
             const r = await api('updateTicket', {
                 ticketId: t.TicketID,
                 reason: $('eReason').value.trim(),
@@ -1283,11 +1473,14 @@ async function openEditTicket() {
                     category: $('eCategory').value, location: $('eLocation').value.trim(), title: $('eTitle').value.trim(),
                     description: $('eDescription').value.trim(), priority: $('ePriority').value, status: $('eStatus').value,
                     technician: $('eTechnician').value, managerNote: $('eManagerNote').value.trim(), techNote: $('eTechNote').value.trim(), cost: $('eCost').value,
-                    image: file ? await compressImage(file) : null,
-                    afterImage: afterFile ? await compressImage(afterFile) : null
+                    removePhotos: [...EDIT_REMOVE],
+                    addBefore: peekPicks('eBefore'),
+                    addAfter: peekPicks('eAfter')
                 }
             });
             toast(r.warning ? `${r.message} — ⚠️ ${r.warning}` : r.message, r.warning ? 'warn' : 'ok');
+            EDIT_REMOVE = [];
+            clearPicks('eBefore'); clearPicks('eAfter');
             refreshAfterChange();
             openTicket(t.TicketID);
         } catch (err) { toast('❌ ' + err.message, 'err'); setBusy(btn, false); }
@@ -1484,7 +1677,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r15';
+const EXPECTED_BACKEND = 'r16';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -1593,7 +1786,10 @@ async function doPrint(ids, btn) {
     setBusy(btn, true, 'กำลังเตรียมเอกสาร...');
     try {
         const r = await api('printTickets', { ticketIds: ids, withImages: opts.images });
-        $('printArea').innerHTML = r.items.map(it => workOrderHtml(Object.assign({}, it.ticket, { signImg: it.signImg, beforeImg: it.beforeImg, afterImg: it.afterImg, requesterImg: it.requesterImg }), it.logs, r, opts)).join('');
+        $('printArea').innerHTML = r.items.map(it => workOrderHtml(Object.assign({}, it.ticket, {
+            signImg: it.signImg, requesterImg: it.requesterImg,
+            beforeImgs: it.beforeImgs || [], afterImgs: it.afterImgs || []
+        }), it.logs, r, opts)).join('');
         await waitImages($('printArea'), 10000);
         closeModal();
         window.print();
@@ -1622,9 +1818,6 @@ function durationText(a, b) {
 function workOrderHtml(t, logs, meta, opts) {
     const v = x => esc(x || '-');
     const st = STATUS[t.Status] || { th: t.Status };
-    const img = (url, label, data) => `<td style="width:50%;text-align:center;height:200px">
-        <div style="font-size:11px;color:#475569;margin-bottom:4px">${label}</div>
-        ${url ? (data ? `<img src="${data}" style="max-width:100%;max-height:180px;object-fit:contain">` : '<span style="color:#94a3b8">(โหลดรูปไม่ได้)</span>') : '<span style="color:#94a3b8">— ไม่มีรูป —</span>'}</td>`;
     const sign = (label, imgData, name, date) => `<div style="flex:1;text-align:center;font-size:11px">
         <div style="height:46px;display:flex;align-items:flex-end;justify-content:center">${imgData ? `<img src="${imgData}" style="max-height:44px;max-width:100%">` : ''}</div>
         <div>ลงชื่อ ${imgData ? '' : '..................................................'}</div>
@@ -1671,9 +1864,9 @@ function workOrderHtml(t, logs, meta, opts) {
             <tr><th>บันทึกการซ่อม</th><td colspan="3" style="height:44px;white-space:pre-line">${v(t.TechNote)}</td></tr>
         </table>
 
-        ${opts.images && (t.ImageURL || t.AfterImageURL) ? `
+        ${opts.images && ((t.beforeImgs || []).length || (t.afterImgs || []).length) ? `
         <div class="sec">5. รูปภาพประกอบ</div>
-        <table><tr>${img(t.ImageURL, 'ก่อนซ่อม', t.beforeImg)}${img(t.AfterImageURL, 'หลังซ่อม', t.afterImg)}</tr></table>` : ''}
+        ${printPhotoGroup('ก่อนซ่อม', t.beforeImgs)}${printPhotoGroup('หลังซ่อม', t.afterImgs)}` : ''}
 
         ${opts.history && logs.length ? `
         <div class="sec">ประวัติการดำเนินงาน</div>
@@ -1688,6 +1881,15 @@ function workOrderHtml(t, logs, meta, opts) {
             <span>พิมพ์โดย ${esc(meta.printedBy)} เมื่อ ${fmtDate(meta.printedAt)}</span><span>RST FixPoint</span>
         </div>
     </div>`;
+}
+
+/** r16: กลุ่มรูปในใบแจ้งซ่อม (รองรับหลายรูป) */
+function printPhotoGroup(label, datas) {
+    if (!datas || !datas.length) return `<div style="font-size:11px;color:#94a3b8;margin:4px 0">${label}: — ไม่มีรูป —</div>`;
+    return `<div style="font-size:11px;color:#475569;margin:6px 0 3px">${label} (${datas.length} รูป)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${datas.map(d => d
+            ? `<img src="${d}" style="width:32%;max-height:170px;object-fit:contain;border:1px solid #e2e8f0">`
+            : '<span style="width:32%;text-align:center;color:#94a3b8;font-size:11px">(โหลดรูปไม่ได้)</span>').join('')}</div>`;
 }
 
 function selectedIds() { return [...new Set([...document.querySelectorAll('#allTable .rowChk:checked')].map(c => c.value))]; }
@@ -1726,6 +1928,8 @@ async function loadPhotoPanel(username, prefix) {
     } catch (e) { box.innerHTML = emptyHtml(e.message); }
 }
 
+const ID_RETENTION_DAYS_UI = 30; // ต้องตรงกับ ID_RETENTION_DAYS ใน Code.gs
+
 function photoPanelHtml(p, prefix) {
     const u = esc(p.username);
     const avatar = p.profilePhotoUrl
@@ -1753,7 +1957,7 @@ function photoPanelHtml(p, prefix) {
             <div class="lbl mb-0">รูประบุตัวตน (บัตรพนักงาน / บัตรประชาชน) <span class="text-xs font-normal text-slate-500">— ไม่บังคับ</span></div>
             ${idImg}
             <input type="file" id="${prefix}IdFile" accept="image/*" onchange="photoPicked(this)" class="${fileCls}">${camButtonHtml(prefix + 'IdFile')}
-            <p class="text-xs text-slate-500">รูปนี้เก็บแบบส่วนตัว ไม่สร้างลิงก์แชร์ และแสดงให้เฉพาะเจ้าของและ Admin เท่านั้น</p>
+            <p class="text-xs text-slate-500">รูปนี้เก็บแบบส่วนตัว ไม่สร้างลิงก์แชร์ และแสดงให้เฉพาะเจ้าของและ Admin เท่านั้น · หากบัญชีถูกปิด รูปนี้จะถูกลบอัตโนมัติหลัง ${ID_RETENTION_DAYS_UI} วัน</p>
         </div>
         <div class="flex flex-wrap gap-2">
             <button class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="savePhotos('${prefix}', '${u}', this)">💾 บันทึกรูป</button>
@@ -1801,30 +2005,70 @@ async function loadAdmin() {
         usersData = u.users;
         renderUsers();
         renderBranches(b.branches);
+        loadUserLogs();
     } catch (e) { $('userTable').innerHTML = `<tr><td colspan="8" class="p-4 text-rose-600">${esc(e.message)}</td></tr>`; }
+}
+
+/** r16: ประวัติการจัดการผู้ใช้ (admin) */
+async function loadUserLogs() {
+    const box = $('userLogBox');
+    if (!box) return;
+    box.innerHTML = loadingHtml();
+    try {
+        const r = await api('listUserLogs', { limit: 100 });
+        box.innerHTML = r.logs.length ? `<div class="overflow-x-auto"><table class="w-full text-xs">
+            <thead class="bg-slate-50 text-slate-600 text-left"><tr>
+                <th class="p-2">วันเวลา</th><th class="p-2">ผู้ดำเนินการ</th><th class="p-2">การกระทำ</th><th class="p-2">ผู้ใช้เป้าหมาย</th><th class="p-2">รายละเอียด</th></tr></thead>
+            <tbody>${r.logs.map(l => `<tr class="border-t align-top">
+                <td class="p-2 whitespace-nowrap">${fmtDate(l.Timestamp)}</td>
+                <td class="p-2">${esc(l.Actor)}</td>
+                <td class="p-2 whitespace-nowrap">${esc(l.Action)}</td>
+                <td class="p-2 font-mono">${esc(l.Target)}</td>
+                <td class="p-2">${esc(l.Detail)}</td></tr>`).join('')}</tbody></table></div>`
+            : emptyHtml('ยังไม่มีประวัติ');
+    } catch (e) { box.innerHTML = emptyHtml(e.message); }
+}
+
+/** ข้อความแจ้งวันที่รูประบุตัวตนจะถูกลบ (เฉพาะบัญชีที่ปิดแล้ว) */
+function purgeNote(u) {
+    return u.idPurgeAt ? `<div class="text-[11px] text-amber-700">รูประบุตัวตนจะถูกลบ ${fmtDate(u.idPurgeAt, false)}</div>` : '';
 }
 
 function renderUsers() {
     $('userCards').innerHTML = usersData.map((u, i) => `
-        <button onclick="openUserForm(${i})" class="text-left w-full border rounded-xl p-3 flex items-center gap-3 ${u.active ? '' : 'opacity-60'}">
+        <button onclick="openUserForm(${i})" class="text-left w-full border rounded-xl p-3 flex items-center gap-3 ${u.active ? '' : 'opacity-70 bg-slate-50'}">
             <div class="w-10 h-10 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-semibold shrink-0">${esc((u.fullName || u.username).slice(0, 1))}</div>
             <div class="min-w-0 flex-1">
                 <div class="font-medium truncate">${esc(u.fullName)} <span class="text-xs font-mono text-slate-500">@${esc(u.username)}</span></div>
-                <div class="text-xs text-slate-500">${esc(ROLE_TH[u.role] || u.role)} · ${esc(u.branch.toUpperCase() === 'ALL' ? 'ทุกสาขา' : u.branch)}${u.active ? '' : ' · ปิดใช้งาน'}</div>
+                <div class="text-xs text-slate-500">${esc(ROLE_TH[u.role] || u.role)} · ${esc(u.branch.toUpperCase() === 'ALL' ? 'ทุกสาขา' : u.branch)}${u.active ? '' : ' · <span class="text-slate-600 font-medium">ปิดบัญชี</span>'}</div>
+                ${purgeNote(u)}
             </div>
             <span class="text-sky-700 text-sm">แก้ไข</span>
         </button>`).join('');
     $('userTable').innerHTML = usersData.map((u, i) => `
-        <tr class="border-t">
+        <tr class="border-t ${u.active ? '' : 'bg-slate-50'}">
             <td class="p-3 font-mono text-xs">${esc(u.username)}</td>
             <td class="p-3">${esc(u.fullName)}</td>
             <td class="p-3">${esc(ROLE_TH[u.role] || u.role)}</td>
             <td class="p-3">${esc(u.branch.toUpperCase() === 'ALL' ? 'ทุกสาขา' : u.branch)}</td>
             <td class="p-3">${esc(u.department)}</td>
-            <td class="p-3">${u.active ? '<span class="text-emerald-700">ใช้งาน</span>' : '<span class="text-slate-400">ปิดใช้งาน</span>'}</td>
+            <td class="p-3">${u.active ? '<span class="text-emerald-700">ใช้งาน</span>' : `<span class="text-slate-600">ปิดบัญชี</span>${u.deactivatedAt ? `<div class="text-[11px] text-slate-400">เมื่อ ${fmtDate(u.deactivatedAt, false)}</div>` : ''}${purgeNote(u)}`}</td>
             <td class="p-3 text-xs">${fmtDate(u.lastLogin)}</td>
-            <td class="p-3 whitespace-nowrap space-x-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button>${u.username !== currentUser.username ? `<button class="text-rose-600 hover:underline" onclick="openDeleteUserDialog('${esc(u.username)}')">ลบ</button>` : ''}</td>
+            <td class="p-3 whitespace-nowrap space-x-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button>${u.username !== currentUser.username
+                ? (u.active
+                    ? `<button class="text-rose-600 hover:underline" onclick="openDeactivateDialog('${esc(u.username)}')">ปิดบัญชี</button>`
+                    : `<button class="text-emerald-700 hover:underline" onclick="reactivateUser(this, '${esc(u.username)}')">เปิดใช้งาน</button>`) : ''}</td>
         </tr>`).join('');
+}
+
+async function reactivateUser(btn, username) {
+    setBusy(btn, true, '');
+    try {
+        const r = await api('reactivateUser', { username });
+        toast(r.message);
+        technicians = null;
+        loadAdmin();
+    } catch (e) { toast('❌ ' + e.message, 'err'); setBusy(btn, false); }
 }
 
 function renderBranches(list) {
@@ -1863,29 +2107,33 @@ $('branchForm').addEventListener('submit', async (e) => {
     finally { setBusy(btn, false); }
 });
 
-function openDeleteUserDialog(username) {
+/** r16: ปิดบัญชี (soft delete) — ไม่ลบข้อมูล สามารถเปิดใช้งานคืนได้ */
+function openDeactivateDialog(username) {
     if (!hasRole('admin')) return;
-    if (username === currentUser.username) { toast('ไม่สามารถลบบัญชีของตัวเองได้', 'err'); return; }
+    if (username === currentUser.username) { toast('ไม่สามารถปิดบัญชีของตัวเองได้', 'err'); return; }
     const u = usersData.find(x => x.username === username);
     openModal(`
-        <h3 class="text-lg font-semibold text-rose-700">ลบผู้ใช้</h3>
-        <p class="text-sm text-slate-500 mb-3">ผู้ใช้ <b>${esc(u ? u.fullName : username)}</b> <span class="font-mono">@${esc(username)}</span> จะเข้าสู่ระบบไม่ได้อีก · ประวัติงานซ่อมยังคงอยู่ · รูปโปรไฟล์และรูประบุตัวตนจะถูกลบ</p>
-        <div class="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2 mb-3">
-            ถ้าผู้ใช้นี้เป็นช่างที่มีงานค้าง ระบบจะไม่ให้ลบ ต้องมอบหมายงานให้คนอื่นก่อน</div>
-        <div><label class="lbl">เหตุผลการลบ *</label><textarea id="duReason" rows="2" class="inp" placeholder="เช่น ลาออกจากบริษัท"></textarea></div>
-        <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" id="duConfirm"> ยืนยันการลบผู้ใช้นี้</label>
+        <h3 class="text-lg font-semibold text-slate-800">ปิดบัญชีผู้ใช้</h3>
+        <p class="text-sm text-slate-500 mb-3">ผู้ใช้ <b>${esc(u ? u.fullName : username)}</b> <span class="font-mono">@${esc(username)}</span> จะเข้าสู่ระบบไม่ได้ ·
+            ประวัติงานซ่อมและรูปโปรไฟล์ยังอยู่ · ผู้ดูแลสามารถเปิดใช้งานคืนได้</p>
+        <div class="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2 mb-3 space-y-1">
+            <div>• รูประบุตัวตน (ถ้ามี) จะถูกลบอัตโนมัติหลัง ${ID_RETENTION_DAYS_UI} วันนับจากวันปิดบัญชี</div>
+            <div>• ถ้าเป็นช่างที่มีงานค้าง ระบบจะไม่ให้ปิด ต้องมอบหมายงานให้คนอื่นก่อน</div>
+        </div>
+        <div><label class="lbl">เหตุผลการปิดบัญชี *</label><textarea id="duReason" rows="2" class="inp" placeholder="เช่น ลาออกจากบริษัท"></textarea></div>
+        <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" id="duConfirm"> ยืนยันการปิดบัญชีผู้ใช้นี้</label>
         <div class="flex gap-2 mt-4">
-            <button id="btnDoDeleteUser" class="btn flex-1 bg-rose-600 hover:bg-rose-700 text-white" disabled>🗑 ลบผู้ใช้</button>
+            <button id="btnDoDeactivate" class="btn flex-1 bg-slate-700 hover:bg-slate-800 text-white" disabled>⛔ ปิดบัญชี</button>
             <button class="btn bg-white border" onclick="closeModal()">ยกเลิก</button>
         </div>`);
-    const check = () => { $('btnDoDeleteUser').disabled = !($('duConfirm').checked && $('duReason').value.trim()); };
+    const check = () => { $('btnDoDeactivate').disabled = !($('duConfirm').checked && $('duReason').value.trim()); };
     $('duConfirm').onchange = check;
     $('duReason').oninput = check;
-    $('btnDoDeleteUser').onclick = async () => {
-        const btn = $('btnDoDeleteUser');
-        setBusy(btn, true, 'กำลังลบ...');
+    $('btnDoDeactivate').onclick = async () => {
+        const btn = $('btnDoDeactivate');
+        setBusy(btn, true, 'กำลังปิดบัญชี...');
         try {
-            const r = await api('deleteUser', { username, reason: $('duReason').value.trim() });
+            const r = await api('deactivateUser', { username, reason: $('duReason').value.trim() });
             toast(r.message);
             technicians = null;
             closeModal();
@@ -1906,7 +2154,7 @@ function openUserForm(i) {
             <div><label class="lbl">สาขา *</label><select id="uBranch" class="inp">${bOpts}</select></div>
             <div><label class="lbl">แผนก</label><input id="uDepartment" class="inp" value="${esc(u ? u.department : '')}"></div>
             <div><label class="lbl">อีเมล</label><input id="uEmail" type="email" class="inp" value="${esc(u ? u.email : '')}"></div>
-            <div><label class="lbl">${u ? 'รีเซ็ตรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่าน *'}</label><input id="uPassword" type="text" class="inp" ${u ? '' : 'required'} autocomplete="new-password"></div>
+            <div><label class="lbl">${u ? 'รีเซ็ตรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน · อย่างน้อย 8 ตัว)' : 'รหัสผ่าน * (อย่างน้อย 8 ตัว)'}</label><input id="uPassword" type="text" class="inp" minlength="8" ${u ? '' : 'required'} autocomplete="new-password"></div>
             <div class="flex items-center gap-2 mt-6"><input id="uActive" type="checkbox" ${!u || u.active ? 'checked' : ''}><label for="uActive" class="text-sm">เปิดใช้งาน</label></div>
             <div class="md:col-span-2 flex gap-2 mt-2">
                 <button class="btn flex-1 bg-sky-800 hover:bg-sky-900 text-white">บันทึก</button>
@@ -1914,7 +2162,8 @@ function openUserForm(i) {
             </div>
         </form>
         ${u ? photoBoxShell('uPhoto') : ''}
-        ${u && u.username !== currentUser.username ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-rose-300 text-rose-700 hover:bg-rose-50" onclick="openDeleteUserDialog('${esc(u.username)}')">🗑 ลบผู้ใช้นี้</button></div>` : ''}`);
+        ${u && u.username !== currentUser.username && u.active ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="openDeactivateDialog('${esc(u.username)}')">⛔ ปิดบัญชีผู้ใช้นี้</button></div>` : ''}
+        ${u && u.username !== currentUser.username && !u.active ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50" onclick="reactivateUser(this, '${esc(u.username)}')">✅ เปิดใช้งานบัญชีนี้อีกครั้ง</button></div>` : ''}`);
     if (u) loadPhotoPanel(u.username, 'uPhoto');
     if (u) { $('uRole').value = u.role; $('uBranch').value = u.branch.toUpperCase() === 'ALL' ? 'ALL' : u.branch; }
     $('userForm').addEventListener('submit', async (e) => {
@@ -1941,7 +2190,7 @@ $('btnChangePw').onclick = () => {
         <h3 class="text-lg font-semibold mb-4">เปลี่ยนรหัสผ่าน</h3>
         <form id="pwForm" class="space-y-3">
             <div><label class="lbl">รหัสผ่านเดิม</label><input id="pwOld" type="password" class="inp" required autocomplete="current-password"></div>
-            <div><label class="lbl">รหัสผ่านใหม่ (อย่างน้อย 4 ตัว)</label><input id="pwNew" type="password" class="inp" required minlength="4" autocomplete="new-password"></div>
+            <div><label class="lbl">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input id="pwNew" type="password" class="inp" required minlength="8" autocomplete="new-password"></div>
             <div><label class="lbl">ยืนยันรหัสผ่านใหม่</label><input id="pwNew2" type="password" class="inp" required autocomplete="new-password"></div>
             <button class="btn w-full bg-sky-800 hover:bg-sky-900 text-white">บันทึก</button>
         </form>`);
