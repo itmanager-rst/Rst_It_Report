@@ -11,6 +11,9 @@
  *  - Workflow: Pending -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
  *  - Dashboard สรุปภาพรวม
  *  - จัดการผู้ใช้ / สาขา (admin)
+ *  - r12: การมองเห็นข้อมูลตามบทบาท (ticketView_ / logVisible_) — พนักงานไม่เห็นหมายเหตุ/ค่าใช้จ่าย,
+ *         ช่างเห็นสรุปคะแนนเท่านั้น, ผู้จัดการ/admin เห็นทั้งหมด • เพิ่มค่าใช้จ่าย (Cost) และการประเมินช่าง (rateTicket)
+ *  - r11: โปรไฟล์ผู้ใช้ — รูปโปรไฟล์ + รูประบุตัวตน (ไฟล์ส่วนตัว ไม่สร้างลิงก์แชร์, เห็นได้เฉพาะเจ้าของและ admin)
  *  - r10: Admin แก้ไข / ลบ รายการแจ้งซ่อมได้ (updateTicket / deleteTickets) — เฉพาะ role admin
  *         · ทุกการแก้ไขบันทึกค่าเดิม → ค่าใหม่ ลงประวัติ (TicketLogs)
  *         · รายการที่ลบถูกย้ายสำเนาไปชีต "DeletedTickets" (กู้คืนได้ด้วย restoreDeletedTicket)
@@ -28,7 +31,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r10-2026-11-05-admin-edit-delete';
+const CODE_VERSION = 'r12-2026-11-05-visibility';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -37,6 +40,10 @@ const SPREADSHEET_ID = '';
 //    = โฟลเดอร์ "Image" (อยู่ใน RST-FixPoint) https://drive.google.com/drive/folders/17LfuEDEVzi5Q7TdWgVoKuHhZJ8L-DbPw
 const FOLDER_ID = '17LfuEDEVzi5Q7TdWgVoKuHhZJ8L-DbPw';
 
+// 📌 (r11) โฟลเดอร์เก็บ "รูประบุตัวตน" — แนะนำให้สร้างโฟลเดอร์ใหม่ที่แชร์ให้เฉพาะ Admin แล้วใส่ ID ที่นี่
+//    เว้นว่าง = ใช้ FOLDER_ID เดิม (ไฟล์ทั้งหมดของโปรไฟล์ไม่สร้างลิงก์แชร์ แต่สิทธิ์การเข้าถึงไฟล์ตามโฟลเดอร์)
+const ID_FOLDER_ID = '';
+
 const TZ = 'Asia/Bangkok';
 const SESSION_SECONDS = 21600; // 6 ชม. (สูงสุดของ CacheService)
 const PW_SALT = 'RST-FixPoint-v1';
@@ -44,7 +51,8 @@ const PW_SALT = 'RST-FixPoint-v1';
 const SHEETS = {
   USERS: {
     name: 'Users',
-    headers: ['Username', 'PasswordHash', 'FullName', 'Role', 'Branch', 'Department', 'Email', 'Active', 'CreatedAt', 'LastLogin']
+    headers: ['Username', 'PasswordHash', 'FullName', 'Role', 'Branch', 'Department', 'Email', 'Active', 'CreatedAt', 'LastLogin',
+      'ProfilePhotoURL', 'IdPhotoURL', 'ProfileUpdatedAt']
   },
   BRANCHES: {
     name: 'Branches',
@@ -54,13 +62,14 @@ const SHEETS = {
     name: 'Tickets',
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
-      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL']
+      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL', 'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt']
   },
   DELETED: {
     name: 'DeletedTickets',
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL',
+      'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt',
       'DeletedAt', 'DeletedBy', 'DeleteReason']
   },
   LOGS: {
@@ -102,7 +111,10 @@ const ROUTES = {
   printTickets:    { roles: ALL_ROLES, fn: printTickets_ },
   getImage:        { roles: ALL_ROLES, fn: getImage_ },
   getImages:       { roles: ALL_ROLES, fn: getImages_ },
+  getProfile:      { roles: ALL_ROLES, fn: getProfile_ },    // r11
+  updateProfile:   { roles: ALL_ROLES, fn: updateProfile_, write: true }, // r11: ตัวเอง หรือ admin
   cancelTicket:    { roles: ALL_ROLES, fn: cancelTicket_, write: true },
+  rateTicket:      { roles: ALL_ROLES, fn: rateTicket_, write: true }, // r12: ผู้แจ้งประเมินช่างหลังปิดงาน
 
   approveTicket:   { roles: MGR, fn: approveTicket_, write: true },
   rejectTicket:    { roles: MGR, fn: rejectTicket_, write: true },
@@ -343,7 +355,9 @@ function publicUser_(u) {
     department: String(u.Department || ''),
     email: String(u.Email || ''),
     active: isActive_(u.Active),
-    lastLogin: u.LastLogin instanceof Date ? u.LastLogin.toISOString() : String(u.LastLogin || '')
+    lastLogin: u.LastLogin instanceof Date ? u.LastLogin.toISOString() : String(u.LastLogin || ''),
+    profilePhotoUrl: String(u.ProfilePhotoURL || ''),
+    hasIdPhoto: !!String(u.IdPhotoURL || '')
   };
 }
 
@@ -427,7 +441,7 @@ function getBranches_(includeInactive) {
  * - ถ้าองค์กรห้ามแชร์ "ทุกคนที่มีลิงก์" (Access denied: DriveApp) จะลดระดับเป็น "ภายในองค์กร" หรือไม่แชร์ อัตโนมัติ
  * - ถ้าอัปโหลดไม่ได้เลย จะไม่ทำให้การบันทึกงานล้มเหลว แต่คืน warning กลับไปแสดงผู้ใช้
  */
-function saveImage_(image, prefix) {
+function saveImage_(image, prefix, folderId, share) {
   if (!image || !image.base64) return { url: '', warning: '' };
   let file;
   try {
@@ -436,13 +450,17 @@ function saveImage_(image, prefix) {
     const ext = /png/i.test(image.type || '') ? '.png' : '.jpg';
     const name = prefix + '_' + Utilities.formatDate(new Date(), TZ, 'yyyyMMdd-HHmmss') + ext; // เช่น FIX-261104-001_before_20261104-153000.jpg
     const blob = Utilities.newBlob(bytes, image.type || 'image/jpeg', name);
-    file = DriveApp.getFolderById(FOLDER_ID).createFile(blob);
+    file = DriveApp.getFolderById(folderId || FOLDER_ID).createFile(blob);
   } catch (e) {
     Logger.log('saveImage_ createFile error: ' + e);
     return { url: '', warning: 'บันทึกงานแล้ว แต่อัปโหลดรูปไม่สำเร็จ (' + driveHint_(e) + ')' };
   }
   try { file.setDescription('RST FixPoint · ' + prefix + ' · ไฟล์ต้นฉบับ: ' + (image.name || '-')); } catch (e) { /* ไม่สำคัญ */ }
 
+  if (share === false) { // r11: ไฟล์ส่วนตัว — ไม่สร้างลิงก์แชร์ ให้เข้าถึงผ่านแอปเท่านั้น
+    try { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW); } catch (e) { /* ใช้สิทธิ์ตามโฟลเดอร์ */ }
+    return { url: file.getUrl(), warning: '' };
+  }
   const mode = setSharingSafe_(file);
   PropertiesService.getScriptProperties().setProperty('SHARING_MODE', mode);
   return { url: file.getUrl(), warning: '' };
@@ -581,17 +599,17 @@ function listTickets_(u, req) {
 
   list.sort((a, b) => (toDate_(b.CreatedAt) || 0) - (toDate_(a.CreatedAt) || 0));
   const limit = Math.min(Number(f.limit) || 500, 2000);
-  return { tickets: list.slice(0, limit).map(clean_), total: list.length };
+  return { tickets: list.slice(0, limit).map(t => ticketView_(u, t)), total: list.length };
 }
 
 function getTicket_(u, req) {
   const t = getTicketRow_(req.ticketId);
   if (!canSee_(u, t)) throw new Error('คุณไม่มีสิทธิ์ดูรายการนี้');
   const logs = readAll_(SHEETS.LOGS)
-    .filter(l => String(l.TicketID) === String(t.TicketID))
+    .filter(l => String(l.TicketID) === String(t.TicketID) && logVisible_(u, l))
     .sort((a, b) => (toDate_(a.Timestamp) || 0) - (toDate_(b.Timestamp) || 0))
     .map(clean_);
-  return { ticket: clean_(t), logs: logs };
+  return { ticket: ticketView_(u, t), logs: logs };
 }
 
 function printTickets_(u, req) {
@@ -604,8 +622,8 @@ function printTickets_(u, req) {
     const t = all.find(x => String(x.TicketID) === id);
     if (!t || !canSee_(u, t)) return;
     const item = {
-      ticket: clean_(t),
-      logs: logs.filter(l => String(l.TicketID) === id)
+      ticket: ticketView_(u, t),
+      logs: logs.filter(l => String(l.TicketID) === id && logVisible_(u, l))
         .sort((a, b) => (toDate_(a.Timestamp) || 0) - (toDate_(b.Timestamp) || 0)).map(clean_)
     };
     item.signImg = imageData_(t.ApproverSignURL);
@@ -623,8 +641,7 @@ function printTickets_(u, req) {
 function getImage_(u, req) {
   const id = fileIdFromUrl_(req.url);
   if (!id) throw new Error('ลิงก์รูปไม่ถูกต้อง');
-  const t = readAll_(SHEETS.TICKETS).find(x => [x.ImageURL, x.AfterImageURL, x.ApproverSignURL].some(v => fileIdFromUrl_(v) === id));
-  if (!t || !canSee_(u, t)) throw new Error('ไม่มีสิทธิ์ดูรูปนี้');
+  if (!imageAccess_(u, req.url)) throw new Error('ไม่มีสิทธิ์ดูรูปนี้');
   return { data: imageData_(req.url) };
 }
 
@@ -636,8 +653,7 @@ function getImages_(u, req) {
   urls.forEach(url => {
     const id = fileIdFromUrl_(url);
     if (!id) return;
-    const t = tickets.find(x => [x.ImageURL, x.AfterImageURL, x.ApproverSignURL].some(v => fileIdFromUrl_(v) === id));
-    if (!t || !canSee_(u, t)) return;
+    if (!imageAccess_(u, url)) return;
     images[url] = imageData_(url);
   });
   return { images: images };
@@ -655,6 +671,168 @@ function counts_(u) {
       (u.Role === 'admin' || !t.Technician || norm_(t.Technician) === norm_(u.Username))).length;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// r11: โปรไฟล์ผู้ใช้ — รูปโปรไฟล์ + รูประบุตัวตน
+// ---------------------------------------------------------------------------
+
+/** ตรวจว่าผู้ใช้มีสิทธิ์ดูรูปนี้หรือไม่: รูปงานซ่อม / รูปโปรไฟล์ / รูประบุตัวตน */
+function imageAccess_(u, url) {
+  const id = fileIdFromUrl_(url);
+  if (!id) return false;
+  const t = readAll_(SHEETS.TICKETS).find(x => [x.ImageURL, x.AfterImageURL, x.ApproverSignURL].some(v => fileIdFromUrl_(v) === id));
+  if (t) return canSee_(u, t);
+  const users = readAll_(SHEETS.USERS);
+  if (users.some(x => fileIdFromUrl_(x.ProfilePhotoURL) === id)) return true; // รูปโปรไฟล์ — ผู้ใช้ที่ login แล้วดูได้
+  const owner = users.find(x => fileIdFromUrl_(x.IdPhotoURL) === id);       // รูประบุตัวตน — เจ้าของ + admin เท่านั้น
+  if (owner) return u.Role === 'admin' || norm_(owner.Username) === norm_(u.Username);
+  return false;
+}
+
+function trashFileByUrl_(url) {
+  const id = fileIdFromUrl_(url);
+  if (!id) return;
+  try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { Logger.log('trash error: ' + e); }
+}
+
+function getProfile_(u, req) {
+  const target = norm_(req.username) || norm_(u.Username);
+  if (target !== norm_(u.Username)) requireAdmin_(u);
+  const row = findUser_(target);
+  if (!row) throw new Error('ไม่พบผู้ใช้ ' + target);
+  const canId = u.Role === 'admin' || norm_(row.Username) === norm_(u.Username);
+  return { profile: {
+    username: String(row.Username),
+    fullName: String(row.FullName || row.Username),
+    role: String(row.Role),
+    branch: String(row.Branch || ''),
+    department: String(row.Department || ''),
+    profilePhotoUrl: String(row.ProfilePhotoURL || ''),
+    hasIdPhoto: !!String(row.IdPhotoURL || ''),
+    idPhotoUrl: canId ? String(row.IdPhotoURL || '') : '',
+    updatedAt: row.ProfileUpdatedAt instanceof Date ? row.ProfileUpdatedAt.toISOString() : String(row.ProfileUpdatedAt || '')
+  } };
+}
+
+function updateProfile_(u, req) {
+  const target = norm_(req.username) || norm_(u.Username);
+  if (target !== norm_(u.Username)) requireAdmin_(u);
+  const row = findUser_(target);
+  if (!row) throw new Error('ไม่พบผู้ใช้ ' + target);
+  const patch = {};
+  const done = [];
+
+  if (req.profilePhoto && req.profilePhoto.base64) {
+    const img = saveImage_(req.profilePhoto, 'PROFILE_' + target, '', false);
+    if (!img.url) throw new Error('อัปโหลดรูปโปรไฟล์ไม่สำเร็จ — ' + (img.warning || 'ลองใหม่อีกครั้ง'));
+    trashFileByUrl_(row.ProfilePhotoURL);
+    patch.ProfilePhotoURL = img.url;
+    done.push('รูปโปรไฟล์');
+  }
+  if (req.removeProfilePhoto) {
+    trashFileByUrl_(row.ProfilePhotoURL);
+    patch.ProfilePhotoURL = '';
+    done.push('ลบรูปโปรไฟล์');
+  }
+  if (req.idPhoto && req.idPhoto.base64) {
+    const img = saveImage_(req.idPhoto, 'IDPHOTO_' + target, ID_FOLDER_ID, false);
+    if (!img.url) throw new Error('อัปโหลดรูประบุตัวตนไม่สำเร็จ — ' + (img.warning || 'ลองใหม่อีกครั้ง'));
+    trashFileByUrl_(row.IdPhotoURL);
+    patch.IdPhotoURL = img.url;
+    done.push('รูประบุตัวตน');
+  }
+  if (req.removeIdPhoto) {
+    trashFileByUrl_(row.IdPhotoURL);
+    patch.IdPhotoURL = '';
+    done.push('ลบรูประบุตัวตน');
+  }
+
+  if (!done.length) throw new Error('ไม่มีรูปที่จะบันทึก');
+  patch.ProfileUpdatedAt = new Date();
+  updateRow_(SHEETS.USERS, row._row, patch);
+  return { message: 'บันทึก' + done.join(' และ') + 'ของ ' + target + ' แล้ว' };
+}
+
+// ---------------------------------------------------------------------------
+// r12: การมองเห็นข้อมูลตามบทบาท
+//   พนักงาน (employee): เห็นรูป/ชื่อ/หัวข้อ/สถานที่/อาการ/รูปชำรุด/สถานะ; ไม่เห็น หมายเหตุ/ค่าใช้จ่าย;
+//                      การประเมิน เห็นเฉพาะของตนเอง
+//   ช่าง (technician):  เห็นหมายเหตุ/ค่าใช้จ่าย; การประเมิน เห็นเฉพาะ "สรุป" (คะแนนเฉลี่ย + จำนวน)
+//   ผู้จัดการ/admin:    เห็นทั้งหมด
+// ---------------------------------------------------------------------------
+
+function toCost_(v) {
+  const n = Math.round(Number(v) * 100) / 100;
+  if (!(n >= 0)) throw new Error('ค่าใช้จ่ายต้องเป็นตัวเลข 0 ขึ้นไป');
+  return n;
+}
+
+function isoOf_(v) {
+  return v instanceof Date ? v.toISOString() : String(v || '');
+}
+
+/** สรุปคะแนนการประเมินของช่าง (รวมทุกรายการที่ช่างคนนี้ดูแลและได้รับการประเมินแล้ว) */
+function techSummary_(name) {
+  const rated = readAll_(SHEETS.TICKETS).filter(t => norm_(t.Technician) === norm_(name) && String(t.Rating || '') !== '');
+  const count = rated.length;
+  const avg = count ? Math.round(rated.reduce((a, t) => a + Number(t.Rating), 0) / count * 10) / 10 : null;
+  return { avg: avg, count: count };
+}
+
+/** แปลงรายการแจ้งซ่อมให้เหลือเฉพาะข้อมูลที่บทบาทนี้มีสิทธิ์เห็น */
+function ticketView_(u, t) {
+  const out = clean_(t);
+  const owner = norm_(t.Username) === norm_(u.Username);
+  const requester = readAll_(SHEETS.USERS).find(x => norm_(x.Username) === norm_(t.Username));
+  out.requesterPhotoUrl = requester ? String(requester.ProfilePhotoURL || '') : '';
+
+  // ฟิลด์ดิบของการประเมินไม่ส่งออกไปตรงๆ — ส่งเฉพาะผ่าน evaluation / techSummary
+  delete out.Rating; delete out.RatingComment; delete out.RatedBy; delete out.RatedAt;
+  const hasRating = String(t.Rating || '') !== '';
+  const fullEval = () => ({ score: Number(t.Rating), comment: String(t.RatingComment || ''), by: String(t.RatedBy || ''), at: isoOf_(t.RatedAt) });
+
+  if (u.Role === 'employee') {
+    delete out.ManagerNote;
+    delete out.TechNote;
+    delete out.Cost;
+    if (owner && hasRating) out.evaluation = { score: Number(t.Rating), comment: String(t.RatingComment || ''), at: isoOf_(t.RatedAt) };
+  } else if (u.Role === 'technician') {
+    if (t.Technician) out.techSummary = techSummary_(t.Technician);
+  } else { // manager / admin
+    if (hasRating) out.evaluation = fullEval();
+    if (t.Technician) out.techSummary = techSummary_(t.Technician);
+  }
+  return out;
+}
+
+/** กรองประวัติการดำเนินงานตามบทบาท (ไม่ให้เห็นบันทึกที่ซ่อนจากบทบาทนั้น) */
+function logVisible_(u, l) {
+  if (u.Role === 'manager' || u.Role === 'admin') return true;
+  const act = String(l.Action || '');
+  if (act === 'ประเมินผลงานช่าง') return u.Role === 'employee' && norm_(l.ByUser) === norm_(u.Username);
+  if (u.Role === 'employee') {
+    return ['อัปเดตความคืบหน้า', 'ปิดงานซ่อม (เสร็จสิ้น)', 'อนุมัติงานซ่อม', 'ไม่อนุมัติ', 'แก้ไขข้อมูล (Admin)', 'ลบรายการ (Admin)'].indexOf(act) === -1;
+  }
+  return true; // ช่าง: เห็นประวัติทั้งหมด ยกเว้นการประเมิน
+}
+
+/** ผู้แจ้งซ่อมให้คะแนนช่าง 1–5 + ข้อเสนอแนะ (ได้ครั้งเดียว เมื่อปิดงานแล้ว) */
+function rateTicket_(u, req) {
+  const t = getTicketRow_(req.ticketId);
+  if (norm_(t.Username) !== norm_(u.Username)) throw new Error('ประเมินได้เฉพาะผู้แจ้งซ่อมรายการนี้');
+  requireStatus_(t, [ST.COMPLETED]);
+  if (String(t.Rating || '') !== '') throw new Error('รายการนี้ได้รับการประเมินแล้ว');
+  const score = Math.round(Number(req.score));
+  if (!(score >= 1 && score <= 5)) throw new Error('กรุณาให้คะแนน 1–5');
+  const comment = String(req.comment || '').trim().slice(0, 1000);
+  const now = new Date();
+  updateRow_(SHEETS.TICKETS, t._row, {
+    Rating: score, RatingComment: comment, RatedBy: u.FullName || u.Username, RatedAt: now, UpdatedAt: now
+  });
+  // บันทึกเฉพาะคะแนนลงประวัติ — ข้อเสนอแนะเก็บในรายการเท่านั้น (กันช่างเห็นข้อความผ่านประวัติ)
+  addLog_(t.TicketID, 'ประเมินผลงานช่าง', u, t.Status, t.Status, score + '/5');
+  return { ticketId: t.TicketID, message: 'ขอบคุณสำหรับการประเมิน' };
 }
 
 function fileIdFromUrl_(url) {
@@ -748,7 +926,9 @@ function updateProgress_(u, req) {
   if (u.Role !== 'admin' && norm_(t.Technician) !== norm_(u.Username)) throw new Error('งานนี้ไม่ใช่งานของคุณ');
   const note = String(req.note || '').trim();
   if (!note) throw new Error('กรุณาระบุความคืบหน้า');
-  updateRow_(SHEETS.TICKETS, t._row, { TechNote: note, UpdatedAt: new Date() });
+  const patch = { TechNote: note, UpdatedAt: new Date() };
+  if (req.cost !== undefined && req.cost !== '') patch.Cost = toCost_(req.cost);
+  updateRow_(SHEETS.TICKETS, t._row, patch);
   addLog_(t.TicketID, 'อัปเดตความคืบหน้า', u, t.Status, t.Status, note);
   return { message: 'บันทึกความคืบหน้าแล้ว' };
 }
@@ -760,6 +940,7 @@ function completeTicket_(u, req) {
   const afterImg = saveImage_(req.image, t.TicketID + '_after');
   const after = afterImg.url;
   const extra = { CompletedAt: new Date(), TechNote: String(req.note || t.TechNote || '') };
+  if (req.cost !== undefined && req.cost !== '') extra.Cost = toCost_(req.cost);
   if (after) extra.AfterImageURL = after;
   const res = transition_(u, t, ST.COMPLETED, 'ปิดงานซ่อม (เสร็จสิ้น)', req.note, extra);
   res.warning = afterImg.warning;
@@ -780,7 +961,7 @@ function cancelTicket_(u, req) {
 const PRIORITIES = ['ปกติ', 'ด่วน', 'ด่วนมาก'];
 
 function requireAdmin_(u) {
-  if (u.Role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่แก้ไข/ลบรายการได้');
+  if (u.Role !== 'admin') throw new Error('ต้องเป็นผู้ดูแลระบบ (Admin) เท่านั้น');
 }
 
 function updateTicket_(u, req) {
@@ -818,6 +999,7 @@ function updateTicket_(u, req) {
   }
   if (has('managerNote')) set('ManagerNote', d.managerNote, 'หมายเหตุผู้จัดการ');
   if (has('techNote')) set('TechNote', d.techNote, 'บันทึกช่าง');
+  if (has('cost')) set('Cost', (d.cost === '' || d.cost === null || d.cost === undefined) ? '' : toCost_(d.cost), 'ค่าใช้จ่าย');
 
   if (has('technician') && norm_(d.technician) !== norm_(t.Technician)) {
     if (!txt(d.technician)) {
