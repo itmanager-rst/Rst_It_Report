@@ -1,6 +1,22 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r18-2026-10-24-turn-guard
+ * CODE_VERSION: r20-2026-11-07-implements
+ *
+ * r20: อุปกรณ์ต่อพ่วงมือสอง / สาธิต (ชุดคีป ผาน โรตารี่ ใบมีดดันดิน ชุดบุ้งกี๋ ฯลฯ)
+ *      - ประเภทใหม่ 'อุปกรณ์ต่อพ่วง' (IMPL_RE) ตรวจหลังประเภทรถทั้งหมด (รถแทรกเตอร์พร้อมผาน = รถแทรกเตอร์)
+ *      - เดิม keepRow_ ทิ้งทุกอย่างที่เป็น 'อื่นๆ' เมื่อไฟล์ไม่มีคอลัมน์หมวด → อุปกรณ์ไม่ถูกนำเข้า
+ *        ตอนนี้: อุปกรณ์ที่ชื่อมี มือสอง/สาธิต นำเข้าได้ทุกหมวด  อุปกรณ์ใหม่/เช่า ไม่นำเข้า
+ *      - Serial ว่าง/---  → ใช้ NS-<รหัสสินค้า> (1 รหัสสินค้า = 1 รายการ รวมจำนวน)
+ *      - Deploy > Manage deployments > Edit > New version (ลิงก์ /exec เดิม) ไม่แตะ turn.gs / turn.html
+ *
+ * r19: เชื่อมกับ Sale Promo Finder (หน้าขายรถมือสอง: เลือกรถจากสต็อกมาทำสัญญา)
+ *      - เพิ่มคำสั่งอ่านอย่างเดียว saleStock() / saleCar(q) ใช้ token เดียวกับหน้าเว็บนี้ (ล็อกอินด้วยบัญชี CRM)
+ *        ไม่ต้องใช้ PIN ทีม  ส่งเฉพาะข้อมูลที่ใช้ทำสัญญา ไม่ส่งข้อมูลระบบเก่า (ชื่อเจ้าของเดิม/ค่าใช้จ่าย)
+ *      - saleCar(q) ค้นด้วย เลขตัวรถ หรือ เลขเครื่อง (ไม่สนช่องว่าง ขีด ตัวพิมพ์เล็ก/ใหญ่ และเลข 0 นำหน้า)
+ *      - บันทึกการเปิดดูจาก Promo Finder ลง AccessLog (event = promo_car)
+ *      - Promo Finder ใช้ login / getCovers / getPhotos / getPhotoFull ที่มีอยู่แล้วด้วย (ไม่ได้แก้)
+ *      - ไม่ต้องเปลี่ยนการตั้งค่า Deploy: ใช้ลิงก์ /exec เดิม แค่ Deploy > Manage deployments > Edit > New version
+ *      - ไม่แตะ turn.gs / turn.html
  *
  * r18: logEvent รับเหตุการณ์ export (ส่งออก Excel จากหน้ารถตีเทิร์น) บันทึกลง AccessLog
  *
@@ -74,7 +90,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r18-2026-10-24-turn-guard';
+var CODE_VERSION = 'r20-2026-11-07-implements';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
@@ -114,7 +130,8 @@ var API = {
   login: login, logEvent: logEvent,
   getBoot: getBoot, getPhotos: getPhotos, getCovers: getCovers, getPhotoFull: getPhotoFull,
   importStock: importStock, uploadPhoto: uploadPhoto, setCover: setCover, deletePhoto: deletePhoto,
-  getLegacy: getLegacy, setYear: setYear, setPrice: setPrice
+  getLegacy: getLegacy, setYear: setYear, setPrice: setPrice,
+  saleStock: saleStock, saleCar: saleCar // r19: Sale Promo Finder (อ่านอย่างเดียว ไม่ต้องใช้ PIN)
 };
 var PUBLIC = { login: 1 }; // ไม่ต้องล็อกอิน
 var WRITE = { importStock: 1, uploadPhoto: 1, setCover: 1, deletePhoto: 1, getLegacy: 1, setYear: 1, setPrice: 1 }; // getLegacy อ่านอย่างเดียว แต่ต้องใช้ PIN (ข้อมูลภายใน)
@@ -343,6 +360,7 @@ function excSeries_(name) {
   return x.replace(/\s+/g, ' ');
 }
 function seriesOf_(name) {
+  if (typeOf_(name) === IMPL_TYPE) return implSeries_(name); // r20
   if (EXC_RE.test(String(name || ''))) return excSeries_(name);
   if (BALER_RE.test(String(name || '')) && !/รถเกี่ยว|รถแทรกเตอร์/.test(String(name))) { // r11: รุ่นเครื่องอัดฟาง ตัดคำนำหน้าออก
     var b = String(name).replace(/^\s*\([^)]*\)\s*/, '').replace(/(?:เครื่อง)?อัดฟาง|\bbaler\b/ig, '')
@@ -360,6 +378,16 @@ function seriesOf_(name) {
 var VAN_RE = /รถตู้|\bvan\b/i;
 /** r11: เครื่องอัดฟาง ตรวจหลังรถแทรกเตอร์ (ชื่อรถแทรกเตอร์ที่พ่วงเครื่องอัดฟางยังนับเป็นรถแทรกเตอร์) */
 var BALER_RE = /อัดฟาง|\bbaler\b/i;
+/** r20: อุปกรณ์ต่อพ่วง (ตรงกับ IMPL_RE ใน index.html) ไม่ใช้คำ 'ไถ' เดี่ยวๆ เพราะ รถไถ = รถ */
+var IMPL_TYPE = 'อุปกรณ์ต่อพ่วง';
+var IMPL_RE = /คีบ|คีป|ผาน|โรตา?รี|จอบหมุน|พรวน|(?:เครื่อง|ชุด|ใบ)ไถ|ไถ(?:ระเบิด|ดินดาน|หัวหมู|บุกเบิก|จาน|ยกร่อง)|คราด|หยอด|ใบมีด|ใบดัน|ใบปาด|บุ้งกี๋|ชุดตัก|ตักหน้า|ชุดแบ็?คโฮ|รถพ่วง|หางพ่วง|ต่อพ่วง|อุปกรณ์|ยกร่อง|ตัดหญ้า|พ่นยา|ปั่นดิน|ตีดิน|ริปเปอร์|สางใบ|โครงกัน|\b(?:rotary|rotavator|plou?gh|harrow|seeder|planter|trailer|front\s*loader|loader|ripper|mower|sprayer|grab|grapple|implement)\b/i;
+/** r20: รุ่นอุปกรณ์ = ชื่อสินค้าตัด (มือสอง)/(สาธิต)/==ยกเลิกรหัสนี้ ออก */
+function implSeries_(name) {
+  return String(name || '').replace(/==.*$/, '').replace(/\(\s*(?:เครื่อง|รถ)?(?:มือสอง|สาธิต)\s*\)/g, ' ').replace(/(?:เครื่อง|รถ)?(?:มือสอง|สาธิต)/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+/** r20: Serial ว่าง / --- → NS-<รหัสสินค้า> */
+function noSerial_(serial) { return /^[\s\-–—_.]*$/.test(String(serial == null ? '' : serial)); }
 function typeOf_(name) {
   var n = String(name || '');
   if (!n.trim()) return '';
@@ -368,6 +396,7 @@ function typeOf_(name) {
   if (BALER_RE.test(n)) return 'เครื่องอัดฟาง';
   if (EXC_RE.test(n)) return 'รถขุด';
   if (VAN_RE.test(n)) return 'รถตู้';
+  if (IMPL_RE.test(n)) return IMPL_TYPE; // r20
   return 'อื่นๆ';
 }
 function kindOf_(name) {
@@ -392,6 +421,7 @@ function keepRow_(r) {
   var t = typeOf_(r.name), c = String(r.usedCat || '');
   if (!t) return false;
   if (c === '1') return true;
+  if (t === IMPL_TYPE) return isKept_(r.name); // r20: อุปกรณ์ต่อพ่วง มือสอง/สาธิต ทุกหมวด
   if (t === 'อื่นๆ' || !isKept_(r.name)) return false;
   if (t === 'เครื่องอัดฟาง') return true; // r12: เครื่องอัดฟางมือสอง/สาธิต ทุกหมวด
   return c === '' || kindOf_(r.name) === 'รถสาธิต';
@@ -523,7 +553,8 @@ function importStock(rows, meta) {
 
     var groups = {}, order = [], matched = 0;
     (rows || []).forEach(function (r) {
-      if (!r || !r.serial || !keepRow_(r)) return;
+      if (r && noSerial_(r.serial) && r.code && typeOf_(r.name) === IMPL_TYPE) r.serial = 'NS-' + String(r.code).trim(); // r20
+      if (!r || !r.serial || noSerial_(r.serial) || !keepRow_(r)) return;
       var key = keyOf_(r.serial); if (!key) return;
       matched++;
       r.price = priceStr_(r.price); // r14: 0 / ข้อความ = ว่าง เพื่อให้ FILL เติมจากแถวอื่นได้
@@ -643,6 +674,55 @@ function setPrice(key, price, by) {
     applyPrice_(c, lp);
     return { key: key, price: c.price, priceSrc: c.priceSrc, priceEc: c.priceEc, priceLegacy: c.priceLegacy, priceDate: c.priceDate || '', priceM: p, priceBy: who, priceAt: p ? at : '' };
   });
+}
+
+/* ================= r19: Sale Promo Finder ================= */
+/** เลข id สำหรับเทียบ: ตัวพิมพ์ใหญ่ ตัดทุกอย่างที่ไม่ใช่ตัวอักษร/ตัวเลข และเลข 0 นำหน้า */
+function idNorm_(v) { return String(v == null ? '' : v).toUpperCase().replace(/[^0-9A-Z฀-๿]/g, '').replace(/^0+(?=.)/, ''); }
+/** รถทุกคัน (ที่แอปนี้เก็บ) พร้อมปี/ราคาที่ใช้จริง เหมือน getBoot */
+function saleCarsAll_() {
+  var photos = {};
+  readAll_(SH.PHOTOS).forEach(function (p) { photos[p.key] = (photos[p.key] || 0) + 1; });
+  var lc = { n: {}, y: {}, p: {} };
+  try { lc = legacyCount_(); } catch (e) { }
+  return readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); }).map(function (c) {
+    var lk = legacyNorm_(c.key);
+    c.yearSrc = c.year ? 'manual' : '';
+    if (!c.year && lc.y[lk]) { c.year = lc.y[lk]; c.yearSrc = 'legacy'; }
+    applyPrice_(c, lc.p[lk]);
+    c.photos = photos[c.key] || 0;
+    return c;
+  });
+}
+/** ข้อมูลที่ Promo Finder ใช้ (ไม่ส่งข้อมูลภายในอื่น) */
+var SALE_FIELDS = ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot',
+  'price', 'priceSrc', 'priceDate', 'cond', 'hours', 'year', 'yearSrc', 'reg', 'status', 'outDate', 'lastSeen', 'photos'];
+function saleSlim_(c) { var o = {}; SALE_FIELDS.forEach(function (k) { o[k] = c[k] == null ? '' : c[k]; }); return o; }
+/** รายการรถที่ยังอยู่ในสต็อก ใช้ทำ dropdown สาขา / ประเภท / รุ่น ใน Promo Finder */
+function saleStock() {
+  var cars = saleCarsAll_().filter(function (c) { return c.status === 'stock'; }).map(saleSlim_);
+  var logs = readAll_(SH.LOG);
+  return { version: CODE_VERSION, at: new Date().toISOString(), lastImport: logs.length ? logs[logs.length - 1].at : '', cars: cars };
+}
+/** หารถ 1 คันจาก เลขตัวรถ / เลขเครื่อง / key (รวมคันที่ออกจากสต็อกแล้ว เพื่อเช็คสถานะตอนเปิดเคสเก่า)
+ *  คืน { car, matches }  car = คันที่ตรงพอดี (ถ้ามีคันเดียว)  matches = คันที่ตรงบางส่วน (สูงสุด 20) */
+function saleCar(q) {
+  var want = idNorm_(q);
+  if (want.length < 3) throw new Error('ใส่เลขตัวรถหรือเลขเครื่องอย่างน้อย 3 ตัว');
+  var all = saleCarsAll_(), exact = [], part = [];
+  all.forEach(function (c) {
+    var ids = [idNorm_(c.key), idNorm_(c.chassis), idNorm_(c.engine)].filter(String);
+    if (ids.indexOf(want) >= 0) exact.push(c);
+    else if (ids.some(function (x) { return x.indexOf(want) >= 0; })) part.push(c);
+  });
+  var rank = function (a, b) { return (a.status === 'stock' ? 0 : 1) - (b.status === 'stock' ? 0 : 1); };
+  exact.sort(rank); part.sort(rank);
+  var car = exact.length ? exact[0] : (part.length === 1 ? part[0] : null);
+  if (car) accessLog_(SESSION_, 'promo_car', car.key);
+  return {
+    car: car ? saleSlim_(car) : null,
+    matches: (exact.length > 1 ? exact : part).slice(0, 20).map(saleSlim_)
+  };
 }
 
 /* ================= photos ================= */
