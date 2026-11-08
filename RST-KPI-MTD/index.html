@@ -196,6 +196,7 @@
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <div class="mr-auto"><h2 class="font-semibold">ทะเบียนหัวข้อ KPI</h2>
           <div class="sub">เพิ่มหัวข้อใหม่ แก้ถ้อยคำ / ทิศทางเป้า / Target ตั้งต้น หรือปิดหัวข้อที่เลิกใช้ — บันทึกลงชีต KPI_Master ทันที</div></div>
+        <button id="btnRollYear" class="btn btn-sec" style="display:none" title="สร้างแถวรายเดือนของปีใหม่จากหัวข้อเดิม">📅 เปิดปี KPI ใหม่</button>
         <button id="btnAddKpi" class="btn btn-pri" style="display:none">＋ เพิ่มหัวข้อ KPI</button>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
@@ -510,6 +511,7 @@ function renderAuth() {
 function applyRoleUI() {
   $('#tabUsersBtn').style.display = isAdmin() ? '' : 'none';
   $('#btnAddKpi').style.display = canManageKpi() ? '' : 'none';
+  $('#btnRollYear').style.display = isAdmin() ? '' : 'none';
   if (!isAdmin() && !$('#tab-users').classList.contains('hidden-tab')) switchTab('dash');
   fillEntrySelects(); fillTemplateSelects();
   if ($('#tblEntry') || $('#entryWrap [data-login]')) renderEntry();
@@ -984,7 +986,7 @@ function onFilterChange() { state.page = 1; renderAll(); }
 
 /* ========================= MODAL ========================= */
 function openModal(html, onOpen) {
-  $('#modalBox').innerHTML = html; $('#modal').classList.add('open');
+  $('#modalBox').style.maxWidth = ''; $('#modalBox').innerHTML = html; $('#modal').classList.add('open');
   $('#modalBox').querySelectorAll('[data-close]').forEach(b => b.onclick = closeModal);
   onOpen && onOpen($('#modalBox'));
   setTimeout(() => $('#modalBox').querySelector('input:not([type=checkbox]):not([type=radio]),select,textarea')?.focus(), 30);
@@ -1490,6 +1492,100 @@ function openUserForm(u) {
   });
 }
 
+/* ========================= เปิดปี KPI ใหม่ (Admin) ========================= */
+// หัวข้อที่จะยกไปปีใหม่: ใช้งานอยู่ และ (มีข้อมูลในปีต้นแบบ หรือ เป็นหัวข้อใหม่ที่ยังไม่มีข้อมูลเลย)
+function rollCandidates(fromYear) {
+  const byCode = new Map();
+  state.data.forEach(r => { if (!byCode.has(r.KPI_Code)) byCode.set(r.KPI_Code, []); byCode.get(r.KPI_Code).push(r); });
+  return state.master.filter(m => m.Active !== 'N').map(m => {
+    const rows = byCode.get(m.KPI_Code) || [], inFrom = rows.filter(r => r.Year === fromYear);
+    if (rows.length && !inFrom.length) return null;
+    const last = inFrom.filter(r => isNum(r.Target)).sort((a,b) => b.Month - a.Month)[0];
+    return { code: m.KPI_Code, company: m.Company, dept: m.Dept, topic: m.Topic,
+      target: last ? last.Target : m.DefaultTarget, direction: last ? last.Direction : m.Direction, isNew: !rows.length };
+  }).filter(Boolean).sort((a,b) => a.company.localeCompare(b.company) || thSort(a.dept, b.dept) || a.code.localeCompare(b.code, undefined, { numeric:true }));
+}
+function openRollYear() {
+  if (!isAdmin()) return toast('เฉพาะ Admin', 'err');
+  const dataYears = uniq(state.data.map(r => r.Year)).sort((a,b) => b - a);
+  const from0 = state.data.length ? latestActiveYear() : NOW_Y;   // ปีล่าสุดที่มีผลจริง (ไม่ใช่ปีที่เพิ่งสร้างแถวล่วงหน้า)
+  openModal(`
+    <div class="flex items-start gap-3 mb-1"><div class="mr-auto"><h3 class="font-semibold text-lg">📅 เปิดปี KPI ใหม่</h3>
+      <div class="sub">คัดลอกหัวข้อที่ใช้งานอยู่ + Target ล่าสุดของปีต้นแบบ → สร้างแถวรายเดือนของปีใหม่ (Actual ว่าง) เพื่อให้เดือนที่ไม่ส่งผลขึ้น "ค้างส่งผล" · แถวที่มีอยู่แล้วจะข้าม กดซ้ำได้</div></div>
+      <button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+      <label class="fld">ปีต้นแบบ (คัดลอกจาก)<select id="ryFrom" class="sel">${dataYears.map(y => `<option>${y}</option>`).join('')}</select></label>
+      <label class="fld">ปี KPI ใหม่<select id="ryTo" class="sel"></select></label>
+      <div class="fld col-span-2">รอบปี<div id="ryCycle" class="text-sm mt-2" style="color:var(--ink)"></div></div>
+    </div>
+    <div class="fld mt-3">เดือนที่ต้องประเมิน<div id="ryMonths" class="flex flex-wrap gap-1 mt-1"></div></div>
+    <div class="flex flex-wrap items-center gap-2 mt-3"><span class="fld">หัวข้อ KPI <span id="ryCount"></span></span><span class="mr-auto"></span>
+      <button type="button" class="text-xs underline" id="ryAll">เลือกทั้งหมด</button><button type="button" class="text-xs underline" id="ryNone">ไม่เลือก</button></div>
+    <div id="ryList" class="mt-1 overflow-auto border rounded" style="max-height:340px;border-color:var(--line)"></div>
+    <div id="rySummary" class="text-sm mt-3 p-2 rounded" style="background:#f3f8fd"></div>
+    <div id="ryErr" class="text-sm mt-2" style="color:#a32020"></div>
+    <div class="flex items-center gap-2 mt-4"><span class="mr-auto sub">หัวข้อที่ปีใหม่เปลี่ยนเงื่อนไข: ปิดหัวข้อเก่า + เพิ่มหัวข้อใหม่ ก่อนกดเปิดปี</span>
+      <button data-close class="btn btn-sec">ยกเลิก</button><button id="ryGo" class="btn btn-pri">สร้างแถว</button></div>`, box => {
+    $('#modalBox').style.maxWidth = '880px';
+    $('#ryFrom').value = String(from0);
+    const ids = () => new Set(state.data.map(r => r.ID));
+    const fillTo = () => { const f = Number($('#ryFrom').value), cur = $('#ryTo').value;
+      $('#ryTo').innerHTML = [f+1, f+2].map(y => `<option>${y}</option>`).join(''); if ([...$('#ryTo').options].some(o => o.value === cur)) $('#ryTo').value = cur; };
+    const renderMonths = () => {
+      const y = Number($('#ryTo').value), ms = ymouMonths(y);
+      $('#ryCycle').textContent = ymouStart(y) > 1 ? `ปีงบ ${TH_M[ms[0]-1]} ${realYear(y, ms[0])} – ${TH_M[ms[11]-1]} ${realYear(y, ms[11])}` : `ปีปฏิทิน ม.ค. – ธ.ค. ${y}` + (ymouStart(y-1) > 1 ? ' (ถ้าใช้รอบ เม.ย.–มี.ค. ให้แก้ YMOU_START_MONTH ใน index.html ก่อน)' : '');
+      $('#ryMonths').innerHTML = ms.map(m => `<label class="mchk"><input type="checkbox" value="${m}" checked>${TH_M[m-1]} ${String(realYear(y, m)).slice(-2)}</label>`).join('');
+      $('#ryMonths').querySelectorAll('input').forEach(i => i.onchange = summary);
+    };
+    const renderList = () => {
+      const items = rollCandidates(Number($('#ryFrom').value));
+      const groups = new Map(); items.forEach(it => { const k = it.company + '|' + it.dept; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
+      $('#ryList').innerHTML = [...groups.entries()].map(([k, list]) => { const [c, d] = k.split('|');
+        return `<details class="border-b" style="border-color:var(--line)"><summary class="px-3 py-2 cursor-pointer flex items-center gap-2 text-sm" style="list-style:none">
+          <input type="checkbox" data-grp="${esc(k)}" checked onclick="event.stopPropagation()"> <b>${esc(d)}</b> <span class="sub">${esc(c)}</span><span class="sub ml-auto" data-gc="${esc(k)}"></span> <span class="sub">▾</span></summary>
+          <div class="px-3 pb-2">${list.map(it => `<label class="flex items-start gap-2 text-sm py-1"><input type="checkbox" class="mt-1" data-code="${esc(it.code)}" data-g="${esc(k)}" checked>
+            <span class="flex-1">${esc(it.topic)} <span class="sub">${esc(it.code)}${it.isNew ? ' · หัวข้อใหม่' : ''}</span></span>
+            <span class="whitespace-nowrap">${dirBadge(it.direction)} <span class="sub">Target</span> ${fmtNum(it.target, isRatioRow(it.target)) || '–'}</span></label>`).join('')}</div></details>`; }).join('')
+        || `<div class="p-4 sub text-center">ไม่มีหัวข้อที่ใช้งานอยู่ในปีต้นแบบ</div>`;
+      $('#ryList').querySelectorAll('[data-grp]').forEach(g => g.onchange = () => { $('#ryList').querySelectorAll(`[data-g="${CSS.escape(g.dataset.grp)}"]`).forEach(i => i.checked = g.checked); summary(); });
+      $('#ryList').querySelectorAll('[data-code]').forEach(i => i.onchange = summary);
+      summary();
+    };
+    const selected = () => ({ codes: [...$('#ryList').querySelectorAll('[data-code]:checked')].map(i => i.dataset.code),
+      months: [...$('#ryMonths').querySelectorAll('input:checked')].map(i => Number(i.value)), to: Number($('#ryTo').value), from: Number($('#ryFrom').value) });
+    function summary() {
+      $('#ryList').querySelectorAll('[data-grp]').forEach(g => {
+        const all = [...$('#ryList').querySelectorAll(`[data-g="${CSS.escape(g.dataset.grp)}"]`)], n = all.filter(i => i.checked).length;
+        g.checked = n === all.length; g.indeterminate = n > 0 && n < all.length;
+        $('#ryList').querySelector(`[data-gc="${CSS.escape(g.dataset.grp)}"]`).textContent = `${n}/${all.length} หัวข้อ`;
+      });
+      const s = selected(), have = ids();
+      let create = 0, skip = 0;
+      s.codes.forEach(c => s.months.forEach(m => have.has(`${c}_${s.to}_${String(m).padStart(2,'0')}`) ? skip++ : create++));
+      $('#ryCount').textContent = `(เลือก ${s.codes.length} หัวข้อ)`;
+      $('#rySummary').innerHTML = `จะสร้าง <b>${create.toLocaleString()}</b> แถว (${s.codes.length} หัวข้อ × ${s.months.length} เดือน) ในปี KPI <b>${s.to}</b>` + (skip ? ` · ข้าม ${skip.toLocaleString()} แถวที่มีอยู่แล้ว` : '');
+      $('#ryGo').disabled = !create; $('#ryGo').textContent = create ? `สร้าง ${create.toLocaleString()} แถว` : 'ไม่มีแถวที่ต้องสร้าง';
+      delete $('#ryGo').dataset.armed;
+    }
+    $('#ryFrom').onchange = () => { fillTo(); renderMonths(); renderList(); };
+    $('#ryTo').onchange = () => { renderMonths(); summary(); };
+    $('#ryAll').onclick = () => { $('#ryList').querySelectorAll('[data-code]').forEach(i => i.checked = true); summary(); };
+    $('#ryNone').onclick = () => { $('#ryList').querySelectorAll('[data-code]').forEach(i => i.checked = false); summary(); };
+    fillTo(); renderMonths(); renderList();
+    $('#ryGo').onclick = async () => {
+      const s = selected();
+      if (!armed($('#ryGo'), `กดอีกครั้งเพื่อยืนยัน — ปี KPI ${s.to}`, 5000)) return;
+      const btn = $('#ryGo'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังสร้าง… (อาจใช้เวลาสักครู่)'; $('#ryErr').textContent = '';
+      try {
+        const j = await apiPost({ action:'rollYear', fromYear:s.from, toYear:s.to, codes:s.codes, months:s.months }, 0);
+        closeModal();
+        toast(`เปิดปี KPI ${s.to} แล้ว: สร้าง ${j.created.toLocaleString()} แถว` + (j.skipped ? ` · ข้าม ${j.skipped}` : '') + (j.errors.length ? ` · ผิดพลาด ${j.errors.length}` : ''), j.errors.length ? 'warn' : 'ok', 8000);
+        mergeRows(j.rows.map(normalizeServerRow));
+      } catch (e) { $('#ryErr').textContent = errMsg(e); btn.disabled = false; btn.textContent = 'ลองอีกครั้ง'; }
+    };
+  });
+}
+
 /* ========================= TEMPLATE (แบบฟอร์มมาตรฐานรายแผนก) ========================= */
 const TPL_HEADERS = ['KPI_Code','บริษัท','แผนก','Y-MOU','เดือน','TOPIC','วิธีวัดผล','Direction','Target','Actual MTD','หมายเหตุ','Link แหล่งข้อมูล'];
 function fillTemplateSelects() {
@@ -1799,6 +1895,7 @@ $('#segMonthly').querySelectorAll('button').forEach(b => b.onclick = () => {
 $('#btnExport').onclick = exportExcel;
 $('#btnReload').onclick = loadFromServer;
 $('#btnAddUser').onclick = () => openUserForm(null);
+$('#btnRollYear').onclick = openRollYear;
 $('#btnUsersReload').onclick = loadUsers;
 $('#eCompany').onchange = () => { refreshEntryDept(); renderEntry(); };
 ['#eDept','#eYear','#eMonth'].forEach(s => $(s).onchange = renderEntry);

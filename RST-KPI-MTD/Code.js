@@ -18,6 +18,8 @@
  *        → { ok, kpi:{...KPI_Master}, rows:[...] }   (months = สร้างแถวรายเดือนล่วงหน้าพร้อม Target)
  *   POST { action:'updateKpi', kpi:{ kpiCode, topic?, method?, direction?, defaultTarget?, active?, applyFromYear? } }
  *        → { ok, kpi, rows:[แถวที่เปลี่ยน] }
+ *   POST { action:'rollYear', fromYear, toYear, codes:[...], months:[...] }  (Admin) เปิดปี KPI ใหม่
+ *        → { ok, created, skipped, rows:[...] }   คัดลอกหัวข้อ + Target ล่าสุด สร้างแถวรายเดือนล่วงหน้า (ไม่สร้างซ้ำ)
  *   POST { action:'deleteRows', ids:[...] }  → { ok, deleted, ids }   (เก็บสำเนาแถวที่ลบไว้ในชีต Log)
  *
  * หมายเหตุ CORS: ฝั่งหน้าเว็บต้องส่ง POST แบบ Content-Type: text/plain เท่านั้น
@@ -105,6 +107,7 @@ function doPost(e) {
     if (a === 'upsert') return json_(Object.assign({ ok: true }, upsertRows_(body.rows || [], sess)));
     if (a === 'addKpi') return json_(Object.assign({ ok: true }, addKpi_(body.kpi || {}, sess)));
     if (a === 'updateKpi') return json_(Object.assign({ ok: true }, updateKpi_(body.kpi || {}, sess)));
+    if (a === 'rollYear') { requireAdmin_(sess); return json_(Object.assign({ ok: true }, rollYear_(body, sess))); }
     if (a === 'deleteRows') return json_(Object.assign({ ok: true }, deleteRows_(body.ids || [], sess)));
     if (a === 'changePassword') return json_(Object.assign({ ok: true }, changePassword_(sess, body.oldPassword, body.newPassword)));
     if (a === 'listUsers') { requireAdmin_(sess); return json_({ ok: true, users: listUsers_() }); }
@@ -552,6 +555,56 @@ function updateKpi_(k, sess) {
   return { kpi: rowToObj_(m.map(v => typeof v === 'string' ? v.replace(/^'/, '') : v), MASTER_HEADERS), rows: touched };
 }
 
+/**
+ * เปิดปี KPI ใหม่ (Admin): สร้างแถวรายเดือนของปีใหม่จากหัวข้อที่เลือก
+ *   Target / ทิศทาง = ค่าล่าสุดของหัวข้อนั้นในปีต้นแบบ (ไม่มี → ใช้ KPI_Master)
+ *   แถวที่มีอยู่แล้ว (ID ซ้ำ) จะข้าม ไม่เขียนทับ → กดซ้ำได้ปลอดภัย
+ */
+function rollYear_(b, sess) {
+  const fromYear = parseYear_(b.fromYear), toYear = parseYear_(b.toYear);
+  if (!toYear) throw new Error('ปีใหม่ไม่ถูกต้อง');
+  if (fromYear && toYear <= fromYear) throw new Error('ปีใหม่ต้องมากกว่าปีต้นแบบ');
+  const codes = new Set((b.codes || []).map(String));
+  const months = [...new Set((b.months || []).map(Number).filter(m => m >= 1 && m <= 12))];
+  if (!codes.size) throw new Error('ยังไม่ได้เลือกหัวข้อ KPI');
+  if (!months.length) throw new Error('ยังไม่ได้เลือกเดือน');
+
+  const masterSh = ensureSheet_(SH.MASTER, MASTER_HEADERS), mCol = colIndex_(masterSh, MASTER_HEADERS);
+  const master = new Map(sheetBody_(masterSh, MASTER_HEADERS.length).map(r => [String(r[mCol.KPI_Code]), r]));
+  const dataSh = ensureSheet_(SH.DATA, DATA_HEADERS), d = colIndex_(dataSh, DATA_HEADERS);
+  const data = sheetBody_(dataSh, DATA_HEADERS.length);
+  const ids = new Set(data.map(r => String(r[d.ID])));
+  const latest = new Map();                         // ค่าล่าสุดของแต่ละหัวข้อในปีต้นแบบ
+  data.forEach(r => {
+    const c = String(r[d.KPI_Code]);
+    if (!codes.has(c) || (fromYear && Number(r[d.Year]) !== fromYear)) return;
+    const k = Number(r[d.Year]) * 100 + Number(r[d.Month]), cur = latest.get(c);
+    if (isNum_(r[d.Target]) && (!cur || k > cur.k)) latest.set(c, { k, target: r[d.Target], direction: r[d.Direction] });
+  });
+
+  const rows = [], missing = [];
+  let skipped = 0;
+  codes.forEach(c => {
+    const m = master.get(c);
+    if (!m) { missing.push(c); return; }
+    const src = latest.get(c);
+    const target = src ? src.target : (isNum_(m[mCol.DefaultTarget]) ? m[mCol.DefaultTarget] : '');
+    const direction = String((src && src.direction) || m[mCol.Direction] || 'HIGHER').toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
+    months.forEach(mo => {
+      if (ids.has(c + '_' + toYear + '_' + String(mo).padStart(2, '0'))) { skipped++; return; }
+      rows.push({ kpiCode: c, topic: cleanText_(m[mCol.Topic]), method: cleanText_(m[mCol.Method]), year: toYear, month: mo, target, direction });
+    });
+  });
+  if (missing.length) throw new Error('ไม่พบรหัสใน KPI_Master: ' + missing.slice(0, 5).join(', '));
+  let created = 0; const out = [], errors = [];
+  for (let i = 0; i < rows.length; i += MAX_ROWS_PER_REQUEST) {
+    const res = upsertRows_(rows.slice(i, i + MAX_ROWS_PER_REQUEST), sess);
+    created += res.inserted; out.push(...res.rows); errors.push(...res.errors);
+  }
+  log_(sess.name, 'rollYear', rows.length, created, 0, errors.length, (fromYear || '-') + ' → ' + toYear + ' · ' + codes.size + ' หัวข้อ × ' + months.length + ' เดือน · ข้าม ' + skipped);
+  return { created, skipped, errors, rows: out };
+}
+
 /** ลบแถวข้อมูลตาม ID (แก้ไขด่วน) — สำเนาแถวที่ลบเก็บใน Log เพื่อกู้คืนได้ */
 function deleteRows_(ids, sess) {
   const user = sess.name;
@@ -846,7 +899,7 @@ function createAdminFromMenu() {
  */
 function createFirstAdmin() {
   const USERNAME = 'itadmin';
-  const PASSWORD = '111111111';                 // ← ใส่รหัสผ่าน (อย่างน้อย 8 ตัว) แล้วลบออกหลังรันเสร็จ
+  const PASSWORD = '';                 // ← ใส่รหัสผ่าน (อย่างน้อย 8 ตัว) แล้วลบออกหลังรันเสร็จ
   if (!PASSWORD) throw new Error('กรุณาใส่ PASSWORD ในฟังก์ชัน createFirstAdmin ก่อนรัน');
   const un = cleanText_(USERNAME).toLowerCase();
   const { rows, u } = readUsers_();
