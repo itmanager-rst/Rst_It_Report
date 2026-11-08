@@ -12,6 +12,13 @@
  *   GET  ?action=ping&token=…  → { ok:true }
  *   POST body(text/plain JSON) { action:'upsert', token, user, rows:[...] }
  *        → { ok, inserted, updated, unchanged, errors:[{index,msg}], newKpis:[...], rows:[...] }
+ *        แถวที่มี forceDirection:true จะเปลี่ยนทิศทางของแถวเดิมได้ (ใช้จากหน้าแก้ไขด่วน)
+ *   POST { action:'addKpi', kpi:{ company, dept, topic, method, direction, defaultTarget,
+ *          companyCode?, deptCode?, year?, months?:[1..12] } }
+ *        → { ok, kpi:{...KPI_Master}, rows:[...] }   (months = สร้างแถวรายเดือนล่วงหน้าพร้อม Target)
+ *   POST { action:'updateKpi', kpi:{ kpiCode, topic?, method?, direction?, defaultTarget?, active?, applyFromYear? } }
+ *        → { ok, kpi, rows:[แถวที่เปลี่ยน] }
+ *   POST { action:'deleteRows', ids:[...] }  → { ok, deleted, ids }   (เก็บสำเนาแถวที่ลบไว้ในชีต Log)
  *
  * หมายเหตุ CORS: ฝั่งหน้าเว็บต้องส่ง POST แบบ Content-Type: text/plain เท่านั้น
  * (ถ้าส่ง application/json เบราว์เซอร์จะยิง preflight ซึ่ง GAS ไม่รองรับ)
@@ -23,7 +30,16 @@
  */
 const API_TOKEN = 'RSTKPI-i9I8R3TMgLoWHmIZHEZswrUoSciPzUdaJPpK';
 
-const SH = { DATA: 'KPI_Data', MASTER: 'KPI_Master', LOOKUP: 'Lookup', LOG: 'Log' };
+const SH = { DATA: 'KPI_Data', MASTER: 'KPI_Master', LOOKUP: 'Lookup', LOG: 'Log', USERS: 'Users' };
+
+/**
+ * สิทธิ์ผู้ใช้ระดับแผนก (Role = DEPT) — Admin ทำได้ทุกอย่างเสมอ
+ *   DEPT_CAN_DELETE     : ลบแถวข้อมูลของแผนกตัวเองได้
+ *   DEPT_CAN_MANAGE_KPI : เพิ่ม/แก้/ปิดหัวข้อ KPI ของแผนกตัวเองได้
+ */
+const PERMS = { DEPT_CAN_DELETE: false, DEPT_CAN_MANAGE_KPI: false };
+const SESSION_TTL = 6 * 60 * 60;          // วินาที (สูงสุดของ CacheService = 6 ชม.)
+const USER_HEADERS = ['Username','DisplayName','Role','Company','Depts','Active','PassHash','Salt','CreatedAt','CreatedBy','LastLogin','Note'];
 
 const DATA_HEADERS = ['ID','KPI_Code','Company','Dept','Year','Month','MonthName','Topic','Method','Link',
   'Direction','Target','Actual','Achieved','Result','Status','Note','SrcNo','UpdatedAt','UpdatedBy'];
@@ -71,25 +87,175 @@ function doPost(e) {
   }
   if (!checkKey_(body.token || body.apiKey)) return json_({ ok: false, error: 'unauthorized: token ไม่ถูกต้อง' });
 
+  // ---- ไม่ต้องล็อกอิน ----
+  try {
+    if (body.action === 'login') return json_(Object.assign({ ok: true }, login_(body.username, body.password)));
+    if (body.action === 'logout') { if (body.session) CacheService.getScriptCache().remove('sess_' + body.session); return json_({ ok: true }); }
+  } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
+
+  // ---- ทุก action ต่อจากนี้ต้องมี session ที่ยังไม่หมดอายุ (เซิร์ฟเวอร์เป็นผู้ตัดสินสิทธิ์ ไม่เชื่อค่าจากหน้าเว็บ) ----
+  const sess = getSession_(body.session);
+  if (!sess) return json_({ ok: false, error: 'unauthenticated: กรุณาเข้าสู่ระบบ (หรือ session หมดอายุ)', code: 'AUTH' });
+  if (body.action === 'me') return json_({ ok: true, me: publicSession_(sess) });
+
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return json_({ ok: false, error: 'ระบบกำลังบันทึกข้อมูลของผู้ใช้อื่น กรุณาลองใหม่อีกครั้ง' });
   try {
-    if (body.action === 'upsert') {
-      const res = upsertRows_(body.rows || [], String(body.user || 'web').slice(0, 80));
-      return json_(Object.assign({ ok: true }, res));
-    }
-    return json_({ ok: false, error: 'ไม่รู้จัก action: ' + body.action });
+    const a = body.action;
+    if (a === 'upsert') return json_(Object.assign({ ok: true }, upsertRows_(body.rows || [], sess)));
+    if (a === 'addKpi') return json_(Object.assign({ ok: true }, addKpi_(body.kpi || {}, sess)));
+    if (a === 'updateKpi') return json_(Object.assign({ ok: true }, updateKpi_(body.kpi || {}, sess)));
+    if (a === 'deleteRows') return json_(Object.assign({ ok: true }, deleteRows_(body.ids || [], sess)));
+    if (a === 'changePassword') return json_(Object.assign({ ok: true }, changePassword_(sess, body.oldPassword, body.newPassword)));
+    if (a === 'listUsers') { requireAdmin_(sess); return json_({ ok: true, users: listUsers_() }); }
+    if (a === 'saveUser') { requireAdmin_(sess); return json_(Object.assign({ ok: true }, saveUser_(body.u || {}, sess))); }
+    return json_({ ok: false, error: 'ไม่รู้จัก action: ' + a });
   } catch (err) {
-    log_(body.user, body.action, (body.rows || []).length, 0, 0, 1, String(err && err.stack || err));
+    log_(sess.name, body.action, (body.rows || []).length, 0, 0, 1, String(err && err.stack || err));
     return json_({ ok: false, error: String(err && err.message || err) });
   } finally {
     lock.releaseLock();
   }
 }
 
+/* =========================== USERS / SESSION =========================== */
+/*
+ * ชีต Users: 1 แถว = 1 บัญชี
+ *   Role  = ADMIN (ทำได้ทุกอย่าง + จัดการสมาชิก) | DEPT (แก้ไขได้เฉพาะ Company + Depts ของตัวเอง)
+ *   Depts = ชื่อแผนกคั่นด้วย , (เช่น "HR, IT") หรือ * = ทุกแผนกในบริษัทนั้น
+ *   รหัสผ่านเก็บเป็น SHA-256 + salt (วนซ้ำ) ไม่เก็บรหัสจริง — ลืมรหัสให้ Admin ตั้งใหม่
+ */
+function hash_(pw, salt) {
+  let h = String(pw);
+  for (let i = 0; i < 300; i++) {
+    h = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + h, Utilities.Charset.UTF_8)
+      .map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
+  }
+  return h;
+}
+function usersSheet_() { return ensureSheet_(SH.USERS, USER_HEADERS); }
+function readUsers_() {
+  const sh = usersSheet_(), u = colIndex_(sh, USER_HEADERS);
+  return { sh, u, rows: sheetBody_(sh, USER_HEADERS.length) };
+}
+function userObj_(r, u) {
+  const depts = String(r[u.Depts] || '').split(/\s*[,;\n]\s*/).map(cleanText_).filter(String);
+  return { username: String(r[u.Username]).toLowerCase(), name: cleanText_(r[u.DisplayName]) || String(r[u.Username]),
+    role: String(r[u.Role]).toUpperCase() === 'ADMIN' ? 'ADMIN' : 'DEPT', company: normCompany_(r[u.Company]),
+    depts: depts.length ? depts : ['*'], active: String(r[u.Active] || 'Y').toUpperCase() !== 'N' };
+}
+function publicSession_(s) {
+  return { username: s.username, name: s.name, role: s.role, company: s.company, depts: s.depts,
+    canDelete: s.role === 'ADMIN' || PERMS.DEPT_CAN_DELETE, canManageKpi: s.role === 'ADMIN' || PERMS.DEPT_CAN_MANAGE_KPI };
+}
+
+function login_(username, password) {
+  const un = cleanText_(username).toLowerCase();
+  if (!un || !password) throw new Error('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน');
+  const cache = CacheService.getScriptCache(), failKey = 'fail_' + un;
+  const fails = Number(cache.get(failKey) || 0);
+  if (fails >= 5) throw new Error('ใส่รหัสผิดหลายครั้ง บัญชีถูกพักชั่วคราว 10 นาที');
+  const { sh, u, rows } = readUsers_();
+  const i = rows.findIndex(r => String(r[u.Username]).toLowerCase() === un);
+  const r = rows[i];
+  if (!r || hash_(password, String(r[u.Salt])) !== String(r[u.PassHash])) {
+    cache.put(failKey, String(fails + 1), 600);
+    throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  }
+  const user = userObj_(r, u);
+  if (!user.active) throw new Error('บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อ Admin');
+  cache.remove(failKey);
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  cache.put('sess_' + token, un, SESSION_TTL);
+  sh.getRange(i + 2, u.LastLogin + 1).setValue(new Date());
+  log_(user.name, 'login', 0, 0, 0, 0, un);
+  return { session: token, me: publicSession_(user), ttl: SESSION_TTL };
+}
+
+/** ตรวจ session ทุกครั้ง + อ่านสิทธิ์ล่าสุดจากชีต (Admin ปิดบัญชี/เปลี่ยนแผนก มีผลทันที) */
+function getSession_(token) {
+  if (!token || !/^[0-9a-f]{40,80}$/.test(String(token))) return null;
+  const cache = CacheService.getScriptCache();
+  const un = cache.get('sess_' + token);
+  if (!un) return null;
+  const { u, rows } = readUsers_();
+  const r = rows.find(x => String(x[u.Username]).toLowerCase() === un);
+  if (!r) return null;
+  const user = userObj_(r, u);
+  if (!user.active) { cache.remove('sess_' + token); return null; }
+  cache.put('sess_' + token, un, SESSION_TTL);        // ต่ออายุเมื่อมีการใช้งาน
+  return user;
+}
+
+function requireAdmin_(sess) { if (!sess || sess.role !== 'ADMIN') throw new Error('เฉพาะ Admin เท่านั้น'); }
+function inScope_(sess, company, dept) {
+  if (sess.role === 'ADMIN') return true;
+  if (normCompany_(company) !== sess.company) return false;
+  return sess.depts.includes('*') || sess.depts.some(d => normKey_(d) === normKey_(dept));
+}
+function canEditDept_(sess, company, dept) { return inScope_(sess, company, dept); }
+function canDelete_(sess, company, dept) { return sess.role === 'ADMIN' || (PERMS.DEPT_CAN_DELETE && inScope_(sess, company, dept)); }
+function canManageKpi_(sess, company, dept) { return sess.role === 'ADMIN' || (PERMS.DEPT_CAN_MANAGE_KPI && inScope_(sess, company, dept)); }
+
+function listUsers_() {
+  const { u, rows } = readUsers_();
+  return rows.map(r => Object.assign(userObj_(r, u), {
+    note: cleanText_(r[u.Note]), createdBy: cleanText_(r[u.CreatedBy]),
+    createdAt: r[u.CreatedAt] instanceof Date ? r[u.CreatedAt].toISOString() : String(r[u.CreatedAt] || ''),
+    lastLogin: r[u.LastLogin] instanceof Date ? r[u.LastLogin].toISOString() : String(r[u.LastLogin] || '') }));
+}
+
+/** เพิ่ม/แก้ไขสมาชิก (Admin) — ส่ง password มาเฉพาะตอนสร้างใหม่หรือรีเซ็ตรหัส */
+function saveUser_(x, sess) {
+  const un = cleanText_(x.username).toLowerCase();
+  if (!/^[a-z0-9._-]{3,30}$/.test(un)) throw new Error('ชื่อผู้ใช้ 3–30 ตัว ใช้ได้เฉพาะ a-z 0-9 . _ -');
+  const { sh, u, rows } = readUsers_();
+  const i = rows.findIndex(r => String(r[u.Username]).toLowerCase() === un);
+  const isNew = i < 0;
+  if (isNew && !x.isNew) throw new Error('ไม่พบผู้ใช้ ' + un);
+  if (!isNew && x.isNew) throw new Error('ชื่อผู้ใช้ "' + un + '" มีอยู่แล้ว');
+  const role = String(x.role || '').toUpperCase() === 'ADMIN' ? 'ADMIN' : 'DEPT';
+  const lk = buildLookup_();
+  const company = role === 'ADMIN' ? '' : canon_(lk.company, normCompany_(x.company));
+  const depts = role === 'ADMIN' ? '*' : (Array.isArray(x.depts) ? x.depts : String(x.depts || '').split(','))
+    .map(d => cleanText_(d)).filter(String).map(d => d === '*' ? '*' : canon_(lk.dept, d)).join(', ');
+  if (role === 'DEPT' && (!company || !depts)) throw new Error('ผู้ใช้ระดับแผนกต้องระบุบริษัทและแผนก');
+  const active = String(x.active || 'Y').toUpperCase() === 'N' ? 'N' : 'Y';
+  const pw = x.password ? String(x.password) : '';
+  if (isNew && !pw) throw new Error('กรุณาตั้งรหัสผ่าน');
+  if (pw && pw.length < 8) throw new Error('รหัสผ่านอย่างน้อย 8 ตัวอักษร');
+
+  // กันล็อกตัวเองออก: ต้องเหลือ Admin ที่ใช้งานได้อย่างน้อย 1 คน
+  if (!isNew) {
+    const admins = rows.map(r => userObj_(r, u)).filter(o => o.role === 'ADMIN' && o.active && o.username !== un);
+    if ((role !== 'ADMIN' || active === 'N') && !admins.length) throw new Error('ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน');
+  }
+  const row = isNew ? new Array(USER_HEADERS.length).fill('') : rows[i];
+  row[u.Username] = un; row[u.DisplayName] = cleanText_(x.name) || un; row[u.Role] = role;
+  row[u.Company] = company; row[u.Depts] = depts; row[u.Active] = active; row[u.Note] = cleanText_(x.note);
+  if (pw) { const salt = Utilities.getUuid(); row[u.Salt] = salt; row[u.PassHash] = hash_(pw, salt); }
+  if (isNew) { row[u.CreatedAt] = new Date(); row[u.CreatedBy] = sess.username; sh.appendRow(row); }
+  else sh.getRange(i + 2, 1, 1, USER_HEADERS.length).setValues([row]);
+  log_(sess.name, isNew ? 'addUser' : 'updateUser', 1, isNew ? 1 : 0, isNew ? 0 : 1, 0,
+       un + ' ' + role + ' ' + company + ' [' + depts + '] active=' + active + (pw ? ' (ตั้งรหัสใหม่)' : ''));
+  return { user: listUsers_().find(o => o.username === un) };
+}
+
+function changePassword_(sess, oldPw, newPw) {
+  if (!newPw || String(newPw).length < 8) throw new Error('รหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร');
+  const { sh, u, rows } = readUsers_();
+  const i = rows.findIndex(r => String(r[u.Username]).toLowerCase() === sess.username);
+  if (i < 0 || hash_(oldPw || '', String(rows[i][u.Salt])) !== String(rows[i][u.PassHash])) throw new Error('รหัสผ่านเดิมไม่ถูกต้อง');
+  const salt = Utilities.getUuid();
+  sh.getRange(i + 2, u.PassHash + 1, 1, 2).setValues([[hash_(newPw, salt), salt]]);
+  log_(sess.name, 'changePassword', 0, 0, 0, 0, sess.username);
+  return {};
+}
+
 /* =========================== UPSERT =========================== */
 
-function upsertRows_(rows, user) {
+function upsertRows_(rows, sess) {
+  const user = sess.name;
   if (!Array.isArray(rows)) throw new Error('rows ต้องเป็น array');
   if (rows.length > MAX_ROWS_PER_REQUEST) throw new Error('ส่งได้ไม่เกิน ' + MAX_ROWS_PER_REQUEST + ' แถวต่อครั้ง');
 
@@ -131,6 +297,7 @@ function upsertRows_(rows, user) {
              : mByKey.get(masterKey_(v.company, v.dept, v.topic));
       if (mi === undefined) {
         if (!v.topic) throw new Error('ไม่พบ KPI_Code และไม่มี TOPIC สำหรับสร้างหัวข้อใหม่');
+        if (!canManageKpi_(sess, v.company, v.dept)) throw new Error('หัวข้อใหม่ "' + v.topic.slice(0, 40) + '…" — เฉพาะ Admin เพิ่มหัวข้อ KPI ได้');
         const prefix = (lk.compCode[v.company] || 'X') + '-' + (lk.deptCode[v.dept] || 'X');
         const seq = (seqByPrefix.get(prefix) || 0) + 1;
         seqByPrefix.set(prefix, seq);
@@ -150,6 +317,8 @@ function upsertRows_(rows, user) {
         masterDirty = true;
       }
       const m = mVals[mi];
+      if (!canEditDept_(sess, m[mCol.Company], m[mCol.Dept]))
+        throw new Error('ไม่มีสิทธิ์แก้ไขข้อมูลแผนก ' + m[mCol.Dept] + ' · ' + m[mCol.Company]);
       if (raw.needReview && m[mCol.NeedReview] !== 'Y') { m[mCol.NeedReview] = 'Y'; masterDirty = true; }  // สูตร Excel ทิศทางไม่สม่ำเสมอ
       const code = String(m[mCol.KPI_Code]);
       const direction = String(m[mCol.Direction] || 'HIGHER').toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
@@ -178,7 +347,8 @@ function upsertRows_(rows, user) {
       if (v.actual !== undefined) row[dCol.Actual] = v.actual;
       // แถวเดิมใช้ทิศทางที่บันทึกไว้แล้ว (บาง KPI ทิศทางต่างกันรายปี)
       // แถวใหม่: ใช้ทิศทางที่หน้าเว็บส่งมา (ตรวจจากสูตร Excel แบบเสียงข้างมากรายปี) ถ้าไม่มีใช้ KPI_Master
-      if (isNew || !row[dCol.Direction]) row[dCol.Direction] = v.direction || direction;
+      // forceDirection = ผู้ใช้แก้ทิศทางเองจากหน้าแก้ไขด่วน → ทับค่าเดิมได้
+      if (isNew || !row[dCol.Direction] || (v.forceDirection && v.direction)) row[dCol.Direction] = v.direction || direction;
       const rowDir = String(row[dCol.Direction]).toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
 
       const ev = evaluateKpi(row[dCol.Target], row[dCol.Actual], rowDir);
@@ -251,7 +421,155 @@ function normalizeIncoming_(r, lk) {
   ['method', 'link', 'note'].forEach(k => { if (k in r) out[k] = cleanText_(r[k]); });
   if ('srcNo' in r) out.srcNo = r.srcNo;
   if (r.direction) out.direction = String(r.direction).toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
+  if (r.forceDirection) out.forceDirection = true;
   return out;
+}
+
+/* =========================== KPI MASTER (เพิ่ม / แก้ไขหัวข้อ) =========================== */
+
+function addKpi_(k, sess) {
+  const user = sess.name;
+  const lk = buildLookup_();
+  const company = canon_(lk.company, normCompany_(k.company));
+  const dept = canon_(lk.dept, cleanText_(k.dept));
+  const topic = cleanText_(k.topic);
+  if (!company) throw new Error('กรุณาระบุบริษัท');
+  if (!dept) throw new Error('กรุณาระบุแผนก');
+  if (topic.length < 5) throw new Error('หัวข้อ KPI สั้นเกินไป (อย่างน้อย 5 ตัวอักษร)');
+  const target = parseNumber_(k.defaultTarget);
+  if (target !== '' && !isNum_(target)) throw new Error('Target ต้องเป็นตัวเลข เช่น 95%, 0.95, 10');
+  const direction = String(k.direction || '').toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
+  if (!canManageKpi_(sess, company, dept)) throw new Error('ไม่มีสิทธิ์เพิ่มหัวข้อ KPI ของ ' + dept + ' · ' + company);
+
+  // บริษัท/แผนกใหม่ → ต้องมีรหัสย่อ แล้วเพิ่มลงชีต Lookup อัตโนมัติ
+  const lkSh = ensureSheet_(SH.LOOKUP, LOOKUP_HEADERS);
+  const codeOk = c => /^[A-Z0-9]{2,5}$/.test(c);
+  if (!lk.compCode[company]) {
+    const c = cleanText_(k.companyCode).toUpperCase();
+    if (sess.role !== 'ADMIN') throw new Error('เฉพาะ Admin เพิ่มบริษัทใหม่ได้');
+    if (!codeOk(c)) throw new Error('บริษัทใหม่ "' + company + '" ต้องระบุรหัสย่อ 2–5 ตัว (A-Z, 0-9)');
+    lkSh.appendRow(['COMPANY', company, company, c]);
+  }
+  if (!lk.deptCode[dept]) {
+    const c = cleanText_(k.deptCode).toUpperCase();
+    if (sess.role !== 'ADMIN') throw new Error('เฉพาะ Admin เพิ่มแผนกใหม่ได้');
+    if (!codeOk(c)) throw new Error('แผนกใหม่ "' + dept + '" ต้องระบุรหัสย่อ 2–5 ตัว (A-Z, 0-9)');
+    lkSh.appendRow(['DEPT', dept, dept, c]);
+  }
+  const lk2 = buildLookup_();
+
+  const masterSh = ensureSheet_(SH.MASTER, MASTER_HEADERS);
+  const mCol = colIndex_(masterSh, MASTER_HEADERS);
+  const mVals = sheetBody_(masterSh, MASTER_HEADERS.length);
+  const key = masterKey_(company, dept, topic);
+  const dup = mVals.find(r => masterKey_(r[mCol.Company], r[mCol.Dept], r[mCol.Topic]) === key);
+  if (dup) throw new Error('มีหัวข้อนี้อยู่แล้ว: ' + dup[mCol.KPI_Code]);
+
+  const prefix = lk2.compCode[company] + '-' + lk2.deptCode[dept];
+  let seq = 0;
+  mVals.forEach(r => { const m = String(r[mCol.KPI_Code]).match(/^(.*)-(\d+)$/); if (m && m[1] === prefix) seq = Math.max(seq, Number(m[2])); });
+  const code = prefix + '-' + String(seq + 1).padStart(2, '0');
+  const year = parseYear_(k.year) || (new Date().getFullYear() + 543);
+  const months = (Array.isArray(k.months) ? k.months : []).map(Number).filter(m => m >= 1 && m <= 12);
+  const ym = year + '-' + String(months[0] || new Date().getMonth() + 1).padStart(2, '0');
+
+  const mrow = new Array(MASTER_HEADERS.length).fill('');
+  mrow[mCol.KPI_Code] = code; mrow[mCol.Company] = company; mrow[mCol.Dept] = dept; mrow[mCol.Topic] = topic;
+  mrow[mCol.Method] = cleanText_(k.method); mrow[mCol.Direction] = direction;
+  mrow[mCol.DefaultTarget] = target; mrow[mCol.FirstYM] = "'" + ym; mrow[mCol.LastYM] = "'" + ym;
+  mrow[mCol.Active] = 'Y'; mrow[mCol.NeedReview] = '';
+  masterSh.appendRow(mrow);
+  log_(user, 'addKpi', 1, 1, 0, 0, code + ' ' + topic);
+
+  let rows = [];
+  if (months.length) {
+    const res = upsertRows_(months.map(m => ({ kpiCode: code, topic, year, month: m, target, direction })), sess);
+    rows = res.rows;
+  }
+  return { kpi: rowToObj_(mrow.map(v => typeof v === 'string' ? v.replace(/^'/, '') : v), MASTER_HEADERS), rows };
+}
+
+function updateKpi_(k, sess) {
+  const user = sess.name;
+  const code = cleanText_(k.kpiCode);
+  if (!code) throw new Error('ไม่มี KPI_Code');
+  const masterSh = ensureSheet_(SH.MASTER, MASTER_HEADERS);
+  const mCol = colIndex_(masterSh, MASTER_HEADERS);
+  const mVals = sheetBody_(masterSh, MASTER_HEADERS.length);
+  const mi = mVals.findIndex(r => String(r[mCol.KPI_Code]) === code);
+  if (mi < 0) throw new Error('ไม่พบ KPI_Code: ' + code);
+  const m = mVals[mi];
+  if (!canManageKpi_(sess, m[mCol.Company], m[mCol.Dept])) throw new Error('ไม่มีสิทธิ์แก้ไขหัวข้อ KPI นี้');
+  const changes = [];
+
+  if ('topic' in k) {
+    const t = cleanText_(k.topic);
+    if (t.length < 5) throw new Error('หัวข้อ KPI สั้นเกินไป');
+    const key = masterKey_(m[mCol.Company], m[mCol.Dept], t);
+    const dup = mVals.find((r, i) => i !== mi && masterKey_(r[mCol.Company], r[mCol.Dept], r[mCol.Topic]) === key);
+    if (dup) throw new Error('ชื่อหัวข้อซ้ำกับ ' + dup[mCol.KPI_Code]);
+    if (t !== m[mCol.Topic]) { m[mCol.Topic] = t; changes.push('topic'); }
+  }
+  if ('method' in k) { m[mCol.Method] = cleanText_(k.method); changes.push('method'); }
+  if ('defaultTarget' in k) {
+    const t = parseNumber_(k.defaultTarget);
+    if (t !== '' && !isNum_(t)) throw new Error('Target ต้องเป็นตัวเลข');
+    m[mCol.DefaultTarget] = t; changes.push('target');
+  }
+  if ('active' in k) { m[mCol.Active] = String(k.active).toUpperCase() === 'N' ? 'N' : 'Y'; changes.push('active'); }
+  let newDir = '';
+  if (k.direction) {
+    newDir = String(k.direction).toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
+    m[mCol.Direction] = newDir; m[mCol.NeedReview] = ''; changes.push('direction');
+  }
+  // FirstYM/LastYM อาจถูก Sheets แปลงเป็นวันที่ → เขียนกลับเป็นข้อความ
+  m[mCol.FirstYM] = "'" + ymText_(m[mCol.FirstYM]); m[mCol.LastYM] = "'" + ymText_(m[mCol.LastYM]);
+  writeBody_(masterSh, mVals, MASTER_HEADERS.length);
+
+  // นำไปใช้กับแถวข้อมูล: ชื่อหัวข้อทุกแถว / ทิศทางตั้งแต่ปีที่เลือก แล้วคำนวณผลใหม่
+  const touched = [];
+  const fromYear = parseYear_(k.applyFromYear);
+  if (changes.includes('topic') || (newDir && fromYear)) {
+    const dataSh = ensureSheet_(SH.DATA, DATA_HEADERS);
+    const d = colIndex_(dataSh, DATA_HEADERS);
+    const rows = sheetBody_(dataSh, DATA_HEADERS.length);
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+    rows.forEach(r => {
+      if (String(r[d.KPI_Code]) !== code) return;
+      let hit = false;
+      if (changes.includes('topic') && r[d.Topic] !== m[mCol.Topic]) { r[d.Topic] = m[mCol.Topic]; hit = true; }
+      if (newDir && fromYear && Number(r[d.Year]) >= fromYear && r[d.Direction] !== newDir) {
+        r[d.Direction] = newDir;
+        const ev = evaluateKpi(r[d.Target], r[d.Actual], newDir);
+        r[d.Achieved] = ev.achieved === null ? '' : ev.achieved; r[d.Result] = ev.result; r[d.Status] = ev.status;
+        hit = true;
+      }
+      if (hit) { r[d.UpdatedAt] = now; r[d.UpdatedBy] = user; touched.push(rowToObj_(r, DATA_HEADERS)); }
+    });
+    if (touched.length) writeBody_(dataSh, rows, DATA_HEADERS.length);
+  }
+  log_(user, 'updateKpi', 1, 0, touched.length, 0, code + ' ' + changes.join(','));
+  return { kpi: rowToObj_(m.map(v => typeof v === 'string' ? v.replace(/^'/, '') : v), MASTER_HEADERS), rows: touched };
+}
+
+/** ลบแถวข้อมูลตาม ID (แก้ไขด่วน) — สำเนาแถวที่ลบเก็บใน Log เพื่อกู้คืนได้ */
+function deleteRows_(ids, sess) {
+  const user = sess.name;
+  if (!Array.isArray(ids) || !ids.length) throw new Error('ไม่มี ID ที่จะลบ');
+  if (ids.length > 200) throw new Error('ลบได้ครั้งละไม่เกิน 200 แถว');
+  const want = new Set(ids.map(String));
+  const dataSh = ensureSheet_(SH.DATA, DATA_HEADERS);
+  const d = colIndex_(dataSh, DATA_HEADERS);
+  const rows = sheetBody_(dataSh, DATA_HEADERS.length);
+  const keep = [], removed = [];
+  rows.forEach(r => (want.has(String(r[d.ID])) ? removed : keep).push(r));
+  if (!removed.length) throw new Error('ไม่พบ ID ที่ระบุ');
+  const denied = removed.filter(r => !canDelete_(sess, r[d.Company], r[d.Dept]));
+  if (denied.length) throw new Error('ไม่มีสิทธิ์ลบ ' + denied.length + ' แถว (เช่น ' + denied[0][d.ID] + ')');
+  writeBody_(dataSh, keep, DATA_HEADERS.length);
+  if (!keep.length) dataSh.getRange(2, 1, Math.max(1, dataSh.getLastRow() - 1), DATA_HEADERS.length).clearContent();
+  removed.forEach(r => log_(user, 'deleteRow', 1, 0, 0, 0, JSON.stringify(rowToObj_(r, DATA_HEADERS))));
+  return { deleted: removed.length, ids: removed.map(r => String(r[d.ID])) };
 }
 
 function buildLookup_() {
@@ -412,6 +730,8 @@ function onOpen() {
     .addItem('1) สร้างโครงสร้างฐานข้อมูล (setup)', 'setup')
     .addItem('คำนวณผลใหม่ทั้งหมด (recalcAll)', 'recalcAll')
     .addItem('ใช้ทิศทางจาก KPI_Master (applyMasterDirection)', 'applyMasterDirection')
+    .addSeparator()
+    .addItem('สร้าง / รีเซ็ตรหัส Admin', 'createAdminFromMenu')
     .addToUi();
 }
 
@@ -428,6 +748,7 @@ function setup() {
     [SH.MASTER, MASTER_HEADERS, { KPI_Code: 110, Company: 130, Dept: 170, Topic: 460, Method: 300 }],
     [SH.LOOKUP, LOOKUP_HEADERS, { Raw: 260, Canonical: 260 }],
     [SH.LOG, LOG_HEADERS, { Time: 150, User: 180, Detail: 420 }],
+    [SH.USERS, USER_HEADERS, { Username: 140, DisplayName: 180, Company: 140, Depts: 220, PassHash: 120, Note: 220 }],
   ];
   specs.forEach(([name, headers, widths]) => {
     const sh = ensureSheet_(name, headers);
@@ -497,4 +818,41 @@ function testEvaluate() {
     const r = evaluateKpi(c[0], c[1], c[2]);
     Logger.log((r.result === c[3] ? 'OK   ' : 'FAIL ') + JSON.stringify(c) + ' → ' + JSON.stringify(r));
   });
+}
+/**
+ * สร้าง Admin คนแรก หรือรีเซ็ตรหัส Admin ที่ลืม — รันจากเมนู RST-KPI ในชีต (ต้องเป็นผู้มีสิทธิ์แก้ไขสเปรดชีต)
+ */
+function createAdminFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const a = ui.prompt('สร้าง / รีเซ็ต Admin', 'ชื่อผู้ใช้ (a-z 0-9 . _ -)', ui.ButtonSet.OK_CANCEL);
+  if (a.getSelectedButton() !== ui.Button.OK) return;
+  const b = ui.prompt('สร้าง / รีเซ็ต Admin', 'รหัสผ่าน (อย่างน้อย 8 ตัว)', ui.ButtonSet.OK_CANCEL);
+  if (b.getSelectedButton() !== ui.Button.OK) return;
+  const un = cleanText_(a.getResponseText()).toLowerCase();
+  const { rows, u } = readUsers_();
+  const exists = rows.some(r => String(r[u.Username]).toLowerCase() === un);
+  const sess = { username: Session.getActiveUser().getEmail() || 'sheet-owner', name: 'sheet-owner', role: 'ADMIN' };
+  saveUser_({ username: un, name: un, role: 'ADMIN', active: 'Y', password: b.getResponseText(), isNew: !exists }, sess);
+  usersSheet_().getRange('G:H').setFontColor('#999999');
+  ui.alert((exists ? 'รีเซ็ตรหัส Admin "' : 'สร้าง Admin "') + un + '" เรียบร้อย — เข้าสู่ระบบที่หน้าเว็บได้เลย');
+}
+
+/**
+ * ★ สร้าง Admin คนแรก (รันจากหน้า Apps Script ได้เลย ไม่ต้องใช้เมนูในชีต)
+ *   1) แก้ USERNAME / PASSWORD ด้านล่าง → บันทึก (Ctrl+S)
+ *   2) เลือกฟังก์ชัน createFirstAdmin ที่แถบด้านบน → กด "เรียกใช้"
+ *   3) ดูผลที่ "บันทึกการดำเนินการ" → แล้ว "ลบรหัสผ่านออก" กลับเป็น '' แล้วบันทึกอีกครั้ง
+ *   ใช้รีเซ็ตรหัส Admin ที่ลืมได้ด้วย (ใส่ USERNAME เดิม)
+ */
+function createFirstAdmin() {
+  const USERNAME = 'itadmin';
+  const PASSWORD = '111111111';                 // ← ใส่รหัสผ่าน (อย่างน้อย 8 ตัว) แล้วลบออกหลังรันเสร็จ
+  if (!PASSWORD) throw new Error('กรุณาใส่ PASSWORD ในฟังก์ชัน createFirstAdmin ก่อนรัน');
+  const un = cleanText_(USERNAME).toLowerCase();
+  const { rows, u } = readUsers_();
+  const exists = rows.some(r => String(r[u.Username]).toLowerCase() === un);
+  const sess = { username: Session.getActiveUser().getEmail() || 'script-owner', name: 'script-owner', role: 'ADMIN' };
+  saveUser_({ username: un, name: un, role: 'ADMIN', active: 'Y', password: PASSWORD, isNew: !exists }, sess);
+  CacheService.getScriptCache().remove('fail_' + un);
+  Logger.log((exists ? 'รีเซ็ตรหัส Admin "' : 'สร้าง Admin "') + un + '" เรียบร้อย — เข้าสู่ระบบที่หน้าเว็บได้เลย (อย่าลืมลบ PASSWORD ออกจากโค้ด)');
 }

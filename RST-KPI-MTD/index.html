@@ -10,27 +10,62 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
-  :root { --pass:#0ca30c; --fail:#d03b3b; --pending:#b4b2a9; --ink:#1f2328; --muted:#6b6a64; --line:#e1e0d9; --bg:#f6f6f3; --card:#ffffff; --brand:#1f4e78; }
+  :root { --pass:#0ca30c; --fail:#d03b3b; --pending:#b4b2a9; --ink:#1f2328; --muted:#6b6a64; --line:#e1e0d9; --bg:#f6f6f3; --card:#ffffff; --brand:#1f4e78; --s1:#2563a8; --s2:#c2620a; }
   html,body { background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans Thai',system-ui,sans-serif; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  .tab-btn { color:var(--ink); }
   .tab-btn[aria-selected="true"] { background:var(--brand); color:#fff; }
   .sel { border:1px solid var(--line); border-radius:8px; padding:6px 10px; background:#fff; font-size:14px; min-width:0; }
   .sel:focus, .inp:focus { outline:2px solid #7aa7d6; outline-offset:1px; }
+  .sel:disabled, button:disabled { opacity:.5; cursor:not-allowed; }
   .inp { border:1px solid var(--line); border-radius:6px; padding:4px 8px; width:100%; font-size:14px; background:#fff; }
+  .btn { display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:7px 14px; font-size:14px; font-weight:500; }
+  .btn-pri { background:var(--brand); color:#fff; } .btn-pri:hover { background:#173d5e; }
+  .btn-sec { background:#fff; border:1px solid var(--line); } .btn-sec:hover { background:#f4f4f0; }
+  .btn-del { background:#fff; border:1px solid #f1b0b0; color:#a32020; } .btn-del:hover { background:#fdf3f3; }
   .badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:500; white-space:nowrap; }
   .b-pass { background:#e6f6e6; color:#006300; } .b-fail { background:#fbe9e9; color:#a32020; }
   .b-pending { background:#efeee9; color:#55544e; } .b-na { background:#fff4dc; color:#7a5200; }
   .b-err { background:#fbe9e9; color:#a32020; } .b-warn { background:#fff4dc; color:#7a5200; } .b-ok { background:#e6f6e6; color:#006300; }
+  .b-info { background:#e8f0fa; color:#1f4e78; }
   table.tbl { width:100%; border-collapse:collapse; font-size:13px; }
   table.tbl th { position:sticky; top:0; background:#f1f0ec; text-align:left; font-weight:600; padding:8px; border-bottom:1px solid var(--line); z-index:1; }
   table.tbl td { padding:7px 8px; border-bottom:1px solid #efeee9; vertical-align:top; }
   table.tbl tr.clickable:hover td { background:#f4f8fc; cursor:pointer; }
+  table.tbl tr.dirty td { background:#fffbe6; }
   .num { text-align:right; font-variant-numeric:tabular-nums; }
   .drop { border:2px dashed #c3c2b7; border-radius:12px; }
   .drop.over { border-color:var(--brand); background:#eef4fa; }
-  .spinner { width:16px; height:16px; border:2px solid #fff; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
+  .spinner { width:16px; height:16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  .hidden-tab { display:none; }
+  .hidden-tab, .fld.hidden { display:none !important; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:12px; }
+  .seg button { padding:3px 10px; background:#fff; } .seg button[aria-pressed="true"] { background:var(--brand); color:#fff; }
+  .sub { color:var(--muted); font-size:12px; }
+  /* heatmap */
+  table.hm { border-collapse:separate; border-spacing:2px; font-size:12px; width:100%; }
+  table.hm th { font-weight:500; color:var(--muted); padding:2px 4px; white-space:nowrap; position:sticky; top:0; background:#fff; z-index:1; }
+  table.hm td.lab { padding:2px 8px 2px 0; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+  table.hm td.c { text-align:center; border-radius:4px; height:28px; min-width:44px; font-variant-numeric:tabular-nums; cursor:pointer; }
+  table.hm td.c:hover { outline:2px solid var(--ink); }
+  .h4 { background:#0b7a0b; color:#fff; } .h3 { background:#9fd89f; } .h2 { background:#fbd78a; } .h1 { background:#f0a3a3; } .h0 { background:#d03b3b; color:#fff; }
+  .hP { background:repeating-linear-gradient(135deg,#efeee9 0 4px,#e1e0d9 4px 8px); color:#55544e; } .hN { background:#fafaf8; color:#c3c2b7; cursor:default !important; }
+  .legend-sw { display:inline-block; width:14px; height:10px; border-radius:2px; vertical-align:middle; margin-right:4px; }
+  .bar-mini { height:6px; border-radius:3px; background:#efeee9; overflow:hidden; display:flex; gap:1px; }
+  /* modal */
+  #modal { position:fixed; inset:0; background:rgba(20,22,26,.45); display:none; align-items:flex-start; justify-content:center; z-index:60; overflow:auto; padding:40px 16px; }
+  #modal.open { display:flex; }
+  #modalBox { width:100%; max-width:680px; }
+  .fld { display:block; font-size:12px; color:var(--muted); }
+  .fld > .inp, .fld > .sel, .fld > textarea { margin-top:4px; width:100%; color:var(--ink); }
+  textarea.inp { min-height:64px; }
+  .mchk { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--line); border-radius:6px; padding:3px 8px; font-size:13px; cursor:pointer; }
+  .mchk:has(input:checked) { background:#e8f0fa; border-color:#7aa7d6; }
+  @media print {
+    header nav, #btnReload, #lnkSheet, #filterBar button, #banner, .no-print, #toast { display:none !important; }
+    body { background:#fff; } .card { break-inside:avoid; border-color:#ccc; }
+    main { max-width:none !important; padding:0 !important; }
+  }
 </style>
 </head>
 <body class="min-h-screen">
@@ -47,12 +82,15 @@
     </div>
     <nav class="flex flex-wrap gap-1 text-sm" role="tablist">
       <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="dash" aria-selected="true">ภาพรวม</button>
-      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="entry" aria-selected="false">กรอกผลรายเดือน</button>
-      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="import" aria-selected="false">นำเข้า Excel</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="entry" aria-selected="false">กรอก / แก้ไขผล</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="kpi" aria-selected="false">หัวข้อ KPI</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="import" aria-selected="false">แบบฟอร์ม &amp; นำเข้า</button>
       <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="table" aria-selected="false">ข้อมูลทั้งหมด</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="users" aria-selected="false" id="tabUsersBtn" style="display:none">สมาชิก</button>
     </nav>
+    <div id="authBox"></div>
     <a id="lnkSheet" target="_blank" rel="noopener" class="text-sm px-3 py-1.5 rounded-lg border" style="border-color:var(--line)" title="เปิดฐานข้อมูลกลาง">▦ ฐานข้อมูล</a>
-    <button id="btnReload" class="text-sm px-3 py-1.5 rounded-lg border" style="border-color:var(--line)" title="ดึงข้อมูลล่าสุดจากฐานข้อมูลกลาง">↻ รีเฟรชข้อมูล</button>
+    <button id="btnReload" class="text-sm px-3 py-1.5 rounded-lg border" style="border-color:var(--line)" title="ดึงข้อมูลล่าสุดจากฐานข้อมูลกลาง">↻ รีเฟรช</button>
   </div>
 </header>
 
@@ -62,15 +100,17 @@
 
   <!-- ================= FILTER BAR (ใช้ร่วม Dashboard + ตาราง) ================= -->
   <section id="filterBar" class="card p-3 mb-4">
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 items-end">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 items-end">
       <label class="text-xs" style="color:var(--muted)">บริษัท<select id="fCompany" class="sel w-full mt-1"></select></label>
       <label class="text-xs" style="color:var(--muted)">แผนก<select id="fDept" class="sel w-full mt-1"></select></label>
       <label class="text-xs" style="color:var(--muted)">ปี KPI (Y-MOU)<select id="fYear" class="sel w-full mt-1"></select></label>
       <label class="text-xs" style="color:var(--muted)">เดือน<select id="fMonth" class="sel w-full mt-1"></select></label>
       <label class="text-xs" style="color:var(--muted)">ผลเทียบเป้า<select id="fResult" class="sel w-full mt-1"></select></label>
-      <label class="text-xs col-span-2 md:col-span-2 lg:col-span-1" style="color:var(--muted)">ค้นหาหัวข้อ<input id="fSearch" class="sel w-full mt-1" placeholder="พิมพ์คำค้น…"></label>
+      <label class="text-xs col-span-2 md:col-span-2 lg:col-span-1" style="color:var(--muted)">ค้นหาหัวข้อ / รหัส<input id="fSearch" class="sel w-full mt-1" placeholder="พิมพ์คำค้น…"></label>
       <button id="btnResetFilter" class="sel text-sm hover:bg-gray-50">ล้างตัวกรอง</button>
+      <button id="btnPrint" class="sel text-sm hover:bg-gray-50" title="พิมพ์หรือบันทึกเป็น PDF">🖨 พิมพ์ / PDF</button>
     </div>
+    <div id="filterChips" class="flex flex-wrap gap-1 mt-2 text-xs"></div>
   </section>
 
   <!-- ================= TAB: DASHBOARD ================= -->
@@ -80,35 +120,56 @@
 
     <div class="grid lg:grid-cols-5 gap-4 mb-4">
       <div class="card p-4 lg:col-span-3 min-w-0">
-        <div class="flex items-baseline justify-between mb-1">
+        <div class="flex items-center justify-between gap-2 mb-1">
           <h2 class="font-semibold">สถานะ KPI รายเดือน</h2>
-          <span class="text-xs" style="color:var(--muted)">เรียงตามเดือนจริง · ไม่ขึ้นกับตัวกรองเดือน</span>
+          <div class="seg no-print" id="segMonthly"><button data-v="count" aria-pressed="true">จำนวน</button><button data-v="pct" aria-pressed="false">สัดส่วน %</button></div>
         </div>
-        <div class="text-xs mb-2" style="color:var(--muted)">จำนวนหัวข้อที่ครบกำหนดประเมิน แยกตามผล (ไม่นับเดือนที่ยังไม่ถึงกำหนด)</div>
-        <div style="height:300px"><canvas id="chMonthly" aria-label="กราฟสถานะ KPI รายเดือน"></canvas></div>
+        <div class="sub mb-2">หัวข้อ × เดือนที่ครบกำหนดประเมิน (ไม่รวมเดือนปัจจุบัน/อนาคต) · คลิกแท่งเพื่อกรองเดือน</div>
+        <div style="height:280px"><canvas id="chMonthly" aria-label="กราฟสถานะ KPI รายเดือน"></canvas></div>
       </div>
       <div class="card p-4 lg:col-span-2 min-w-0">
-        <h2 class="font-semibold mb-1">สถานะรายแผนก</h2>
-        <div class="text-xs mb-2" style="color:var(--muted)">คลิกแท่งเพื่อกรองแผนก</div>
-        <div id="deptChartWrap" style="height:300px"><canvas id="chDept" aria-label="กราฟสถานะรายแผนก"></canvas></div>
+        <h2 class="font-semibold mb-1">แนวโน้ม % ผ่านเป้า และ % ส่งผล</h2>
+        <div class="sub mb-2">เส้นประ = เกณฑ์ผ่านเป้า 70% · ส่งผลครบ 80%</div>
+        <div style="height:280px"><canvas id="chTrend" aria-label="กราฟแนวโน้มรายเดือน"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card p-4 mb-4 min-w-0">
+      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <div><h2 class="font-semibold">Heatmap % ผ่านเป้า รายแผนก × เดือน</h2>
+          <div class="sub">ตัวเลข = % ผ่านของหัวข้อที่ส่งผลในเดือนนั้น · ช่องลายทาง = ครบกำหนดแต่ยังไม่ส่งผล · คลิกช่องเพื่อเจาะดู</div></div>
+        <div class="sub flex flex-wrap gap-2">
+          <span><span class="legend-sw h4"></span>≥ 90%</span><span><span class="legend-sw h3"></span>70–89%</span><span><span class="legend-sw h2"></span>50–69%</span><span><span class="legend-sw h1"></span>30–49%</span><span><span class="legend-sw h0"></span>&lt; 30%</span><span><span class="legend-sw hP"></span>ค้างส่งผล</span>
+        </div>
+      </div>
+      <div class="overflow-auto" style="max-height:520px" id="heatWrap"></div>
+    </div>
+
+    <div class="grid lg:grid-cols-5 gap-4 mb-4">
+      <div class="card p-4 lg:col-span-2 min-w-0">
+        <h2 class="font-semibold mb-1">เปรียบเทียบรายบริษัท</h2>
+        <div class="sub mb-2">% ส่งผล และ % ผ่านเป้า ตามตัวกรองปัจจุบัน · คลิกเพื่อกรองบริษัท</div>
+        <div id="compWrap" style="height:240px"><canvas id="chComp" aria-label="กราฟเปรียบเทียบรายบริษัท"></canvas></div>
+      </div>
+      <div class="card p-4 lg:col-span-3 overflow-hidden min-w-0">
+        <div class="flex items-baseline justify-between mb-2">
+          <h2 class="font-semibold">หัวข้อที่ไม่ผ่านเป้าซ้ำบ่อย</h2><span class="sub">Top 10 · คลิกเพื่อดูประวัติ</span>
+        </div>
+        <div class="overflow-auto" style="max-height:300px"><table class="tbl" id="tblRepeat"></table></div>
       </div>
     </div>
 
     <div class="grid lg:grid-cols-5 gap-4">
       <div class="card p-4 lg:col-span-2 overflow-hidden min-w-0">
         <h2 class="font-semibold mb-2">สรุปรายแผนก</h2>
-        <div class="overflow-auto" style="max-height:420px">
-          <table class="tbl" id="tblDept"></table>
-        </div>
+        <div class="overflow-auto" style="max-height:440px"><table class="tbl" id="tblDept"></table></div>
       </div>
       <div class="card p-4 lg:col-span-3 overflow-hidden min-w-0">
         <div class="flex items-baseline justify-between mb-2">
           <h2 class="font-semibold">รายการที่ไม่ผ่านเป้า</h2>
-          <span class="text-xs" style="color:var(--muted)" id="ncCount"></span>
+          <span class="sub" id="ncCount"></span>
         </div>
-        <div class="overflow-auto" style="max-height:420px">
-          <table class="tbl" id="tblNC"></table>
-        </div>
+        <div class="overflow-auto" style="max-height:440px"><table class="tbl" id="tblNC"></table></div>
       </div>
     </div>
   </section>
@@ -116,31 +177,69 @@
   <!-- ================= TAB: ENTRY ================= -->
   <section id="tab-entry" class="hidden-tab">
     <div class="card p-4 mb-4">
-      <h2 class="font-semibold mb-1">กรอกผล Actual รายเดือน</h2>
-      <p class="text-sm mb-3" style="color:var(--muted)">เลือกบริษัท แผนก และเดือน แล้วกรอก Actual ระบบจะคำนวณผลเทียบเป้าให้ทันที เว้นว่างไว้ = ยังไม่ได้ประเมิน</p>
-      <div class="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
-        <label class="text-xs" style="color:var(--muted)">ผู้บันทึก<input id="eUser" class="sel w-full mt-1" placeholder="ชื่อ (แผนก)"></label>
+      <h2 class="font-semibold mb-1">กรอก / แก้ไขผล KPI รายเดือน</h2>
+      <p class="text-sm mb-3" style="color:var(--muted)">เลือกบริษัท แผนก และเดือน → แก้ Target / Actual / ทิศทาง / หมายเหตุ ได้ทันที แถวที่แก้จะเป็นสีเหลือง แล้วกด "บันทึก" · ใช้แก้ไขด่วนเมื่อระบบอัตโนมัติส่งค่าผิดได้</p>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
         <label class="text-xs" style="color:var(--muted)">บริษัท<select id="eCompany" class="sel w-full mt-1"></select></label>
         <label class="text-xs" style="color:var(--muted)">แผนก<select id="eDept" class="sel w-full mt-1"></select></label>
         <label class="text-xs" style="color:var(--muted)">ปี KPI (Y-MOU)<select id="eYear" class="sel w-full mt-1"></select></label>
         <label class="text-xs" style="color:var(--muted)">เดือน<select id="eMonth" class="sel w-full mt-1"></select></label>
-        <button id="btnEntryLoad" class="sel text-sm hover:bg-gray-50">แสดงหัวข้อ</button>
+        <button id="btnEntryLoad" class="btn btn-pri justify-center">แสดงหัวข้อ</button>
       </div>
     </div>
     <div class="card p-4" id="entryWrap"><p class="text-sm" style="color:var(--muted)">ยังไม่ได้เลือก</p></div>
   </section>
 
+  <!-- ================= TAB: KPI MASTER ================= -->
+  <section id="tab-kpi" class="hidden-tab">
+    <div class="card p-4 mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <div class="mr-auto"><h2 class="font-semibold">ทะเบียนหัวข้อ KPI</h2>
+          <div class="sub">เพิ่มหัวข้อใหม่ แก้ถ้อยคำ / ทิศทางเป้า / Target ตั้งต้น หรือปิดหัวข้อที่เลิกใช้ — บันทึกลงชีต KPI_Master ทันที</div></div>
+        <button id="btnAddKpi" class="btn btn-pri" style="display:none">＋ เพิ่มหัวข้อ KPI</button>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+        <label class="text-xs" style="color:var(--muted)">บริษัท<select id="kCompany" class="sel w-full mt-1"></select></label>
+        <label class="text-xs" style="color:var(--muted)">แผนก<select id="kDept" class="sel w-full mt-1"></select></label>
+        <label class="text-xs" style="color:var(--muted)">สถานะ<select id="kStatus" class="sel w-full mt-1">
+          <option value="active">ใช้งานอยู่</option><option value="review">ต้องตรวจทิศทาง</option><option value="inactive">ปิดใช้งาน</option><option value="__all__">ทั้งหมด</option></select></label>
+        <label class="text-xs md:col-span-2" style="color:var(--muted)">ค้นหา<input id="kSearch" class="sel w-full mt-1" placeholder="หัวข้อ หรือ รหัส"></label>
+      </div>
+    </div>
+    <div class="card p-4"><div class="flex items-baseline justify-between mb-2"><span class="sub" id="kCount"></span></div>
+      <div class="overflow-auto" style="max-height:640px"><table class="tbl" id="tblKpi"></table></div></div>
+  </section>
+
   <!-- ================= TAB: IMPORT ================= -->
   <section id="tab-import" class="hidden-tab">
-    <div class="card p-4 mb-4">
-      <h2 class="font-semibold mb-1">นำเข้าไฟล์ Excel ฟอร์มเดิม</h2>
-      <p class="text-sm mb-3" style="color:var(--muted)">รองรับชีต "RST-KPI กรอกช่องนี้" และฟอร์มแผนกที่มีหัวคอลัมน์ TOPIC / บริษัท / แผนก / เดือน / Y-MOU / Target / Actual ระบบหาแถวหัวตารางเอง ข้ามแถวว่าง และเติมค่าเซลล์ที่ merge ให้</p>
-      <label id="drop" class="drop p-6 flex flex-col items-center justify-center text-center cursor-pointer">
-        <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" class="hidden">
-        <div class="text-3xl mb-1">📄</div>
-        <div class="font-medium">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
-        <div class="text-xs" style="color:var(--muted)">.xlsx / .xlsm — อ่านในเบราว์เซอร์ ไม่ส่งไฟล์ออกไปจนกว่าจะกดบันทึก</div>
-      </label>
+    <div class="grid lg:grid-cols-2 gap-4 mb-4">
+      <div class="card p-4">
+        <div class="flex items-center gap-2 mb-1"><span class="badge b-info">ขั้นที่ 1</span><h2 class="font-semibold">ดาวน์โหลดแบบฟอร์มมาตรฐาน (Template)</h2></div>
+        <p class="text-sm mb-3" style="color:var(--muted)">สร้างไฟล์ Excel เฉพาะบริษัท/แผนกของคุณ พร้อมหัวข้อ KPI และ Target ล่าสุด — กรอกแค่ช่อง <b>Actual</b> (และหมายเหตุ) แล้วส่งกลับที่ขั้นที่ 2</p>
+        <div class="grid grid-cols-2 gap-2 items-end">
+          <label class="text-xs" style="color:var(--muted)">บริษัท<select id="tCompany" class="sel w-full mt-1"></select></label>
+          <label class="text-xs" style="color:var(--muted)">แผนก<select id="tDept" class="sel w-full mt-1"></select></label>
+          <label class="text-xs" style="color:var(--muted)">ปี KPI (Y-MOU)<select id="tYear" class="sel w-full mt-1"></select></label>
+          <label class="text-xs" style="color:var(--muted)">ช่วงเดือน<select id="tMonth" class="sel w-full mt-1"></select></label>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 mt-3">
+          <button id="btnTemplate" class="btn btn-pri">⬇ ดาวน์โหลดแบบฟอร์ม</button>
+          <button id="btnTemplateBlank" class="btn btn-sec" title="ไฟล์เปล่าสำหรับแผนกที่ยังไม่มีหัวข้อในระบบ">⬇ แบบฟอร์มเปล่า</button>
+          <span class="sub" id="tInfo"></span>
+        </div>
+      </div>
+      <div class="card p-4">
+        <div class="flex items-center gap-2 mb-1"><span class="badge b-info">ขั้นที่ 2</span><h2 class="font-semibold">อัปโหลดไฟล์เข้าระบบ</h2></div>
+        <p class="text-sm mb-3" style="color:var(--muted)">รองรับแบบฟอร์มมาตรฐาน และไฟล์ฟอร์มเดิม ("RST-KPI กรอกช่องนี้") ระบบหาแถวหัวตารางเอง ข้ามแถวว่าง และให้ตรวจก่อนบันทึก</p>
+        <label id="drop" class="drop p-5 flex flex-col items-center justify-center text-center cursor-pointer">
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" class="hidden">
+          <div class="text-3xl mb-1">📄</div>
+          <div class="font-medium">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
+          <div class="text-xs" style="color:var(--muted)">.xlsx / .xlsm — อ่านในเบราว์เซอร์ ไม่ส่งออกไปจนกว่าจะกดบันทึก</div>
+        </label>
+        <label class="flex items-start gap-2 text-sm mt-3"><input type="checkbox" id="impSkipBlank" checked class="mt-1">
+          <span>ไม่เขียนทับด้วยช่องว่าง <span class="sub block">ช่อง Actual / Target / หมายเหตุ ที่เว้นว่างในไฟล์ จะไม่ลบค่าที่มีอยู่แล้วในระบบ (แนะนำ) — ถ้าต้องการล้างค่า ให้แก้ที่แท็บ "กรอก / แก้ไขผล"</span></span></label>
+      </div>
     </div>
     <div id="importResult"></div>
   </section>
@@ -148,17 +247,32 @@
   <!-- ================= TAB: TABLE ================= -->
   <section id="tab-table" class="hidden-tab">
     <div class="card p-4">
-      <div class="flex flex-wrap items-center gap-2 mb-3">
+      <div class="flex flex-wrap items-center gap-2 mb-2">
         <h2 class="font-semibold mr-auto">ข้อมูล KPI ทั้งหมด <span class="text-sm font-normal" style="color:var(--muted)" id="tblCount"></span></h2>
-        <button id="btnExport" class="sel text-sm hover:bg-gray-50">⬇ ส่งออก Excel (ตามตัวกรอง)</button>
+        <button id="btnExport" class="btn btn-sec">⬇ ส่งออก Excel (ตามตัวกรอง)</button>
       </div>
+      <div id="tblNote" class="text-sm mb-3"></div>
       <div class="overflow-auto" style="max-height:640px"><table class="tbl" id="tblAll"></table></div>
       <div class="flex items-center justify-end gap-2 mt-3 text-sm" id="pager"></div>
     </div>
   </section>
+
+  <!-- ================= TAB: USERS (Admin) ================= -->
+  <section id="tab-users" class="hidden-tab">
+    <div class="card p-4 mb-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="mr-auto"><h2 class="font-semibold">สมาชิก</h2>
+          <div class="sub">เฉพาะ Admin · Admin ทำได้ทุกอย่าง · ผู้ใช้แผนก กรอก/แก้ไขได้เฉพาะบริษัทและแผนกที่กำหนด · บัญชีเก็บในชีต Users (รหัสผ่านเข้ารหัสทางเดียว)</div></div>
+        <button id="btnUsersReload" class="btn btn-sec">↻</button>
+        <button id="btnAddUser" class="btn btn-pri">＋ เพิ่มสมาชิก</button>
+      </div>
+    </div>
+    <div class="card p-4"><div class="overflow-auto"><table class="tbl" id="tblUsers"></table></div></div>
+  </section>
 </main>
 
-<div id="toast" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+<div id="modal" role="dialog" aria-modal="true"><div id="modalBox" class="card p-5 shadow-xl"></div></div>
+<div id="toast" class="fixed bottom-4 right-4 z-[70] space-y-2"></div>
 
 <script>
 /* =====================================================================
@@ -173,6 +287,8 @@ const CONFIG = {
   // ปี KPI (Y-MOU) ที่ใช้รอบ "ปีงบประมาณ" → ใส่เดือนเริ่มต้น เช่น 2568: 4 = เม.ย. 68 – มี.ค. 69
   // ปีที่ไม่ได้ระบุ = รอบปฏิทิน ม.ค.–ธ.ค. (ไฟล์เดิม: Y-MOU 2568 ม.ค.–มี.ค. คือ ม.ค.–มี.ค. 2569 จริง)
   YMOU_START_MONTH: { 2568: 4 },
+  PASS_GOAL: 0.7,         // เกณฑ์ % ผ่านเป้า (ตัวแดงเมื่อต่ำกว่า)
+  SUBMIT_GOAL: 0.8,       // เกณฑ์ % ส่งผล
 };
 
 /* ========================= CONSTANTS ========================= */
@@ -180,7 +296,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const TH_M = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const R = { PASS:'ผ่านเป้า', FAIL:'ต่ำกว่าเป้า', NA:'ไม่มีข้อมูล (N.A.)', PENDING:'ยังไม่ได้ประเมิน' };
 const S = { PASS:'ผ่านเป้า', FAIL:'ไม่ผ่านเป้า', PENDING:'ยังไม่ได้ประเมิน' };
-const COLORS = { pass:'#0ca30c', fail:'#d03b3b', pending:'#b4b2a9', grid:'#e1e0d9', axis:'#c3c2b7', ink:'#1f2328', muted:'#6b6a64' };
+const COLORS = { pass:'#0ca30c', fail:'#d03b3b', pending:'#b4b2a9', grid:'#e1e0d9', axis:'#c3c2b7', ink:'#1f2328', muted:'#6b6a64', s1:'#2563a8', s2:'#c2620a' };
 const ALL = '__all__';
 
 /* ========================= STATE ========================= */
@@ -191,6 +307,8 @@ const state = {
   page: 1, pageSize: 50,
   importParsed: null,
   charts: {},
+  monthlyMode: 'count',
+  fixedResults: 0,                 // แถวที่ผลในฐานข้อมูลไม่ตรงสูตร (คำนวณใหม่บนหน้าเว็บ)
 };
 
 /* ========================= SETTINGS (localStorage แบบปลอดภัย) ========================= */
@@ -201,7 +319,11 @@ const store = {
 const API_CONFIGURED = /^https:\/\/script\.google(usercontent)?\.com\/.+\/exec$/.test(CONFIG.API_URL.trim()) && !/^วาง_/.test(CONFIG.API_TOKEN);
 const apiUrl  = () => API_CONFIGURED ? CONFIG.API_URL.trim() : '';
 const apiToken = () => CONFIG.API_TOKEN || '';
-const apiUser = () => clean($('#eUser')?.value) || store.get('user') || 'web';   // ชื่อผู้บันทึก (จำไว้ในเครื่อง)
+/* ---------- AUTH (ระบบสมาชิก — สิทธิ์จริงตรวจที่ Code.gs ทุกครั้ง หน้านี้แค่ซ่อน/แสดงปุ่มให้ตรงสิทธิ์) ---------- */
+const auth = {
+  get token() { try { return localStorage.getItem('rstkpi.session') || ''; } catch { return ''; } },
+  set token(v) { try { v ? localStorage.setItem('rstkpi.session', v) : localStorage.removeItem('rstkpi.session'); } catch {} },
+};
 
 /* ========================= UTIL ========================= */
 const $ = (s, el=document) => el.querySelector(s);
@@ -216,16 +338,23 @@ const fmtNum = (v, ratio) => isNum(v) ? (ratio ? (v*100).toLocaleString('th-TH',
 const fmtPct = v => isNum(v) ? (v*100).toLocaleString('th-TH',{maximumFractionDigits:1})+'%' : '–';
 const pct = (a,b) => b ? Math.round(a/b*1000)/10 : 0;
 const ymLabel = (y,m) => `${TH_M[m-1]} ${String(y).slice(-2)}`;
+const pLabel = p => ymLabel(Math.floor(p/100), p%100);
+const dirOf = v => String(v||'').toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER';
+// ค่าที่แสดงในช่อง input (สัดส่วน → แสดงเป็น % ให้คนอ่านง่าย)
+const inputVal = (v, ratio) => isNum(v) ? (ratio ? +(Number(v)*100).toFixed(4) + '%' : String(+Number(v).toFixed(6))) : String(v ?? '');
 
 /* ---------- งวดเวลา (หลักการประเมิน) ----------
  * Year  = ปี KPI (Y-MOU) ชุดหัวข้อที่ใช้ประเมิน · Month = เดือนที่ประเมิน
  * PY/PM = ปี/เดือนตามปฏิทินจริง (พ.ศ.) ใช้เรียงเวลาและตัดสินว่า "ครบกำหนด" หรือยัง
  * Due   = งวดที่สิ้นเดือนไปแล้ว → ต้องมีผล ถ้าว่าง = ค้างส่งผล / งวดเดือนนี้และอนาคต = ยังไม่ถึงกำหนด (ไม่นับ)
  */
-const NOW_P = (new Date().getFullYear() + 543) * 100 + (new Date().getMonth() + 1);
+const NOW_Y = new Date().getFullYear() + 543, NOW_M = new Date().getMonth() + 1;
+const NOW_P = NOW_Y * 100 + NOW_M;
+const ymouStart = y => Number(CONFIG.YMOU_START_MONTH[y] || 1);
+const ymouMonths = y => { const st = ymouStart(y); return [...Array(12)].map((_, i) => ((st - 1 + i) % 12) + 1); };   // ลำดับเดือนในรอบปี KPI
+const realYear = (y, m) => { const st = ymouStart(y); return (st > 1 && m < st) ? y + 1 : y; };
 function withPeriod(r) {
-  const st = Number(CONFIG.YMOU_START_MONTH[r.Year] || 1);
-  r.PY = (st > 1 && r.Month < st) ? r.Year + 1 : r.Year;
+  r.PY = realYear(r.Year, r.Month);
   r.PM = r.Month; r.P = r.PY * 100 + r.PM;
   r.Due = r.P < NOW_P;
   return r;
@@ -253,6 +382,7 @@ function resultBadge(r, row) {
 const dirBadge = d => d === 'LOWER'
   ? `<span class="badge b-pending" title="ยิ่งน้อยยิ่งดี: Actual ≤ Target = ผ่าน">↓ น้อยดี</span>`
   : `<span class="badge b-pending" title="ยิ่งมากยิ่งดี: Actual ≥ Target = ผ่าน">↑ มากดี</span>`;
+const srcBadge = by => /^asset-app|auto|bot/i.test(by||'') ? `<span class="badge b-info" title="บันทึกโดยระบบอัตโนมัติ">⚙ ${esc(by)}</span>` : (by ? `<span class="sub">${esc(by)}</span>` : '');
 
 /* ========================= BUSINESS LOGIC (ต้องตรงกับ Code.gs) ========================= */
 function evaluateKpi(target, actual, direction) {
@@ -295,17 +425,17 @@ function parseYear(v) {
 }
 
 function buildLookupMaps() {
-  const lk = { company:{}, dept:{} };
+  const lk = { company:{}, dept:{}, compCode:{}, deptCode:{} };
   state.lookup.forEach(o => {
     const t = String(o.Type||'').toUpperCase(), c = clean(o.Canonical);
     if (!c) return;
-    if (t === 'COMPANY') { lk.company[normKey(normCompany(o.Raw))] = normCompany(c); lk.company[normKey(normCompany(c))] = normCompany(c); }
-    if (t === 'DEPT')    { lk.dept[normKey(o.Raw)] = c; lk.dept[normKey(c)] = c; }
+    if (t === 'COMPANY') { lk.company[normKey(normCompany(o.Raw))] = normCompany(c); lk.company[normKey(normCompany(c))] = normCompany(c); if (o.Code) lk.compCode[normCompany(c)] = String(o.Code); }
+    if (t === 'DEPT')    { lk.dept[normKey(o.Raw)] = c; lk.dept[normKey(c)] = c; if (o.Code) lk.deptCode[c] = String(o.Code); }
   });
   return lk;
 }
 
-/* ========================= API (รูปแบบเดียวกับแอป IT Subscription) ========================= */
+/* ========================= API ========================= */
 function setConn(kind, text) {   // kind: off | wait | ok | err
   $('#connDot').style.background = { off:'#b4b2a9', wait:'#fab219', ok:COLORS.pass, err:COLORS.fail }[kind] || '#b4b2a9';
   $('#srcInfo').textContent = text;
@@ -314,7 +444,9 @@ function errMsg(e) {
   const m = String((e && e.message) || e || '');
   if (e instanceof SyntaxError || /JSON/.test(m)) return 'Server ไม่ได้ตอบเป็น JSON — ตรวจ Deploy (Who has access: Anyone) และ URL ลงท้าย /exec';
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'เชื่อมต่อ Server ไม่ได้ — ตรวจอินเทอร์เน็ต หรือ API_URL ใน index.html';
+  if (/unauthenticated/i.test(m)) return 'กรุณาเข้าสู่ระบบ (session หมดอายุ)';
   if (/unauthorized/i.test(m)) return 'Token ไม่ถูกต้อง — API_TOKEN ใน index.html ต้องตรงกับใน Code.gs (และ Deploy เวอร์ชันใหม่แล้ว)';
+  if (/ไม่รู้จัก action/.test(m)) return m + ' — Code.gs บนเซิร์ฟเวอร์ยังเป็นเวอร์ชันเก่า: วาง Code.gs ใหม่แล้ว Deploy เวอร์ชันใหม่';
   return m;
 }
 async function apiGet(action='data') {
@@ -335,10 +467,14 @@ async function apiPost(payload, retries=2) {
       const res = await fetch(apiUrl(), {
         method:'POST', redirect:'follow',
         headers:{ 'Content-Type':'text/plain;charset=utf-8' },   // text/plain เพื่อเลี่ยง CORS preflight
-        body: JSON.stringify(Object.assign({ token: apiToken(), user: apiUser() }, payload)),
+        body: JSON.stringify(Object.assign({ token: apiToken(), session: auth.token }, payload)),
       });
       const j = JSON.parse(await res.text());
-      if (!j.ok) { const e = new Error(j.error || 'บันทึกไม่สำเร็จ'); e.noRetry = !/ลองใหม่/.test(j.error||''); throw e; }
+      if (!j.ok) {
+        const e = new Error(j.error || 'บันทึกไม่สำเร็จ'); e.noRetry = !/ลองใหม่/.test(j.error||'');
+        if (j.code === 'AUTH' && payload.action !== 'me') onAuthLost();
+        throw e;
+      }
       return j;
     } catch (err) {
       if (i >= retries || err.noRetry || err instanceof SyntaxError) throw err;
@@ -346,17 +482,110 @@ async function apiPost(payload, retries=2) {
     }
   }
 }
+const isAdmin = () => state.me?.role === 'ADMIN';
+function inScope(company, dept) {
+  const me = state.me; if (!me) return false; if (me.role === 'ADMIN') return true;
+  return normCompany(company) === me.company && (me.depts.includes('*') || me.depts.some(d => normKey(d) === normKey(dept)));
+}
+const canEdit = inScope;
+const canDelete = (c, d) => !!state.me && (isAdmin() || (state.me.canDelete && inScope(c, d)));
+const canManageKpi = (c, d) => !!state.me && (isAdmin() || (state.me.canManageKpi && (c === undefined || inScope(c, d))));
+const scopeText = me => me.role === 'ADMIN' ? 'Admin' : `${me.depts.includes('*') ? 'ทุกแผนก' : me.depts.join(', ')} · ${me.company}`;
+// ทุกการแก้ไขต้องล็อกอิน (ชื่อใน UpdatedBy มาจากบัญชีที่ล็อกอิน — เซิร์ฟเวอร์เป็นผู้ใส่)
+function requireUser(company, dept) {
+  if (!state.me) { openLogin(); return false; }
+  if (company !== undefined && !inScope(company, dept)) { toast(`บัญชีของคุณไม่มีสิทธิ์แก้ไข ${dept} · ${company}`, 'err'); return false; }
+  return true;
+}
+function onAuthLost() { auth.token = ''; state.me = null; renderAuth(); applyRoleUI(); openLogin('Session หมดอายุ หรือบัญชีถูกปิด — กรุณาเข้าสู่ระบบใหม่'); }
+
+function renderAuth() {
+  const me = state.me;
+  $('#authBox').innerHTML = me
+    ? `<button id="btnMe" class="text-sm px-3 py-1.5 rounded-lg border flex items-center gap-2" style="border-color:var(--line)" title="บัญชีของฉัน">👤 <span class="font-medium">${esc(me.name)}</span><span class="badge ${me.role==='ADMIN'?'b-info':'b-pending'}">${esc(scopeText(me))}</span></button>`
+    : `<button id="btnLogin" class="btn btn-pri" style="padding:6px 12px">🔑 เข้าสู่ระบบ</button>`;
+  $('#btnMe')?.addEventListener('click', openMe);
+  $('#btnLogin')?.addEventListener('click', () => openLogin());
+}
+function applyRoleUI() {
+  $('#tabUsersBtn').style.display = isAdmin() ? '' : 'none';
+  $('#btnAddKpi').style.display = canManageKpi() ? '' : 'none';
+  if (!isAdmin() && !$('#tab-users').classList.contains('hidden-tab')) switchTab('dash');
+  fillEntrySelects(); fillTemplateSelects();
+  if ($('#tblEntry') || $('#entryWrap [data-login]')) renderEntry();
+  renderKpiTab();
+}
+function openLogin(msg) {
+  openModal(`
+    <div class="flex items-start gap-3 mb-1"><h3 class="font-semibold text-lg mr-auto">เข้าสู่ระบบ RST-KPI</h3><button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <p class="sub mb-4">${msg ? esc(msg) : 'ดู Dashboard ได้โดยไม่ต้องล็อกอิน · การกรอก/แก้ไขข้อมูลต้องใช้บัญชีที่ Admin สร้างให้'}</p>
+    <form id="loginForm" class="space-y-3" style="max-width:420px">
+      <label class="fld">ชื่อผู้ใช้<input id="lgUser" class="inp" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <label class="fld">รหัสผ่าน<input id="lgPass" type="password" class="inp" autocomplete="current-password"></label>
+      <div id="lgErr" class="text-sm" style="color:#a32020"></div>
+      <div class="flex gap-2 items-center"><span class="sub mr-auto">ลืมรหัสผ่าน? ติดต่อ Admin</span><button type="submit" id="lgBtn" class="btn btn-pri">เข้าสู่ระบบ</button></div>
+    </form>`, box => {
+    $('#lgUser').value = store.get('lastUser');
+    if ($('#lgUser').value) setTimeout(() => $('#lgPass').focus(), 50);
+    $('#loginForm').onsubmit = async e => {
+      e.preventDefault();
+      const btn = $('#lgBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังตรวจสอบ'; $('#lgErr').textContent = '';
+      try {
+        const j = await apiPost({ action:'login', username: clean($('#lgUser').value), password: $('#lgPass').value }, 0);
+        auth.token = j.session; state.me = j.me; store.set('lastUser', j.me.username);
+        closeModal(); renderAuth(); applyRoleUI();
+        toast(`ยินดีต้อนรับ ${j.me.name} (${scopeText(j.me)})`, 'ok');
+      } catch (err) { $('#lgErr').textContent = errMsg(err); $('#lgPass').select(); }
+      finally { btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ'; }
+    };
+  });
+}
+function openMe() {
+  const me = state.me; if (!me) return openLogin();
+  openModal(`
+    <div class="flex items-start gap-3 mb-3"><div class="mr-auto"><h3 class="font-semibold text-lg">${esc(me.name)}</h3><div class="sub">ชื่อผู้ใช้: ${esc(me.username)}</div></div><button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <div class="text-sm mb-4 p-3 rounded" style="background:#f3f8fd">สิทธิ์: <b>${me.role === 'ADMIN' ? 'Admin — ทำได้ทุกอย่าง' : 'ผู้ใช้แผนก — กรอก/แก้ไขได้เฉพาะ ' + esc(scopeText(me))}</b>
+      ${me.role !== 'ADMIN' ? `<div class="sub mt-1">ลบข้อมูล: ${me.canDelete ? 'ได้ (เฉพาะแผนกตัวเอง)' : 'ไม่ได้'} · จัดการหัวข้อ KPI: ${me.canManageKpi ? 'ได้ (เฉพาะแผนกตัวเอง)' : 'ไม่ได้ — แจ้ง Admin'}</div>` : ''}</div>
+    <h4 class="font-medium mb-2">เปลี่ยนรหัสผ่าน</h4>
+    <form id="pwForm" class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+      <label class="fld">รหัสเดิม<input id="pwOld" type="password" class="inp" autocomplete="current-password"></label>
+      <label class="fld">รหัสใหม่ (≥ 8 ตัว)<input id="pwNew" type="password" class="inp" autocomplete="new-password"></label>
+      <label class="fld">ยืนยันรหัสใหม่<input id="pwNew2" type="password" class="inp" autocomplete="new-password"></label>
+      <div class="md:col-span-3 flex items-center gap-2"><span id="pwMsg" class="text-sm mr-auto"></span><button type="submit" id="pwBtn" class="btn btn-sec">เปลี่ยนรหัสผ่าน</button></div>
+    </form>
+    <div class="flex mt-5 pt-4 border-t" style="border-color:var(--line)"><span class="mr-auto"></span><button id="btnLogout" class="btn btn-del">ออกจากระบบ</button></div>`, () => {
+    $('#pwForm').onsubmit = async e => {
+      e.preventDefault();
+      const msg = (t, err) => { $('#pwMsg').textContent = t; $('#pwMsg').style.color = err ? '#a32020' : '#006300'; };
+      if ($('#pwNew').value.length < 8) return msg('รหัสใหม่อย่างน้อย 8 ตัวอักษร', true);
+      if ($('#pwNew').value !== $('#pwNew2').value) return msg('ยืนยันรหัสใหม่ไม่ตรงกัน', true);
+      try { await apiPost({ action:'changePassword', oldPassword:$('#pwOld').value, newPassword:$('#pwNew').value }, 0); msg('เปลี่ยนรหัสผ่านแล้ว'); $('#pwForm').reset(); }
+      catch (err) { msg(errMsg(err), true); }
+    };
+    $('#btnLogout').onclick = async () => {
+      try { await apiPost({ action:'logout' }, 0); } catch {}
+      auth.token = ''; state.me = null; closeModal(); renderAuth(); applyRoleUI(); toast('ออกจากระบบแล้ว', 'ok');
+    };
+  });
+}
+async function restoreSession() {
+  if (!auth.token || !apiUrl()) return renderAuth();
+  try { const j = await apiPost({ action:'me' }, 0); state.me = j.me; }
+  catch { auth.token = ''; state.me = null; }
+  renderAuth(); applyRoleUI();
+}
 
 async function loadFromServer() {
   if (!apiUrl()) { setConn('off', 'ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html'); renderBanner(); return false; }
   setConn('wait', 'กำลังเชื่อมต่อฐานข้อมูลกลาง…');
   try {
     const j = await apiGet('data');
+    state.fixedResults = 0;
     state.data = j.data.map(normalizeServerRow);
-    state.master = j.master; state.lookup = j.lookup;
+    state.master = j.master.map(normalizeMaster); state.lookup = j.lookup;
     state.source = 'server';
-    setConn('ok', `เชื่อมต่อฐานข้อมูลกลางสำเร็จ · ${state.data.length.toLocaleString()} รายการ · อัปเดต ${new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} น.`);
-    renderBanner(); initFilters(); renderAll();
+    setConn('ok', `เชื่อมต่อฐานข้อมูลกลาง · ${state.data.length.toLocaleString()} รายการ · ${state.master.length} หัวข้อ · อัปเดต ${new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} น.`);
+    renderBanner(); initFilters(); renderAll(); renderKpiTab();
     return true;
   } catch (e) {
     setConn('err', 'เชื่อมต่อไม่สำเร็จ');
@@ -364,32 +593,56 @@ async function loadFromServer() {
     return false;
   }
 }
+// ผลเทียบเป้า "คำนวณใหม่เสมอ" จาก Target/Actual/Direction — กันกรณีระบบอื่นเขียนค่าผิดรูปแบบลงชีตโดยตรง (เช่น Result = "N.A.")
 function normalizeServerRow(o) {
-  return withPeriod({
+  const r = {
     ID:String(o.ID), KPI_Code:String(o.KPI_Code||''), Company:normCompany(o.Company), Dept:clean(o.Dept),
     Year:Number(o.Year), Month:Number(o.Month), Topic:clean(o.Topic), Method:o.Method||'', Link:o.Link||'',
-    Direction:o.Direction==='LOWER'?'LOWER':'HIGHER', Target:o.Target, Actual:o.Actual,
-    Achieved:o.Achieved===''?null:o.Achieved, Result:o.Result||R.PENDING, Status:o.Status||S.PENDING,
+    Direction:dirOf(o.Direction), Target:o.Target, Actual:o.Actual,
     Note:o.Note||'', UpdatedAt:o.UpdatedAt||'', UpdatedBy:o.UpdatedBy||'',
-  });
+  };
+  const ev = evaluateKpi(r.Target, r.Actual, r.Direction);
+  if ((o.Result || R.PENDING) !== ev.result) state.fixedResults++;
+  Object.assign(r, { Achieved:ev.achieved, Result:ev.result, Status:ev.status });
+  return withPeriod(r);
+}
+function normalizeMaster(m) {
+  return { ...m, KPI_Code:String(m.KPI_Code||''), Company:normCompany(m.Company), Dept:clean(m.Dept), Topic:clean(m.Topic),
+    Method:clean(m.Method), Direction:dirOf(m.Direction), DefaultTarget:m.DefaultTarget ?? '',
+    Active:String(m.Active||'Y').toUpperCase()==='N'?'N':'Y', NeedReview:String(m.NeedReview||'').toUpperCase()==='Y'?'Y':'',
+    FirstYM:ymText(m.FirstYM), LastYM:ymText(m.LastYM) };
+}
+function ymText(v) {   // FirstYM/LastYM อาจถูก Sheets แปลงเป็นวันที่ (ISO) → 'yyyy-MM'
+  const s = String(v ?? '').replace(/^'/, '');
+  const m = s.match(/^(\d{4})-(\d{2})/); if (!m) return s;
+  if (/T\d{2}:/.test(s)) { const d = new Date(s); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+  return m[1] + '-' + m[2];
 }
 
 function renderBanner(err) {
-  const b = $('#banner');
-  if (err) b.innerHTML = `<div class="card p-3 text-sm" style="border-color:#f1b0b0;background:#fdf3f3">⚠ เชื่อมต่อฐานข้อมูลไม่สำเร็จ: ${esc(err)} — ยังใช้แท็บ "นำเข้า Excel" ดูตัวอย่างได้</div>`;
-  else if (!apiUrl()) b.innerHTML = `<div class="card p-3 text-sm" style="border-color:#f5d48a;background:#fffaf0">ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html — ใช้แท็บ "นำเข้า Excel" ดู Dashboard จากไฟล์ได้ (โหมดดูตัวอย่าง ไม่บันทึก)</div>`;
-  else if (state.source === 'local') b.innerHTML = `<div class="card p-3 text-sm" style="border-color:#f5d48a;background:#fffaf0">กำลังแสดงข้อมูลจากไฟล์ที่นำเข้า (ยังไม่ได้บันทึก) — กด ↻ รีเฟรชข้อมูล เพื่อกลับไปใช้ข้อมูลจากฐานข้อมูลกลาง</div>`;
-  else b.innerHTML = '';
+  const b = $('#banner'), parts = [];
+  if (err) parts.push(`<div class="card p-3 text-sm mb-2" style="border-color:#f1b0b0;background:#fdf3f3">⚠ เชื่อมต่อฐานข้อมูลไม่สำเร็จ: ${esc(err)} — ยังใช้แท็บ "แบบฟอร์ม &amp; นำเข้า" ดูตัวอย่างได้</div>`);
+  else if (!apiUrl()) parts.push(`<div class="card p-3 text-sm mb-2" style="border-color:#f5d48a;background:#fffaf0">ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html — ใช้แท็บ "แบบฟอร์ม &amp; นำเข้า" ดู Dashboard จากไฟล์ได้ (โหมดดูตัวอย่าง ไม่บันทึก)</div>`);
+  else if (state.source === 'local') parts.push(`<div class="card p-3 text-sm mb-2" style="border-color:#f5d48a;background:#fffaf0">กำลังแสดงข้อมูลจากไฟล์ที่นำเข้า (ยังไม่ได้บันทึก) — กด ↻ รีเฟรช เพื่อกลับไปใช้ข้อมูลจากฐานข้อมูลกลาง</div>`);
+  if (!err && state.source === 'server' && state.fixedResults)
+    parts.push(`<div class="card p-3 text-sm mb-2 no-print" style="border-color:#c9dbef;background:#f3f8fd">ℹ พบ ${state.fixedResults} แถวในฐานข้อมูลที่ช่อง Result ไม่ตรงกับสูตร (เช่น ระบบอัตโนมัติเขียน "N.A." ลงชีตโดยตรง) — หน้านี้คำนวณใหม่จาก Target/Actual ให้แล้ว · แก้ถาวรได้โดยรันเมนู <b>RST-KPI → คำนวณผลใหม่ทั้งหมด</b> ในชีต</div>`);
+  b.innerHTML = parts.join('');
 }
 
 /* ========================= FILTERS ========================= */
 function uniq(arr) { return [...new Set(arr)].filter(v => v !== '' && v != null); }
+const thSort = (a,b) => String(a).localeCompare(String(b),'th');
 function fillSelect(sel, values, allLabel, labelFn = v => v, keep = true) {
   const cur = sel.value;
   sel.innerHTML = (allLabel ? `<option value="${ALL}">${allLabel}</option>` : '') +
     values.map(v => `<option value="${esc(v)}">${esc(labelFn(v))}</option>`).join('');
   if (keep && [...sel.options].some(o => o.value === cur)) sel.value = cur;
 }
+const allCompanies = () => uniq([...state.master.map(m => m.Company), ...state.data.map(r => r.Company)]).sort();
+const deptsOf = c => uniq([...state.master.filter(m => c === ALL || m.Company === c).map(m => m.Dept),
+                           ...state.data.filter(r => c === ALL || r.Company === c).map(r => r.Dept)]).sort(thSort);
+const allYears = () => { const ys = uniq([...state.data.map(r => r.Year), NOW_Y]); return ys.sort((a,b)=>b-a); };
+
 function initFilters() {
   const f = state.filter, d = state.data;
   fillSelect($('#fCompany'), uniq(d.map(r => r.Company)).sort(), 'ทุกบริษัท');
@@ -397,14 +650,19 @@ function initFilters() {
   fillSelect($('#fYear'), uniq(d.map(r => r.Year)).sort((a,b)=>b-a), 'ทุกปี', String);
   fillSelect($('#fMonth'), [1,2,3,4,5,6,7,8,9,10,11,12], 'ทุกเดือน', m => TH_M[m-1]);
   fillSelect($('#fResult'), [R.PASS, R.FAIL, R.PENDING, R.NA], 'ทุกผล', v => v === R.PENDING ? 'ค้างส่งผล' : v);
-  if (f.year === 'LATEST' && d.length) f.year = Math.max(...d.map(r => r.Year));
+  if (f.year === 'LATEST' && d.length) f.year = latestActiveYear();
   $('#fCompany').value = f.company; $('#fYear').value = f.year === 'LATEST' ? ALL : String(f.year); $('#fMonth').value = String(f.month); $('#fResult').value = f.result;
   if (!$('#fYear').value) $('#fYear').value = ALL;
-  fillEntrySelects();
+  fillEntrySelects(); fillTemplateSelects(); fillKpiFilters();
+}
+// ปี KPI ล่าสุดที่ "มีงวดครบกำหนดแล้ว" (กันกรณีมีคนสร้างแถวล่วงหน้าของปีหน้า แล้ว Dashboard กระโดดไปปีที่ยังว่าง)
+function latestActiveYear() {
+  const ys = uniq(state.data.filter(isCounted).map(r => r.Year));
+  return ys.length ? Math.max(...ys) : Math.max(...state.data.map(r => r.Year));
 }
 function refreshDeptFilter() {
   const c = $('#fCompany').value || ALL;
-  const depts = uniq(state.data.filter(r => c === ALL || r.Company === c).map(r => r.Dept)).sort((a,b)=>a.localeCompare(b,'th'));
+  const depts = uniq(state.data.filter(r => c === ALL || r.Company === c).map(r => r.Dept)).sort(thSort);
   fillSelect($('#fDept'), depts, 'ทุกแผนก');
   if (!depts.includes(state.filter.dept)) state.filter.dept = ALL;
   $('#fDept').value = state.filter.dept;
@@ -419,12 +677,12 @@ function readFilters() {
 function applyFilters(rows, opts = {}) {
   const f = state.filter;
   return rows.filter(r =>
-    (f.company === ALL || r.Company === f.company) &&
-    (f.dept === ALL || r.Dept === f.dept) &&
+    (opts.ignoreCompany || f.company === ALL || r.Company === f.company) &&
+    (opts.ignoreCompany || f.dept === ALL || r.Dept === f.dept) &&
     (f.year === ALL || r.Year === f.year) &&
     (opts.all || isCounted(r)) &&
     (opts.ignoreMonth || f.month === ALL || r.Month === f.month) &&
-    (f.result === ALL || r.Result === f.result) &&
+    (opts.ignoreResult || f.result === ALL || r.Result === f.result) &&
     (!f.search || r.Topic.toLowerCase().includes(f.search) || (r.KPI_Code||'').toLowerCase().includes(f.search)));
 }
 function summarize(rows) {
@@ -436,10 +694,28 @@ function summarize(rows) {
   s.passRate = s.done ? s.pass / s.done : null;     // % ผ่าน = ผ่าน / ส่งผลแล้ว (ไม่เอารายการค้างมาถ่วง)
   return s;
 }
-const pctTxt = v => v === null ? '–' : (Math.round(v*1000)/10) + '%';
+const pctTxt = v => v === null || v === undefined ? '–' : (Math.round(v*1000)/10) + '%';
+
+function renderChips() {
+  const f = state.filter, chips = [];
+  const chip = (label, sel, val) => chips.push(`<button class="badge b-info" data-sel="${sel}" data-val="${esc(val)}" title="นำตัวกรองนี้ออก">${esc(label)} ✕</button>`);
+  if (f.company !== ALL) chip(f.company, '#fCompany', ALL);
+  if (f.dept !== ALL) chip(f.dept, '#fDept', ALL);
+  if (f.year !== ALL && f.year !== 'LATEST') chip('ปี KPI ' + f.year, '#fYear', ALL);
+  if (f.month !== ALL) chip(TH_M[f.month-1], '#fMonth', ALL);
+  if (f.result !== ALL) chip(f.result === R.PENDING ? 'ค้างส่งผล' : f.result, '#fResult', ALL);
+  if (f.search) chip('ค้นหา: ' + f.search, '#fSearch', '');
+  $('#filterChips').innerHTML = chips.length ? `<span class="sub mr-1 self-center">กำลังกรอง:</span>` + chips.join('') : '';
+  $('#filterChips').querySelectorAll('button').forEach(b => b.onclick = () => {
+    $(b.dataset.sel).value = b.dataset.val; readFilters(); if (b.dataset.sel === '#fCompany') refreshDeptFilter(); onFilterChange();
+  });
+}
 
 /* ========================= RENDER: DASHBOARD ========================= */
-function renderAll() { readFilters(); renderDupNote(); renderCards(); renderMonthly(); renderDeptChart(); renderDeptTable(); renderNC(); renderTable(); }
+function renderAll() {
+  readFilters(); renderChips(); renderDupNote(); renderCards(); renderMonthly(); renderTrend(); renderHeatmap();
+  renderCompany(); renderRepeat(); renderDeptTable(); renderNC(); renderTable();
+}
 
 function renderDupNote() {
   // ตรวจงวดเดียวกันที่ถูกประเมินด้วย KPI หลายชุด (Y-MOU ต่างกัน) → ถ้าเลือก "ทุกปี" จะนับซ้ำ
@@ -451,88 +727,182 @@ function renderDupNote() {
   if (!dup.length) { el.innerHTML = ''; return; }
   const depts = new Set(dup.map(([k]) => k.split('|')[1]));
   const ps = [...new Set(dup.map(([k]) => +k.split('|')[2]))].sort((a,b)=>a-b);
-  el.innerHTML = `<div class="card p-3 mb-4 text-sm" style="border-color:#f5d48a;background:#fffaf0">⚠ ${depts.size} แผนก ถูกประเมินงวดเดียวกันด้วย KPI มากกว่า 1 ชุด (${ps.map(p=>ymLabel(Math.floor(p/100),p%100)).join(', ')}) — การดู "ทุกปี" จะนับงวดนี้ซ้ำ ควรเลือก <b>ปี KPI</b> ทีละปี</div>`;
+  el.innerHTML = `<div class="card p-3 mb-4 text-sm" style="border-color:#f5d48a;background:#fffaf0">⚠ ${depts.size} แผนก ถูกประเมินงวดเดียวกันด้วย KPI มากกว่า 1 ชุด (${ps.map(pLabel).join(', ')}) — การดู "ทุกปี" จะนับงวดนี้ซ้ำ ควรเลือก <b>ปี KPI</b> ทีละปี</div>`;
 }
 
 function renderCards() {
-  const s = summarize(applyFilters(state.data));
-  const card = (label, n, sub, color, strong) => `
+  const rows = applyFilters(state.data);
+  const s = summarize(rows);
+  // เทียบเดือนล่าสุดที่มีผล กับเดือนก่อนหน้า
+  const ps = uniq(rows.filter(r => r.Due && isEvaluated(r)).map(r => r.P)).sort((a,b)=>a-b);
+  let trend = '';
+  if (ps.length >= 2 && state.filter.month === ALL) {
+    const a = summarize(rows.filter(r => r.P === ps.at(-1))), b = summarize(rows.filter(r => r.P === ps.at(-2)));
+    if (a.passRate !== null && b.passRate !== null) {
+      const d = Math.round((a.passRate - b.passRate) * 1000) / 10;
+      trend = `<div class="text-xs mt-1" style="color:${d>=0?'#006300':'#a32020'}">${d>=0?'▲':'▼'} ${Math.abs(d)} จุด · ${pLabel(ps.at(-1))} เทียบ ${pLabel(ps.at(-2))}</div>`;
+    }
+  }
+  const bar = (v, goal, color) => v === null ? '' : `<div class="bar-mini mt-2" title="เกณฑ์ ${goal*100}%"><div style="width:${Math.min(100,v*100)}%;background:${color}"></div></div>`;
+  const card = (label, value, sub, opts={}) => `
     <div class="card p-4">
-      <div class="text-xs mb-1 flex items-center gap-1.5" style="color:var(--muted)">${color?`<span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:${color}"></span>`:''}${label}</div>
-      <div class="text-2xl font-semibold" style="font-variant-numeric:tabular-nums">${strong ?? n.toLocaleString()}</div>
-      <div class="text-xs mt-0.5" style="color:var(--muted)">${sub}</div>
+      <div class="text-xs mb-1 flex items-center gap-1.5" style="color:var(--muted)">${opts.color?`<span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:${opts.color}"></span>`:''}${label}</div>
+      <div class="text-2xl font-semibold" style="font-variant-numeric:tabular-nums;${opts.warn?'color:#a32020':''}">${value}</div>
+      <div class="text-xs mt-0.5" style="color:var(--muted)">${sub}</div>${opts.extra||''}
     </div>`;
   $('#cards').innerHTML =
-    card('ครบกำหนดประเมิน', s.base, 'หัวข้อ × เดือน' + (s.na ? ` · ไม่นับ N.A. ${s.na}` : '')) +
-    card('ส่งผลแล้ว', s.done, `${pctTxt(s.submitRate)} ของที่ครบกำหนด`) +
-    card('ค้างส่งผล', s.pending, `${pctTxt(s.base ? s.pending/s.base : null)} ของที่ครบกำหนด`, COLORS.pending) +
-    card('% ผ่านเป้า', s.pass, `ผ่าน ${s.pass.toLocaleString()} จาก ${s.done.toLocaleString()} ที่ส่งผล`, COLORS.pass, pctTxt(s.passRate)) +
-    card('ไม่ผ่านเป้า', s.fail, `${pctTxt(s.done ? s.fail/s.done : null)} ของที่ส่งผล`, COLORS.fail);
+    card('ครบกำหนดประเมิน', s.base.toLocaleString(), 'หัวข้อ × เดือน' + (s.na ? ` · ไม่นับ N.A. ${s.na}` : '')) +
+    card('% ส่งผล', pctTxt(s.submitRate), `ส่งแล้ว ${s.done.toLocaleString()} จาก ${s.base.toLocaleString()}`, { warn: s.submitRate !== null && s.submitRate < CONFIG.SUBMIT_GOAL, extra: bar(s.submitRate, CONFIG.SUBMIT_GOAL, COLORS.s1) }) +
+    card('ค้างส่งผล', s.pending.toLocaleString(), `${pctTxt(s.base ? s.pending/s.base : null)} ของที่ครบกำหนด`, { color: COLORS.pending }) +
+    card('% ผ่านเป้า', pctTxt(s.passRate), `ผ่าน ${s.pass.toLocaleString()} จาก ${s.done.toLocaleString()} ที่ส่งผล`, { color: COLORS.pass, warn: s.passRate !== null && s.passRate < CONFIG.PASS_GOAL, extra: trend || bar(s.passRate, CONFIG.PASS_GOAL, COLORS.pass) }) +
+    card('ไม่ผ่านเป้า', s.fail.toLocaleString(), `${pctTxt(s.done ? s.fail/s.done : null)} ของที่ส่งผล`, { color: COLORS.fail });
 }
 
 Chart.defaults.font.family = "'IBM Plex Sans Thai', system-ui, sans-serif";
 Chart.defaults.font.size = 12;
 Chart.defaults.color = COLORS.muted;
 
-function stackDatasets(pass, fail, pending) {
-  const base = { borderColor:'#fff', borderWidth:{ top:2 }, borderSkipped:false, borderRadius:0, maxBarThickness:36 };
+function stackDatasets(pass, fail, pending, horizontal) {
+  const base = { borderColor:'#fff', borderWidth: horizontal ? { right:2 } : { top:2 }, borderSkipped:false, borderRadius:0, maxBarThickness:36 };
+  const end = horizontal ? { topRight:4, bottomRight:4, topLeft:0, bottomLeft:0 } : { topLeft:4, topRight:4, bottomLeft:0, bottomRight:0 };
   return [
     { ...base, label:'ผ่านเป้า', data:pass, backgroundColor:COLORS.pass },
     { ...base, label:'ต่ำกว่าเป้า', data:fail, backgroundColor:COLORS.fail },
-    { ...base, label:'ค้างส่งผล', data:pending, backgroundColor:COLORS.pending, borderRadius:{ topLeft:4, topRight:4, bottomLeft:0, bottomRight:0 } },
+    { ...base, label:'ค้างส่งผล', data:pending, backgroundColor:COLORS.pending, borderRadius:end },
   ];
 }
-function tooltipFooter(items) {
-  const i = items[0]; const ds = i.chart.data.datasets; const k = i.dataIndex;
-  const p = ds[0].data[k], f = ds[1].data[k], n = ds[2].data[k], tot = p+f+n;
-  return `ครบกำหนด ${tot} · ส่งผล ${pct(p+f,tot)}% · ผ่าน ${pct(p,p+f)}% ของที่ส่งผล`;
-}
-
-function renderMonthly() {
-  const rows = applyFilters(state.data, { ignoreMonth:true }).filter(r => r.Result !== R.NA);
+function byPeriod(rows) {
   const keys = uniq(rows.map(r => r.P)).sort((a,b)=>a-b);
   const by = new Map(keys.map(k => [k, {pass:0,fail:0,pending:0}]));
   rows.forEach(r => { const o = by.get(r.P); if (r.Result===R.PASS) o.pass++; else if (r.Result===R.FAIL) o.fail++; else o.pending++; });
-  const labels = keys.map(k => ymLabel(Math.floor(k/100), k%100));
+  return { keys, by };
+}
+
+function renderMonthly() {
+  const rows = applyFilters(state.data, { ignoreMonth:true, ignoreResult:true }).filter(r => r.Due && r.Result !== R.NA);   // กราฟตามเวลา: เฉพาะงวดที่ครบกำหนด
+  const { keys, by } = byPeriod(rows);
+  const asPct = state.monthlyMode === 'pct';
+  const val = (k, f) => { const o = by.get(k), t = o.pass+o.fail+o.pending; return asPct ? (t ? Math.round(o[f]/t*1000)/10 : 0) : o[f]; };
   const sel = state.filter.month;
-  const data = { labels, datasets: stackDatasets(keys.map(k=>by.get(k).pass), keys.map(k=>by.get(k).fail), keys.map(k=>by.get(k).pending)) };
+  const data = { labels: keys.map(pLabel), datasets: stackDatasets(keys.map(k=>val(k,'pass')), keys.map(k=>val(k,'fail')), keys.map(k=>val(k,'pending'))) };
   if (sel !== ALL) data.datasets.forEach(ds => { const c = ds.backgroundColor; ds.backgroundColor = keys.map(k => k%100===sel ? c : c+'55'); });
   drawChart('chMonthly', 'bar', data, {
-    scales: { x:{ stacked:true, grid:{display:false}, border:{color:COLORS.axis} }, y:{ stacked:true, beginAtZero:true, grid:{color:COLORS.grid}, border:{display:false}, ticks:{precision:0} } },
+    scales: { x:{ stacked:true, grid:{display:false}, border:{color:COLORS.axis} },
+              y:{ stacked:true, beginAtZero:true, max: asPct ? 100 : undefined, grid:{color:COLORS.grid}, border:{display:false}, ticks:{ precision:0, callback: v => asPct ? v+'%' : v } } },
     plugins: { legend:{ position:'top', align:'start', labels:{ boxWidth:10, boxHeight:10, useBorderRadius:true, borderRadius:2 } },
-               tooltip:{ mode:'index', intersect:false, callbacks:{ footer: tooltipFooter } } },
+               tooltip:{ mode:'index', intersect:false, callbacks:{
+                 label: c => ` ${c.dataset.label}: ${c.raw}${asPct?'%':''}`,
+                 footer: items => { const o = by.get(keys[items[0].dataIndex]); const t = o.pass+o.fail+o.pending;
+                   return `ครบกำหนด ${t} · ส่งผล ${pct(o.pass+o.fail,t)}% · ผ่าน ${pct(o.pass,o.pass+o.fail)}% ของที่ส่งผล`; } } } },
     onClick: (e, els) => { if (!els.length) return; $('#fMonth').value = String(keys[els[0].index] % 100); onFilterChange(); },
   });
 }
 
-function renderDeptChart() {
-  const rows = applyFilters(state.data).filter(r => r.Result !== R.NA);
-  const by = new Map();
-  rows.forEach(r => { const k = r.Dept; if (!by.has(k)) by.set(k,{pass:0,fail:0,pending:0}); const o = by.get(k);
-    if (r.Result===R.PASS) o.pass++; else if (r.Result===R.FAIL) o.fail++; else o.pending++; });
-  const depts = [...by.keys()].sort((a,b) => (by.get(b).fail - by.get(a).fail) || a.localeCompare(b,'th'));
-  $('#deptChartWrap').style.height = Math.max(220, depts.length*26 + 60) + 'px';
-  const ds = stackDatasets(depts.map(d=>by.get(d).pass), depts.map(d=>by.get(d).fail), depts.map(d=>by.get(d).pending));
-  ds.forEach(d => { d.borderWidth = { right:2 }; d.borderRadius = 0; });
-  ds[2].borderRadius = { topRight:4, bottomRight:4, topLeft:0, bottomLeft:0 };
-  drawChart('chDept', 'bar', { labels: depts, datasets: ds }, {
-    indexAxis:'y',
-    scales: { x:{ stacked:true, beginAtZero:true, grid:{color:COLORS.grid}, border:{display:false}, ticks:{precision:0} },
-              y:{ stacked:true, grid:{display:false}, border:{color:COLORS.axis}, ticks:{ autoSkip:false, callback(v){ const s=this.getLabelForValue(v); return s.length>22?s.slice(0,21)+'…':s; } } } },
-    plugins: { legend:{ display:false }, tooltip:{ mode:'index', intersect:false, callbacks:{ footer: tooltipFooter } } },
-    onClick: (e, els) => { if (!els.length) return; setDeptFilter(depts[els[0].index]); },
+function renderTrend() {
+  const rows = applyFilters(state.data, { ignoreMonth:true, ignoreResult:true }).filter(r => r.Due && r.Result !== R.NA);   // กราฟตามเวลา: เฉพาะงวดที่ครบกำหนด
+  const { keys, by } = byPeriod(rows);
+  const passR = keys.map(k => { const o = by.get(k); return o.pass+o.fail ? Math.round(o.pass/(o.pass+o.fail)*1000)/10 : null; });
+  const subR = keys.map(k => { const o = by.get(k), t = o.pass+o.fail+o.pending; return t ? Math.round((o.pass+o.fail)/t*1000)/10 : null; });
+  const line = (label, data, color, extra={}) => ({ label, data, borderColor:color, backgroundColor:color, borderWidth:2, pointRadius:3, pointHoverRadius:5, tension:.25, spanGaps:true, ...extra });
+  const ref = (label, v, color) => ({ label, data: keys.map(() => v), borderColor:color, borderWidth:1, borderDash:[5,4], pointRadius:0, pointHoverRadius:0, fill:false });
+  drawChart('chTrend', 'line', { labels: keys.map(pLabel), datasets: [
+    line('% ผ่านเป้า', passR, COLORS.s1), line('% ส่งผล', subR, COLORS.s2),
+    ref('เกณฑ์ผ่าน 70%', CONFIG.PASS_GOAL*100, COLORS.s1+'99'), ref('เกณฑ์ส่งผล 80%', CONFIG.SUBMIT_GOAL*100, COLORS.s2+'99') ] }, {
+    scales: { x:{ grid:{display:false}, border:{color:COLORS.axis} }, y:{ min:0, max:100, grid:{color:COLORS.grid}, border:{display:false}, ticks:{ stepSize:25, callback:v => v+'%' } } },
+    interaction:{ mode:'index', intersect:false },
+    plugins: { legend:{ position:'top', align:'start', labels:{ boxWidth:14, boxHeight:2, filter: i => i.datasetIndex < 2 } },
+               tooltip:{ filter: i => i.datasetIndex < 2, callbacks:{ label: c => ` ${c.dataset.label}: ${c.raw ?? '–'}%` } } },
   });
 }
 
-function drawChart(id, type, data, options) {
-  const ch = state.charts[id];
-  if (ch) { ch.data = data; ch.options = Object.assign({ responsive:true, maintainAspectRatio:false, animation:{duration:250} }, options); ch.update(); return; }
-  state.charts[id] = new Chart(document.getElementById(id), { type, data, options: Object.assign({ responsive:true, maintainAspectRatio:false, animation:{duration:250} }, options) });
+function heatClass(rate) { return rate >= .9 ? 'h4' : rate >= .7 ? 'h3' : rate >= .5 ? 'h2' : rate >= .3 ? 'h1' : 'h0'; }
+function renderHeatmap() {
+  const rows = applyFilters(state.data, { ignoreMonth:true, ignoreResult:true }).filter(r => r.Due && r.Result !== R.NA);   // กราฟตามเวลา: เฉพาะงวดที่ครบกำหนด
+  const keys = uniq(rows.map(r => r.P)).sort((a,b)=>a-b);
+  if (!rows.length) { $('#heatWrap').innerHTML = `<p class="sub py-6 text-center">ไม่มีข้อมูลตามตัวกรอง</p>`; return; }
+  const groups = new Map();
+  rows.forEach(r => { const g = r.Company+'|'+r.Dept; if (!groups.has(g)) groups.set(g, new Map()); const m = groups.get(g);
+    if (!m.has(r.P)) m.set(r.P, {pass:0,fail:0,pending:0}); const o = m.get(r.P);
+    if (r.Result===R.PASS) o.pass++; else if (r.Result===R.FAIL) o.fail++; else o.pending++; });
+  const list = [...groups.keys()].sort((a,b) => a.split('|')[0].localeCompare(b.split('|')[0]) || thSort(a.split('|')[1], b.split('|')[1]));
+  const multiComp = new Set(list.map(g => g.split('|')[0])).size > 1;
+  let html = `<table class="hm"><thead><tr><th style="text-align:left">แผนก</th>${keys.map(k => `<th>${pLabel(k)}</th>`).join('')}<th>รวม</th></tr></thead><tbody>`;
+  let lastComp = '';
+  list.forEach(g => {
+    const [comp, dept] = g.split('|'), m = groups.get(g);
+    if (multiComp && comp !== lastComp) { html += `<tr><td colspan="${keys.length+2}" class="pt-2 pb-0.5 text-xs font-semibold" style="color:var(--brand)">${esc(comp)}</td></tr>`; lastComp = comp; }
+    let tp = 0, tf = 0;
+    html += `<tr><td class="lab" title="${esc(dept)} · ${esc(comp)}">${esc(dept)}</td>` + keys.map(k => {
+      const o = m.get(k);
+      if (!o) return `<td class="c hN">·</td>`;
+      tp += o.pass; tf += o.fail;
+      const done = o.pass + o.fail, tot = done + o.pending;
+      const tip = `${dept} · ${pLabel(k)}\nผ่าน ${o.pass} · ไม่ผ่าน ${o.fail} · ค้าง ${o.pending}`;
+      if (!done) return `<td class="c hP" data-g="${esc(g)}" data-p="${k}" title="${esc(tip)}">ค้าง</td>`;
+      const rate = o.pass / done;
+      return `<td class="c ${heatClass(rate)}" data-g="${esc(g)}" data-p="${k}" title="${esc(tip)}">${Math.round(rate*100)}${o.pending ? '<sup>*</sup>' : ''}</td>`;
+    }).join('') + (tp+tf ? `<td class="c ${heatClass(tp/(tp+tf))}" style="font-weight:600" data-g="${esc(g)}">${Math.round(tp/(tp+tf)*100)}%</td>` : `<td class="c hP" data-g="${esc(g)}">–</td>`) + `</tr>`;
+  });
+  html += `</tbody></table><div class="sub mt-2">* = มีบางหัวข้อในเดือนนั้นยังไม่ส่งผล</div>`;
+  $('#heatWrap').innerHTML = html;
+  $('#heatWrap').querySelectorAll('td[data-g]').forEach(td => td.onclick = () => {
+    const [comp, dept] = td.dataset.g.split('|');
+    $('#fCompany').value = comp; readFilters(); refreshDeptFilter(); $('#fDept').value = dept;
+    if (td.dataset.p) $('#fMonth').value = String(Number(td.dataset.p) % 100);
+    onFilterChange();
+  });
 }
 
-function setDeptFilter(dept) {
-  const row = state.data.find(r => r.Dept === dept);
-  if (row && state.filter.company !== ALL && row.Company !== state.filter.company) $('#fCompany').value = ALL;
+function renderCompany() {
+  const rows = applyFilters(state.data, { ignoreCompany:true });
+  const comps = uniq(rows.map(r => r.Company)).sort();
+  const ss = comps.map(c => summarize(rows.filter(r => r.Company === c)));
+  $('#compWrap').style.height = Math.max(180, comps.length * 54 + 50) + 'px';
+  const ds = (label, data, color) => ({ label, data, backgroundColor:color, borderRadius:{ topRight:4, bottomRight:4 }, borderSkipped:false, barPercentage:.8, categoryPercentage:.7, maxBarThickness:16 });
+  drawChart('chComp', 'bar', { labels: comps, datasets: [
+      ds('% ส่งผล', ss.map(s => s.submitRate === null ? 0 : Math.round(s.submitRate*1000)/10), COLORS.s2),
+      ds('% ผ่านเป้า', ss.map(s => s.passRate === null ? 0 : Math.round(s.passRate*1000)/10), COLORS.s1) ] }, {
+    indexAxis:'y',
+    scales: { x:{ min:0, max:100, grid:{color:COLORS.grid}, border:{display:false}, ticks:{ stepSize:25, callback:v => v+'%' } },
+              y:{ grid:{display:false}, border:{color:COLORS.axis}, ticks:{ color:c => comps[c.index] === state.filter.company ? COLORS.ink : COLORS.muted, font:c => ({ weight: comps[c.index] === state.filter.company ? '600' : '400' }) } } },
+    plugins: { legend:{ position:'top', align:'start', reverse:true, labels:{ boxWidth:10, boxHeight:10, useBorderRadius:true, borderRadius:2 } },
+               tooltip:{ mode:'index', intersect:false, callbacks:{ label: c => ` ${c.dataset.label}: ${c.raw}%`,
+                 footer: it => { const s = ss[it[0].dataIndex]; return `ครบกำหนด ${s.base} · ผ่าน ${s.pass} · ไม่ผ่าน ${s.fail} · ค้าง ${s.pending}`; } } } },
+    onClick: (e, els) => { if (!els.length) return; const c = comps[els[0].index]; $('#fCompany').value = state.filter.company === c ? ALL : c; readFilters(); refreshDeptFilter(); onFilterChange(); },
+  });
+}
+
+function renderRepeat() {
+  const rows = applyFilters(state.data, { ignoreMonth:true, ignoreResult:true }).filter(isEvaluated);
+  const by = new Map();
+  rows.forEach(r => { if (!by.has(r.KPI_Code)) by.set(r.KPI_Code, []); by.get(r.KPI_Code).push(r); });
+  const list = [...by.entries()].map(([code, rs]) => {
+    rs.sort((a,b) => a.P - b.P);
+    const fail = rs.filter(r => r.Result === R.FAIL).length;
+    let streak = 0; for (let i = rs.length-1; i >= 0 && rs[i].Result === R.FAIL; i--) streak++;
+    const last = rs.at(-1);
+    return { code, topic:last.Topic, dept:last.Dept, company:last.Company, fail, n:rs.length, streak, seq: rs.slice(-6) };
+  }).filter(x => x.fail >= 2).sort((a,b) => b.streak - a.streak || b.fail - a.fail || b.fail/b.n - a.fail/a.n).slice(0, 10);
+  $('#tblRepeat').innerHTML = `<thead><tr><th>หัวข้อ</th><th>6 งวดล่าสุด</th><th class="num">ไม่ผ่าน</th><th class="num">ติดกัน</th></tr></thead><tbody>` +
+    (list.length ? list.map(x => `<tr class="clickable" data-code="${esc(x.code)}">
+      <td><div class="line-clamp-2">${esc(x.topic)}</div><div class="sub">${esc(x.dept)} · ${esc(x.company)} · ${esc(x.code)}</div></td>
+      <td class="whitespace-nowrap">${x.seq.map(r => `<span title="${pLabel(r.P)}: ${r.Result}" style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;background:${r.Result===R.PASS?COLORS.pass:COLORS.fail}"></span>`).join('')}</td>
+      <td class="num">${x.fail}/${x.n}</td>
+      <td class="num" style="${x.streak>=3?'color:#a32020;font-weight:600':''}">${x.streak ? x.streak + ' งวด' : '–'}</td></tr>`).join('')
+      : `<tr><td colspan="4" class="text-center py-6" style="color:var(--muted)">ไม่มีหัวข้อที่ไม่ผ่านซ้ำตั้งแต่ 2 งวดขึ้นไป</td></tr>`) + `</tbody>`;
+  $('#tblRepeat').querySelectorAll('tr[data-code]').forEach(tr => tr.onclick = () => openHistory(tr.dataset.code));
+}
+
+function drawChart(id, type, data, options) {
+  const opts = Object.assign({ responsive:true, maintainAspectRatio:false, animation:{duration:250} }, options);
+  const ch = state.charts[id];
+  if (ch) { ch.data = data; ch.options = opts; ch.update(); return; }
+  state.charts[id] = new Chart(document.getElementById(id), { type, data, options: opts });
+}
+
+function setDeptFilter(dept, company) {
+  if (company) $('#fCompany').value = company;
+  else { const row = state.data.find(r => r.Dept === dept); if (row && state.filter.company !== ALL && row.Company !== state.filter.company) $('#fCompany').value = ALL; }
   readFilters(); refreshDeptFilter(); $('#fDept').value = dept; onFilterChange();
 }
 
@@ -543,50 +913,67 @@ function renderDeptTable() {
   const list = [...by.entries()].map(([k,v]) => ({ company:k.split('|')[0], dept:k.split('|')[1], ...summarize(v) }))
     .sort((a,b) => a.company.localeCompare(b.company) || ((a.passRate ?? 2) - (b.passRate ?? 2)));
   const warn = (v, lim) => v !== null && v < lim ? 'color:#a32020;font-weight:600' : '';
-  $('#tblDept').innerHTML = `<thead><tr><th>แผนก</th><th class="num">ครบกำหนด</th><th class="num">% ส่งผล</th><th class="num">% ผ่าน</th><th class="num">ไม่ผ่าน</th><th class="num">ค้าง</th></tr></thead><tbody>` +
-    (list.length ? list.map(x => `<tr class="clickable" data-dept="${esc(x.dept)}">
-      <td><div class="font-medium">${esc(x.dept)}</div><div class="text-xs" style="color:var(--muted)">${esc(x.company)}</div></td>
+  const mini = x => { const t = x.pass + x.fail + x.pending || 1;
+    return `<div class="bar-mini mt-1" style="width:100%"><div style="width:${x.pass/t*100}%;background:${COLORS.pass}"></div><div style="width:${x.fail/t*100}%;background:${COLORS.fail}"></div><div style="width:${x.pending/t*100}%;background:${COLORS.pending}"></div></div>`; };
+  $('#tblDept').innerHTML = `<thead><tr><th>แผนก</th><th class="num">ครบกำหนด</th><th class="num">% ส่งผล</th><th class="num">% ผ่าน</th><th class="num">ไม่ผ่าน</th></tr></thead><tbody>` +
+    (list.length ? list.map(x => `<tr class="clickable" data-dept="${esc(x.dept)}" data-comp="${esc(x.company)}">
+      <td><div class="font-medium">${esc(x.dept)}</div><div class="text-xs" style="color:var(--muted)">${esc(x.company)}</div>${mini(x)}</td>
       <td class="num">${x.base}</td>
-      <td class="num" style="${warn(x.submitRate,0.8)}">${pctTxt(x.submitRate)}</td>
-      <td class="num" style="${warn(x.passRate,0.7)}">${pctTxt(x.passRate)}</td>
-      <td class="num">${x.fail}</td><td class="num">${x.pending}</td></tr>`).join('') : `<tr><td colspan="6" class="text-center py-6" style="color:var(--muted)">ไม่มีข้อมูล</td></tr>`) +
-    `</tbody><tfoot><tr><td colspan="6" class="text-xs pt-2" style="color:var(--muted)">% ส่งผล = ส่งผลแล้ว ÷ ครบกำหนด (ตัวแดง &lt; 80%) · % ผ่าน = ผ่าน ÷ ส่งผลแล้ว (ตัวแดง &lt; 70%) · เรียงจาก % ผ่านต่ำสุด</td></tr></tfoot>`;
-  $('#tblDept').querySelectorAll('tr[data-dept]').forEach(tr => tr.onclick = () => setDeptFilter(tr.dataset.dept));
+      <td class="num" style="${warn(x.submitRate,CONFIG.SUBMIT_GOAL)}">${pctTxt(x.submitRate)}</td>
+      <td class="num" style="${warn(x.passRate,CONFIG.PASS_GOAL)}">${pctTxt(x.passRate)}</td>
+      <td class="num">${x.fail}</td></tr>`).join('') : `<tr><td colspan="5" class="text-center py-6" style="color:var(--muted)">ไม่มีข้อมูล</td></tr>`) +
+    `</tbody><tfoot><tr><td colspan="5" class="text-xs pt-2" style="color:var(--muted)">แถบสี: <span style="color:${COLORS.pass}">■</span> ผ่าน <span style="color:${COLORS.fail}">■</span> ไม่ผ่าน <span style="color:${COLORS.pending}">■</span> ค้าง · % ส่งผล = ส่งแล้ว ÷ ครบกำหนด (แดง &lt; 80%) · % ผ่าน = ผ่าน ÷ ส่งผล (แดง &lt; 70%)</td></tr></tfoot>`;
+  $('#tblDept').querySelectorAll('tr[data-dept]').forEach(tr => tr.onclick = () => setDeptFilter(tr.dataset.dept, tr.dataset.comp));
 }
 
 function renderNC() {
-  const rows = applyFilters(state.data).filter(r => r.Result === R.FAIL)
+  const rows = applyFilters(state.data, { ignoreResult:true }).filter(r => r.Result === R.FAIL)
     .sort((a,b) => b.P - a.P || a.Dept.localeCompare(b.Dept,'th'));
-  $('#ncCount').textContent = rows.length ? `${rows.length} รายการ` + (rows.length > 200 ? ' (แสดง 200 ล่าสุด)' : '') : '';
+  $('#ncCount').textContent = rows.length ? `${rows.length} รายการ` + (rows.length > 200 ? ' (แสดง 200 ล่าสุด)' : '') + ' · คลิกเพื่อแก้ไข' : '';
   $('#tblNC').innerHTML = `<thead><tr><th>เดือน</th><th>แผนก</th><th>หัวข้อ</th><th class="num">Target</th><th class="num">Actual</th><th class="num">ทำได้</th></tr></thead><tbody>` +
-    (rows.length ? rows.slice(0,200).map(r => `<tr>
+    (rows.length ? rows.slice(0,200).map(r => `<tr class="clickable" data-id="${esc(r.ID)}">
       <td class="whitespace-nowrap">${ymLabel(r.PY,r.PM)}</td>
       <td><div>${esc(r.Dept)}</div><div class="text-xs whitespace-nowrap" style="color:var(--muted)">${esc(r.Company)}</div></td>
       <td>${esc(r.Topic)} <span class="ml-1">${dirBadge(r.Direction)}</span>${r.Note?`<div class="text-xs mt-0.5" style="color:var(--muted)">หมายเหตุ: ${esc(r.Note)}</div>`:''}</td>
       <td class="num">${fmtNum(r.Target, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtNum(r.Actual, isRatioRow(r.Target,r.Actual))}</td>
       <td class="num" style="color:#a32020">${fmtPct(r.Achieved)}</td></tr>`).join('')
       : `<tr><td colspan="6" class="text-center py-6" style="color:var(--muted)">ไม่มีรายการที่ไม่ผ่านเป้าตามตัวกรองนี้ 🎉</td></tr>`) + `</tbody>`;
+  $('#tblNC').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openRowEditor(tr.dataset.id));
 }
 
-/* ========================= RENDER: TABLE ========================= */
+/* ========================= RENDER: TABLE (ข้อมูลทั้งหมด) ========================= */
 function renderTable() {
   const rows = applyFilters(state.data, { all:true }).sort((a,b) => b.P - a.P || a.Company.localeCompare(b.Company) || a.Dept.localeCompare(b.Dept,'th'));
   const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
   state.page = Math.min(state.page, pages);
   const slice = rows.slice((state.page-1)*state.pageSize, state.page*state.pageSize);
-  $('#tblCount').textContent = `(${rows.length.toLocaleString()} แถว)`;
-  $('#tblAll').innerHTML = `<thead><tr><th>งวด</th><th>ปี KPI</th><th>บริษัท</th><th>แผนก</th><th>รหัส</th><th>หัวข้อ</th><th>ทิศ</th><th class="num">Target</th><th class="num">Actual</th><th class="num">ทำได้</th><th>ผล</th><th>หมายเหตุ</th></tr></thead><tbody>` +
-    slice.map(r => `<tr><td class="whitespace-nowrap">${ymLabel(r.PY,r.PM)}</td><td>${r.Year}</td><td class="whitespace-nowrap">${esc(r.Company)}</td><td>${esc(r.Dept)}</td>
+  $('#tblCount').textContent = `(${rows.length.toLocaleString()} จาก ${state.data.length.toLocaleString()} แถว)`;
+  // อธิบายว่าทำไมจำนวนแถวน้อยกว่าทั้งหมด
+  const f = state.filter, why = [];
+  if (f.year !== ALL) why.push(`ปี KPI ${f.year}`);
+  if (f.company !== ALL) why.push(f.company); if (f.dept !== ALL) why.push(f.dept);
+  if (f.month !== ALL) why.push(TH_M[f.month-1]); if (f.result !== ALL) why.push(f.result === R.PENDING ? 'ค้างส่งผล' : f.result);
+  if (f.search) why.push('คำค้น "' + f.search + '"');
+  const years = uniq(state.data.map(r => r.Year)).sort();
+  $('#tblNote').innerHTML = why.length && rows.length < state.data.length
+    ? `<div class="p-2 rounded flex flex-wrap items-center gap-2" style="background:#f3f8fd">ℹ แสดงตามตัวกรอง: <b>${esc(why.join(' · '))}</b> — ฐานข้อมูลมีทั้งหมด ${state.data.length.toLocaleString()} แถว (${years.map(y => `ปี ${y}: ${state.data.filter(r => r.Year === y).length.toLocaleString()}`).join(' · ')}) <button id="btnShowAll" class="btn btn-sec" style="padding:2px 10px">แสดงทั้งหมด</button></div>`
+    : `<div class="sub">คลิกแถวเพื่อแก้ไข / ลบ · แถว "ยังไม่ถึงกำหนด" คือเดือนที่สร้างไว้ล่วงหน้าพร้อม Target</div>`;
+  $('#btnShowAll')?.addEventListener('click', () => $('#btnResetFilter').click());
+  $('#tblAll').innerHTML = `<thead><tr><th>งวด</th><th>ปี KPI</th><th>บริษัท</th><th>แผนก</th><th>รหัส</th><th>หัวข้อ</th><th>ทิศ</th><th class="num">Target</th><th class="num">Actual</th><th class="num">ทำได้</th><th>ผล</th><th>หมายเหตุ</th><th>แก้ไขล่าสุด</th></tr></thead><tbody>` +
+    (slice.length ? slice.map(r => `<tr class="clickable" data-id="${esc(r.ID)}"><td class="whitespace-nowrap">${ymLabel(r.PY,r.PM)}</td><td>${r.Year}</td><td class="whitespace-nowrap">${esc(r.Company)}</td><td>${esc(r.Dept)}</td>
       <td class="text-xs whitespace-nowrap" style="color:var(--muted)">${esc(r.KPI_Code)}</td><td style="min-width:260px">${esc(r.Topic)}</td><td>${dirBadge(r.Direction)}</td>
-      <td class="num">${fmtNum(r.Target, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtNum(r.Actual, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtPct(r.Achieved)}</td><td>${resultBadge(r.Result, r)}</td><td class="text-xs">${esc(r.Note)}</td></tr>`).join('') + `</tbody>`;
+      <td class="num">${fmtNum(r.Target, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtNum(r.Actual, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtPct(r.Achieved)}</td><td>${resultBadge(r.Result, r)}</td><td class="text-xs">${esc(r.Note)}</td>
+      <td class="text-xs whitespace-nowrap">${srcBadge(r.UpdatedBy)}<div class="sub">${esc(String(r.UpdatedAt).slice(0,16).replace('T',' '))}</div></td></tr>`).join('')
+      : `<tr><td colspan="13" class="text-center py-6" style="color:var(--muted)">ไม่มีข้อมูลตามตัวกรอง</td></tr>`) + `</tbody>`;
+  $('#tblAll').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openRowEditor(tr.dataset.id));
   $('#pager').innerHTML = `<button class="sel" ${state.page<=1?'disabled':''} data-p="${state.page-1}">‹ ก่อนหน้า</button><span>หน้า ${state.page} / ${pages}</span><button class="sel" ${state.page>=pages?'disabled':''} data-p="${state.page+1}">ถัดไป ›</button>`;
   $('#pager').querySelectorAll('button[data-p]').forEach(b => b.onclick = () => { state.page = Number(b.dataset.p); renderTable(); });
 }
 
 function exportExcel() {
-  const rows = applyFilters(state.data, { all:true }).map(r => ({ 'งวด (ปี-เดือน)':`${r.PY}-${String(r.PM).padStart(2,'0')}`, 'ปี KPI (Y-MOU)':r.Year, 'เดือน':MONTHS[r.Month-1], 'บริษัท':r.Company, 'แผนก':r.Dept, 'รหัส KPI':r.KPI_Code,
+  const rows = applyFilters(state.data, { all:true }).map(r => ({ 'ID':r.ID, 'งวด (ปี-เดือน)':`${r.PY}-${String(r.PM).padStart(2,'0')}`, 'ปี KPI (Y-MOU)':r.Year, 'เดือน':MONTHS[r.Month-1], 'บริษัท':r.Company, 'แผนก':r.Dept, 'รหัส KPI':r.KPI_Code,
     'TOPIC':r.Topic, 'ทิศทาง':r.Direction==='LOWER'?'ยิ่งน้อยยิ่งดี':'ยิ่งมากยิ่งดี', 'Target':r.Target, 'Actual':r.Actual,
-    '% ทำได้':r.Achieved ?? '', 'ผลเทียบเป้า':(r.Result===R.PENDING ? (r.Due ? 'ค้างส่งผล' : 'ยังไม่ถึงกำหนด') : r.Result), 'สถานะ':r.Status, 'หมายเหตุ':r.Note }));
+    '% ทำได้':r.Achieved ?? '', 'ผลเทียบเป้า':(r.Result===R.PENDING ? (r.Due ? 'ค้างส่งผล' : 'ยังไม่ถึงกำหนด') : r.Result), 'สถานะ':r.Status, 'หมายเหตุ':r.Note, 'แก้ไขโดย':r.UpdatedBy, 'แก้ไขเมื่อ':r.UpdatedAt }));
   if (!rows.length) return toast('ไม่มีข้อมูลตามตัวกรอง', 'warn');
   const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'KPI');
@@ -595,24 +982,126 @@ function exportExcel() {
 
 function onFilterChange() { state.page = 1; renderAll(); }
 
-/* ========================= ENTRY (กรอกผลบนเว็บ) ========================= */
+/* ========================= MODAL ========================= */
+function openModal(html, onOpen) {
+  $('#modalBox').innerHTML = html; $('#modal').classList.add('open');
+  $('#modalBox').querySelectorAll('[data-close]').forEach(b => b.onclick = closeModal);
+  onOpen && onOpen($('#modalBox'));
+  setTimeout(() => $('#modalBox').querySelector('input:not([type=checkbox]):not([type=radio]),select,textarea')?.focus(), 30);
+}
+function closeModal() { $('#modal').classList.remove('open'); $('#modalBox').innerHTML = ''; }
+$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#modal').classList.contains('open')) closeModal(); });
+// ปุ่มยืนยัน 2 ครั้ง (แทน confirm() ที่ทำให้หน้าค้าง)
+function armed(btn, text, ms=4000) {
+  if (btn.dataset.armed) { delete btn.dataset.armed; return true; }
+  const orig = btn.innerHTML; btn.dataset.armed = 1; btn.innerHTML = text;
+  setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.innerHTML = orig; } }, ms);
+  return false;
+}
+
+/* ---------- แก้ไขแถวเดียว (จากตาราง / รายการไม่ผ่าน) ---------- */
+function openRowEditor(id) {
+  const r = state.data.find(x => x.ID === id);
+  if (!r) return;
+  const ratio = isRatioRow(r.Target, r.Actual), editable = canEdit(r.Company, r.Dept), dis = editable ? '' : 'disabled';
+  openModal(`
+    <div class="flex items-start gap-3 mb-3"><div class="mr-auto"><div class="sub">${esc(r.KPI_Code)} · ${esc(r.Dept)} · ${esc(r.Company)} · งวด ${ymLabel(r.PY,r.PM)} (ปี KPI ${r.Year})</div>
+      <h3 class="font-semibold">${esc(r.Topic)}</h3>${r.Method?`<div class="sub mt-0.5">วิธีวัด: ${esc(r.Method)}</div>`:''}</div>
+      <button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <div class="grid grid-cols-2 gap-3">
+      ${editable ? '' : `<div class="col-span-2 text-sm p-2 rounded" style="background:#fff4dc">🔒 ดูได้อย่างเดียว — ${state.me ? 'บัญชีของคุณไม่มีสิทธิ์แก้ไขแผนกนี้' : '<button class="underline" id="rLogin">เข้าสู่ระบบ</button> เพื่อแก้ไข'}</div>`}
+      <label class="fld">Target<input id="rTarget" ${dis} class="inp num" value="${esc(inputVal(r.Target, ratio))}"></label>
+      <label class="fld">Actual <span class="sub">(ว่าง = ยังไม่ประเมิน · N.A. = ไม่มีข้อมูล)</span><input id="rActual" ${dis} class="inp num" value="${esc(inputVal(r.Actual, ratio))}" placeholder="—"></label>
+      <label class="fld">ทิศทางเป้า<select id="rDir" ${dis} class="sel"><option value="HIGHER">↑ ยิ่งมากยิ่งดี (Actual ≥ Target = ผ่าน)</option><option value="LOWER">↓ ยิ่งน้อยยิ่งดี (Actual ≤ Target = ผ่าน)</option></select></label>
+      <div class="fld">ผลที่จะได้<div id="rPreview" class="mt-2"></div></div>
+      <label class="fld col-span-2">หมายเหตุ / เหตุผลที่แก้ไข<input id="rNote" ${dis} class="inp" value="${esc(r.Note)}"></label>
+      <label class="fld col-span-2">Link แหล่งข้อมูล<input id="rLink" ${dis} class="inp" value="${esc(r.Link)}" placeholder="https://…"></label>
+    </div>
+    <div class="sub mt-3">แก้ไขล่าสุด: ${srcBadge(r.UpdatedBy) || '–'} ${esc(String(r.UpdatedAt).slice(0,16).replace('T',' '))}</div>
+    <div class="flex flex-wrap items-center gap-2 mt-4">
+      ${canDelete(r.Company, r.Dept) ? '<button id="rDelete" class="btn btn-del">🗑 ลบแถวนี้</button>' : ''}
+      <button id="rHistory" class="btn btn-sec">ประวัติหัวข้อนี้</button>
+      <span class="mr-auto"></span>
+      <button data-close class="btn btn-sec">${editable ? 'ยกเลิก' : 'ปิด'}</button>
+      ${editable ? '<button id="rSave" class="btn btn-pri">บันทึกการแก้ไข</button>' : ''}
+    </div>`, box => {
+    $('#rDir', box).value = r.Direction;
+    const prev = () => {
+      const t = parseNumber($('#rTarget').value), a = parseNumber($('#rActual').value);
+      $('#rPreview').innerHTML = (t !== '' && !isNum(t)) ? `<span class="badge b-err">Target ต้องเป็นตัวเลข</span>`
+        : resultBadge(evaluateKpi(t, a, $('#rDir').value).result) + ` <span class="sub">${fmtPct(evaluateKpi(t, a, $('#rDir').value).achieved)}</span>`;
+    };
+    ['#rTarget','#rActual','#rDir'].forEach(s => $(s).addEventListener('input', prev)); prev();
+    $('#rHistory').onclick = () => openHistory(r.KPI_Code);
+    $('#rLogin')?.addEventListener('click', () => openLogin());
+    if (!editable) return;
+    $('#rSave').onclick = async () => {
+      if (!requireUser(r.Company, r.Dept)) return;
+      const t = parseNumber($('#rTarget').value);
+      if (t !== '' && !isNum(t)) return toast('Target ต้องเป็นตัวเลข', 'err');
+      const dir = $('#rDir').value;
+      const res = await saveRows([{ kpiCode:r.KPI_Code, company:r.Company, dept:r.Dept, topic:r.Topic, year:r.Year, month:r.Month,
+        target:t, actual:parseNumber($('#rActual').value), note:clean($('#rNote').value), link:clean($('#rLink').value),
+        direction:dir, ...(dir !== r.Direction ? { forceDirection:true } : {}) }], $('#rSave'));
+      if (res && !res.errors.length) closeModal();
+      else if (res) toast(res.errors[0].msg, 'err', 8000);
+    };
+    if ($('#rDelete')) $('#rDelete').onclick = async () => {
+      if (!armed($('#rDelete'), 'กดอีกครั้งเพื่อยืนยันลบ')) return;
+      if (!requireUser()) return;
+      if (await deleteIds([r.ID], $('#rDelete'))) closeModal();
+    };
+  });
+}
+
+function openHistory(code) {
+  const rows = state.data.filter(r => r.KPI_Code === code).sort((a,b) => b.P - a.P || b.Year - a.Year);
+  if (!rows.length) return;
+  const m = state.master.find(x => x.KPI_Code === code);
+  openModal(`
+    <div class="flex items-start gap-3 mb-3"><div class="mr-auto"><div class="sub">${esc(code)} · ${esc(rows[0].Dept)} · ${esc(rows[0].Company)}</div>
+      <h3 class="font-semibold">${esc(rows[0].Topic)}</h3></div><button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <div class="overflow-auto" style="max-height:420px"><table class="tbl"><thead><tr><th>งวด</th><th>ปี KPI</th><th>ทิศ</th><th class="num">Target</th><th class="num">Actual</th><th class="num">ทำได้</th><th>ผล</th></tr></thead><tbody>
+      ${rows.map(r => `<tr class="clickable" data-id="${esc(r.ID)}"><td>${ymLabel(r.PY,r.PM)}</td><td>${r.Year}</td><td>${dirBadge(r.Direction)}</td>
+        <td class="num">${fmtNum(r.Target, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtNum(r.Actual, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtPct(r.Achieved)}</td><td>${resultBadge(r.Result, r)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="flex gap-2 mt-4"><span class="sub mr-auto self-center">คลิกแถวเพื่อแก้ไข</span>${m && canManageKpi(m.Company, m.Dept) ? `<button id="hEditKpi" class="btn btn-sec">แก้ไขหัวข้อ KPI</button>` : ''}<button data-close class="btn btn-sec">ปิด</button></div>`, box => {
+    box.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openRowEditor(tr.dataset.id));
+    $('#hEditKpi', box)?.addEventListener('click', () => openKpiForm(m));
+  });
+}
+
+async function deleteIds(ids, btn) {
+  if (!apiUrl()) { toast('ยังไม่ได้ตั้งค่า API', 'err'); return false; }
+  const label = btn ? btn.innerHTML : ''; if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังลบ'; }
+  try {
+    const r = await apiPost({ action:'deleteRows', ids });
+    const del = new Set(r.ids);
+    state.data = state.data.filter(x => !del.has(x.ID));
+    toast(`ลบแล้ว ${r.deleted} แถว (สำเนาเก็บในชีต Log)`, 'ok');
+    initFilters(); renderAll();
+    return true;
+  } catch (e) { toast('ลบไม่สำเร็จ: ' + errMsg(e), 'err', 8000); return false; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = label; } }
+}
+
+/* ========================= ENTRY (กรอก / แก้ไขผลบนเว็บ) ========================= */
 function fillEntrySelects() {
-  const comps = uniq([...state.master.map(m => normCompany(m.Company)), ...state.data.map(r => r.Company)]).sort();
+  const me = state.me, comps = me && !isAdmin() ? [me.company] : allCompanies();
   fillSelect($('#eCompany'), comps, '');
   refreshEntryDept();
-  const nowY = new Date().getFullYear() + 543;
-  const years = uniq([...state.data.map(r => r.Year), nowY, nowY+1]).sort((a,b)=>b-a);
-  fillSelect($('#eYear'), years, '', String);
-  if (![...$('#eYear').options].some(o => o.selected && o.value)) $('#eYear').value = String(nowY);
+  fillSelect($('#eYear'), uniq([...allYears(), NOW_Y + 1]).sort((a,b)=>b-a), '', String);
   fillSelect($('#eMonth'), [1,2,3,4,5,6,7,8,9,10,11,12], '', m => TH_M[m-1]);
-  if (!$('#eMonth').dataset.init) { $('#eMonth').value = String(new Date().getMonth()+1); $('#eMonth').dataset.init = 1; $('#eYear').value = String(nowY); }
+  if (!$('#eMonth').dataset.init) {
+    // ค่าเริ่มต้น = เดือนที่แล้ว (งวดที่ต้องส่งผล) ในปี KPI ที่ครอบคลุมเดือนนั้น
+    const pm = NOW_M === 1 ? 12 : NOW_M - 1, py = NOW_M === 1 ? NOW_Y - 1 : NOW_Y;
+    const ky = [...state.data.map(r => r.Year)].filter(y => realYear(y, pm) === py).sort((a,b)=>b-a)[0] || py;
+    $('#eMonth').value = String(pm); $('#eYear').value = String(ky);
+    if (state.data.length) $('#eMonth').dataset.init = 1;
+  }
 }
-function refreshEntryDept() {
-  const c = $('#eCompany').value;
-  const depts = uniq([...state.master.filter(m => normCompany(m.Company) === c).map(m => clean(m.Dept)),
-                      ...state.data.filter(r => r.Company === c).map(r => r.Dept)]).sort((a,b)=>a.localeCompare(b,'th'));
-  fillSelect($('#eDept'), depts, '');
-}
+function refreshEntryDept() { const c = $('#eCompany').value; fillSelect($('#eDept'), deptsOf(c).filter(d => !state.me || isAdmin() || inScope(c, d)), ''); }
 
 function entryCandidates(company, dept, year, month) {
   const rows = state.data.filter(r => r.Company === company && r.Dept === dept);
@@ -623,15 +1112,21 @@ function entryCandidates(company, dept, year, month) {
     const lastY = Math.max(0, ...rows.map(r => r.Year));
     codes = uniq(rows.filter(r => r.Year === lastY).map(r => r.KPI_Code));
   }
+  // หัวข้อที่เพิ่งเพิ่มผ่านหน้าเว็บ (มีใน KPI_Master แต่ยังไม่มีแถวข้อมูลในปีนี้)
+  const hasRows = new Set(rows.map(r => r.KPI_Code));
+  state.master.filter(m => m.Company === company && m.Dept === dept && m.Active !== 'N' && !codes.includes(m.KPI_Code) &&
+    (!hasRows.has(m.KPI_Code) || Number(String(m.FirstYM).slice(0,4)) === year)).forEach(m => codes.push(m.KPI_Code));
   return codes.map(code => {
     const existing = rows.find(r => r.KPI_Code === code && r.Year === year && r.Month === month);
     const latest = rows.filter(r => r.KPI_Code === code).sort((a,b)=>(b.Year*100+b.Month)-(a.Year*100+a.Month))[0];
-    const m = state.master.find(x => String(x.KPI_Code) === code);
-    if (m && String(m.Active).toUpperCase() === 'N') return null;
-    return { code, topic: (existing||latest).Topic, method: (existing||latest).Method,
-      direction: existing ? existing.Direction : (m ? (m.Direction === 'LOWER' ? 'LOWER' : 'HIGHER') : (latest?.Direction || 'HIGHER')),
+    const m = state.master.find(x => x.KPI_Code === code);
+    if (m && m.Active === 'N' && !existing) return null;
+    const src = existing || latest || {};
+    return { code, id: existing?.ID, topic: src.Topic || m?.Topic || '', method: src.Method || m?.Method || '',
+      direction: existing ? existing.Direction : (m ? m.Direction : (latest?.Direction || 'HIGHER')),
       target: existing ? existing.Target : (latest ? latest.Target : (m?.DefaultTarget ?? '')),
-      actual: existing ? existing.Actual : '', note: existing ? existing.Note : '', existing: !!existing };
+      actual: existing ? existing.Actual : '', note: existing ? existing.Note : '', link: existing ? existing.Link : '',
+      existing: !!existing, updatedBy: existing?.UpdatedBy || '', updatedAt: existing?.UpdatedAt || '', isNewKpi: !latest };
   }).filter(Boolean);
 }
 
@@ -640,50 +1135,82 @@ function renderEntry() {
   const wrap = $('#entryWrap');
   if (!company || !dept) { wrap.innerHTML = `<p class="text-sm" style="color:var(--muted)">กรุณาเลือกบริษัทและแผนก</p>`; return; }
   const items = entryCandidates(company, dept, year, month);
-  if (!items.length) { wrap.innerHTML = `<p class="text-sm" style="color:var(--muted)">ไม่พบหัวข้อ KPI ของแผนกนี้ — เพิ่มหัวข้อใหม่ได้โดยนำเข้าไฟล์ Excel</p>`; return; }
+  if (!items.length) { wrap.innerHTML = `<div class="text-sm" style="color:var(--muted)">ไม่พบหัวข้อ KPI ของแผนกนี้ <button class="btn btn-sec ml-2" id="btnEntryAddKpi">＋ เพิ่มหัวข้อ KPI</button></div>`;
+    $('#btnEntryAddKpi').onclick = () => openKpiForm(null, { company, dept, year }); return; }
+  const py = realYear(year, month), due = py*100+month < NOW_P;
+  const editable = canEdit(company, dept), dis = editable ? '' : 'disabled', delOk = canDelete(company, dept);
   wrap.innerHTML = `
-    <div class="flex flex-wrap items-baseline gap-2 mb-3"><h3 class="font-semibold mr-auto">${esc(dept)} · ${esc(company)} · ${TH_M[month-1]} ${year}</h3>
-      <span class="text-xs" style="color:var(--muted)">ค่าเป็น % ให้พิมพ์ 95% หรือ 0.95 · พิมพ์ N.A. ถ้าไม่มีข้อมูลเดือนนี้</span></div>
-    <div class="overflow-auto"><table class="tbl" id="tblEntry"><thead><tr><th>#</th><th>หัวข้อ</th><th>ทิศ</th><th class="num" style="width:110px">Target</th><th class="num" style="width:110px">Actual</th><th>ผล</th><th style="width:180px">หมายเหตุ</th></tr></thead><tbody>
-    ${items.map((it,i) => `<tr data-i="${i}">
+    ${editable ? '' : `<div class="text-sm p-3 rounded mb-3 flex flex-wrap items-center gap-2" style="background:#fff4dc" data-login>🔒 ดูได้อย่างเดียว — ${state.me ? 'บัญชีของคุณไม่มีสิทธิ์แก้ไขแผนกนี้' : 'เข้าสู่ระบบด้วยบัญชีของแผนกนี้เพื่อกรอก/แก้ไข'} ${state.me ? '' : '<button class="btn btn-pri" style="padding:3px 12px" id="entryLogin">เข้าสู่ระบบ</button>'}</div>`}
+    <div class="flex flex-wrap items-baseline gap-2 mb-3"><h3 class="font-semibold mr-auto">${esc(dept)} · ${esc(company)} · ${TH_M[month-1]} ${py} <span class="sub">(ปี KPI ${year})</span> ${due ? '' : '<span class="badge b-pending">ยังไม่ถึงกำหนด</span>'}</h3>
+      <span class="text-xs" style="color:var(--muted)">ค่าเป็น % พิมพ์ 95% หรือ 0.95 · พิมพ์ N.A. ถ้าไม่มีข้อมูลเดือนนี้ · ลบค่าใน Actual = กลับเป็นยังไม่ประเมิน</span></div>
+    <div class="overflow-auto"><table class="tbl" id="tblEntry"><thead><tr><th>#</th><th>หัวข้อ</th><th style="width:120px">ทิศทาง</th><th class="num" style="width:100px">Target</th><th class="num" style="width:100px">Actual</th><th style="width:120px">ผล</th><th style="width:170px">หมายเหตุ</th><th></th></tr></thead><tbody>
+    ${items.map((it,i) => { const ratio = isRatioRow(it.target, it.actual); return `<tr data-i="${i}">
       <td>${i+1}</td>
-      <td><div>${esc(it.topic)}</div><div class="text-xs" style="color:var(--muted)">${esc(it.code)}${it.method?' · '+esc(it.method):''}</div></td>
-      <td>${dirBadge(it.direction)}</td>
-      <td><input class="inp num" data-f="target" value="${esc(it.target)}"></td>
-      <td><input class="inp num" data-f="actual" value="${esc(it.actual)}" placeholder="—"></td>
+      <td><div>${esc(it.topic)}</div><div class="text-xs" style="color:var(--muted)">${esc(it.code)}${it.method?' · '+esc(it.method):''}</div>
+        <div class="text-xs mt-0.5">${it.existing ? `แก้ไขล่าสุด ${srcBadge(it.updatedBy)} <span class="sub">${esc(String(it.updatedAt).slice(0,16).replace('T',' '))}</span>` : `<span class="badge b-warn">ยังไม่มีแถวเดือนนี้ — บันทึกแล้วจะสร้างใหม่</span>`}</div></td>
+      <td><select class="inp" data-f="direction" ${dis}><option value="HIGHER">↑ มากดี</option><option value="LOWER">↓ น้อยดี</option></select></td>
+      <td><input class="inp num" data-f="target" ${dis} value="${esc(inputVal(it.target, ratio))}"></td>
+      <td><input class="inp num" data-f="actual" ${dis} value="${esc(inputVal(it.actual, ratio))}" placeholder="—"></td>
       <td data-res></td>
-      <td><input class="inp" data-f="note" value="${esc(it.note)}"></td></tr>`).join('')}
+      <td><input class="inp" data-f="note" ${dis} value="${esc(it.note)}"></td>
+      <td>${it.existing && delOk ? `<button class="text-xs px-2 py-1 rounded hover:bg-red-50" style="color:#a32020" data-del title="ลบแถวเดือนนี้">ลบ</button>` : ''}</td></tr>`; }).join('')}
     </tbody></table></div>
-    <div class="flex items-center justify-end gap-3 mt-3"><span class="text-sm" id="entryMsg" style="color:var(--muted)"></span>
-      <button id="btnEntrySave" class="text-sm px-4 py-2 rounded-lg text-white" style="background:var(--brand)">บันทึกเข้าระบบ</button></div>`;
+    <div class="flex flex-wrap items-center justify-end gap-3 mt-3"><span class="text-sm mr-auto" id="entryMsg" style="color:var(--muted)"></span>
+      ${editable ? `<button id="btnEntryReset" class="btn btn-sec">คืนค่าเดิม</button>
+      <button id="btnEntrySave" class="btn btn-pri">บันทึก</button>` : ''}</div>`;
+  $('#entryLogin')?.addEventListener('click', () => openLogin());
   const tb = $('#tblEntry');
+  const orig = new Map();
+  const get = (tr, f) => tr.querySelector(`[data-f=${f}]`).value;
   const refreshRow = tr => {
     const it = items[tr.dataset.i];
-    const t = parseNumber(tr.querySelector('[data-f=target]').value), a = parseNumber(tr.querySelector('[data-f=actual]').value);
+    const t = parseNumber(get(tr,'target')), a = parseNumber(get(tr,'actual'));
     const bad = t !== '' && !isNum(t);
     tr.querySelector('[data-f=target]').style.borderColor = bad ? COLORS.fail : '';
-    tr.querySelector('[data-res]').innerHTML = bad ? `<span class="badge b-err">Target ไม่ใช่ตัวเลข</span>` : resultBadge(evaluateKpi(t, a, it.direction).result);
+    const ev = evaluateKpi(t, a, get(tr,'direction'));
+    tr.querySelector('[data-res]').innerHTML = bad ? `<span class="badge b-err">Target ไม่ใช่ตัวเลข</span>` : resultBadge(ev.result) + (ev.achieved !== null ? `<div class="sub mt-0.5">ทำได้ ${fmtPct(ev.achieved)}</div>` : '');
+    const now = ['direction','target','actual','note'].map(f => get(tr, f)).join('|');
+    tr.classList.toggle('dirty', now !== orig.get(tr));
+    const n = tb.querySelectorAll('tr.dirty').length;
+    if (!editable) return;
+    $('#btnEntrySave').textContent = n ? `บันทึก (${n} รายการ)` : 'บันทึก';
+    $('#btnEntrySave').disabled = !n;
   };
-  tb.querySelectorAll('tbody tr').forEach(tr => { refreshRow(tr); tr.querySelectorAll('input').forEach(inp => inp.oninput = () => { inp.dataset.dirty = 1; refreshRow(tr); }); });
+  tb.querySelectorAll('tbody tr').forEach(tr => {
+    const it = items[tr.dataset.i];
+    tr.querySelector('[data-f=direction]').value = it.direction;
+    orig.set(tr, ['direction','target','actual','note'].map(f => get(tr, f)).join('|'));
+    tr.querySelectorAll('input,select').forEach(inp => inp.oninput = () => refreshRow(tr));
+    tr.querySelector('[data-del]')?.addEventListener('click', async e => {
+      if (!armed(e.target, 'ยืนยัน?')) return;
+      if (!requireUser(company, dept)) return;
+      if (await deleteIds([it.id], e.target)) renderEntry();
+    });
+    refreshRow(tr);
+  });
+  if (!editable) return;
+  $('#btnEntryReset').onclick = renderEntry;
   $('#btnEntrySave').onclick = async () => {
+    if (!requireUser(company, dept)) return;
     const payload = [];
     let invalid = 0;
-    tb.querySelectorAll('tbody tr').forEach(tr => {
-      if (!tr.querySelector('[data-dirty]')) return;
+    tb.querySelectorAll('tbody tr.dirty').forEach(tr => {
       const it = items[tr.dataset.i];
-      const t = parseNumber(tr.querySelector('[data-f=target]').value);
+      const t = parseNumber(get(tr,'target'));
       if (t !== '' && !isNum(t)) { invalid++; return; }
+      const dir = get(tr,'direction');
       payload.push({ kpiCode: it.code, company, dept, topic: it.topic, year, month, target: t,
-        actual: parseNumber(tr.querySelector('[data-f=actual]').value), note: clean(tr.querySelector('[data-f=note]').value) });
+        actual: parseNumber(get(tr,'actual')), note: clean(get(tr,'note')), direction: dir,
+        ...(it.existing && dir !== it.direction ? { forceDirection:true } : {}) });
     });
     if (invalid) return toast(`มี ${invalid} แถวที่ Target ไม่ใช่ตัวเลข`, 'err');
     if (!payload.length) return toast('ยังไม่มีการแก้ไข', 'warn');
-    await saveRows(payload, $('#btnEntrySave'), $('#entryMsg'));
-    renderEntry();
+    const res = await saveRows(payload, $('#btnEntrySave'), $('#entryMsg'));
+    if (res) { const msg = $('#entryMsg').textContent; renderEntry(); $('#entryMsg').textContent = msg; }
   };
 }
 
-/* ========================= SAVE (ใช้ร่วม Entry + Import) ========================= */
+/* ========================= SAVE (ใช้ร่วม Entry + Import + Modal) ========================= */
 async function saveRows(rows, btn, msgEl) {
   if (!apiUrl()) { toast('ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html', 'err'); return null; }
   const label = btn.innerHTML; btn.disabled = true;
@@ -701,7 +1228,7 @@ async function saveRows(rows, btn, msgEl) {
     const msg = `บันทึกแล้ว: เพิ่ม ${total.inserted} · แก้ไข ${total.updated} · ไม่เปลี่ยน ${total.unchanged}` + (total.errors.length ? ` · ผิดพลาด ${total.errors.length}` : '');
     if (msgEl) msgEl.textContent = msg;
     toast(msg, total.errors.length ? 'warn' : 'ok', 6000);
-    if (total.newKpis.length) toast(`สร้างหัวข้อ KPI ใหม่ ${total.newKpis.length} รายการ — ตรวจทิศทางเป้าในชีต KPI_Master`, 'warn', 8000);
+    if (total.newKpis.length) { toast(`สร้างหัวข้อ KPI ใหม่ ${total.newKpis.length} รายการ — ตรวจทิศทางเป้าที่แท็บ "หัวข้อ KPI"`, 'warn', 8000); loadFromServer(); }
     return total;
   } catch (e) {
     toast('บันทึกไม่สำเร็จ: ' + errMsg(e), 'err', 8000);
@@ -714,7 +1241,321 @@ function mergeRows(newRows) {
   if (state.source !== 'server') return;
   const idx = new Map(state.data.map((r,i) => [r.ID, i]));
   newRows.forEach(r => idx.has(r.ID) ? state.data[idx.get(r.ID)] = r : state.data.push(r));
-  initFilters(); renderAll();
+  initFilters(); renderAll(); renderKpiTab();
+}
+
+/* ========================= KPI MASTER (ทะเบียนหัวข้อ) ========================= */
+function fillKpiFilters() {
+  fillSelect($('#kCompany'), allCompanies(), 'ทุกบริษัท');
+  fillSelect($('#kDept'), deptsOf($('#kCompany').value || ALL), 'ทุกแผนก');
+}
+function renderKpiTab() {
+  const c = $('#kCompany').value || ALL, d = $('#kDept').value || ALL, st = $('#kStatus').value, q = clean($('#kSearch').value).toLowerCase();
+  const stats = new Map();
+  state.data.forEach(r => { const s = stats.get(r.KPI_Code) || { n:0, eval:0, pass:0, years:new Set(), lastP:0 };
+    s.n++; s.years.add(r.Year); if (isEvaluated(r)) { s.eval++; if (r.Result === R.PASS) s.pass++; s.lastP = Math.max(s.lastP, r.P); } stats.set(r.KPI_Code, s); });
+  const list = state.master.filter(m => (c === ALL || m.Company === c) && (d === ALL || m.Dept === d) &&
+      (st === ALL || (st === 'active' && m.Active !== 'N') || (st === 'inactive' && m.Active === 'N') || (st === 'review' && m.NeedReview === 'Y')) &&
+      (!q || m.Topic.toLowerCase().includes(q) || m.KPI_Code.toLowerCase().includes(q)))
+    .sort((a,b) => a.Company.localeCompare(b.Company) || thSort(a.Dept, b.Dept) || a.KPI_Code.localeCompare(b.KPI_Code, undefined, { numeric:true }));
+  const review = state.master.filter(m => m.NeedReview === 'Y').length;
+  $('#kCount').innerHTML = `${list.length} หัวข้อ` + (review ? ` · <span class="badge b-warn">ต้องตรวจทิศทาง ${review}</span>` : '');
+  $('#tblKpi').innerHTML = `<thead><tr><th>รหัส</th><th>บริษัท / แผนก</th><th>หัวข้อ</th><th>ทิศทาง</th><th class="num">Target ตั้งต้น</th><th>ปี KPI ที่มีข้อมูล</th><th class="num">% ผ่าน</th><th>สถานะ</th><th></th></tr></thead><tbody>` +
+    (list.length ? list.map(m => { const s = stats.get(m.KPI_Code);
+      return `<tr class="clickable" data-code="${esc(m.KPI_Code)}" style="${m.Active==='N'?'opacity:.55':''}">
+      <td class="text-xs whitespace-nowrap">${esc(m.KPI_Code)}</td>
+      <td><div class="whitespace-nowrap">${esc(m.Dept)}</div><div class="sub">${esc(m.Company)}</div></td>
+      <td style="min-width:280px">${esc(m.Topic)}${m.Method?`<div class="sub">${esc(m.Method)}</div>`:''}</td>
+      <td>${dirBadge(m.Direction)}</td>
+      <td class="num">${fmtNum(m.DefaultTarget, isRatioRow(m.DefaultTarget))}</td>
+      <td class="text-xs">${s ? [...s.years].sort().join(', ') + `<div class="sub">${s.n} แถว</div>` : '<span class="badge b-warn">ยังไม่มีข้อมูล</span>'}</td>
+      <td class="num">${s && s.eval ? pctTxt(s.pass/s.eval) : '–'}</td>
+      <td>${m.Active==='N' ? '<span class="badge b-pending">ปิดใช้งาน</span>' : '<span class="badge b-ok">ใช้งาน</span>'}${m.NeedReview==='Y' ? ' <span class="badge b-warn">ตรวจทิศทาง</span>' : ''}</td>
+      <td>${canManageKpi(m.Company, m.Dept) ? '<button class="text-xs px-2 py-1 rounded border" style="border-color:var(--line)">แก้ไข</button>' : ''}</td></tr>`; }).join('')
+      : `<tr><td colspan="9" class="text-center py-6" style="color:var(--muted)">ไม่พบหัวข้อตามตัวกรอง</td></tr>`) + `</tbody>`;
+  $('#tblKpi').querySelectorAll('tr[data-code]').forEach(tr => tr.onclick = () => {
+    const m = state.master.find(x => x.KPI_Code === tr.dataset.code);
+    if (canManageKpi(m.Company, m.Dept)) openKpiForm(m);
+    else if (state.data.some(r => r.KPI_Code === m.KPI_Code)) openHistory(m.KPI_Code);
+  });
+}
+
+/** ฟอร์มเพิ่ม (m = null) / แก้ไขหัวข้อ KPI */
+function openKpiForm(m, preset = {}) {
+  const isNew = !m, lk = buildLookupMaps();
+  const comps = allCompanies();
+  const yearsHave = m ? uniq(state.data.filter(r => r.KPI_Code === m.KPI_Code).map(r => r.Year)).sort() : [];
+  const defYear = preset.year || latestActiveYear() || NOW_Y;
+  openModal(`
+    <div class="flex items-start gap-3 mb-3"><div class="mr-auto"><h3 class="font-semibold text-lg">${isNew ? 'เพิ่มหัวข้อ KPI ใหม่' : 'แก้ไขหัวข้อ KPI'}</h3>
+      <div class="sub">${isNew ? 'ระบบจะสร้างรหัส KPI ให้อัตโนมัติ และสร้างแถวรายเดือนพร้อม Target ไว้ให้กรอก Actual' : esc(m.KPI_Code) + ' · ' + esc(m.Dept) + ' · ' + esc(m.Company)}</div></div>
+      <button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <div class="grid grid-cols-2 gap-3">
+      ${isNew ? `
+      <label class="fld">บริษัท<select id="kfCompany" class="sel">${comps.map(c => `<option>${esc(c)}</option>`).join('')}<option value="__new">＋ บริษัทใหม่…</option></select></label>
+      <label class="fld">แผนก<select id="kfDept" class="sel"></select></label>
+      <label class="fld hidden" id="kfNewCompWrap">ชื่อบริษัทใหม่<input id="kfNewComp" class="inp" placeholder="เช่น RST-XXXX"></label>
+      <label class="fld hidden" id="kfCompCodeWrap">รหัสย่อบริษัท (2–5 ตัว)<input id="kfCompCode" class="inp" maxlength="5" placeholder="เช่น XXX"></label>
+      <label class="fld hidden" id="kfNewDeptWrap">ชื่อแผนกใหม่<input id="kfNewDept" class="inp"></label>
+      <label class="fld hidden" id="kfDeptCodeWrap">รหัสย่อแผนก (2–5 ตัว)<input id="kfDeptCode" class="inp" maxlength="5" placeholder="เช่น SAF"></label>` : ''}
+      <label class="fld col-span-2">หัวข้อ KPI (TOPIC) *<textarea id="kfTopic" class="inp" placeholder="เช่น ข้อร้องเรียนจากลูกค้า (ไม่เกิน 2 ครั้ง/เดือน)">${esc(m?.Topic || '')}</textarea></label>
+      <label class="fld col-span-2">วิธีวัดผล<input id="kfMethod" class="inp" value="${esc(m?.Method || '')}" placeholder="เช่น (จำนวนที่ทำได้ / แผน) × 100"></label>
+      <div class="fld col-span-2">ทิศทางเป้า *
+        <div class="grid grid-cols-2 gap-2 mt-1">
+          <label class="mchk" style="padding:8px"><input type="radio" name="kfDir" value="HIGHER"> <span><b>↑ ยิ่งมากยิ่งดี</b><span class="sub block">Actual ≥ Target = ผ่าน (ยอดขาย, % ทำได้ตามแผน)</span></span></label>
+          <label class="mchk" style="padding:8px"><input type="radio" name="kfDir" value="LOWER"> <span><b>↓ ยิ่งน้อยยิ่งดี</b><span class="sub block">Actual ≤ Target = ผ่าน (ข้อร้องเรียน, จำนวนวัน, ค่าใช้จ่าย)</span></span></label>
+        </div></div>
+      <label class="fld">Target ตั้งต้น<input id="kfTarget" class="inp num" value="${esc(m ? inputVal(m.DefaultTarget, isRatioRow(m.DefaultTarget)) : '')}" placeholder="เช่น 95% หรือ 10"></label>
+      ${isNew ? `
+      <label class="fld">ปี KPI (Y-MOU)<select id="kfYear" class="sel">${uniq([...allYears(), NOW_Y+1]).sort((a,b)=>b-a).map(y => `<option ${y===defYear?'selected':''}>${y}</option>`).join('')}</select></label>
+      <div class="fld col-span-2">สร้างแถวรายเดือนล่วงหน้า (พร้อม Target) <span class="sub">— เลือกเดือนที่ต้องประเมิน</span>
+        <div id="kfMonths" class="flex flex-wrap gap-1 mt-1"></div>
+        <div class="flex gap-2 mt-1 text-xs"><button type="button" class="underline" id="kfAll">เลือกทั้งปี</button><button type="button" class="underline" id="kfFromNow">ตั้งแต่เดือนนี้</button><button type="button" class="underline" id="kfNone">ไม่สร้าง</button></div></div>
+      <div class="col-span-2 sub" id="kfCodePreview"></div>` : `
+      <label class="fld">สถานะ<select id="kfActive" class="sel"><option value="Y">ใช้งาน</option><option value="N">ปิดใช้งาน (ไม่แสดงในหน้ากรอกผล)</option></select></label>
+      <label class="fld col-span-2">เมื่อเปลี่ยนทิศทาง ให้คำนวณผลใหม่ของแถวข้อมูล<select id="kfApply" class="sel"><option value="">ไม่เปลี่ยนแถวเดิม (มีผลกับแถวที่สร้างใหม่เท่านั้น)</option>${yearsHave.map(y => `<option value="${y}">ตั้งแต่ปี KPI ${y} เป็นต้นไป</option>`).join('')}</select></label>
+      <div class="col-span-2 sub">แก้ถ้อยคำหัวข้อ → ระบบเปลี่ยนชื่อในทุกแถวข้อมูลของรหัสนี้ให้ (รหัสเดิม ประวัติไม่หาย)</div>`}
+    </div>
+    <div id="kfErr" class="text-sm mt-3" style="color:#a32020"></div>
+    <div class="flex items-center gap-2 mt-4"><span class="mr-auto"></span>
+      <button data-close class="btn btn-sec">ยกเลิก</button>
+      <button id="kfSave" class="btn btn-pri">${isNew ? 'เพิ่มหัวข้อ' : 'บันทึกการแก้ไข'}</button></div>`, box => {
+    const dirInit = m?.Direction || '';
+    if (dirInit) box.querySelector(`input[name=kfDir][value=${dirInit}]`).checked = true;
+    if (!isNew) { $('#kfActive').value = m.Active; }
+    if (isNew) {
+      const show = (id, on) => $(id).classList.toggle('hidden', !on);
+      const compVal = () => $('#kfCompany').value === '__new' ? normCompany($('#kfNewComp').value) : $('#kfCompany').value;
+      const deptVal = () => $('#kfDept').value === '__new' ? clean($('#kfNewDept').value) : $('#kfDept').value;
+      const refreshDept = () => {
+        const isNewComp = $('#kfCompany').value === '__new';
+        show('#kfNewCompWrap', isNewComp); show('#kfCompCodeWrap', isNewComp && !lk.compCode[compVal()]);
+        $('#kfDept').innerHTML = (isNewComp ? [] : deptsOf($('#kfCompany').value)).map(d => `<option>${esc(d)}</option>`).join('') + `<option value="__new">＋ แผนกใหม่…</option>`;
+        if (preset.dept && [...$('#kfDept').options].some(o => o.value === preset.dept)) $('#kfDept').value = preset.dept;
+        refreshNewDept();
+      };
+      const refreshNewDept = () => { const n = $('#kfDept').value === '__new'; show('#kfNewDeptWrap', n); show('#kfDeptCodeWrap', n && !lk.deptCode[lk.dept[normKey(deptVal())] || deptVal()]); preview(); };
+      const preview = () => {
+        const c = compVal(), d = lk.dept[normKey(deptVal())] || deptVal();
+        const cc = lk.compCode[c] || clean($('#kfCompCode').value).toUpperCase() || '?', dc = lk.deptCode[d] || clean($('#kfDeptCode').value).toUpperCase() || '?';
+        const prefix = cc + '-' + dc;
+        const seq = Math.max(0, ...state.master.map(x => { const mm = x.KPI_Code.match(/^(.*)-(\d+)$/); return mm && mm[1] === prefix ? +mm[2] : 0; })) + 1;
+        const n = box.querySelectorAll('#kfMonths input:checked').length;
+        $('#kfCodePreview').innerHTML = `รหัสที่จะได้ (โดยประมาณ): <b>${esc(prefix)}-${String(seq).padStart(2,'0')}</b> · จะสร้าง ${n} แถวรายเดือน`;
+      };
+      const renderMonths = () => {
+        const y = Number($('#kfYear').value);
+        $('#kfMonths').innerHTML = ymouMonths(y).map(mo => { const p = realYear(y, mo)*100+mo;
+          return `<label class="mchk"><input type="checkbox" value="${mo}" ${p >= NOW_P - 1 ? 'checked' : ''}>${TH_M[mo-1]} ${String(realYear(y,mo)).slice(-2)}</label>`; }).join('');
+        $('#kfMonths').querySelectorAll('input').forEach(i => i.onchange = preview); preview();
+      };
+      const setMonths = fn => { const y = Number($('#kfYear').value); $('#kfMonths').querySelectorAll('input').forEach(i => i.checked = fn(realYear(y, +i.value)*100 + +i.value)); preview(); };
+      if (preset.company && comps.includes(preset.company)) $('#kfCompany').value = preset.company;
+      $('#kfCompany').onchange = refreshDept; $('#kfDept').onchange = refreshNewDept;
+      ['#kfNewComp','#kfNewDept','#kfCompCode','#kfDeptCode'].forEach(s => $(s).oninput = () => { if (s === '#kfNewComp') show('#kfCompCodeWrap', !lk.compCode[compVal()]); if (s === '#kfNewDept') refreshNewDept(); preview(); });
+      $('#kfYear').onchange = renderMonths;
+      $('#kfAll').onclick = () => setMonths(() => true); $('#kfNone').onclick = () => setMonths(() => false); $('#kfFromNow').onclick = () => setMonths(p => p >= NOW_P - 1);
+      refreshDept(); renderMonths();
+    }
+    $('#kfSave').onclick = async () => {
+      $('#kfErr').textContent = '';
+      if (!requireUser()) return;
+      if (!canManageKpi()) return toast('เฉพาะ Admin จัดการหัวข้อ KPI ได้', 'err');
+      const dir = box.querySelector('input[name=kfDir]:checked')?.value;
+      const topic = clean($('#kfTopic').value), target = parseNumber($('#kfTarget').value);
+      const errs = [];
+      if (topic.length < 5) errs.push('กรุณากรอกหัวข้อ KPI (อย่างน้อย 5 ตัวอักษร)');
+      if (!dir) errs.push('กรุณาเลือกทิศทางเป้า');
+      if (target !== '' && !isNum(target)) errs.push('Target ต้องเป็นตัวเลข เช่น 95%, 0.95, 10');
+      let kpi;
+      if (isNew) {
+        const company = $('#kfCompany').value === '__new' ? normCompany($('#kfNewComp').value) : $('#kfCompany').value;
+        const dept = $('#kfDept').value === '__new' ? clean($('#kfNewDept').value) : $('#kfDept').value;
+        if (!company) errs.push('กรุณาระบุบริษัท'); if (!dept) errs.push('กรุณาระบุแผนก');
+        const dup = state.master.find(x => x.Company === company && normKey(x.Dept) === normKey(lk.dept[normKey(dept)] || dept) && normKey(x.Topic) === normKey(topic));
+        if (dup) errs.push('มีหัวข้อนี้อยู่แล้ว: ' + dup.KPI_Code);
+        kpi = { company, dept, topic, method: clean($('#kfMethod').value), direction: dir, defaultTarget: target,
+          companyCode: clean($('#kfCompCode').value).toUpperCase(), deptCode: clean($('#kfDeptCode').value).toUpperCase(),
+          year: Number($('#kfYear').value), months: [...box.querySelectorAll('#kfMonths input:checked')].map(i => Number(i.value)) };
+      } else {
+        kpi = { kpiCode: m.KPI_Code };
+        if (topic !== m.Topic) kpi.topic = topic;
+        if (clean($('#kfMethod').value) !== m.Method) kpi.method = clean($('#kfMethod').value);
+        if (dir !== m.Direction || m.NeedReview === 'Y') kpi.direction = dir;
+        if (String(target) !== String(m.DefaultTarget)) kpi.defaultTarget = target;
+        if ($('#kfActive').value !== m.Active) kpi.active = $('#kfActive').value;
+        if ($('#kfApply').value) { kpi.applyFromYear = Number($('#kfApply').value); kpi.direction = dir; }
+        if (Object.keys(kpi).length === 1) errs.push('ยังไม่มีการเปลี่ยนแปลง');
+      }
+      if (errs.length) { $('#kfErr').innerHTML = errs.map(esc).join('<br>'); return; }
+      const btn = $('#kfSave'), label = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก';
+      try {
+        const res = await apiPost({ action: isNew ? 'addKpi' : 'updateKpi', kpi });
+        const nm = normalizeMaster(res.kpi), i = state.master.findIndex(x => x.KPI_Code === nm.KPI_Code);
+        if (i >= 0) state.master[i] = nm; else state.master.push(nm);
+        closeModal();
+        toast(isNew ? `เพิ่มหัวข้อ ${nm.KPI_Code} แล้ว` + (res.rows.length ? ` · สร้าง ${res.rows.length} แถวรายเดือน` : '') : `บันทึก ${nm.KPI_Code} แล้ว` + (res.rows.length ? ` · ปรับ ${res.rows.length} แถว` : ''), 'ok', 6000);
+        if (res.rows.length) mergeRows(res.rows.map(normalizeServerRow)); else { initFilters(); renderAll(); renderKpiTab(); }
+      } catch (e) { $('#kfErr').textContent = errMsg(e); }
+      finally { btn.disabled = false; btn.innerHTML = label; }
+    };
+  });
+}
+
+/* ========================= USERS (Admin จัดการสมาชิก) ========================= */
+async function loadUsers() {
+  if (!isAdmin()) return;
+  $('#tblUsers').innerHTML = `<tr><td class="py-6 text-center sub"><span class="spinner"></span> กำลังโหลด…</td></tr>`;
+  try { const j = await apiPost({ action:'listUsers' }, 0); state.users = j.users; renderUsers(); }
+  catch (e) { $('#tblUsers').innerHTML = `<tr><td class="py-6 text-center" style="color:#a32020">${esc(errMsg(e))}</td></tr>`; }
+}
+const fmtDT = v => v ? new Date(v).toLocaleString('th-TH', { dateStyle:'short', timeStyle:'short' }) : '–';
+function renderUsers() {
+  const list = [...(state.users || [])].sort((a,b) => (a.role === b.role ? 0 : a.role === 'ADMIN' ? -1 : 1) || a.company.localeCompare(b.company) || a.username.localeCompare(b.username));
+  $('#tblUsers').innerHTML = `<thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อที่แสดง</th><th>สิทธิ์</th><th>บริษัท / แผนกที่แก้ไขได้</th><th>สถานะ</th><th>เข้าใช้ล่าสุด</th><th>สร้างโดย</th><th></th></tr></thead><tbody>` +
+    (list.length ? list.map(u => `<tr class="clickable" data-u="${esc(u.username)}" style="${u.active?'':'opacity:.55'}">
+      <td class="font-medium">${esc(u.username)}${u.username === state.me?.username ? ' <span class="badge b-info">คุณ</span>' : ''}</td><td>${esc(u.name)}${u.note?`<div class="sub">${esc(u.note)}</div>`:''}</td>
+      <td>${u.role === 'ADMIN' ? '<span class="badge b-info">Admin</span>' : '<span class="badge b-pending">แผนก</span>'}</td>
+      <td>${u.role === 'ADMIN' ? '<span class="sub">ทุกบริษัท ทุกแผนก</span>' : `${esc(u.depts.includes('*') ? 'ทุกแผนก' : u.depts.join(', '))}<div class="sub">${esc(u.company)}</div>`}</td>
+      <td>${u.active ? '<span class="badge b-ok">ใช้งาน</span>' : '<span class="badge b-pending">ปิด</span>'}</td>
+      <td class="text-xs whitespace-nowrap">${fmtDT(u.lastLogin)}</td><td class="text-xs">${esc(u.createdBy)}<div class="sub">${fmtDT(u.createdAt)}</div></td>
+      <td><button class="text-xs px-2 py-1 rounded border" style="border-color:var(--line)">แก้ไข</button></td></tr>`).join('')
+      : `<tr><td colspan="8" class="text-center py-6 sub">ยังไม่มีสมาชิก</td></tr>`) + `</tbody>`;
+  $('#tblUsers').querySelectorAll('tr[data-u]').forEach(tr => tr.onclick = () => openUserForm(state.users.find(u => u.username === tr.dataset.u)));
+}
+function genPassword() {
+  const cs = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', a = new Uint32Array(10);
+  crypto.getRandomValues(a); return [...a].map(n => cs[n % cs.length]).join('');
+}
+function openUserForm(u) {
+  const isNew = !u, comps = allCompanies();
+  openModal(`
+    <div class="flex items-start gap-3 mb-3"><h3 class="font-semibold text-lg mr-auto">${isNew ? 'เพิ่มสมาชิก' : 'แก้ไขสมาชิก: ' + esc(u.username)}</h3><button data-close class="text-xl leading-none px-2" aria-label="ปิด">×</button></div>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="fld">ชื่อผู้ใช้ (ใช้ล็อกอิน)<input id="ufUser" class="inp" ${isNew ? '' : 'disabled'} value="${esc(u?.username || '')}" placeholder="เช่น hr01" autocapitalize="off" spellcheck="false"></label>
+      <label class="fld">ชื่อที่แสดง (ลงใน UpdatedBy)<input id="ufName" class="inp" value="${esc(u?.name || '')}" placeholder="เช่น สมชาย (HR)"></label>
+      <label class="fld">สิทธิ์<select id="ufRole" class="sel"><option value="DEPT">ผู้ใช้แผนก — แก้ไขได้เฉพาะแผนกที่กำหนด</option><option value="ADMIN">Admin — ทำได้ทุกอย่าง + จัดการสมาชิก</option></select></label>
+      <label class="fld">สถานะ<select id="ufActive" class="sel"><option value="Y">ใช้งาน</option><option value="N">ปิดใช้งาน (ล็อกอินไม่ได้ทันที)</option></select></label>
+      <div id="ufScope" class="col-span-2 grid grid-cols-2 gap-3">
+        <label class="fld">บริษัท<select id="ufCompany" class="sel">${comps.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>
+        <div class="fld col-span-2">แผนกที่แก้ไขได้ <span class="sub">(เลือกได้หลายแผนก)</span><div id="ufDepts" class="flex flex-wrap gap-1 mt-1"></div></div>
+      </div>
+      <label class="fld col-span-2">หมายเหตุ<input id="ufNote" class="inp" value="${esc(u?.note || '')}" placeholder="เช่น ตำแหน่ง / เบอร์ติดต่อ"></label>
+      <div class="fld col-span-2">${isNew ? 'รหัสผ่านเริ่มต้น *' : 'ตั้งรหัสผ่านใหม่ <span class="sub">(เว้นว่าง = ไม่เปลี่ยน)</span>'}
+        <div class="flex gap-2 mt-1"><input id="ufPass" class="inp" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"><button type="button" id="ufGen" class="btn btn-sec whitespace-nowrap">สุ่มรหัส</button></div>
+        <div class="sub mt-1">แจ้งรหัสนี้ให้ผู้ใช้ แล้วให้เปลี่ยนเองที่เมนู 👤 หลังล็อกอิน (ระบบไม่เก็บรหัสจริง ดูย้อนหลังไม่ได้)</div></div>
+    </div>
+    <div id="ufErr" class="text-sm mt-3" style="color:#a32020"></div>
+    <div class="flex items-center gap-2 mt-4"><span class="mr-auto"></span><button data-close class="btn btn-sec">ยกเลิก</button><button id="ufSave" class="btn btn-pri">${isNew ? 'เพิ่มสมาชิก' : 'บันทึก'}</button></div>`, () => {
+    $('#ufRole').value = u?.role || 'DEPT'; $('#ufActive').value = u && !u.active ? 'N' : 'Y';
+    if (u?.company && comps.includes(u.company)) $('#ufCompany').value = u.company;
+    const renderDepts = keep => {
+      const sel = new Set(keep || []);
+      $('#ufDepts').innerHTML = `<label class="mchk"><input type="checkbox" value="*" ${sel.has('*')?'checked':''}><b>ทุกแผนก</b></label>` +
+        deptsOf($('#ufCompany').value).map(d => `<label class="mchk"><input type="checkbox" value="${esc(d)}" ${sel.has(d)?'checked':''}>${esc(d)}</label>`).join('');
+    };
+    const toggleScope = () => $('#ufScope').style.display = $('#ufRole').value === 'ADMIN' ? 'none' : '';
+    renderDepts(u?.depts); toggleScope();
+    $('#ufCompany').onchange = () => renderDepts([]); $('#ufRole').onchange = toggleScope;
+    $('#ufGen').onclick = () => { $('#ufPass').value = genPassword(); $('#ufPass').select(); };
+    $('#ufSave').onclick = async () => {
+      const x = { isNew, username: clean($('#ufUser').value).toLowerCase(), name: clean($('#ufName').value), role: $('#ufRole').value,
+        active: $('#ufActive').value, note: clean($('#ufNote').value), company: $('#ufCompany').value,
+        depts: [...$('#ufDepts').querySelectorAll('input:checked')].map(i => i.value), password: $('#ufPass').value };
+      if (x.depts.includes('*')) x.depts = ['*'];
+      const errs = [];
+      if (!/^[a-z0-9._-]{3,30}$/.test(x.username)) errs.push('ชื่อผู้ใช้ 3–30 ตัว ใช้ได้เฉพาะ a-z 0-9 . _ -');
+      if (x.role === 'DEPT' && !x.depts.length) errs.push('เลือกแผนกอย่างน้อย 1 แผนก');
+      if (isNew && !x.password) errs.push('กรุณาตั้งรหัสผ่าน (กด "สุ่มรหัส" ได้)');
+      if (x.password && x.password.length < 8) errs.push('รหัสผ่านอย่างน้อย 8 ตัวอักษร');
+      if (!isNew && u.username === state.me.username && (x.role !== 'ADMIN' || x.active === 'N')) errs.push('ลดสิทธิ์/ปิดบัญชีตัวเองไม่ได้ — ให้ Admin คนอื่นทำ');
+      if (errs.length) return $('#ufErr').innerHTML = errs.map(esc).join('<br>');
+      if (!x.password) delete x.password;
+      const btn = $('#ufSave'), label = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก';
+      try {
+        const j = await apiPost({ action:'saveUser', u: x }, 0);
+        const i = state.users.findIndex(o => o.username === j.user.username);
+        if (i >= 0) state.users[i] = j.user; else state.users.push(j.user);
+        renderUsers();
+        if (x.password) openModal(`<h3 class="font-semibold text-lg mb-2">${isNew ? 'เพิ่มสมาชิกแล้ว' : 'ตั้งรหัสใหม่แล้ว'}</h3>
+          <p class="text-sm mb-3">ส่งข้อมูลนี้ให้ผู้ใช้ (แสดงครั้งเดียว):</p>
+          <div class="p-3 rounded font-mono text-sm" style="background:#f1f0ec">ชื่อผู้ใช้: ${esc(x.username)}<br>รหัสผ่าน: ${esc(x.password)}</div>
+          <div class="flex gap-2 mt-4"><span class="mr-auto"></span><button id="ufCopy" class="btn btn-sec">คัดลอก</button><button data-close class="btn btn-pri">เสร็จ</button></div>`, () => {
+            $('#ufCopy').onclick = () => { navigator.clipboard?.writeText(`ชื่อผู้ใช้: ${x.username}\nรหัสผ่าน: ${x.password}`).then(() => toast('คัดลอกแล้ว'), () => {}); };
+          });
+        else { closeModal(); toast(`บันทึก ${x.username} แล้ว`, 'ok'); }
+      } catch (e) { $('#ufErr').textContent = errMsg(e); }
+      finally { btn.disabled = false; btn.innerHTML = label; }
+    };
+  });
+}
+
+/* ========================= TEMPLATE (แบบฟอร์มมาตรฐานรายแผนก) ========================= */
+const TPL_HEADERS = ['KPI_Code','บริษัท','แผนก','Y-MOU','เดือน','TOPIC','วิธีวัดผล','Direction','Target','Actual MTD','หมายเหตุ','Link แหล่งข้อมูล'];
+function fillTemplateSelects() {
+  const me = state.me;
+  fillSelect($('#tCompany'), allCompanies(), '');
+  if (me && !isAdmin() && !$('#tCompany').dataset.me) { $('#tCompany').value = me.company; $('#tCompany').dataset.me = 1; }
+  fillSelect($('#tDept'), deptsOf($('#tCompany').value), '');
+  if (me && !isAdmin() && !$('#tDept').dataset.me && !me.depts.includes('*')) { const d = deptsOf(me.company).find(x => inScope(me.company, x)); if (d) $('#tDept').value = d; $('#tDept').dataset.me = 1; }
+  fillSelect($('#tYear'), uniq([...allYears(), NOW_Y+1]).sort((a,b)=>b-a), '', String);
+  if (!$('#tYear').dataset.init && state.data.length) { $('#tYear').value = String(latestActiveYear()); $('#tYear').dataset.init = 1; }
+  fillTemplateMonths();
+}
+function fillTemplateMonths() {
+  const y = Number($('#tYear').value) || NOW_Y;
+  const cur = $('#tMonth').value;
+  $('#tMonth').innerHTML = `<option value="${ALL}">ทั้งปี (12 เดือน)</option>` + ymouMonths(y).map(m => `<option value="${m}">${TH_M[m-1]} ${realYear(y,m)}</option>`).join('');
+  if ([...$('#tMonth').options].some(o => o.value === cur)) $('#tMonth').value = cur;
+  else { const pm = NOW_M === 1 ? 12 : NOW_M - 1; if (ymouMonths(y).some(m => realYear(y,m)*100+m === (NOW_M===1?NOW_Y-1:NOW_Y)*100+pm)) $('#tMonth').value = String(pm); }
+  updateTemplateInfo();
+}
+function updateTemplateInfo() {
+  const c = $('#tCompany').value, d = $('#tDept').value, y = Number($('#tYear').value);
+  const n = c && d ? entryCandidates(c, d, y, ymouMonths(y)[0]).length : 0;
+  $('#tInfo').textContent = c && d ? `${n} หัวข้อ` : '';
+}
+function setCell(ws, r, c, v, z) { const ref = XLSX.utils.encode_cell({ r, c }); ws[ref] = typeof v === 'number' ? { t:'n', v, ...(z ? { z } : {}) } : { t:'s', v: String(v ?? '') }; }
+function downloadTemplate(blank) {
+  const c = $('#tCompany').value, d = $('#tDept').value, y = Number($('#tYear').value), mv = $('#tMonth').value;
+  if (!blank && (!c || !d)) return toast('กรุณาเลือกบริษัทและแผนก', 'warn');
+  const months = mv === ALL ? ymouMonths(y) : [Number(mv)];
+  const data = [];
+  if (!blank) months.forEach(m => entryCandidates(c, d, y, m).forEach(it => data.push({ ...it, m })));
+  if (!blank && !data.length) return toast('แผนกนี้ยังไม่มีหัวข้อ KPI — เพิ่มที่แท็บ "หัวข้อ KPI" หรือใช้แบบฟอร์มเปล่า', 'warn', 6000);
+  const ws = {};
+  const title = blank ? 'แบบฟอร์มส่งผล KPI รายเดือน (เปล่า)' : `แบบฟอร์มส่งผล KPI · ${d} · ${c} · ปี KPI ${y}` + (mv === ALL ? '' : ` · ${TH_M[Number(mv)-1]} ${realYear(y, Number(mv))}`);
+  setCell(ws, 0, 0, title);
+  setCell(ws, 1, 0, 'วิธีกรอก: กรอกเฉพาะคอลัมน์ "Actual MTD" (และหมายเหตุ/Link ถ้ามี) · ค่าเป็น % พิมพ์ 95% หรือ 0.95 · ไม่มีข้อมูลเดือนนั้นพิมพ์ N.A. · ห้ามแก้ KPI_Code / TOPIC / แถวหัวตาราง');
+  setCell(ws, 2, 0, `Direction: HIGHER = ยิ่งมากยิ่งดี (Actual ≥ Target ผ่าน) · LOWER = ยิ่งน้อยยิ่งดี (Actual ≤ Target ผ่าน) · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`);
+  const H = 4;
+  TPL_HEADERS.forEach((h, i) => setCell(ws, H, i, h));
+  const rows = blank ? [...Array(10)].map(() => ({ code:'', topic:'', method:'', direction:'HIGHER', target:'', actual:'', note:'', link:'', m: months[0] })) : data;
+  rows.forEach((it, k) => {
+    const r = H + 1 + k, ratio = isRatioRow(it.target, it.actual), z = ratio ? '0.0%' : undefined;
+    const vals = [it.code, blank ? c : c, blank ? d : d, y, TH_M[it.m-1], it.topic, it.method, it.direction, it.target, it.actual, it.note, it.link];
+    vals.forEach((v, i) => setCell(ws, r, i, v === null ? '' : v, (i === 8 || i === 9) ? z : undefined));
+  });
+  ws['!ref'] = XLSX.utils.encode_range({ s:{ r:0, c:0 }, e:{ r:H + rows.length, c:TPL_HEADERS.length-1 } });
+  ws['!cols'] = [12,16,18,8,8,60,36,10,10,12,28,30].map(wch => ({ wch }));
+  ws['!merges'] = [0,1,2].map(r => ({ s:{ r, c:0 }, e:{ r, c:TPL_HEADERS.length-1 } }));
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{ r:H, c:0 }, e:{ r:H + rows.length, c:TPL_HEADERS.length-1 } }) };
+  const help = XLSX.utils.aoa_to_sheet([
+    ['คู่มือแบบฟอร์มส่งผล KPI (RST-KPI Dashboard)'], [],
+    ['ขั้นตอน'], ['1. กรอกคอลัมน์ Actual MTD ของแต่ละหัวข้อ/เดือน'], ['2. บันทึกไฟล์ (ห้ามเปลี่ยนชื่อชีต "KPI" และหัวตาราง)'],
+    ['3. เปิดหน้า RST-KPI Dashboard → แท็บ "แบบฟอร์ม & นำเข้า" → ลากไฟล์มาวาง → ตรวจ → กดบันทึก'], [],
+    ['คอลัมน์', 'ความหมาย', 'แก้ได้?'],
+    ['KPI_Code', 'รหัสหัวข้อ ใช้จับคู่กับฐานข้อมูล', 'ห้ามแก้'], ['TOPIC', 'ชื่อหัวข้อ KPI', 'ห้ามแก้ (แก้ที่แท็บ หัวข้อ KPI)'],
+    ['Direction', 'HIGHER ยิ่งมากยิ่งดี / LOWER ยิ่งน้อยยิ่งดี', 'ห้ามแก้'], ['Target', 'เป้าหมาย', 'แก้ได้ถ้าเป้าเดือนนั้นเปลี่ยน'],
+    ['Actual MTD', 'ผลที่ทำได้ เว้นว่าง = ยังไม่ประเมิน, N.A. = ไม่มีข้อมูล', 'กรอก'], ['หมายเหตุ', 'คำอธิบาย/เหตุผล', 'กรอก'], ['Link แหล่งข้อมูล', 'ลิงก์หลักฐาน', 'กรอก'],
+    [], ['ช่องที่เว้นว่างจะไม่ลบค่าที่มีอยู่ในระบบ (ถ้าเปิดตัวเลือก "ไม่เขียนทับด้วยช่องว่าง" ตอนอัปโหลด)'] ]);
+  help['!cols'] = [{ wch:18 }, { wch:56 }, { wch:28 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'KPI');
+  XLSX.utils.book_append_sheet(wb, help, 'วิธีกรอก');
+  const safe = s => String(s).replace(/[\\/:*?"<>|]/g, '_');
+  XLSX.writeFile(wb, blank ? 'RST_KPI_Template_blank.xlsx' : `RST_KPI_${safe(c)}_${safe(d)}_${y}${mv === ALL ? '' : '_' + String(mv).padStart(2,'0')}.xlsx`);
+  toast(blank ? 'ดาวน์โหลดแบบฟอร์มเปล่าแล้ว' : `ดาวน์โหลดแบบฟอร์ม ${data.length} แถวแล้ว`, 'ok');
 }
 
 /* ========================= IMPORT EXCEL (SheetJS) ========================= */
@@ -760,6 +1601,7 @@ function parseSheet(wb, name) {
   if (!hdr) return null;
   const range = XLSX.utils.decode_range(ws['!ref']);
   const { map } = hdr, lk = buildLookupMaps();
+  const codes = new Map(state.master.map(m => [m.KPI_Code, m]));
   const out = [], stats = { empty:0, headerRepeat:0, filled:0 };
   let prev = {};
   for (let r = hdr.row + 1; r < aoa.length; r++) {
@@ -785,6 +1627,12 @@ function parseSheet(wb, name) {
     rec.month = parseMonth(rec.raw_month); rec.year = parseYear(rec.raw_year);
     rec.target = parseNumber(g('target')); rec.actual = parseNumber(g('actual'));
     rec.direction = clean(g('direction')).toUpperCase() || directionFromFormula(ws, r + range.s.r, map);
+    if (rec.direction && !['HIGHER','LOWER'].includes(rec.direction)) { rec.warnings.push(`Direction "${rec.direction}" ไม่รู้จัก`); rec.direction = ''; }
+    if (rec.kpiCode) {                                    // แบบฟอร์มมาตรฐาน: ตรวจรหัสกับทะเบียน
+      const m = codes.get(rec.kpiCode);
+      if (!m && state.master.length) rec.errors.push(`ไม่พบรหัส ${rec.kpiCode} ในทะเบียน KPI`);
+      else if (m && (m.Company !== rec.company || m.Dept !== rec.dept)) rec.errors.push(`รหัส ${rec.kpiCode} เป็นของ ${m.Dept} · ${m.Company}`);
+    }
     if (!rec.company) rec.errors.push('ไม่มีบริษัท');
     if (!rec.dept) rec.errors.push('ไม่มีแผนก');
     if (!rec.month) rec.errors.push(`เดือนไม่ถูกต้อง "${rec.raw_month}"`);
@@ -796,23 +1644,26 @@ function parseSheet(wb, name) {
   }
   // ตรวจซ้ำในไฟล์ (บริษัท+แผนก+หัวข้อ+ปี+เดือน)
   const seen = new Map();
-  out.forEach(r => { if (r.errors.length) return; const k = [r.company, r.dept, r.topic.toLowerCase(), r.year, r.month].join('|');
+  out.forEach(r => { if (r.errors.length) return; const k = [r.kpiCode || [r.company, r.dept, r.topic.toLowerCase()].join('|'), r.year, r.month].join('|');
     if (seen.has(k)) r.errors.push(`ซ้ำกับแถว ${seen.get(k)}`); else seen.set(k, r._row); });
   // ทิศทางเป้า: ใช้ KPI_Master ก่อน ถ้าไม่มี ใช้เสียงข้างมากของสูตรในปีเดียวกัน (กันสูตรที่ copy ผิดบางเดือน)
-  const mDir = new Map(state.master.map(m => [[normCompany(m.Company), clean(m.Dept), clean(m.Topic).toLowerCase()].join('|'), m.Direction]));
+  const mDir = new Map(state.master.map(m => [[m.Company, m.Dept, m.Topic.toLowerCase()].join('|'), m.Direction]));
   const votes = new Map();
   out.forEach(r => { if (!r.direction) return; const k = [r.company, r.dept, r.topic.toLowerCase(), r.year].join('|');
     const v = votes.get(k) || { HIGHER:0, LOWER:0 }; v[r.direction]++; votes.set(k, v); });
   let dirFixed = 0;
   out.forEach(r => {
     const mk = [r.company, r.dept, r.topic.toLowerCase()].join('|');
-    if (mDir.has(mk)) { r.effDirection = mDir.get(mk) === 'LOWER' ? 'LOWER' : 'HIGHER'; r.inMaster = true; return; }
+    const byCode = r.kpiCode && codes.get(r.kpiCode);
+    if (byCode) { r.effDirection = byCode.Direction; r.inMaster = true; r.direction = r.effDirection; return; }
+    if (mDir.has(mk)) { r.effDirection = mDir.get(mk); r.inMaster = true; r.direction = r.effDirection; return; }
     const v = votes.get(mk + '|' + r.year);
     const maj = v ? (v.LOWER > v.HIGHER ? 'LOWER' : 'HIGHER') : '';
     if (r.direction && maj && r.direction !== maj) { r.warnings.push(`สูตร Excel เป็น ${r.direction} แต่เดือนอื่นเป็น ${maj} → ใช้ ${maj}`); dirFixed++; }
     r.effDirection = maj || r.direction || 'HIGHER';
     if (v && v.LOWER && v.HIGHER) r.needReview = true;                // หัวข้อนี้มีสูตรทั้งสองทิศในปีเดียวกัน
     if (!r.direction && !maj) r.warnings.push('ไม่ทราบทิศทางเป้า ใช้ "ยิ่งมากยิ่งดี"');
+    if (state.master.length) r.warnings.push('หัวข้อใหม่ (จะสร้างใน KPI_Master)');
     r.direction = r.effDirection;
   });
   out.forEach(r => Object.assign(r, evaluateKpi(r.target, r.actual, r.effDirection)));
@@ -829,9 +1680,9 @@ async function handleFile(file) {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type:'array', cellFormula:true, cellDates:true, cellNF:false, cellStyles:false });
     const parsed = wb.SheetNames.map(n => { try { return parseSheet(wb, n); } catch (e) { console.warn(n, e); return null; } }).filter(p => p && p.rows.length);
-    if (!parsed.length) { box.innerHTML = `<div class="card p-4 text-sm" style="color:#a32020">ไม่พบชีตที่มีหัวคอลัมน์ TOPIC / Target / บริษัท หรือ แผนก</div>`; return; }
-    // ชีตหลักมาก่อน (กรอกช่องนี้ / KPI_Data) แล้วตามจำนวนแถว
-    parsed.sort((a,b) => (/กรอกช่องนี้|kpi_data/i.test(b.name) - /กรอกช่องนี้|kpi_data/i.test(a.name)) || b.rows.length - a.rows.length);
+    if (!parsed.length) { box.innerHTML = `<div class="card p-4 text-sm" style="color:#a32020">ไม่พบชีตที่มีหัวคอลัมน์ TOPIC / Target / บริษัท หรือ แผนก — ลองดาวน์โหลดแบบฟอร์มมาตรฐานจากขั้นที่ 1</div>`; return; }
+    // ชีตหลักมาก่อน (KPI / กรอกช่องนี้ / KPI_Data) แล้วตามจำนวนแถว
+    parsed.sort((a,b) => (/^kpi$|กรอกช่องนี้|kpi_data/i.test(b.name) - /^kpi$|กรอกช่องนี้|kpi_data/i.test(a.name)) || b.rows.length - a.rows.length);
     state.importParsed = { file: file.name, sheets: parsed, active: 0 };
     renderImport();
   } catch (e) {
@@ -847,10 +1698,11 @@ function renderImport() {
   const showOnly = $('#impFilter')?.value || 'all';
   const view = sh.rows.filter(r => showOnly === 'all' || (showOnly === 'err' ? r.errors.length : showOnly === 'warn' ? (!r.errors.length && r.warnings.length) : false));
   const colNames = Object.entries(sh.map).map(([k,c]) => `${k}→${XLSX.utils.encode_col(c)}`).join(' · ');
+  const scope = uniq(ok.map(r => r.dept + ' · ' + r.company));
   $('#importResult').innerHTML = `
   <div class="card p-4 mb-4">
     <div class="flex flex-wrap items-center gap-2 mb-3">
-      <div class="mr-auto"><div class="font-semibold">${esc(P.file)}</div><div class="text-xs" style="color:var(--muted)">หัวตารางอยู่แถว ${sh.headerRow} · คอลัมน์ที่จับได้: ${esc(colNames)}</div></div>
+      <div class="mr-auto"><div class="font-semibold">${esc(P.file)}</div><div class="text-xs" style="color:var(--muted)">หัวตารางอยู่แถว ${sh.headerRow} · ${scope.length <= 3 ? 'แผนก: ' + esc(scope.join(', ')) : scope.length + ' แผนก'} · คอลัมน์: ${esc(colNames)}</div></div>
       <label class="text-sm">ชีต <select id="impSheet" class="sel">${P.sheets.map((s,i)=>`<option value="${i}" ${i===P.active?'selected':''}>${esc(s.name)} (${s.rows.length})</option>`).join('')}</select></label>
     </div>
     <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm mb-3">
@@ -864,8 +1716,8 @@ function renderImport() {
     ${sh.stats.dirFixed ? `<div class="text-sm mb-3 p-2 rounded" style="background:#fff4dc">⚠ พบสูตรผลเทียบเป้าใน Excel ที่ทิศทางไม่ตรงกับเดือนอื่นของหัวข้อเดียวกัน ${sh.stats.dirFixed} แถว — ระบบใช้ทิศทางเสียงข้างมากแทน</div>` : ''}
     <div class="flex flex-wrap gap-2 items-center">
       <label class="text-sm mr-auto">แสดง <select id="impFilter" class="sel"><option value="all">ทั้งหมด</option><option value="err">เฉพาะผิดพลาด</option><option value="warn">เฉพาะคำเตือน</option></select></label>
-      <button id="btnPreview" class="sel text-sm hover:bg-gray-50">ดูบน Dashboard (ไม่บันทึก)</button>
-      <button id="btnUpload" class="text-sm px-4 py-2 rounded-lg text-white" style="background:var(--brand)" ${ok.length?'':'disabled'}>บันทึกเข้าระบบ (${ok.length} รายการ)</button>
+      <button id="btnPreview" class="btn btn-sec">ดูบน Dashboard (ไม่บันทึก)</button>
+      <button id="btnUpload" class="btn btn-pri" ${ok.length?'':'disabled'}>บันทึกเข้าระบบ (${ok.length} รายการ)</button>
     </div>
     <div id="impMsg" class="text-sm mt-2" style="color:var(--muted)"></div>
   </div>
@@ -873,8 +1725,8 @@ function renderImport() {
     <thead><tr><th>แถว</th><th>ตรวจสอบ</th><th>บริษัท</th><th>แผนก</th><th>เดือน</th><th>หัวข้อ</th><th>ทิศ</th><th class="num">Target</th><th class="num">Actual</th><th>ผล</th></tr></thead><tbody>
     ${view.slice(0,300).map(r => `<tr><td>${r._row}</td>
       <td>${r.errors.map(e=>`<div class="badge b-err mb-0.5">${esc(e)}</div>`).join('')}${r.warnings.map(w=>`<div class="badge b-warn mb-0.5">${esc(w)}</div>`).join('')}${!r.errors.length&&!r.warnings.length?'<span class="badge b-ok">OK</span>':''}</td>
-      <td class="whitespace-nowrap">${esc(r.company)}</td><td>${esc(r.dept)}</td><td class="whitespace-nowrap">${r.month&&r.year?ymLabel(r.year,r.month):esc(r.raw_month)}</td>
-      <td style="min-width:240px">${esc(r.topic)}</td><td>${dirBadge(r.effDirection)}</td>
+      <td class="whitespace-nowrap">${esc(r.company)}</td><td>${esc(r.dept)}</td><td class="whitespace-nowrap">${r.month&&r.year?ymLabel(realYear(r.year,r.month),r.month):esc(r.raw_month)}</td>
+      <td style="min-width:240px">${esc(r.topic)}${r.kpiCode?`<div class="sub">${esc(r.kpiCode)}</div>`:''}</td><td>${dirBadge(r.effDirection)}</td>
       <td class="num">${fmtNum(r.target, isRatioRow(r.target,r.actual))}</td><td class="num">${fmtNum(r.actual, isRatioRow(r.target,r.actual))}</td><td>${resultBadge(r.result)}</td></tr>`).join('')}
     ${view.length>300?`<tr><td colspan="10" class="text-center text-xs py-3" style="color:var(--muted)">แสดง 300 จาก ${view.length} แถว</td></tr>`:''}
     </tbody></table></div></div>`;
@@ -883,9 +1735,21 @@ function renderImport() {
   $('#impFilter').onchange = () => renderImport();
   $('#btnPreview').onclick = () => previewLocal(ok);
   $('#btnUpload').onclick = async () => {
-    const payload = ok.map(r => ({ company:r.company, dept:r.dept, topic:r.topic, method:r.method, link:r.link, note:r.note, srcNo:r.srcNo,
-      year:r.year, month:r.month, target:r.target, actual:r.actual, direction:r.effDirection, ...(r.needReview?{needReview:true}:{}), ...(r.kpiCode?{kpiCode:r.kpiCode}:{}) }));
-    if (!confirmUpload(payload.length)) return;
+    if (!requireUser()) return;
+    const denied = ok.filter(r => !inScope(r.company, r.dept));
+    if (denied.length) return toast(`ไฟล์มี ${denied.length} แถวของแผนกที่บัญชีคุณไม่มีสิทธิ์ (${uniq(denied.map(r => r.dept + ' · ' + r.company)).slice(0,3).join(', ')}) — ตัดออกจากไฟล์ หรือให้ Admin อัปโหลด`, 'err', 9000);
+    const newTopics = ok.filter(r => !r.inMaster && !r.kpiCode);
+    if (newTopics.length && state.master.length && !canManageKpi()) return toast(`ไฟล์มีหัวข้อใหม่ ${newTopics.length} แถวที่ยังไม่อยู่ในทะเบียน — ให้ Admin เพิ่มหัวข้อก่อน หรือใช้แบบฟอร์มมาตรฐาน`, 'err', 9000);
+    const skipBlank = $('#impSkipBlank').checked;
+    const payload = ok.map(r => {
+      const o = { company:r.company, dept:r.dept, topic:r.topic, srcNo:r.srcNo, year:r.year, month:r.month, direction:r.effDirection,
+        method:r.method, link:r.link, note:r.note, target:r.target, actual:r.actual,
+        ...(r.needReview?{needReview:true}:{}), ...(r.kpiCode?{kpiCode:r.kpiCode}:{}) };
+      // ไม่เขียนทับค่าในระบบด้วยช่องว่าง
+      if (skipBlank) ['method','link','note','target','actual','srcNo'].forEach(k => { if (o[k] === '' || o[k] === undefined) delete o[k]; });
+      return o;
+    });
+    if (!armed($('#btnUpload'), `กดอีกครั้งเพื่อยืนยันบันทึก ${payload.length} รายการ`, 5000)) return;
     const res = await saveRows(payload, $('#btnUpload'), $('#impMsg'));
     if (res && res.errors.length) {
       $('#impMsg').innerHTML += `<div class="mt-2">${res.errors.slice(0,20).map(e => `<div class="badge b-err mb-1">แถว ${ok[e.index]?._row ?? '?'}: ${esc(e.msg)}</div>`).join(' ')}</div>`;
@@ -893,25 +1757,17 @@ function renderImport() {
     if (res && state.source !== 'server') await loadFromServer();
   };
 }
-function confirmUpload(n) {
-  // ใช้ปุ่มกดสองครั้งแทน confirm() เพื่อไม่ให้หน้าค้าง
-  const b = $('#btnUpload');
-  if (b.dataset.armed) { delete b.dataset.armed; return true; }
-  b.dataset.armed = 1; b.textContent = `กดอีกครั้งเพื่อยืนยันบันทึก ${n} รายการ`;
-  setTimeout(() => { if (b.dataset.armed) { delete b.dataset.armed; b.textContent = `บันทึกเข้าระบบ (${n} รายการ)`; } }, 5000);
-  return false;
-}
 
 function previewLocal(rows) {
-  const toRow = r => ({ ID:[r.company,r.dept,r.topic,r.year,r.month].join('|'), KPI_Code:r.kpiCode||'', Company:r.company, Dept:r.dept, Year:r.year, Month:r.month,
+  const toRow = r => ({ ID:r.kpiCode ? `${r.kpiCode}_${r.year}_${String(r.month).padStart(2,'0')}` : [r.company,r.dept,r.topic,r.year,r.month].join('|'), KPI_Code:r.kpiCode||'', Company:r.company, Dept:r.dept, Year:r.year, Month:r.month,
     Topic:r.topic, Method:r.method, Link:r.link, Direction:r.effDirection, Target:r.target, Actual:r.actual, Achieved:r.achieved,
-    Result:r.result, Status:r.status, Note:r.note });
+    Result:r.result, Status:r.status, Note:r.note, UpdatedBy:'(ตัวอย่าง)', UpdatedAt:'' });
   const toRowP = r => withPeriod(toRow(r));
   if (state.source === 'server') {
-    // ผสมกับข้อมูลจริง: แทนที่แถวที่ตรงกัน (บริษัท+แผนก+หัวข้อ+ปี+เดือน)
-    const key = r => [r.Company, r.Dept, r.Topic.toLowerCase(), r.Year, r.Month].join('|');
+    // ผสมกับข้อมูลจริง: แทนที่แถวที่ตรงกัน (รหัส หรือ บริษัท+แผนก+หัวข้อ) + ปี + เดือน
+    const key = r => [r.KPI_Code || [r.Company, r.Dept, r.Topic.toLowerCase()].join('|'), r.Year, r.Month].join('|');
     const map = new Map(state.data.map(r => [key(r), r]));
-    rows.map(toRowP).forEach(r => map.set(key(r), { ...(map.get(key(r))||{}), ...r }));
+    rows.map(toRowP).forEach(r => { const old = map.get(key(r)); map.set(key(r), { ...(old||{}), ...r, ID: old?.ID || r.ID, KPI_Code: old?.KPI_Code || r.KPI_Code }); });
     state.data = [...map.values()];
   } else state.data = rows.map(toRowP);
   state.source = 'local';
@@ -920,11 +1776,16 @@ function previewLocal(rows) {
 }
 
 /* ========================= TABS & EVENTS ========================= */
+const TABS = ['dash','entry','kpi','import','table','users'];
 function switchTab(t) {
   document.querySelectorAll('.tab-btn').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
-  ['dash','entry','import','table'].forEach(x => $('#tab-'+x).classList.toggle('hidden-tab', x !== t));
+  TABS.forEach(x => $('#tab-'+x).classList.toggle('hidden-tab', x !== t));
   $('#filterBar').style.display = (t === 'dash' || t === 'table') ? '' : 'none';
   if (t === 'dash') Object.values(state.charts).forEach(c => c.resize());
+  if (t === 'kpi') renderKpiTab();
+  if (t === 'users') loadUsers();
+  if (t === 'entry' && $('#eDept').value && !$('#tblEntry')) renderEntry();
+  store.set('tab', t);
 }
 
 document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
@@ -932,12 +1793,25 @@ $('#fCompany').onchange = () => { readFilters(); refreshDeptFilter(); onFilterCh
 ['#fDept','#fYear','#fMonth','#fResult'].forEach(s => $(s).onchange = onFilterChange);
 let searchTimer; $('#fSearch').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(onFilterChange, 250); };
 $('#btnResetFilter').onclick = () => { ['#fCompany','#fDept','#fYear','#fMonth','#fResult'].forEach(s => $(s).value = ALL); $('#fSearch').value=''; readFilters(); refreshDeptFilter(); onFilterChange(); };
+$('#btnPrint').onclick = () => { switchTab('dash'); setTimeout(() => window.print(), 300); };
+$('#segMonthly').querySelectorAll('button').forEach(b => b.onclick = () => {
+  state.monthlyMode = b.dataset.v; $('#segMonthly').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderMonthly(); });
 $('#btnExport').onclick = exportExcel;
 $('#btnReload').onclick = loadFromServer;
-$('#eUser').value = store.get('user');
-$('#eUser').onchange = () => store.set('user', clean($('#eUser').value));
-$('#eCompany').onchange = refreshEntryDept;
+$('#btnAddUser').onclick = () => openUserForm(null);
+$('#btnUsersReload').onclick = loadUsers;
+$('#eCompany').onchange = () => { refreshEntryDept(); renderEntry(); };
+['#eDept','#eYear','#eMonth'].forEach(s => $(s).onchange = renderEntry);
 $('#btnEntryLoad').onclick = renderEntry;
+$('#btnAddKpi').onclick = () => openKpiForm(null, { company: $('#kCompany').value !== ALL ? $('#kCompany').value : '', dept: $('#kDept').value !== ALL ? $('#kDept').value : '' });
+$('#kCompany').onchange = () => { fillSelect($('#kDept'), deptsOf($('#kCompany').value || ALL), 'ทุกแผนก'); renderKpiTab(); };
+['#kDept','#kStatus'].forEach(s => $(s).onchange = renderKpiTab);
+let kTimer; $('#kSearch').oninput = () => { clearTimeout(kTimer); kTimer = setTimeout(renderKpiTab, 200); };
+$('#tCompany').onchange = () => { fillSelect($('#tDept'), deptsOf($('#tCompany').value), ''); updateTemplateInfo(); };
+$('#tDept').onchange = updateTemplateInfo;
+$('#tYear').onchange = fillTemplateMonths;
+$('#btnTemplate').onclick = () => downloadTemplate(false);
+$('#btnTemplateBlank').onclick = () => downloadTemplate(true);
 $('#fileInput').onchange = e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ''; };
 const drop = $('#drop');
 ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
@@ -947,7 +1821,8 @@ drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) h
 /* ========================= START ========================= */
 if (CONFIG.SHEET_URL) $('#lnkSheet').href = CONFIG.SHEET_URL; else $('#lnkSheet').remove();
 if (CONFIG.API_URL.trim() && !API_CONFIGURED) toast('API_URL ไม่ถูกรูปแบบ ต้องขึ้นต้น https://script.google.com/macros/s/ และลงท้าย /exec', 'err', 10000);
-initFilters(); renderAll(); renderBanner(); loadFromServer();
+initFilters(); renderAll(); renderBanner(); renderAuth();
+loadFromServer().then(restoreSession);
 </script>
 </body>
 </html>
