@@ -3,6 +3,8 @@
 // เวอร์ชันความปลอดภัย v5 : PIN ตรวจที่ Server + Token (HMAC-SHA256)
 // v5.1 : ลายเซ็นเบิก/โอน/คืน บันทึกแบบต่อท้ายบน Server (trAck / trComment / trDecide / trGet)
 // v5.3 : เชื่อม SiteAsset-Tracker — อนุมัติ/ไม่อนุมัติใบคืนจากสาขา อัปเดตชีตสาขาอัตโนมัติ (siteSyncDecision_)
+// v5.4 : KPI รายเดือน (IT) — คำนวณจาก Ticket + ส่งเข้า Rst-Kpi-Mtd อัตโนมัติทุกต้นเดือน (handleKpi_ / kpiMonthlyJob)
+//        หลังวางโค้ดในโปรเจกต์ Ticket ให้ Run kpiSetup 1 ครั้ง (อนุญาตสิทธิ์ ScriptApp + เปิดไฟล์ KPI)
 // v5.2 : อ่าน/เขียนไฟล์ใน SHEET_FILES โดยตรง (IT Assets / IT Tickets / IT Transfers) — หลังวางโค้ดให้ Run checkFiles 1 ครั้ง
 // ───────────────────────────────────────────────────────────────
 // ใช้โค้ดไฟล์นี้ชุดเดียวกันทั้ง 3 โปรเจกต์ (Asset / Ticket / Transfer)
@@ -262,6 +264,7 @@ function main(e) {
     }
 
     if (action.indexOf('line') === 0) return handleLine(action, param, cb, role);
+    if (action.indexOf('kpi') === 0) return out(handleKpi_(action, param, role), cb);
 
     var sheetName = param.sheet || '';
     var ss = getSS(kindOfSheetName(sheetName));
@@ -662,4 +665,455 @@ function lineWebhook(e) {
     });
   }
   return ContentService.createTextOutput('OK');
+}
+// ═══════════════════════════════════════════════════════════════
+// KPI รายเดือน (IT) → Rst-Kpi-Mtd   (v5.4)
+// ───────────────────────────────────────────────────────────────
+// • รายการหัวข้อ KPI เก็บในชีต "KPI Config" (ไฟล์ IT Tickets) — เพิ่ม/แก้/ลบได้จากหน้าเว็บ
+// • ค่าที่กรอกเอง/แก้ทับ เก็บในชีต "KPI Monthly"   • ตั้งค่า (บริษัท/แผนก/ส่งอัตโนมัติ) ในชีต "KPI Settings"
+// • ส่งผลเข้า Rst-Kpi-Mtd-db (KPI_Data + KPI_Master) ด้วย openById — เจ้าของไฟล์คนเดียวกัน ไม่ต้องผ่าน HTTP
+// • ส่งอัตโนมัติ: Trigger วันที่ 1 ของทุกเดือน 06:00 (เวลาไทย) ส่งผลของ "เดือนที่แล้ว"
+//
+// แหล่งข้อมูล (source) ของแต่ละหัวข้อ:
+//   manual          กรอกเองทุกเดือน
+//   tk_none         ไม่พบ Ticket หมวดนี้ในเดือน = 1, พบ = 0           (เช่น ตรวจพบโปรแกรมละเมิดลิขสิทธิ์)
+//   tk_success      Ticket หมวดนี้ที่ปิดงานและ "สำเร็จ" / ที่ปิดงานทั้งหมด (เช่น กู้คืนข้อมูล, สร้าง/ลบ User)
+//   tk_response     Ticket ที่ IT เริ่มดำเนินการภายใน N นาที / ทั้งหมด  (param = N นาที, หมวดว่าง = ทุกหมวด)
+//   tk_uptime       1 − (นาทีที่ระบบล่ม / นาทีทั้งเดือน)  จาก Ticket หมวด Downtime
+//   tk_satisfaction คะแนนความพึงพอใจรวม / (5 × จำนวน Ticket ที่ให้คะแนน)
+// ═══════════════════════════════════════════════════════════════
+var KPI_DST = {
+  FILE_ID: '1UF_HlJKmgR81OMqwvgU0l0iQtRyOndRck7wy_KjejTE',   // Rst-Kpi-Mtd-db
+  DATA: 'KPI_Data', MASTER: 'KPI_Master', LOG: 'Log'
+};
+var KPI_SH = { CONFIG: 'KPI Config', MONTHLY: 'KPI Monthly', SETTINGS: 'KPI Settings', TICKETS: 'IT Tickets' };
+var KPI_CFG_HEAD = ['code', 'topic', 'method', 'direction', 'target', 'source', 'category', 'param', 'active', 'order', 'updatedAt'];
+var KPI_MON_HEAD = ['key', 'ym', 'code', 'actual', 'note', 'by', 'updatedAt', 'pushedAt', 'pushedActual'];
+var KPI_TK_EXTRA = ['responded', 'downMin', 'outcome', 'score'];   // คอลัมน์ O..R ของชีต IT Tickets
+var KPI_SOURCES = ['manual', 'tk_none', 'tk_success', 'tk_response', 'tk_uptime', 'tk_satisfaction'];
+var KPI_NA = 'N.A.';
+var KPI_TXT = { PASS: 'ผ่านเป้า', LOW: 'ต่ำกว่าเป้า', FAIL: 'ไม่ผ่านเป้า', NONE: 'ยังไม่ได้ประเมิน' };
+var KPI_BY = 'asset-app';
+var KPI_MONTH_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+var KPI_DEFAULTS = [
+  ['OFC-IT-01', 'ตรวจพบการใช้โปรแกรมที่ละเมิดลิขสิทธิ์จากภายนอก', '', 'HIGHER', 1, 'tk_none', 'ตรวจพบโปรแกรมละเมิดลิขสิทธิ์', ''],
+  ['OFC-IT-02', 'อัตราความสำเร็จของกู้คืนข้อมูล', '', 'HIGHER', 1, 'tk_success', 'กู้คืนข้อมูล', ''],
+  ['OFC-IT-03', 'ระยะเวลาในการเข้าดำเนินการตรวจสอบและซ่อมต่อคำขอ IT ภายใน 30 นาที', '', 'HIGHER', 1, 'tk_response', '', 30],
+  ['OFC-IT-04', 'ความถูกต้องของการสร้าง/ลบ user ใน microsoft teams, google workspace, bluehost, ecount', '(จำนวนพนักงานลาออกแล้วไม่ได้ลบ user / จำนวนพนักงานทั้งหมด) * 100', 'HIGHER', 1, 'tk_success', 'สร้าง/ลบ User (Teams/Google/Bluehost/Ecount)', ''],
+  ['OFC-IT-05', 'Downtime: server', '', 'HIGHER', 0.97, 'tk_uptime', 'Downtime: Server', ''],
+  ['OFC-IT-06', 'Downtime: Internet', '', 'HIGHER', 0.97, 'tk_uptime', 'Downtime: Internet', ''],
+  ['OFC-IT-07', 'Downtime: กล้อง', '', 'HIGHER', 0.97, 'tk_uptime', 'Downtime: กล้อง CCTV', ''],
+  ['OFC-IT-08', 'Downtime: Bluehost', '', 'HIGHER', 0.97, 'tk_uptime', 'Downtime: Bluehost', ''],
+  ['OFC-IT-09', 'Downtime: GPS', '', 'HIGHER', 0.97, 'tk_uptime', 'Downtime: GPS', ''],
+  ['OFC-IT-10', 'ผู้ใช้มีความพึงพอใจในการเข้าซ่อม และการแก้ไขปัญหา', '(คะแนนที่ผู้ใช้มีความพึงพอใจ / คะแนนทั้งหมด) * 100', 'HIGHER', 0.95, 'tk_satisfaction', '', '']
+];
+
+// ── Run จาก Editor ครั้งแรก (ในโปรเจกต์ Ticket) ──
+function kpiSetup() {
+  kpiConfig_();
+  kpiTicketSheet_();
+  var dst = SpreadsheetApp.openById(KPI_DST.FILE_ID);
+  ScriptApp.getProjectTriggers();   // ขอสิทธิ์สร้าง Trigger
+  Logger.log('✓ KPI พร้อมใช้งาน — ปลายทาง: ' + dst.getName() + ' · หัวข้อ ' + kpiConfig_().length + ' รายการ');
+  Logger.log('เปิด "ส่งอัตโนมัติทุกเดือน" ได้จากหน้าเว็บ (KPI รายเดือน) หรือ Run kpiEnableAuto');
+}
+function kpiEnableAuto() { Logger.log(JSON.stringify(kpiSetAuto_(true))); }
+function kpiDisableAuto() { Logger.log(JSON.stringify(kpiSetAuto_(false))); }
+function kpiPushLastMonth() { Logger.log(JSON.stringify(kpiPush_(kpiPrevYm_(), false, 'editor'))); }
+
+// ── Trigger: วันที่ 1 ของทุกเดือน ──
+function kpiMonthlyJob() {
+  var st = kpiSettings_();
+  if (st.autoPush !== 'Y') return;
+  var ym = kpiPrevYm_(), res;
+  try { res = kpiPush_(ym, false, KPI_BY + ':auto'); }
+  catch (err) { res = { status: 'error', msg: err.message || String(err) }; }
+  kpiSaveSetting_('lastAuto', kpiStamp_() + ' · ' + ym + ' · ' + (res.status === 'ok' ? res.summary : 'ERROR ' + res.msg));
+  try {   // แจ้ง LINE (ถ้าตั้งค่าไว้ในโปรเจกต์นี้)
+    var cfg = lineGetConfig();
+    if (cfg.token && cfg.targets.length) {
+      linePushAll(cfg.token, cfg.targets, '📊 KPI IT เดือน ' + kpiYmTH_(ym) + '\nส่งเข้า Rst-Kpi-Mtd อัตโนมัติ: ' +
+        (res.status === 'ok' ? res.summary + (res.lines ? '\n' + res.lines.join('\n') : '') : 'ไม่สำเร็จ — ' + res.msg));
+    }
+  } catch (e) {}
+}
+
+// ═══════════════════ ROUTER ═══════════════════
+function handleKpi_(action, param, role) {
+  try {
+    var ym = kpiYm_(param.ym);
+    if (action === 'kpiGet') return kpiGet_(ym);
+
+    if (!isMgr(role)) return { status: 'error', code: 'forbidden', msg: 'เฉพาะผู้จัดการ/แอดมินเท่านั้น' };
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      if (action === 'kpiSaveItem') return kpiSaveItem_(JSON.parse(param.item || '{}'), String(param.orig || ''));
+      if (action === 'kpiDelItem') return kpiDelItem_(String(param.code || ''));
+      if (action === 'kpiSeed') return kpiSeed_();
+      if (action === 'kpiSaveValues') return kpiSaveValues_(ym, JSON.parse(param.vals || '[]'), role);
+      if (action === 'kpiPush') return kpiPush_(ym, param.force === '1', KPI_BY + ':' + role);
+      if (action === 'kpiSettings') {
+        if (role !== 'admin') return { status: 'error', code: 'forbidden', msg: 'เฉพาะ IT Admin เท่านั้น' };
+        if (param.company !== undefined) kpiSaveSetting_('company', String(param.company).trim().slice(0, 60) || 'RST-OFFICE');
+        if (param.dept !== undefined) kpiSaveSetting_('dept', String(param.dept).trim().slice(0, 60) || 'IT');
+        if (param.autoPush !== undefined) kpiSetAuto_(param.autoPush === 'Y');
+        return { status: 'ok', settings: kpiSettings_(), trigger: kpiTriggerOn_() };
+      }
+    } finally { lock.releaseLock(); }
+    return { status: 'error', msg: 'unknown kpi action: ' + action };
+  } catch (err) {
+    return { status: 'error', msg: err.message || String(err) };
+  }
+}
+
+function kpiGet_(ym) {
+  var cfg = kpiConfig_(), vals = kpiValues_(ym, cfg);
+  var cats = {};
+  cfg.forEach(function (c) { kpiCats_(c.category).forEach(function (x) { cats[x] = 1; }); });
+  return {
+    status: 'ok', ym: ym, config: cfg, rows: vals, settings: kpiSettings_(),
+    trigger: kpiTriggerOn_(), kpiCats: Object.keys(cats), dstUrl: 'https://docs.google.com/spreadsheets/d/' + KPI_DST.FILE_ID + '/edit'
+  };
+}
+
+// ═══════════════════ STORAGE (ไฟล์ IT Tickets) ═══════════════════
+function kpiSheet_(name, head) {
+  var ss = getSS('ticket'), sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) { sh.appendRow(head); sh.setFrozenRows(1); }
+  return sh;
+}
+function kpiSettings_() {
+  var sh = kpiSheet_(KPI_SH.SETTINGS, ['key', 'value']), o = { company: 'RST-OFFICE', dept: 'IT', autoPush: 'N', seeded: '', lastPush: '', lastAuto: '' };
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) { if (r[0]) o[String(r[0])] = String(r[1]); });
+  return o;
+}
+function kpiSaveSetting_(k, v) {
+  var sh = kpiSheet_(KPI_SH.SETTINGS, ['key', 'value']), n = sh.getLastRow();
+  if (n > 1) {
+    var keys = sh.getRange(2, 1, n - 1, 1).getValues();
+    for (var i = 0; i < keys.length; i++) if (String(keys[i][0]) === k) { sh.getRange(i + 2, 2).setNumberFormat('@').setValue(v); return; }
+  }
+  sh.appendRow([k, String(v)]);
+}
+function kpiConfig_() {
+  var sh = kpiSheet_(KPI_SH.CONFIG, KPI_CFG_HEAD);
+  if (sh.getLastRow() < 2 && kpiSettings_().seeded !== 'Y') {
+    var stamp = kpiStamp_();
+    var rows = KPI_DEFAULTS.map(function (d, i) { return d.concat(['Y', i + 1, stamp]); });
+    sh.getRange(2, 1, rows.length, KPI_CFG_HEAD.length).setValues(rows);
+    kpiSaveSetting_('seeded', 'Y');
+  }
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, KPI_CFG_HEAD.length).getValues()
+    .filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r, i) {
+      return {
+        code: String(r[0]).trim(), topic: String(r[1]), method: String(r[2]),
+        direction: String(r[3]).toUpperCase() === 'LOWER' ? 'LOWER' : 'HIGHER',
+        target: kpiNum_(r[4]), source: KPI_SOURCES.indexOf(String(r[5])) > -1 ? String(r[5]) : 'manual',
+        category: String(r[6] || ''), param: kpiNum_(r[7]), active: String(r[8] || 'Y') !== 'N',
+        order: kpiNum_(r[9]) === null ? i + 1 : kpiNum_(r[9])
+      };
+    })
+    .sort(function (a, b) { return a.order - b.order || (a.code < b.code ? -1 : 1); });
+}
+function kpiSaveItem_(it, orig) {
+  var code = String(it.code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9_\-]{1,29}$/.test(code)) return { status: 'error', msg: 'รหัส KPI ใช้ได้เฉพาะ A-Z 0-9 - _ (2–30 ตัว)' };
+  var topic = String(it.topic || '').trim().slice(0, 500);
+  if (!topic) return { status: 'error', msg: 'กรุณาระบุหัวข้อ' };
+  var target = kpiNum_(it.target);
+  if (target === null) return { status: 'error', msg: 'Target ต้องเป็นตัวเลข (เช่น 0.97 = 97%)' };
+  var src = KPI_SOURCES.indexOf(it.source) > -1 ? it.source : 'manual';
+  var sh = kpiSheet_(KPI_SH.CONFIG, KPI_CFG_HEAD), n = sh.getLastRow();
+  var keys = n > 1 ? sh.getRange(2, 1, n - 1, 1).getValues().map(function (r) { return String(r[0]).trim().toUpperCase(); }) : [];
+  if (!orig && keys.indexOf(code) > -1) return { status: 'error', msg: 'รหัส ' + code + ' มีอยู่แล้ว' };
+  var at = orig ? keys.indexOf(orig.toUpperCase()) : -1;
+  if (keys.indexOf(code) > -1 && keys.indexOf(code) !== at) return { status: 'error', msg: 'รหัส ' + code + ' มีอยู่แล้ว' };
+  var order = kpiNum_(it.order);
+  if (order === null) order = at > -1 ? kpiNum_(sh.getRange(at + 2, 10).getValue()) : keys.length + 1;
+  var row = [code, topic, String(it.method || '').slice(0, 500), it.direction === 'LOWER' ? 'LOWER' : 'HIGHER', target, src,
+    String(it.category || '').trim().slice(0, 200), kpiNum_(it.param) === null ? '' : kpiNum_(it.param), it.active === false || it.active === 'N' ? 'N' : 'Y', order || keys.length + 1, kpiStamp_()];
+  var r = at > -1 ? at + 2 : n + 1;
+  sh.getRange(r, 1, 1, 1).setNumberFormat('@');
+  sh.getRange(r, 1, 1, row.length).setValues([row]);
+  return { status: 'ok', config: kpiConfig_() };
+}
+function kpiDelItem_(code) {
+  var sh = kpiSheet_(KPI_SH.CONFIG, KPI_CFG_HEAD), n = sh.getLastRow();
+  if (n < 2) return { status: 'error', msg: 'ไม่พบรายการ' };
+  var keys = sh.getRange(2, 1, n - 1, 1).getValues();
+  for (var i = keys.length - 1; i >= 0; i--) if (String(keys[i][0]).trim().toUpperCase() === code.toUpperCase()) { sh.deleteRow(i + 2); return { status: 'ok', config: kpiConfig_() }; }
+  return { status: 'error', msg: 'ไม่พบรหัส ' + code };
+}
+function kpiSeed_() {   // เติมหัวข้อเริ่มต้นที่ยังไม่มี (ไม่ทับของเดิม)
+  var have = {}; kpiConfig_().forEach(function (c) { have[c.code] = 1; });
+  var add = KPI_DEFAULTS.filter(function (d) { return !have[d[0]]; });
+  var sh = kpiSheet_(KPI_SH.CONFIG, KPI_CFG_HEAD), stamp = kpiStamp_();
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, KPI_CFG_HEAD.length).setValues(add.map(function (d) { return d.concat(['Y', parseInt(d[0].slice(-2), 10) || 99, stamp]); }));
+  return { status: 'ok', added: add.length, config: kpiConfig_() };
+}
+function kpiMonthly_(ym) {
+  var sh = kpiSheet_(KPI_SH.MONTHLY, KPI_MON_HEAD), n = sh.getLastRow(), o = {};
+  if (n < 2) return o;
+  sh.getRange(2, 1, n - 1, KPI_MON_HEAD.length).getValues().forEach(function (r, i) {
+    if (String(r[1]) !== ym) return;
+    o[String(r[2])] = { row: i + 2, actual: r[3] === '' ? '' : String(r[3]), note: String(r[4] || ''), by: String(r[5] || ''), updatedAt: String(r[6] || ''), pushedAt: String(r[7] || ''), pushedActual: String(r[8] === undefined ? '' : r[8]) };
+  });
+  return o;
+}
+function kpiMonUpsert_(ym, code, patch) {
+  var sh = kpiSheet_(KPI_SH.MONTHLY, KPI_MON_HEAD), cur = kpiMonthly_(ym)[code];
+  var base = cur ? [ym + '|' + code, ym, code, cur.actual, cur.note, cur.by, cur.updatedAt, cur.pushedAt, cur.pushedActual] : [ym + '|' + code, ym, code, '', '', '', '', '', ''];
+  Object.keys(patch).forEach(function (k) { var i = KPI_MON_HEAD.indexOf(k); if (i > -1) base[i] = patch[k]; });
+  var r = cur ? cur.row : sh.getLastRow() + 1;
+  sh.getRange(r, 1, 1, base.length).setNumberFormat('@').setValues([base.map(String)]);
+}
+function kpiSaveValues_(ym, vals, role) {
+  if (!Array.isArray(vals)) return { status: 'error', msg: 'bad vals' };
+  var stamp = kpiStamp_();
+  vals.forEach(function (v) {
+    var code = String(v.code || '').trim(); if (!code) return;
+    var a = String(v.actual === null || v.actual === undefined ? '' : v.actual).trim();
+    if (a && a.toUpperCase().replace(/\s/g, '') !== 'N.A.' && a.toUpperCase() !== 'NA') {
+      var num = kpiNum_(a); if (num === null) return; a = String(num);
+    } else if (a) a = KPI_NA;
+    kpiMonUpsert_(ym, code, { actual: a, note: String(v.note || '').slice(0, 500), by: role, updatedAt: stamp });
+  });
+  return kpiGet_(ym);
+}
+
+// ═══════════════════ คำนวณจาก Ticket ═══════════════════
+function kpiTicketSheet_() {
+  var ss = getSS('ticket'), sh = ss.getSheetByName(KPI_SH.TICKETS) || ss.getSheets()[0];
+  var head = sh.getRange(1, 15, 1, 4).getValues()[0];
+  if (head.join('') === '') sh.getRange(1, 15, 1, 4).setValues([KPI_TK_EXTRA]);
+  return sh;
+}
+function kpiTickets_() {
+  var sh = kpiTicketSheet_(), n = sh.getLastRow();
+  if (n < 2) return [];
+  return sh.getRange(2, 1, n - 1, Math.max(18, sh.getLastColumn())).getValues()
+    .filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r) {
+      return {
+        id: String(r[1]), category: String(r[4]).trim(), status: String(r[7]),
+        created: kpiDate_(r[11]), closed: kpiDate_(r[12]), responded: kpiDate_(r[14]),
+        downMin: kpiNum_(r[15]), outcome: String(r[16] || '').toLowerCase(), score: kpiNum_(r[17])
+      };
+    });
+}
+function kpiCats_(s) { return String(s || '').split('|').map(function (x) { return x.trim(); }).filter(String); }
+function kpiInCat_(t, cats) {
+  if (!cats.length) return true;
+  var c = t.category.toLowerCase();
+  return cats.some(function (x) { return x.toLowerCase() === c; });
+}
+// ช่วงเวลาของเดือน (เวลาไทย UTC+7)
+function kpiWindow_(ym) {
+  var y = +ym.slice(0, 4), m = +ym.slice(5, 7), off = 7 * 3600e3;
+  return { start: Date.UTC(y, m - 1, 1) - off, end: Date.UTC(y, m, 1) - off };
+}
+function kpiCompute_(c, ym, tks) {
+  if (c.source === 'manual') return { actual: '', detail: 'กรอกเอง' };
+  var w = kpiWindow_(ym), now = Date.now(), cats = kpiCats_(c.category);
+  var inMonth = tks.filter(function (t) { return t.created && t.created.getTime() >= w.start && t.created.getTime() < w.end && kpiInCat_(t, cats); });
+  var r4 = function (x) { return Math.round(x * 10000) / 10000; };
+
+  if (c.source === 'tk_none') {
+    return { actual: inMonth.length ? 0 : 1, detail: inMonth.length ? 'พบ ' + inMonth.length + ' ครั้ง (' + inMonth.map(function (t) { return t.id; }).join(', ') + ')' : 'ไม่พบในเดือนนี้' };
+  }
+  if (c.source === 'tk_success') {
+    var done = inMonth.filter(function (t) { return t.status === 'closed'; });
+    if (!done.length) return { actual: KPI_NA, detail: inMonth.length ? 'ยังไม่ปิดงาน ' + inMonth.length + ' ใบ' : 'ไม่มีคำขอในเดือนนี้' };
+    var ok = done.filter(function (t) { return t.outcome !== 'fail'; }).length;
+    return { actual: r4(ok / done.length), detail: 'สำเร็จ ' + ok + '/' + done.length + ' ใบ' + (inMonth.length > done.length ? ' · ค้าง ' + (inMonth.length - done.length) : '') };
+  }
+  if (c.source === 'tk_response') {
+    var lim = (c.param || 30) * 60e3, okR = 0, tot = 0, late = [];
+    inMonth.forEach(function (t) {
+      var at = t.responded || t.closed;
+      if (!at) { if (now - t.created.getTime() > lim) { tot++; late.push(t.id); } return; }   // ยังไม่เริ่มและเกินเวลาแล้ว = ไม่ผ่าน
+      tot++;
+      if (at.getTime() - t.created.getTime() <= lim) okR++; else late.push(t.id);
+    });
+    if (!tot) return { actual: KPI_NA, detail: 'ไม่มี Ticket ในเดือนนี้' };
+    return { actual: r4(okR / tot), detail: 'ทันเวลา ' + okR + '/' + tot + ' ใบ (≤ ' + (c.param || 30) + ' นาที)' + (late.length ? ' · เกิน: ' + late.slice(0, 8).join(', ') : '') };
+  }
+  if (c.source === 'tk_uptime') {
+    var total = (w.end - w.start) / 60e3, down = 0, ids = [];
+    tks.forEach(function (t) {
+      if (!t.created || !kpiInCat_(t, cats)) return;
+      var mins = 0;
+      if (t.downMin !== null && t.downMin >= 0) {   // กรอกนาทีเอง → นับในเดือนที่แจ้ง
+        if (t.created.getTime() >= w.start && t.created.getTime() < w.end) mins = t.downMin;
+      } else {
+        var s = Math.max(t.created.getTime(), w.start), e = Math.min((t.closed ? t.closed.getTime() : now), w.end);
+        if (e > s) mins = (e - s) / 60e3;
+      }
+      if (mins > 0) { down += mins; ids.push(t.id); }
+    });
+    var up = Math.max(0, 1 - down / total);
+    return { actual: r4(up), detail: down ? 'ล่มรวม ' + kpiDur_(down) + ' (' + ids.join(', ') + ')' : 'ไม่มีระบบล่ม' };
+  }
+  if (c.source === 'tk_satisfaction') {
+    var sc = tks.filter(function (t) { return t.score !== null && t.score >= 1 && t.score <= 5 && kpiInCat_(t, cats) && (t.closed || t.created) && (t.closed || t.created).getTime() >= w.start && (t.closed || t.created).getTime() < w.end; });
+    if (!sc.length) return { actual: KPI_NA, detail: 'ยังไม่มีการให้คะแนน' };
+    var sum = sc.reduce(function (a, t) { return a + t.score; }, 0);
+    return { actual: r4(sum / (5 * sc.length)), detail: 'คะแนน ' + sum + '/' + (5 * sc.length) + ' จาก ' + sc.length + ' ใบ' };
+  }
+  return { actual: '', detail: '' };
+}
+function kpiValues_(ym, cfg) {
+  var tks = kpiTickets_(), mon = kpiMonthly_(ym);
+  return cfg.map(function (c) {
+    var auto = kpiCompute_(c, ym, tks), m = mon[c.code];
+    var ovr = m && m.actual !== '' ? m.actual : '';
+    var fin = ovr !== '' ? (ovr === KPI_NA ? KPI_NA : +ovr) : auto.actual;
+    return {
+      code: c.code, auto: auto, override: ovr, note: m ? m.note : '', actual: fin,
+      eval: kpiEval_(fin, c.target, c.direction), pushedAt: m ? m.pushedAt : '', pushedActual: m ? m.pushedActual : ''
+    };
+  });
+}
+function kpiEval_(a, t, dir) {
+  if (a === '' || a === null || a === undefined) return { achieved: '', result: KPI_TXT.NONE, status: KPI_TXT.NONE };
+  if (a === KPI_NA) return { achieved: '', result: KPI_NA, status: KPI_NA };
+  a = +a; t = +t;
+  var ach = dir === 'LOWER' ? (a === 0 ? 1 : t / a) : (t === 0 ? 1 : a / t);
+  var pass = dir === 'LOWER' ? a <= t : a >= t;
+  return { achieved: (ach * 100).toFixed(1) + '%', result: pass ? KPI_TXT.PASS : KPI_TXT.LOW, status: pass ? KPI_TXT.PASS : KPI_TXT.FAIL };
+}
+
+// ═══════════════════ ส่งเข้า Rst-Kpi-Mtd ═══════════════════
+function kpiPush_(ym, force, by) {
+  var st = kpiSettings_(), cfg = kpiConfig_().filter(function (c) { return c.active; });
+  if (!cfg.length) return { status: 'error', msg: 'ยังไม่มีหัวข้อ KPI ที่เปิดใช้งาน' };
+  var vals = kpiValues_(ym, cfg), byCode = {};
+  vals.forEach(function (v) { byCode[v.code] = v; });
+  var y = +ym.slice(0, 4), m = +ym.slice(5, 7), yBE = y + 543, mm = ('0' + m).slice(-2), ymBE = yBE + '-' + mm;
+  var stamp = kpiStamp_();
+
+  var dss = SpreadsheetApp.openById(KPI_DST.FILE_ID);
+  var sh = dss.getSheetByName(KPI_DST.DATA);
+  if (!sh) return { status: 'error', msg: 'ไม่พบชีต ' + KPI_DST.DATA + ' ใน Rst-Kpi-Mtd-db' };
+  var data = sh.getDataRange().getValues(), head = data[0].map(function (h) { return String(h).trim(); }), H = {};
+  head.forEach(function (h, i) { H[h] = i; });
+  ['ID', 'KPI_Code', 'Actual'].forEach(function (k) { if (H[k] === undefined) throw new Error('ชีต KPI_Data ไม่มีคอลัมน์ ' + k); });
+  var idx = {};
+  for (var i = 1; i < data.length; i++) idx[String(data[i][H.ID])] = i;
+
+  var ins = [], upd = 0, skip = [], lines = [];
+  cfg.forEach(function (c) {
+    var v = byCode[c.code], id = c.code + '_' + yBE + '_' + mm;
+    var r = idx[id], cur = r !== undefined ? data[r].slice() : head.map(function () { return ''; });
+    while (cur.length < head.length) cur.push('');
+    var hasActual = r !== undefined && String(cur[H.Actual]).trim() !== '';
+    var ours = r === undefined || /^asset-app/.test(String(H.UpdatedBy !== undefined ? cur[H.UpdatedBy] : ''));
+    if (r !== undefined && v.actual === '') { skip.push(c.code + ' (ยังไม่มีค่า)'); return; }
+    if (hasActual && !ours && !force) { skip.push(c.code + ' (กรอกใน Rst-Kpi-Mtd แล้ว)'); return; }
+    var set = function (k, val) { if (H[k] !== undefined) cur[H[k]] = val; };
+    set('ID', id); set('KPI_Code', c.code); set('Company', st.company); set('Dept', st.dept);
+    set('Year', yBE); set('Month', m); set('MonthName', KPI_MONTH_EN[m - 1]);
+    set('Topic', c.topic); set('Method', c.method); set('Direction', c.direction); set('Target', c.target);
+    set('Actual', v.actual); set('Achieved', v.eval.achieved); set('Result', v.eval.result); set('Status', v.eval.status);
+    var oldNote = H.Note !== undefined ? String(cur[H.Note] || '') : '';
+    if (!oldNote || /^\[asset-app\]/.test(oldNote)) set('Note', '[asset-app] ' + (v.note || v.auto.detail || ''));
+    set('SrcNo', 'asset-app'); set('UpdatedAt', stamp); set('UpdatedBy', by);
+    if (r !== undefined) { sh.getRange(r + 1, 1, 1, head.length).setValues([cur]); upd++; }
+    else ins.push(cur);
+    lines.push('• ' + c.code + ': ' + (v.actual === '' ? '-' : v.actual) + ' → ' + v.eval.status);
+  });
+  if (ins.length) sh.getRange(sh.getLastRow() + 1, 1, ins.length, head.length).setValues(ins);
+
+  kpiMasterUpsert_(dss, cfg, st, ymBE);
+  try {
+    var lg = dss.getSheetByName(KPI_DST.LOG);
+    if (lg) lg.appendRow([Utilities.formatDate(new Date(), 'Asia/Bangkok', 'd/M/yyyy, HH:mm:ss'), by, 'upsert', ins.length + upd, ins.length, upd, 0, 'asset-app ' + ym + (skip.length ? ' · ข้าม ' + skip.length : '')]);
+  } catch (e) {}
+  SpreadsheetApp.flush();
+
+  cfg.forEach(function (c) {
+    if (skip.some(function (s) { return s.indexOf(c.code + ' ') === 0; })) return;
+    kpiMonUpsert_(ym, c.code, { pushedAt: stamp, pushedActual: String(byCode[c.code].actual) });
+  });
+  var summary = 'เพิ่ม ' + ins.length + ' · อัปเดต ' + upd + (skip.length ? ' · ข้าม ' + skip.length : '');
+  kpiSaveSetting_('lastPush', stamp + ' · ' + ym + ' · ' + summary + ' · ' + by);
+  return { status: 'ok', ym: ym, inserted: ins.length, updated: upd, skipped: skip, summary: summary, lines: lines };
+}
+function kpiMasterUpsert_(dss, cfg, st, ymBE) {
+  var sh = dss.getSheetByName(KPI_DST.MASTER);
+  if (!sh) return;
+  var data = sh.getDataRange().getValues(), H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  if (H.KPI_Code === undefined) return;
+  var idx = {};
+  for (var i = 1; i < data.length; i++) idx[String(data[i][H.KPI_Code])] = i;
+  var add = [];
+  cfg.forEach(function (c) {
+    var r = idx[c.code];
+    if (r === undefined) {
+      var row = data[0].map(function () { return ''; });
+      var set = function (k, v) { if (H[k] !== undefined) row[H[k]] = v; };
+      set('KPI_Code', c.code); set('Company', st.company); set('Dept', st.dept); set('Topic', c.topic); set('Method', c.method);
+      set('Direction', c.direction); set('DefaultTarget', c.target); set('FirstYM', ymBE); set('LastYM', ymBE); set('Active', 'Y');
+      add.push(row);
+    } else {
+      if (H.LastYM !== undefined && String(data[r][H.LastYM]) < ymBE) sh.getRange(r + 1, H.LastYM + 1).setNumberFormat('@').setValue(ymBE);
+      if (H.FirstYM !== undefined && (!String(data[r][H.FirstYM]) || String(data[r][H.FirstYM]) > ymBE)) sh.getRange(r + 1, H.FirstYM + 1).setNumberFormat('@').setValue(ymBE);
+    }
+  });
+  if (add.length) {
+    var rg = sh.getRange(sh.getLastRow() + 1, 1, add.length, data[0].length);
+    if (H.FirstYM !== undefined) sh.getRange(sh.getLastRow() + 1, H.FirstYM + 1, add.length, 2).setNumberFormat('@');
+    rg.setValues(add);
+  }
+}
+
+// ═══════════════════ TRIGGER ═══════════════════
+function kpiTriggerOn_() {
+  try { return ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'kpiMonthlyJob'; }); }
+  catch (e) { return false; }
+}
+function kpiSetAuto_(on) {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'kpiMonthlyJob') ScriptApp.deleteTrigger(t); });
+  if (on) ScriptApp.newTrigger('kpiMonthlyJob').timeBased().onMonthDay(1).atHour(6).inTimezone('Asia/Bangkok').create();
+  kpiSaveSetting_('autoPush', on ? 'Y' : 'N');
+  kpiSaveSetting_('autoProject', props().getProperty('SCRIPT_KIND') || SETUP.SCRIPT_KIND);
+  return { status: 'ok', autoPush: on ? 'Y' : 'N', trigger: kpiTriggerOn_() };
+}
+
+// ═══════════════════ HELPERS ═══════════════════
+function kpiNum_(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  var s = String(v).trim().replace(/,/g, ''), pct = /%$/.test(s);
+  var n = parseFloat(s.replace(/%$/, ''));
+  if (isNaN(n) || !/^-?[\d.]+%?$/.test(s)) return null;
+  return pct ? n / 100 : n;
+}
+function kpiDate_(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  var d = new Date(String(v));
+  return isNaN(d.getTime()) ? null : d;
+}
+function kpiYm_(v) {
+  v = String(v || '');
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : kpiPrevYm_();
+}
+function kpiPrevYm_() {
+  var d = new Date(Date.now() + 7 * 3600e3);   // เวลาไทย
+  var y = d.getUTCFullYear(), m = d.getUTCMonth();   // m = เดือนที่แล้ว (1-based)
+  if (m === 0) { y--; m = 12; }
+  return y + '-' + ('0' + m).slice(-2);
+}
+function kpiYmTH_(ym) { return KPI_MONTH_EN[+ym.slice(5, 7) - 1] + ' ' + (+ym.slice(0, 4) + 543); }
+function kpiStamp_() { return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss'); }
+function kpiDur_(min) {
+  min = Math.round(min);
+  var d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), mm = min % 60;
+  return (d ? d + ' วัน ' : '') + (h ? h + ' ชม. ' : '') + mm + ' นาที';
 }
