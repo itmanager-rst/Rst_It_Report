@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RST-KPI Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root { --pass:#0ca30c; --fail:#d03b3b; --pending:#b4b2a9; --ink:#1f2328; --muted:#6b6a64; --line:#e1e0d9; --bg:#f6f6f3; --card:#ffffff; --brand:#1f4e78; }
+  html,body { background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans Thai',system-ui,sans-serif; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  .tab-btn[aria-selected="true"] { background:var(--brand); color:#fff; }
+  .sel { border:1px solid var(--line); border-radius:8px; padding:6px 10px; background:#fff; font-size:14px; min-width:0; }
+  .sel:focus, .inp:focus { outline:2px solid #7aa7d6; outline-offset:1px; }
+  .inp { border:1px solid var(--line); border-radius:6px; padding:4px 8px; width:100%; font-size:14px; background:#fff; }
+  .badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:500; white-space:nowrap; }
+  .b-pass { background:#e6f6e6; color:#006300; } .b-fail { background:#fbe9e9; color:#a32020; }
+  .b-pending { background:#efeee9; color:#55544e; } .b-na { background:#fff4dc; color:#7a5200; }
+  .b-err { background:#fbe9e9; color:#a32020; } .b-warn { background:#fff4dc; color:#7a5200; } .b-ok { background:#e6f6e6; color:#006300; }
+  table.tbl { width:100%; border-collapse:collapse; font-size:13px; }
+  table.tbl th { position:sticky; top:0; background:#f1f0ec; text-align:left; font-weight:600; padding:8px; border-bottom:1px solid var(--line); z-index:1; }
+  table.tbl td { padding:7px 8px; border-bottom:1px solid #efeee9; vertical-align:top; }
+  table.tbl tr.clickable:hover td { background:#f4f8fc; cursor:pointer; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .drop { border:2px dashed #c3c2b7; border-radius:12px; }
+  .drop.over { border-color:var(--brand); background:#eef4fa; }
+  .spinner { width:16px; height:16px; border:2px solid #fff; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .hidden-tab { display:none; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ================= HEADER ================= -->
+<header class="bg-white border-b" style="border-color:var(--line)">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+    <div class="flex items-center gap-2 mr-auto">
+      <div class="w-9 h-9 rounded-lg grid place-items-center text-white font-bold" style="background:var(--brand)">KPI</div>
+      <div>
+        <div class="font-semibold leading-tight">RST-KPI Dashboard</div>
+        <div class="text-xs flex items-center gap-1.5" style="color:var(--muted)"><span id="connDot" class="inline-block w-2 h-2 rounded-full shrink-0" style="background:#b4b2a9"></span><span id="srcInfo">ยังไม่ได้เชื่อมต่อ</span></div>
+      </div>
+    </div>
+    <nav class="flex flex-wrap gap-1 text-sm" role="tablist">
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="dash" aria-selected="true">ภาพรวม</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="entry" aria-selected="false">กรอกผลรายเดือน</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="import" aria-selected="false">นำเข้า Excel</button>
+      <button class="tab-btn px-3 py-1.5 rounded-lg" data-tab="table" aria-selected="false">ข้อมูลทั้งหมด</button>
+    </nav>
+    <a id="lnkSheet" target="_blank" rel="noopener" class="text-sm px-3 py-1.5 rounded-lg border" style="border-color:var(--line)" title="เปิดฐานข้อมูลกลาง">▦ ฐานข้อมูล</a>
+    <button id="btnReload" class="text-sm px-3 py-1.5 rounded-lg border" style="border-color:var(--line)" title="ดึงข้อมูลล่าสุดจากฐานข้อมูลกลาง">↻ รีเฟรชข้อมูล</button>
+  </div>
+</header>
+
+<div id="banner" class="max-w-7xl mx-auto px-4 mt-3"></div>
+
+<main class="max-w-7xl mx-auto px-4 py-4">
+
+  <!-- ================= FILTER BAR (ใช้ร่วม Dashboard + ตาราง) ================= -->
+  <section id="filterBar" class="card p-3 mb-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 items-end">
+      <label class="text-xs" style="color:var(--muted)">บริษัท<select id="fCompany" class="sel w-full mt-1"></select></label>
+      <label class="text-xs" style="color:var(--muted)">แผนก<select id="fDept" class="sel w-full mt-1"></select></label>
+      <label class="text-xs" style="color:var(--muted)">ปี KPI (Y-MOU)<select id="fYear" class="sel w-full mt-1"></select></label>
+      <label class="text-xs" style="color:var(--muted)">เดือน<select id="fMonth" class="sel w-full mt-1"></select></label>
+      <label class="text-xs" style="color:var(--muted)">ผลเทียบเป้า<select id="fResult" class="sel w-full mt-1"></select></label>
+      <label class="text-xs col-span-2 md:col-span-2 lg:col-span-1" style="color:var(--muted)">ค้นหาหัวข้อ<input id="fSearch" class="sel w-full mt-1" placeholder="พิมพ์คำค้น…"></label>
+      <button id="btnResetFilter" class="sel text-sm hover:bg-gray-50">ล้างตัวกรอง</button>
+    </div>
+  </section>
+
+  <!-- ================= TAB: DASHBOARD ================= -->
+  <section id="tab-dash">
+    <div id="dupNote"></div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4" id="cards"></div>
+
+    <div class="grid lg:grid-cols-5 gap-4 mb-4">
+      <div class="card p-4 lg:col-span-3 min-w-0">
+        <div class="flex items-baseline justify-between mb-1">
+          <h2 class="font-semibold">สถานะ KPI รายเดือน</h2>
+          <span class="text-xs" style="color:var(--muted)">เรียงตามเดือนจริง · ไม่ขึ้นกับตัวกรองเดือน</span>
+        </div>
+        <div class="text-xs mb-2" style="color:var(--muted)">จำนวนหัวข้อที่ครบกำหนดประเมิน แยกตามผล (ไม่นับเดือนที่ยังไม่ถึงกำหนด)</div>
+        <div style="height:300px"><canvas id="chMonthly" aria-label="กราฟสถานะ KPI รายเดือน"></canvas></div>
+      </div>
+      <div class="card p-4 lg:col-span-2 min-w-0">
+        <h2 class="font-semibold mb-1">สถานะรายแผนก</h2>
+        <div class="text-xs mb-2" style="color:var(--muted)">คลิกแท่งเพื่อกรองแผนก</div>
+        <div id="deptChartWrap" style="height:300px"><canvas id="chDept" aria-label="กราฟสถานะรายแผนก"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-5 gap-4">
+      <div class="card p-4 lg:col-span-2 overflow-hidden min-w-0">
+        <h2 class="font-semibold mb-2">สรุปรายแผนก</h2>
+        <div class="overflow-auto" style="max-height:420px">
+          <table class="tbl" id="tblDept"></table>
+        </div>
+      </div>
+      <div class="card p-4 lg:col-span-3 overflow-hidden min-w-0">
+        <div class="flex items-baseline justify-between mb-2">
+          <h2 class="font-semibold">รายการที่ไม่ผ่านเป้า</h2>
+          <span class="text-xs" style="color:var(--muted)" id="ncCount"></span>
+        </div>
+        <div class="overflow-auto" style="max-height:420px">
+          <table class="tbl" id="tblNC"></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: ENTRY ================= -->
+  <section id="tab-entry" class="hidden-tab">
+    <div class="card p-4 mb-4">
+      <h2 class="font-semibold mb-1">กรอกผล Actual รายเดือน</h2>
+      <p class="text-sm mb-3" style="color:var(--muted)">เลือกบริษัท แผนก และเดือน แล้วกรอก Actual ระบบจะคำนวณผลเทียบเป้าให้ทันที เว้นว่างไว้ = ยังไม่ได้ประเมิน</p>
+      <div class="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+        <label class="text-xs" style="color:var(--muted)">ผู้บันทึก<input id="eUser" class="sel w-full mt-1" placeholder="ชื่อ (แผนก)"></label>
+        <label class="text-xs" style="color:var(--muted)">บริษัท<select id="eCompany" class="sel w-full mt-1"></select></label>
+        <label class="text-xs" style="color:var(--muted)">แผนก<select id="eDept" class="sel w-full mt-1"></select></label>
+        <label class="text-xs" style="color:var(--muted)">ปี KPI (Y-MOU)<select id="eYear" class="sel w-full mt-1"></select></label>
+        <label class="text-xs" style="color:var(--muted)">เดือน<select id="eMonth" class="sel w-full mt-1"></select></label>
+        <button id="btnEntryLoad" class="sel text-sm hover:bg-gray-50">แสดงหัวข้อ</button>
+      </div>
+    </div>
+    <div class="card p-4" id="entryWrap"><p class="text-sm" style="color:var(--muted)">ยังไม่ได้เลือก</p></div>
+  </section>
+
+  <!-- ================= TAB: IMPORT ================= -->
+  <section id="tab-import" class="hidden-tab">
+    <div class="card p-4 mb-4">
+      <h2 class="font-semibold mb-1">นำเข้าไฟล์ Excel ฟอร์มเดิม</h2>
+      <p class="text-sm mb-3" style="color:var(--muted)">รองรับชีต "RST-KPI กรอกช่องนี้" และฟอร์มแผนกที่มีหัวคอลัมน์ TOPIC / บริษัท / แผนก / เดือน / Y-MOU / Target / Actual ระบบหาแถวหัวตารางเอง ข้ามแถวว่าง และเติมค่าเซลล์ที่ merge ให้</p>
+      <label id="drop" class="drop p-6 flex flex-col items-center justify-center text-center cursor-pointer">
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" class="hidden">
+        <div class="text-3xl mb-1">📄</div>
+        <div class="font-medium">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
+        <div class="text-xs" style="color:var(--muted)">.xlsx / .xlsm — อ่านในเบราว์เซอร์ ไม่ส่งไฟล์ออกไปจนกว่าจะกดบันทึก</div>
+      </label>
+    </div>
+    <div id="importResult"></div>
+  </section>
+
+  <!-- ================= TAB: TABLE ================= -->
+  <section id="tab-table" class="hidden-tab">
+    <div class="card p-4">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <h2 class="font-semibold mr-auto">ข้อมูล KPI ทั้งหมด <span class="text-sm font-normal" style="color:var(--muted)" id="tblCount"></span></h2>
+        <button id="btnExport" class="sel text-sm hover:bg-gray-50">⬇ ส่งออก Excel (ตามตัวกรอง)</button>
+      </div>
+      <div class="overflow-auto" style="max-height:640px"><table class="tbl" id="tblAll"></table></div>
+      <div class="flex items-center justify-end gap-2 mt-3 text-sm" id="pager"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+<script>
+/* =====================================================================
+ * CONFIG — URL ของ Apps Script ฝังไว้ที่นี่ (ทุกเครื่องใช้ค่าเดียวกัน)
+ * ===================================================================== */
+const CONFIG = {
+  // ▼▼ วาง Web App URL ที่ได้จาก Deploy (ลงท้าย /exec) ระหว่างเครื่องหมาย ' ' แล้วบันทึกไฟล์ ▼▼
+  API_URL: 'https://script.google.com/macros/s/AKfycbzdBn0F8YujrrHTv8BIqVFCOFdbiMdeZWjKCo22F_19V49F0eLlkXsIoVLE6__wRk1j/exec',
+  API_TOKEN: 'RSTKPI-i9I8R3TMgLoWHmIZHEZswrUoSciPzUdaJPpK',   // ต้องตรงกับ API_TOKEN ใน Code.gs
+  SHEET_URL: 'https://docs.google.com/spreadsheets/d/1UF_HlJKmgR81OMqwvgU0l0iQtRyOndRck7wy_KjejTE/edit',   // ฐานข้อมูล Rst-Kpi-Mtd-db
+  CHUNK_SIZE: 400,        // จำนวนแถวต่อ 1 request ตอนอัปโหลด
+  // ปี KPI (Y-MOU) ที่ใช้รอบ "ปีงบประมาณ" → ใส่เดือนเริ่มต้น เช่น 2568: 4 = เม.ย. 68 – มี.ค. 69
+  // ปีที่ไม่ได้ระบุ = รอบปฏิทิน ม.ค.–ธ.ค. (ไฟล์เดิม: Y-MOU 2568 ม.ค.–มี.ค. คือ ม.ค.–มี.ค. 2569 จริง)
+  YMOU_START_MONTH: { 2568: 4 },
+};
+
+/* ========================= CONSTANTS ========================= */
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const TH_M = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const R = { PASS:'ผ่านเป้า', FAIL:'ต่ำกว่าเป้า', NA:'ไม่มีข้อมูล (N.A.)', PENDING:'ยังไม่ได้ประเมิน' };
+const S = { PASS:'ผ่านเป้า', FAIL:'ไม่ผ่านเป้า', PENDING:'ยังไม่ได้ประเมิน' };
+const COLORS = { pass:'#0ca30c', fail:'#d03b3b', pending:'#b4b2a9', grid:'#e1e0d9', axis:'#c3c2b7', ink:'#1f2328', muted:'#6b6a64' };
+const ALL = '__all__';
+
+/* ========================= STATE ========================= */
+const state = {
+  data: [], master: [], lookup: [],
+  source: 'none',                  // 'server' | 'local'
+  filter: { company:ALL, dept:ALL, year:'LATEST', month:ALL, result:ALL, search:'' },   // เริ่มที่ปี KPI ล่าสุด (กันนับซ้ำข้ามชุด KPI)
+  page: 1, pageSize: 50,
+  importParsed: null,
+  charts: {},
+};
+
+/* ========================= SETTINGS (localStorage แบบปลอดภัย) ========================= */
+const store = {
+  get(k, d='') { try { return localStorage.getItem('rstkpi.'+k) ?? d; } catch { return d; } },
+  set(k, v)    { try { localStorage.setItem('rstkpi.'+k, v); } catch {} },
+};
+const API_CONFIGURED = /^https:\/\/script\.google(usercontent)?\.com\/.+\/exec$/.test(CONFIG.API_URL.trim()) && !/^วาง_/.test(CONFIG.API_TOKEN);
+const apiUrl  = () => API_CONFIGURED ? CONFIG.API_URL.trim() : '';
+const apiToken = () => CONFIG.API_TOKEN || '';
+const apiUser = () => clean($('#eUser')?.value) || store.get('user') || 'web';   // ชื่อผู้บันทึก (จำไว้ในเครื่อง)
+
+/* ========================= UTIL ========================= */
+const $ = (s, el=document) => el.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clean = v => v == null ? '' : String(v).replace(/\s+/g,' ').trim();
+const normCompany = v => clean(v).replace(/\s*-\s*/g,'-').toUpperCase();
+const normKey = v => clean(v).toLowerCase().replace(/[\s_:&\-]+/g,'');
+const isNum = v => v !== '' && v !== null && v !== undefined && typeof v !== 'boolean' && isFinite(Number(v));
+// แสดงเป็น % เมื่อแถวนั้นเป็นสัดส่วน (มีค่าทศนิยม และทุกค่า ≤ 1.5) เช่น Target 1 / Actual 0.994 → 100% / 99.4%
+const isRatioRow = (...vals) => { const n = vals.filter(isNum).map(Number); return n.length > 0 && n.every(x => Math.abs(x) <= 1.5) && n.some(x => !Number.isInteger(x)); };
+const fmtNum = (v, ratio) => isNum(v) ? (ratio ? (v*100).toLocaleString('th-TH',{maximumFractionDigits:1})+'%' : Number(v).toLocaleString('th-TH',{maximumFractionDigits:2})) : esc(v ?? '');
+const fmtPct = v => isNum(v) ? (v*100).toLocaleString('th-TH',{maximumFractionDigits:1})+'%' : '–';
+const pct = (a,b) => b ? Math.round(a/b*1000)/10 : 0;
+const ymLabel = (y,m) => `${TH_M[m-1]} ${String(y).slice(-2)}`;
+
+/* ---------- งวดเวลา (หลักการประเมิน) ----------
+ * Year  = ปี KPI (Y-MOU) ชุดหัวข้อที่ใช้ประเมิน · Month = เดือนที่ประเมิน
+ * PY/PM = ปี/เดือนตามปฏิทินจริง (พ.ศ.) ใช้เรียงเวลาและตัดสินว่า "ครบกำหนด" หรือยัง
+ * Due   = งวดที่สิ้นเดือนไปแล้ว → ต้องมีผล ถ้าว่าง = ค้างส่งผล / งวดเดือนนี้และอนาคต = ยังไม่ถึงกำหนด (ไม่นับ)
+ */
+const NOW_P = (new Date().getFullYear() + 543) * 100 + (new Date().getMonth() + 1);
+function withPeriod(r) {
+  const st = Number(CONFIG.YMOU_START_MONTH[r.Year] || 1);
+  r.PY = (st > 1 && r.Month < st) ? r.Year + 1 : r.Year;
+  r.PM = r.Month; r.P = r.PY * 100 + r.PM;
+  r.Due = r.P < NOW_P;
+  return r;
+}
+const isEvaluated = r => r.Result === R.PASS || r.Result === R.FAIL;
+// แถวที่นับในภาพรวม: ครบกำหนดแล้ว หรือส่งผลมาแล้วแม้ยังไม่ครบกำหนด
+const isCounted = r => r.Due || isEvaluated(r);
+
+function toast(msg, type='ok', ms=4000) {
+  const el = document.createElement('div');
+  el.className = 'card px-4 py-3 text-sm shadow-lg max-w-sm';
+  el.style.borderLeft = `4px solid ${type==='err'?COLORS.fail:type==='warn'?'#fab219':COLORS.pass}`;
+  el.textContent = msg;
+  $('#toast').appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+function resultBadge(r, row) {
+  if (row && r === R.PENDING && !row.Due) return `<span class="badge b-pending" style="background:transparent;border:1px dashed #c3c2b7">◌ ยังไม่ถึงกำหนด</span>`;
+  if (r === R.PASS) return `<span class="badge b-pass">✓ ผ่านเป้า</span>`;
+  if (r === R.FAIL) return `<span class="badge b-fail">✕ ต่ำกว่าเป้า</span>`;
+  if (r === R.NA)   return `<span class="badge b-na">– N.A.</span>`;
+  return `<span class="badge b-pending">○ ${row ? 'ค้างส่งผล' : 'ยังไม่ประเมิน'}</span>`;
+}
+const dirBadge = d => d === 'LOWER'
+  ? `<span class="badge b-pending" title="ยิ่งน้อยยิ่งดี: Actual ≤ Target = ผ่าน">↓ น้อยดี</span>`
+  : `<span class="badge b-pending" title="ยิ่งมากยิ่งดี: Actual ≥ Target = ผ่าน">↑ มากดี</span>`;
+
+/* ========================= BUSINESS LOGIC (ต้องตรงกับ Code.gs) ========================= */
+function evaluateKpi(target, actual, direction) {
+  if (actual === '' || actual === null || actual === undefined) return { achieved:null, result:R.PENDING, status:S.PENDING };
+  if (!isNum(actual) || !isNum(target)) return { achieved:null, result:R.NA, status:S.PENDING };
+  const t = Number(target), a = Number(actual), EPS = 1e-9, lower = direction === 'LOWER';
+  const ok = lower ? a <= t + EPS : a >= t - EPS;
+  let achieved = lower ? (a !== 0 ? t/a : (ok ? 1 : null)) : (t !== 0 ? a/t : null);
+  if (achieved !== null) achieved = Math.round(achieved*10000)/10000;
+  return { achieved, result: ok ? R.PASS : R.FAIL, status: ok ? S.PASS : S.FAIL };
+}
+
+function parseNumber(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'number') return v;
+  const s = String(v).trim();
+  if (s === '' || s === '-') return '';
+  const raw = s.replace(/[,%\s]/g,'');
+  const n = Number(raw);
+  if (raw !== '' && isFinite(n)) return /%$/.test(s) ? n/100 : n;
+  return s;
+}
+function parseMonth(v) {
+  if (v instanceof Date) return v.getMonth()+1;
+  if (typeof v === 'number') return v >= 1 && v <= 12 ? Math.floor(v) : 0;
+  const s = clean(v).toLowerCase();
+  if (!s) return 0;
+  if (/^\d{1,2}$/.test(s)) { const n = +s; return n>=1 && n<=12 ? n : 0; }
+  let i = MONTHS.findIndex(m => s.startsWith(m.toLowerCase()));
+  if (i >= 0) return i+1;
+  i = TH_M.findIndex(m => s.replace(/\s/g,'') === m);
+  return i >= 0 ? i+1 : 0;
+}
+function parseYear(v) {
+  const n = Number(clean(v));
+  if (!isFinite(n) || n <= 0) return 0;
+  if (n < 100) return 2500 + n;
+  if (n < 2400) return n + 543;
+  return Math.floor(n);
+}
+
+function buildLookupMaps() {
+  const lk = { company:{}, dept:{} };
+  state.lookup.forEach(o => {
+    const t = String(o.Type||'').toUpperCase(), c = clean(o.Canonical);
+    if (!c) return;
+    if (t === 'COMPANY') { lk.company[normKey(normCompany(o.Raw))] = normCompany(c); lk.company[normKey(normCompany(c))] = normCompany(c); }
+    if (t === 'DEPT')    { lk.dept[normKey(o.Raw)] = c; lk.dept[normKey(c)] = c; }
+  });
+  return lk;
+}
+
+/* ========================= API (รูปแบบเดียวกับแอป IT Subscription) ========================= */
+function setConn(kind, text) {   // kind: off | wait | ok | err
+  $('#connDot').style.background = { off:'#b4b2a9', wait:'#fab219', ok:COLORS.pass, err:COLORS.fail }[kind] || '#b4b2a9';
+  $('#srcInfo').textContent = text;
+}
+function errMsg(e) {
+  const m = String((e && e.message) || e || '');
+  if (e instanceof SyntaxError || /JSON/.test(m)) return 'Server ไม่ได้ตอบเป็น JSON — ตรวจ Deploy (Who has access: Anyone) และ URL ลงท้าย /exec';
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'เชื่อมต่อ Server ไม่ได้ — ตรวจอินเทอร์เน็ต หรือ API_URL ใน index.html';
+  if (/unauthorized/i.test(m)) return 'Token ไม่ถูกต้อง — API_TOKEN ใน index.html ต้องตรงกับใน Code.gs (และ Deploy เวอร์ชันใหม่แล้ว)';
+  return m;
+}
+async function apiGet(action='data') {
+  if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html');
+  const u = new URL(apiUrl());
+  u.searchParams.set('action', action);
+  u.searchParams.set('token', apiToken());
+  const res = await fetch(u.toString(), { cache:'no-store', redirect:'follow' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const j = JSON.parse(await res.text());
+  if (!j.ok) throw new Error(j.error || 'เกิดข้อผิดพลาดจาก Server');
+  return j;
+}
+async function apiPost(payload, retries=2) {
+  if (!apiUrl()) throw new Error('ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html');
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(apiUrl(), {
+        method:'POST', redirect:'follow',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },   // text/plain เพื่อเลี่ยง CORS preflight
+        body: JSON.stringify(Object.assign({ token: apiToken(), user: apiUser() }, payload)),
+      });
+      const j = JSON.parse(await res.text());
+      if (!j.ok) { const e = new Error(j.error || 'บันทึกไม่สำเร็จ'); e.noRetry = !/ลองใหม่/.test(j.error||''); throw e; }
+      return j;
+    } catch (err) {
+      if (i >= retries || err.noRetry || err instanceof SyntaxError) throw err;
+      await new Promise(r => setTimeout(r, 1500 * (i+1)));   // network/lock → รอแล้วลองใหม่
+    }
+  }
+}
+
+async function loadFromServer() {
+  if (!apiUrl()) { setConn('off', 'ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html'); renderBanner(); return false; }
+  setConn('wait', 'กำลังเชื่อมต่อฐานข้อมูลกลาง…');
+  try {
+    const j = await apiGet('data');
+    state.data = j.data.map(normalizeServerRow);
+    state.master = j.master; state.lookup = j.lookup;
+    state.source = 'server';
+    setConn('ok', `เชื่อมต่อฐานข้อมูลกลางสำเร็จ · ${state.data.length.toLocaleString()} รายการ · อัปเดต ${new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} น.`);
+    renderBanner(); initFilters(); renderAll();
+    return true;
+  } catch (e) {
+    setConn('err', 'เชื่อมต่อไม่สำเร็จ');
+    renderBanner(errMsg(e));
+    return false;
+  }
+}
+function normalizeServerRow(o) {
+  return withPeriod({
+    ID:String(o.ID), KPI_Code:String(o.KPI_Code||''), Company:normCompany(o.Company), Dept:clean(o.Dept),
+    Year:Number(o.Year), Month:Number(o.Month), Topic:clean(o.Topic), Method:o.Method||'', Link:o.Link||'',
+    Direction:o.Direction==='LOWER'?'LOWER':'HIGHER', Target:o.Target, Actual:o.Actual,
+    Achieved:o.Achieved===''?null:o.Achieved, Result:o.Result||R.PENDING, Status:o.Status||S.PENDING,
+    Note:o.Note||'', UpdatedAt:o.UpdatedAt||'', UpdatedBy:o.UpdatedBy||'',
+  });
+}
+
+function renderBanner(err) {
+  const b = $('#banner');
+  if (err) b.innerHTML = `<div class="card p-3 text-sm" style="border-color:#f1b0b0;background:#fdf3f3">⚠ เชื่อมต่อฐานข้อมูลไม่สำเร็จ: ${esc(err)} — ยังใช้แท็บ "นำเข้า Excel" ดูตัวอย่างได้</div>`;
+  else if (!apiUrl()) b.innerHTML = `<div class="card p-3 text-sm" style="border-color:#f5d48a;background:#fffaf0">ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html — ใช้แท็บ "นำเข้า Excel" ดู Dashboard จากไฟล์ได้ (โหมดดูตัวอย่าง ไม่บันทึก)</div>`;
+  else if (state.source === 'local') b.innerHTML = `<div class="card p-3 text-sm" style="border-color:#f5d48a;background:#fffaf0">กำลังแสดงข้อมูลจากไฟล์ที่นำเข้า (ยังไม่ได้บันทึก) — กด ↻ รีเฟรชข้อมูล เพื่อกลับไปใช้ข้อมูลจากฐานข้อมูลกลาง</div>`;
+  else b.innerHTML = '';
+}
+
+/* ========================= FILTERS ========================= */
+function uniq(arr) { return [...new Set(arr)].filter(v => v !== '' && v != null); }
+function fillSelect(sel, values, allLabel, labelFn = v => v, keep = true) {
+  const cur = sel.value;
+  sel.innerHTML = (allLabel ? `<option value="${ALL}">${allLabel}</option>` : '') +
+    values.map(v => `<option value="${esc(v)}">${esc(labelFn(v))}</option>`).join('');
+  if (keep && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+function initFilters() {
+  const f = state.filter, d = state.data;
+  fillSelect($('#fCompany'), uniq(d.map(r => r.Company)).sort(), 'ทุกบริษัท');
+  refreshDeptFilter();
+  fillSelect($('#fYear'), uniq(d.map(r => r.Year)).sort((a,b)=>b-a), 'ทุกปี', String);
+  fillSelect($('#fMonth'), [1,2,3,4,5,6,7,8,9,10,11,12], 'ทุกเดือน', m => TH_M[m-1]);
+  fillSelect($('#fResult'), [R.PASS, R.FAIL, R.PENDING, R.NA], 'ทุกผล', v => v === R.PENDING ? 'ค้างส่งผล' : v);
+  if (f.year === 'LATEST' && d.length) f.year = Math.max(...d.map(r => r.Year));
+  $('#fCompany').value = f.company; $('#fYear').value = f.year === 'LATEST' ? ALL : String(f.year); $('#fMonth').value = String(f.month); $('#fResult').value = f.result;
+  if (!$('#fYear').value) $('#fYear').value = ALL;
+  fillEntrySelects();
+}
+function refreshDeptFilter() {
+  const c = $('#fCompany').value || ALL;
+  const depts = uniq(state.data.filter(r => c === ALL || r.Company === c).map(r => r.Dept)).sort((a,b)=>a.localeCompare(b,'th'));
+  fillSelect($('#fDept'), depts, 'ทุกแผนก');
+  if (!depts.includes(state.filter.dept)) state.filter.dept = ALL;
+  $('#fDept').value = state.filter.dept;
+}
+function readFilters() {
+  const f = state.filter;
+  f.company = $('#fCompany').value || ALL; f.dept = $('#fDept').value || ALL;
+  if (!(f.year === 'LATEST' && !state.data.length)) f.year = $('#fYear').value === ALL ? ALL : Number($('#fYear').value);
+  f.month = $('#fMonth').value === ALL ? ALL : Number($('#fMonth').value);
+  f.result = $('#fResult').value || ALL; f.search = clean($('#fSearch').value).toLowerCase();
+}
+function applyFilters(rows, opts = {}) {
+  const f = state.filter;
+  return rows.filter(r =>
+    (f.company === ALL || r.Company === f.company) &&
+    (f.dept === ALL || r.Dept === f.dept) &&
+    (f.year === ALL || r.Year === f.year) &&
+    (opts.all || isCounted(r)) &&
+    (opts.ignoreMonth || f.month === ALL || r.Month === f.month) &&
+    (f.result === ALL || r.Result === f.result) &&
+    (!f.search || r.Topic.toLowerCase().includes(f.search) || (r.KPI_Code||'').toLowerCase().includes(f.search)));
+}
+function summarize(rows) {
+  const s = { total: rows.length, pass:0, fail:0, pending:0, na:0 };
+  rows.forEach(r => { if (r.Result === R.PASS) s.pass++; else if (r.Result === R.FAIL) s.fail++; else if (r.Result === R.NA) s.na++; else s.pending++; });
+  s.done = s.pass + s.fail;                 // ส่งผลแล้ว
+  s.base = s.total - s.na;                  // ครบกำหนดประเมิน (ไม่นับ N.A. = ไม่มีกิจกรรมให้วัดในเดือนนั้น)
+  s.submitRate = s.base ? s.done / s.base : null;   // % ส่งผล = ส่งผลแล้ว / ครบกำหนด
+  s.passRate = s.done ? s.pass / s.done : null;     // % ผ่าน = ผ่าน / ส่งผลแล้ว (ไม่เอารายการค้างมาถ่วง)
+  return s;
+}
+const pctTxt = v => v === null ? '–' : (Math.round(v*1000)/10) + '%';
+
+/* ========================= RENDER: DASHBOARD ========================= */
+function renderAll() { readFilters(); renderDupNote(); renderCards(); renderMonthly(); renderDeptChart(); renderDeptTable(); renderNC(); renderTable(); }
+
+function renderDupNote() {
+  // ตรวจงวดเดียวกันที่ถูกประเมินด้วย KPI หลายชุด (Y-MOU ต่างกัน) → ถ้าเลือก "ทุกปี" จะนับซ้ำ
+  const el = $('#dupNote');
+  if (state.filter.year !== ALL) { el.innerHTML = ''; return; }
+  const m = new Map();
+  applyFilters(state.data).forEach(r => { const k = r.Company+'|'+r.Dept+'|'+r.P; if (!m.has(k)) m.set(k, new Set()); m.get(k).add(r.Year); });
+  const dup = [...m.entries()].filter(([,v]) => v.size > 1);
+  if (!dup.length) { el.innerHTML = ''; return; }
+  const depts = new Set(dup.map(([k]) => k.split('|')[1]));
+  const ps = [...new Set(dup.map(([k]) => +k.split('|')[2]))].sort((a,b)=>a-b);
+  el.innerHTML = `<div class="card p-3 mb-4 text-sm" style="border-color:#f5d48a;background:#fffaf0">⚠ ${depts.size} แผนก ถูกประเมินงวดเดียวกันด้วย KPI มากกว่า 1 ชุด (${ps.map(p=>ymLabel(Math.floor(p/100),p%100)).join(', ')}) — การดู "ทุกปี" จะนับงวดนี้ซ้ำ ควรเลือก <b>ปี KPI</b> ทีละปี</div>`;
+}
+
+function renderCards() {
+  const s = summarize(applyFilters(state.data));
+  const card = (label, n, sub, color, strong) => `
+    <div class="card p-4">
+      <div class="text-xs mb-1 flex items-center gap-1.5" style="color:var(--muted)">${color?`<span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:${color}"></span>`:''}${label}</div>
+      <div class="text-2xl font-semibold" style="font-variant-numeric:tabular-nums">${strong ?? n.toLocaleString()}</div>
+      <div class="text-xs mt-0.5" style="color:var(--muted)">${sub}</div>
+    </div>`;
+  $('#cards').innerHTML =
+    card('ครบกำหนดประเมิน', s.base, 'หัวข้อ × เดือน' + (s.na ? ` · ไม่นับ N.A. ${s.na}` : '')) +
+    card('ส่งผลแล้ว', s.done, `${pctTxt(s.submitRate)} ของที่ครบกำหนด`) +
+    card('ค้างส่งผล', s.pending, `${pctTxt(s.base ? s.pending/s.base : null)} ของที่ครบกำหนด`, COLORS.pending) +
+    card('% ผ่านเป้า', s.pass, `ผ่าน ${s.pass.toLocaleString()} จาก ${s.done.toLocaleString()} ที่ส่งผล`, COLORS.pass, pctTxt(s.passRate)) +
+    card('ไม่ผ่านเป้า', s.fail, `${pctTxt(s.done ? s.fail/s.done : null)} ของที่ส่งผล`, COLORS.fail);
+}
+
+Chart.defaults.font.family = "'IBM Plex Sans Thai', system-ui, sans-serif";
+Chart.defaults.font.size = 12;
+Chart.defaults.color = COLORS.muted;
+
+function stackDatasets(pass, fail, pending) {
+  const base = { borderColor:'#fff', borderWidth:{ top:2 }, borderSkipped:false, borderRadius:0, maxBarThickness:36 };
+  return [
+    { ...base, label:'ผ่านเป้า', data:pass, backgroundColor:COLORS.pass },
+    { ...base, label:'ต่ำกว่าเป้า', data:fail, backgroundColor:COLORS.fail },
+    { ...base, label:'ค้างส่งผล', data:pending, backgroundColor:COLORS.pending, borderRadius:{ topLeft:4, topRight:4, bottomLeft:0, bottomRight:0 } },
+  ];
+}
+function tooltipFooter(items) {
+  const i = items[0]; const ds = i.chart.data.datasets; const k = i.dataIndex;
+  const p = ds[0].data[k], f = ds[1].data[k], n = ds[2].data[k], tot = p+f+n;
+  return `ครบกำหนด ${tot} · ส่งผล ${pct(p+f,tot)}% · ผ่าน ${pct(p,p+f)}% ของที่ส่งผล`;
+}
+
+function renderMonthly() {
+  const rows = applyFilters(state.data, { ignoreMonth:true }).filter(r => r.Result !== R.NA);
+  const keys = uniq(rows.map(r => r.P)).sort((a,b)=>a-b);
+  const by = new Map(keys.map(k => [k, {pass:0,fail:0,pending:0}]));
+  rows.forEach(r => { const o = by.get(r.P); if (r.Result===R.PASS) o.pass++; else if (r.Result===R.FAIL) o.fail++; else o.pending++; });
+  const labels = keys.map(k => ymLabel(Math.floor(k/100), k%100));
+  const sel = state.filter.month;
+  const data = { labels, datasets: stackDatasets(keys.map(k=>by.get(k).pass), keys.map(k=>by.get(k).fail), keys.map(k=>by.get(k).pending)) };
+  if (sel !== ALL) data.datasets.forEach(ds => { const c = ds.backgroundColor; ds.backgroundColor = keys.map(k => k%100===sel ? c : c+'55'); });
+  drawChart('chMonthly', 'bar', data, {
+    scales: { x:{ stacked:true, grid:{display:false}, border:{color:COLORS.axis} }, y:{ stacked:true, beginAtZero:true, grid:{color:COLORS.grid}, border:{display:false}, ticks:{precision:0} } },
+    plugins: { legend:{ position:'top', align:'start', labels:{ boxWidth:10, boxHeight:10, useBorderRadius:true, borderRadius:2 } },
+               tooltip:{ mode:'index', intersect:false, callbacks:{ footer: tooltipFooter } } },
+    onClick: (e, els) => { if (!els.length) return; $('#fMonth').value = String(keys[els[0].index] % 100); onFilterChange(); },
+  });
+}
+
+function renderDeptChart() {
+  const rows = applyFilters(state.data).filter(r => r.Result !== R.NA);
+  const by = new Map();
+  rows.forEach(r => { const k = r.Dept; if (!by.has(k)) by.set(k,{pass:0,fail:0,pending:0}); const o = by.get(k);
+    if (r.Result===R.PASS) o.pass++; else if (r.Result===R.FAIL) o.fail++; else o.pending++; });
+  const depts = [...by.keys()].sort((a,b) => (by.get(b).fail - by.get(a).fail) || a.localeCompare(b,'th'));
+  $('#deptChartWrap').style.height = Math.max(220, depts.length*26 + 60) + 'px';
+  const ds = stackDatasets(depts.map(d=>by.get(d).pass), depts.map(d=>by.get(d).fail), depts.map(d=>by.get(d).pending));
+  ds.forEach(d => { d.borderWidth = { right:2 }; d.borderRadius = 0; });
+  ds[2].borderRadius = { topRight:4, bottomRight:4, topLeft:0, bottomLeft:0 };
+  drawChart('chDept', 'bar', { labels: depts, datasets: ds }, {
+    indexAxis:'y',
+    scales: { x:{ stacked:true, beginAtZero:true, grid:{color:COLORS.grid}, border:{display:false}, ticks:{precision:0} },
+              y:{ stacked:true, grid:{display:false}, border:{color:COLORS.axis}, ticks:{ autoSkip:false, callback(v){ const s=this.getLabelForValue(v); return s.length>22?s.slice(0,21)+'…':s; } } } },
+    plugins: { legend:{ display:false }, tooltip:{ mode:'index', intersect:false, callbacks:{ footer: tooltipFooter } } },
+    onClick: (e, els) => { if (!els.length) return; setDeptFilter(depts[els[0].index]); },
+  });
+}
+
+function drawChart(id, type, data, options) {
+  const ch = state.charts[id];
+  if (ch) { ch.data = data; ch.options = Object.assign({ responsive:true, maintainAspectRatio:false, animation:{duration:250} }, options); ch.update(); return; }
+  state.charts[id] = new Chart(document.getElementById(id), { type, data, options: Object.assign({ responsive:true, maintainAspectRatio:false, animation:{duration:250} }, options) });
+}
+
+function setDeptFilter(dept) {
+  const row = state.data.find(r => r.Dept === dept);
+  if (row && state.filter.company !== ALL && row.Company !== state.filter.company) $('#fCompany').value = ALL;
+  readFilters(); refreshDeptFilter(); $('#fDept').value = dept; onFilterChange();
+}
+
+function renderDeptTable() {
+  const rows = applyFilters(state.data);
+  const by = new Map();
+  rows.forEach(r => { const k = r.Company+'|'+r.Dept; if (!by.has(k)) by.set(k,[]); by.get(k).push(r); });
+  const list = [...by.entries()].map(([k,v]) => ({ company:k.split('|')[0], dept:k.split('|')[1], ...summarize(v) }))
+    .sort((a,b) => a.company.localeCompare(b.company) || ((a.passRate ?? 2) - (b.passRate ?? 2)));
+  const warn = (v, lim) => v !== null && v < lim ? 'color:#a32020;font-weight:600' : '';
+  $('#tblDept').innerHTML = `<thead><tr><th>แผนก</th><th class="num">ครบกำหนด</th><th class="num">% ส่งผล</th><th class="num">% ผ่าน</th><th class="num">ไม่ผ่าน</th><th class="num">ค้าง</th></tr></thead><tbody>` +
+    (list.length ? list.map(x => `<tr class="clickable" data-dept="${esc(x.dept)}">
+      <td><div class="font-medium">${esc(x.dept)}</div><div class="text-xs" style="color:var(--muted)">${esc(x.company)}</div></td>
+      <td class="num">${x.base}</td>
+      <td class="num" style="${warn(x.submitRate,0.8)}">${pctTxt(x.submitRate)}</td>
+      <td class="num" style="${warn(x.passRate,0.7)}">${pctTxt(x.passRate)}</td>
+      <td class="num">${x.fail}</td><td class="num">${x.pending}</td></tr>`).join('') : `<tr><td colspan="6" class="text-center py-6" style="color:var(--muted)">ไม่มีข้อมูล</td></tr>`) +
+    `</tbody><tfoot><tr><td colspan="6" class="text-xs pt-2" style="color:var(--muted)">% ส่งผล = ส่งผลแล้ว ÷ ครบกำหนด (ตัวแดง &lt; 80%) · % ผ่าน = ผ่าน ÷ ส่งผลแล้ว (ตัวแดง &lt; 70%) · เรียงจาก % ผ่านต่ำสุด</td></tr></tfoot>`;
+  $('#tblDept').querySelectorAll('tr[data-dept]').forEach(tr => tr.onclick = () => setDeptFilter(tr.dataset.dept));
+}
+
+function renderNC() {
+  const rows = applyFilters(state.data).filter(r => r.Result === R.FAIL)
+    .sort((a,b) => b.P - a.P || a.Dept.localeCompare(b.Dept,'th'));
+  $('#ncCount').textContent = rows.length ? `${rows.length} รายการ` + (rows.length > 200 ? ' (แสดง 200 ล่าสุด)' : '') : '';
+  $('#tblNC').innerHTML = `<thead><tr><th>เดือน</th><th>แผนก</th><th>หัวข้อ</th><th class="num">Target</th><th class="num">Actual</th><th class="num">ทำได้</th></tr></thead><tbody>` +
+    (rows.length ? rows.slice(0,200).map(r => `<tr>
+      <td class="whitespace-nowrap">${ymLabel(r.PY,r.PM)}</td>
+      <td><div>${esc(r.Dept)}</div><div class="text-xs whitespace-nowrap" style="color:var(--muted)">${esc(r.Company)}</div></td>
+      <td>${esc(r.Topic)} <span class="ml-1">${dirBadge(r.Direction)}</span>${r.Note?`<div class="text-xs mt-0.5" style="color:var(--muted)">หมายเหตุ: ${esc(r.Note)}</div>`:''}</td>
+      <td class="num">${fmtNum(r.Target, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtNum(r.Actual, isRatioRow(r.Target,r.Actual))}</td>
+      <td class="num" style="color:#a32020">${fmtPct(r.Achieved)}</td></tr>`).join('')
+      : `<tr><td colspan="6" class="text-center py-6" style="color:var(--muted)">ไม่มีรายการที่ไม่ผ่านเป้าตามตัวกรองนี้ 🎉</td></tr>`) + `</tbody>`;
+}
+
+/* ========================= RENDER: TABLE ========================= */
+function renderTable() {
+  const rows = applyFilters(state.data, { all:true }).sort((a,b) => b.P - a.P || a.Company.localeCompare(b.Company) || a.Dept.localeCompare(b.Dept,'th'));
+  const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
+  state.page = Math.min(state.page, pages);
+  const slice = rows.slice((state.page-1)*state.pageSize, state.page*state.pageSize);
+  $('#tblCount').textContent = `(${rows.length.toLocaleString()} แถว)`;
+  $('#tblAll').innerHTML = `<thead><tr><th>งวด</th><th>ปี KPI</th><th>บริษัท</th><th>แผนก</th><th>รหัส</th><th>หัวข้อ</th><th>ทิศ</th><th class="num">Target</th><th class="num">Actual</th><th class="num">ทำได้</th><th>ผล</th><th>หมายเหตุ</th></tr></thead><tbody>` +
+    slice.map(r => `<tr><td class="whitespace-nowrap">${ymLabel(r.PY,r.PM)}</td><td>${r.Year}</td><td class="whitespace-nowrap">${esc(r.Company)}</td><td>${esc(r.Dept)}</td>
+      <td class="text-xs whitespace-nowrap" style="color:var(--muted)">${esc(r.KPI_Code)}</td><td style="min-width:260px">${esc(r.Topic)}</td><td>${dirBadge(r.Direction)}</td>
+      <td class="num">${fmtNum(r.Target, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtNum(r.Actual, isRatioRow(r.Target,r.Actual))}</td><td class="num">${fmtPct(r.Achieved)}</td><td>${resultBadge(r.Result, r)}</td><td class="text-xs">${esc(r.Note)}</td></tr>`).join('') + `</tbody>`;
+  $('#pager').innerHTML = `<button class="sel" ${state.page<=1?'disabled':''} data-p="${state.page-1}">‹ ก่อนหน้า</button><span>หน้า ${state.page} / ${pages}</span><button class="sel" ${state.page>=pages?'disabled':''} data-p="${state.page+1}">ถัดไป ›</button>`;
+  $('#pager').querySelectorAll('button[data-p]').forEach(b => b.onclick = () => { state.page = Number(b.dataset.p); renderTable(); });
+}
+
+function exportExcel() {
+  const rows = applyFilters(state.data, { all:true }).map(r => ({ 'งวด (ปี-เดือน)':`${r.PY}-${String(r.PM).padStart(2,'0')}`, 'ปี KPI (Y-MOU)':r.Year, 'เดือน':MONTHS[r.Month-1], 'บริษัท':r.Company, 'แผนก':r.Dept, 'รหัส KPI':r.KPI_Code,
+    'TOPIC':r.Topic, 'ทิศทาง':r.Direction==='LOWER'?'ยิ่งน้อยยิ่งดี':'ยิ่งมากยิ่งดี', 'Target':r.Target, 'Actual':r.Actual,
+    '% ทำได้':r.Achieved ?? '', 'ผลเทียบเป้า':(r.Result===R.PENDING ? (r.Due ? 'ค้างส่งผล' : 'ยังไม่ถึงกำหนด') : r.Result), 'สถานะ':r.Status, 'หมายเหตุ':r.Note }));
+  if (!rows.length) return toast('ไม่มีข้อมูลตามตัวกรอง', 'warn');
+  const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'KPI');
+  XLSX.writeFile(wb, `RST_KPI_export_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function onFilterChange() { state.page = 1; renderAll(); }
+
+/* ========================= ENTRY (กรอกผลบนเว็บ) ========================= */
+function fillEntrySelects() {
+  const comps = uniq([...state.master.map(m => normCompany(m.Company)), ...state.data.map(r => r.Company)]).sort();
+  fillSelect($('#eCompany'), comps, '');
+  refreshEntryDept();
+  const nowY = new Date().getFullYear() + 543;
+  const years = uniq([...state.data.map(r => r.Year), nowY, nowY+1]).sort((a,b)=>b-a);
+  fillSelect($('#eYear'), years, '', String);
+  if (![...$('#eYear').options].some(o => o.selected && o.value)) $('#eYear').value = String(nowY);
+  fillSelect($('#eMonth'), [1,2,3,4,5,6,7,8,9,10,11,12], '', m => TH_M[m-1]);
+  if (!$('#eMonth').dataset.init) { $('#eMonth').value = String(new Date().getMonth()+1); $('#eMonth').dataset.init = 1; $('#eYear').value = String(nowY); }
+}
+function refreshEntryDept() {
+  const c = $('#eCompany').value;
+  const depts = uniq([...state.master.filter(m => normCompany(m.Company) === c).map(m => clean(m.Dept)),
+                      ...state.data.filter(r => r.Company === c).map(r => r.Dept)]).sort((a,b)=>a.localeCompare(b,'th'));
+  fillSelect($('#eDept'), depts, '');
+}
+
+function entryCandidates(company, dept, year, month) {
+  const rows = state.data.filter(r => r.Company === company && r.Dept === dept);
+  const inYear = rows.filter(r => r.Year === year);
+  let codes;
+  if (inYear.length) codes = uniq(inYear.map(r => r.KPI_Code));
+  else {                                              // ปีใหม่ที่ยังไม่มีข้อมูล → ใช้หัวข้อของปีล่าสุด
+    const lastY = Math.max(0, ...rows.map(r => r.Year));
+    codes = uniq(rows.filter(r => r.Year === lastY).map(r => r.KPI_Code));
+  }
+  return codes.map(code => {
+    const existing = rows.find(r => r.KPI_Code === code && r.Year === year && r.Month === month);
+    const latest = rows.filter(r => r.KPI_Code === code).sort((a,b)=>(b.Year*100+b.Month)-(a.Year*100+a.Month))[0];
+    const m = state.master.find(x => String(x.KPI_Code) === code);
+    if (m && String(m.Active).toUpperCase() === 'N') return null;
+    return { code, topic: (existing||latest).Topic, method: (existing||latest).Method,
+      direction: existing ? existing.Direction : (m ? (m.Direction === 'LOWER' ? 'LOWER' : 'HIGHER') : (latest?.Direction || 'HIGHER')),
+      target: existing ? existing.Target : (latest ? latest.Target : (m?.DefaultTarget ?? '')),
+      actual: existing ? existing.Actual : '', note: existing ? existing.Note : '', existing: !!existing };
+  }).filter(Boolean);
+}
+
+function renderEntry() {
+  const company = $('#eCompany').value, dept = $('#eDept').value, year = Number($('#eYear').value), month = Number($('#eMonth').value);
+  const wrap = $('#entryWrap');
+  if (!company || !dept) { wrap.innerHTML = `<p class="text-sm" style="color:var(--muted)">กรุณาเลือกบริษัทและแผนก</p>`; return; }
+  const items = entryCandidates(company, dept, year, month);
+  if (!items.length) { wrap.innerHTML = `<p class="text-sm" style="color:var(--muted)">ไม่พบหัวข้อ KPI ของแผนกนี้ — เพิ่มหัวข้อใหม่ได้โดยนำเข้าไฟล์ Excel</p>`; return; }
+  wrap.innerHTML = `
+    <div class="flex flex-wrap items-baseline gap-2 mb-3"><h3 class="font-semibold mr-auto">${esc(dept)} · ${esc(company)} · ${TH_M[month-1]} ${year}</h3>
+      <span class="text-xs" style="color:var(--muted)">ค่าเป็น % ให้พิมพ์ 95% หรือ 0.95 · พิมพ์ N.A. ถ้าไม่มีข้อมูลเดือนนี้</span></div>
+    <div class="overflow-auto"><table class="tbl" id="tblEntry"><thead><tr><th>#</th><th>หัวข้อ</th><th>ทิศ</th><th class="num" style="width:110px">Target</th><th class="num" style="width:110px">Actual</th><th>ผล</th><th style="width:180px">หมายเหตุ</th></tr></thead><tbody>
+    ${items.map((it,i) => `<tr data-i="${i}">
+      <td>${i+1}</td>
+      <td><div>${esc(it.topic)}</div><div class="text-xs" style="color:var(--muted)">${esc(it.code)}${it.method?' · '+esc(it.method):''}</div></td>
+      <td>${dirBadge(it.direction)}</td>
+      <td><input class="inp num" data-f="target" value="${esc(it.target)}"></td>
+      <td><input class="inp num" data-f="actual" value="${esc(it.actual)}" placeholder="—"></td>
+      <td data-res></td>
+      <td><input class="inp" data-f="note" value="${esc(it.note)}"></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="flex items-center justify-end gap-3 mt-3"><span class="text-sm" id="entryMsg" style="color:var(--muted)"></span>
+      <button id="btnEntrySave" class="text-sm px-4 py-2 rounded-lg text-white" style="background:var(--brand)">บันทึกเข้าระบบ</button></div>`;
+  const tb = $('#tblEntry');
+  const refreshRow = tr => {
+    const it = items[tr.dataset.i];
+    const t = parseNumber(tr.querySelector('[data-f=target]').value), a = parseNumber(tr.querySelector('[data-f=actual]').value);
+    const bad = t !== '' && !isNum(t);
+    tr.querySelector('[data-f=target]').style.borderColor = bad ? COLORS.fail : '';
+    tr.querySelector('[data-res]').innerHTML = bad ? `<span class="badge b-err">Target ไม่ใช่ตัวเลข</span>` : resultBadge(evaluateKpi(t, a, it.direction).result);
+  };
+  tb.querySelectorAll('tbody tr').forEach(tr => { refreshRow(tr); tr.querySelectorAll('input').forEach(inp => inp.oninput = () => { inp.dataset.dirty = 1; refreshRow(tr); }); });
+  $('#btnEntrySave').onclick = async () => {
+    const payload = [];
+    let invalid = 0;
+    tb.querySelectorAll('tbody tr').forEach(tr => {
+      if (!tr.querySelector('[data-dirty]')) return;
+      const it = items[tr.dataset.i];
+      const t = parseNumber(tr.querySelector('[data-f=target]').value);
+      if (t !== '' && !isNum(t)) { invalid++; return; }
+      payload.push({ kpiCode: it.code, company, dept, topic: it.topic, year, month, target: t,
+        actual: parseNumber(tr.querySelector('[data-f=actual]').value), note: clean(tr.querySelector('[data-f=note]').value) });
+    });
+    if (invalid) return toast(`มี ${invalid} แถวที่ Target ไม่ใช่ตัวเลข`, 'err');
+    if (!payload.length) return toast('ยังไม่มีการแก้ไข', 'warn');
+    await saveRows(payload, $('#btnEntrySave'), $('#entryMsg'));
+    renderEntry();
+  };
+}
+
+/* ========================= SAVE (ใช้ร่วม Entry + Import) ========================= */
+async function saveRows(rows, btn, msgEl) {
+  if (!apiUrl()) { toast('ยังไม่ได้ตั้งค่า API_URL / API_TOKEN ในไฟล์ index.html', 'err'); return null; }
+  const label = btn.innerHTML; btn.disabled = true;
+  const total = { inserted:0, updated:0, unchanged:0, errors:[], newKpis:[] };
+  try {
+    for (let i = 0; i < rows.length; i += CONFIG.CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + CONFIG.CHUNK_SIZE);
+      btn.innerHTML = `<span class="spinner"></span> กำลังบันทึก ${Math.min(i+chunk.length, rows.length)}/${rows.length}`;
+      const r = await apiPost({ action:'upsert', rows: chunk });
+      total.inserted += r.inserted; total.updated += r.updated; total.unchanged += r.unchanged;
+      total.errors.push(...r.errors.map(e => ({ ...e, index: e.index + i })));
+      total.newKpis.push(...r.newKpis);
+      mergeRows(r.rows.map(normalizeServerRow));          // อัปเดต Dashboard ทันทีโดยไม่ต้องโหลดใหม่ทั้งหมด
+    }
+    const msg = `บันทึกแล้ว: เพิ่ม ${total.inserted} · แก้ไข ${total.updated} · ไม่เปลี่ยน ${total.unchanged}` + (total.errors.length ? ` · ผิดพลาด ${total.errors.length}` : '');
+    if (msgEl) msgEl.textContent = msg;
+    toast(msg, total.errors.length ? 'warn' : 'ok', 6000);
+    if (total.newKpis.length) toast(`สร้างหัวข้อ KPI ใหม่ ${total.newKpis.length} รายการ — ตรวจทิศทางเป้าในชีต KPI_Master`, 'warn', 8000);
+    return total;
+  } catch (e) {
+    toast('บันทึกไม่สำเร็จ: ' + errMsg(e), 'err', 8000);
+    if (msgEl) msgEl.textContent = 'บันทึกไม่สำเร็จ: ' + errMsg(e);
+    return null;
+  } finally { btn.disabled = false; btn.innerHTML = label; }
+}
+
+function mergeRows(newRows) {
+  if (state.source !== 'server') return;
+  const idx = new Map(state.data.map((r,i) => [r.ID, i]));
+  newRows.forEach(r => idx.has(r.ID) ? state.data[idx.get(r.ID)] = r : state.data.push(r));
+  initFilters(); renderAll();
+}
+
+/* ========================= IMPORT EXCEL (SheetJS) ========================= */
+// ชื่อคอลัมน์ที่ยอมรับ (เทียบแบบตัดช่องว่าง/ขึ้นบรรทัด/ตัวพิมพ์)
+const COL_ALIASES = {
+  no:['no','ลำดับ','#'], link:['linkแหล่งข้อมูล','link','แหล่งข้อมูล'], method:['วิธีวัดผล','method','วิธีการวัด'],
+  topic:['topic','หัวข้อ','หัวข้อkpi','kpi'], company:['บริษัท','company'], dept:['แผนก','dept','department','ฝ่าย'],
+  month:['เดือน','month'], year:['y-mou','ymou','ปี','year','ปีพ.ศ.'], target:['target','เป้า','เป้าหมาย'],
+  actual:['actualmtd','actual','ผลจริง','ผลที่ทำได้'], achieved:['%achieved','achieved'], status:['สถานะ','status'],
+  result:['ผลเทียบเป้า','result'], note:['หมายเหตุ','note','remark'], direction:['direction','ทิศทาง'], kpiCode:['kpi_code','kpicode','รหัสkpi'],
+};
+const hNorm = v => String(v ?? '').toLowerCase().replace(/[\s\n\r]+/g,'');
+
+function detectHeader(aoa) {
+  for (let r = 0; r < Math.min(aoa.length, 30); r++) {
+    const cells = aoa[r].map(hNorm), map = {};
+    for (const [key, aliases] of Object.entries(COL_ALIASES)) {
+      let c = cells.findIndex(h => aliases.includes(h));
+      if (c < 0 && !['no','status','achieved','direction','kpiCode','link'].includes(key)) c = cells.findIndex(h => h && aliases.some(a => a.length > 3 && h.startsWith(a)));
+      if (c >= 0 && !Object.values(map).includes(c)) map[key] = c;
+    }
+    if (map.topic !== undefined && map.target !== undefined && (map.company !== undefined || map.dept !== undefined)) return { row: r, map };
+  }
+  return null;
+}
+
+function directionFromFormula(ws, r, map) {
+  if (map.result === undefined || map.actual === undefined || map.target === undefined) return '';
+  const cell = ws[XLSX.utils.encode_cell({ r, c: map.result })];
+  if (!cell || !cell.f) return '';
+  const f = cell.f.replace(/\$/g,'').replace(/\s/g,'');
+  const A = XLSX.utils.encode_col(map.actual), T = XLSX.utils.encode_col(map.target);
+  if (new RegExp(`${A}\\d+>${T}\\d+`).test(f) || new RegExp(`${T}\\d+<${A}\\d+`).test(f)) return 'LOWER';
+  if (new RegExp(`${A}\\d+<${T}\\d+`).test(f) || new RegExp(`${T}\\d+>${A}\\d+`).test(f)) return 'HIGHER';
+  return '';
+}
+
+function parseSheet(wb, name) {
+  const ws = wb.Sheets[name];
+  if (!ws || !ws['!ref']) return null;
+  const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:'', blankrows:true });
+  const hdr = detectHeader(aoa);
+  if (!hdr) return null;
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  const { map } = hdr, lk = buildLookupMaps();
+  const out = [], stats = { empty:0, headerRepeat:0, filled:0 };
+  let prev = {};
+  for (let r = hdr.row + 1; r < aoa.length; r++) {
+    const row = aoa[r], g = k => map[k] === undefined ? '' : row[map[k]];
+    if (!row.some(v => clean(v) !== '')) { stats.empty++; continue; }                 // แถวว่างทั้งแถว
+    const topic = clean(g('topic'));
+    if (!topic) { stats.empty++; continue; }                                         // ไม่มีหัวข้อ = แถวตกแต่ง/สรุป
+    if (COL_ALIASES.topic.includes(hNorm(topic))) { stats.headerRepeat++; continue; } // หัวตารางซ้ำกลางชีต
+    const rec = { _row: r + 1 + range.s.r, errors: [], warnings: [] };
+    // เติมค่าจากแถวบน (กรณีเซลล์ merge หรือกรอกเฉพาะแถวแรก)
+    for (const k of ['company','dept','month','year']) {
+      let v = g(k);
+      if (clean(v) === '' && prev[k] !== undefined) { v = prev[k]; rec.warnings.push(`เติม${{company:'บริษัท',dept:'แผนก',month:'เดือน',year:'ปี'}[k]}จากแถวบน`); stats.filled++; }
+      rec['raw_'+k] = v;
+    }
+    prev = { company: rec.raw_company, dept: rec.raw_dept, month: rec.raw_month, year: rec.raw_year };
+    const compN = normCompany(rec.raw_company), deptN = clean(rec.raw_dept);
+    rec.company = lk.company[normKey(compN)] || compN;
+    rec.dept = lk.dept[normKey(deptN)] || deptN;
+    if (state.lookup.length && rec.raw_dept && !lk.dept[normKey(deptN)]) rec.warnings.push('แผนกใหม่ (ไม่อยู่ใน Lookup)');
+    rec.topic = topic; rec.method = clean(g('method')); rec.link = clean(g('link')); rec.note = clean(g('note'));
+    rec.srcNo = g('no'); rec.kpiCode = clean(g('kpiCode'));
+    rec.month = parseMonth(rec.raw_month); rec.year = parseYear(rec.raw_year);
+    rec.target = parseNumber(g('target')); rec.actual = parseNumber(g('actual'));
+    rec.direction = clean(g('direction')).toUpperCase() || directionFromFormula(ws, r + range.s.r, map);
+    if (!rec.company) rec.errors.push('ไม่มีบริษัท');
+    if (!rec.dept) rec.errors.push('ไม่มีแผนก');
+    if (!rec.month) rec.errors.push(`เดือนไม่ถูกต้อง "${rec.raw_month}"`);
+    if (!rec.year) rec.errors.push(`ปีไม่ถูกต้อง "${rec.raw_year}"`);
+    if (rec.target !== '' && !isNum(rec.target)) rec.errors.push(`Target ไม่ใช่ตัวเลข "${rec.target}"`);
+    if (rec.target === '') rec.warnings.push('ไม่มี Target');
+    if (rec.actual !== '' && !isNum(rec.actual)) rec.warnings.push(`Actual เป็นข้อความ "${rec.actual}"`);
+    out.push(rec);
+  }
+  // ตรวจซ้ำในไฟล์ (บริษัท+แผนก+หัวข้อ+ปี+เดือน)
+  const seen = new Map();
+  out.forEach(r => { if (r.errors.length) return; const k = [r.company, r.dept, r.topic.toLowerCase(), r.year, r.month].join('|');
+    if (seen.has(k)) r.errors.push(`ซ้ำกับแถว ${seen.get(k)}`); else seen.set(k, r._row); });
+  // ทิศทางเป้า: ใช้ KPI_Master ก่อน ถ้าไม่มี ใช้เสียงข้างมากของสูตรในปีเดียวกัน (กันสูตรที่ copy ผิดบางเดือน)
+  const mDir = new Map(state.master.map(m => [[normCompany(m.Company), clean(m.Dept), clean(m.Topic).toLowerCase()].join('|'), m.Direction]));
+  const votes = new Map();
+  out.forEach(r => { if (!r.direction) return; const k = [r.company, r.dept, r.topic.toLowerCase(), r.year].join('|');
+    const v = votes.get(k) || { HIGHER:0, LOWER:0 }; v[r.direction]++; votes.set(k, v); });
+  let dirFixed = 0;
+  out.forEach(r => {
+    const mk = [r.company, r.dept, r.topic.toLowerCase()].join('|');
+    if (mDir.has(mk)) { r.effDirection = mDir.get(mk) === 'LOWER' ? 'LOWER' : 'HIGHER'; r.inMaster = true; return; }
+    const v = votes.get(mk + '|' + r.year);
+    const maj = v ? (v.LOWER > v.HIGHER ? 'LOWER' : 'HIGHER') : '';
+    if (r.direction && maj && r.direction !== maj) { r.warnings.push(`สูตร Excel เป็น ${r.direction} แต่เดือนอื่นเป็น ${maj} → ใช้ ${maj}`); dirFixed++; }
+    r.effDirection = maj || r.direction || 'HIGHER';
+    if (v && v.LOWER && v.HIGHER) r.needReview = true;                // หัวข้อนี้มีสูตรทั้งสองทิศในปีเดียวกัน
+    if (!r.direction && !maj) r.warnings.push('ไม่ทราบทิศทางเป้า ใช้ "ยิ่งมากยิ่งดี"');
+    r.direction = r.effDirection;
+  });
+  out.forEach(r => Object.assign(r, evaluateKpi(r.target, r.actual, r.effDirection)));
+  return { name, rows: out, stats: { ...stats, dirFixed }, headerRow: hdr.row + 1, map };
+}
+
+async function handleFile(file) {
+  const box = $('#importResult');
+  if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) return toast('รองรับเฉพาะไฟล์ .xlsx / .xlsm / .xls', 'err');
+  if (file.size > 30 * 1024 * 1024) return toast('ไฟล์ใหญ่เกิน 30 MB', 'err');
+  box.innerHTML = `<div class="card p-4 text-sm">กำลังอ่านไฟล์ ${esc(file.name)}…</div>`;
+  await new Promise(r => setTimeout(r, 30));
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:'array', cellFormula:true, cellDates:true, cellNF:false, cellStyles:false });
+    const parsed = wb.SheetNames.map(n => { try { return parseSheet(wb, n); } catch (e) { console.warn(n, e); return null; } }).filter(p => p && p.rows.length);
+    if (!parsed.length) { box.innerHTML = `<div class="card p-4 text-sm" style="color:#a32020">ไม่พบชีตที่มีหัวคอลัมน์ TOPIC / Target / บริษัท หรือ แผนก</div>`; return; }
+    // ชีตหลักมาก่อน (กรอกช่องนี้ / KPI_Data) แล้วตามจำนวนแถว
+    parsed.sort((a,b) => (/กรอกช่องนี้|kpi_data/i.test(b.name) - /กรอกช่องนี้|kpi_data/i.test(a.name)) || b.rows.length - a.rows.length);
+    state.importParsed = { file: file.name, sheets: parsed, active: 0 };
+    renderImport();
+  } catch (e) {
+    console.error(e);
+    box.innerHTML = `<div class="card p-4 text-sm" style="color:#a32020">อ่านไฟล์ไม่สำเร็จ: ${esc(e.message)} (ไฟล์มีรหัสผ่านหรือเสียหายหรือไม่?)</div>`;
+  }
+}
+
+function renderImport() {
+  const P = state.importParsed, sh = P.sheets[P.active];
+  const ok = sh.rows.filter(r => !r.errors.length), bad = sh.rows.filter(r => r.errors.length), warn = ok.filter(r => r.warnings.length);
+  const sum = summarize(ok.map(r => ({ Result: r.result })));
+  const showOnly = $('#impFilter')?.value || 'all';
+  const view = sh.rows.filter(r => showOnly === 'all' || (showOnly === 'err' ? r.errors.length : showOnly === 'warn' ? (!r.errors.length && r.warnings.length) : false));
+  const colNames = Object.entries(sh.map).map(([k,c]) => `${k}→${XLSX.utils.encode_col(c)}`).join(' · ');
+  $('#importResult').innerHTML = `
+  <div class="card p-4 mb-4">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <div class="mr-auto"><div class="font-semibold">${esc(P.file)}</div><div class="text-xs" style="color:var(--muted)">หัวตารางอยู่แถว ${sh.headerRow} · คอลัมน์ที่จับได้: ${esc(colNames)}</div></div>
+      <label class="text-sm">ชีต <select id="impSheet" class="sel">${P.sheets.map((s,i)=>`<option value="${i}" ${i===P.active?'selected':''}>${esc(s.name)} (${s.rows.length})</option>`).join('')}</select></label>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm mb-3">
+      <div class="card p-2"><div class="text-xs" style="color:var(--muted)">แถวข้อมูล</div><div class="font-semibold">${sh.rows.length}</div></div>
+      <div class="card p-2"><div class="text-xs" style="color:var(--muted)">พร้อมบันทึก</div><div class="font-semibold" style="color:#006300">${ok.length}</div></div>
+      <div class="card p-2"><div class="text-xs" style="color:var(--muted)">ผิดพลาด (ไม่ส่ง)</div><div class="font-semibold" style="color:#a32020">${bad.length}</div></div>
+      <div class="card p-2"><div class="text-xs" style="color:var(--muted)">มีคำเตือน</div><div class="font-semibold" style="color:#7a5200">${warn.length}</div></div>
+      <div class="card p-2"><div class="text-xs" style="color:var(--muted)">ข้ามแถวว่าง/หัวซ้ำ</div><div class="font-semibold">${sh.stats.empty + sh.stats.headerRepeat}</div></div>
+      <div class="card p-2"><div class="text-xs" style="color:var(--muted)">ผ่าน / ไม่ผ่าน / ยังไม่</div><div class="font-semibold">${sum.pass} / ${sum.fail} / ${sum.pending}</div></div>
+    </div>
+    ${sh.stats.dirFixed ? `<div class="text-sm mb-3 p-2 rounded" style="background:#fff4dc">⚠ พบสูตรผลเทียบเป้าใน Excel ที่ทิศทางไม่ตรงกับเดือนอื่นของหัวข้อเดียวกัน ${sh.stats.dirFixed} แถว — ระบบใช้ทิศทางเสียงข้างมากแทน</div>` : ''}
+    <div class="flex flex-wrap gap-2 items-center">
+      <label class="text-sm mr-auto">แสดง <select id="impFilter" class="sel"><option value="all">ทั้งหมด</option><option value="err">เฉพาะผิดพลาด</option><option value="warn">เฉพาะคำเตือน</option></select></label>
+      <button id="btnPreview" class="sel text-sm hover:bg-gray-50">ดูบน Dashboard (ไม่บันทึก)</button>
+      <button id="btnUpload" class="text-sm px-4 py-2 rounded-lg text-white" style="background:var(--brand)" ${ok.length?'':'disabled'}>บันทึกเข้าระบบ (${ok.length} รายการ)</button>
+    </div>
+    <div id="impMsg" class="text-sm mt-2" style="color:var(--muted)"></div>
+  </div>
+  <div class="card p-4"><div class="overflow-auto" style="max-height:520px"><table class="tbl">
+    <thead><tr><th>แถว</th><th>ตรวจสอบ</th><th>บริษัท</th><th>แผนก</th><th>เดือน</th><th>หัวข้อ</th><th>ทิศ</th><th class="num">Target</th><th class="num">Actual</th><th>ผล</th></tr></thead><tbody>
+    ${view.slice(0,300).map(r => `<tr><td>${r._row}</td>
+      <td>${r.errors.map(e=>`<div class="badge b-err mb-0.5">${esc(e)}</div>`).join('')}${r.warnings.map(w=>`<div class="badge b-warn mb-0.5">${esc(w)}</div>`).join('')}${!r.errors.length&&!r.warnings.length?'<span class="badge b-ok">OK</span>':''}</td>
+      <td class="whitespace-nowrap">${esc(r.company)}</td><td>${esc(r.dept)}</td><td class="whitespace-nowrap">${r.month&&r.year?ymLabel(r.year,r.month):esc(r.raw_month)}</td>
+      <td style="min-width:240px">${esc(r.topic)}</td><td>${dirBadge(r.effDirection)}</td>
+      <td class="num">${fmtNum(r.target, isRatioRow(r.target,r.actual))}</td><td class="num">${fmtNum(r.actual, isRatioRow(r.target,r.actual))}</td><td>${resultBadge(r.result)}</td></tr>`).join('')}
+    ${view.length>300?`<tr><td colspan="10" class="text-center text-xs py-3" style="color:var(--muted)">แสดง 300 จาก ${view.length} แถว</td></tr>`:''}
+    </tbody></table></div></div>`;
+  $('#impFilter').value = showOnly;
+  $('#impSheet').onchange = e => { P.active = Number(e.target.value); renderImport(); };
+  $('#impFilter').onchange = () => renderImport();
+  $('#btnPreview').onclick = () => previewLocal(ok);
+  $('#btnUpload').onclick = async () => {
+    const payload = ok.map(r => ({ company:r.company, dept:r.dept, topic:r.topic, method:r.method, link:r.link, note:r.note, srcNo:r.srcNo,
+      year:r.year, month:r.month, target:r.target, actual:r.actual, direction:r.effDirection, ...(r.needReview?{needReview:true}:{}), ...(r.kpiCode?{kpiCode:r.kpiCode}:{}) }));
+    if (!confirmUpload(payload.length)) return;
+    const res = await saveRows(payload, $('#btnUpload'), $('#impMsg'));
+    if (res && res.errors.length) {
+      $('#impMsg').innerHTML += `<div class="mt-2">${res.errors.slice(0,20).map(e => `<div class="badge b-err mb-1">แถว ${ok[e.index]?._row ?? '?'}: ${esc(e.msg)}</div>`).join(' ')}</div>`;
+    }
+    if (res && state.source !== 'server') await loadFromServer();
+  };
+}
+function confirmUpload(n) {
+  // ใช้ปุ่มกดสองครั้งแทน confirm() เพื่อไม่ให้หน้าค้าง
+  const b = $('#btnUpload');
+  if (b.dataset.armed) { delete b.dataset.armed; return true; }
+  b.dataset.armed = 1; b.textContent = `กดอีกครั้งเพื่อยืนยันบันทึก ${n} รายการ`;
+  setTimeout(() => { if (b.dataset.armed) { delete b.dataset.armed; b.textContent = `บันทึกเข้าระบบ (${n} รายการ)`; } }, 5000);
+  return false;
+}
+
+function previewLocal(rows) {
+  const toRow = r => ({ ID:[r.company,r.dept,r.topic,r.year,r.month].join('|'), KPI_Code:r.kpiCode||'', Company:r.company, Dept:r.dept, Year:r.year, Month:r.month,
+    Topic:r.topic, Method:r.method, Link:r.link, Direction:r.effDirection, Target:r.target, Actual:r.actual, Achieved:r.achieved,
+    Result:r.result, Status:r.status, Note:r.note });
+  const toRowP = r => withPeriod(toRow(r));
+  if (state.source === 'server') {
+    // ผสมกับข้อมูลจริง: แทนที่แถวที่ตรงกัน (บริษัท+แผนก+หัวข้อ+ปี+เดือน)
+    const key = r => [r.Company, r.Dept, r.Topic.toLowerCase(), r.Year, r.Month].join('|');
+    const map = new Map(state.data.map(r => [key(r), r]));
+    rows.map(toRowP).forEach(r => map.set(key(r), { ...(map.get(key(r))||{}), ...r }));
+    state.data = [...map.values()];
+  } else state.data = rows.map(toRowP);
+  state.source = 'local';
+  setConn('wait', `ตัวอย่างจากไฟล์ · ${state.data.length.toLocaleString()} รายการ (ยังไม่บันทึก)`);
+  renderBanner(); initFilters(); renderAll(); switchTab('dash');
+}
+
+/* ========================= TABS & EVENTS ========================= */
+function switchTab(t) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+  ['dash','entry','import','table'].forEach(x => $('#tab-'+x).classList.toggle('hidden-tab', x !== t));
+  $('#filterBar').style.display = (t === 'dash' || t === 'table') ? '' : 'none';
+  if (t === 'dash') Object.values(state.charts).forEach(c => c.resize());
+}
+
+document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+$('#fCompany').onchange = () => { readFilters(); refreshDeptFilter(); onFilterChange(); };
+['#fDept','#fYear','#fMonth','#fResult'].forEach(s => $(s).onchange = onFilterChange);
+let searchTimer; $('#fSearch').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(onFilterChange, 250); };
+$('#btnResetFilter').onclick = () => { ['#fCompany','#fDept','#fYear','#fMonth','#fResult'].forEach(s => $(s).value = ALL); $('#fSearch').value=''; readFilters(); refreshDeptFilter(); onFilterChange(); };
+$('#btnExport').onclick = exportExcel;
+$('#btnReload').onclick = loadFromServer;
+$('#eUser').value = store.get('user');
+$('#eUser').onchange = () => store.set('user', clean($('#eUser').value));
+$('#eCompany').onchange = refreshEntryDept;
+$('#btnEntryLoad').onclick = renderEntry;
+$('#fileInput').onchange = e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ''; };
+const drop = $('#drop');
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+
+/* ========================= START ========================= */
+if (CONFIG.SHEET_URL) $('#lnkSheet').href = CONFIG.SHEET_URL; else $('#lnkSheet').remove();
+if (CONFIG.API_URL.trim() && !API_CONFIGURED) toast('API_URL ไม่ถูกรูปแบบ ต้องขึ้นต้น https://script.google.com/macros/s/ และลงท้าย /exec', 'err', 10000);
+initFilters(); renderAll(); renderBanner(); loadFromServer();
+</script>
+</body>
+</html>
