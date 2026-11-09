@@ -2,7 +2,16 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r16-2026-11-05-security-multiphoto-expense
+ * CODE_VERSION: r21-2026-11-08-kpi-send-only
+ *
+ *  - r22: [แก้บั๊ก] เพิ่มฟังก์ชัน normalizeYm_ ที่หายไป (ทำให้โหลด/ส่ง KPI ไม่ได้: "normalizeYm_ is not defined")
+ *         • kpiSaveBatch_: แถวซ้ำในคำขอเดียวกันจะอัปเดตแถวเดิม ไม่เพิ่มแถวซ้ำ
+ *  - r21: [KPI] หน้า KPI ซ่อมบำรุง เหลือเฉพาะฟอร์มส่งค่าเข้า Rst-Kpi-Mtd (ตัดรายงาน/บอร์ดออก)
+ *  - r20: [KPI] ฟอร์ม KPI รายเดือนแบบ Hiring_Pipeline: โหลดฟอร์ม (kpiForm) + ส่งทีละข้อ/ส่งที่แก้ไข/ส่งทั้งหมด (kpiSave) → เขียน KPI_Data ของ Rst-Kpi-Mtd
+ *  - r19: [KPI รายเดือน] หน้า KPI ซ่อมบำรุง บันทึก Target/Actual รายเดือน แล้วส่งเข้าฐานข้อมูล Rst-Kpi-Mtd (KPI_Data) อัตโนมัติ
+ *  - r18: [API] GET ?api=kpi&key=... ดึง KPI แผนกซ่อมบำรุง (RST-ASIA) จากฐานข้อมูล KPI • [หน้าเว็บ] เมนู KPI (kpiReport) สำหรับ manager/admin
+ *  - r17: [API] เพิ่ม JSON API ดึงข้อมูลงานซ่อมทั้งหมดของแผนกซ่อมบำรุง (Maintenance) ด้วย API Key
+ *         GET <WebAppURL>?api=tickets&key=KEY  (ดูรายละเอียดในส่วน r17 ท้ายไฟล์)
  *
  * ฟีเจอร์:
  *  - r16: [ความปลอดภัย] ปิดบัญชี (soft delete) แทนการลบแถวจริง • ลบรูประบุตัวตนอัตโนมัติหลังปิดบัญชี 30 วัน
@@ -41,7 +50,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r16-2026-11-05-security-multiphoto-expense';
+const CODE_VERSION = 'r22-2026-11-08-kpi-bugfix';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -156,7 +165,9 @@ const ROUTES = {
   deactivateUser:  { roles: ADMIN, fn: deactivateUser_, write: true }, // r16: ปิดบัญชี (แทนการลบ)
   reactivateUser:  { roles: ADMIN, fn: reactivateUser_, write: true }, // r16: เปิดใช้งานบัญชีอีกครั้ง
   listUserLogs:    { roles: ADMIN, fn: listUserLogs_ },                // r16
-  expenseReport:   { roles: ADMIN, fn: expenseReport_ }                // r16: รายงานค่าใช้จ่าย
+  expenseReport:   { roles: ADMIN, fn: expenseReport_ },               // r16: รายงานค่าใช้จ่าย
+  kpiForm:         { roles: ['technician', 'manager', 'admin'], fn: (u, r) => kpiForm_(normalizeYm_(r.month), !!r.all) }, // r20
+  kpiSave:         { roles: ['technician', 'manager', 'admin'], fn: (u, r) => kpiSaveBatch_(u, r), write: true }        // r20
 };
 
 function doPost(e) {
@@ -191,8 +202,12 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  if (e && e.parameter && e.parameter.action === 'checkStatus') {
-    return ok_(checkStatus_());
+  resetMemo_();
+  const p = (e && e.parameter) || {};
+  if (p.action === 'checkStatus') return ok_(checkStatus_());
+  if (p.api === 'tickets' || p.api === 'kpi') {  // r17/r18: JSON API (ต้องมี key)
+    try { return p.api === 'kpi' ? apiKpi_(p) : apiTickets_(p); }
+    catch (error) { return err_(error && error.message ? error.message : String(error)); }
   }
   return ContentService.createTextOutput('RST FixPoint API Online — ' + CODE_VERSION);
 }
@@ -1768,4 +1783,375 @@ function migrateOldRepairData() {
     n++;
   });
   Logger.log('ย้ายข้อมูลแล้ว ' + n + ' รายการ');
+}
+
+// ---------------------------------------------------------------------------
+// r17: JSON API ดึงข้อมูลงานซ่อม (แผนกซ่อมบำรุง) — ปลอดภัยด้วย API Key แบบ hash + จำกัดการเดา + บันทึกการเรียก
+//   GET <WebAppURL>?api=tickets&key=YOUR_KEY
+//     &company=Asia                 (ไม่บังคับ — กรองตามสาขา/บริษัท ที่บันทึกในฟิลด์ Branch)
+//     &department=ช่างซ่อมบำรุง     (ไม่บังคับ — ค่าที่รับ: Maintenance | ฝ่ายซ่อมบำรุง | ช่างซ่อมบำรุง ; ค่าเริ่มต้น = ทั้งสามแบบ)
+//     &status=Completed             (ไม่บังคับ — สถานะตาม ALL_STATUS)
+//     &dateFrom=2026-01-01&dateTo=2026-12-31   (ไม่บังคับ — กรองตามวันที่แจ้ง รูปแบบ YYYY-MM-DD)
+//     &limit=1000                   (ไม่บังคับ — สูงสุด 5000)
+//   ตั้งค่า: รัน setApiKey 1 ครั้ง → คัดลอก Key จาก Execution log (Key จะไม่ถูกเก็บเป็นข้อความธรรมดา)
+//   ยกเลิกการเข้าถึง: รัน revokeApiKey  • หมุนเปลี่ยน Key: รัน setApiKey ใหม่ (Key เดิมใช้ไม่ได้ทันที)
+// ---------------------------------------------------------------------------
+
+const API_DEPARTMENTS = ['Maintenance', 'ฝ่ายซ่อมบำรุง', 'ช่างซ่อมบำรุง']; // ค่า Department ที่ถือเป็นแผนกซ่อมบำรุง
+const API_MAX_LIMIT = 5000;
+const API_MAX_FAILS = 10;          // ใส่ key ผิดเกินนี้ภายในช่วงเวลาที่กำหนด → ระงับชั่วคราว
+const API_FAIL_WINDOW_SEC = 600;   // ช่วงเวลานับความผิดพลาด (10 นาที)
+const API_PROP_HASH = 'API_KEY_HASH';
+
+// r18: ฐานข้อมูล KPI (Rst-Kpi-Mtd-db) — ชีต KPI_Data
+const KPI_SPREADSHEET_ID = '1UF_HlJKmgR81OMqwvgU0l0iQtRyOndRck7wy_KjejTE';
+const KPI_DATA_SHEET = 'KPI_Data';
+const KPI_DEFAULT_COMPANY = 'RST-ASIA';   // บริษัท Asia
+const KPI_DEFAULT_DEPT = 'ซ่อมบำรุง';      // แผนกซ่อมบำรุง (ค่า Dept ในชีต KPI_Data)
+
+function sha256Hex_(text) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text), Utilities.Charset.UTF_8)
+    .map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
+}
+
+/** เปรียบเทียบสตริงแบบไม่ขึ้นกับตำแหน่งที่ต่าง (กัน timing attack) */
+function safeEqual_(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** ▶️ สร้าง API Key ใหม่ — เก็บเฉพาะค่า hash (SHA-256) ใน Script Properties; Key จริงแสดงใน log ครั้งเดียว */
+function setApiKey() {
+  const key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty(API_PROP_HASH, sha256Hex_(key));
+  addUserLog_('ระบบ', 'ตั้งค่า API Key', 'API', 'สร้าง/หมุน API Key ใหม่');
+  Logger.log('✅ API_KEY ใหม่ = ' + key + '  (คัดลอกเก็บไว้ทันที ระบบจะไม่แสดงซ้ำ)');
+  return 'สร้าง API Key แล้ว — ดูค่าใน Execution log';
+}
+
+/** ▶️ ยกเลิกการเข้าถึง API ทั้งหมดทันที */
+function revokeApiKey() {
+  PropertiesService.getScriptProperties().deleteProperty(API_PROP_HASH);
+  addUserLog_('ระบบ', 'ยกเลิก API Key', 'API', 'ปิดการเข้าถึง API');
+  Logger.log('✅ ยกเลิก API Key แล้ว');
+}
+
+function apiFailCount_() {
+  return Number(CacheService.getScriptCache().get('api_fail') || 0);
+}
+function apiRegisterFail_() {
+  CacheService.getScriptCache().put('api_fail', String(apiFailCount_() + 1), API_FAIL_WINDOW_SEC);
+}
+
+/** ตรวจ API Key (hash + จำกัดการเดา) — คืน null ถ้าผ่าน, คืน error response ถ้าไม่ผ่าน */
+function apiAuth_(p) {
+  if (apiFailCount_() >= API_MAX_FAILS) return err_('มีการใส่ API Key ผิดหลายครั้ง ระงับชั่วคราว กรุณารอ 10 นาที', 'LOCKED');
+  const stored = PropertiesService.getScriptProperties().getProperty(API_PROP_HASH);
+  if (!stored) return err_('ยังไม่ได้เปิดใช้งาน API — ให้ผู้ดูแลรัน setApiKey() ก่อน', 'DISABLED');
+  if (!safeEqual_(sha256Hex_(String(p.key || '')), stored)) {
+    apiRegisterFail_();
+    return err_('API Key ไม่ถูกต้อง', 'UNAUTHORIZED');
+  }
+  return null;
+}
+
+/** ดึงรายการแจ้งซ่อมของแผนกซ่อมบำรุง (ต้องมี key ที่ถูกต้อง) */
+function apiTickets_(p) {
+  const bad = apiAuth_(p);
+  if (bad) return bad;
+
+  // ---- ตรวจค่าพารามิเตอร์ (รับเฉพาะค่าที่กำหนด) ----
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if ((p.dateFrom && !dateRe.test(p.dateFrom)) || (p.dateTo && !dateRe.test(p.dateTo))) {
+    return err_('รูปแบบวันที่ต้องเป็น YYYY-MM-DD', 'BAD_REQUEST');
+  }
+  if (p.status && ALL_STATUS.indexOf(String(p.status)) === -1) return err_('สถานะไม่ถูกต้อง', 'BAD_REQUEST');
+  if (p.department && API_DEPARTMENTS.indexOf(String(p.department)) === -1) {
+    return err_('แผนกไม่ถูกต้อง (ใช้ได้: ' + API_DEPARTMENTS.join(', ') + ')', 'BAD_REQUEST');
+  }
+  const from = p.dateFrom ? new Date(p.dateFrom + 'T00:00:00+07:00') : null;
+  const to = p.dateTo ? new Date(p.dateTo + 'T23:59:59+07:00') : null;
+  const limit = Math.min(Math.max(Number(p.limit) || API_MAX_LIMIT, 1), API_MAX_LIMIT);
+  const depts = p.department ? [String(p.department)] : API_DEPARTMENTS;
+  const deptSet = depts.map(norm_);
+
+  // ---- กรองข้อมูล ----
+  let list = readAll_(SHEETS.TICKETS).filter(t => deptSet.indexOf(norm_(t.Department)) > -1);
+  if (p.company) list = list.filter(t => norm_(t.Branch) === norm_(p.company));
+  if (p.status) list = list.filter(t => String(t.Status) === String(p.status));
+  if (from) list = list.filter(t => { const d = toDate_(t.CreatedAt); return d && d >= from; });
+  if (to) list = list.filter(t => { const d = toDate_(t.CreatedAt); return d && d <= to; });
+  list.sort((a, b) => (toDate_(b.CreatedAt) || 0) - (toDate_(a.CreatedAt) || 0));
+
+  // ---- บันทึกการเรียกใช้ (ไม่บันทึก key) ----
+  addUserLog_('API', 'เรียกดูข้อมูลผ่าน API', 'tickets',
+    'company=' + (p.company || '-') + ' | department=' + (p.department || 'ทั้งหมด') + ' | จำนวน ' + list.length + ' รายการ');
+
+  return ok_({
+    department: p.department || API_DEPARTMENTS.join(' / '),
+    company: p.company || '',
+    count: list.length,
+    returned: Math.min(list.length, limit),
+    generatedAt: new Date().toISOString(),
+    tickets: list.slice(0, limit).map(apiTicket_)
+  });
+}
+
+/** ข้อมูลงานทุกฟิลด์ในชีต Tickets + รายการรูปทั้งหมด (ไม่มีข้อมูลภายใน/รหัสผ่าน) */
+function apiTicket_(t) {
+  const out = clean_(t);
+  delete out.ExtraPhotos;
+  out.photos = photosOf_(t);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// r18: JSON API — ดึงข้อมูล KPI ของแผนกซ่อมบำรุง (บริษัท RST-ASIA) จากฐานข้อมูล KPI
+//   GET <WebAppURL>?api=kpi&key=YOUR_KEY
+//     &company=RST-ASIA      (ค่าเริ่มต้น)
+//     &department=ซ่อมบำรุง  (ค่าเริ่มต้น)
+//     &year=2568             (ไม่บังคับ — ปี พ.ศ. ตามที่บันทึกในชีต)
+//     &kpi_code=ASIA-MTN-04  (ไม่บังคับ)
+//   ผลลัพธ์: รายการ KPI รายเดือนทุกฟิลด์จากชีต KPI_Data (Target, Actual, Achieved, Result, Status, Note ฯลฯ)
+// ---------------------------------------------------------------------------
+
+function readKpiRows_() {
+  const sh = SpreadsheetApp.openById(KPI_SPREADSHEET_ID).getSheetByName(KPI_DATA_SHEET);
+  if (!sh) throw new Error('ไม่พบชีต ' + KPI_DATA_SHEET + ' ในฐานข้อมูล KPI');
+  const values = sh.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const h = values[0].map(String);
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    if (r.every(c => c === '' || c === null)) continue;
+    const o = {};
+    h.forEach((k, j) => { if (k) o[k] = r[j] instanceof Date ? r[j].toISOString() : r[j]; });
+    out.push(o);
+  }
+  return out;
+}
+
+/** r18: ดึงแถว KPI ตามตัวกรอง (ใช้ร่วมกันทั้ง API และหน้าเว็บ) */
+function kpiQuery_(f) {
+  f = f || {};
+  if (f.year && !/^\d{4}$/.test(String(f.year))) throw new Error('ปีต้องเป็นตัวเลข 4 หลัก');
+  const company = String(f.company || KPI_DEFAULT_COMPANY).trim();
+  const dept = String(f.department || KPI_DEFAULT_DEPT).trim();
+  let rows = readKpiRows_().filter(r => norm_(r.Company) === norm_(company) && norm_(r.Dept) === norm_(dept));
+  if (f.year) rows = rows.filter(r => String(r.Year) === String(f.year));
+  if (f.kpi_code) rows = rows.filter(r => norm_(r.KPI_Code) === norm_(f.kpi_code));
+  rows.sort((a, b) => String(a.KPI_Code).localeCompare(String(b.KPI_Code)) ||
+    (Number(a.Year) - Number(b.Year)) || (Number(a.Month) - Number(b.Month)));
+  return { company: company, department: dept, rows: rows };
+}
+
+function apiKpi_(p) {
+  const bad = apiAuth_(p);
+  if (bad) return bad;
+  const q = kpiQuery_(p);
+  addUserLog_('API', 'เรียกดูข้อมูล KPI ผ่าน API', 'kpi',
+    'company=' + q.company + ' | department=' + q.department + ' | จำนวน ' + q.rows.length + ' แถว');
+  return ok_({
+    source: 'Rst-Kpi-Mtd-db / KPI_Data',
+    company: q.company,
+    department: q.department,
+    kpiCodes: [...new Set(q.rows.map(r => String(r.KPI_Code)))],
+    count: q.rows.length,
+    generatedAt: new Date().toISOString(),
+    rows: q.rows
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// r19: KPI รายเดือน (แผนกซ่อมบำรุง) — บันทึกค่า แล้วเขียนเข้าฐานข้อมูล Rst-Kpi-Mtd (ชีต KPI_Data) ทันที
+//   รูปแบบแถวเดียวกับที่แอป Rst-Kpi-Mtd ใช้: ID = รหัส_ปี(พ.ศ.)_เดือน, Achieved/Result/Status คำนวณตาม Direction
+// ---------------------------------------------------------------------------
+const KPI_MASTER_SHEET = 'KPI_Master';
+const KPI_LOG_SHEET = 'Log';
+const KPI_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** อ่านชีตในฐานข้อมูล KPI พร้อมเลขแถว (_row) และหัวคอลัมน์ */
+function kpiTableRows_(name) {
+  const sh = SpreadsheetApp.openById(KPI_SPREADSHEET_ID).getSheetByName(name);
+  if (!sh) throw new Error('ไม่พบชีต ' + name + ' ในฐานข้อมูล KPI');
+  const values = sh.getDataRange().getValues();
+  const h = values.length ? values[0].map(String) : [];
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    if (r.every(c => c === '' || c === null)) continue;
+    const o = { _row: i + 1 };
+    h.forEach((k, j) => { if (k) o[k] = r[j] instanceof Date ? r[j].toISOString() : r[j]; });
+    rows.push(o);
+  }
+  return { sheet: sh, headers: h, rows: rows };
+}
+
+/** r20: แปลง FirstYM/LastYM ของ KPI_Master เป็นเลข YYYYMM (พ.ศ.) */
+function kpiYmNum_(v) {
+  if (v === null || v === undefined || v === '') return null;
+  let y, m;
+  if (v instanceof Date) { y = v.getFullYear(); m = v.getMonth() + 1; }
+  else {
+    const g = String(v).match(/(\d{4})\D(\d{1,2})/);
+    if (!g) return null;
+    y = Number(g[1]); m = Number(g[2]);
+  }
+  if (y < 2400) y += 543;
+  return y * 100 + m;
+}
+
+/** r22: แปลงเดือนที่รับมาให้เป็น 'YYYY-MM' (ปี ค.ศ.) — รับ 'YYYY-MM', 'YYYYMM', 'YYYY-M', Date, หรือปี พ.ศ. (เช่น 2569-11)
+ *  ว่าง/ไม่ระบุ → เดือนปัจจุบัน */
+function normalizeYm_(v) {
+  if (v === null || v === undefined || v === '') {
+    return Utilities.formatDate(new Date(), TZ, 'yyyy-MM');
+  }
+  let y, m;
+  if (v instanceof Date) {
+    y = Number(Utilities.formatDate(v, TZ, 'yyyy'));
+    m = Number(Utilities.formatDate(v, TZ, 'M'));
+  } else {
+    const s = String(v).trim();
+    const g = s.match(/^(\d{4})\D?(\d{1,2})$/);
+    if (!g) throw new Error('รูปแบบเดือนไม่ถูกต้อง (ต้องเป็น YYYY-MM): ' + s);
+    y = Number(g[1]);
+    m = Number(g[2]);
+  }
+  if (y >= 2400) y -= 543;
+  if (!(m >= 1 && m <= 12) || y < 2000 || y > 2100) throw new Error('เดือนไม่ถูกต้อง: ' + v);
+  return y + '-' + ('0' + m).slice(-2);
+}
+
+/** r20: KPI ของแผนกซ่อมบำรุง (Company/Dept ตรง + Active) */
+function kpiMasterRows_() {
+  return kpiTableRows_(KPI_MASTER_SHEET).rows.filter(r =>
+    norm_(r.Company) === norm_(KPI_DEFAULT_COMPANY) && norm_(r.Dept) === norm_(KPI_DEFAULT_DEPT) && isActive_(r.Active));
+}
+
+/** r20: ฟอร์ม KPI ของเดือน — แสดงข้อที่มีแถวในเดือนนั้นหรืออยู่ในช่วง FirstYM–LastYM (all=true → ครบทุกข้อ) */
+function kpiForm_(ym, showAll) {
+  const year = Number(ym.slice(0, 4)) + 543;
+  const month = Number(ym.slice(5, 7));
+  const cur = year * 100 + month;
+  const master = kpiMasterRows_();
+  const data = kpiTableRows_(KPI_DATA_SHEET).rows;
+  const rows = [];
+  master.forEach(m => {
+    const id = m.KPI_Code + '_' + year + '_' + ('0' + month).slice(-2);
+    const x = data.find(r => String(r.ID) === id) || null;
+    const a = kpiYmNum_(m.FirstYM), b = kpiYmNum_(m.LastYM);
+    const covers = (a === null || cur >= a) && (b === null || cur <= b);
+    const inPeriod = !!x || covers;
+    if (!showAll && !inPeriod) return;
+    const txt = v => (v === null || v === undefined) ? '' : v;
+    rows.push({
+      kpiCode: String(m.KPI_Code),
+      topic: String(m.Topic || ''),
+      method: String(m.Method || ''),
+      direction: String((x && x.Direction) || m.Direction || 'HIGHER').toUpperCase(),
+      target: (x && txt(x.Target) !== '') ? txt(x.Target) : txt(m.DefaultTarget),
+      actual: x ? txt(x.Actual) : '',
+      achieved: x ? txt(x.Achieved) : '',
+      result: x ? txt(x.Result) : '',
+      status: (x && txt(x.Status)) || 'ยังไม่ได้ประเมิน',
+      note: x ? String(txt(x.Note)).split('[fixpoint-app:manual]').join('').trim() : '',
+      link: x ? txt(x.Link) : '',
+      srcNo: x ? txt(x.SrcNo) : '',
+      updatedAt: x ? String(txt(x.UpdatedAt)).slice(0, 16) : '',
+      updatedBy: x ? txt(x.UpdatedBy) : '',
+      exists: !!x,
+      inPeriod: inPeriod
+    });
+  });
+  return { month: ym, yearBE: year, totalKpi: master.length, rows: rows };
+}
+
+/** r20: แปลงค่าที่พิมพ์: "95%" → 0.95 · "N.A." → na · "" → empty */
+function kpiParseVal_(v) {
+  if (v === null || v === undefined) return { kind: 'empty' };
+  if (typeof v === 'number') return isFinite(v) ? { kind: 'num', value: v } : { kind: 'empty' };
+  const s = String(v).trim();
+  if (s === '') return { kind: 'empty' };
+  if (/^(n\.?\/?a\.?|-|\.)$/i.test(s)) return { kind: 'na' };
+  const pct = /%$/.test(s);
+  const n = Number(s.replace(/[%,\s]/g, ''));
+  if (!isFinite(n)) return { kind: 'na' };
+  return { kind: 'num', value: pct ? Math.round(n / 100 * 10000) / 10000 : n };
+}
+
+/** r20: คำนวณผล (เหมือน evaluate_ ของ Hiring_Pipeline) */
+function kpiEvaluate_(p, target, direction) {
+  if (!p || p.kind === 'empty') return { actual: '', achieved: '', result: 'ยังไม่ได้ประเมิน', status: 'ยังไม่ได้ประเมิน' };
+  if (p.kind === 'na') return { actual: 'N.A.', achieved: '', result: 'ไม่มีข้อมูล (N.A.)', status: 'ยังไม่ได้ประเมิน' };
+  const a = p.value;
+  let ach = direction === 'LOWER' ? (a === 0 ? 1 : target / a) : (target ? a / target : 0);
+  ach = Math.round(ach * 10000) / 10000;
+  const pass = ach >= 1;
+  return { actual: a, achieved: ach, result: pass ? 'ผ่านเป้า' : 'ต่ำกว่าเป้า', status: pass ? 'ผ่านเป้า' : 'ไม่ผ่านเป้า' };
+}
+
+/** r20: ส่งหลายข้อพร้อมกัน (สูงสุด 30) → เขียน/อัปเดต KPI_Data + บันทึก Log ของ Rst-Kpi-Mtd */
+function kpiSaveBatch_(u, req) {
+  const ym = normalizeYm_(req.month);
+  const list = Array.isArray(req.rows) ? req.rows : [];
+  if (!list.length) throw new Error('ไม่มีรายการ KPI ที่จะส่ง');
+  if (list.length > 30) throw new Error('ส่งได้ครั้งละไม่เกิน 30 รายการ');
+
+  const year = Number(ym.slice(0, 4)) + 543;
+  const month = Number(ym.slice(5, 7));
+  const master = kpiMasterRows_();
+  const t = kpiTableRows_(KPI_DATA_SHEET);
+  const H = t.headers;
+  const byId = {};
+  t.rows.forEach(r => { byId[String(r.ID)] = r; });
+  const stamp = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+  const by = String(u.FullName || u.Username);
+  const results = [], skipped = [];
+  let inserted = 0, updated = 0;
+
+  list.forEach(inp => {
+    const code = String(inp.kpiCode || '').trim();
+    const m = master.find(x => norm_(x.KPI_Code) === norm_(code));
+    if (!m) { skipped.push({ kpiCode: code, reason: 'ไม่พบใน KPI_Master ของแผนกซ่อมบำรุง' }); return; }
+    const id = code + '_' + year + '_' + ('0' + month).slice(-2);
+    const ex = byId[id] || null;
+
+    const tIn = kpiParseVal_(inp.target);
+    let target = tIn.kind === 'num' ? tIn.value : (ex && ex.Target !== '' && isFinite(Number(ex.Target)) ? Number(ex.Target) : Number(m.DefaultTarget));
+    if (!isFinite(target)) target = 0;
+    const direction = String(m.Direction || 'HIGHER').toUpperCase();
+    const ev = kpiEvaluate_(kpiParseVal_(inp.actual), target, direction);
+
+    const note = String(inp.note || '').split('[fixpoint-app:manual]').join('').trim();
+    const values = {
+      ID: id, KPI_Code: code, Company: KPI_DEFAULT_COMPANY, Dept: KPI_DEFAULT_DEPT,
+      Year: year, Month: month, MonthName: KPI_MONTH_NAMES[month - 1],
+      Topic: String(m.Topic || ''), Method: String(m.Method || ''), Direction: direction,
+      Target: target, Actual: ev.actual, Achieved: ev.achieved, Result: ev.result, Status: ev.status,
+      Note: ('[fixpoint-app:manual] ' + note).trim().slice(0, 480),
+      Link: String(inp.link || '').slice(0, 300),
+      SrcNo: 'fixpoint-app', UpdatedAt: stamp, UpdatedBy: by
+    };
+    const row = H.map(k => Object.prototype.hasOwnProperty.call(values, k) ? values[k] : (ex ? ex[k] : ''));
+    if (ex) { t.sheet.getRange(ex._row, 1, 1, H.length).setValues([row]); updated++; }
+    else {
+      t.sheet.appendRow(row); inserted++;
+      byId[id] = Object.assign({ _row: t.sheet.getLastRow() }, values); // r22: กันแถวซ้ำถ้า KPI เดียวกันอยู่ในคำขอเดียวกัน
+    }
+    results.push({ id: id, kpiCode: code, target: target, actual: ev.actual, achieved: ev.achieved,
+                   result: ev.result, status: ev.status, updatedAt: stamp, updatedBy: by });
+  });
+
+  if (inserted || updated) { 
+    SpreadsheetApp.openById(KPI_SPREADSHEET_ID).getSheetByName(KPI_LOG_SHEET).appendRow(
+      [new Date(), 'fixpoint:' + u.Username, 'upsert', inserted + updated, inserted, updated, 0, 'fixpoint-app ' + ym + ' (manual)']);
+    addUserLog_(u.Username, 'ส่งค่า KPI รายเดือน', ym, 'เพิ่มใหม่ ' + inserted + ' · อัปเดต ' + updated + ' รายการ');
+  }
+  return { month: ym, yearBE: year, inserted: inserted, updated: updated, rows: results, skipped: skipped };
 }

@@ -335,6 +335,34 @@
             <div class="bg-white rounded-xl shadow-sm p-4"><h3 class="font-semibold text-sm mb-3">รายการ</h3><div id="exRows"></div></div>
         </div>
 
+        <!-- KPI ซ่อมบำรุง → ส่งเข้า Rst-Kpi-Mtd -->
+        <div id="page-kpi" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">KPI แผนกซ่อมบำรุง</h2>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4">
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <h3 class="font-semibold mr-auto">KPI ฝ่ายซ่อมบำรุง → Rst-Kpi-Mtd</h3>
+                    <input type="month" id="kpMonth" aria-label="เดือน KPI" class="inp" style="width:auto">
+                    <label class="text-sm flex items-center gap-1 text-slate-600"><input type="checkbox" id="kpShowAll"> แสดงครบทุกข้อ</label>
+                    <button type="button" class="btn border bg-white hover:bg-slate-50" onclick="kpLoadForm()">↻ โหลด</button>
+                    <button type="button" class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="kpSendRows(kpIdx(true))">⬆ ส่งที่แก้ไข (<span id="kpDirtyCount">0</span>)</button>
+                    <button type="button" class="btn border bg-white hover:bg-slate-50" onclick="kpSendRows(kpIdx(false))">➤ ส่งทั้งหมด</button>
+                </div>
+                <p class="text-xs text-slate-500 mb-3 leading-relaxed">แก้ไข Target / Actual / หมายเหตุ / Link ในตาราง แล้วกด "ส่ง" ทีละข้อ หรือ "ส่งที่แก้ไข" ·
+                    ค่าแบบ % พิมพ์ได้ทั้ง <code>95%</code> หรือ <code>0.95</code> · ไม่มีข้อมูลพิมพ์ <code>N.A.</code> · เว้นว่าง = ยังไม่ได้ประเมิน</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-left"><tr>
+                            <th class="p-2">KPI</th><th class="p-2">Target</th><th class="p-2">Actual</th><th class="p-2">ผล</th>
+                            <th class="p-2">หมายเหตุ / Link</th><th class="p-2">อัปเดตล่าสุด</th><th class="p-2"></th></tr></thead>
+                        <tbody id="kpTbody"><tr><td colspan="7" class="p-6 text-center text-slate-400">เลือกเดือนแล้วกด "โหลด"</td></tr></tbody>
+                    </table>
+                </div>
+                <div id="kpStatus" class="text-xs mt-3 text-slate-500"></div>
+            </div>
+        </div>
+
         <!-- Admin -->
         <div id="page-admin" class="page hidden space-y-6">
             <div class="bg-white rounded-xl shadow-sm p-4">
@@ -403,7 +431,7 @@
 
 <script>
 // 📌 ใส่ Web App URL จาก Google Apps Script ตรงนี้ (คัดลอกจาก Deploy > Manage deployments เท่านั้น ห้ามพิมพ์เอง)
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzGiDh0j56QmqeCyQqwlmzAzdKboB1rRp9YxidfiwVy7y3WSqSu3pBqcJvgD2Fsqurj/exec";
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxVdd-VRIuVCICldEWfAme3Uf7ZwilJsY1_RjnRCxgIkPBDaGgeHQFWFYfSj6wFdFr/exec";
 
 const LS_TOKEN = 'rst_fixpoint_token';
 const LS_USER = 'rst_fixpoint_user';
@@ -433,6 +461,7 @@ const NAV = [
     { id: 'approvals', label: 'รออนุมัติ',          roles: ['manager', 'admin'], badge: true },
     { id: 'jobs',      label: 'งานช่าง',           roles: ['technician', 'admin'], badge: true },
     { id: 'all',       label: 'งานซ่อมทั้งหมด',     roles: ['manager', 'admin'] },
+    { id: 'kpi',       label: 'KPI ซ่อมบำรุง',       roles: ['technician', 'manager', 'admin'] },
     { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'manager', 'admin'] },
     { id: 'expenses',  label: 'ค่าใช้จ่าย',          roles: ['admin'] },
     { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
@@ -734,10 +763,11 @@ const NAV_ICON = {
     admin: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
     profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     expenses: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    kpi: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
 };
-const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', more: 'เพิ่มเติม' };
-const MOBILE_PRIORITY = ['dashboard', 'approvals', 'jobs', 'new', 'mine', 'all', 'profile', 'admin'];
+const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', kpi: 'KPI', more: 'เพิ่มเติม' };
+const MOBILE_PRIORITY = ['dashboard', 'approvals', 'jobs', 'new', 'mine', 'all', 'kpi', 'profile', 'admin'];
 let moreItems = [];
 
 function bnavBtn(id, badge) {
@@ -779,7 +809,7 @@ function switchPage(name) {
     window.scrollTo(0, 0);
     if (!loaded[name]) {
         loaded[name] = true;
-        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses }[name] || (() => {}))();
+        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses, kpi: () => loadKpiPage(false) }[name] || (() => {}))();
     }
 }
 
@@ -1070,6 +1100,160 @@ async function loadAll() {
     }
 }
 $('allQ').addEventListener('keydown', e => { if (e.key === 'Enter') loadAll(); });
+
+// ---------------- r20: ฟอร์ม KPI รายเดือน (แบบ Hiring_Pipeline) → ส่งเข้า Rst-Kpi-Mtd ----------------
+let kpRows = [];
+let kpLoadedMonth = '';
+let kpLoadedShowAll = false;
+const kpTbody = () => $('kpTbody');
+
+function kpDefaultMonth() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function kpStatus(text, type) {
+    $('kpStatus').textContent = text;
+    $('kpStatus').className = 'text-xs mt-3 ' + (type === 'ok' ? 'text-emerald-700' : type === 'err' ? 'text-rose-700' : 'text-slate-500');
+}
+function kpParse(v) {                       // เหมือน parseNum_ ฝั่ง Apps Script
+    const s = String(v == null ? '' : v).trim();
+    if (s === '') return { kind: 'empty' };
+    if (/^(n\.?\/?a\.?|-|\.)$/i.test(s)) return { kind: 'na' };
+    const n = Number(s.replace(/[%,\s]/g, ''));
+    if (!isFinite(n)) return { kind: 'na' };
+    return { kind: 'num', value: /%$/.test(s) ? n / 100 : n };
+}
+function kpEval(edit, direction) {          // เหมือน evaluate_ ฝั่ง Apps Script
+    const a = kpParse(edit.actual), t = kpParse(edit.target);
+    if (a.kind === 'empty') return { cls: 'na', label: 'ยังไม่ได้ประเมิน', ach: '' };
+    if (a.kind === 'na') return { cls: 'na', label: 'N.A.', ach: '' };
+    const target = t.kind === 'num' ? t.value : 0;
+    let ach = direction === 'LOWER' ? (a.value === 0 ? 1 : target / a.value) : (target ? a.value / target : 0);
+    ach = Math.round(ach * 10000) / 10000;
+    const pass = ach >= 1;
+    return { cls: pass ? 'pass' : 'fail', label: pass ? 'ผ่านเป้า' : 'ไม่ผ่านเป้า', ach: (ach * 100).toFixed(1) + '%' };
+}
+function kpResultHtml(r) {
+    const ev = kpEval(r.edit, r.direction);
+    const cls = { pass: 'bg-emerald-100 text-emerald-800', fail: 'bg-rose-100 text-rose-800', na: 'bg-slate-100 text-slate-700' }[ev.cls];
+    return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${cls}">${esc(ev.label)}</span>` +
+        (ev.ach ? `<div class="text-[11px] text-slate-500 mt-1">Achieved ${ev.ach}</div>` : '');
+}
+function kpDirtyCount() {
+    const n = kpRows.filter(r => r.dirty).length;
+    $('kpDirtyCount').textContent = n;
+    return n;
+}
+function kpIdx(onlyDirty) {
+    return kpRows.map((r, i) => (!onlyDirty || r.dirty) ? i : -1).filter(i => i > -1);
+}
+function kpRenderForm() {
+    if (!kpRows.length) {
+        kpTbody().innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">ไม่พบ KPI ของแผนกซ่อมบำรุงในเดือนนี้ — ลองติ๊ก "แสดงครบทุกข้อ"</td></tr>`;
+        kpDirtyCount();
+        return;
+    }
+    kpTbody().innerHTML = kpRows.map((r, i) => {
+        const tag = r.exists ? `<span class="text-[10px] font-semibold rounded px-1.5 ${r.manual ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}">${esc(r.srcNo || 'web')}</span>` : '';
+        const meta = r.exists ? `${tag}<div>${esc(r.updatedBy || '-')}</div><div>${esc(r.updatedAt || '')}</div>`
+                              : `<span class="text-[10px] font-semibold rounded px-1.5 bg-slate-100 text-slate-600">ยังไม่มีในระบบ</span>`;
+        return `<tr class="border-t align-top ${r.dirty ? 'bg-amber-50' : ''} ${r.inPeriod ? '' : 'opacity-70'}" data-row="${i}">
+            <td class="p-2 min-w-[220px]">
+                <span class="font-semibold text-sm">${esc(r.kpiCode)}</span>
+                <span class="text-[11px] font-semibold bg-slate-100 text-slate-600 rounded px-1.5 ml-1">${r.direction === 'LOWER' ? '↓ ยิ่งน้อยยิ่งดี' : '↑ ยิ่งมากยิ่งดี'}</span>
+                <div class="text-[13px] mt-0.5">${esc(r.topic)}</div>
+                ${r.method ? `<div class="text-[11px] text-slate-500 mt-0.5">${esc(r.method)}</div>` : ''}
+            </td>
+            <td class="p-2"><input class="inp w-24" type="text" inputmode="decimal" data-i="${i}" data-f="target" value="${esc(r.edit.target)}"></td>
+            <td class="p-2"><input class="inp w-24" type="text" inputmode="decimal" data-i="${i}" data-f="actual" value="${esc(r.edit.actual)}" placeholder="—"></td>
+            <td class="p-2 kpi-result">${kpResultHtml(r)}</td>
+            <td class="p-2 min-w-[200px]">
+                <textarea class="inp text-[13px] mb-1" rows="2" data-i="${i}" data-f="note" placeholder="หมายเหตุ">${esc(r.edit.note)}</textarea>
+                <input class="inp text-xs" data-i="${i}" data-f="link" value="${esc(r.edit.link)}" placeholder="Link / ไฟล์อ้างอิง (ถ้ามี)">
+            </td>
+            <td class="p-2 text-[11px] text-slate-500 whitespace-nowrap">${meta}</td>
+            <td class="p-2"><button type="button" class="btn border bg-white hover:bg-slate-50 text-xs" data-act="send" data-i="${i}">⬆ ส่ง</button></td>
+        </tr>`;
+    }).join('');
+    kpDirtyCount();
+}
+async function kpLoadForm() {
+    if (kpRows.some(r => r.dirty) && kpLoadedMonth && !confirm('มีค่าที่แก้ไขแต่ยังไม่ได้ส่ง ต้องการโหลดใหม่และทิ้งการแก้ไขหรือไม่?')) {
+        $('kpMonth').value = kpLoadedMonth;          // r22: คืนค่าเดิมทั้งเดือนและช่องแสดงครบทุกข้อ
+        $('kpShowAll').checked = kpLoadedShowAll;
+        return;
+    }
+    await kpFetchForm();
+}
+// r22: โหลดฟอร์มจากเซิร์ฟเวอร์ (keep = แก้ไขที่ยังไม่ได้ส่ง ของแถวอื่น เก็บไว้ไม่ให้หาย)
+async function kpFetchForm(keep) {
+    const month = $('kpMonth').value || kpDefaultMonth();
+    const showAll = $('kpShowAll').checked;
+    kpStatus('กำลังโหลด KPI...');
+    try {
+        const d = await api('kpiForm', { month: month, all: showAll });
+        kpLoadedMonth = d.month;
+        kpLoadedShowAll = showAll;
+        kpRows = d.rows.map(r => Object.assign({}, r, {
+            manual: false,
+            edit: { target: String(r.target ?? ''), actual: String(r.actual ?? ''), note: r.note || '', link: r.link || '' },
+            dirty: false
+        }));
+        kpRows.forEach(r => { if (keep && keep[r.kpiCode]) { r.edit = Object.assign({}, keep[r.kpiCode]); r.dirty = true; } });
+        kpRenderForm();
+        kpStatus(`เดือน ${d.month} (พ.ศ. ${d.yearBE}) · แสดง ${kpRows.length} จาก ${d.totalKpi} KPI`);
+    } catch (e) {
+        kpTbody().innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-700">โหลด KPI ไม่สำเร็จ: ${esc(e.message)}</td></tr>`;
+        kpStatus('');
+    }
+}
+async function kpSendRows(indexes) {
+    const month = kpLoadedMonth || $('kpMonth').value || kpDefaultMonth();
+    if (!indexes.length) { toast('ยังไม่มีรายการที่แก้ไข', 'err'); return; }
+    const rows = indexes.map(i => {
+        const r = kpRows[i];
+        return { kpiCode: r.kpiCode, target: r.edit.target, actual: r.edit.actual, note: r.edit.note, link: r.edit.link };
+    });
+    if (!confirm(`ส่ง KPI ${rows.length} รายการ ของเดือน ${month} ไปบันทึกใน Rst-Kpi-Mtd ใช่หรือไม่?`)) return;
+    kpStatus(`กำลังส่ง ${rows.length} รายการ...`);
+    try {
+        const d = await api('kpiSave', { month: month, rows: rows });
+        const skipped = (d.skipped || []).map(s => `${s.kpiCode} (${s.reason})`).join(', ');
+        const keep = {};                              // r22: เก็บแก้ไขของแถวที่ยังไม่ได้ส่งไว้
+        kpRows.forEach((r, i) => { if (r.dirty && indexes.indexOf(i) === -1) keep[r.kpiCode] = r.edit; });
+        await kpFetchForm(keep);
+        kpStatus(`✅ ส่งสำเร็จ เดือน ${d.month} · เพิ่มใหม่ ${d.inserted} · อัปเดต ${d.updated}` + (skipped ? ` · ข้าม: ${skipped}` : ''), 'ok');
+        toast('ส่ง KPI ไป Rst-Kpi-Mtd แล้ว');
+    } catch (e) {
+        kpStatus('❌ ส่ง KPI ไม่สำเร็จ: ' + e.message, 'err');
+        toast(e.message, 'err');
+    }
+}
+kpTbody().addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el.dataset || el.dataset.f === undefined) return;
+    const r = kpRows[Number(el.dataset.i)];
+    r.edit[el.dataset.f] = el.value;
+    r.dirty = true;
+    const tr = el.closest('tr');
+    tr.classList.add('bg-amber-50');
+    tr.querySelector('.kpi-result').innerHTML = kpResultHtml(r);
+    kpDirtyCount();
+});
+kpTbody().addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act="send"]');
+    if (btn) kpSendRows([Number(btn.dataset.i)]);
+});
+$('kpShowAll').addEventListener('change', kpLoadForm);
+$('kpMonth').addEventListener('change', kpLoadForm);
+window.addEventListener('beforeunload', (e) => {
+    if (kpRows.some(r => r.dirty)) { e.preventDefault(); e.returnValue = ''; }
+});
+
+function loadKpiPage(force) {
+    if (!$('kpMonth').value) $('kpMonth').value = kpDefaultMonth();
+    if (force || !kpRows.length) kpLoadForm();
+}
 
 // ---------------- r16: รายงานค่าใช้จ่าย (admin) ----------------
 let expData = null;
@@ -1677,7 +1861,7 @@ async function loadDashboard() {
 }
 
 // ---------------- Server status ----------------
-const EXPECTED_BACKEND = 'r16';
+const EXPECTED_BACKEND = 'r22';
 const srv = { state: 'checking', version: '', latency: null, db: '', drive: '', folderName: '', tickets: null, lastCheck: null, error: '' };
 
 function renderServer() {
@@ -2220,7 +2404,7 @@ window.addEventListener('unhandledrejection', e => {
     if (!token || !cached) return;
     try {
         const r = await api('me');
-        store(LS_USER, JSON.stringify(r.user));
+        store(LS_USER, JSON.stringify(r.user)); 
         await startApp(r.user, r.branches);
     } catch (e) {
         /* token หมดอายุ -> อยู่หน้า login */
