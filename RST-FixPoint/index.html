@@ -372,6 +372,23 @@
                 </div>
                 <div id="kpStatus" class="text-xs mt-3 text-slate-500"></div>
             </div>
+            <div id="kpRecCard" class="hidden bg-white rounded-xl shadow-sm p-4">
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <h3 class="font-semibold mr-auto">กระทบยอด ASIA-MTN-04 · งานแจ้งซ่อม ↔ KPI</h3>
+                    <button type="button" class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="kpReconcile()">🔍 ตรวจกระทบยอด</button>
+                </div>
+                <p class="text-xs text-slate-500 mb-3 leading-relaxed">นับเฉพาะหมวด "เครื่องจักร (Breakdown)" ที่ไม่ใช่ Rejected/Cancelled และอยู่ในสาขาที่กำหนด · ตารางด้านล่างแสดงรายการงานที่นับของเดือนที่เลือกในช่องเดือนด้านบน</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-left"><tr>
+                            <th class="p-2">เดือน</th><th class="p-2 text-right">จากงานแจ้งซ่อม</th><th class="p-2 text-right">ค่าใน KPI</th>
+                            <th class="p-2">แหล่งที่มา</th><th class="p-2">อัปเดตล่าสุด</th><th class="p-2">สถานะ</th></tr></thead>
+                        <tbody id="kpRecSummary"><tr><td colspan="6" class="p-4 text-center text-slate-400">กด "ตรวจกระทบยอด"</td></tr></tbody>
+                    </table>
+                </div>
+                <h4 class="font-semibold text-sm mt-4 mb-2">รายการงานที่นับ · เดือน <span id="kpRecMonth">-</span></h4>
+                <div id="kpRecDetail" class="text-sm text-slate-500">-</div>
+            </div>
         </div>
 
         <!-- Admin -->
@@ -1302,6 +1319,46 @@ async function kpRestoreBreakdown() {   // r24
     } catch (e) { kpStatus('❌ ' + e.message, 'err'); toast(e.message, 'err'); }
 }
 
+const KP_REC_LABEL = {
+    match: ['ตรงกับงานแจ้งซ่อม', 'bg-emerald-100 text-emerald-800'],
+    mismatch: ['ไม่ตรง — ควรซิงก์ใหม่', 'bg-rose-100 text-rose-800'],
+    manual: ['ค่ามือ (ตรงกับงาน)', 'bg-violet-100 text-violet-800'],
+    manual_diff: ['ค่ามือ (ต่างจากงานแจ้งซ่อม)', 'bg-amber-100 text-amber-800'],
+    missing: ['ยังไม่มีข้อมูลใน KPI', 'bg-slate-100 text-slate-700']
+};
+async function kpReconcile() {   // r25: กระทบยอดงานแจ้งซ่อมกับ KPI (อ่านอย่างเดียว)
+    const month = $('kpMonth').value || kpDefaultMonth();
+    $('kpRecSummary').innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400"><span class="spinner"></span> กำลังตรวจ...</td></tr>`;
+    try {
+        const d = await api('kpiReconcile', { month: month });
+        const sel = d.detail.month;
+        $('kpRecSummary').innerHTML = d.months.length ? d.months.map(m => {
+            const [lbl, cls] = KP_REC_LABEL[m.status] || ['-', 'bg-slate-100 text-slate-700'];
+            return `<tr class="border-t ${m.month === sel ? 'bg-sky-50' : ''}">
+                <td class="p-2 whitespace-nowrap">${esc(m.month)}</td>
+                <td class="p-2 text-right font-medium">${m.count}</td>
+                <td class="p-2 text-right">${m.kpiActual === null ? '-' : m.kpiActual}</td>
+                <td class="p-2 text-xs">${esc(m.srcNo || '-')}</td>
+                <td class="p-2 text-xs">${esc(m.updatedAt || '-')}<div>${esc(m.updatedBy || '')}</div></td>
+                <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${cls}">${lbl}</span></td>
+            </tr>`;
+        }).join('') : `<tr><td colspan="6" class="p-4 text-center text-slate-400">ไม่มีเดือนในช่วงของ KPI นี้ถึงเดือนปัจจุบัน</td></tr>`;
+        $('kpRecMonth').textContent = sel;
+        const c = d.detail.counted;
+        const summary = `<div class="mb-2">นับ <b>${c.length}</b> รายการ · ค่าใน KPI ${d.detail.kpiActual === null ? '-' : d.detail.kpiActual}` +
+            ` · ไม่นับ (ยกเลิก/ไม่อนุมัติ) ${d.detail.cancelled} · นอกสาขาที่กำหนด ${d.detail.outOfScope}` +
+            (d.detail.consistent ? '' : ` <span class="text-rose-700">· ⚠️ จำนวนไม่สอดคล้องกับการคำนวณ ควรซิงก์ใหม่</span>`) + `</div>`;
+        const rows = c.length ? `<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-slate-600 text-left"><tr>
+            <th class="p-2">รหัสงาน</th><th class="p-2">วันที่แจ้ง</th><th class="p-2">สาขา</th><th class="p-2">หัวข้อ</th><th class="p-2">สถานที่</th><th class="p-2">สถานะ</th></tr></thead><tbody>` +
+            c.map(t => `<tr class="border-t"><td class="p-2 font-mono text-xs">${esc(t.ticketId)}</td><td class="p-2 whitespace-nowrap">${esc(t.createdAt)}</td>` +
+                `<td class="p-2">${esc(t.branch)}</td><td class="p-2">${esc(t.title)}</td><td class="p-2">${esc(t.location)}</td><td class="p-2">${statusBadge(t.status)}</td></tr>`).join('') +
+            `</tbody></table></div>` : '<div class="text-slate-400">ไม่มีงานที่นับในเดือนนี้</div>';
+        $('kpRecDetail').innerHTML = summary + rows;
+    } catch (e) {
+        $('kpRecSummary').innerHTML = `<tr><td colspan="6" class="p-4 text-center text-rose-700">ตรวจไม่สำเร็จ: ${esc(e.message)}</td></tr>`;
+    }
+}
+
 async function kpSyncBreakdown() {   // r23: คำนวณ ASIA-MTN-04 ของเดือนใหม่จากงานแจ้งซ่อม
     const month = $('kpMonth').value || kpDefaultMonth();
     if (!confirm(`คำนวณ ASIA-MTN-04 (จำนวนครั้ง Breakdown) ของเดือน ${month} ใหม่จากงานแจ้งซ่อม แล้วส่งเข้า Rst-Kpi-Mtd ใช่หรือไม่?`)) return;
@@ -1324,6 +1381,7 @@ async function kpSyncBreakdown() {   // r23: คำนวณ ASIA-MTN-04 ขอ�
 function loadKpiPage(force) {
     if (!$('kpMonth').value) $('kpMonth').value = kpDefaultMonth();
     $('kpSyncBtn').classList.toggle('hidden', !hasRole('manager', 'admin'));   // r23
+    $('kpRecCard').classList.toggle('hidden', !hasRole('manager', 'admin'));   // r25
     if (force || !kpRows.length) kpLoadForm();
 }
 

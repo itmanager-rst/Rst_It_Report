@@ -52,7 +52,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r24-2026-11-09-kpi-breakdown-manual';
+const CODE_VERSION = 'r25-2026-11-09-kpi-breakdown-reconcile';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -172,7 +172,8 @@ const ROUTES = {
   kpiSave:         { roles: ['technician', 'manager', 'admin'], fn: (u, r) => kpiSaveBatch_(u, r), write: true },       // r20
   kpiSyncBreakdown: { roles: ['manager', 'admin'], fn: kpiSyncBreakdownRoute_, write: true },  // r23
   kpiOverrideBreakdown: { roles: ['manager', 'admin'], fn: kpiOverrideBreakdownRoute_, write: true },  // r24
-  kpiRestoreBreakdown: { roles: ['manager', 'admin'], fn: kpiRestoreBreakdownRoute_, write: true }     // r24
+  kpiRestoreBreakdown: { roles: ['manager', 'admin'], fn: kpiRestoreBreakdownRoute_, write: true },    // r24
+  kpiReconcile:    { roles: ['manager', 'admin'], fn: kpiReconcileRoute_ }                              // r25 (อ่านอย่างเดียว)
 };
 
 function doPost(e) {
@@ -2413,4 +2414,103 @@ function kpiRestoreBreakdownRoute_(u, req) {
   const r = kpiSyncBreakdownMonths_([ym], u.FullName || u.Username, { force: true });
   addUserLog_(u.Username, 'คืนค่า KPI ASIA-MTN-04 เป็นอัตโนมัติ', ym, '');
   return Object.assign({ month: ym }, r);
+}
+
+
+// ===========================================================================
+// r25: กระทบยอด ASIA-MTN-04 — เทียบจำนวนจากงานแจ้งซ่อมกับค่าใน KPI_Data (อ่านอย่างเดียว ไม่เขียนข้อมูล)
+// ===========================================================================
+/** เดือนทั้งหมดในช่วง FirstYM–LastYM ของ KPI ที่ไม่เกินเดือนปัจจุบัน (ค.ศ. 'yyyy-MM') */
+function kpiMonthsInRange_(master) {
+  const a = kpiYmNum_(master.FirstYM), b = kpiYmNum_(master.LastYM);
+  const cur = currentYm_();
+  const out = [];
+  if (a === null) return out;
+  const fromY = Math.floor(a / 100) - 543, fromM = a % 100;
+  const toY = b === null ? 9999 : Math.floor(b / 100) - 543;
+  const toM = b === null ? 12 : b % 100;
+  let y = fromY, mo = fromM;
+  while (y < toY || (y === toY && mo <= toM)) {
+    const ym = y + '-' + ('0' + mo).slice(-2);
+    if (ym > cur) break;
+    out.push(ym);
+    if (mo === 12) { y++; mo = 1; } else { mo++; }
+  }
+  return out;
+}
+
+/** r25: รายงานกระทบยอด — สรุปทุกเดือน + รายการงานที่นับของเดือนที่เลือก */
+function kpiReconcileRoute_(u, req) {
+  const master = kpiMasterRows_().find(r => norm_(r.KPI_Code) === norm_(KPI_AUTO_BREAKDOWN_CODE));
+  if (!master) throw new Error('ไม่พบ ' + KPI_AUTO_BREAKDOWN_CODE + ' ใน KPI_Master');
+  const direction = String(master.Direction || 'LOWER').toUpperCase();
+  const target = Number(master.DefaultTarget);
+  const cur = currentYm_();
+  const sel = req && req.month ? normalizeYm_(req.month) : cur;
+  const counts = breakdownCounts_();
+
+  // แถวของ ASIA-MTN-04 ใน KPI_Data จัดกลุ่มตามเดือน (ค.ศ.)
+  const kpiByYm = {};
+  kpiTableRows_(KPI_DATA_SHEET).rows.forEach(r => {
+    if (norm_(r.KPI_Code) !== norm_(KPI_AUTO_BREAKDOWN_CODE)) return;
+    const ym = (Number(r.Year) - 543) + '-' + ('0' + Number(r.Month)).slice(-2);
+    kpiByYm[ym] = r;
+  });
+
+  const months = kpiMonthsInRange_(master).map(ym => {
+    const count = counts[ym] || 0;
+    const r = kpiByYm[ym] || null;
+    const kpiActual = (r && r.Actual !== '' && r.Actual !== null && r.Actual !== undefined) ? Number(r.Actual) : null;
+    const src = r ? String(r.SrcNo || '') : '';
+    let status;
+    if (kpiActual === null) status = 'missing';
+    else if (src === KPI_MANUAL_SRC) status = kpiActual === count ? 'manual' : 'manual_diff';
+    else status = kpiActual === count ? 'match' : 'mismatch';
+    return {
+      month: ym, count: count, kpiActual: kpiActual, srcNo: src,
+      updatedAt: r ? String(r.UpdatedAt || '') : '', updatedBy: r ? String(r.UpdatedBy || '') : '',
+      status: status
+    };
+  });
+
+  // รายการงานของเดือนที่เลือก
+  const scope = KPI_COMPANY_BRANCHES.map(norm_);
+  const inScope = t => !scope.length || scope.indexOf(norm_(t.Branch)) > -1;
+  const counted = [];
+  let cancelled = 0, outOfScope = 0;
+  readAll_(SHEETS.TICKETS).forEach(t => {
+    if (String(t.Category) !== KPI_BREAKDOWN_CATEGORY) return;
+    const d = toDate_(t.CreatedAt);
+    if (!d) return;
+    if (Utilities.formatDate(d, TZ, 'yyyy-MM') !== sel) return;
+    if (!inScope(t)) { outOfScope++; return; }
+    const st = String(t.Status || '');
+    if (st === ST.REJECTED || st === ST.CANCELLED) { cancelled++; return; }
+    counted.push({
+      ticketId: String(t.TicketID),
+      createdAt: Utilities.formatDate(d, TZ, 'yyyy-MM-dd HH:mm'),
+      branch: String(t.Branch || ''),
+      title: String(t.Title || ''),
+      location: String(t.Location || ''),
+      status: st
+    });
+  });
+  counted.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+
+  const selRow = months.find(m => m.month === sel) || null;
+  return {
+    current: cur,
+    scope: KPI_COMPANY_BRANCHES,
+    target: target,
+    direction: direction,
+    months: months,
+    detail: {
+      month: sel,
+      counted: counted,
+      cancelled: cancelled,
+      outOfScope: outOfScope,
+      kpiActual: selRow ? selRow.kpiActual : null,
+      consistent: counted.length === (counts[sel] || 0)
+    }
+  };
 }
