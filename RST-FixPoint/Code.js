@@ -2,8 +2,11 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r21-2026-11-08-kpi-send-only
+ * CODE_VERSION: r25-2026-11-09-kpi-breakdown-reconcile
  *
+ *  - r25: [KPI] กระทบยอด ASIA-MTN-04 — รายงานเทียบจำนวนงานแจ้งซ่อมกับค่าใน KPI_Data รายเดือน (อ่านอย่างเดียว, kpiReconcile)
+ *  - r24: [KPI] ผู้จัดการ/admin กรอกค่า ASIA-MTN-04 ด้วยมือพร้อมเหตุผล (SrcNo = fixpoint-manual) • ค่ามือชนะค่าอัตโนมัติของเดือนนั้น
+ *         • คืนค่าอัตโนมัติได้ (kpiRestoreBreakdown)
  *  - r23: [KPI อัตโนมัติ] ASIA-MTN-04 (จำนวนครั้ง breakdown) นับจากงานแจ้งซ่อมหมวด "เครื่องจักร (Breakdown)"
  *         แล้วส่งเข้า KPI_Data ของ Rst-Kpi-Mtd อัตโนมัติ • ซิงก์เมื่องานซ่อมเปลี่ยน + trigger รายวัน + ปุ่มคำนวณใหม่
  *  - r22: [แก้บั๊ก] เพิ่มฟังก์ชัน normalizeYm_ ที่หายไป (ทำให้โหลด/ส่ง KPI ไม่ได้: "normalizeYm_ is not defined")
