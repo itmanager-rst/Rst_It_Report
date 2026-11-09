@@ -348,9 +348,20 @@
                     <button type="button" class="btn border bg-white hover:bg-slate-50" onclick="kpLoadForm()">↻ โหลด</button>
                     <button type="button" class="btn bg-sky-800 hover:bg-sky-900 text-white" onclick="kpSendRows(kpIdx(true))">⬆ ส่งที่แก้ไข (<span id="kpDirtyCount">0</span>)</button>
                     <button type="button" class="btn border bg-white hover:bg-slate-50" onclick="kpSendRows(kpIdx(false))">➤ ส่งทั้งหมด</button>
+                    <button type="button" id="kpSyncBtn" class="btn border bg-white hover:bg-slate-50 hidden" onclick="kpSyncBreakdown()">🔄 คำนวณ Breakdown ใหม่</button>
                 </div>
                 <p class="text-xs text-slate-500 mb-3 leading-relaxed">แก้ไข Target / Actual / หมายเหตุ / Link ในตาราง แล้วกด "ส่ง" ทีละข้อ หรือ "ส่งที่แก้ไข" ·
                     ค่าแบบ % พิมพ์ได้ทั้ง <code>95%</code> หรือ <code>0.95</code> · ไม่มีข้อมูลพิมพ์ <code>N.A.</code> · เว้นว่าง = ยังไม่ได้ประเมิน</p>
+                <div id="kpOverrideBox" class="hidden mb-3 p-3 rounded-lg bg-violet-50 border border-violet-200 text-sm">
+                    <div class="font-semibold mb-2">ASIA-MTN-04 · กรอกค่าด้วยมือ (ผู้จัดการ / Admin)</div>
+                    <div class="flex flex-wrap gap-2 items-end">
+                        <div><label class="lbl">จำนวนครั้ง (Actual)</label><input id="kpOvVal" type="number" min="0" step="1" class="inp w-28"></div>
+                        <div class="flex-1 min-w-[220px]"><label class="lbl">เหตุผล (บังคับ)</label><input id="kpOvReason" class="inp" placeholder="เช่น เครื่องเสียแต่ไม่ได้แจ้งผ่านระบบ"></div>
+                        <button type="button" class="btn bg-violet-700 hover:bg-violet-800 text-white" onclick="kpOverrideBreakdown()">💾 บันทึกค่ามือ</button>
+                        <button type="button" class="btn border bg-white hover:bg-slate-50" onclick="kpRestoreBreakdown()">↩ คืนค่าอัตโนมัติ</button>
+                    </div>
+                    <p id="kpOvInfo" class="text-xs text-slate-500 mt-2"></p>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-slate-50 text-slate-600 text-left"><tr>
@@ -452,6 +463,7 @@ const CATEGORIES = [
     ['เครื่องปรับอากาศ', 'เครื่องปรับอากาศ (แอร์)'],
     ['ระบบประปา/ห้องน้ำ', 'ระบบประปา / ห้องน้ำ / สุขภัณฑ์'],
     ['อาคารสถานที่/ประตู/กระจก', 'งานอาคาร / ประตู / เพดาน / กระจก'],
+    ['เครื่องจักร (Breakdown)', 'เครื่องจักร (เครื่องหยุดทำงานกะทันหัน)'],
     ['อื่นๆ', 'อื่นๆ']
 ];
 const NAV = [
@@ -1159,20 +1171,20 @@ function kpRenderForm() {
                               : `<span class="text-[10px] font-semibold rounded px-1.5 bg-slate-100 text-slate-600">ยังไม่มีในระบบ</span>`;
         return `<tr class="border-t align-top ${r.dirty ? 'bg-amber-50' : ''} ${r.inPeriod ? '' : 'opacity-70'}" data-row="${i}">
             <td class="p-2 min-w-[220px]">
-                <span class="font-semibold text-sm">${esc(r.kpiCode)}</span>
+                <span class="font-semibold text-sm">${esc(r.kpiCode)}</span>${r.auto ? ' <span class="text-[10px] font-semibold rounded px-1.5 bg-violet-100 text-violet-800">อัตโนมัติ</span>' : ''}
                 <span class="text-[11px] font-semibold bg-slate-100 text-slate-600 rounded px-1.5 ml-1">${r.direction === 'LOWER' ? '↓ ยิ่งน้อยยิ่งดี' : '↑ ยิ่งมากยิ่งดี'}</span>
                 <div class="text-[13px] mt-0.5">${esc(r.topic)}</div>
                 ${r.method ? `<div class="text-[11px] text-slate-500 mt-0.5">${esc(r.method)}</div>` : ''}
             </td>
-            <td class="p-2"><input class="inp w-24" type="text" inputmode="decimal" data-i="${i}" data-f="target" value="${esc(r.edit.target)}"></td>
-            <td class="p-2"><input class="inp w-24" type="text" inputmode="decimal" data-i="${i}" data-f="actual" value="${esc(r.edit.actual)}" placeholder="—"></td>
+            <td class="p-2"><input class="inp w-24" type="text" inputmode="decimal" data-i="${i}" data-f="target" value="${esc(r.edit.target)}" ${r.auto ? 'disabled' : ''}></td>
+            <td class="p-2"><input class="inp w-24" type="text" inputmode="decimal" data-i="${i}" data-f="actual" value="${esc(r.edit.actual)}" placeholder="—" ${r.auto ? 'disabled' : ''}></td>
             <td class="p-2 kpi-result">${kpResultHtml(r)}</td>
             <td class="p-2 min-w-[200px]">
-                <textarea class="inp text-[13px] mb-1" rows="2" data-i="${i}" data-f="note" placeholder="หมายเหตุ">${esc(r.edit.note)}</textarea>
-                <input class="inp text-xs" data-i="${i}" data-f="link" value="${esc(r.edit.link)}" placeholder="Link / ไฟล์อ้างอิง (ถ้ามี)">
+                <textarea class="inp text-[13px] mb-1" rows="2" data-i="${i}" data-f="note" placeholder="หมายเหตุ" ${r.auto ? 'disabled' : ''}>${esc(r.edit.note)}</textarea>
+                <input class="inp text-xs" data-i="${i}" data-f="link" value="${esc(r.edit.link)}" placeholder="Link / ไฟล์อ้างอิง (ถ้ามี)" ${r.auto ? 'disabled' : ''}>
             </td>
             <td class="p-2 text-[11px] text-slate-500 whitespace-nowrap">${meta}</td>
-            <td class="p-2"><button type="button" class="btn border bg-white hover:bg-slate-50 text-xs" data-act="send" data-i="${i}">⬆ ส่ง</button></td>
+            <td class="p-2">${r.auto ? '<span class="text-[11px] text-slate-500 whitespace-nowrap">คำนวณอัตโนมัติ</span>' : '<button type="button" class="btn border bg-white hover:bg-slate-50 text-xs" data-act="send" data-i="${i}">⬆ ส่ง</button>'}</td>
         </tr>`;
     }).join('');
     kpDirtyCount();
@@ -1195,12 +1207,13 @@ async function kpFetchForm(keep) {
         kpLoadedMonth = d.month;
         kpLoadedShowAll = showAll;
         kpRows = d.rows.map(r => Object.assign({}, r, {
-            manual: false,
+            manual: !!r.manual,
             edit: { target: String(r.target ?? ''), actual: String(r.actual ?? ''), note: r.note || '', link: r.link || '' },
             dirty: false
         }));
         kpRows.forEach(r => { if (keep && keep[r.kpiCode]) { r.edit = Object.assign({}, keep[r.kpiCode]); r.dirty = true; } });
         kpRenderForm();
+        kpUpdateOverrideBox();   // r24
         kpStatus(`เดือน ${d.month} (พ.ศ. ${d.yearBE}) · แสดง ${kpRows.length} จาก ${d.totalKpi} KPI`);
     } catch (e) {
         kpTbody().innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-700">โหลด KPI ไม่สำเร็จ: ${esc(e.message)}</td></tr>`;
@@ -1209,6 +1222,7 @@ async function kpFetchForm(keep) {
 }
 async function kpSendRows(indexes) {
     const month = kpLoadedMonth || $('kpMonth').value || kpDefaultMonth();
+    indexes = indexes.filter(i => kpRows[i] && !kpRows[i].auto);   // r23: ข้อคำนวณอัตโนมัติไม่ส่งมือ
     if (!indexes.length) { toast('ยังไม่มีรายการที่แก้ไข', 'err'); return; }
     const rows = indexes.map(i => {
         const r = kpRows[i];
@@ -1250,8 +1264,66 @@ window.addEventListener('beforeunload', (e) => {
     if (kpRows.some(r => r.dirty)) { e.preventDefault(); e.returnValue = ''; }
 });
 
+const KP_AUTO_CODE = 'ASIA-MTN-04';
+function kpKeepDirty() { const keep = {}; kpRows.forEach(r => { if (r.dirty) keep[r.kpiCode] = r.edit; }); return keep; }
+function kpUpdateOverrideBox() {   // r24
+    const box = $('kpOverrideBox');
+    const row = kpRows.find(r => r.kpiCode === KP_AUTO_CODE);
+    const show = !!row && hasRole('manager', 'admin');
+    box.classList.toggle('hidden', !show);
+    if (!show) return;
+    $('kpOvInfo').textContent = row.manual
+        ? `ปัจจุบันเป็นค่ามือ (${row.updatedBy || '-'} · ${row.updatedAt || ''}) — กด "คืนค่าอัตโนมัติ" เพื่อกลับไปใช้ค่าจากงานแจ้งซ่อม`
+        : 'ปัจจุบันเป็นค่าอัตโนมัติจากงานแจ้งซ่อม';
+    $('kpOvVal').value = (row.actual !== '' && row.actual !== null && row.actual !== undefined) ? row.actual : '';
+}
+async function kpOverrideBreakdown() {   // r24
+    const month = kpLoadedMonth || $('kpMonth').value || kpDefaultMonth();
+    const val = $('kpOvVal').value.trim();
+    const reason = $('kpOvReason').value.trim();
+    if (!/^\d+$/.test(val)) { toast('กรุณากรอกจำนวนครั้งเป็นจำนวนเต็ม 0 ขึ้นไป', 'err'); return; }
+    if (reason.length < 5) { toast('กรุณาระบุเหตุผล (อย่างน้อย 5 ตัวอักษร)', 'err'); return; }
+    if (!confirm(`กรอกค่า ASIA-MTN-04 เดือน ${month} = ${val} ครั้ง (ค่ามือ) ใช่หรือไม่?`)) return;
+    kpStatus('กำลังบันทึกค่ามือ...');
+    try {
+        await api('kpiOverrideBreakdown', { month: month, actual: Number(val), reason: reason });
+        $('kpOvReason').value = '';
+        await kpFetchForm(kpKeepDirty());
+        toast('บันทึกค่ามือแล้ว');
+    } catch (e) { kpStatus('❌ ' + e.message, 'err'); toast(e.message, 'err'); }
+}
+async function kpRestoreBreakdown() {   // r24
+    const month = kpLoadedMonth || $('kpMonth').value || kpDefaultMonth();
+    if (!confirm(`คืนค่า ASIA-MTN-04 เดือน ${month} เป็นค่าอัตโนมัติจากงานแจ้งซ่อม ใช่หรือไม่?`)) return;
+    try {
+        await api('kpiRestoreBreakdown', { month: month });
+        await kpFetchForm(kpKeepDirty());
+        toast('คืนค่าอัตโนมัติแล้ว');
+    } catch (e) { kpStatus('❌ ' + e.message, 'err'); toast(e.message, 'err'); }
+}
+
+async function kpSyncBreakdown() {   // r23: คำนวณ ASIA-MTN-04 ของเดือนใหม่จากงานแจ้งซ่อม
+    const month = $('kpMonth').value || kpDefaultMonth();
+    if (!confirm(`คำนวณ ASIA-MTN-04 (จำนวนครั้ง Breakdown) ของเดือน ${month} ใหม่จากงานแจ้งซ่อม แล้วส่งเข้า Rst-Kpi-Mtd ใช่หรือไม่?`)) return;
+    kpStatus('กำลังคำนวณ Breakdown...');
+    try {
+        const d = await api('kpiSyncBreakdown', { month: month });
+        const keep = {};
+        kpRows.forEach(r => { if (r.dirty) keep[r.kpiCode] = r.edit; });
+        await kpFetchForm(keep);
+        const row = (d.results || [])[0];
+        if (row) toast(`ASIA-MTN-04 เดือน ${d.month}: ${row.count} ครั้ง`);
+        else toast(`เดือน ${d.month} อยู่นอกช่วงของ KPI นี้ (ไม่ได้คำนวณ)`, 'warn');
+        kpStatus(`✅ คำนวณ Breakdown เดือน ${d.month} แล้ว · เพิ่มใหม่ ${d.inserted} · อัปเดต ${d.updated}`, 'ok');
+    } catch (e) {
+        kpStatus('❌ คำนวณไม่สำเร็จ: ' + e.message, 'err');
+        toast(e.message, 'err');
+    }
+}
+
 function loadKpiPage(force) {
     if (!$('kpMonth').value) $('kpMonth').value = kpDefaultMonth();
+    $('kpSyncBtn').classList.toggle('hidden', !hasRole('manager', 'admin'));   // r23
     if (force || !kpRows.length) kpLoadForm();
 }
 

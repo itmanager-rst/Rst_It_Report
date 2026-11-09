@@ -4,6 +4,8 @@
  *
  * CODE_VERSION: r21-2026-11-08-kpi-send-only
  *
+ *  - r23: [KPI อัตโนมัติ] ASIA-MTN-04 (จำนวนครั้ง breakdown) นับจากงานแจ้งซ่อมหมวด "เครื่องจักร (Breakdown)"
+ *         แล้วส่งเข้า KPI_Data ของ Rst-Kpi-Mtd อัตโนมัติ • ซิงก์เมื่องานซ่อมเปลี่ยน + trigger รายวัน + ปุ่มคำนวณใหม่
  *  - r22: [แก้บั๊ก] เพิ่มฟังก์ชัน normalizeYm_ ที่หายไป (ทำให้โหลด/ส่ง KPI ไม่ได้: "normalizeYm_ is not defined")
  *         • kpiSaveBatch_: แถวซ้ำในคำขอเดียวกันจะอัปเดตแถวเดิม ไม่เพิ่มแถวซ้ำ
  *  - r21: [KPI] หน้า KPI ซ่อมบำรุง เหลือเฉพาะฟอร์มส่งค่าเข้า Rst-Kpi-Mtd (ตัดรายงาน/บอร์ดออก)
@@ -50,7 +52,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r22-2026-11-08-kpi-bugfix';
+const CODE_VERSION = 'r24-2026-11-09-kpi-breakdown-manual';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -167,7 +169,10 @@ const ROUTES = {
   listUserLogs:    { roles: ADMIN, fn: listUserLogs_ },                // r16
   expenseReport:   { roles: ADMIN, fn: expenseReport_ },               // r16: รายงานค่าใช้จ่าย
   kpiForm:         { roles: ['technician', 'manager', 'admin'], fn: (u, r) => kpiForm_(normalizeYm_(r.month), !!r.all) }, // r20
-  kpiSave:         { roles: ['technician', 'manager', 'admin'], fn: (u, r) => kpiSaveBatch_(u, r), write: true }        // r20
+  kpiSave:         { roles: ['technician', 'manager', 'admin'], fn: (u, r) => kpiSaveBatch_(u, r), write: true },       // r20
+  kpiSyncBreakdown: { roles: ['manager', 'admin'], fn: kpiSyncBreakdownRoute_, write: true },  // r23
+  kpiOverrideBreakdown: { roles: ['manager', 'admin'], fn: kpiOverrideBreakdownRoute_, write: true },  // r24
+  kpiRestoreBreakdown: { roles: ['manager', 'admin'], fn: kpiRestoreBreakdownRoute_, write: true }     // r24
 };
 
 function doPost(e) {
@@ -190,7 +195,9 @@ function doPost(e) {
       const lock = LockService.getScriptLock();
       lock.waitLock(20000);
       try {
-        return ok_(route.fn(user, req));
+        const res = route.fn(user, req);
+        if (KPI_TICKET_ACTIONS.indexOf(action) > -1) kpiAutoSyncSafe_(req); // r23: ซิงก์ KPI อัตโนมัติ
+        return ok_(res);
       } finally {
         lock.releaseLock();
       }
@@ -2066,7 +2073,9 @@ function kpiForm_(ym, showAll) {
       updatedAt: x ? String(txt(x.UpdatedAt)).slice(0, 16) : '',
       updatedBy: x ? txt(x.UpdatedBy) : '',
       exists: !!x,
-      inPeriod: inPeriod
+      inPeriod: inPeriod,
+      auto: KPI_AUTO_CODES.some(c => norm_(c) === norm_(m.KPI_Code)),  // r23
+      manual: !!x && String(x.SrcNo || '') === 'fixpoint-manual'        // r24
     });
   });
   return { month: ym, yearBE: year, totalKpi: master.length, rows: rows };
@@ -2119,6 +2128,7 @@ function kpiSaveBatch_(u, req) {
     const code = String(inp.kpiCode || '').trim();
     const m = master.find(x => norm_(x.KPI_Code) === norm_(code));
     if (!m) { skipped.push({ kpiCode: code, reason: 'ไม่พบใน KPI_Master ของแผนกซ่อมบำรุง' }); return; }
+    if (KPI_AUTO_CODES.some(c => norm_(c) === norm_(code))) { skipped.push({ kpiCode: code, reason: 'คำนวณอัตโนมัติจากงานแจ้งซ่อม ส่งมือไม่ได้' }); return; } // r23
     const id = code + '_' + year + '_' + ('0' + month).slice(-2);
     const ex = byId[id] || null;
 
@@ -2154,4 +2164,253 @@ function kpiSaveBatch_(u, req) {
     addUserLog_(u.Username, 'ส่งค่า KPI รายเดือน', ym, 'เพิ่มใหม่ ' + inserted + ' · อัปเดต ' + updated + ' รายการ');
   }
   return { month: ym, yearBE: year, inserted: inserted, updated: updated, rows: results, skipped: skipped };
+}
+
+
+// ===========================================================================
+// r23: KPI อัตโนมัติ — ASIA-MTN-04 (จำนวนครั้งที่เครื่องจักร breakdown)
+//   นับจากงานแจ้งซ่อมหมวด KPI_BREAKDOWN_CATEGORY (ไม่นับที่ Rejected / Cancelled)
+//   แล้วเขียน Actual ลง KPI_Data ของ Rst-Kpi-Mtd (ID แบบเดียวกับแอปเดิม, SrcNo = fixpoint-auto)
+//   • ซิงก์ทุกครั้งที่งานซ่อมถูกสร้าง/อนุมัติ/ปฏิเสธ/ยกเลิก/ปิดงาน/แก้ไข/ลบ (ใน doPost)
+//   • trigger รายวัน (installKpiBreakdownTrigger) เป็นตัวสำรอง
+//   • ผู้จัดการ/admin กดคำนวณใหม่ได้จากหน้า KPI (kpiSyncBreakdownRoute_)
+// ===========================================================================
+const KPI_AUTO_BREAKDOWN_CODE = 'ASIA-MTN-04';
+const KPI_BREAKDOWN_CATEGORY = 'เครื่องจักร (Breakdown)';   // ต้องตรงกับค่าแรกของรายการ CATEGORIES ใน index.html
+// 📌 ชื่อสาขา (ตามค่าในคอลัมน์ Branch ของชีต Tickets = ชื่อสาขาจากชีต Branches) ที่นับเป็น RST-ASIA — RST-ASIA มีสาขาเดียวคือสำนักงานใหญ่
+const KPI_COMPANY_BRANCHES = ['สำนักงานใหญ่'];
+const KPI_AUTO_CODES = [KPI_AUTO_BREAKDOWN_CODE];          // รหัส KPI ที่คำนวณอัตโนมัติ (ส่งมือจากหน้า KPI ไม่ได้)
+const KPI_AUTO_SRC = 'fixpoint-auto';
+const KPI_TICKET_ACTIONS = ['createTicket', 'approveTicket', 'rejectTicket', 'cancelTicket', 'completeTicket', 'updateTicket', 'deleteTickets'];
+
+/** นับจำนวนงาน breakdown ต่อเดือน → { 'yyyy-MM' (ค.ศ.): จำนวน } */
+function breakdownCounts_() {
+  const out = {};
+  const scope = KPI_COMPANY_BRANCHES.map(norm_);
+  readAll_(SHEETS.TICKETS).forEach(t => {
+    if (String(t.Category) !== KPI_BREAKDOWN_CATEGORY) return;
+    const st = String(t.Status || '');
+    if (st === ST.REJECTED || st === ST.CANCELLED) return;
+    if (scope.length && scope.indexOf(norm_(t.Branch)) === -1) return;
+    const d = toDate_(t.CreatedAt);
+    if (!d) return;
+    const key = Utilities.formatDate(d, TZ, 'yyyy-MM');
+    out[key] = (out[key] || 0) + 1;
+  });
+  return out;
+}
+
+/** เดือนปัจจุบัน (ค.ศ. 'yyyy-MM') */
+function currentYm_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM'); }
+
+/**
+ * ซิงก์ Actual ของ ASIA-MTN-04 ลง KPI_Data สำหรับแต่ละเดือน (ค.ศ. 'yyyy-MM')
+ * - ข้ามเดือนที่อยู่นอกช่วง FirstYM–LastYM ของ KPI_Master และเดือนในอนาคต
+ * - ไม่เขียนซ้ำถ้าค่าเดิมเหมือนเดิม (ลดการเขียนชีต)
+ */
+function kpiSyncBreakdownMonths_(yms, actorName, opts) {
+  const force = !!(opts && opts.force);   // r24: force = คืนค่าอัตโนมัติ (ทับค่ามือ)
+  const master = kpiMasterRows_().find(r => norm_(r.KPI_Code) === norm_(KPI_AUTO_BREAKDOWN_CODE));
+  if (!master) throw new Error('ไม่พบ ' + KPI_AUTO_BREAKDOWN_CODE + ' ใน KPI_Master (Company=' + KPI_DEFAULT_COMPANY + ', Dept=' + KPI_DEFAULT_DEPT + ', Active=Y)');
+  const direction = String(master.Direction || 'LOWER').toUpperCase();
+  const target = Number(master.DefaultTarget);
+  const fromNum = kpiYmNum_(master.FirstYM), toNum = kpiYmNum_(master.LastYM);
+  const cur = currentYm_();
+  const counts = breakdownCounts_();
+  const t = kpiTableRows_(KPI_DATA_SHEET);
+  const H = t.headers;
+  const byId = {};
+  t.rows.forEach(r => { byId[String(r.ID)] = r; });
+  const stamp = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+  const by = String(actorName || 'fixpoint:auto');
+  const results = [], skipped = [];
+  let inserted = 0, updated = 0, unchanged = 0;
+  const manualKept = [];
+
+  Array.from(new Set(yms)).sort().forEach(ym => {
+    if (!/^\d{4}-\d{2}$/.test(ym) || ym > cur) { skipped.push(ym); return; }
+    const year = Number(ym.slice(0, 4)) + 543;
+    const month = Number(ym.slice(5, 7));
+    const num = year * 100 + month;
+    if ((fromNum !== null && num < fromNum) || (toNum !== null && num > toNum)) { skipped.push(ym); return; }
+
+    const count = counts[ym] || 0;
+    const id = KPI_AUTO_BREAKDOWN_CODE + '_' + year + '_' + ('0' + month).slice(-2);
+    const ex = byId[id] || null;
+    if (ex && String(ex.SrcNo) === KPI_MANUAL_SRC && !force) { manualKept.push(ym); return; }   // r24: ค่ามือชนะค่าอัตโนมัติ
+    const ev = kpiEvaluate_(kpiParseVal_(count), target, direction);
+    const base = { id: id, kpiCode: KPI_AUTO_BREAKDOWN_CODE, month: ym, count: count, target: target,
+                   achieved: ev.achieved, result: ev.result, status: ev.status };
+
+    if (ex && String(ex.Actual) === String(count) && String(ex.SrcNo) === KPI_AUTO_SRC && Number(ex.Target) === target) {
+      unchanged++;
+      results.push(Object.assign(base, { changed: false }));
+      return;
+    }
+    const values = {
+      ID: id, KPI_Code: KPI_AUTO_BREAKDOWN_CODE, Company: KPI_DEFAULT_COMPANY, Dept: KPI_DEFAULT_DEPT,
+      Year: year, Month: month, MonthName: KPI_MONTH_NAMES[month - 1],
+      Topic: String(master.Topic || ''), Method: String(master.Method || ''), Direction: direction,
+      Target: target, Actual: count, Achieved: ev.achieved, Result: ev.result, Status: ev.status,
+      Note: ('[fixpoint-auto] นับจากงานแจ้งซ่อมหมวด "' + KPI_BREAKDOWN_CATEGORY + '" ' + count +
+             ' ครั้ง (ไม่นับงานที่ไม่อนุมัติหรือยกเลิก)').slice(0, 480),
+      SrcNo: KPI_AUTO_SRC, UpdatedAt: stamp, UpdatedBy: by
+    };
+    // คอลัมน์ที่ไม่ได้กำหนดในนี้ (เช่น Link) คงค่าเดิมของแถว
+    const row = H.map(k => Object.prototype.hasOwnProperty.call(values, k) ? values[k] : (ex ? ex[k] : ''));
+    if (ex) {
+      t.sheet.getRange(ex._row, 1, 1, H.length).setValues([row]);
+      updated++;
+    } else {
+      t.sheet.appendRow(row);
+      inserted++;
+      byId[id] = Object.assign({ _row: t.sheet.getLastRow() }, values);
+    }
+    results.push(Object.assign(base, { changed: true }));
+  });
+
+  if (inserted || updated) {
+    SpreadsheetApp.openById(KPI_SPREADSHEET_ID).getSheetByName(KPI_LOG_SHEET).appendRow(
+      [new Date(), 'fixpoint:auto', 'upsert', inserted + updated, inserted, updated, 0,
+       'breakdown-sync ' + KPI_AUTO_BREAKDOWN_CODE + ' ' + results.filter(r => r.changed).map(r => r.month).join(',')]);
+  }
+  return { kpiCode: KPI_AUTO_BREAKDOWN_CODE, direction: direction, target: target,
+           inserted: inserted, updated: updated, unchanged: unchanged, results: results, skipped: skipped, manualKept: manualKept };
+}
+
+/** r23: ปุ่ม "คำนวณ Breakdown ใหม่" (ผู้จัดการ/admin) — ซิงก์เดือนที่เลือก */
+function kpiSyncBreakdownRoute_(u, req) {
+  const ym = normalizeYm_(req.month);
+  const r = kpiSyncBreakdownMonths_([ym], u.FullName || u.Username);
+  addUserLog_(u.Username, 'คำนวณ KPI อัตโนมัติ ' + KPI_AUTO_BREAKDOWN_CODE, ym,
+    'เพิ่ม ' + r.inserted + ' · อัปเดต ' + r.updated + ' · ไม่เปลี่ยน ' + r.unchanged);
+  return Object.assign({ month: ym }, r);
+}
+
+/** เดือนที่ต้องซิงก์: เดือนปัจจุบัน + เดือนก่อนหน้า + เดือนที่แจ้งของงานที่เกี่ยวข้อง (ค.ศ. 'yyyy-MM') */
+function kpiAffectedMonths_(req) {
+  const now = new Date();
+  const y = Number(Utilities.formatDate(now, TZ, 'yyyy'));
+  const m = Number(Utilities.formatDate(now, TZ, 'M'));
+  const pad = n => ('0' + n).slice(-2);
+  const set = {};
+  set[y + '-' + pad(m)] = true;
+  set[(m === 1 ? y - 1 : y) + '-' + pad(m === 1 ? 12 : m - 1)] = true;
+  const ids = [req && req.ticketId].concat(Array.isArray(req && req.ticketIds) ? req.ticketIds : [])
+    .filter(Boolean).map(String);
+  if (ids.length) {
+    readAll_(SHEETS.TICKETS).concat(readAll_(SHEETS.DELETED)).forEach(t => {
+      if (ids.indexOf(String(t.TicketID)) === -1) return;
+      const d = toDate_(t.CreatedAt);
+      if (d) set[Utilities.formatDate(d, TZ, 'yyyy-MM')] = true;
+    });
+  }
+  return Object.keys(set).sort();
+}
+
+/** ซิงก์ KPI หลังงานซ่อมเปลี่ยน — ถ้าผิดพลาดจะไม่ทำให้การบันทึกงานล้มเหลว */
+function kpiAutoSyncSafe_(req) {
+  try {
+    kpiSyncBreakdownMonths_(kpiAffectedMonths_(req), 'fixpoint:auto');
+  } catch (e) {
+    Logger.log('kpiAutoSyncSafe_: ' + e);
+    try { addUserLog_('ระบบ', 'ซิงก์ KPI อัตโนมัติไม่สำเร็จ', KPI_AUTO_BREAKDOWN_CODE, String((e && e.message) || e)); }
+    catch (e2) { /* ignore */ }
+  }
+}
+
+/** ▶️ รันครั้งเดียว: ตั้ง trigger ซิงก์ทุกวันเวลา 01:00 (เดือนปัจจุบัน + เดือนก่อนหน้า) */
+function installKpiBreakdownTrigger() {
+  ScriptApp.getProjectTriggers().forEach(tr => {
+    if (tr.getHandlerFunction() === 'kpiDailyBreakdownSync') ScriptApp.deleteTrigger(tr);
+  });
+  ScriptApp.newTrigger('kpiDailyBreakdownSync').timeBased().everyDays(1).atHour(1).create();
+  Logger.log('✅ ตั้ง trigger kpiDailyBreakdownSync ทุกวัน 01:00 แล้ว');
+}
+
+function kpiDailyBreakdownSync() {
+  kpiSyncBreakdownMonths_(kpiAffectedMonths_({}), 'fixpoint:auto');
+}
+
+/** ▶️ รันครั้งเดียวหลังตั้งค่า: ซิงก์ย้อนหลังทุกเดือนในช่วง FirstYM–LastYM ของ ASIA-MTN-04 */
+function backfillKpiBreakdown() {
+  const m = kpiMasterRows_().find(r => norm_(r.KPI_Code) === norm_(KPI_AUTO_BREAKDOWN_CODE));
+  if (!m) throw new Error('ไม่พบ ' + KPI_AUTO_BREAKDOWN_CODE + ' ใน KPI_Master');
+  const a = kpiYmNum_(m.FirstYM), b = kpiYmNum_(m.LastYM);
+  const fromY = Math.floor(a / 100) - 543, fromM = a % 100;
+  const toY = Math.floor(b / 100) - 543, toM = b % 100;
+  const yms = [];
+  let y = fromY, mo = fromM;
+  while (y < toY || (y === toY && mo <= toM)) {
+    yms.push(y + '-' + ('0' + mo).slice(-2));
+    if (mo === 12) { y++; mo = 1; } else { mo++; }
+  }
+  const r = kpiSyncBreakdownMonths_(yms, 'fixpoint:backfill');
+  Logger.log(JSON.stringify({ inserted: r.inserted, updated: r.updated, unchanged: r.unchanged, skipped: r.skipped }));
+  return r;
+}
+
+
+// ===========================================================================
+// r24: กรอกค่า ASIA-MTN-04 ด้วยมือ (ผู้จัดการ/admin) — ค่ามือของเดือนนั้นชนะค่าอัตโนมัติ
+//   SrcNo = fixpoint-manual · ต้องมีเหตุผล · คืนค่าอัตโนมัติได้ด้วย kpiRestoreBreakdownRoute_
+// ===========================================================================
+const KPI_MANUAL_SRC = 'fixpoint-manual';
+
+/** เขียนแถว ASIA-MTN-04 ของเดือนหนึ่งลง KPI_Data โดยกำหนดค่า SrcNo/Note เอง (ไม่ซิงก์) */
+function kpiWriteBreakdownRow_(ym, count, src, note, by) {
+  const master = kpiMasterRows_().find(r => norm_(r.KPI_Code) === norm_(KPI_AUTO_BREAKDOWN_CODE));
+  if (!master) throw new Error('ไม่พบ ' + KPI_AUTO_BREAKDOWN_CODE + ' ใน KPI_Master');
+  const year = Number(ym.slice(0, 4)) + 543;
+  const month = Number(ym.slice(5, 7));
+  const num = year * 100 + month;
+  const fromNum = kpiYmNum_(master.FirstYM), toNum = kpiYmNum_(master.LastYM);
+  if ((fromNum !== null && num < fromNum) || (toNum !== null && num > toNum)) {
+    throw new Error('เดือน ' + ym + ' อยู่นอกช่วงของ KPI นี้');
+  }
+  if (ym > currentYm_()) throw new Error('ไม่สามารถกรอกค่าของเดือนในอนาคตได้');
+  const direction = String(master.Direction || 'LOWER').toUpperCase();
+  const target = Number(master.DefaultTarget);
+  const id = KPI_AUTO_BREAKDOWN_CODE + '_' + year + '_' + ('0' + month).slice(-2);
+  const t = kpiTableRows_(KPI_DATA_SHEET);
+  const H = t.headers;
+  const ex = t.rows.find(r => String(r.ID) === id) || null;
+  const ev = kpiEvaluate_(kpiParseVal_(count), target, direction);
+  const stamp = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+  const values = {
+    ID: id, KPI_Code: KPI_AUTO_BREAKDOWN_CODE, Company: KPI_DEFAULT_COMPANY, Dept: KPI_DEFAULT_DEPT,
+    Year: year, Month: month, MonthName: KPI_MONTH_NAMES[month - 1],
+    Topic: String(master.Topic || ''), Method: String(master.Method || ''), Direction: direction,
+    Target: target, Actual: count, Achieved: ev.achieved, Result: ev.result, Status: ev.status,
+    Note: String(note).slice(0, 480), SrcNo: src, UpdatedAt: stamp, UpdatedBy: String(by)
+  };
+  const row = H.map(k => Object.prototype.hasOwnProperty.call(values, k) ? values[k] : (ex ? ex[k] : ''));
+  if (ex) t.sheet.getRange(ex._row, 1, 1, H.length).setValues([row]);
+  else t.sheet.appendRow(row);
+  SpreadsheetApp.openById(KPI_SPREADSHEET_ID).getSheetByName(KPI_LOG_SHEET).appendRow(
+    [new Date(), 'fixpoint:' + String(by), 'upsert', 1, ex ? 0 : 1, ex ? 1 : 0, 0, src + ' ' + ym]);
+  return { id: id, month: ym, count: count, target: target, achieved: ev.achieved, result: ev.result,
+           status: ev.status, srcNo: src };
+}
+
+/** r24: ผู้จัดการ/admin กรอกค่าด้วยมือ (จำนวนเต็ม ≥ 0 + เหตุผลบังคับ) */
+function kpiOverrideBreakdownRoute_(u, req) {
+  const ym = normalizeYm_(req.month);
+  const raw = req.actual;
+  const val = (raw === '' || raw === null || raw === undefined) ? NaN : Number(raw);
+  if (!isFinite(val) || val < 0 || Math.floor(val) !== val) throw new Error('จำนวนครั้งต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+  const reason = String(req.reason || '').trim();
+  if (reason.length < 5) throw new Error('กรุณาระบุเหตุผลการแก้ค่ามือ (อย่างน้อย 5 ตัวอักษร)');
+  const by = u.FullName || u.Username;
+  const r = kpiWriteBreakdownRow_(ym, val, KPI_MANUAL_SRC, '[fixpoint-manual] ' + reason + ' (โดย ' + by + ')', by);
+  addUserLog_(u.Username, 'กรอกค่า KPI ASIA-MTN-04 ด้วยมือ', ym, val + ' ครั้ง · ' + reason);
+  return r;
+}
+
+/** r24: คืนค่าอัตโนมัติ (ทับค่ามือของเดือนนั้นด้วยค่าจากงานแจ้งซ่อม) */
+function kpiRestoreBreakdownRoute_(u, req) {
+  const ym = normalizeYm_(req.month);
+  const r = kpiSyncBreakdownMonths_([ym], u.FullName || u.Username, { force: true });
+  addUserLog_(u.Username, 'คืนค่า KPI ASIA-MTN-04 เป็นอัตโนมัติ', ym, '');
+  return Object.assign({ month: ym }, r);
 }
