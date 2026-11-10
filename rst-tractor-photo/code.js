@@ -1,6 +1,9 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r20-2026-11-07-implements
+ * CODE_VERSION: r21-2026-11-10-impl-used-note
+ *
+ * r21: อุปกรณ์ต่อพ่วง เอาเฉพาะ มือสอง (อุปกรณ์สาธิต/ใหม่/เช่า ไม่นำเข้า และไม่แสดงในแอป)
+ *      - คอลัมน์ใหม่ note = หมายเหตุ จาก Ecount (หัวตาราง หมายเหตุ) ถ้าไฟล์ไม่มีคอลัมน์นี้ ใช้หมายเหตุเดิมต่อ
  *
  * r20: อุปกรณ์ต่อพ่วงมือสอง / สาธิต (ชุดคีป ผาน โรตารี่ ใบมีดดันดิน ชุดบุ้งกี๋ ฯลฯ)
  *      - ประเภทใหม่ 'อุปกรณ์ต่อพ่วง' (IMPL_RE) ตรวจหลังประเภทรถทั้งหมด (รถแทรกเตอร์พร้อมผาน = รถแทรกเตอร์)
@@ -90,11 +93,11 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r20-2026-11-07-implements';
+var CODE_VERSION = 'r21-2026-11-10-impl-used-note';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
-  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt', 'reg', 'priceDate', 'priceM', 'priceBy', 'priceAt'],
+  Tractors: ['key', 'serial', 'chassis', 'engine', 'tag', 'code', 'name', 'series', 'type', 'kind', 'branch', 'spot', 'qty', 'price', 'cond', 'hours', 'status', 'firstSeen', 'lastSeen', 'outDate', 'updatedAt', 'year', 'yearBy', 'yearAt', 'reg', 'priceDate', 'priceM', 'priceBy', 'priceAt', 'note'],
   Photos: ['photoId', 'key', 'fileId', 'thumbId', 'label', 'cover', 'uploadedAt', 'uploadedBy'],
   ImportLog: ['at', 'by', 'fileName', 'rowsRead', 'rowsMatched', 'newCars', 'dupRows', 'tractors', 'goneCars', 'format'],
   AccessLog: ['at', 'user', 'name', 'branch', 'role', 'event', 'detail']
@@ -387,6 +390,10 @@ function implSeries_(name) {
     .replace(/\s+/g, ' ').trim();
 }
 /** r20: Serial ว่าง / --- → NS-<รหัสสินค้า> */
+/** r21: อุปกรณ์ต่อพ่วงที่แอปเก็บ = มือสองเท่านั้น (ชื่อมี มือสอง หรืออยู่หมวดมือสองและไม่ใช่สาธิต) */
+function implUsed_(r) { var k = kindOf_(r.name); return k === 'มือสอง' || (String(r.usedCat || '') === '1' && k === 'รถใหม่'); }
+/** r21: แสดงในแอปไหม (อุปกรณ์ต่อพ่วงที่ไม่ใช่มือสอง ซ่อน) */
+function shown_(c) { return c.key && c.type && isKeptKind_(c.kind) && !(c.type === IMPL_TYPE && c.kind !== 'มือสอง'); }
 function noSerial_(serial) { return /^[\s\-–—_.]*$/.test(String(serial == null ? '' : serial)); }
 function typeOf_(name) {
   var n = String(name || '');
@@ -420,8 +427,8 @@ function rowKind_(r) {
 function keepRow_(r) {
   var t = typeOf_(r.name), c = String(r.usedCat || '');
   if (!t) return false;
+  if (t === IMPL_TYPE) return implUsed_(r); // r21 (ตรวจก่อน usedCat: อุปกรณ์สาธิตในหมวดมือสองก็ไม่เอา)
   if (c === '1') return true;
-  if (t === IMPL_TYPE) return isKept_(r.name); // r20: อุปกรณ์ต่อพ่วง มือสอง/สาธิต ทุกหมวด
   if (t === 'อื่นๆ' || !isKept_(r.name)) return false;
   if (t === 'เครื่องอัดฟาง') return true; // r12: เครื่องอัดฟางมือสอง/สาธิต ทุกหมวด
   return c === '' || kindOf_(r.name) === 'รถสาธิต';
@@ -527,7 +534,7 @@ function getBoot() {
   readAll_(SH.PHOTOS).forEach(function (p) { photos[p.key] = (photos[p.key] || 0) + 1; });
   var logs = readAll_(SH.LOG), email = '';
   try { email = Session.getActiveUser().getEmail(); } catch (e) { }
-  var cars = readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); });
+  var cars = readAll_(SH.TRACTORS).map(normCar_).filter(shown_);
   var legacy = {}, lc = { n: {}, y: {}, p: {} };
   cars.forEach(function (c) { c.yearSrc = c.year ? 'manual' : ''; });
   try { lc = legacyCount_(); } catch (e) { }
@@ -562,7 +569,7 @@ function importStock(rows, meta) {
       groups[key].push(r);
     });
 
-    var out = [], fresh = 0, dupRows = 0, gone = 0, FILL = ['branch', 'spot', 'code', 'price', 'cond', 'hours', 'gps', 'reg'];
+    var out = [], fresh = 0, dupRows = 0, gone = 0, FILL = ['branch', 'spot', 'code', 'price', 'cond', 'hours', 'gps', 'reg', 'note'];
     order.forEach(function (key) {
       var g = groups[key], qty = 0, pick = null;
       dupRows += g.length - 1;
@@ -583,7 +590,8 @@ function importStock(rows, meta) {
         price: r.price || (prev ? priceStr_(prev.price) : ''),
         priceDate: r.price ? today : (prev && priceStr_(prev.price) ? (prev.priceDate || prev.lastSeen || '') : ''),
         priceM: prev ? prev.priceM : '', priceBy: prev ? prev.priceBy : '', priceAt: prev ? prev.priceAt : '',
-        hours: numStr_(r.hours), reg: String(r.reg || '').trim(), status: inStock ? 'stock' : 'out',
+        hours: numStr_(r.hours), reg: String(r.reg || '').trim(),
+        note: meta.hasNote ? String(r.note || '').trim() : (prev ? String(prev.note || '') : ''), // r21: หมายเหตุจาก Ecount status: inStock ? 'stock' : 'out',
         firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
         outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now,
         year: prev ? prev.year : '', yearBy: prev ? prev.yearBy : '', yearAt: prev ? prev.yearAt : ''
@@ -685,7 +693,7 @@ function saleCarsAll_() {
   readAll_(SH.PHOTOS).forEach(function (p) { photos[p.key] = (photos[p.key] || 0) + 1; });
   var lc = { n: {}, y: {}, p: {} };
   try { lc = legacyCount_(); } catch (e) { }
-  return readAll_(SH.TRACTORS).map(normCar_).filter(function (c) { return c.key && c.type && isKeptKind_(c.kind); }).map(function (c) {
+  return readAll_(SH.TRACTORS).map(normCar_).filter(shown_).map(function (c) {
     var lk = legacyNorm_(c.key);
     c.yearSrc = c.year ? 'manual' : '';
     if (!c.year && lc.y[lk]) { c.year = lc.y[lk]; c.yearSrc = 'legacy'; }
