@@ -227,6 +227,13 @@ body {
 .badge-partial-custom { background-color: #ffe5d0; color: #b34700; font-weight: 500; }
 .badge-success-custom { background-color: #d1e7dd; color: #0f5132; font-weight: 500; }
 
+/* ช่องสถานะอะไหล่/คูปอง: ป้าย + ปุ่มเรียงลงล่าง ไม่ล้นทับช่อง Remark */
+.table td.cell-status { white-space: normal; min-width: 170px; }
+.status-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.cell-status.text-end .status-stack { align-items: flex-end; }
+.status-stack .badge { white-space: normal; text-align: left; line-height: 1.3; }
+.status-stack .btn { white-space: nowrap; margin-left: 0 !important; position: relative; z-index: 1; }
+
 #loginOverlay {
   position: fixed;
   top: 0; left: 0; width: 100%; height: 100%;
@@ -1107,9 +1114,10 @@ body {
           <div class="row mb-3 g-2">
             <div class="col-md-3 col-6">
               <div class="card card-stat p-3 h-100" style="border-left-color:#6c757d;">
-                <span class="text-muted small">คูปองทั้งหมด / ยอดที่ควรได้คืน</span>
+                <span class="text-muted small">สิทธิ์คูปองทั้งหมด / ยอดที่ควรได้คืน</span>
                 <h4 class="fw-bold mb-0 mt-1" id="cpStatTotal">0 ใบ</h4>
                 <div class="small text-muted" id="cpStatExpected">0 บาท</div>
+                <div class="small text-muted" id="cpStatPendingCoupon"></div>
               </div>
             </div>
             <div class="col-md-3 col-6">
@@ -1128,7 +1136,7 @@ body {
             </div>
             <div class="col-md-3 col-6">
               <div class="card card-stat p-3 h-100" style="border-left-color:#dc3545;">
-                <span class="text-muted small">Yanmar จ่ายไม่ครบ / ไม่จ่าย</span>
+                <span class="text-muted small">Yanmar จ่ายเงินคืนไม่ครบ / ไม่จ่าย</span>
                 <h4 class="fw-bold mb-0 mt-1 text-danger" id="cpStatShort">0 บาท</h4>
                 <div class="small text-muted" id="cpStatShortCount">0 ใบ</div>
               </div>
@@ -1145,11 +1153,12 @@ body {
               </div>
               <div class="col-lg-8 d-flex flex-wrap gap-1 justify-content-lg-end">
                 <button class="btn btn-sm btn-outline-dark cp-filter active" onclick="setCouponFilter('all', this)">ทั้งหมด</button>
-                <button class="btn btn-sm btn-outline-secondary cp-filter" onclick="setCouponFilter('not_sent', this)">ยังไม่ส่ง</button>
+                <button class="btn btn-sm btn-outline-secondary cp-filter" onclick="setCouponFilter('not_sent', this)">ยังไม่ส่งคูปอง</button>
                 <button class="btn btn-sm btn-outline-info cp-filter" onclick="setCouponFilter('waiting', this)">รอเงินโอน</button>
-                <button class="btn btn-sm btn-outline-success cp-filter" onclick="setCouponFilter('full', this)">ได้รับครบ</button>
-                <button class="btn btn-sm btn-outline-danger cp-filter" onclick="setCouponFilter('problem', this)">ไม่ครบ / ไม่จ่าย</button>
+                <button class="btn btn-sm btn-outline-success cp-filter" onclick="setCouponFilter('full', this)">เงินคืนครบ</button>
+                <button class="btn btn-sm btn-outline-danger cp-filter" onclick="setCouponFilter('problem', this)">เงินคืนไม่ครบ / ไม่จ่าย</button>
                 <button class="btn btn-sm btn-outline-warning text-dark cp-filter" onclick="setCouponFilter('no_coupon_no', this)">ไม่มีเลขคูปอง</button>
+                <button class="btn btn-sm btn-outline-secondary cp-filter" onclick="setCouponFilter('pending_coupon', this)">ค้างส่งคูปอง</button>
               </div>
             </div>
 
@@ -2594,9 +2603,9 @@ function renderDashboardTable(list) {
       const badgeClass = pStatus === "ส่งบางส่วน" ? "badge-partial-custom" : "badge-warning-custom";
       
       partsStatusDisplay = `
-        <div class="mb-1">
+        <div class="status-stack">
           <span class="badge ${badgeClass} text-wrap">ค้างส่ง: ${escapeHtml(item.partsStore || 'อะไหล่ PM')}${item.lastPm ? ` (${item.lastPm} ชม.)` : ''}</span>
-          ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimPartsModal('${escapeHtml(item.machineId)}')">รับอะไหล่</button>` : ''}
+          ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:0.7rem;" onclick="openClaimPartsModal('${escapeHtml(item.machineId)}')">รับอะไหล่</button>` : ''}
         </div>
       `;
     }
@@ -2620,9 +2629,9 @@ function renderDashboardTable(list) {
           couponDisplay = `<span class="text-success fw-bold"><i class="fa-solid fa-circle-check me-1"></i>ครบถ้วน (${couponVal.toLocaleString('th-TH')})</span>`;
         } else {
           couponDisplay = `
-            <div class="mb-1">
+            <div class="status-stack">
               <span class="badge badge-warning-custom text-wrap">ค้างส่งคูปอง (สิทธิ์ 4,000.-)</span>
-              ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimModal('${escapeHtml(matchedHistory.ticketId)}', '${lastPmRound}')">รับคูปอง</button>` : ''}
+              ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:0.7rem;" onclick="openClaimModal('${escapeHtml(matchedHistory.ticketId)}', '${lastPmRound}')">รับคูปอง</button>` : ''}
             </div>
           `;
         }
@@ -2632,9 +2641,9 @@ function renderDashboardTable(list) {
           couponDisplay = `<span class="text-success fw-bold"><i class="fa-solid fa-circle-check me-1"></i>ครบถ้วน (${totalCoupon.toLocaleString('th-TH')})</span>`;
         } else {
           couponDisplay = `
-            <div class="mb-1">
+            <div class="status-stack">
               <span class="badge badge-warning-custom text-wrap">ค้างส่งคูปอง (สิทธิ์ 4,000.-)</span>
-              ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-1 ms-1" style="font-size:0.7rem;" onclick="openClaimModal('${escapeHtml(item.machineId)}', '${lastPmRound}')">รับคูปอง</button>` : ''}
+              ${showAction ? `<button class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:0.7rem;" onclick="openClaimModal('${escapeHtml(item.machineId)}', '${lastPmRound}')">รับคูปอง</button>` : ''}
             </div>
           `;
         }
@@ -2668,11 +2677,11 @@ function renderDashboardTable(list) {
       <td style="white-space: normal; word-break: break-word; min-width: 180px; max-width: 280px;">${escapeHtml(item.partsStore) || '-'}</td>
       <td><span class="badge bg-light text-dark border">${escapeHtml(item.supplierId) || '-'}</span></td>
       <td>${escapeHtml(item.partsBillNo) || '-'}</td>
-      <td>${partsStatusDisplay}</td>
+      <td class="cell-status">${partsStatusDisplay}</td>
       <td class="text-center">
         ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
       </td>
-      <td class="text-end">${couponDisplay}</td>
+      <td class="text-end cell-status">${couponDisplay}</td>
       <td style="white-space: normal; word-break: break-word; min-width: 200px; max-width: 320px;"><small>${escapeHtml(item.remark) || '-'}</small></td>
       ${actionTd}
     `;
@@ -3203,11 +3212,11 @@ function renderHistoryTable(list) {
       <td style="white-space: normal; word-break: break-word; min-width: 180px; max-width: 280px;">${escapeHtml(item.partsStore) || '-'}</td>
       <td><span class="badge bg-light text-dark border">${escapeHtml(item.supplierId) || '-'}</span></td>
       <td>${escapeHtml(item.partsBillNo) || '-'}</td>
-      <td>${partsStatusDisplay}</td>
+      <td class="cell-status">${partsStatusDisplay}</td>
       <td class="text-center">
         ${isImageUrl(item.receiptImage) ? `<button class="btn btn-sm btn-outline-info" onclick="showImageModal('${escapeHtml(item.receiptImage)}')"><i class="fa-solid fa-image"></i></button>` : '-'}
       </td>
-      <td class="text-end">${couponDisplay}</td>
+      <td class="text-end cell-status">${couponDisplay}</td>
       <td style="white-space: normal; word-break: break-word; min-width: 200px; max-width: 320px;"><small>${escapeHtml(item.remark) || '-'}</small></td>
       ${actionTd}
     `;
@@ -3935,8 +3944,10 @@ function loadCouponRefund(forceRefresh = false) {
 function renderCouponSummary() {
   const s = couponRefundSummary || {};
   const set = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
-  set("cpStatTotal", `${cpMoney(s.totalCoupons)} ใบ`);
-  set("cpStatExpected", `ควรได้คืน ${cpMoney(s.expectedTotal)} บาท · คงค้าง ${cpMoney(s.outstandingTotal)} บาท`);
+  // สิทธิ์ทั้งหมด = ได้รับคูปองแล้ว + ค้างส่งคูปอง (ตรงกับการ์ดยอดรวมสิทธิ์คูปองหน้าตารางสถานะเครื่องจักร)
+  set("cpStatTotal", `${cpMoney(s.entitledCount ?? s.totalCoupons)} ใบ · ${cpMoney(s.entitledTotal ?? s.expectedTotal)} บาท`);
+  set("cpStatExpected", `ได้รับคูปองแล้ว ${cpMoney(s.totalCoupons)} ใบ = ${cpMoney(s.expectedTotal)} บาท · คงค้างเงินคืน ${cpMoney(s.outstandingTotal)} บาท`);
+  set("cpStatPendingCoupon", s.pendingCouponCount ? `ค้างส่งคูปอง (ยังไม่ได้รับคูปอง) ${cpMoney(s.pendingCouponCount)} ใบ = ${cpMoney(s.pendingCouponAmount)} บาท` : '');
   set("cpStatWaiting", `${cpMoney(s.waitingCount)} ใบ`);
   set("cpStatWaitingAmt", `${cpMoney(s.waitingAmount)} บาท · ยังไม่ส่ง ${cpMoney((s.notSentCount || 0) + (s.noCouponNoCount || 0))} ใบ`);
   set("cpStatReceived", `${cpMoney(s.receivedTotal)} บาท`);
@@ -3958,7 +3969,7 @@ function getFilteredCoupons() {
   return couponRefundData.filter(c => {
     if (couponFilter === 'problem' && !(c.statusKey === 'partial' || c.statusKey === 'unpaid')) return false;
     if (couponFilter === 'full' && !(c.statusKey === 'full' || c.statusKey === 'over')) return false;
-    if (['not_sent', 'waiting', 'no_coupon_no'].includes(couponFilter) && c.statusKey !== couponFilter) return false;
+    if (['not_sent', 'waiting', 'no_coupon_no', 'pending_coupon'].includes(couponFilter) && c.statusKey !== couponFilter) return false;
     if (!q) return true;
     return [c.couponNo, c.ticketId, c.machineId, c.customer, c.model, c.refundRef]
       .some(v => String(v || '').toLowerCase().includes(q));
@@ -3967,6 +3978,7 @@ function getFilteredCoupons() {
 
 function couponStatusBadge(c) {
   const map = {
+    pending_coupon: ['bg-light text-dark border', 'fa-clock'],
     no_coupon_no: ['bg-warning text-dark', 'fa-triangle-exclamation'],
     not_sent: ['bg-secondary', 'fa-box-archive'],
     waiting: ['bg-info text-dark', 'fa-hourglass-half'],
@@ -4104,9 +4116,9 @@ function updateRefundDiffPreview() {
   const v = Number(amt.value);
   if (amt.value === '' || isNaN(v)) { el.innerHTML = ''; return; }
   const d = v - expected;
-  el.innerHTML = d === 0 ? '<span class="text-success">✅ ได้รับครบตามมูลค่าคูปอง</span>'
+  el.innerHTML = d === 0 ? '<span class="text-success">✅ เงินคืนครบตามมูลค่าคูปอง</span>'
     : d < 0 ? `<span class="text-danger">❗ ได้รับขาดไป ${cpMoney(-d)} บาท</span>`
-    : `<span class="text-primary">ℹ️ ได้รับเกิน ${cpMoney(d)} บาท</span>`;
+    : `<span class="text-primary">ℹ️ เงินคืนเกิน ${cpMoney(d)} บาท</span>`;
 }
 
 async function submitRefund() {

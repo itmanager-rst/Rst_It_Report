@@ -1,4 +1,4 @@
-// CODE_VERSION: r02-2026-11-10-coupon-no-yanmar-refund
+// CODE_VERSION: r04-2026-11-10-refund-status-labels
 // ==========================================
 // CONFIGURATION & HELPER FUNCTIONS
 // ==========================================
@@ -494,7 +494,7 @@ function doGet(e) {
     if (action === "getAllData") {
       return getAllData(e.parameter);
     } else if (action === "checkStatus") {
-      return responseJSON({ status: "success", codeVersion: "r02-2026-11-10-coupon-no-yanmar-refund" });
+      return responseJSON({ status: "success", codeVersion: "r04-2026-11-10-refund-status-labels" });
     } else if (action === "getDashboard") {
       return getDashboardData();
     } else if (action === "getReportList") {
@@ -1495,16 +1495,16 @@ function computeRefundStatus(r) {
 
   var key, label;
   if (refund !== null) {
-    if (refund <= 0) { key = 'unpaid'; label = 'Yanmar ไม่จ่าย / ถูกปฏิเสธ'; }
-    else if (refund < expected) { key = 'partial'; label = 'ได้รับไม่ครบ'; }
-    else if (refund > expected) { key = 'over'; label = 'ได้รับเกิน'; }
-    else { key = 'full'; label = 'ได้รับครบ'; }
+    if (refund <= 0) { key = 'unpaid'; label = 'Yanmar ไม่จ่ายเงินคืน / ถูกปฏิเสธ'; }
+    else if (refund < expected) { key = 'partial'; label = 'เงินคืนไม่ครบ'; }
+    else if (refund > expected) { key = 'over'; label = 'เงินคืนเกิน'; }
+    else { key = 'full'; label = 'เงินคืนครบ'; }
   } else if (sentDate) {
     key = 'waiting'; label = 'รอ Yanmar โอนเงิน';
   } else if (!couponNo) {
     key = 'no_coupon_no'; label = 'ยังไม่กรอกเลขคูปอง';
   } else {
-    key = 'not_sent'; label = 'ยังไม่ส่งให้ Yanmar';
+    key = 'not_sent'; label = 'ยังไม่ส่งคูปองให้ Yanmar';
   }
 
   var waitingDays = null;
@@ -1548,8 +1548,24 @@ function findRowByCouponNo_(rows, couponNo) {
 }
 
 /**
+ * มีสิทธิ์คูปองหรือไม่ — ต้องตรงกับ hasCouponEntitlement() ฝั่งหน้าเว็บ
+ * (เบิกอะไหล่ และมีสถานะค้าง/รายการอะไหล่/เลขบิล)
+ */
+function hasCouponEntitlement_(r) {
+  var partsStatus = String(ciGet(r, 'parts_status') || '').trim();
+  var partsStore = String(ciGet(r, 'parts_store') || '').trim();
+  var partsBillNo = String(ciGet(r, 'parts_bill_no') || '').trim().toUpperCase();
+  var hasPendingParts = partsStatus === 'ส่งบางส่วน' || partsStatus === 'ค้างส่งอะไหล่';
+  var hasPartsList = partsStore !== '' && partsStore !== '-';
+  var hasPartsBill = partsBillNo !== '' && partsBillNo !== '-' && partsBillNo !== 'NA';
+  return partsStatus !== 'ไม่ได้เบิกอะไหล่' && (hasPendingParts || hasPartsList || hasPartsBill);
+}
+
+/**
  * รายการคูปองทั้งหมด + สรุปยอดเงินคืน (อ่านจาก Sheet pm_log โดยตรง)
- * นับเฉพาะงานที่ได้รับคูปองแล้ว (yanmar_coupon > 0) หรือมีเลขคูปองกรอกไว้
+ * - งานที่ได้รับคูปองแล้ว (yanmar_coupon > 0) หรือมีเลขคูปอง → นับเป็นคูปองที่ต้องตามเงินคืน
+ * - งานที่มีสิทธิ์แต่ยังไม่ได้รับคูปอง (yanmar_coupon = 0, PM รอบ > 0) → สถานะ pending_coupon
+ *   นับแยก เพื่อให้ยอด "สิทธิ์ทั้งหมด" ตรงกับการ์ดยอดรวมสิทธิ์คูปองในหน้าตารางสถานะเครื่องจักร
  */
 function getCouponRefundList(isRawObject) {
   try {
@@ -1563,17 +1579,35 @@ function getCouponRefundList(isRawObject) {
     var s = {
       totalCoupons: 0, expectedTotal: 0, notSentCount: 0, noCouponNoCount: 0,
       waitingCount: 0, waitingAmount: 0, receivedCount: 0, receivedTotal: 0,
-      fullCount: 0, partialCount: 0, unpaidCount: 0, overCount: 0, shortfallTotal: 0, duplicateCount: 0
+      fullCount: 0, partialCount: 0, unpaidCount: 0, overCount: 0, shortfallTotal: 0, duplicateCount: 0,
+      pendingCouponCount: 0, pendingCouponAmount: 0, entitledCount: 0, entitledTotal: 0
     };
     var list = [];
 
     rows.forEach(function (r) {
       var coupon = _toNumberOrNull(ciGet(r, 'yanmar_coupon')) || 0;
       var cn = normalizeCouponNo(ciGet(r, 'coupon_no'));
-      if (coupon <= 0 && !cn) return;
+      var pmRound = Number(ciGet(r, 'pm_target')) || 0;
+      var st;
+      if (coupon <= 0 && !cn) {
+        // ยังไม่ได้รับคูปอง แต่มีสิทธิ์ → แสดงเป็น "ค้างส่งคูปอง" (ยังตามเงินคืนไม่ได้)
+        if (pmRound <= 0 || !hasCouponEntitlement_(r)) return;
+        st = {
+          expected: COUPON_VALUE, refund: null, diff: null, key: 'pending_coupon',
+          label: 'ค้างส่งคูปอง (ยังไม่ได้รับคูปอง)', sentDate: '', refundDate: '', waitingDays: null
+        };
+        s.pendingCouponCount++;
+        s.pendingCouponAmount += st.expected;
+        s.entitledCount++;
+        s.entitledTotal += st.expected;
+        list.push(buildCouponListItem_(r, cn, coupon, st, false));
+        return;
+      }
 
-      var st = computeRefundStatus(r);
+      st = computeRefundStatus(r);
       var dup = !!(cn && countByNo[cn] > 1);
+      s.entitledCount++;
+      s.entitledTotal += st.expected;
       s.totalCoupons++;
       s.expectedTotal += st.expected;
       if (dup) s.duplicateCount++;
@@ -1587,7 +1621,18 @@ function getCouponRefundList(isRawObject) {
       if (st.key === 'unpaid') s.unpaidCount++;
       if (st.key === 'partial' || st.key === 'unpaid') s.shortfallTotal += st.expected - Math.max(st.refund || 0, 0);
 
-      list.push({
+      list.push(buildCouponListItem_(r, cn, coupon, st, dup));
+    });
+    s.outstandingTotal = s.expectedTotal - s.receivedTotal;
+
+    return responseJSON({ status: 'success', summary: s, data: list }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString(), summary: {}, data: [] }, isRawObject);
+  }
+}
+
+function buildCouponListItem_(r, cn, coupon, st, dup) {
+  return {
         ticketId: String(ciGet(r, 'ticket_id') || ciGet(r, 'no') || ''),
         machineId: String(ciGet(r, 'machine_id') || ''),
         model: String(ciGet(r, 'model') || ''),
@@ -1607,14 +1652,7 @@ function getCouponRefundList(isRawObject) {
         statusLabel: st.label,
         waitingDays: st.waitingDays,
         duplicate: dup
-      });
-    });
-    s.outstandingTotal = s.expectedTotal - s.receivedTotal;
-
-    return responseJSON({ status: 'success', summary: s, data: list }, isRawObject);
-  } catch (err) {
-    return responseJSON({ status: 'error', message: err.toString(), summary: {}, data: [] }, isRawObject);
-  }
+  };
 }
 
 /**
