@@ -1,6 +1,8 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r21-2026-11-10-impl-used-note
+ * CODE_VERSION: r22-2026-11-10-fix-status
+ *
+ * r22: แก้บั๊ก r21 ที่ทำให้ status ของรถว่างตอนนำเข้า (รถไม่ขึ้นในแอปทุกรายการ) นำเข้าไฟล์ใหม่อีกครั้งหลัง deploy
  *
  * r21: อุปกรณ์ต่อพ่วง เอาเฉพาะ มือสอง (อุปกรณ์สาธิต/ใหม่/เช่า ไม่นำเข้า และไม่แสดงในแอป)
  *      - คอลัมน์ใหม่ note = หมายเหตุ จาก Ecount (หัวตาราง หมายเหตุ) ถ้าไฟล์ไม่มีคอลัมน์นี้ ใช้หมายเหตุเดิมต่อ
@@ -93,7 +95,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r21-2026-11-10-impl-used-note';
+var CODE_VERSION = 'r22-2026-11-10-fix-status';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
@@ -591,7 +593,8 @@ function importStock(rows, meta) {
         priceDate: r.price ? today : (prev && priceStr_(prev.price) ? (prev.priceDate || prev.lastSeen || '') : ''),
         priceM: prev ? prev.priceM : '', priceBy: prev ? prev.priceBy : '', priceAt: prev ? prev.priceAt : '',
         hours: numStr_(r.hours), reg: String(r.reg || '').trim(),
-        note: meta.hasNote ? String(r.note || '').trim() : (prev ? String(prev.note || '') : ''), // r21: หมายเหตุจาก Ecount status: inStock ? 'stock' : 'out',
+        status: inStock ? 'stock' : 'out',
+        note: meta.hasNote ? String(r.note || '').trim() : (prev ? String(prev.note || '') : ''), // r21: หมายเหตุจาก Ecount
         firstSeen: (prev && prev.firstSeen) || today, lastSeen: today,
         outDate: inStock ? '' : ((prev && prev.status === 'out' && prev.outDate) || today), updatedAt: now,
         year: prev ? prev.year : '', yearBy: prev ? prev.yearBy : '', yearAt: prev ? prev.yearAt : ''
