@@ -1,6 +1,8 @@
 /**
  * RST Tractor & Harvester Photos — Apps Script backend (bound to a Google Sheet)
- * CODE_VERSION: r22-2026-11-10-fix-status
+ * CODE_VERSION: r23-2026-11-10-self-heal
+ *
+ * r23: แถวที่ status ว่าง (นำเข้าด้วย r21) → คำนวณจากจำนวนคงเหลือตอนอ่าน รถขึ้นทันทีโดยไม่ต้องนำเข้าใหม่
  *
  * r22: แก้บั๊ก r21 ที่ทำให้ status ของรถว่างตอนนำเข้า (รถไม่ขึ้นในแอปทุกรายการ) นำเข้าไฟล์ใหม่อีกครั้งหลัง deploy
  *
@@ -95,7 +97,7 @@
  *   Legacy_Data ข้อมูลจากระบบเก่า (นำเข้าเองครั้งเดียว ไม่ได้สร้างโดย setup) คอลัมน์ newKey = key ใน Tractors
  *   (ชีต Movements จากเวอร์ชันก่อน r04 ไม่ใช้แล้ว ลบทิ้งได้)
  */
-var CODE_VERSION = 'r22-2026-11-10-fix-status';
+var CODE_VERSION = 'r23-2026-11-10-self-heal';
 
 var SH = { TRACTORS: 'Tractors', PHOTOS: 'Photos', LOG: 'ImportLog', ACCESS: 'AccessLog' };
 var HEAD = {
@@ -472,6 +474,7 @@ function normCar_(o) {
     o.type = t;
   }
   if (!o.kind) o.kind = kindOf_(o.name);
+  if (!o.status && o.key) o.status = num_(o.qty) > 0 ? 'stock' : 'out'; // r23: ซ่อมแถวที่ status ว่างจากบั๊ก r21 (ไม่ต้องนำเข้าใหม่ก็ขึ้น)
   if (!o.series) o.series = seriesOf_(o.name);
   var c = {}; HEAD.Tractors.forEach(function (k) { c[k] = o[k] == null ? '' : String(o[k]); });
   return c;
