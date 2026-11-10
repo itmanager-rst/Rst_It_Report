@@ -193,6 +193,21 @@
       </div>
     </div>
 
+    <!-- 🏢 เลือกคลังของแผนก (HR / HQ_Office) — มีผลกับ KPI, ตารางสต็อก และฟอร์มจัดการพัสดุ -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-bold text-slate-500">🏢 คลังพัสดุ:</span>
+        <div class="inline-flex rounded-xl border border-slate-300 bg-slate-50 p-0.5 m-tabs" role="group" aria-label="เลือกคลังแผนก">
+          <button data-dept-tab="HR" onclick="setDept('HR')">🧑‍💼 HR · อุปกรณ์สำนักงาน</button>
+          <button data-dept-tab="HQ" onclick="setDept('HQ')">✏️ HQ_Office · เครื่องเขียน</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span id="deptHint" class="text-[11px] text-slate-400"></span>
+        <button data-roles="ADMIN,HQ_ADMIN" onclick="openAddModal()" class="dept-add-btn text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-sm cursor-pointer">➕ เพิ่มอุปกรณ์เข้าคลัง <span class="dept-name">HR</span></button>
+      </div>
+    </div>
+
     <!-- 📊 HR Executive KPI Dashboard -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       <div class="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between gap-2">
@@ -236,7 +251,7 @@
     </div>
 
     <!-- 📊 Executive & Branch Consumption Dashboard (ADMIN / MANAGER) -->
-    <div id="dashSection" data-roles="ADMIN,MANAGER" class="scroll-mt-3 viz-root bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+    <div id="dashSection" data-roles="ADMIN,HQ_ADMIN,MANAGER" class="scroll-mt-3 viz-root bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
       <div class="p-5 bg-gradient-to-r from-slate-900 to-blue-950 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
           <div class="flex items-center gap-2 font-bold text-base"><span>📊</span><h2>Dashboard สรุปการเบิกจ่ายรายสาขา (Executive Report)</h2></div>
@@ -262,6 +277,11 @@
           <span class="text-slate-400">ถึง</span>
           <input type="date" id="dashTo" onchange="renderDashboard()" class="px-2 py-1.5 border border-slate-300 rounded-lg bg-white">
         </div>
+        <select id="dashDept" onchange="renderDashboard()" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold">
+          <option value="ALL">🏢 รวมทุกแผนก (HR + HQ_Office)</option>
+          <option value="HR">🧑‍💼 เฉพาะ HR</option>
+          <option value="HQ">✏️ เฉพาะ HQ_Office</option>
+        </select>
         <select id="dashBranch" onchange="renderDashboard()" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs"></select>
         <select id="dashCategory" onchange="renderDashboard()" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs"><option value="ALL">-- ทุกหมวดหมู่ --</option></select>
       </div>
@@ -303,10 +323,16 @@
         <div class="flex items-center space-x-2 text-blue-900 font-bold">
           <span>📋</span> <h2 class="text-sm sm:text-base font-bold">ขอเบิกอุปกรณ์สำนักงาน (ส่งขออนุมัติ → อนุมัติแล้วจึงตัดสต็อก)</h2>
         </div>
-        <button data-roles="ADMIN" onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
-          <span>➕</span> เพิ่มอุปกรณ์ใหม่เข้าคลัง
-        </button>
+        <div class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-400">ค้นหาจากคลัง:</span>
+          <select id="pickDept" onchange="searchPickerAssets($('assetSearch').value)" class="px-2 py-1.5 border border-slate-300 rounded-lg bg-white text-xs font-semibold">
+            <option value="ALL">ทุกแผนก (HR + HQ_Office)</option>
+            <option value="HR">HR</option>
+            <option value="HQ">HQ_Office</option>
+          </select>
+        </div>
       </div>
+      <p class="-mt-2 mb-3 text-[11px] text-slate-500">💡 เบิกของจาก HR และ HQ_Office พร้อมกันได้ในครั้งเดียว — ระบบจะแยกเป็นใบเบิกของแต่ละแผนกให้อัตโนมัติ (เลขที่ RQ-… / HQ-…)</p>
 
       <form id="assetForm" onsubmit="handleSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <!-- 🔍 ช่องค้นหาสินค้าในการเบิก (Asset Picker) -->
@@ -413,7 +439,12 @@
           <span style="pointer-events:none" class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
           <input type="search" id="reqSearch" oninput="reqPage=1; renderRequests()" placeholder="ค้นหาเลขที่ใบเบิก / ผู้เบิก / อุปกรณ์ / สาขา..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
         </div>
-        <button onclick="loadRequests()" class="text-xs font-bold bg-white border border-slate-300 hover:bg-slate-100 px-3 py-2 rounded-xl cursor-pointer">🔄 รีเฟรชใบเบิก</button>
+        <div class="flex gap-2">
+          <select id="reqDept" onchange="reqPage=1; renderRequests()" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold">
+            <option value="ALL">🏢 ทุกแผนก</option><option value="HR">HR</option><option value="HQ">HQ_Office</option>
+          </select>
+          <button onclick="loadRequests()" class="text-xs font-bold bg-white border border-slate-300 hover:bg-slate-100 px-3 py-2 rounded-xl cursor-pointer">🔄 รีเฟรชใบเบิก</button>
+        </div>
       </div>
       <div class="overflow-x-auto">
         <table class="m-cards w-full text-left border-collapse text-xs text-slate-600">
@@ -443,11 +474,11 @@
       <div class="p-5 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div class="flex items-center space-x-2 font-bold text-base">
-            <span>📦</span> <h2>รายงานสถานะสต็อกอุปกรณ์คงเหลือจริง (HR Inventory Master)</h2>
+            <span>📦</span> <h2>รายงานสถานะสต็อกอุปกรณ์คงเหลือจริง (<span id="invTitleDept">HR Inventory Master</span>)</h2>
           </div>
-          <p class="text-xs text-slate-400 mt-0.5">ตรวจสอบยอดคงเหลือ<span data-roles="ADMIN,MANAGER"> · ติ๊กเลือกรายการเพื่อออกใบขออนุมัติจัดซื้อเสนอผู้บริหาร</span></p>
+          <p class="text-xs text-slate-400 mt-0.5">ตรวจสอบยอดคงเหลือ<span data-roles="ADMIN,HQ_ADMIN,MANAGER"> · ติ๊กเลือกรายการเพื่อออกใบขออนุมัติจัดซื้อเสนอผู้บริหาร</span></p>
         </div>
-        <div data-roles="ADMIN,MANAGER" class="flex items-center gap-2 flex-wrap">
+        <div data-roles="ADMIN,HQ_ADMIN,MANAGER" class="flex items-center gap-2 flex-wrap">
           <button onclick="autoSelectNeedPurchase()" class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl transition-all cursor-pointer">⚡ เลือกรายการใกล้หมด/หมดคลัง</button>
           <button onclick="clearAllSelections()" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-3 rounded-xl transition-all cursor-pointer">🧹 เคลียร์ที่เลือก</button>
           <button onclick="preparePRModal()" class="bg-emerald-500 hover:bg-emerald-600 text-slate-900 text-xs font-bold py-2 px-3 rounded-xl transition-all cursor-pointer">📄 พิมพ์ใบขออนุมัติจัดซื้อ (<span id="selectedCountBadge">0</span>)</button>
@@ -477,7 +508,7 @@
         <table class="m-cards w-full text-left border-collapse text-sm text-slate-600">
           <thead>
             <tr class="bg-slate-100/70 border-b border-slate-200 text-slate-700 font-semibold text-xs uppercase tracking-wider">
-              <th data-roles="ADMIN,MANAGER" class="p-3 text-center w-10" title="เลือกทั้งหน้านี้">
+              <th data-roles="ADMIN,HQ_ADMIN,MANAGER" class="p-3 text-center w-10" title="เลือกทั้งหน้านี้">
                 <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" class="rounded cursor-pointer">
               </th>
               <th class="p-3">รหัสอุปกรณ์</th>
@@ -488,7 +519,7 @@
               <th class="p-3 text-center">ยอดทั้งหมด</th>
               <th class="p-3 text-center w-36">สถานะสต็อกคงเหลือจริง</th>
               <th class="p-3 text-center">สถานะ</th>
-              <th data-roles="ADMIN" class="p-3 text-center">จัดการ</th>
+              <th data-roles="ADMIN,HQ_ADMIN" class="p-3 text-center">จัดการ</th>
             </tr>
           </thead>
           <tbody id="assetTableBody">
@@ -505,7 +536,12 @@
         <div class="flex items-center space-x-2 font-bold">
           <span>📜</span> <h2>รายงานประวัติการเบิกจ่ายอุปกรณ์สำนักงานล่าสุด</h2>
         </div>
-        <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl cursor-pointer text-white font-bold">🟢 Export Excel (.csv)</button>
+        <div class="flex gap-2">
+          <select id="logDept" onchange="logPage=1; renderLogs()" class="px-2 py-1.5 rounded-xl text-xs font-semibold bg-white/10 border border-white/20 text-white">
+            <option class="text-slate-800" value="ALL">🏢 รวมทุกแผนก</option><option class="text-slate-800" value="HR">HR</option><option class="text-slate-800" value="HQ">HQ_Office</option>
+          </select>
+          <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl cursor-pointer text-white font-bold">🟢 Export Excel (.csv)</button>
+        </div>
       </div>
       <div class="overflow-x-auto">
         <table class="m-cards w-full text-left border-collapse text-xs text-slate-600">
@@ -530,7 +566,7 @@
     </div>
 
     <!-- 🔁 ประวัติการเคลื่อนไหวสต็อก (รับเข้า / เบิกออก / ปรับยอด / ยกเลิก) -->
-    <div id="secMovements" data-roles="ADMIN,MANAGER" class="scroll-mt-3 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+    <div id="secMovements" data-roles="ADMIN,HQ_ADMIN,MANAGER" class="scroll-mt-3 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
       <div class="p-4 bg-emerald-900 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div>
           <div class="flex items-center space-x-2 font-bold"><span>🔁</span> <h2>ประวัติการเคลื่อนไหวสต็อก (Stock Movements)</h2></div>
@@ -541,7 +577,10 @@
           <button onclick="exportMovementsCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-3 py-1.5 rounded-xl cursor-pointer text-white font-bold">🟢 Export Excel (.csv)</button>
         </div>
       </div>
-      <div class="p-3 bg-slate-50 border-b border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div class="p-3 bg-slate-50 border-b border-slate-200/80 grid grid-cols-1 sm:grid-cols-4 gap-2">
+        <select id="mvDept" onchange="mvPage=1; renderMovements()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+          <option value="ALL">🏢 ทุกแผนก</option><option value="HR">HR</option><option value="HQ">HQ_Office</option>
+        </select>
         <div class="relative">
           <span style="pointer-events:none" class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
           <input type="search" id="mvSearch" oninput="mvPage=1; renderMovements()" placeholder="ค้นหารหัส / ชื่ออุปกรณ์ / เลขใบเบิก / ผู้ทำรายการ..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
@@ -585,7 +624,7 @@
       <a href="#secRequestForm" data-sec="secRequestForm"><span>📝</span><span>ขอเบิก</span></a>
       <a href="#secRequests" data-sec="secRequests"><span>✍️</span><span>ใบเบิก</span></a>
       <a href="#secInventory" data-sec="secInventory"><span>📦</span><span>สต็อก</span></a>
-      <a href="#dashSection" data-sec="dashSection" data-roles="ADMIN,MANAGER"><span>📊</span><span>สรุป</span></a>
+      <a href="#dashSection" data-sec="dashSection" data-roles="ADMIN,HQ_ADMIN,MANAGER"><span>📊</span><span>สรุป</span></a>
       <a href="#secLogs" data-sec="secLogs"><span>📜</span><span>ประวัติ</span></a>
     </nav>
 
@@ -716,12 +755,12 @@
 
       <div>
         <div class="flex items-center justify-between mb-1">
-          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้จ่ายพัสดุ (HR) <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
+          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้จ่ายพัสดุ (แอดมินคลัง) <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
           <button type="button" onclick="sigPads.issuer.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
         </div>
         <div class="relative">
           <canvas id="issuerSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-400 rounded-xl cursor-crosshair"></canvas>
-          <span id="issuerSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">HR เซ็นชื่อผู้จ่ายพัสดุในกรอบนี้</span>
+          <span id="issuerSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">แอดมินคลังเซ็นชื่อผู้จ่ายพัสดุในกรอบนี้</span>
         </div>
       </div>
 
@@ -877,6 +916,7 @@
           <select id="ufRole" onchange="onUfRoleChange()" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
             <option value="BRANCH">พนักงานสาขา (BRANCH)</option>
             <option value="MANAGER">ผู้อนุมัติ/ผู้บริหาร (MANAGER)</option>
+            <option value="HQ_ADMIN">HQ_Office Admin (HQ_ADMIN)</option>
             <option value="ADMIN">HR Admin (ADMIN)</option>
           </select></div>
         <div><label class="block font-semibold text-slate-600 mb-1">สาขา</label>
@@ -924,6 +964,12 @@
       </div>
       <form id="newAssetForm" onsubmit="handleAssetSubmit(event)" class="space-y-4">
         <input type="hidden" id="formAction" value="addAsset">
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">คลังของแผนก <span class="text-red-500">*</span></label>
+          <select id="newAssetDept" onchange="onAssetDeptChange()" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-bold bg-white disabled:bg-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="HR">🧑‍💼 HR — อุปกรณ์สำนักงาน (Assets_Stock)</option>
+            <option value="HQ">✏️ HQ_Office — เครื่องเขียน (HQ_Assets_Stock)</option>
+          </select>
+          <p id="newAssetDeptHint" class="text-[10px] text-slate-400 mt-1"></p></div>
         <div><label class="block text-xs font-semibold text-slate-600 mb-1">รหัสอุปกรณ์สำนักงาน (Asset ID) <span class="text-red-500">*</span></label>
           <input type="text" id="newAssetId" placeholder="เช่น Asset 001" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></div>
         <div><label class="block text-xs font-semibold text-slate-600 mb-1">ชื่ออุปกรณ์สำนักงาน <span class="text-red-500">*</span></label>
@@ -979,6 +1025,7 @@
     const BRANCHES = ["สาขาขุขันธ์", "สาขาเบญจลักษณ์", "สาขากุฉินารายณ์", "เดชอุดม", "ตระการพืชผล", "ศรีเมืองใหม่", "อำนาจเจริญ", "สำนักงานใหญ่"];
     const ROLE_INFO = {
       ADMIN:   { label: "HR Admin",            badge: "bg-rose-100 text-rose-700" },
+      HQ_ADMIN:{ label: "HQ_Office Admin",     badge: "bg-amber-100 text-amber-800" },
       MANAGER: { label: "ผู้อนุมัติ/ผู้บริหาร", badge: "bg-indigo-100 text-indigo-700" },
       BRANCH:  { label: "พนักงานสาขา",         badge: "bg-sky-100 text-sky-700" }
     };
@@ -996,13 +1043,27 @@
     const $ = id => document.getElementById(id);
     const role = () => (session && session.user && session.user.role) || "";
     const hasRole = (...rs) => rs.includes(role());
-    const canManageAssets = () => hasRole("ADMIN");
-    const canApprove = () => hasRole("ADMIN", "MANAGER");
-    const canPurchase = () => hasRole("ADMIN", "MANAGER");
-    const canIssue = () => hasRole("ADMIN");                 // HR เป็นผู้จ่ายของ / บันทึกฝากส่ง
-    const canReceive = r => hasRole("ADMIN", "MANAGER") ||   // สาขาเจ้าของใบเบิกยืนยันรับของ
+    // แอดมิน HR (ADMIN) และ HQ_Office (HQ_ADMIN) ทำแทนกันได้ทั้ง 2 คลัง
+    const canManageAssets = () => hasRole("ADMIN", "HQ_ADMIN");
+    const canApprove = () => hasRole("ADMIN", "HQ_ADMIN", "MANAGER");
+    const canPurchase = () => hasRole("ADMIN", "HQ_ADMIN", "MANAGER");
+    const canIssue = () => hasRole("ADMIN", "HQ_ADMIN");     // แอดมินคลังเป็นผู้จ่ายของ / บันทึกฝากส่ง
+    const canReceive = r => hasRole("ADMIN", "HQ_ADMIN", "MANAGER") ||   // สาขาเจ้าของใบเบิกยืนยันรับของ
       (hasRole("BRANCH") && session && r && r.branch === session.user.branch);
     const ISSUED_PLUS = ["ISSUED", "SHIPPED", "RECEIVED"];
+
+    /* 🏢 แผนก / คลัง — ฐานข้อมูลแยกกัน (HR: Assets_Stock · HQ: HQ_Assets_Stock) */
+    const DEPTS = {
+      HR: { label: "HR", full: "ฝ่ายทรัพยากรบุคคล (HR)", sheet: "Assets_Stock", badge: "bg-blue-100 text-blue-800",
+            btn: "bg-blue-600 hover:bg-blue-700", inv: "HR Inventory Master", pr: "PR-HR-", idHint: "เช่น Asset 001", nameHint: "เช่น Printer Brother, กล้อง CCTV", catHint: "เช่น อุปกรณ์สำนักงาน, ไอที" },
+      HQ: { label: "HQ_Office", full: "สำนักงานใหญ่ (HQ_Office)", sheet: "HQ_Assets_Stock", badge: "bg-amber-100 text-amber-800",
+            btn: "bg-amber-600 hover:bg-amber-700", inv: "HQ_Office Inventory", pr: "PR-HQ-", idHint: "เช่น OF-007", nameHint: "เช่น ปากกาเน้นข้อความ, แฟ้มเอกสาร", catHint: "เช่น เครื่องเขียน, กระดาษ" }
+    };
+    const normDept = d => String(d || "").trim().toUpperCase() === "HQ" ? "HQ" : "HR";
+    /** key ภายในหน้าเว็บ (รหัสซ้ำกันได้ถ้าอยู่คนละคลัง): HR = รหัสเดิม · HQ = "HQ:" + รหัส */
+    const akey = (dept, id) => (normDept(dept) === "HQ" ? "HQ:" : "") + String(id == null ? "" : id);
+    const deptBadge = d => `<span class="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${DEPTS[normDept(d)].badge}">${DEPTS[normDept(d)].label}</span>`;
+    let curDept = "HR";
 
     /* =========================================================
        🚀 เริ่มต้นระบบ
@@ -1090,8 +1151,10 @@
     function enterApp() {
       $("loginScreen").classList.add("hidden");
       $("appRoot").classList.remove("hidden");
+      curDept = role() === "HQ_ADMIN" ? "HQ" : "HR";      // แอดมิน HQ เปิดมาที่คลัง HQ_Office
       applyRoleUI();
       applyFormDefaults();
+      setDept(curDept, true);
       requestAnimationFrame(() => sigPads.requester.setup());
       loadData();
     }
@@ -1112,7 +1175,7 @@
       setTimeout(() => authKicked = false, 1000);
     }
 
-    /** ซ่อน/แสดงส่วนต่าง ๆ ตามสิทธิ์ (data-roles="ADMIN,MANAGER") */
+    /** ซ่อน/แสดงส่วนต่าง ๆ ตามสิทธิ์ (data-roles="ADMIN,HQ_ADMIN,MANAGER") */
     function applyRoleUI() {
       const u = (session && session.user) || {};
       document.querySelectorAll("[data-roles]").forEach(el => {
@@ -1124,8 +1187,8 @@
       $("userBranch").innerText = u.branch || "ทุกสาขา";
       $("reqSubtitle").innerText = u.role === "BRANCH"
         ? `ใบเบิกของ ${u.branch || "สาขาคุณ"} · เมื่อของมาถึงสาขา (แท็บ 🚚 กำลังส่งไปสาขา) ให้กด 📥 ยืนยันรับของ แล้วเซ็นรับ`
-        : u.role === "ADMIN"
-          ? "HR: ✅ รอจ่ายของ → กด 📦 จ่ายของ · 📦 รอฝากส่ง → กด 🚚 ฝากส่ง (ฝ่ายบริการ/ฝ่ายขาย) · สาขาเซ็นรับเมื่อของถึง"
+        : u.role === "ADMIN" || u.role === "HQ_ADMIN"
+          ? "แอดมินคลัง (HR / HQ_Office ทำแทนกันได้): ✅ รอจ่ายของ → กด 📦 จ่ายของ · 📦 รอฝากส่ง → กด 🚚 ฝากส่ง · สาขาเซ็นรับเมื่อของถึง"
           : "ขอเบิก → อนุมัติ → HR จ่ายของ → ฝากส่งไปสาขา → สาขายืนยันรับของ";
       if (cachedAssets.length) renderInventoryPage();
       if (globalRequests.length) renderRequests();
@@ -1207,36 +1270,18 @@
     async function loadData() {
       if (!session) return;
       loadRequests();
-      if (hasRole("ADMIN", "MANAGER")) loadMovements();
+      if (hasRole("ADMIN", "HQ_ADMIN", "MANAGER")) loadMovements();
       try {
-        const [assets, logs] = await Promise.all([apiGet("getAssets"), apiGet("getLogs")]);
+        // ดึงทั้ง 2 คลังครั้งเดียว (dept=ALL) → แต่ละแถวมี field dept
+        const [assets, logs] = await Promise.all([apiGet("getAssets", { dept: "ALL" }), apiGet("getLogs", { dept: "ALL" })]);
         [assets, logs].forEach(x => { if (x && x.status === "error") throw new Error(x.message); });
         cachedAssets = Array.isArray(assets) ? assets : (assets.data || []);
         globalLogData = Array.isArray(logs) ? logs : (logs.data || []);
-        cachedAssets.forEach(a => { a.id = String(a.id); });
-
-        let totalRemaining = 0, totalBorrowed = 0, low = 0, out = 0;
-        const cats = new Set();
-        cachedAssets.forEach(a => {
-          const rem = getRemaining(a.id), tot = parseInt(a.total) || 0;
-          totalRemaining += rem;
-          totalBorrowed += Math.max(0, tot - rem);
-          if (rem === 0) out++; else if (rem <= 2) low++;
-          if (a.category) cats.add(a.category);
-        });
-        $("kpiTotalTypes").innerText = cachedAssets.length.toLocaleString();
-        $("kpiTotalRemaining").innerText = totalRemaining.toLocaleString();
-        $("kpiTotalBorrowed").innerText = totalBorrowed.toLocaleString();
-        $("kpiLowStock").innerText = low;
-        $("kpiOutOfStock").innerText = out;
-
-        const cf = $("categoryFilter"), keep = cf.value;
-        cf.innerHTML = '<option value="ALL">-- หมวดหมู่ทั้งหมด --</option>' + [...cats].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
-        cf.value = [...cats].includes(keep) ? keep : "ALL";
-        $("categoryList").innerHTML = [...cats].map(c => `<option value="${esc(c)}">`).join("");
+        cachedAssets.forEach(a => { a.dept = normDept(a.dept); a.code = String(a.id); a.id = akey(a.dept, a.code); });
+        globalLogData.forEach(l => { l.dept = normDept(l.dept); });
 
         buildLastBorrowMap();
-        applyFilters(true);
+        refreshDeptView(true);
         logPage = 1;
         renderLogs();
         renderDashboard();
@@ -1250,16 +1295,57 @@
     }
 
     /* =========================================================
+       🏢 สลับคลังแผนก (KPI + ตารางสต็อก + ปุ่มจัดการพัสดุ)
+       ========================================================= */
+    function setDept(d, silent) {
+      curDept = normDept(d);
+      const D = DEPTS[curDept];
+      document.querySelectorAll("[data-dept-tab]").forEach(b => {
+        b.className = "text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer " +
+          (b.dataset.deptTab === curDept ? (curDept === "HQ" ? "bg-amber-500 text-white shadow" : "bg-blue-600 text-white shadow") : "text-slate-600 hover:bg-white");
+      });
+      $("invTitleDept").innerText = D.inv;
+      $("deptHint").innerText = `ฐานข้อมูล: ${D.sheet}`;
+      document.querySelectorAll(".dept-add-btn").forEach(b => { b.className = "dept-add-btn text-white text-xs font-bold py-2 px-3.5 rounded-xl shadow-sm cursor-pointer " + D.btn; });
+      document.querySelectorAll(".dept-name").forEach(el => el.innerText = D.label);
+      if (!silent || cachedAssets.length) refreshDeptView();
+    }
+
+    /** KPI + หมวดหมู่ + ตารางสต็อก ของคลังที่เลือก */
+    function refreshDeptView(keepPage) {
+      const list = cachedAssets.filter(a => a.dept === curDept);
+      let totalRemaining = 0, totalBorrowed = 0, low = 0, out = 0;
+      const cats = new Set();
+      list.forEach(a => {
+        const rem = getRemaining(a.id), tot = parseInt(a.total) || 0;
+        totalRemaining += rem;
+        totalBorrowed += Math.max(0, tot - rem);
+        if (rem === 0) out++; else if (rem <= 2) low++;
+        if (a.category) cats.add(a.category);
+      });
+      $("kpiTotalTypes").innerText = list.length.toLocaleString();
+      $("kpiTotalRemaining").innerText = totalRemaining.toLocaleString();
+      $("kpiTotalBorrowed").innerText = totalBorrowed.toLocaleString();
+      $("kpiLowStock").innerText = low;
+      $("kpiOutOfStock").innerText = out;
+
+      const cf = $("categoryFilter"), keep = cf.value;
+      cf.innerHTML = '<option value="ALL">-- หมวดหมู่ทั้งหมด --</option>' + [...cats].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+      cf.value = [...cats].includes(keep) ? keep : "ALL";
+      applyFilters(keepPage);
+    }
+
+    /* =========================================================
        🔍 Asset Picker — ช่องค้นหาสินค้าในการเบิก
        ========================================================= */
     let pickList = [], pickIdx = -1;
 
     function assetMatches(a, q) {
       if (!q) return true;
-      const hay = [a.id, a.name, a.category, a.notes].map(v => String(v == null ? "" : v).toLowerCase()).join(" | ");
+      const hay = [a.code || a.id, a.name, a.category, a.notes, (DEPTS[a.dept] || {}).label].map(v => String(v == null ? "" : v).toLowerCase()).join(" | ");
       return q.split(/\s+/).filter(Boolean).every(t => hay.includes(t));   // หลายคำ = ต้องตรงทุกคำ
     }
-    const pickerLabel = a => `${a.id} - ${a.name}`;
+    const pickerLabel = a => `${a.code || a.id} - ${a.name}${a.dept === "HQ" ? " [HQ_Office]" : ""}`;
 
     function searchPickerAssets(q) {
       const hid = $("assetSelect");
@@ -1269,7 +1355,8 @@
         if (cur && pickerLabel(cur) === q) query = "";        // เพิ่งเลือก/โฟกัสกลับ → แสดงทั้งหมด
         else setPickerSelected(null, true);                    // พิมพ์ใหม่ = ยกเลิกที่เลือก
       }
-      const all = cachedAssets.filter(a => assetMatches(a, query))
+      const pd = ($("pickDept") || {}).value || "ALL";
+      const all = cachedAssets.filter(a => (pd === "ALL" || a.dept === pd) && assetMatches(a, query))
         .sort((a, b) => (getRemaining(b.id) > 0) - (getRemaining(a.id) > 0));   // มีของขึ้นก่อน
       pickList = all.slice(0, 50);
       pickIdx = pickList.findIndex(a => getRemaining(a.id) > 0);
@@ -1288,7 +1375,7 @@
             return `<button type="button" data-i="${i}" ${out ? 'aria-disabled="true"' : ""} onmousedown="event.preventDefault()" onclick="pickAsset(${i})"
                       class="picker-item w-full text-left px-3 py-2 border-b border-slate-100 last:border-0 ${i === pickIdx ? "bg-blue-50" : ""} ${out ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-50 cursor-pointer"}">
                 <div class="flex items-center gap-2 text-xs">
-                  <span class="font-mono font-bold text-blue-700 shrink-0">${esc(a.id)}</span>
+                  ${deptBadge(a.dept)}<span class="font-mono font-bold text-blue-700 shrink-0">${esc(a.code)}</span>
                   <span class="font-semibold text-slate-800 truncate">${esc(a.name)}</span>
                   <span class="ml-auto shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md ${badge}">${out ? "หมด" : "คงเหลือ " + rem}</span>
                 </div>
@@ -1327,7 +1414,7 @@
       if (total > rem) { alert(`⚠️ ${a.name}\nจำนวนรวมที่ขอเบิก (${total}) มากกว่ายอดคงเหลือ (${rem})`); $("quantity").focus(); return false; }
       if (!cur && reqCart.length >= MAX_REQ_ITEMS) { alert(`ใบเบิก 1 ใบเบิกได้ไม่เกิน ${MAX_REQ_ITEMS} รายการ`); return false; }
       if (cur) cur.quantity = total;
-      else reqCart.push({ assetId: String(a.id), assetName: a.name, category: a.category || "", quantity: qty });
+      else reqCart.push({ assetId: String(a.id), code: a.code, dept: a.dept, assetName: a.name, category: a.category || "", quantity: qty });
       $("quantity").value = "";
       clearPickerAsset(false);
       renderCart();
@@ -1367,7 +1454,7 @@
             const rem = getRemaining(it.assetId), over = it.quantity > rem;
             return `<tr class="border-t border-slate-100 ${over ? "bg-rose-50" : ""}">
               <td class="p-2 text-center text-slate-400">${i + 1}</td>
-              <td class="p-2"><div class="font-bold text-slate-800">${esc(it.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(it.assetId)} · ${esc(it.category || "-")}</div></td>
+              <td class="p-2"><div class="font-bold text-slate-800">${deptBadge(it.dept)} ${esc(it.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(it.code)} · ${esc(it.category || "-")}</div></td>
               <td class="p-2 text-center ${over ? "text-rose-600 font-bold" : "text-slate-500"}">${rem}</td>
               <td class="p-2 text-center"><input type="number" min="1" max="${rem}" value="${it.quantity}" onchange="setCartQty(${i}, this.value)" class="w-20 px-2 py-1 border border-slate-300 rounded-lg text-center text-sm font-bold"></td>
               <td class="p-2 text-center"><button type="button" onclick="removeCartItem(${i})" class="h-7 w-7 rounded-md text-rose-500 hover:bg-rose-50 cursor-pointer" title="ลบรายการ">✕</button></td>
@@ -1376,7 +1463,8 @@
           <tfoot class="bg-slate-50 font-bold"><tr class="border-t border-slate-200">
             <td colspan="3" class="p-2 text-right">รวม ${reqCart.length} รายการ</td><td class="p-2 text-center text-blue-800">${sum} ชิ้น</td><td></td>
           </tr></tfoot>
-        </table>`;
+        </table>` + (new Set(reqCart.map(x => x.dept)).size > 1
+          ? `<div class="p-2 text-[11px] bg-amber-50 border-t border-amber-200 text-amber-800 font-semibold">📑 มีของจาก 2 แผนก → ส่งครั้งเดียว ได้ 2 ใบเบิก: HR ${reqCart.filter(x => x.dept === "HR").length} รายการ · HQ_Office ${reqCart.filter(x => x.dept === "HQ").length} รายการ (อนุมัติ/ตัดสต็อกแยกคลัง)</div>` : "");
     }
 
     function setPickerSelected(a, keepText) {
@@ -1392,7 +1480,7 @@
         <div class="flex items-center gap-3 p-2.5 rounded-xl bg-blue-50 border border-blue-100">
           ${a.image ? `<img src="${esc(a.image)}" onclick="openZoomModal(this.src)" class="h-11 w-11 object-cover rounded-lg border cursor-pointer">` : '<div class="h-11 w-11 rounded-lg bg-white border flex items-center justify-center text-lg">📦</div>'}
           <div class="flex-1 min-w-0 text-xs">
-            <div class="font-bold text-slate-800 truncate">${esc(a.name)}</div>
+            <div class="font-bold text-slate-800 truncate">${deptBadge(a.dept)} ${esc(a.name)}</div>
             <div class="text-[11px] text-slate-500 truncate">หมวดหมู่: ${esc(a.category || "-")} · สถานที่เก็บ: ${esc(a.notes || "-")}</div>
           </div>
           <div class="text-right shrink-0"><div class="text-[10px] text-slate-400">คงเหลือ</div><div class="text-lg font-black ${rem > 2 ? "text-emerald-600" : "text-amber-600"}">${rem}</div></div>
@@ -1445,7 +1533,7 @@
     function buildLastBorrowMap() {
       lastBorrowMap = {};
       globalLogData.forEach(log => {
-        const k = String(log.assetId);
+        const k = akey(log.dept, log.assetId);
         if (!lastBorrowMap[k]) lastBorrowMap[k] = { staffName: log.staffName || "-", branch: log.branch || "-" };
       });
     }
@@ -1457,6 +1545,7 @@
       const q = $("searchInput").value.toLowerCase().trim();
       const statusVal = $("statusFilter").value, catVal = $("categoryFilter").value;
       invFiltered = cachedAssets.filter(a => {
+        if (a.dept !== curDept) return false;
         const rem = getRemaining(a.id);
         let st = true;
         if (statusVal === "NORMAL") st = rem > 2;
@@ -1484,7 +1573,7 @@
           <div class="flex items-center gap-3">
             ${it.image ? `<img src="${esc(it.image)}" onclick="openZoomModal(this.src)" class="h-14 w-14 object-cover rounded-xl border shadow-sm cursor-pointer">` : '<div class="h-14 w-14 bg-slate-200 rounded-xl flex items-center justify-center text-xs text-slate-500">ไม่มีรูป</div>'}
             <div>
-              <span class="font-mono text-xs bg-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">${esc(it.id)}</span>
+              <span class="font-mono text-xs bg-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">${esc(it.code)}</span> ${deptBadge(it.dept)}
               <h4 class="text-base font-black text-slate-900 mt-0.5">${esc(it.name)}</h4>
               <p class="text-xs text-slate-500">หมวดหมู่: ${esc(it.category)} | สถานที่เก็บ: ${esc(it.notes || "-")}</p>
             </div>
@@ -1521,7 +1610,7 @@
           return `
             <tr class="border-b border-slate-100 hover:bg-slate-50/80">
               ${showCheck ? `<td class="p-3 text-center"><input type="checkbox" data-id="${esc(a.id)}" ${selectedAssetsForPR.has(a.id) ? "checked" : ""} onchange="toggleItemSelection(this.dataset.id, this.checked)" class="asset-checkbox rounded cursor-pointer"></td>` : ""}
-              <td class="p-3 font-mono font-bold text-slate-900 text-xs">${esc(a.id)}</td>
+              <td class="p-3 font-mono font-bold text-slate-900 text-xs">${esc(a.code)}<div class="mt-1">${deptBadge(a.dept)}</div></td>
               <td class="p-3 text-center">${img}</td>
               <td class="p-3"><div class="font-bold text-slate-800 text-sm">${esc(a.name)}</div><div class="text-xs text-slate-400 mt-0.5">หมวดหมู่: ${esc(a.category)}</div></td>
               <td class="p-3 text-slate-600 text-xs max-w-[140px] break-words">${esc(a.notes || "-")}</td>
@@ -1576,7 +1665,7 @@
     }
     function autoSelectNeedPurchase() {
       selectedAssetsForPR.clear();
-      cachedAssets.forEach(a => { if (getRemaining(a.id) <= 2) selectedAssetsForPR.add(a.id); });
+      cachedAssets.forEach(a => { if (a.dept === curDept && getRemaining(a.id) <= 2) selectedAssetsForPR.add(a.id); });
       $("statusFilter").value = "ALL";
       applyFilters();
       alert(`⚡ เลือกรายการใกล้หมด/หมดคลังแล้ว ${selectedAssetsForPR.size} รายการ`);
@@ -1586,26 +1675,31 @@
     /* =========================================================
        📜 ประวัติการเบิก (Pagination 30 รายการ/หน้า)
        ========================================================= */
+    function logFiltered() {
+      const d = ($("logDept") || {}).value || "ALL";
+      return d === "ALL" ? globalLogData : globalLogData.filter(l => l.dept === d);
+    }
     function renderLogs() {
       const tbody = $("logTableBody");
-      if (!globalLogData.length) {
+      const list = logFiltered();
+      if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-400">ยังไม่มีประวัติการเบิกจ่ายอุปกรณ์สำนักงาน</td></tr>';
         $("logPagination").innerHTML = "";
         return;
       }
       const start = (logPage - 1) * LOG_PAGE_SIZE;
-      tbody.innerHTML = globalLogData.slice(start, start + LOG_PAGE_SIZE).map((log, i) => `
+      tbody.innerHTML = list.slice(start, start + LOG_PAGE_SIZE).map((log, i) => `
         <tr class="border-b border-slate-100 hover:bg-slate-50">
           <td class="p-3 text-center font-semibold text-slate-500">${start + i + 1}</td>
           <td class="p-3 text-slate-500 whitespace-nowrap">${esc(log.timestamp)}</td>
-          <td class="p-3"><div class="font-bold text-slate-800">${esc(log.assetName)}</div><div class="text-[10px] text-slate-400 font-mono">${esc(log.assetId)}</div></td>
+          <td class="p-3"><div class="font-bold text-slate-800">${esc(log.assetName)}</div><div class="text-[10px] text-slate-400 font-mono">${deptBadge(log.dept)} ${esc(log.assetId)}</div></td>
           <td class="p-3 text-center font-bold text-slate-900">${esc(log.quantity)}</td>
           <td class="p-3"><div class="font-medium">${esc(log.staffName)}</div><div class="text-[10px] text-slate-400">แผนก: ${esc(log.department)}</div></td>
           <td class="p-3 text-slate-700">${esc(log.branch)}</td>
           <td class="p-3 text-slate-600 max-w-[220px] break-words">${esc(log.notes || "-")}</td>
           <td class="p-3">${log.image ? `<img src="${esc(log.image)}" loading="lazy" onclick="openZoomModal(this.src)" class="h-10 w-10 object-cover rounded-lg border cursor-pointer hover:scale-105 transition-all">` : '<span class="text-slate-400 text-[10px]">ไม่มีรูป</span>'}</td>
         </tr>`).join("");
-      renderPager("logPagination", logPage, globalLogData.length, LOG_PAGE_SIZE, "gotoLogPage");
+      renderPager("logPagination", logPage, list.length, LOG_PAGE_SIZE, "gotoLogPage");
     }
     function gotoLogPage(p) { logPage = p; renderLogs(); }
 
@@ -1625,9 +1719,9 @@
       DELETE: ["🗑️ ลบอุปกรณ์", "bg-slate-200 text-slate-700"]
     };
     async function loadMovements() {
-      if (!hasRole("ADMIN", "MANAGER")) return;
+      if (!hasRole("ADMIN", "HQ_ADMIN", "MANAGER")) return;
       try {
-        const j = await apiGet("getMovements");
+        const j = await apiGet("getMovements", { dept: "ALL" });
         if (j.status !== "success") throw new Error(j.message || "โหลดไม่สำเร็จ");
         movements = j.data || [];
         renderMovements();
@@ -1636,8 +1730,8 @@
       }
     }
     function mvFiltered() {
-      const q = $("mvSearch").value.toLowerCase().trim(), type = $("mvType").value;
-      return movements.filter(m => (type === "ALL" || m.type === type) &&
+      const q = $("mvSearch").value.toLowerCase().trim(), type = $("mvType").value, dept = $("mvDept").value;
+      return movements.filter(m => (type === "ALL" || m.type === type) && (dept === "ALL" || normDept(m.dept) === dept) &&
         (!q || [m.assetId, m.assetName, m.refId, m.note, m.byName, m.byUser].join(" ").toLowerCase().includes(q)));
     }
     function gotoMvPage(p) { mvPage = p; renderMovements(); }
@@ -1660,7 +1754,7 @@
             return `<tr class="border-b border-slate-100 hover:bg-slate-50">
               <td class="p-3 whitespace-nowrap text-slate-500">${esc(m.timestamp)}</td>
               <td class="p-3"><span class="${t[1]} font-semibold px-2 py-1 rounded-lg whitespace-nowrap">${t[0]}</span></td>
-              <td class="p-3"><div class="font-bold text-slate-800">${esc(m.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(m.assetId)}</div></td>
+              <td class="p-3"><div class="font-bold text-slate-800">${esc(m.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${deptBadge(m.dept)} ${esc(m.assetId)}</div></td>
               <td class="p-3 text-center font-black ${qCls}">${q > 0 ? "+" : ""}${q}</td>
               <td class="p-3 text-center whitespace-nowrap">${esc(m.remBefore)} ➜ <b class="text-slate-800">${esc(m.remAfter)}</b><div class="text-[10px] text-slate-400">ทั้งหมด ${esc(m.totalAfter)}</div></td>
               <td class="p-3">${m.refId ? `<div class="font-mono text-indigo-900 font-bold">${esc(m.refId)}</div>` : ""}<div class="text-slate-500 break-words max-w-[260px]">${esc(m.note)}</div></td>
@@ -1673,9 +1767,9 @@
       const list = mvFiltered();
       if (!list.length) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
       const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-      let csv = "﻿วัน-เวลา,ประเภท,รหัสอุปกรณ์,ชื่ออุปกรณ์,เปลี่ยนแปลง,คงเหลือก่อน,คงเหลือหลัง,ยอดทั้งหมดก่อน,ยอดทั้งหมดหลัง,อ้างอิง,หมายเหตุ,ผู้ทำรายการ\n";
+      let csv = "﻿วัน-เวลา,คลัง,ประเภท,รหัสอุปกรณ์,ชื่ออุปกรณ์,เปลี่ยนแปลง,คงเหลือก่อน,คงเหลือหลัง,ยอดทั้งหมดก่อน,ยอดทั้งหมดหลัง,อ้างอิง,หมายเหตุ,ผู้ทำรายการ\n";
       list.forEach(m => {
-        csv += [q(m.timestamp), q((MV_TYPE[m.type] || [m.type])[0]), q(m.assetId), q(m.assetName), m.qtyChange, m.remBefore, m.remAfter,
+        csv += [q(m.timestamp), q(DEPTS[normDept(m.dept)].label), q((MV_TYPE[m.type] || [m.type])[0]), q(m.assetId), q(m.assetName), m.qtyChange, m.remBefore, m.remAfter,
           m.totalBefore, m.totalAfter, q(m.refId), q(m.note), q(m.byName || m.byUser)].join(",") + "\n";
       });
       const link = document.createElement("a");
@@ -1685,11 +1779,12 @@
     }
 
     function exportToCSV() {
-      if (!globalLogData.length) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
+      const list = logFiltered();
+      if (!list.length) { alert("ไม่มีข้อมูลสำหรับการ Export"); return; }
       const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-      let csv = "﻿ลำดับ,วัน-เวลา,รหัสอุปกรณ์สำนักงาน,ชื่ออุปกรณ์สำนักงาน,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
-      globalLogData.forEach((l, i) => {
-        csv += [i + 1, q(l.timestamp), q(l.assetId), q(l.assetName), l.quantity, q(l.staffName), q(l.department), q(l.branch), q(l.notes)].join(",") + "\n";
+      let csv = "﻿ลำดับ,คลัง (แผนกเจ้าของพัสดุ),วัน-เวลา,รหัสอุปกรณ์สำนักงาน,ชื่ออุปกรณ์สำนักงาน,จำนวนที่เบิก,ชื่อผู้เบิก,แผนก,สาขา,เหตุผลการเบิก\n";
+      list.forEach((l, i) => {
+        csv += [i + 1, q(DEPTS[l.dept].label), q(l.timestamp), q(l.assetId), q(l.assetName), l.quantity, q(l.staffName), q(l.department), q(l.branch), q(l.notes)].join(",") + "\n";
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
@@ -1704,9 +1799,25 @@
       $("addAssetModal").classList.toggle("hidden", !show);
       if (!show) { $("newAssetForm").reset(); newAssetBase64 = ""; }
     }
+    /** เปลี่ยนคลังในฟอร์ม → ปรับคำแนะนำ/หมวดหมู่ให้ตรงแผนก */
+    function onAssetDeptChange() {
+      const d = normDept($("newAssetDept").value), D = DEPTS[d];
+      $("newAssetDeptHint").innerText = `บันทึกลงชีต ${D.sheet} · ประวัติแยกใน ${d === "HQ" ? "HQ_Stock_Movements" : "Stock_Movements"}`;
+      $("newAssetId").placeholder = D.idHint;
+      $("newAssetName").placeholder = D.nameHint;
+      $("newAssetCategory").placeholder = D.catHint;
+      const cats = [...new Set(cachedAssets.filter(a => a.dept === d).map(a => a.category).filter(Boolean))];
+      $("categoryList").innerHTML = cats.map(c => `<option value="${esc(c)}">`).join("");
+      $("addBtn").className = "text-white text-xs font-bold py-2 px-4 rounded-xl cursor-pointer " + D.btn;
+      const t = $("modalTitle").dataset.base || $("modalTitle").innerText;
+      $("modalTitle").innerHTML = `${esc(t)} ${deptBadge(d)}`;
+    }
     function openAddModal() {
       $("modalTitle").innerText = "➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง";
+      $("modalTitle").dataset.base = "➕ เพิ่มอุปกรณ์ชิ้นใหม่เข้าคลัง";
       $("formAction").value = "addAsset";
+      $("newAssetDept").value = curDept; $("newAssetDept").disabled = false;
+      onAssetDeptChange();
       $("newAssetId").disabled = false;
       $("totalLabel").innerHTML = 'จำนวนอุปกรณ์สำนักงานทั้งหมด (ชิ้น/ชุด) <span class="text-red-500">*</span>';
       $("imgOptionalNote").innerText = "";
@@ -1735,9 +1846,11 @@
     function openEditModal(id) {
       const a = findAsset(id);
       if (!a) return;
-      $("modalTitle").innerText = "✏️ แก้ไขข้อมูล / เพิ่มจำนวนสต็อกสินค้า";
+      $("modalTitle").dataset.base = "✏️ แก้ไขข้อมูล / เพิ่มจำนวนสต็อกสินค้า";
       $("formAction").value = "editAsset";
-      $("newAssetId").value = a.id; $("newAssetId").disabled = true;
+      $("newAssetDept").value = a.dept; $("newAssetDept").disabled = true;   // ย้ายคลังไม่ได้ (ฐานข้อมูลแยกกัน)
+      onAssetDeptChange();
+      $("newAssetId").value = a.code; $("newAssetId").disabled = true;
       $("newAssetName").value = a.name;
       $("newAssetCategory").value = a.category;
       $("newAssetTotal").value = a.total;
@@ -1759,6 +1872,7 @@
       try {
         const payload = {
           action: action,
+          dept: normDept($("newAssetDept").value),          // คลังปลายทาง: HR | HQ
           id: $("newAssetId").value.trim(),
           name: $("newAssetName").value.trim(),
           category: $("newAssetCategory").value.trim(),
@@ -1783,7 +1897,8 @@
         }
         const r = await apiPost(payload);
         if (r.status === "error") throw new Error(r.message);
-        alert(action === "addAsset" ? "🎉 เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!" : "✏️ " + (r.message || "อัปเดตข้อมูลพัสดุเรียบร้อย!"));
+        alert(action === "addAsset" ? "🎉 " + (r.message || "เพิ่มอุปกรณ์สำนักงานใหม่สำเร็จ!") : "✏️ " + (r.message || "อัปเดตข้อมูลพัสดุเรียบร้อย!"));
+        if (payload.dept !== curDept) setDept(payload.dept, true);
         toggleModal(false);
         loadData();
       } catch (err) {
@@ -1795,9 +1910,10 @@
 
     async function handleDeleteAsset(id) {
       const a = findAsset(id);
-      if (!confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบอุปกรณ์สำนักงานรายการนี้ออกจากคลัง?\n[${id}] - ${a ? a.name : ""}`)) return;
+      if (!a) return;
+      if (!confirm(`⚠️ คุณแน่ใจใช่ไหมว่าจะลบอุปกรณ์สำนักงานรายการนี้ออกจากคลัง ${DEPTS[a.dept].label}?\n[${a.code}] - ${a.name}`)) return;
       try {
-        const r = await apiPost({ action: "deleteAsset", assetId: id });
+        const r = await apiPost({ action: "deleteAsset", assetId: a.code, dept: a.dept });
         if (r.status === "error") throw new Error(r.message);
         selectedAssetsForPR.delete(id);
         alert("🗑️ ลบข้อมูลสำเร็จ");
@@ -1813,14 +1929,15 @@
     function preparePRModal() {
       if (!selectedAssetsForPR.size) { alert("กรุณาติ๊กเลือกอุปกรณ์ที่ต้องการขออนุมัติจัดซื้ออย่างน้อย 1 รายการครับ"); return; }
       const d = new Date();
-      $("prNumber").value = "PR-HR-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + Math.floor(100 + Math.random() * 900);
+      $("prRequester").value = DEPTS[curDept].full;
+      $("prNumber").value = DEPTS[curDept].pr + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + Math.floor(100 + Math.random() * 900);
       $("prDate").value = d.toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" });
       $("prItemsList").innerHTML = [...selectedAssetsForPR].map(id => {
         const it = findAsset(id); if (!it) return "";
         return `
           <div class="flex items-center justify-between p-2.5 bg-slate-50 border rounded-xl gap-2 text-xs">
             <div class="flex-1">
-              <div class="font-bold text-slate-800">${esc(it.name)} <span class="font-mono text-slate-400 font-normal">(${esc(it.id)})</span></div>
+              <div class="font-bold text-slate-800">${deptBadge(it.dept)} ${esc(it.name)} <span class="font-mono text-slate-400 font-normal">(${esc(it.code)})</span></div>
               <div class="text-[11px] text-slate-500">คงเหลือในคลัง: <span class="font-bold text-rose-600">${getRemaining(id)}</span> ชิ้น</div>
             </div>
             <div class="flex items-center gap-1">
@@ -1845,7 +1962,7 @@
         return `
           <tr class="border-b border-slate-300">
             <td class="border border-slate-400 p-2 text-center">${n++}</td>
-            <td class="border border-slate-400 p-2 font-mono font-bold">${esc(it.id)}</td>
+            <td class="border border-slate-400 p-2 font-mono font-bold">${esc(it.code)}${it.dept === "HQ" ? " <span style='font-size:9px'>[HQ_Office]</span>" : ""}</td>
             <td class="border border-slate-400 p-2 font-bold">${esc(it.name)}</td>
             <td class="border border-slate-400 p-2 text-center">${esc(it.category)}</td>
             <td class="border border-slate-400 p-2 text-center">${getRemaining(id)} ชิ้น</td>
@@ -1880,13 +1997,14 @@
           staffName: $("staffName").value.trim(),
           department: $("department").value.trim(),
           branch: $("branch").value,
-          items: reqCart.map(it => ({ assetId: it.assetId, assetName: it.assetName, category: it.category, quantity: it.quantity })),
+          items: reqCart.map(it => ({ assetId: it.code, dept: it.dept, assetName: it.assetName, category: it.category, quantity: it.quantity })),
           notes: $("requisitionNotes").value.trim() || "-",
           imageBase64: compressedBase64,
           requesterSig: sigPads.requester.toDataURL()
         });
         if (r.status !== "success") throw new Error(r.message || "ไม่ทราบสาเหตุ");
-        alert(`✅ ส่งคำขอเบิกเรียบร้อย\nเลขที่ใบเบิก: ${r.requestId}\nจำนวน ${reqCart.length} รายการ\nสถานะ: รออนุมัติ`);
+        const ids = r.requestIds || [r.requestId];
+        alert(`✅ ส่งคำขอเบิกเรียบร้อย\n${ids.length > 1 ? "แยกเป็น " + ids.length + " ใบเบิก (ตามแผนก)\n" : ""}เลขที่ใบเบิก: ${ids.join(", ")}\nจำนวน ${reqCart.length} รายการ\nสถานะ: รออนุมัติ`);
         $("assetForm").reset();
         clearPickerAsset(false);
         clearCart(true);
@@ -1934,8 +2052,8 @@
     function reqItems(r) {
       let a = r && r.items;
       if (typeof a === "string") { try { a = JSON.parse(a); } catch (_) { a = null; } }
-      if (Array.isArray(a) && a.length) return a;
-      return [{ assetId: r.assetId, assetName: r.assetName, category: r.category, quantity: r.quantity }];
+      if (!(Array.isArray(a) && a.length)) a = [{ assetId: r.assetId, assetName: r.assetName, category: r.category, quantity: r.quantity }];
+      return a.map(it => Object.assign({}, it, { key: akey(r.dept, it.assetId) }));   // key → หาในคลังของแผนกเจ้าของใบเบิก
     }
     /** แสดงรายการอุปกรณ์แบบย่อ (ตาราง / modal) */
     function reqItemsCell(r, max) {
@@ -1954,7 +2072,7 @@
         <tbody>${items.map((it, i) => {
           let st = "";
           if (withStock) {
-            const a = findAsset(it.assetId), rem = a ? getRemaining(a.id) : null, q = parseInt(it.quantity) || 0;
+            const a = findAsset(it.key), rem = a ? getRemaining(a.id) : null, q = parseInt(it.quantity) || 0;
             st = rem === null ? '<span class="text-slate-500">ไม่พบในคลัง</span>'
               : rem >= q ? `<span class="text-emerald-700 font-semibold">🟢 ${rem} → ${rem - q}</span>`
               : `<span class="text-rose-700 font-bold">🔴 คงเหลือ ${rem}</span>`;
@@ -1967,7 +2085,7 @@
     }
     /** รายการที่สต็อกไม่พอ */
     function reqShortItems(r) {
-      return reqItems(r).filter(it => { const a = findAsset(it.assetId); return !a || (parseInt(it.quantity) || 0) > getRemaining(a.id); });
+      return reqItems(r).filter(it => { const a = findAsset(it.key); return !a || (parseInt(it.quantity) || 0) > getRemaining(a.id); });
     }
 
     /** ยกเลิกใบเบิก: รออนุมัติ = ผู้ขอ/ผู้อนุมัติ · อนุมัติแล้ว/รอฝากส่ง = HR Admin (คืนยอดเข้าคลัง) */
@@ -1995,7 +2113,7 @@
         delete reqDetailCache[id];
         showToast("✅ " + (j.message || "ยกเลิกใบเบิกแล้ว"));
         if (back) loadData(); else loadRequests();
-        if (back && hasRole("ADMIN", "MANAGER")) loadMovements();
+        if (back && hasRole("ADMIN", "HQ_ADMIN", "MANAGER")) loadMovements();
       } catch (err) {
         alert("❌ " + err.message);
       }
@@ -2014,8 +2132,10 @@
     }
 
     function renderRequests() {
-      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, SHIPPED: 0, RECEIVED: 0, REJECTED: 0, CANCELLED: 0, ALL: globalRequests.length };
-      globalRequests.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+      const rd = ($("reqDept") || {}).value || "ALL";
+      const base = rd === "ALL" ? globalRequests : globalRequests.filter(r => normDept(r.dept) === rd);
+      const counts = { PENDING: 0, APPROVED: 0, ISSUED: 0, SHIPPED: 0, RECEIVED: 0, REJECTED: 0, CANCELLED: 0, ALL: base.length };
+      base.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
       document.querySelectorAll("[data-req-tab]").forEach(btn => {
         const s = btn.dataset.reqTab;
         btn.querySelector(".cnt").innerText = counts[s] || 0;
@@ -2024,7 +2144,7 @@
       });
 
       const q = $("reqSearch").value.toLowerCase().trim();
-      const list = globalRequests.filter(r =>
+      const list = base.filter(r =>
         (reqStatusFilter === "ALL" || r.status === reqStatusFilter) &&
         (!q || [r.requestId, r.staffName, r.branch, r.department].concat(reqItems(r).map(it => it.assetName + " " + it.assetId)).join(" ").toLowerCase().includes(q)));
       const pages = Math.max(1, Math.ceil(list.length / REQ_PAGE_SIZE));
@@ -2061,7 +2181,7 @@
             if (r.status === "CANCELLED") reason = `<div class="text-[10px] text-slate-500 mt-1 max-w-[180px] mx-auto break-words">โดย ${esc(r.cancelledByName || "-")} · ${esc(r.cancelledAt || "")}${r.cancelReason ? `<br><span class="text-rose-500">${esc(r.cancelReason)}</span>` : ""}</div>`;
             return `
               <tr class="border-b border-slate-100 hover:bg-slate-50">
-                <td class="p-3 font-mono font-bold text-indigo-900 whitespace-nowrap">${id}</td>
+                <td class="p-3 font-mono font-bold text-indigo-900 whitespace-nowrap">${id}<div class="mt-1">${deptBadge(r.dept)}</div></td>
                 <td class="p-3 text-slate-500 whitespace-nowrap">${esc(r.timestamp)}</td>
                 <td class="p-3">${reqItemsCell(r)}</td>
                 <td class="p-3 text-center font-black text-slate-900">${esc(r.quantity)}${reqItems(r).length > 1 ? '<div class="text-[10px] font-normal text-slate-400">ชิ้นรวม</div>' : ""}</td>
@@ -2122,6 +2242,7 @@
         box.innerHTML = `
           <div class="space-y-3">
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div class="col-span-full">${deptBadge(r.dept)} <span class="text-[11px] text-slate-500">ตัดสต็อกจากคลัง ${esc(DEPTS[normDept(r.dept)].sheet)}</span></div>
               ${f("วันที่ขอเบิก", r.timestamp)}${f("ผู้ขอเบิก", r.staffName)}${f("แผนก", r.department)}
               ${f("สาขา", r.branch)}${f("จำนวนรายการ", items.length + " รายการ")}${f("จำนวนที่ขอเบิกรวม", r.quantity + " ชิ้น")}
               <div class="col-span-full"><p class="text-[10px] text-slate-400">เหตุผลการเบิก</p><p class="text-slate-700">${esc(r.notes || "-")}</p></div>
@@ -2147,7 +2268,7 @@
         if (sigPads.approver.isEmpty) { alert("✍️ กรุณาเซ็นลายเซ็นผู้อนุมัติก่อนกดอนุมัติ"); return; }
         const r = reqDetailCache[id], short = r ? reqShortItems(r) : [];
         if (short.length) {
-          alert("⚠️ สต็อกไม่พอ / ไม่พบในคลัง:\n" + short.map(it => `• ${it.assetName}: ขอ ${it.quantity} / คงเหลือ ${getRemaining(it.assetId)}`).join("\n") +
+          alert("⚠️ สต็อกไม่พอ / ไม่พบในคลัง " + DEPTS[normDept(r.dept)].label + ":\n" + short.map(it => `• ${it.assetName}: ขอ ${it.quantity} / คงเหลือ ${getRemaining(it.key)}`).join("\n") +
             "\n\nกรุณาเติมสต็อกก่อน หรือ \"ไม่อนุมัติ\" แล้วให้สาขาส่งคำขอใหม่");
           return;
         }
@@ -2213,7 +2334,7 @@
           <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;">
             <div>
               <div style="font-size:20px;font-weight:900;">ใบเบิกพัสดุ / อุปกรณ์สำนักงาน</div>
-              <div style="font-size:11px;color:#475569;letter-spacing:.5px;">MATERIAL REQUISITION SLIP · HR SITEASSET TRACKER</div>
+              <div style="font-size:11px;color:#475569;letter-spacing:.5px;">MATERIAL REQUISITION SLIP · คลัง ${esc(DEPTS[normDept(r.dept)].full)}</div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:10px;color:#475569;">เลขที่ใบเบิก</div>
@@ -2233,7 +2354,7 @@
             </tr></thead>
             <tbody>${items.map((it, i) => `<tr>
               <td style="${td}text-align:center;">${i + 1}</td><td style="${td}font-family:monospace;font-weight:700;">${esc(it.assetId)}</td><td style="${td}font-weight:700;">${esc(it.assetName)}</td>
-              <td style="${td}text-align:center;">${esc(it.category || (findAsset(it.assetId) || {}).category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(it.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(it.quantity) : ""}</td>
+              <td style="${td}text-align:center;">${esc(it.category || (findAsset(it.key) || {}).category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(it.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(it.quantity) : ""}</td>
             </tr>`).join("")}</tbody>
             ${items.length > 1 ? `<tfoot><tr style="background:#f1f5f9;font-weight:800;"><td colspan="4" style="${td}text-align:right;">รวม ${items.length} รายการ</td><td style="${td}text-align:center;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-size:14px;">${issued ? esc(r.quantity) : ""}</td></tr></tfoot>` : ""}
           </table>
@@ -2243,7 +2364,7 @@
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
             ${box("ผู้ขอเบิก", r.requesterSig, r.staffName, r.department ? "แผนก " + r.department : "", String(r.timestamp || "").split(" ")[0])}
             ${box("ผู้อนุมัติ", r.approverSig, r.approverName, r.approverPosition, String(r.actionAt || "").split(" ")[0])}
-            ${box("ผู้จ่ายพัสดุ (HR)", r.issuerSig, r.issuedByName || "", r.issuedByName ? "ฝ่ายทรัพยากรบุคคล" : "", String(r.issuedAt || "").split(" ")[0])}
+            ${box("ผู้จ่ายพัสดุ (" + DEPTS[normDept(r.dept)].label + ")", r.issuerSig, r.issuedByName || "", r.issuedByName ? DEPTS[normDept(r.dept)].full : "", String(r.issuedAt || "").split(" ")[0])}
             ${box("ผู้รับพัสดุ (สาขา)", r.receiverSig, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", r.receiverSig ? String(r.receivedAt || r.issuedAt || "").split(" ")[0] : "")}
           </div>
           <div style="margin-top:18px;padding:8px 10px;background:#f1f5f9;border-radius:6px;font-size:11px;color:#334155;">
@@ -2440,11 +2561,11 @@
     }
 
     function dashRows(from, to) {
-      const br = $("dashBranch").value, cat = $("dashCategory").value;
+      const br = $("dashBranch").value, cat = $("dashCategory").value, dp = $("dashDept").value;
       return globalLogData.map(l => {
-        const a = findAsset(l.assetId);
-        return { ...l, _d: parseTs(l.timestamp), _qty: parseInt(l.quantity) || 0, _cat: (a && a.category) || "-", _branch: BRANCHES.includes(l.branch) ? l.branch : "อื่น ๆ" };
-      }).filter(l => l._d && l._d >= from && l._d <= to &&
+        const k = akey(l.dept, l.assetId), a = findAsset(k);
+        return { ...l, _key: k, _d: parseTs(l.timestamp), _qty: parseInt(l.quantity) || 0, _cat: (a && a.category) || "-", _branch: BRANCHES.includes(l.branch) ? l.branch : "อื่น ๆ" };
+      }).filter(l => l._d && l._d >= from && l._d <= to && (dp === "ALL" || l.dept === dp) &&
         (br === "ALL" || l._branch === br) && (cat === "ALL" || l._cat === cat));
     }
 
@@ -2455,7 +2576,8 @@
       bs.innerHTML = '<option value="ALL">-- ทุกสาขา --</option>' + BRANCHES.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
       bs.value = bv;
       const cs = $("dashCategory"), cv = cs.value || "ALL";
-      const cats = [...new Set(cachedAssets.map(a => a.category).filter(Boolean))];
+      const dp = $("dashDept").value;
+      const cats = [...new Set(cachedAssets.filter(a => dp === "ALL" || a.dept === dp).map(a => a.category).filter(Boolean))];
       cs.innerHTML = '<option value="ALL">-- ทุกหมวดหมู่ --</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
       cs.value = cats.includes(cv) ? cv : "ALL";
       document.querySelectorAll("[data-dash-period]").forEach(b => {
@@ -2472,9 +2594,10 @@
       // ---- สรุปรายสาขา ----
       const branchKeys = [...BRANCHES, ...(rows.some(l => l._branch === "อื่น ๆ") ? ["อื่น ๆ"] : [])];
       const byBranch = {};
-      branchKeys.forEach(b => byBranch[b] = { branch: b, qty: 0, count: 0, items: {}, last: null });
+      branchKeys.forEach(b => byBranch[b] = { branch: b, qty: 0, count: 0, hr: 0, hq: 0, items: {}, last: null });
       rows.forEach(l => {
         const x = byBranch[l._branch]; x.qty += l._qty; x.count++;
+        if (l.dept === "HQ") x.hq += l._qty; else x.hr += l._qty;
         x.items[l.assetName || l.assetId] = (x.items[l.assetName || l.assetId] || 0) + l._qty;
         if (!x.last || l._d > x.last) x.last = l._d;
       });
@@ -2484,8 +2607,8 @@
       // ---- Top อุปกรณ์ ----
       const byItem = {};
       rows.forEach(l => {
-        const k = String(l.assetId);
-        const x = byItem[k] || (byItem[k] = { id: k, name: l.assetName, cat: l._cat, qty: 0, count: 0, branches: new Set() });
+        const k = l._key;
+        const x = byItem[k] || (byItem[k] = { id: k, code: String(l.assetId), dept: l.dept, name: l.assetName, cat: l._cat, qty: 0, count: 0, branches: new Set() });
         x.qty += l._qty; x.count++; x.branches.add(l._branch);
       });
       const topItems = Object.values(byItem).sort((a, b) => b.qty - a.qty).slice(0, 10);
@@ -2504,13 +2627,15 @@
         </div>`;
       $("dashTiles").innerHTML =
         tile("ยอดเบิกรวม (ชิ้น)", fmtN(totalQty), delta) +
-        tile("จำนวนครั้งที่เบิก", fmtN(rows.length), `<span class="text-slate-500">เฉลี่ย ${rows.length ? (totalQty / rows.length).toFixed(1) : 0} ชิ้น/ครั้ง</span>`) +
+        (dp === "ALL"
+          ? tile("แยกตามแผนก (ชิ้น)", `<span class="text-blue-700">${fmtN(rows.filter(l => l.dept === "HR").reduce((s, l) => s + l._qty, 0))}</span> <span class="text-slate-300">/</span> <span class="text-amber-600">${fmtN(rows.filter(l => l.dept === "HQ").reduce((s, l) => s + l._qty, 0))}</span>`, `<span class="text-slate-500">HR / HQ_Office · ${fmtN(rows.length)} ครั้ง</span>`)
+          : tile("จำนวนครั้งที่เบิก", fmtN(rows.length), `<span class="text-slate-500">เฉลี่ย ${rows.length ? (totalQty / rows.length).toFixed(1) : 0} ชิ้น/ครั้ง</span>`)) +
         tile("สาขาที่เบิกมากที่สุด", topB ? esc(topB.branch) : "-", topB ? `<span class="text-slate-500">${fmtN(topB.qty)} ชิ้น · ${totalQty ? Math.round(topB.qty / totalQty * 100) : 0}% ของทั้งหมด</span>` : "") +
         tile("อุปกรณ์ที่ถูกเบิกมากที่สุด", topItems[0] ? esc(topItems[0].name) : "-", topItems[0] ? `<span class="text-slate-500">${fmtN(topItems[0].qty)} ชิ้น · ${topItems[0].count} ครั้ง</span>` : "");
 
       // ---- สถานะใบเบิกในช่วงเวลา ----
       const br = $("dashBranch").value;
-      const reqIn = globalRequests.filter(r => { const d = parseTs(r.timestamp); return d && d >= R.from && d <= R.to && (br === "ALL" || r.branch === br); });
+      const reqIn = globalRequests.filter(r => { const d = parseTs(r.timestamp); return d && d >= R.from && d <= R.to && (br === "ALL" || r.branch === br) && (dp === "ALL" || normDept(r.dept) === dp); });
       const cnt = s => reqIn.filter(r => r.status === s).length;
       const st = (icon, label, n, tab) => `
         <button onclick="setReqStatus('${tab}'); document.getElementById('reqTableBody').scrollIntoView({behavior:'smooth',block:'center'})"
@@ -2574,7 +2699,7 @@
       // ---- ตารางสรุปรายสาขา ----
       const th = "p-3 font-semibold text-slate-700 bg-slate-100 whitespace-nowrap";
       $("dashBranchTable").innerHTML = `
-        <thead><tr><th class="${th} text-left">สาขา</th><th class="${th} text-right">จำนวนครั้ง</th><th class="${th} text-right">จำนวนชิ้น</th>
+        <thead><tr><th class="${th} text-left">สาขา</th><th class="${th} text-right">จำนวนครั้ง</th><th class="${th} text-right">จำนวนชิ้น</th>${dp === "ALL" ? `<th class="${th} text-right">HR</th><th class="${th} text-right">HQ_Office</th>` : ""}
           <th class="${th} text-left w-48">สัดส่วน</th><th class="${th} text-left">อุปกรณ์ที่เบิกมากสุด</th><th class="${th} text-left">เบิกล่าสุด</th></tr></thead>
         <tbody>${branchList.map(x => {
           const share = totalQty ? x.qty / totalQty * 100 : 0;
@@ -2582,12 +2707,14 @@
             <td class="p-3 font-semibold text-slate-800">${esc(x.branch)}</td>
             <td class="p-3 text-right tabular-nums">${fmtN(x.count)}</td>
             <td class="p-3 text-right tabular-nums font-bold text-slate-900">${fmtN(x.qty)}</td>
+            ${dp === "ALL" ? `<td class="p-3 text-right tabular-nums text-blue-700">${fmtN(x.hr)}</td><td class="p-3 text-right tabular-nums text-amber-700">${fmtN(x.hq)}</td>` : ""}
             <td class="p-3"><div class="flex items-center gap-2"><div class="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-2 rounded-full" style="width:${share}%;background:var(--series-1)"></div></div><span class="w-10 text-right tabular-nums">${share.toFixed(1)}%</span></div></td>
             <td class="p-3">${esc(x.topItem)}</td>
             <td class="p-3 whitespace-nowrap text-slate-500">${x.last ? thDate(x.last) : "-"}</td></tr>`;
         }).join("")}</tbody>
         <tfoot><tr class="border-t-2 border-slate-300 bg-slate-50 font-bold text-slate-900">
           <td class="p-3">รวมทั้งหมด</td><td class="p-3 text-right tabular-nums">${fmtN(rows.length)}</td><td class="p-3 text-right tabular-nums">${fmtN(totalQty)}</td>
+          ${dp === "ALL" ? `<td class="p-3 text-right tabular-nums">${fmtN(branchList.reduce((s, x) => s + x.hr, 0))}</td><td class="p-3 text-right tabular-nums">${fmtN(branchList.reduce((s, x) => s + x.hq, 0))}</td>` : ""}
           <td class="p-3">100%</td><td class="p-3"></td><td class="p-3"></td></tr></tfoot>`;
 
       // ---- Top 10 ----
@@ -2597,14 +2724,14 @@
             <th class="${th} text-right">จำนวนชิ้น</th><th class="${th} text-right">จำนวนครั้ง</th><th class="${th} text-left">สาขาที่เบิก</th><th class="${th} text-right">คงเหลือปัจจุบัน</th></tr></thead>
           <tbody>${topItems.map((x, i) => `<tr class="border-t border-slate-100">
             <td class="p-3 text-center font-bold text-slate-500">${i + 1}</td>
-            <td class="p-3"><span class="font-semibold text-slate-800">${esc(x.name)}</span> <span class="font-mono text-[10px] text-slate-400">${esc(x.id)}</span></td>
+            <td class="p-3">${deptBadge(x.dept)} <span class="font-semibold text-slate-800">${esc(x.name)}</span> <span class="font-mono text-[10px] text-slate-400">${esc(x.code)}</span></td>
             <td class="p-3">${esc(x.cat)}</td>
             <td class="p-3 text-right tabular-nums font-bold text-slate-900">${fmtN(x.qty)}</td>
             <td class="p-3 text-right tabular-nums">${fmtN(x.count)}</td>
             <td class="p-3 text-slate-500">${esc([...x.branches].join(", "))}</td>
             <td class="p-3 text-right tabular-nums">${findAsset(x.id) ? fmtN(getRemaining(x.id)) : "-"}</td></tr>`).join("")}</tbody>`;
 
-      window._dash = { R, rows, branchList, topItems, totalQty };
+      window._dash = { R, rows, branchList, topItems, totalQty, dept: dp };
     }
 
     /* Tooltip ร่วมของกราฟ */
@@ -2627,19 +2754,20 @@
       const D = window._dash; if (!D) return;
       const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
       const br = $("dashBranch").value, cat = $("dashCategory").value;
+      const dl = D.dept === "ALL" ? "รวมทุกแผนก (HR + HQ_Office)" : DEPTS[D.dept].label;
       let csv = "﻿" + [
-        q("รายงานสรุปการเบิกจ่ายรายสาขา - HR SiteAsset Tracker"),
+        q("รายงานสรุปการเบิกจ่ายรายสาขา - HR SiteAsset Tracker · " + dl),
         q("ช่วงเวลา: " + D.R.label),
         q("สาขา: " + (br === "ALL" ? "ทุกสาขา" : br) + " | หมวดหมู่: " + (cat === "ALL" ? "ทุกหมวดหมู่" : cat)),
         q("ออกรายงานเมื่อ: " + new Date().toLocaleString("th-TH")), ""].join("\n") + "\n";
-      csv += "สรุปรายสาขา\nสาขา,จำนวนครั้ง,จำนวนชิ้น,สัดส่วน (%),อุปกรณ์ที่เบิกมากสุด,เบิกล่าสุด\n";
-      D.branchList.forEach(x => csv += [q(x.branch), x.count, x.qty, D.totalQty ? (x.qty / D.totalQty * 100).toFixed(1) : 0, q(x.topItem), q(x.last ? thDate(x.last) : "-")].join(",") + "\n");
-      csv += [q("รวม"), D.rows.length, D.totalQty, 100, "", ""].join(",") + "\n\n";
-      csv += "อุปกรณ์ที่ถูกเบิกมากที่สุด 10 อันดับ\nอันดับ,รหัส,อุปกรณ์,หมวดหมู่,จำนวนชิ้น,จำนวนครั้ง,สาขาที่เบิก\n";
-      D.topItems.forEach((x, i) => csv += [i + 1, q(x.id), q(x.name), q(x.cat), x.qty, x.count, q([...x.branches].join(", "))].join(",") + "\n");
-      csv += "\nรายละเอียดการเบิกในช่วงเวลา\nวัน-เวลา,รหัส,อุปกรณ์,หมวดหมู่,จำนวน,ผู้เบิก,แผนก,สาขา,หมายเหตุ\n";
+      csv += "สรุปรายสาขา\nสาขา,จำนวนครั้ง,จำนวนชิ้น,ชิ้น HR,ชิ้น HQ_Office,สัดส่วน (%),อุปกรณ์ที่เบิกมากสุด,เบิกล่าสุด\n";
+      D.branchList.forEach(x => csv += [q(x.branch), x.count, x.qty, x.hr, x.hq, D.totalQty ? (x.qty / D.totalQty * 100).toFixed(1) : 0, q(x.topItem), q(x.last ? thDate(x.last) : "-")].join(",") + "\n");
+      csv += [q("รวม"), D.rows.length, D.totalQty, D.branchList.reduce((s, x) => s + x.hr, 0), D.branchList.reduce((s, x) => s + x.hq, 0), 100, "", ""].join(",") + "\n\n";
+      csv += "อุปกรณ์ที่ถูกเบิกมากที่สุด 10 อันดับ\nอันดับ,คลัง,รหัส,อุปกรณ์,หมวดหมู่,จำนวนชิ้น,จำนวนครั้ง,สาขาที่เบิก\n";
+      D.topItems.forEach((x, i) => csv += [i + 1, q(DEPTS[x.dept].label), q(x.code), q(x.name), q(x.cat), x.qty, x.count, q([...x.branches].join(", "))].join(",") + "\n");
+      csv += "\nรายละเอียดการเบิกในช่วงเวลา\nวัน-เวลา,คลัง,รหัส,อุปกรณ์,หมวดหมู่,จำนวน,ผู้เบิก,แผนก,สาขา,หมายเหตุ\n";
       [...D.rows].sort((a, b) => a._d - b._d).forEach(l =>
-        csv += [q(l.timestamp), q(l.assetId), q(l.assetName), q(l._cat), l._qty, q(l.staffName), q(l.department), q(l.branch), q(l.notes)].join(",") + "\n");
+        csv += [q(l.timestamp), q(DEPTS[l.dept].label), q(l.assetId), q(l.assetName), q(l._cat), l._qty, q(l.staffName), q(l.department), q(l.branch), q(l.notes)].join(",") + "\n");
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
       a.download = `รายงานเบิกจ่ายรายสาขา_${dashPeriod}_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.csv`;
@@ -2654,7 +2782,7 @@
       tpl.innerHTML = `
         <div style="border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:14px;font-family:Sarabun,sans-serif;">
           <div style="font-size:20px;font-weight:900;">รายงานสรุปการเบิกจ่ายรายสาขา</div>
-          <div style="font-size:12px;color:#475569;">${esc(D.R.label)} · สาขา: ${esc(br === "ALL" ? "ทุกสาขา" : br)} · หมวดหมู่: ${esc(cat === "ALL" ? "ทุกหมวดหมู่" : cat)}</div>
+          <div style="font-size:12px;color:#475569;">${esc(D.dept === "ALL" ? "รวม HR + HQ_Office" : DEPTS[D.dept].label)} · ${esc(D.R.label)} · สาขา: ${esc(br === "ALL" ? "ทุกสาขา" : br)} · หมวดหมู่: ${esc(cat === "ALL" ? "ทุกหมวดหมู่" : cat)}</div>
           <div style="font-size:10px;color:#94a3b8;">พิมพ์โดย ${esc(session.user.fullName || session.user.username)} · ${esc(new Date().toLocaleString("th-TH"))}</div>
         </div><div class="space-y-5">` + $("dashReport").innerHTML + "</div>";
       printElement("dashPrintTemplate");

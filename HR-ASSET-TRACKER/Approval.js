@@ -6,7 +6,9 @@
  *  2) ไฟล์ Approval.gs: ลบของเดิมทิ้ง แล้ววางโค้ดนี้ทั้งหมดแทน
  *  3) เลือกฟังก์ชัน setupAdmin ที่แถบด้านบน → กด ▶ Run (ครั้งเดียว)
  *     → ได้ผู้ใช้ admin / รหัส Admin@1234  (เข้าระบบแล้วเปลี่ยนรหัสทันที)
- *  4) Deploy > Manage deployments > ✏️ Edit > Version: New version > Deploy
+ *  4) (ใหม่) เลือกฟังก์ชัน setupHQOffice → ▶ Run (ครั้งเดียว) สร้างชีต HQ_Office + ตัวอย่างเครื่องเขียน
+ *     จากนั้นเพิ่มผู้ใช้ Role = HQ_ADMIN ในเมนู 👥 จัดการสมาชิก ให้แอดมินฝั่ง HQ_Office
+ *  5) Deploy > Manage deployments > ✏️ Edit > Version: New version > Deploy
  *
  * ชีตที่สร้างให้อัตโนมัติ:
  *  - Users    : username | password | passwordHash | salt | fullName | role | branch | active | ...
@@ -14,9 +16,18 @@
  *  - Requests : ใบขอเบิก / ผลการอนุมัติ / ลายเซ็น
  *
  * สิทธิ์ (role):
- *  ADMIN   = HR Admin : ทุกอย่าง + จัดการอุปกรณ์ + จัดการสมาชิก + อนุมัติ
- *  MANAGER = ผู้อนุมัติ/ผู้บริหาร : ดูทุกสาขา + อนุมัติ/ไม่อนุมัติ + พิมพ์ PR
- *  BRANCH  = พนักงานสาขา : ดูสต็อก + ส่งคำขอเบิก (เฉพาะสาขาตัวเอง) + พิมพ์ใบเบิกที่อนุมัติแล้ว
+ *  ADMIN    = HR Admin        : จัดการคลัง HR + อนุมัติ/จ่ายของ + จัดการสมาชิก (เมนูสมาชิกเฉพาะ ADMIN)
+ *  HQ_ADMIN = HQ_Office Admin : จัดการคลัง HQ_Office + อนุมัติ/จ่ายของ
+ *     ★ แอดมิน 2 ฝ่าย "ทำแทนกันได้" — ADMIN / HQ_ADMIN จัดการสต็อก อนุมัติ จ่ายของ ยกเลิก ได้ทั้งคลัง HR และ HQ_Office
+ *       (ระบบบันทึกหมายเหตุ "ทำแทน ..." ในประวัติสต็อก / ใบเบิก ให้ตรวจย้อนหลังได้)
+ *  MANAGER  = ผู้อนุมัติ/ผู้บริหาร : ดูทุกสาขา + อนุมัติ/ไม่อนุมัติ (ทั้ง 2 แผนก) + พิมพ์ PR
+ *  BRANCH   = พนักงานสาขา : ดูสต็อก + ส่งคำขอเบิก (เฉพาะสาขาตัวเอง) + พิมพ์ใบเบิกที่อนุมัติแล้ว
+ *
+ * 🏢 แผนก / คลัง (แยกฐานข้อมูลเด็ดขาด)
+ *  HR : Requests     (เลขที่ RQ-yyMMdd-001)  · Assets_Stock / Requisition_Log / Stock_Movements
+ *  HQ : HQ_Requests  (เลขที่ HQ-yyMMdd-001)  · HQ_Assets_Stock / HQ_Requisition_Log / HQ_Stock_Movements
+ *  พนักงานเบิกของทั้ง 2 แผนกพร้อมกันได้ในการกดส่งครั้งเดียว → ระบบแยกเป็นใบเบิกของแต่ละแผนกให้อัตโนมัติ
+ *  รายงาน / Export ดึงรวมกันได้ (dept=ALL)
  *
  * สถานะใบเบิก:
  *   PENDING (รออนุมัติ)
@@ -38,7 +49,8 @@
 
 const APP_CONFIG = {
   SPREADSHEET_ID: '',                       // เว้นว่างถ้าสคริปต์ผูกกับ Sheet อยู่แล้ว
-  REQ_SHEET: 'Requests',
+  REQ_SHEET: 'Requests',                    // ใบเบิก HR (ชื่อเดิม)
+  HQ_REQ_SHEET: 'HQ_Requests',              // ใบเบิก HQ_Office (แยกชีต)
   USERS_SHEET: 'Users',
   IMAGE_FOLDER: 'HR-Asset-Request-Images',  // โฟลเดอร์ Drive เก็บรูปหลักฐาน
   TOKEN_HOURS: 12,                          // อายุการ Login (ชั่วโมง)
@@ -47,7 +59,21 @@ const APP_CONFIG = {
   TZ: 'Asia/Bangkok'
 };
 
-const ROLES = ['ADMIN', 'MANAGER', 'BRANCH'];
+const ROLES = ['ADMIN', 'HQ_ADMIN', 'MANAGER', 'BRANCH'];
+const ADMIN_ROLES = ['ADMIN', 'HQ_ADMIN'];             // แอดมินคลัง — ทำแทนกันได้ทั้ง 2 แผนก
+const APPROVER_ROLES = ['ADMIN', 'HQ_ADMIN', 'MANAGER'];
+const DEPT_LABEL = { HR: 'HR', HQ: 'HQ_Office' };
+const REQ_PREFIX = { HR: 'RQ-', HQ: 'HQ-' };
+/** แผนกต้นสังกัดของแอดมิน (ใช้บันทึกว่า "ทำแทน" อีกฝ่าย) */
+function homeDept_(user) { return user.role === 'HQ_ADMIN' ? 'HQ' : user.role === 'ADMIN' ? 'HR' : ''; }
+function isAdmin_(user) { return ADMIN_ROLES.indexOf(user.role) >= 0; }
+/** " (ทำแทน HQ_Office)" เมื่อแอดมินของอีกฝ่ายเป็นผู้ทำรายการ */
+function proxyTag_(user, dept) {
+  const h = homeDept_(user);
+  return h && h !== normDept_(dept) ? ' (ทำแทน ' + DEPT_LABEL[normDept_(dept)] + ')' : '';
+}
+/** เลขที่ใบเบิก → แผนก (HQ-... = HQ, อื่น ๆ = HR) */
+function reqDept_(id) { return /^HQ-/i.test(String(id || '').trim()) ? 'HQ' : 'HR'; }
 const BRANCHES = [
   'สาขาขุขันธ์', 'สาขาเบญจลักษณ์', 'สาขากุฉินารายณ์', 'เดชอุดม',
   'ตระการพืชผล', 'ศรีเมืองใหม่', 'อำนาจเจริญ', 'สำนักงานใหญ่'
@@ -91,9 +117,9 @@ function doGet(e) {
       case 'getRequest':  return jsonOut_(getRequestDetail_(p.id, user));
       case 'listUsers':   requireRole_(user, ['ADMIN']); return jsonOut_(listUsers_());
       case 'getMovements':
-        requireRole_(user, ['ADMIN', 'MANAGER']);
+        requireRole_(user, APPROVER_ROLES);
         if (typeof getStockMovements !== 'function') throw new Error(LEGACY_MISSING_MSG_);
-        return jsonOut_({ status: 'success', data: getStockMovements() });
+        return jsonOut_({ status: 'success', data: getStockMovements(p.dept || 'ALL') });
       case 'getLogs':
         if (user.role === 'BRANCH') return jsonOut_(filterLegacyByBranch_(legacyGet_(e), user.branch));
         break;
@@ -126,7 +152,11 @@ function diag_() {
     sheets: ss ? ss.getSheets().map(s => s.getName()) : [],
     hasUsers: !!(ss && ss.getSheetByName(APP_CONFIG.USERS_SHEET)),
     hasAssetsStock: !!(ss && ss.getSheetByName('Assets_Stock')),
-    hasRequisitionLog: !!(ss && ss.getSheetByName('Requisition_Log'))
+    hasRequisitionLog: !!(ss && ss.getSheetByName('Requisition_Log')),
+    hasHQ_AssetsStock: !!(ss && ss.getSheetByName('HQ_Assets_Stock')),
+    hasHQ_RequisitionLog: !!(ss && ss.getSheetByName('HQ_Requisition_Log')),
+    hasHQ_Requests: !!(ss && ss.getSheetByName(APP_CONFIG.HQ_REQ_SHEET)),
+    codeJs_multiDept: typeof normDept_ === 'function' && typeof stockSheet_ === 'function'
   };
 }
 
@@ -142,12 +172,13 @@ function doPost(e) {
 
     switch (data.action) {
       case 'createRequest':  return jsonOut_(createRequest_(data, user));
-      case 'approveRequest': requireRole_(user, ['ADMIN', 'MANAGER']); return jsonOut_(decideRequest_(data, true, user));
-      case 'rejectRequest':  requireRole_(user, ['ADMIN', 'MANAGER']); return jsonOut_(decideRequest_(data, false, user));
-      case 'issueRequest':   requireRole_(user, ['ADMIN']); return jsonOut_(issueRequest_(data, user));
-      case 'shipRequest':    requireRole_(user, ['ADMIN']); return jsonOut_(shipRequest_(data, user));
+      case 'approveRequest': requireRole_(user, APPROVER_ROLES); return jsonOut_(decideRequest_(data, true, user));
+      case 'rejectRequest':  requireRole_(user, APPROVER_ROLES); return jsonOut_(decideRequest_(data, false, user));
+      case 'issueRequest':   requireRole_(user, ADMIN_ROLES); return jsonOut_(issueRequest_(data, user));
+      case 'shipRequest':    requireRole_(user, ADMIN_ROLES); return jsonOut_(shipRequest_(data, user));
       case 'receiveRequest': return jsonOut_(receiveRequest_(data, user));   // ตรวจสิทธิ์ตามสาขาในฟังก์ชัน
       case 'cancelRequest':  return jsonOut_(cancelRequest_(data, user));    // ตรวจสิทธิ์ตามสถานะในฟังก์ชัน
+      case 'setupHQ':        requireRole_(user, ADMIN_ROLES); setupHQOffice(); reqSheet_('HQ'); return jsonOut_({ status: 'success', message: 'สร้างชีต HQ_Office เรียบร้อย' });
       case 'saveUser':       requireRole_(user, ['ADMIN']); return jsonOut_(saveUser_(data, user));
       case 'changePassword': return jsonOut_(changePassword_(data, user));
       case undefined:
@@ -155,8 +186,10 @@ function doPost(e) {
         // การเบิกตรง (ตัดสต็อกทันที) ถูกปิด — ต้องผ่านระบบอนุมัติเท่านั้น
         return jsonOut_({ status: 'error', message: 'การเบิกต้องส่งผ่านระบบขออนุมัติ' });
       default:
-        // addAsset / editAsset / deleteAsset และ action อื่นของระบบเดิม = ADMIN เท่านั้น
-        requireRole_(user, ['ADMIN']);
+        // addAsset / editAsset / deleteAsset / deleteLog = แอดมินคลัง (HR หรือ HQ_Office ทำแทนกันได้ทั้ง 2 คลัง)
+        requireRole_(user, ADMIN_ROLES);
+        if (typeof normDept_ !== 'function') throw new Error(LEGACY_MISSING_MSG_);
+        MOVE_ACTOR_.fullName = (user.fullName || user.username) + proxyTag_(user, data.dept);
         return legacyPost_(e);
     }
   } catch (err) {
@@ -387,11 +420,19 @@ function changePassword_(d, user) {
 /* ============================ Requests / Approval ============================ */
 function listRequests_(user) {
   // ไม่ส่งลายเซ็นในรายการ (ลดขนาดข้อมูล → โหลดเร็ว) ดึงเต็มผ่าน getRequest
-  return readTable_(reqSheet_()).rows
+  // รวมใบเบิกของ HR (Requests) + HQ_Office (HQ_Requests) → เรียงใหม่ → เก่า
+  const all = [];
+  ['HR', 'HQ'].forEach(dept => {
+    const sh = dept === 'HQ' && !ss_().getSheetByName(APP_CONFIG.HQ_REQ_SHEET) ? null : reqSheet_(dept);
+    if (!sh) return;
+    readTable_(sh).rows.forEach((r, i) => { r.dept = dept; r._ord = i; all.push(r); });
+  });
+  return all
     .filter(r => user.role !== 'BRANCH' || String(r.branch) === user.branch)
-    .reverse()
+    .sort((a, b) => (tsNum_(b.timestamp) - tsNum_(a.timestamp)) || (b._ord - a._ord))
     .map(r => {
       const o = Object.assign({}, r);
+      delete o._ord;
       o.status = effStatus_(r);
       o.items = reqItems_(r);
       o.hasIssuerSig = !!o.issuerSig;
@@ -401,8 +442,24 @@ function listRequests_(user) {
     });
 }
 
+/** "dd/MM/yyyy HH:mm" → ตัวเลขสำหรับเรียงลำดับ */
+function tsNum_(v) {
+  const m = String(v || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!m) return 0;
+  return Number(m[3]) * 1e8 + Number(m[2]) * 1e6 + Number(m[1]) * 1e4 + Number(m[4] || 0) * 100 + Number(m[5] || 0);
+}
+
+/** หาใบเบิกจากเลขที่ (เลือกชีตตามแผนกจาก prefix) → { t, r, dept } */
+function findReq_(id) {
+  const dept = reqDept_(id);
+  const t = readTable_(reqSheet_(dept));
+  const r = t.rows.find(x => String(x.requestId) === String(id));
+  if (r) r.dept = dept;
+  return { t: t, r: r, dept: dept };
+}
+
 function getRequestDetail_(id, user) {
-  const r = readTable_(reqSheet_()).rows.find(x => String(x.requestId) === String(id));
+  const r = findReq_(id).r;
   if (!r || (user.role === 'BRANCH' && String(r.branch) !== user.branch)) {
     return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + id };
   }
@@ -431,53 +488,68 @@ function parseReqItems_(d) {
   for (let i = 0; i < src.length; i++) {
     const it = src[i] || {};
     const id = String(it.assetId || '').trim();
+    const dept = normDept_(it.dept || d.dept);
     const q = parseInt(it.quantity, 10);
     if (!id) return { error: 'รายการที่ ' + (i + 1) + ': ไม่ได้เลือกอุปกรณ์' };
     if (!(q > 0)) return { error: 'รายการที่ ' + (i + 1) + ' (' + id + '): จำนวนไม่ถูกต้อง' };
-    if (map[id]) { map[id].quantity += q; continue; }
-    map[id] = { assetId: id, assetName: String(it.assetName || ''), category: String(it.category || ''), quantity: q };
-    out.push(map[id]);
+    const key = dept + '|' + id;                       // รหัสซ้ำกันได้ถ้าอยู่คนละคลัง
+    if (map[key]) { map[key].quantity += q; continue; }
+    map[key] = { dept: dept, assetId: id, assetName: String(it.assetName || ''), category: String(it.category || ''), quantity: q };
+    out.push(map[key]);
   }
   if (!out.length) return { error: 'กรุณาเพิ่มอุปกรณ์อย่างน้อย 1 รายการ' };
-  if (out.length > MAX_REQ_ITEMS) return { error: 'ใบเบิก 1 ใบเบิกได้ไม่เกิน ' + MAX_REQ_ITEMS + ' รายการ' };
-  return { items: out };
+  // แยกตามแผนก → 1 แผนก = 1 ใบเบิก
+  const groups = {};
+  out.forEach(x => (groups[x.dept] = groups[x.dept] || []).push({ assetId: x.assetId, assetName: x.assetName, category: x.category, quantity: x.quantity }));
+  for (const k in groups) {
+    if (groups[k].length > MAX_REQ_ITEMS) return { error: 'ใบเบิก ' + DEPT_LABEL[k] + ' เบิกได้ไม่เกิน ' + MAX_REQ_ITEMS + ' รายการต่อใบ' };
+  }
+  return { items: out, groups: groups };
 }
 
 function createRequest_(d, user) {
   const branch = user.role === 'BRANCH' && user.branch ? user.branch : String(d.branch || '');
   if (!d.staffName) return { status: 'error', message: 'ข้อมูลไม่ครบ (ชื่อผู้เบิก)' };
   if (BRANCHES.indexOf(branch) < 0) return { status: 'error', message: 'กรุณาเลือกสาขาให้ถูกต้อง' };
+  if (typeof normDept_ !== 'function') return { status: 'error', message: LEGACY_MISSING_MSG_ };
   const parsed = parseReqItems_(d);
   if (parsed.error) return { status: 'error', message: parsed.error };
-  const items = parsed.items, multi = items.length > 1;
-  const qty = items.reduce((s, x) => s + x.quantity, 0);
   if (!d.requesterSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้ขอเบิก' };
 
+  const depts = ['HR', 'HQ'].filter(k => parsed.groups[k]);   // เบิกพร้อมกัน 2 แผนก → ได้ 2 ใบ
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const t = readTable_(reqSheet_());
     const now = new Date();
-    const prefix = 'RQ-' + Utilities.formatDate(now, APP_CONFIG.TZ, 'yyMMdd') + '-';
-    const seq = t.rows.filter(x => String(x.requestId).indexOf(prefix) === 0).length + 1;
-    const requestId = prefix + String(seq).padStart(3, '0');
-    const img = d.imageBase64 ? saveImage_(d.imageBase64, requestId + '_evidence') : { id: '', url: '' };
-
-    appendObj_(t, {
-      requestId: requestId,
-      timestamp: Utilities.formatDate(now, APP_CONFIG.TZ, 'dd/MM/yyyy HH:mm'),
-      // คอลัมน์เดิมเก็บสรุป (รายการแรก / ยอดรวม) → ชีตอ่านง่าย · รายละเอียดทุกรายการอยู่ในคอลัมน์ items
-      assetId: items[0].assetId,
-      assetName: multi ? items[0].assetName + ' และอีก ' + (items.length - 1) + ' รายการ' : items[0].assetName,
-      category: multi ? 'หลายรายการ (' + items.length + ')' : items[0].category,
-      items: JSON.stringify(items),
-      quantity: qty, staffName: d.staffName, department: d.department || '',
-      branch: branch, notes: d.notes || '-',
-      imageUrl: img.url, imageFileId: img.id,
-      requesterSig: storeSig_(d.requesterSig, requestId + '_requester'),
-      status: 'PENDING', requestedBy: user.username
+    const ymd = Utilities.formatDate(now, APP_CONFIG.TZ, 'yyMMdd');
+    const ids = [];
+    let img = null, sig = '';
+    depts.forEach(dept => {
+      const items = parsed.groups[dept], multi = items.length > 1;
+      const qty = items.reduce((s, x) => s + x.quantity, 0);
+      const t = readTable_(reqSheet_(dept));
+      const prefix = REQ_PREFIX[dept] + ymd + '-';
+      const seq = t.rows.filter(x => String(x.requestId).indexOf(prefix) === 0).length + 1;
+      const requestId = prefix + String(seq).padStart(3, '0');
+      if (!img) img = d.imageBase64 ? saveImage_(d.imageBase64, requestId + '_evidence') : { id: '', url: '' };   // รูปเดียวใช้ร่วมกัน
+      if (!sig) sig = storeSig_(d.requesterSig, requestId + '_requester');
+      appendObj_(t, {
+        requestId: requestId,
+        timestamp: Utilities.formatDate(now, APP_CONFIG.TZ, 'dd/MM/yyyy HH:mm'),
+        assetId: items[0].assetId,
+        assetName: multi ? items[0].assetName + ' และอีก ' + (items.length - 1) + ' รายการ' : items[0].assetName,
+        category: multi ? 'หลายรายการ (' + items.length + ')' : items[0].category,
+        items: JSON.stringify(items),
+        quantity: qty, staffName: d.staffName, department: d.department || '',
+        branch: branch,
+        notes: (d.notes || '-') + (depts.length > 1 ? ' [เบิกคู่กับ ' + DEPT_LABEL[depts[0] === dept ? depts[1] : depts[0]] + ']' : ''),
+        imageUrl: img.url, imageFileId: img.id,
+        requesterSig: sig,
+        status: 'PENDING', requestedBy: user.username
+      });
+      ids.push(requestId);
     });
-    return { status: 'success', requestId: requestId };
+    return { status: 'success', requestId: ids.join(', '), requestIds: ids, depts: depts };
   } finally {
     lock.releaseLock();
   }
@@ -493,8 +565,7 @@ function decideRequest_(d, approve, user) {
   lock.waitLock(30000);
   let t, r;
   try {
-    t = readTable_(reqSheet_());
-    r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    ({ t, r } = findReq_(d.requestId));
     if (!r) return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
     if (r.status !== 'PENDING') return { status: 'error', message: 'ใบเบิกนี้ถูกพิจารณาไปแล้ว (' + r.status + ')' };
     setCell_(t, r._row, 'status', approve ? 'PROCESSING' : 'REJECTED');
@@ -508,10 +579,11 @@ function decideRequest_(d, approve, user) {
       if (typeof processRequisitionBatch_ !== 'function') throw new Error(LEGACY_MISSING_MSG_);
       // ส่งลิงก์รูปใน Drive (ไม่ส่ง base64) → เร็วกว่า และไม่ชนลิมิต 50,000 ตัวอักษรต่อเซลล์ของชีต Log
       const j = processRequisitionBatch_({
+        dept: r.dept,                                          // ตัดสต็อกจากคลังของแผนกเจ้าของใบเบิก
         requestId: r.requestId,
         staffName: r.staffName, department: r.department, branch: r.branch,
         items: reqItems_(r),
-        requisitionNotes: (r.notes || '-') + ' [ใบเบิก ' + r.requestId + ' อนุมัติโดย ' + approverName + ']',
+        requisitionNotes: (r.notes || '-') + ' [ใบเบิก ' + r.requestId + ' อนุมัติโดย ' + approverName + proxyTag_(user, r.dept) + ']',
         imageBase64: r.imageUrl || ''
       });
       if (!j || j.status !== 'success') throw new Error((j && j.message) || 'ตัดสต็อกไม่สำเร็จ');
@@ -523,7 +595,7 @@ function decideRequest_(d, approve, user) {
   }
 
   // 3) บันทึกผลการพิจารณา
-  setCell_(t, r._row, 'approverName', approverName);
+  setCell_(t, r._row, 'approverName', approverName + proxyTag_(user, r.dept));
   setCell_(t, r._row, 'approverPosition', d.approverPosition || '');
   setCell_(t, r._row, 'approvedBy', user.username);
   if (d.approverSig) setCell_(t, r._row, 'approverSig', storeSig_(d.approverSig, r.requestId + '_approver'));
@@ -554,8 +626,7 @@ function issueRequest_(d, user) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const t = readTable_(reqSheet_());
-    const r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    const { t, r } = findReq_(d.requestId);
     if (!r) return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
     const st = effStatus_(r);
     const lateSign = ['ISSUED', 'SHIPPED', 'RECEIVED'].indexOf(st) >= 0 && !r.issuerSig;
@@ -566,7 +637,7 @@ function issueRequest_(d, user) {
     if (lateSign) {                                   // เซ็นย้อนหลังอย่างเดียว
       if (!r.issuedBy) {
         setCell_(t, r._row, 'issuedBy', user.username);
-        setCell_(t, r._row, 'issuedByName', user.fullName || user.username);
+        setCell_(t, r._row, 'issuedByName', (user.fullName || user.username) + proxyTag_(user, r.dept));
         setCell_(t, r._row, 'issuedAt', nowStr_());
       }
       setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
@@ -580,7 +651,7 @@ function issueRequest_(d, user) {
     }
     const now = nowStr_();
     setCell_(t, r._row, 'issuedBy', user.username);
-    setCell_(t, r._row, 'issuedByName', user.fullName || user.username);
+    setCell_(t, r._row, 'issuedByName', (user.fullName || user.username) + proxyTag_(user, r.dept));
     setCell_(t, r._row, 'issuedAt', now);
     setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
     setCell_(t, r._row, 'deliveryMethod', pickup ? 'PICKUP' : 'SHIP');
@@ -608,8 +679,7 @@ function shipRequest_(d, user) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const t = readTable_(reqSheet_());
-    const r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    const { t, r } = findReq_(d.requestId);
     if (!r) return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
     const st = effStatus_(r);
     // ISSUED = ฝากส่งครั้งแรก · SHIPPED = แก้ไขข้อมูลผู้นำส่ง (เช่น เปลี่ยนคนฝาก)
@@ -621,7 +691,7 @@ function shipRequest_(d, user) {
     setCell_(t, r._row, 'shipCarrier', carrier);
     setCell_(t, r._row, 'shipNote', String(d.shipNote || '').trim());
     setCell_(t, r._row, 'shippedBy', user.username);
-    setCell_(t, r._row, 'shippedByName', user.fullName || user.username);
+    setCell_(t, r._row, 'shippedByName', (user.fullName || user.username) + proxyTag_(user, r.dept));
     setCell_(t, r._row, 'shippedAt', nowStr_());
     setCell_(t, r._row, 'status', 'SHIPPED');
     return { status: 'success', requestId: r.requestId, newStatus: 'SHIPPED' };
@@ -638,8 +708,7 @@ function receiveRequest_(d, user) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const t = readTable_(reqSheet_());
-    const r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    const { t, r } = findReq_(d.requestId);
     if (!r || (user.role === 'BRANCH' && String(r.branch) !== user.branch)) {
       return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
     }
@@ -674,8 +743,7 @@ function cancelRequest_(d, user) {
   lock.waitLock(20000);
   let t, r, st, rawStatus, stockBack;
   try {
-    t = readTable_(reqSheet_());
-    r = t.rows.find(x => String(x.requestId) === String(d.requestId));
+    ({ t, r } = findReq_(d.requestId));
     if (!r || (user.role === 'BRANCH' && String(r.branch) !== user.branch)) {
       return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
     }
@@ -686,7 +754,7 @@ function cancelRequest_(d, user) {
       const own = String(r.requestedBy || '') === user.username;
       if (!own && user.role === 'BRANCH') return { status: 'error', message: 'ยกเลิกได้เฉพาะใบเบิกที่คุณเป็นผู้ขอ' };
     } else if (stockBack) {
-      if (user.role !== 'ADMIN') return { status: 'error', message: 'ใบที่อนุมัติแล้ว ยกเลิกได้เฉพาะ HR Admin (ต้องคืนยอดเข้าคลัง)' };
+      if (!isAdmin_(user)) return { status: 'error', message: 'ใบที่อนุมัติแล้ว ยกเลิกได้เฉพาะแอดมินคลัง (HR / HQ_Office) — ต้องคืนยอดเข้าคลัง' };
     } else {
       return { status: 'error', message: 'ยกเลิกได้เฉพาะใบที่รออนุมัติ / อนุมัติแล้ว / รอฝากส่ง (สถานะปัจจุบัน: ' + st + ')' };
     }
@@ -699,7 +767,7 @@ function cancelRequest_(d, user) {
   if (stockBack) {
     try {
       if (typeof reverseRequisition_ !== 'function') throw new Error(LEGACY_MISSING_MSG_);
-      const res = reverseRequisition_(r.requestId, r.txId, reason);
+      const res = reverseRequisition_(r.requestId, r.txId, reason, r.dept);
       if (!res || res.status !== 'success') throw new Error((res && res.message) || 'คืนยอดไม่สำเร็จ');
       note = res.logFound
         ? (res.restored > 0 ? ' · คืนยอดเข้าคลัง ' + res.restored + ' ชิ้น' + (res.lines > 1 ? ' (' + res.lines + ' รายการ)' : '') : '')
@@ -713,7 +781,7 @@ function cancelRequest_(d, user) {
   }
 
   setCell_(t, r._row, 'cancelledBy', user.username);
-  setCell_(t, r._row, 'cancelledByName', user.fullName || user.username);
+  setCell_(t, r._row, 'cancelledByName', (user.fullName || user.username) + proxyTag_(user, r.dept));
   setCell_(t, r._row, 'cancelledAt', nowStr_());
   setCell_(t, r._row, 'cancelReason', reason);
   setCell_(t, r._row, 'status', 'CANCELLED');
@@ -731,7 +799,12 @@ function filterLegacyByBranch_(out, branch) {
 function ss_() {
   return APP_CONFIG.SPREADSHEET_ID ? SpreadsheetApp.openById(APP_CONFIG.SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
 }
-function reqSheet_()   { return ensureSheet_(APP_CONFIG.REQ_SHEET, REQ_HEADERS, '#e0e7ff'); }
+/** ชีตใบเบิกของแผนก: HR = Requests · HQ = HQ_Requests */
+function reqSheet_(dept) {
+  return normDept_(dept) === 'HQ'
+    ? ensureSheet_(APP_CONFIG.HQ_REQ_SHEET, REQ_HEADERS, '#fef3c7')
+    : ensureSheet_(APP_CONFIG.REQ_SHEET, REQ_HEADERS, '#e0e7ff');
+}
 function usersSheet_() { return ensureSheet_(APP_CONFIG.USERS_SHEET, USER_HEADERS, '#fee2e2'); }
 
 /** สร้างชีต/เติมหัวคอลัมน์ที่ขาดให้อัตโนมัติ (รองรับชีตจากเวอร์ชันเก่า) */
