@@ -2,8 +2,10 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r25-2026-11-09-kpi-breakdown-reconcile
+ * CODE_VERSION: r26-2026-11-10-branches
  *
+ *  - r26: [สาขา] คืนสาขา "สำนักงานใหญ่" (HQ) + เพิ่ม 10 สาขาใหม่ (ขุขันธุ์ ... กุฉินารายณ์)
+ *         · setupDatabase ใช้รายชื่อ BRANCH_SEED (ฐานข้อมูลใหม่) · seedBranches() เพิ่มเฉพาะสาขาที่ยังไม่มี (ฐานข้อมูลเดิม, รันซ้ำได้ปลอดภัย)
  *  - r25: [KPI] กระทบยอด ASIA-MTN-04 — รายงานเทียบจำนวนงานแจ้งซ่อมกับค่าใน KPI_Data รายเดือน (อ่านอย่างเดียว, kpiReconcile)
  *  - r24: [KPI] ผู้จัดการ/admin กรอกค่า ASIA-MTN-04 ด้วยมือพร้อมเหตุผล (SrcNo = fixpoint-manual) • ค่ามือชนะค่าอัตโนมัติของเดือนนั้น
  *         • คืนค่าอัตโนมัติได้ (kpiRestoreBreakdown)
@@ -55,7 +57,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r25-2026-11-09-kpi-breakdown-reconcile';
+const CODE_VERSION = 'r26-2026-11-10-branches';
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -1746,15 +1748,54 @@ function restoreDeletedTicket(ticketId) {
   Logger.log('✅ กู้คืน ' + ticketId + ' แล้ว');
 }
 
+/** (r26) รายชื่อสาขาเริ่มต้น [รหัส, ชื่อสาขา] — ใช้ตอนตั้งค่าฐานข้อมูลใหม่ และ seedBranches() */
+const BRANCH_SEED = [
+  ['HQ',   'สำนักงานใหญ่'],
+  ['BR01', 'ขุขันธุ์'],
+  ['BR02', 'เบญจลักษ์'],
+  ['BR03', 'ศรีสะเกษ'],
+  ['BR04', 'ศรีเมืองใหม่'],
+  ['BR05', 'ตระการพืชผล'],
+  ['BR06', 'เดชอุดม'],
+  ['BR07', 'ริมมูล'],
+  ['BR08', 'แจ้งสนิท'],
+  ['BR09', 'ออฟฟิศเชียงราก (โรบอท)'],
+  ['BR10', 'อำนาจเจริญ'],
+  ['BR11', 'กุฉินารายณ์']
+];
+
+/**
+ * (r26) ▶️ เพิ่มสาขาจาก BRANCH_SEED ที่ยังไม่มีในชีต Branches (ใช้กับฐานข้อมูลที่ตั้งค่าไปแล้ว)
+ * เทียบจาก "ชื่อสาขา" — ชื่อที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ และไม่แก้ไขสาขาเดิม • รันซ้ำได้ปลอดภัย
+ * ถ้ารหัสซ้ำกับสาขาเดิม ระบบจะเลือกรหัสว่างถัดไปให้อัตโนมัติ
+ */
+function seedBranches() {
+  const list = readAll_(SHEETS.BRANCHES);
+  const names = list.map(b => String(b.BranchName).trim());
+  const codes = list.map(b => String(b.BranchCode).trim().toUpperCase());
+  let added = 0;
+  BRANCH_SEED.forEach(r => {
+    if (names.indexOf(r[1]) > -1) return;
+    let code = r[0];
+    if (codes.indexOf(code) > -1) {
+      let n = 1;
+      while (codes.indexOf('BR' + String(n).padStart(2, '0')) > -1) n++;
+      code = 'BR' + String(n).padStart(2, '0');
+    }
+    appendObj_(SHEETS.BRANCHES, { BranchCode: code, BranchName: r[1], Active: 'TRUE' });
+    names.push(r[1]);
+    codes.push(code);
+    added++;
+  });
+  Logger.log('✅ seedBranches: เพิ่มสาขาใหม่ ' + added + ' แห่ง (ข้ามชื่อที่มีอยู่แล้ว)');
+  return added;
+}
+
 function setupDatabase() {
   Object.keys(SHEETS).forEach(k => sheet_(SHEETS[k]));
 
   if (readAll_(SHEETS.BRANCHES).length === 0) {
-    [
-      ['HQ', 'สำนักงานใหญ่', 'TRUE'],
-      ['BR01', 'สาขา 1 (แก้ชื่อได้)', 'TRUE'],
-      ['BR02', 'สาขา 2 (แก้ชื่อได้)', 'TRUE']
-    ].forEach(r => appendObj_(SHEETS.BRANCHES, { BranchCode: r[0], BranchName: r[1], Active: r[2] }));
+    BRANCH_SEED.forEach(r => appendObj_(SHEETS.BRANCHES, { BranchCode: r[0], BranchName: r[1], Active: 'TRUE' }));
   }
 
   if (readAll_(SHEETS.USERS).length === 0) {
