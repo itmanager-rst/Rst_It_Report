@@ -1023,6 +1023,10 @@
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_uYDpb36YpqlKDJ5tznO-8Hm5oGrtLPRgoqtbktoi723SNg-a4WK3QGrN7GTjxacF/exec";
 
     const BRANCHES = ["สาขาขุขันธ์", "สาขาเบญจลักษณ์", "สาขากุฉินารายณ์", "เดชอุดม", "ตระการพืชผล", "ศรีเมืองใหม่", "อำนาจเจริญ", "สำนักงานใหญ่"];
+    /** เทียบชื่อสาขาแบบยืดหยุ่น: ไม่สนช่องว่าง / คำว่า "สาขา" นำหน้า (เช่น "สาขาเดชอุดม " = "เดชอุดม") */
+    const normBr = b => String(b || "").replace(/[\s\u200B]+/g, "").replace(/^สาขา/, "");
+    /** คืนชื่อสาขาตามรายการ BRANCHES ที่ตรงกัน หรือ "" ถ้าไม่พบ (เช่น สาขาที่ปิดไปแล้ว) */
+    const matchBranch = b => { const k = normBr(b); return k ? (BRANCHES.find(x => normBr(x) === k) || "") : ""; };
     const ROLE_INFO = {
       ADMIN:   { label: "HR Admin",            badge: "bg-rose-100 text-rose-700" },
       HQ_ADMIN:{ label: "HQ_Office Admin",     badge: "bg-amber-100 text-amber-800" },
@@ -1049,7 +1053,7 @@
     const canPurchase = () => hasRole("ADMIN", "HQ_ADMIN", "MANAGER");
     const canIssue = () => hasRole("ADMIN", "HQ_ADMIN");     // แอดมินคลังเป็นผู้จ่ายของ / บันทึกฝากส่ง
     const canReceive = r => hasRole("ADMIN", "HQ_ADMIN", "MANAGER") ||   // สาขาเจ้าของใบเบิกยืนยันรับของ
-      (hasRole("BRANCH") && session && r && r.branch === session.user.branch);
+      (hasRole("BRANCH") && session && r && normBr(r.branch) === normBr(session.user.branch));
     const ISSUED_PLUS = ["ISSUED", "SHIPPED", "RECEIVED"];
 
     /* 🏢 แผนก / คลัง — ฐานข้อมูลแยกกัน (HR: Assets_Stock · HQ: HQ_Assets_Stock) */
@@ -1197,8 +1201,17 @@
     function applyFormDefaults() {
       const u = (session && session.user) || {};
       const br = $("branch");
-      if (u.role === "BRANCH" && u.branch) { br.value = u.branch; br.disabled = true; }
-      else { br.disabled = false; if (!br.value && BRANCHES.includes(u.branch)) br.value = u.branch; }
+      const mine = matchBranch(u.branch);
+      if (u.role === "BRANCH" && mine) { br.value = mine; br.disabled = true; br.title = ""; }
+      else {
+        // 🐞 เดิม: ล็อก dropdown ทุกครั้งที่ user เป็น BRANCH แม้ชื่อสาขาในชีต Users ไม่ตรงกับรายการ
+        //    → ค่าที่เลือกกลายเป็นค่าว่าง + ถูกล็อก = เลือกสาขาไม่ได้ (เช่น user areerat)
+        //    ตอนนี้: ถ้าหาสาขาไม่เจอ ให้เลือกเองได้ และแจ้งให้แอดมินแก้ข้อมูลสาขาของผู้ใช้
+        br.disabled = false;
+        if (!br.value && mine) br.value = mine;
+        br.title = (u.role === "BRANCH" && !mine)
+          ? `ไม่พบสาขา "${u.branch || "-"}" ในรายการ — กรุณาเลือกสาขา และแจ้ง HR Admin ให้แก้ไขสาขาของผู้ใช้ในหน้าจัดการสมาชิก` : "";
+      }
       if (!$("staffName").value) $("staffName").value = u.fullName || "";
       renderCart();
     }
@@ -2423,7 +2436,7 @@
       $("ufUsername").disabled = !!u;
       $("ufFullName").value = u ? u.fullName : "";
       $("ufRole").value = u ? u.role : "BRANCH";
-      $("ufBranch").value = u ? (u.branch || "") : "";
+      $("ufBranch").value = u ? matchBranch(u.branch) : "";
       $("ufPassword").value = "";
       $("ufPassword").required = !u;
       $("ufPwReq").classList.toggle("hidden", !!u);
