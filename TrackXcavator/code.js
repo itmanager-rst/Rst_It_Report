@@ -1,4 +1,4 @@
-// CODE_VERSION: r01-2026-09-29-fast-load-getAllData-cache
+// CODE_VERSION: r02-2026-11-10-coupon-no-yanmar-refund
 // ==========================================
 // CONFIGURATION & HELPER FUNCTIONS
 // ==========================================
@@ -371,7 +371,8 @@ function invalidateDataCache() {
 }
 
 var WRITE_ACTIONS = ['insertTicket', 'claimCoupon', 'updatePartsStatus', 'updatePendingPartsByRound',
-  'updatePmLog', 'approveMachine', 'deleteDashboard', 'deleteReport', 'fixPmLogSwaps'];
+  'updatePmLog', 'approveMachine', 'deleteDashboard', 'deleteReport', 'fixPmLogSwaps',
+  'markCouponsSent', 'recordCouponRefund'];
 
 /**
  * ⚡ ดึงข้อมูลทั้งหมดที่หน้าเว็บใช้ในครั้งเดียว (ตารางสถานะ + ประวัติ PM)
@@ -493,7 +494,7 @@ function doGet(e) {
     if (action === "getAllData") {
       return getAllData(e.parameter);
     } else if (action === "checkStatus") {
-      return responseJSON({ status: "success", codeVersion: "r01-2026-09-29-fast-load-getAllData-cache" });
+      return responseJSON({ status: "success", codeVersion: "r02-2026-11-10-coupon-no-yanmar-refund" });
     } else if (action === "getDashboard") {
       return getDashboardData();
     } else if (action === "getReportList") {
@@ -506,6 +507,8 @@ function doGet(e) {
       return getModels();
     } else if (action === "detectPmLogSwaps") {
       return detectPmLogSwaps();
+    } else if (action === "getCouponRefundList") {
+      return getCouponRefundList();
     }
     
     // หากไม่มี action ระบุมา ให้แสดงผลหน้า index.html ของ Web App
@@ -577,6 +580,12 @@ function routePost_(action, data) {
       return detectPmLogSwaps();
     } else if (action === "fixPmLogSwaps") {
       return fixPmLogSwaps(data);
+    } else if (action === "getCouponRefundList") {
+      return getCouponRefundList();
+    } else if (action === "markCouponsSent") {
+      return markCouponsSent(data);
+    } else if (action === "recordCouponRefund") {
+      return recordCouponRefund(data);
     }
 
     return responseJSON({ status: "error", message: "Unknown action" });
@@ -863,6 +872,7 @@ function getReportList(isRawObject, prefetchedRows, prefetchedServiceRows) {
         receipt_image: ciGet(row, 'receipt_image') || "",
         yanmarCoupon: Number(ciGet(row, 'yanmar_coupon')) || 0,
         yanmar_coupon: Number(ciGet(row, 'yanmar_coupon')) || 0,
+        couponNo: ciGet(row, 'coupon_no') || "",
         remark: ciGet(row, 'remark') || "",
         updatedAt: ciGet(row, "updated_at") || ""
       });
@@ -1126,7 +1136,15 @@ function insertOrUpdateTicket(p, isRawObject) {
     var remark = p.remark || '';
     var updatedBy = p.updatedBy || p.updated_by || '';
     var yanmarCoupon = Number(p.yanmarCoupon) || 0;
+    var couponNo = normalizeCouponNo(p.couponNo || p.coupon_no);
     var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+    // กันเลขคูปองซ้ำ (1 เลข = 1 งาน PM) — เช็กก่อนเขียนอะไรลงชีต
+    if (couponNo) {
+      ensureCouponColumns();
+      var couponOwner = findCouponOwner(sheetToObjects(getSheet(SHEET_TABS.pm_log)), couponNo, machineId, pmRound);
+      if (couponOwner) return responseJSON({ status: "error", message: couponDupMessage(couponNo, couponOwner) }, isRawObject);
+    }
 
     // 1. เพิ่มแถวใหม่ใน pm_log (ประวัติ PM ทุกครั้ง เพิ่มแถวใหม่เสมอ ไม่ทับของเดิม)
     // หมายเหตุ: pm_log ใช้ชื่อคอลัมน์จริงคือ Ticket_ID / PM_Target / Actual_Hours / Service_Date
@@ -1148,6 +1166,7 @@ function insertOrUpdateTicket(p, isRawObject) {
       parts_status: partsStatus,
       receipt_image: receiptImage,
       yanmar_coupon: yanmarCoupon,
+      coupon_no: couponNo,
       remark: remark,
       updated_at: nowStr
     });
@@ -1180,6 +1199,7 @@ function insertOrUpdateTicket(p, isRawObject) {
     };
     // receipt_image: อัปเดตเฉพาะตอนมีค่าใหม่ส่งมา (ถ้าไม่ส่งมา ไม่แตะของเดิม)
     if (receiptImage) dashObj.receipt_image = receiptImage;
+    dashObj.coupon_no = couponNo;
 
     if (matched.length > 0) {
       updateRowByObject(dashSheet, matched[0].__row, dashObj);
@@ -1280,6 +1300,16 @@ function updatePmLog(p, isRawObject) {
     var origMachineId = p.originalMachineId || p.original_machine_id || machineId;
     var origPmRound = (p.originalPmRound !== undefined && p.originalPmRound !== '') ? p.originalPmRound : pmRound;
     var targetRow = findPmLogTarget(logSheet, ticketId, origMachineId, origPmRound);
+
+    // หมายเลขคูปอง: แก้เฉพาะเมื่อกรอกมา (ช่องว่าง = ไม่แตะเลขเดิม)
+    var editCouponNo = normalizeCouponNo(p.couponNo || p.coupon_no);
+    if (editCouponNo) {
+      ensureCouponColumns();
+      var editOwner = findCouponOwner(sheetToObjects(logSheet), editCouponNo, machineId, pmRound, targetRow.__row);
+      if (editOwner) return responseJSON({ status: "error", message: couponDupMessage(editCouponNo, editOwner) }, isRawObject);
+      logUpdate.coupon_no = editCouponNo;
+      dashUpdate.coupon_no = editCouponNo;
+    }
     updateRowByObject(logSheet, targetRow.__row, logUpdate);
 
     // 2. sync ไป service_report เฉพาะแถวที่ machine_id ตรงกัน และ last_pm_round เดิม <= รอบที่แก้
@@ -1321,9 +1351,19 @@ function claimCoupon(p, isRawObject) {
 
     var machineId = String(ciGet(targetRow, 'machine_id') || '');
 
+    // หมายเลขคูปอง (กันซ้ำกับงาน PM อื่น)
+    var couponNo = normalizeCouponNo(p.couponNo || p.coupon_no);
+    if (couponNo) {
+      ensureCouponColumns();
+      var owner = findCouponOwner(sheetToObjects(logSheet), couponNo, machineId, roundOfClaim, targetRow.__row);
+      if (owner) return responseJSON({ status: "error", message: couponDupMessage(couponNo, owner) }, isRawObject);
+    }
+
     logRows.forEach(function (r) {
       var newRemark = couponRemark ? (String(ciGet(r, 'remark') || '') + ' | เลขรับคูปอง: ' + couponRemark) : ciGet(r, 'remark');
-      updateRowByObject(logSheet, r.__row, { yanmar_coupon: amount, remark: newRemark });
+      var upd = { yanmar_coupon: amount, remark: newRemark };
+      if (couponNo) upd.coupon_no = couponNo;
+      updateRowByObject(logSheet, r.__row, upd);
     });
 
     if (machineId) {
@@ -1334,13 +1374,341 @@ function claimCoupon(p, isRawObject) {
       });
       dashRows.forEach(function (r) {
         var newRemark = couponRemark ? (String(ciGet(r, 'remark') || '') + ' | เลขรับคูปอง: ' + couponRemark) : ciGet(r, 'remark');
-        updateRowByObject(dashSheet, r.__row, { yanmar_coupon: amount, remark: newRemark });
+        var dupd = { yanmar_coupon: amount, remark: newRemark };
+        if (couponNo) dupd.coupon_no = couponNo;
+        updateRowByObject(dashSheet, r.__row, dupd);
       });
     }
 
-    return responseJSON({ status: "success" }, isRawObject);
+    return responseJSON({ status: "success", couponNo: couponNo }, isRawObject);
   } catch (err) {
     return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 5.1 💰 หมายเลขคูปอง + ติดตามเงินคืนจาก Yanmar (ตรวจทีละใบตามหมายเลขคูปอง)
+// ==========================================
+// คอลัมน์ใหม่ใน pm_log (สร้างอัตโนมัติด้วย ensureCouponColumns / setupCouponRefundColumns):
+//   coupon_no        หมายเลขคูปอง (1 เลข = 1 งาน PM ห้ามซ้ำข้ามเครื่อง/รอบ)
+//   coupon_sent_date วันที่ส่งคูปองให้ Yanmar
+//   refund_amount    เงินที่ Yanmar โอนคืนสำหรับคูปองใบนี้ (ว่าง = ยังไม่ได้รับ)
+//   refund_date      วันที่ได้รับเงิน
+//   refund_ref       เลขอ้างอิงการโอน / เอกสาร Yanmar
+//   refund_remark    หมายเหตุการรับเงิน
+// ข้อมูลส่วนนี้อ่านจาก Google Sheet โดยตรง (ไม่ผ่าน BigQuery) เพราะ External Table
+// ใน BigQuery จะไม่เห็นคอลัมน์ใหม่จนกว่าจะแก้ schema ของตาราง
+var COUPON_VALUE = 4000;
+var COUPON_REFUND_COLUMNS = ['coupon_no', 'coupon_sent_date', 'refund_amount', 'refund_date', 'refund_ref', 'refund_remark'];
+
+/**
+ * 🔧 รันครั้งเดียวใน Apps Script Editor (หรือปล่อยให้ระบบเรียกเองตอนบันทึกคูปองครั้งแรก)
+ * เพิ่มคอลัมน์ที่ยังไม่มีต่อท้าย Header ของ pm_log และ coupon_no ใน service_report
+ * ไม่แตะข้อมูลเดิม รันซ้ำได้ปลอดภัย
+ */
+function setupCouponRefundColumns() {
+  var plan = [
+    { tab: SHEET_TABS.pm_log, cols: COUPON_REFUND_COLUMNS },
+    { tab: SHEET_TABS.service_report, cols: ['coupon_no'] }
+  ];
+  plan.forEach(function (p) {
+    var sh = getSheet(p.tab);
+    var lastCol = Math.max(sh.getLastColumn(), 1);
+    var headersLower = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    var missing = p.cols.filter(function (c) { return headersLower.indexOf(c) === -1; });
+    if (missing.length === 0) { Logger.log(p.tab + ': มีคอลัมน์ครบแล้ว'); return; }
+
+    var startCol = sh.getLastColumn() + 1;
+    var needMax = startCol + missing.length - 1;
+    if (sh.getMaxColumns() < needMax) sh.insertColumnsAfter(sh.getMaxColumns(), needMax - sh.getMaxColumns());
+    sh.getRange(1, startCol, 1, missing.length).setValues([missing]);
+
+    // เลขคูปองเก็บเป็นข้อความ กันเลข 0 นำหน้าหาย
+    var idx = missing.indexOf('coupon_no');
+    if (idx !== -1 && sh.getMaxRows() > 1) {
+      sh.getRange(2, startCol + idx, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+    }
+    Logger.log(p.tab + ': เพิ่มคอลัมน์ ' + missing.join(', '));
+  });
+}
+
+/** เรียกก่อนเขียนข้อมูลคูปอง: ถ้ายังไม่มีคอลัมน์ใหม่ ให้สร้างให้อัตโนมัติ (เช็กซ้ำทุก 6 ชม.) */
+function ensureCouponColumns() {
+  var cache = CacheService.getScriptCache();
+  if (cache.get('coupon_cols_ok') === '1') return;
+  setupCouponRefundColumns();
+  cache.put('coupon_cols_ok', '1', 21600);
+}
+
+function normalizeCouponNo(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * หาแถวที่ใช้เลขคูปองนี้อยู่แล้ว "กับงาน PM อื่น"
+ * pm_log เป็น log → เครื่อง+รอบเดียวกันมีหลายแถวได้ จึงไม่นับแถวของเครื่อง+รอบเดียวกันว่าซ้ำ
+ */
+function findCouponOwner(rows, couponNo, machineId, pmRound, excludeRow) {
+  var target = normalizeCouponNo(couponNo);
+  if (!target) return null;
+  var mId = String(machineId || '').trim().toLowerCase();
+  var round = Number(pmRound) || 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (excludeRow && r.__row === excludeRow) continue;
+    if (normalizeCouponNo(ciGet(r, 'coupon_no')) !== target) continue;
+    var sameJob = mId && String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === mId &&
+      (Number(ciGet(r, 'pm_target')) || 0) === round;
+    if (!sameJob) return r;
+  }
+  return null;
+}
+
+function couponDupMessage(couponNo, owner) {
+  return 'หมายเลขคูปอง ' + normalizeCouponNo(couponNo) + ' ถูกใช้แล้วกับใบงาน ' +
+    (ciGet(owner, 'ticket_id') || ciGet(owner, 'no') || '-') +
+    ' (เครื่อง ' + (ciGet(owner, 'machine_id') || '-') + ' รอบ ' + (ciGet(owner, 'pm_target') || '-') + ' ชม.)';
+}
+
+function _fmtSheetDate(v) {
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, 'Asia/Bangkok', 'yyyy-MM-dd');
+  return v === null || v === undefined ? '' : String(v).trim();
+}
+
+function _toNumberOrNull(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  var n = Number(String(v).replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * สถานะเงินคืนของคูปอง 1 ใบ
+ * key: no_coupon_no | not_sent | waiting | full | over | partial | unpaid
+ */
+function computeRefundStatus(r) {
+  var coupon = _toNumberOrNull(ciGet(r, 'yanmar_coupon'));
+  var expected = coupon && coupon > 0 ? coupon : COUPON_VALUE;
+  var refund = _toNumberOrNull(ciGet(r, 'refund_amount'));
+  var couponNo = normalizeCouponNo(ciGet(r, 'coupon_no'));
+  var sentDate = _fmtSheetDate(ciGet(r, 'coupon_sent_date'));
+
+  var key, label;
+  if (refund !== null) {
+    if (refund <= 0) { key = 'unpaid'; label = 'Yanmar ไม่จ่าย / ถูกปฏิเสธ'; }
+    else if (refund < expected) { key = 'partial'; label = 'ได้รับไม่ครบ'; }
+    else if (refund > expected) { key = 'over'; label = 'ได้รับเกิน'; }
+    else { key = 'full'; label = 'ได้รับครบ'; }
+  } else if (sentDate) {
+    key = 'waiting'; label = 'รอ Yanmar โอนเงิน';
+  } else if (!couponNo) {
+    key = 'no_coupon_no'; label = 'ยังไม่กรอกเลขคูปอง';
+  } else {
+    key = 'not_sent'; label = 'ยังไม่ส่งให้ Yanmar';
+  }
+
+  var waitingDays = null;
+  if (key === 'waiting') {
+    var d = new Date(sentDate);
+    if (!isNaN(d.getTime())) waitingDays = Math.floor((new Date().getTime() - d.getTime()) / 86400000);
+  }
+  return {
+    expected: expected, refund: refund, diff: refund === null ? null : refund - expected,
+    key: key, label: label, sentDate: sentDate, refundDate: _fmtSheetDate(ciGet(r, 'refund_date')),
+    waitingDays: waitingDays
+  };
+}
+
+/**
+ * เลือก "แถวตัวแทน" ของงาน PM แต่ละงาน (เครื่อง+รอบ) สำหรับเรื่องคูปอง
+ * ใช้แถวล่าสุดที่มีเลขคูปอง ถ้าไม่มีแถวไหนมีเลข ใช้แถวล่าสุด
+ */
+function pickCouponRowsPerJob_(rows) {
+  var groups = {};
+  rows.forEach(function (r) {
+    var mId = String(ciGet(r, 'machine_id') || '').trim().toLowerCase();
+    if (!mId) return;
+    var key = mId + '|' + (Number(ciGet(r, 'pm_target')) || 0);
+    (groups[key] = groups[key] || []).push(r);
+  });
+  var out = [];
+  Object.keys(groups).forEach(function (k) {
+    var g = groups[k];
+    var withNo = g.filter(function (r) { return normalizeCouponNo(ciGet(r, 'coupon_no')); });
+    out.push(pickLatestLogRow(withNo.length ? withNo : g));
+  });
+  return out;
+}
+
+/** หาแถวที่จะเขียนข้อมูลเงินคืน ด้วยหมายเลขคูปอง (แถวล่าสุดที่มีเลขนี้) */
+function findRowByCouponNo_(rows, couponNo) {
+  var target = normalizeCouponNo(couponNo);
+  if (!target) return null;
+  return pickLatestLogRow(rows.filter(function (r) { return normalizeCouponNo(ciGet(r, 'coupon_no')) === target; }));
+}
+
+/**
+ * รายการคูปองทั้งหมด + สรุปยอดเงินคืน (อ่านจาก Sheet pm_log โดยตรง)
+ * นับเฉพาะงานที่ได้รับคูปองแล้ว (yanmar_coupon > 0) หรือมีเลขคูปองกรอกไว้
+ */
+function getCouponRefundList(isRawObject) {
+  try {
+    var rows = pickCouponRowsPerJob_(sheetToObjects(getSheet(SHEET_TABS.pm_log)));
+    var countByNo = {};
+    rows.forEach(function (r) {
+      var cn = normalizeCouponNo(ciGet(r, 'coupon_no'));
+      if (cn) countByNo[cn] = (countByNo[cn] || 0) + 1;
+    });
+
+    var s = {
+      totalCoupons: 0, expectedTotal: 0, notSentCount: 0, noCouponNoCount: 0,
+      waitingCount: 0, waitingAmount: 0, receivedCount: 0, receivedTotal: 0,
+      fullCount: 0, partialCount: 0, unpaidCount: 0, overCount: 0, shortfallTotal: 0, duplicateCount: 0
+    };
+    var list = [];
+
+    rows.forEach(function (r) {
+      var coupon = _toNumberOrNull(ciGet(r, 'yanmar_coupon')) || 0;
+      var cn = normalizeCouponNo(ciGet(r, 'coupon_no'));
+      if (coupon <= 0 && !cn) return;
+
+      var st = computeRefundStatus(r);
+      var dup = !!(cn && countByNo[cn] > 1);
+      s.totalCoupons++;
+      s.expectedTotal += st.expected;
+      if (dup) s.duplicateCount++;
+      if (st.key === 'not_sent') s.notSentCount++;
+      if (st.key === 'no_coupon_no') s.noCouponNoCount++;
+      if (st.key === 'waiting') { s.waitingCount++; s.waitingAmount += st.expected; }
+      if (st.refund !== null) { s.receivedCount++; s.receivedTotal += Math.max(st.refund, 0); }
+      if (st.key === 'full') s.fullCount++;
+      if (st.key === 'over') s.overCount++;
+      if (st.key === 'partial') s.partialCount++;
+      if (st.key === 'unpaid') s.unpaidCount++;
+      if (st.key === 'partial' || st.key === 'unpaid') s.shortfallTotal += st.expected - Math.max(st.refund || 0, 0);
+
+      list.push({
+        ticketId: String(ciGet(r, 'ticket_id') || ciGet(r, 'no') || ''),
+        machineId: String(ciGet(r, 'machine_id') || ''),
+        model: String(ciGet(r, 'model') || ''),
+        customer: String(ciGet(r, 'customer') || ''),
+        pmRound: Number(ciGet(r, 'pm_target')) || 0,
+        serviceDate: _fmtSheetDate(ciGet(r, 'service_date')),
+        couponNo: cn,
+        couponAmount: coupon,
+        expected: st.expected,
+        couponSentDate: st.sentDate,
+        refundAmount: st.refund,
+        refundDate: st.refundDate,
+        refundRef: String(ciGet(r, 'refund_ref') || ''),
+        refundRemark: String(ciGet(r, 'refund_remark') || ''),
+        diff: st.diff,
+        statusKey: st.key,
+        statusLabel: st.label,
+        waitingDays: st.waitingDays,
+        duplicate: dup
+      });
+    });
+    s.outstandingTotal = s.expectedTotal - s.receivedTotal;
+
+    return responseJSON({ status: 'success', summary: s, data: list }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString(), summary: {}, data: [] }, isRawObject);
+  }
+}
+
+/**
+ * บันทึกว่าส่งคูปองให้ Yanmar แล้ว (หลายใบพร้อมกัน จับคู่ด้วยหมายเลขคูปอง)
+ * payload: { couponNos: [...], sentDate: 'yyyy-MM-dd', clear: false }
+ */
+function markCouponsSent(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    ensureCouponColumns();
+    var nos = (p.couponNos || []).map(normalizeCouponNo).filter(String);
+    if (nos.length === 0) return responseJSON({ status: 'error', message: 'ไม่ได้เลือกคูปองที่มีหมายเลข' }, isRawObject);
+    var clear = p.clear === true || p.clear === 'true';
+    var sentDate = String(p.sentDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'));
+
+    var sheet = getSheet(SHEET_TABS.pm_log);
+    var rows = sheetToObjects(sheet);
+    var updated = [], notFound = [];
+    nos.forEach(function (cn) {
+      var row = findRowByCouponNo_(rows, cn);
+      if (!row) { notFound.push(cn); return; }
+      updateRowByObject(sheet, row.__row, { coupon_sent_date: clear ? '' : sentDate });
+      updated.push(cn);
+    });
+    return responseJSON({ status: 'success', updated: updated, notFound: notFound }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+/**
+ * บันทึกเงินคืนจาก Yanmar ทีละใบ หรือนำเข้าหลายใบจากใบแจ้งโอน (จับคู่ด้วยหมายเลขคูปอง)
+ * payload: { items: [{ couponNo, refundAmount }], refundDate, refundRef, refundRemark }
+ * ผลลัพธ์บอกว่าใบไหนได้ครบ / ไม่ครบ / เกิน / ไม่พบเลขคูปองในระบบ
+ */
+function recordCouponRefund(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    ensureCouponColumns();
+    var items = Array.isArray(p.items) ? p.items : [{ couponNo: p.couponNo, refundAmount: p.refundAmount }];
+    var refundDate = String(p.refundDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'));
+    var refundRef = String(p.refundRef || '');
+    var refundRemark = String(p.refundRemark || '');
+
+    var sheet = getSheet(SHEET_TABS.pm_log);
+    var rows = sheetToObjects(sheet);
+    var results = { matched: [], notFound: [], duplicateInput: [] };
+    var seen = {};
+
+    items.forEach(function (it) {
+      var cn = normalizeCouponNo(it.couponNo);
+      if (!cn) return;
+      var amount = _toNumberOrNull(it.refundAmount);
+      if (amount === null) { results.notFound.push({ couponNo: cn, reason: 'จำนวนเงินไม่ถูกต้อง' }); return; }
+      if (seen[cn]) { results.duplicateInput.push({ couponNo: cn, refundAmount: amount }); return; }
+      seen[cn] = true;
+
+      var row = findRowByCouponNo_(rows, cn);
+      if (!row) { results.notFound.push({ couponNo: cn, refundAmount: amount, reason: 'ไม่พบหมายเลขคูปองนี้ในระบบ' }); return; }
+
+      var upd = { refund_amount: amount, refund_date: refundDate };
+      if (refundRef) upd.refund_ref = refundRef;
+      if (refundRemark) upd.refund_remark = refundRemark;
+      // ได้เงินแล้วย่อมต้องส่งไปแล้ว: ถ้ายังไม่เคยบันทึกวันส่ง ให้ใส่วันเดียวกัน
+      if (!_fmtSheetDate(ciGet(row, 'coupon_sent_date'))) upd.coupon_sent_date = refundDate;
+      updateRowByObject(sheet, row.__row, upd);
+
+      var merged = {};
+      for (var k in row) merged[k] = row[k];
+      for (var k2 in upd) {
+        // เขียนทับด้วยชื่อคีย์เดิมของแถว (Header อาจเป็นตัวใหญ่)
+        var existing = null;
+        for (var ek in merged) { if (ek.toLowerCase() === k2) { existing = ek; break; } }
+        merged[existing || k2] = upd[k2];
+      }
+      var st = computeRefundStatus(merged);
+      results.matched.push({
+        couponNo: cn, ticketId: String(ciGet(row, 'ticket_id') || ciGet(row, 'no') || ''),
+        machineId: String(ciGet(row, 'machine_id') || ''), expected: st.expected,
+        refundAmount: amount, diff: st.diff, statusKey: st.key, statusLabel: st.label
+      });
+    });
+
+    var paid = results.matched.reduce(function (a, m) { return a + m.refundAmount; }, 0);
+    var expected = results.matched.reduce(function (a, m) { return a + m.expected; }, 0);
+    return responseJSON({ status: 'success', results: results, totals: { paid: paid, expected: expected, diff: paid - expected } }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
 }
 

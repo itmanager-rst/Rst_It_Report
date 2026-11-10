@@ -561,8 +561,11 @@ body {
           <button class="nav-link me-2" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" onclick="loadHistoryData()">
             <i class="fa-solid fa-clock-rotate-left me-2"></i> บันทึกประวัติการทำ PM
           </button>
-          <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-matrix" type="button" onclick="loadPMMatrix()">
+          <button class="nav-link me-2" data-bs-toggle="pill" data-bs-target="#tab-matrix" type="button" onclick="loadPMMatrix()">
             <i class="fa-solid fa-diagram-project me-2"></i> สถานะ PM Matrix (Workflow)
+          </button>
+          <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-coupon" type="button" onclick="loadCouponRefund()">
+            <i class="fa-solid fa-money-bill-transfer me-2"></i> เงินคืนคูปอง Yanmar
           </button>
         </div>
         <div>
@@ -886,6 +889,16 @@ body {
                     </div>
                   </div>
 
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-3">
+                      <label class="form-label form-label-sm fw-bold text-danger"><i class="fa-solid fa-ticket me-1"></i>หมายเลขคูปอง Yanmar</label>
+                      <input type="text" id="inpCouponNo" class="form-control form-control-sm" placeholder="เช่น YM-000123 (ใส่เมื่อได้รับคูปอง)">
+                    </div>
+                    <div class="col-md-9 d-flex align-items-end">
+                      <span class="text-muted" style="font-size:0.72rem;">* ใช้ตรวจเงินคืนจาก Yanmar ทีละใบ (1 เลข = 1 งาน PM ห้ามซ้ำ) · ตอนแก้ไขใบงาน ถ้าเว้นว่างจะไม่แตะเลขเดิม · ดูสถานะที่แท็บ "เงินคืนคูปอง Yanmar"</span>
+                    </div>
+                  </div>
+
                   <div class="mb-3">
                     <label class="form-label form-label-sm">หมายเหตุ (Remark)</label>
                     <input type="text" id="inpRemark" class="form-control form-control-sm" placeholder="ระบุสิ่งที่ส่งแล้ว หรือ รายการที่ยังค้างอยู่...">
@@ -1088,6 +1101,186 @@ body {
           </div>
         </div>
 
+
+        <!-- แท็บ 4: ติดตามเงินคืนคูปองจาก Yanmar -->
+        <div class="tab-pane fade" id="tab-coupon">
+          <div class="row mb-3 g-2">
+            <div class="col-md-3 col-6">
+              <div class="card card-stat p-3 h-100" style="border-left-color:#6c757d;">
+                <span class="text-muted small">คูปองทั้งหมด / ยอดที่ควรได้คืน</span>
+                <h4 class="fw-bold mb-0 mt-1" id="cpStatTotal">0 ใบ</h4>
+                <div class="small text-muted" id="cpStatExpected">0 บาท</div>
+              </div>
+            </div>
+            <div class="col-md-3 col-6">
+              <div class="card card-stat p-3 h-100" style="border-left-color:#0dcaf0;">
+                <span class="text-muted small">ส่งให้ Yanmar แล้ว รอเงินโอน</span>
+                <h4 class="fw-bold mb-0 mt-1 text-info" id="cpStatWaiting">0 ใบ</h4>
+                <div class="small text-muted" id="cpStatWaitingAmt">0 บาท · ยังไม่ส่ง 0 ใบ</div>
+              </div>
+            </div>
+            <div class="col-md-3 col-6">
+              <div class="card card-stat p-3 h-100" style="border-left-color:#198754;">
+                <span class="text-muted small">ได้รับเงินคืนแล้ว</span>
+                <h4 class="fw-bold mb-0 mt-1 text-success" id="cpStatReceived">0 บาท</h4>
+                <div class="small text-muted" id="cpStatReceivedCount">0 ใบ (ครบ 0)</div>
+              </div>
+            </div>
+            <div class="col-md-3 col-6">
+              <div class="card card-stat p-3 h-100" style="border-left-color:#dc3545;">
+                <span class="text-muted small">Yanmar จ่ายไม่ครบ / ไม่จ่าย</span>
+                <h4 class="fw-bold mb-0 mt-1 text-danger" id="cpStatShort">0 บาท</h4>
+                <div class="small text-muted" id="cpStatShortCount">0 ใบ</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <div class="row g-2 mb-3 align-items-center">
+              <div class="col-lg-4">
+                <div class="input-group input-group-sm">
+                  <input type="text" id="searchCoupon" class="form-control" placeholder="ค้นหา เลขคูปอง / ใบงาน / รหัสเครื่อง / ลูกค้า / เลขอ้างอิงโอน" onkeyup="renderCouponRefundTable()">
+                  <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                </div>
+              </div>
+              <div class="col-lg-8 d-flex flex-wrap gap-1 justify-content-lg-end">
+                <button class="btn btn-sm btn-outline-dark cp-filter active" onclick="setCouponFilter('all', this)">ทั้งหมด</button>
+                <button class="btn btn-sm btn-outline-secondary cp-filter" onclick="setCouponFilter('not_sent', this)">ยังไม่ส่ง</button>
+                <button class="btn btn-sm btn-outline-info cp-filter" onclick="setCouponFilter('waiting', this)">รอเงินโอน</button>
+                <button class="btn btn-sm btn-outline-success cp-filter" onclick="setCouponFilter('full', this)">ได้รับครบ</button>
+                <button class="btn btn-sm btn-outline-danger cp-filter" onclick="setCouponFilter('problem', this)">ไม่ครบ / ไม่จ่าย</button>
+                <button class="btn btn-sm btn-outline-warning text-dark cp-filter" onclick="setCouponFilter('no_coupon_no', this)">ไม่มีเลขคูปอง</button>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-2 align-items-center">
+              <h6 class="fw-bold mb-0 text-dark me-auto"><i class="fa-solid fa-money-bill-transfer me-1 text-danger"></i> ตรวจเงินคืนคูปองจาก Yanmar (ทีละใบตามหมายเลขคูปอง)</h6>
+              <span class="small text-muted" id="cpSelectedInfo">เลือก 0 ใบ</span>
+              <button class="btn btn-sm btn-outline-primary cp-admin" onclick="openMarkSentModal()"><i class="fa-solid fa-paper-plane me-1"></i> ส่งให้ Yanmar แล้ว</button>
+              <button class="btn btn-sm btn-success cp-admin" onclick="openImportRefundModal()"><i class="fa-solid fa-file-import me-1"></i> นำเข้ายอดโอนจาก Yanmar</button>
+              <button class="btn btn-sm btn-excel" onclick="exportToExcel('tbCouponTable', 'Yanmar_Coupon_Refund')"><i class="fa-solid fa-file-excel me-1"></i> Excel</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="loadCouponRefund(true)"><i class="fa-solid fa-rotate me-1"></i> รีเฟรช</button>
+            </div>
+
+            <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+              <table class="table table-hover align-middle" id="tbCouponTable">
+                <thead>
+                  <tr>
+                    <th class="text-center cp-admin"><input type="checkbox" class="form-check-input" id="cpCheckAll" onchange="toggleAllCoupons(this.checked)"></th>
+                    <th>หมายเลขคูปอง</th>
+                    <th>ใบงาน</th>
+                    <th>รหัสเครื่อง / ลูกค้า</th>
+                    <th class="text-center">รอบ PM</th>
+                    <th class="text-end">มูลค่าคูปอง</th>
+                    <th>วันที่ส่ง Yanmar</th>
+                    <th class="text-end">Yanmar โอนคืน</th>
+                    <th>วันที่ได้รับ / อ้างอิง</th>
+                    <th class="text-end">ส่วนต่าง</th>
+                    <th>สถานะ</th>
+                    <th class="text-center cp-admin">จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody id="tbCoupon">
+                  <tr><td colspan="12" class="text-center py-4 text-muted">กดแท็บนี้เพื่อโหลดข้อมูล</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 💰 MODAL บันทึกเงินคืนคูปอง (ทีละใบ) -->
+  <div class="modal fade" id="refundModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-money-bill-wave me-1"></i> บันทึกเงินคืนจาก Yanmar</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="refundTicketId">
+          <div class="rounded border bg-light p-2 mb-2 small" id="refundInfo">-</div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label form-label-sm fw-bold">จำนวนเงินที่ได้รับ (บาท) *</label>
+              <input type="number" id="refundAmountInput" class="form-control form-control-sm fw-bold text-success" min="0" step="0.01">
+            </div>
+            <div class="col-6">
+              <label class="form-label form-label-sm">วันที่ได้รับเงิน *</label>
+              <input type="date" id="refundDateInput" class="form-control form-control-sm">
+            </div>
+            <div class="col-12">
+              <label class="form-label form-label-sm">เลขอ้างอิงการโอน / เอกสาร Yanmar</label>
+              <input type="text" id="refundRefInput" class="form-control form-control-sm" placeholder="เช่น เลขที่ Credit Note / Statement">
+            </div>
+            <div class="col-12">
+              <label class="form-label form-label-sm">หมายเหตุ</label>
+              <input type="text" id="refundRemarkInput" class="form-control form-control-sm" placeholder="เช่น หักภาษี / เหตุผลที่จ่ายไม่ครบ">
+            </div>
+          </div>
+          <div class="small mt-2 fw-bold" id="refundDiffPreview"></div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="button" id="btnSubmitRefund" class="btn btn-sm btn-success fw-bold" onclick="submitRefund()"><i class="fa-solid fa-check me-1"></i> บันทึก</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📤 MODAL ทำเครื่องหมายส่งคูปองให้ Yanmar -->
+  <div class="modal fade" id="markSentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-paper-plane me-1"></i> บันทึกการส่งคูปองให้ Yanmar</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2 small" id="markSentInfo">-</div>
+          <label class="form-label form-label-sm fw-bold">วันที่ส่งคูปอง *</label>
+          <input type="date" id="markSentDateInput" class="form-control form-control-sm">
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-outline-danger me-auto" onclick="submitMarkSent(true)">ยกเลิกสถานะส่ง</button>
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="submitMarkSent(false)"><i class="fa-solid fa-check me-1"></i> บันทึก</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📥 MODAL นำเข้ายอดโอนจาก Yanmar (หลายใบ) -->
+  <div class="modal fade" id="importRefundModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-file-import me-1"></i> นำเข้ายอดโอนเงินคืนจาก Yanmar (จับคู่ด้วยหมายเลขคูปอง)</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <label class="form-label form-label-sm fw-bold">วันที่ได้รับเงิน *</label>
+              <input type="date" id="importRefundDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label form-label-sm">เลขอ้างอิงการโอน / Statement</label>
+              <input type="text" id="importRefundRef" class="form-control form-control-sm" placeholder="ใช้กับทุกใบในชุดนี้">
+            </div>
+          </div>
+          <label class="form-label form-label-sm fw-bold">วางรายการจากใบแจ้งโอนของ Yanmar: 1 บรรทัด = 1 คูปอง → <code>หมายเลขคูปอง  จำนวนเงิน</code></label>
+          <textarea id="importRefundText" class="form-control form-control-sm font-monospace" rows="8" placeholder="YM-000123  4000&#10;YM-000124  4000&#10;YM-000130  3500&#10;(คัดลอกจาก Excel 2 คอลัมน์มาวางได้เลย / ถ้าไม่ใส่จำนวนเงิน จะถือว่า 4000)" oninput="previewImportRefund()"></textarea>
+          <div class="mt-2 small" id="importRefundPreview"></div>
+          <div class="mt-2" id="importRefundResult"></div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button type="button" id="btnSubmitImportRefund" class="btn btn-sm btn-success fw-bold" onclick="submitImportRefund()"><i class="fa-solid fa-check-double me-1"></i> ตรวจและบันทึก</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1184,6 +1377,10 @@ body {
           <div class="mb-2">
             <label class="form-label form-label-sm">จำนวนเงินคูปอง (บาท):</label>
             <input type="number" id="claimAmountInput" class="form-control form-control-sm fw-bold text-success" value="4000">
+          </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm fw-bold text-danger">หมายเลขคูปอง Yanmar *</label>
+            <input type="text" id="claimCouponNoInput" class="form-control form-control-sm fw-bold" placeholder="เลขที่พิมพ์บนคูปอง">
           </div>
           <div class="mb-2">
             <label class="form-label form-label-sm fw-bold text-dark">เลขที่เอกสารรับคูปอง / หมายเหตุเพิ่มเติม:</label>
@@ -1353,6 +1550,7 @@ body {
     window.resetTicketForm = window.resetTicketForm || function() {};
     window.submitClaimCoupon = window.submitClaimCoupon || function() {};
     window.submitClaimParts = window.submitClaimParts || function() {};
+    window.loadCouponRefund = window.loadCouponRefund || function() {};
     window.togglePartsInputList = window.togglePartsInputList || function() {};
 
     function showAppUI() {
@@ -2608,6 +2806,8 @@ function editDashboardItem(machineId) {
   }
   
   if (inpYanmarCoupon) inpYanmarCoupon.value = couponVal;
+  const inpCouponNoEl = document.getElementById("inpCouponNo");
+  if (inpCouponNoEl) inpCouponNoEl.value = ""; // ใบงานใหม่ = คูปองใบใหม่
   setRemarkControls(item.remark || "");
 
   // เลื่อนหน้าจอลงมายังฟอร์ม
@@ -2646,6 +2846,7 @@ async function handleSaveTicket(e) {
     partsStatus: document.getElementById("inpPartsStatus").value,
     receiptImage: document.getElementById("inpReceiptImageBase64").value,
     yanmarCoupon: Number(document.getElementById("inpYanmarCoupon").value || 0),
+    couponNo: (document.getElementById("inpCouponNo") ? document.getElementById("inpCouponNo").value.trim() : ""),
     remark: getRemarkValue(),
     updatedBy: currentUser
   };
@@ -3575,6 +3776,13 @@ function editMatrixRound(machineId, round) {
   if (inpPartsStatus) inpPartsStatus.value = record.partsStatus || "ค้างส่งอะไหล่";
   if (inpImgBase64) inpImgBase64.value = "";
   if (inpYanmarCoupon) inpYanmarCoupon.value = Number(record.yanmarCoupon) || 0;
+  const inpCouponNoEl = document.getElementById("inpCouponNo");
+  if (inpCouponNoEl) {
+    const fromList = (couponRefundData || []).find(c =>
+      String(c.machineId).trim().toLowerCase() === String(item.machineId || machineId).trim().toLowerCase() &&
+      Number(c.pmRound) === Number(round));
+    inpCouponNoEl.value = record.couponNo || (fromList ? fromList.couponNo : "") || "";
+  }
   setRemarkControls(record.remark || "");
 
   // สลับไปแท็บบันทึกใบงาน (ถ้าจำเป็น) แล้วเลื่อนหน้าจอลงไปที่ฟอร์ม
@@ -3600,6 +3808,8 @@ function openClaimModal(ticketOrMachineId, pmRound) {
   if (pDispEl) pDispEl.value = `${pmRound} ชม.`;
   if (amtEl) amtEl.value = 4000;
   if (rmkEl) rmkEl.value = "";
+  const cnEl = document.getElementById("claimCouponNoInput");
+  if (cnEl) cnEl.value = "";
 
   const modalEl = document.getElementById('claimCouponModal');
   if (modalEl) {
@@ -3619,6 +3829,14 @@ async function submitClaimCoupon() {
 
   if (!ticketId) return;
 
+  const couponNoEl = document.getElementById("claimCouponNoInput");
+  const couponNo = couponNoEl ? couponNoEl.value.trim() : "";
+  if (!couponNo) {
+    alert("กรุณากรอกหมายเลขคูปอง Yanmar");
+    if (couponNoEl) couponNoEl.focus();
+    return;
+  }
+
   const btn = document.getElementById("btnSubmitClaimCoupon");
   if (btn) {
     btn.disabled = true;
@@ -3636,6 +3854,7 @@ async function submitClaimCoupon() {
       ticketId: ticketId,
       pmRound: ticketIdInput ? ticketIdInput.dataset.pmRound : "",
       yanmarCoupon: amount,
+      couponNo: couponNo,
       couponRemark: remark,
       updatedBy: currentUser
     });
@@ -3645,6 +3864,9 @@ async function submitClaimCoupon() {
       alert("🟢 บันทึกการรับคูปองเรียบร้อยแล้ว!");
       if (modal) modal.hide();
       refreshAllData();
+      couponRefundLoaded = false;
+      const cpPane = document.getElementById("tab-coupon");
+      if (cpPane && cpPane.classList.contains("active")) loadCouponRefund(true);
     } else {
       alert("เกิดข้อผิดพลาด: " + res.message);
     }
@@ -3657,6 +3879,354 @@ async function submitClaimCoupon() {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-check me-1"></i> บันทึกรับคูปอง';
     }
+  }
+}
+
+// ==========================================
+// 💰 YANMAR COUPON REFUND TRACKING (ตรวจเงินคืนทีละใบตามหมายเลขคูปอง)
+// ==========================================
+let couponRefundData = [];
+let couponRefundSummary = {};
+let couponRefundLoaded = false;
+let couponRefundPromise = null;
+let couponFilter = 'all';
+const couponSelected = new Set();
+
+function cpText(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function cpAttr(v) { return cpText(v).replace(/'/g, '&#39;'); }
+function cpMoney(n) { return Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+function cpToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function loadCouponRefund(forceRefresh = false) {
+  if (!forceRefresh && couponRefundLoaded) {
+    renderCouponRefundTable();
+    return Promise.resolve(couponRefundData);
+  }
+  if (couponRefundPromise) return couponRefundPromise;
+
+  const tbody = document.getElementById("tbCoupon");
+  if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i> กำลังโหลดข้อมูลคูปอง...</td></tr>';
+
+  couponRefundPromise = postJson({ action: "getCouponRefundList" })
+    .then(res => {
+      if (!res || res.status !== 'success') throw new Error((res && res.message) || 'โหลดข้อมูลคูปองไม่สำเร็จ');
+      // คีย์ไม่ซ้ำต่องาน PM (ticket id ใน pm_log อาจซ้ำได้)
+      couponRefundData = (res.data || []).map(c => Object.assign(c, { key: `${c.machineId}|${c.pmRound}` }));
+      couponRefundSummary = res.summary || {};
+      couponRefundLoaded = true;
+      couponSelected.clear();
+      renderCouponSummary();
+      renderCouponRefundTable();
+      return couponRefundData;
+    })
+    .catch(err => {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4 text-danger">เกิดข้อผิดพลาด: ${cpText(err.message || err)}</td></tr>`;
+    })
+    .finally(() => { couponRefundPromise = null; });
+  return couponRefundPromise;
+}
+
+function renderCouponSummary() {
+  const s = couponRefundSummary || {};
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+  set("cpStatTotal", `${cpMoney(s.totalCoupons)} ใบ`);
+  set("cpStatExpected", `ควรได้คืน ${cpMoney(s.expectedTotal)} บาท · คงค้าง ${cpMoney(s.outstandingTotal)} บาท`);
+  set("cpStatWaiting", `${cpMoney(s.waitingCount)} ใบ`);
+  set("cpStatWaitingAmt", `${cpMoney(s.waitingAmount)} บาท · ยังไม่ส่ง ${cpMoney((s.notSentCount || 0) + (s.noCouponNoCount || 0))} ใบ`);
+  set("cpStatReceived", `${cpMoney(s.receivedTotal)} บาท`);
+  set("cpStatReceivedCount", `${cpMoney(s.receivedCount)} ใบ (ครบ ${cpMoney((s.fullCount || 0) + (s.overCount || 0))})`);
+  set("cpStatShort", `${cpMoney(s.shortfallTotal)} บาท`);
+  set("cpStatShortCount", `${cpMoney((s.partialCount || 0) + (s.unpaidCount || 0))} ใบ` + (s.duplicateCount ? ` · ⚠️ เลขคูปองซ้ำ ${s.duplicateCount}` : ''));
+}
+
+function setCouponFilter(type, btn) {
+  couponFilter = type;
+  document.querySelectorAll('.cp-filter').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderCouponRefundTable();
+}
+
+function getFilteredCoupons() {
+  const searchEl = document.getElementById("searchCoupon");
+  const q = searchEl ? searchEl.value.toLowerCase().trim() : "";
+  return couponRefundData.filter(c => {
+    if (couponFilter === 'problem' && !(c.statusKey === 'partial' || c.statusKey === 'unpaid')) return false;
+    if (couponFilter === 'full' && !(c.statusKey === 'full' || c.statusKey === 'over')) return false;
+    if (['not_sent', 'waiting', 'no_coupon_no'].includes(couponFilter) && c.statusKey !== couponFilter) return false;
+    if (!q) return true;
+    return [c.couponNo, c.ticketId, c.machineId, c.customer, c.model, c.refundRef]
+      .some(v => String(v || '').toLowerCase().includes(q));
+  });
+}
+
+function couponStatusBadge(c) {
+  const map = {
+    no_coupon_no: ['bg-warning text-dark', 'fa-triangle-exclamation'],
+    not_sent: ['bg-secondary', 'fa-box-archive'],
+    waiting: ['bg-info text-dark', 'fa-hourglass-half'],
+    full: ['bg-success', 'fa-circle-check'],
+    over: ['bg-primary', 'fa-circle-plus'],
+    partial: ['bg-danger', 'fa-circle-exclamation'],
+    unpaid: ['bg-dark', 'fa-ban']
+  };
+  const [cls, icon] = map[c.statusKey] || ['bg-light text-dark', 'fa-circle'];
+  let extra = '';
+  if (c.statusKey === 'waiting' && c.waitingDays !== null) {
+    extra = `<div class="small ${c.waitingDays > 60 ? 'text-danger fw-bold' : 'text-muted'}">รอมาแล้ว ${c.waitingDays} วัน</div>`;
+  }
+  if (c.duplicate) extra += `<div class="small text-danger fw-bold">⚠️ เลขคูปองซ้ำ</div>`;
+  return `<span class="badge ${cls}"><i class="fa-solid ${icon} me-1"></i>${cpText(c.statusLabel)}</span>${extra}`;
+}
+
+function renderCouponRefundTable() {
+  const tbody = document.getElementById("tbCoupon");
+  if (!tbody) return;
+  const admin = isAdmin();
+  document.querySelectorAll('.cp-admin').forEach(el => { el.style.display = admin ? '' : 'none'; });
+
+  const list = getFilteredCoupons().sort((a, b) =>
+    String(b.serviceDate || '').localeCompare(String(a.serviceDate || '')) || String(b.key).localeCompare(String(a.key)));
+
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4 text-muted">ไม่พบรายการคูปอง</td></tr>`;
+    updateCouponSelectedInfo();
+    return;
+  }
+
+  tbody.innerHTML = list.map(c => {
+    const diffHtml = c.diff === null ? '<span class="text-muted">-</span>'
+      : c.diff < 0 ? `<span class="text-danger fw-bold">${cpMoney(c.diff)}</span>`
+      : c.diff > 0 ? `<span class="text-primary fw-bold">+${cpMoney(c.diff)}</span>`
+      : `<span class="text-success">0</span>`;
+    const tid = cpAttr(c.key);
+    return `
+      <tr>
+        <td class="text-center cp-admin" style="${admin ? '' : 'display:none'}"><input type="checkbox" class="form-check-input cp-check" value="${tid}" ${couponSelected.has(c.key) ? 'checked' : ''} onchange="toggleCouponSelect('${tid}', this.checked)"></td>
+        <td>${c.couponNo ? `<strong class="font-monospace">${cpText(c.couponNo)}</strong>` : '<span class="text-warning fw-bold">— ยังไม่กรอก —</span>'}</td>
+        <td><span class="badge bg-secondary">${cpText(c.ticketId) || '-'}</span><div class="small text-muted">${cpText(c.serviceDate)}</div></td>
+        <td><strong>${cpText(c.machineId)}</strong><div class="small text-muted">${cpText(c.customer)}</div></td>
+        <td class="text-center fw-bold text-primary">${c.pmRound}</td>
+        <td class="text-end">${cpMoney(c.expected)}</td>
+        <td>${cpText(c.couponSentDate) || '<span class="text-muted">-</span>'}</td>
+        <td class="text-end fw-bold">${c.refundAmount === null ? '<span class="text-muted">-</span>' : cpMoney(c.refundAmount)}</td>
+        <td>${cpText(c.refundDate) || '-'}${c.refundRef ? `<div class="small text-muted">${cpText(c.refundRef)}</div>` : ''}${c.refundRemark ? `<div class="small fst-italic text-muted">${cpText(c.refundRemark)}</div>` : ''}</td>
+        <td class="text-end">${diffHtml}</td>
+        <td>${couponStatusBadge(c)}</td>
+        <td class="text-center cp-admin" style="${admin ? '' : 'display:none'}">
+          ${c.couponNo
+            ? `<button class="btn btn-sm btn-outline-success py-0 px-2" onclick="openRefundModal('${tid}')"><i class="fa-solid fa-money-bill-wave me-1"></i>${c.refundAmount === null ? 'รับเงิน' : 'แก้ไข'}</button>`
+            : `<button class="btn btn-sm btn-outline-warning text-dark py-0 px-2" onclick="openClaimModal('${cpAttr(c.ticketId || c.machineId)}', '${c.pmRound}')"><i class="fa-solid fa-ticket me-1"></i>ใส่เลขคูปอง</button>`}
+        </td>
+      </tr>`;
+  }).join('');
+  updateCouponSelectedInfo();
+}
+
+function toggleCouponSelect(ticketId, checked) {
+  if (checked) couponSelected.add(ticketId); else couponSelected.delete(ticketId);
+  updateCouponSelectedInfo();
+}
+function toggleAllCoupons(checked) {
+  getFilteredCoupons().forEach(c => { if (checked) couponSelected.add(c.key); else couponSelected.delete(c.key); });
+  renderCouponRefundTable();
+}
+function updateCouponSelectedInfo() {
+  const el = document.getElementById("cpSelectedInfo");
+  if (!el) return;
+  const sel = couponRefundData.filter(c => couponSelected.has(c.key));
+  el.innerText = `เลือก ${sel.length} ใบ` + (sel.length ? ` (${cpMoney(sel.reduce((s, c) => s + c.expected, 0))} บาท)` : '');
+}
+
+// ---------- บันทึกส่งคูปองให้ Yanmar ----------
+function openMarkSentModal() {
+  if (couponSelected.size === 0) { alert("กรุณาติ๊กเลือกคูปองที่ส่งให้ Yanmar ก่อน"); return; }
+  const sel = couponRefundData.filter(c => couponSelected.has(c.key));
+  const noNumber = sel.filter(c => !c.couponNo).length;
+  document.getElementById("markSentInfo").innerHTML =
+    `คูปองที่เลือก <strong>${sel.length}</strong> ใบ มูลค่ารวม <strong>${cpMoney(sel.reduce((s, c) => s + c.expected, 0))}</strong> บาท` +
+    (noNumber ? `<div class="text-danger mt-1">⚠️ มี ${noNumber} ใบที่ยังไม่กรอกหมายเลขคูปอง จะถูกข้าม</div>` : '');
+  document.getElementById("markSentDateInput").value = cpToday();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("markSentModal")).show();
+}
+
+async function submitMarkSent(clear) {
+  const sentDate = document.getElementById("markSentDateInput").value;
+  if (!clear && !sentDate) { alert("กรุณาเลือกวันที่ส่ง"); return; }
+  if (clear && !confirm(`ยกเลิกสถานะ "ส่งให้ Yanmar แล้ว" ของ ${couponSelected.size} ใบ?`)) return;
+  showOperation('กำลังบันทึกการส่งคูปอง...');
+  try {
+    const couponNos = couponRefundData.filter(c => couponSelected.has(c.key) && c.couponNo).map(c => c.couponNo);
+    if (!couponNos.length) { hideOperation(); alert("คูปองที่เลือกยังไม่มีหมายเลขคูปอง"); return; }
+    const res = await postJson({ action: "markCouponsSent", couponNos, sentDate, clear: !!clear, updatedBy: currentUser });
+    hideOperation();
+    if (res.status !== 'success') throw new Error(res.message);
+    let msg = `บันทึกแล้ว ${res.updated.length} ใบ`;
+    const skippedNoNumber = couponRefundData.filter(c => couponSelected.has(c.key) && !c.couponNo).length;
+    if (skippedNoNumber) msg += `\nข้าม ${skippedNoNumber} ใบ (ยังไม่มีเลขคูปอง)`;
+    if (res.notFound && res.notFound.length) msg += `\nไม่พบ: ${res.notFound.join(', ')}`;
+    alert(msg);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("markSentModal")).hide();
+    loadCouponRefund(true);
+  } catch (err) {
+    hideOperation();
+    alert("บันทึกไม่สำเร็จ: " + err.message);
+  }
+}
+
+// ---------- บันทึกเงินคืนทีละใบ ----------
+function openRefundModal(ticketId) {
+  const c = couponRefundData.find(x => x.key === ticketId);
+  if (!c) return;
+  document.getElementById("refundTicketId").value = c.couponNo;
+  document.getElementById("refundInfo").innerHTML =
+    `คูปอง <strong class="font-monospace">${cpText(c.couponNo)}</strong> · ใบงาน ${cpText(c.ticketId)} · ${cpText(c.machineId)} รอบ ${c.pmRound} ชม.<br>มูลค่าที่ควรได้คืน <strong>${cpMoney(c.expected)}</strong> บาท`;
+  const amt = document.getElementById("refundAmountInput");
+  amt.value = c.refundAmount === null ? c.expected : c.refundAmount;
+  amt.dataset.expected = c.expected;
+  amt.oninput = updateRefundDiffPreview;
+  document.getElementById("refundDateInput").value = c.refundDate || cpToday();
+  document.getElementById("refundRefInput").value = c.refundRef || '';
+  document.getElementById("refundRemarkInput").value = c.refundRemark || '';
+  updateRefundDiffPreview();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("refundModal")).show();
+}
+
+function updateRefundDiffPreview() {
+  const amt = document.getElementById("refundAmountInput");
+  const el = document.getElementById("refundDiffPreview");
+  const expected = Number(amt.dataset.expected || 0);
+  const v = Number(amt.value);
+  if (amt.value === '' || isNaN(v)) { el.innerHTML = ''; return; }
+  const d = v - expected;
+  el.innerHTML = d === 0 ? '<span class="text-success">✅ ได้รับครบตามมูลค่าคูปอง</span>'
+    : d < 0 ? `<span class="text-danger">❗ ได้รับขาดไป ${cpMoney(-d)} บาท</span>`
+    : `<span class="text-primary">ℹ️ ได้รับเกิน ${cpMoney(d)} บาท</span>`;
+}
+
+async function submitRefund() {
+  const couponNo = document.getElementById("refundTicketId").value;
+  const amountStr = document.getElementById("refundAmountInput").value;
+  const refundDate = document.getElementById("refundDateInput").value;
+  if (amountStr === '' || isNaN(Number(amountStr))) { alert("กรุณากรอกจำนวนเงินที่ได้รับ"); return; }
+  if (!refundDate) { alert("กรุณาเลือกวันที่ได้รับเงิน"); return; }
+  const btn = document.getElementById("btnSubmitRefund");
+  btn.disabled = true;
+  showOperation('กำลังบันทึกเงินคืน...');
+  try {
+    const res = await postJson({
+      action: "recordCouponRefund",
+      items: [{ couponNo, refundAmount: Number(amountStr) }],
+      refundDate,
+      refundRef: document.getElementById("refundRefInput").value.trim(),
+      refundRemark: document.getElementById("refundRemarkInput").value.trim(),
+      updatedBy: currentUser
+    });
+    hideOperation();
+    if (res.status !== 'success') throw new Error(res.message);
+    if (!res.results.matched.length) throw new Error((res.results.notFound[0] || {}).reason || 'ไม่พบหมายเลขคูปอง');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("refundModal")).hide();
+    loadCouponRefund(true);
+  } catch (err) {
+    hideOperation();
+    alert("บันทึกไม่สำเร็จ: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- นำเข้ายอดโอนหลายใบ ----------
+function openImportRefundModal() {
+  document.getElementById("importRefundDate").value = cpToday();
+  document.getElementById("importRefundRef").value = '';
+  document.getElementById("importRefundText").value = '';
+  document.getElementById("importRefundPreview").innerHTML = '';
+  document.getElementById("importRefundResult").innerHTML = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("importRefundModal")).show();
+}
+
+function parseImportRefundLines(text) {
+  const items = [];
+  const errors = [];
+  String(text || '').split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    let couponNo = line, amount = 4000;
+    const m = line.match(/^(.*?)[\t ,;|]+([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:บาท)?$/);
+    if (m && m[1].trim()) {
+      couponNo = m[1].trim();
+      amount = Number(m[2].replace(/,/g, ''));
+    }
+    couponNo = couponNo.replace(/\s+/g, '').toUpperCase();
+    if (!couponNo || isNaN(amount)) { errors.push(`บรรทัด ${i + 1}: อ่านไม่ได้ "${line}"`); return; }
+    items.push({ couponNo, refundAmount: amount });
+  });
+  return { items, errors };
+}
+
+function previewImportRefund() {
+  const { items, errors } = parseImportRefundLines(document.getElementById("importRefundText").value);
+  const el = document.getElementById("importRefundPreview");
+  if (!items.length && !errors.length) { el.innerHTML = ''; return; }
+  const known = new Map(couponRefundData.filter(c => c.couponNo).map(c => [c.couponNo, c]));
+  let expected = 0, paid = 0, unknown = [], short = [];
+  items.forEach(it => {
+    paid += it.refundAmount;
+    const c = known.get(it.couponNo);
+    if (!c) { unknown.push(it.couponNo); return; }
+    expected += c.expected;
+    if (it.refundAmount < c.expected) short.push(`${it.couponNo} (ขาด ${cpMoney(c.expected - it.refundAmount)})`);
+  });
+  el.innerHTML = `
+    <div class="border rounded p-2 bg-light">
+      อ่านได้ <strong>${items.length}</strong> ใบ · ยอดโอนรวม <strong>${cpMoney(paid)}</strong> บาท
+      ${short.length ? `<div class="text-danger">❗ จ่ายไม่ครบ: ${cpText(short.join(', '))}</div>` : ''}
+      ${unknown.length ? `<div class="text-warning fw-bold">⚠️ ไม่พบในระบบ: ${cpText(unknown.join(', '))}</div>` : ''}
+      ${errors.length ? `<div class="text-danger">${cpText(errors.join(' | '))}</div>` : ''}
+    </div>`;
+}
+
+async function submitImportRefund() {
+  const { items, errors } = parseImportRefundLines(document.getElementById("importRefundText").value);
+  const refundDate = document.getElementById("importRefundDate").value;
+  if (!items.length) { alert("กรุณาวางรายการหมายเลขคูปองและจำนวนเงิน"); return; }
+  if (!refundDate) { alert("กรุณาเลือกวันที่ได้รับเงิน"); return; }
+  if (errors.length && !confirm(`มี ${errors.length} บรรทัดที่อ่านไม่ได้ ต้องการบันทึกเฉพาะที่อ่านได้ (${items.length} ใบ) หรือไม่?`)) return;
+
+  const btn = document.getElementById("btnSubmitImportRefund");
+  btn.disabled = true;
+  showOperation(`กำลังตรวจและบันทึก ${items.length} ใบ...`);
+  try {
+    const res = await postJson({
+      action: "recordCouponRefund",
+      items,
+      refundDate,
+      refundRef: document.getElementById("importRefundRef").value.trim(),
+      updatedBy: currentUser
+    });
+    hideOperation();
+    if (res.status !== 'success') throw new Error(res.message);
+    const r = res.results, t = res.totals;
+    const problem = r.matched.filter(m => m.statusKey !== 'full');
+    document.getElementById("importRefundResult").innerHTML = `
+      <div class="alert ${problem.length || r.notFound.length ? 'alert-warning' : 'alert-success'} small mb-0">
+        <div class="fw-bold mb-1">ผลการตรวจ: บันทึกแล้ว ${r.matched.length} ใบ · Yanmar โอน ${cpMoney(t.paid)} / ควรได้ ${cpMoney(t.expected)} บาท
+          (${t.diff === 0 ? 'ครบ ✅' : t.diff < 0 ? 'ขาด ' + cpMoney(-t.diff) + ' บาท ❗' : 'เกิน ' + cpMoney(t.diff) + ' บาท'})</div>
+        ${problem.length ? `<div class="text-danger">ใบที่ไม่ครบ/เกิน: ${cpText(problem.map(m => `${m.couponNo} (${m.diff > 0 ? '+' : ''}${cpMoney(m.diff)})`).join(', '))}</div>` : ''}
+        ${r.notFound.length ? `<div>ไม่พบในระบบ (ไม่ได้บันทึก): ${cpText(r.notFound.map(n => n.couponNo).join(', '))}</div>` : ''}
+        ${r.duplicateInput.length ? `<div>ซ้ำในรายการที่วาง (ข้าม): ${cpText(r.duplicateInput.map(d => d.couponNo).join(', '))}</div>` : ''}
+      </div>`;
+    loadCouponRefund(true);
+  } catch (err) {
+    hideOperation();
+    alert("บันทึกไม่สำเร็จ: " + err.message);
+  } finally {
+    btn.disabled = false;
   }
 }
 
