@@ -497,8 +497,8 @@ function deleteLog(txId) {
 
 /**
  * ยกเลิกใบเบิกที่ตัดสต็อกไปแล้ว (เรียกจาก Approval.js → cancelRequest_)
- *   ลบแถวประวัติการเบิกของใบนั้น (ยอดเบิกใน Dashboard จะไม่นับซ้ำ) + คืนยอดเข้าคลัง + บันทึก CANCEL
- *   ถ้าไม่พบประวัติ (เคยถูกลบและคืนยอดไปแล้ว) → ไม่คืนยอดซ้ำ
+ *   ลบแถวประวัติการเบิก "ทุกแถว" ของใบนั้น (ใบเดียวอาจมีหลายรายการ) + คืนยอดเข้าคลัง + บันทึก CANCEL
+ *   txId อาจเป็นหลายค่าคั่นด้วย , · ถ้าไม่พบประวัติ (เคยถูกลบและคืนยอดไปแล้ว) → ไม่คืนยอดซ้ำ
  */
 function reverseRequisition_(requestId, txId, reason) {
   var lock = LockService.getScriptLock();
@@ -509,24 +509,107 @@ function reverseRequisition_(requestId, txId, reason) {
     var stockSheet = ss.getSheetByName(STOCK_SHEET);
     if (!logSheet || !stockSheet) return { status: "error", message: "ไม่พบชีทประวัติหรือสต็อก" };
 
-    var logData = logSheet.getDataRange().getValues();
-    var idx = -1;
-    for (var i = logData.length - 1; i >= 1; i--) {
-      if ((txId && String(logData[i][0]) === String(txId)) || reqIdFromNote_(logData[i][9]) === String(requestId)) { idx = i; break; }
-    }
-    if (idx < 0) return { status: "success", restored: 0, logFound: false };
+    var txSet = {};
+    String(txId || "").split(",").forEach(function (x) { x = x.trim(); if (x) txSet[x] = true; });
 
-    var row = logData[idx];
-    var qty = parseInt(row[4]) || 0;
-    logSheet.deleteRow(idx + 1);
-    var s = restoreStock_(stockSheet, row[2], qty);
-    var warn = "";
-    if (s.found) {
-      warn = logMovement_({ type: "CANCEL", assetId: row[2], assetName: s.name, remBefore: s.remBefore, remAfter: s.remAfter,
-        totalBefore: s.totalBefore, totalAfter: s.totalAfter, refId: requestId,
-        note: "ยกเลิกใบเบิก คืนยอดเข้าคลัง · เหตุผล: " + reason });
+    var logData = logSheet.getDataRange().getValues();
+    var hits = [];
+    for (var i = logData.length - 1; i >= 1; i--) {         // ล่าง → บน (ลบแถวแล้วเลขแถวด้านบนไม่เลื่อน)
+      if (txSet[String(logData[i][0])] || reqIdFromNote_(logData[i][9]) === String(requestId)) hits.push(i);
     }
-    return { status: "success", restored: s.found ? qty : 0, logFound: true, assetFound: s.found, warn: warn };
+    if (!hits.length) return { status: "success", restored: 0, lines: 0, logFound: false };
+
+    var restored = 0, missing = [], warn = "";
+    hits.forEach(function (idx) {
+      var row = logData[idx];
+      var qty = parseInt(row[4]) || 0;
+      logSheet.deleteRow(idx + 1);
+      var s = restoreStock_(stockSheet, row[2], qty);
+      if (s.found) {
+        restored += qty;
+        warn = logMovement_({ type: "CANCEL", assetId: row[2], assetName: s.name, remBefore: s.remBefore, remAfter: s.remAfter,
+          totalBefore: s.totalBefore, totalAfter: s.totalAfter, refId: requestId,
+          note: "ยกเลิกใบเบิก คืนยอดเข้าคลัง · เหตุผล: " + reason }) || warn;
+      } else {
+        missing.push(String(row[2]));
+      }
+    });
+    return { status: "success", restored: restored, lines: hits.length, logFound: true,
+      assetFound: missing.length === 0, missingAssets: missing, warn: warn };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 7b. ตัดสต็อกใบเบิกหลายรายการในครั้งเดียว (เรียกจาก Approval.js หลังอนุมัติ)
+ *   data.items = [{ assetId, quantity }, ...]
+ *   ตรวจยอดคงเหลือ "ทุกรายการ" ก่อน → ถ้ามีรายการไหนไม่พอ/ไม่พบ จะไม่ตัดอะไรเลย (all-or-nothing)
+ *   บันทึกประวัติการเบิก 1 แถวต่อ 1 รายการ (Dashboard / รายงานเดิมใช้ได้ทันที)
+ */
+function processRequisitionBatch_(data) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var stockSheet = ss.getSheetByName(STOCK_SHEET);
+    var logSheet = ss.getSheetByName(LOG_SHEET);
+    if (!stockSheet || !logSheet) return { status: "error", message: "ไม่พบชีทระบบสต็อกหรือชีทประวัติ" };
+
+    var items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) return { status: "error", message: "ใบเบิกไม่มีรายการอุปกรณ์" };
+
+    // ดัชนีสต็อก
+    var stockData = stockSheet.getDataRange().getValues();
+    var idx = {};
+    for (var i = 1; i < stockData.length; i++) {
+      var id = String(stockData[i][0]).trim();
+      if (!id || idx[id]) continue;
+      var total = parseInt(stockData[i][3]) || 0;
+      var rem = parseInt(stockData[i][4]);
+      if (isNaN(rem)) rem = total;
+      idx[id] = { row: i + 1, name: stockData[i][1], total: total, rem: rem, need: 0 };
+    }
+
+    // 1) ตรวจทุกรายการก่อน
+    var errs = [];
+    items.forEach(function (it) {
+      var aid = String(it.assetId || "").trim(), q = parseInt(it.quantity);
+      if (!(q > 0)) { errs.push(aid + ": จำนวนไม่ถูกต้อง"); return; }
+      if (!idx[aid]) { errs.push(aid + ": ไม่พบในคลัง"); return; }
+      idx[aid].need += q;
+    });
+    Object.keys(idx).forEach(function (aid) {
+      var s = idx[aid];
+      if (s.need > s.rem) errs.push(aid + " " + s.name + ": คงเหลือ " + s.rem + " แต่ขอเบิก " + s.need);
+    });
+    if (errs.length) return { status: "error", message: "สต็อกไม่พอ / ข้อมูลไม่ถูกต้อง — ยังไม่ได้ตัดสต็อก\n• " + errs.join("\n• ") };
+
+    // 2) บันทึก Log ทุกรายการ (ครั้งเดียว) แล้วค่อยตัดสต็อก
+    var now = new Date(), base = now.getTime();
+    var img = toImageCell_(data.imageBase64, "log_" + (data.requestId || base));
+    var txIds = [], rows = [];
+    items.forEach(function (it, n) {
+      var aid = String(it.assetId).trim();
+      var tx = "TX-" + base + (items.length > 1 ? "-" + (n + 1) : "");
+      txIds.push(tx);
+      rows.push([tx, now, aid, idx[aid].name, parseInt(it.quantity), data.staffName, data.department, data.branch, img, data.requisitionNotes || "-"]);
+    });
+    logSheet.getRange(logSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+
+    var warn = "";
+    items.forEach(function (it) {
+      var aid = String(it.assetId).trim(), q = parseInt(it.quantity), s = idx[aid];
+      var before = s.rem;
+      s.rem -= q;
+      stockSheet.getRange(s.row, 5).setValue(s.rem);
+      warn = logMovement_({ type: "OUT", assetId: aid, assetName: s.name, remBefore: before, remAfter: s.rem,
+        totalBefore: s.total, totalAfter: s.total, refId: data.requestId || txIds[0],
+        note: "เบิกออก: " + (data.staffName || "-") + " / " + (data.branch || "-") }) || warn;
+    });
+    return { status: "success", txIds: txIds, txId: txIds[0], message: "บันทึกการเบิกและตัดสต็อกสำเร็จ " + items.length + " รายการ" + warn };
+  } catch (error) {
+    return { status: "error", message: error.toString() };
   } finally {
     lock.releaseLock();
   }

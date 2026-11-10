@@ -29,6 +29,10 @@
  *                         APPROVED / ISSUED: ADMIN ยกเลิกได้ → คืนยอดเข้าคลัง + บันทึกประวัติสต็อก
  *   * ถ้าผู้รับมารับของเองที่ HR → ISSUED ข้ามไป RECEIVED ได้ทันที
  *
+ * ใบเบิก 1 ใบเบิกได้หลายรายการ (สูงสุด MAX_REQ_ITEMS) — เก็บในคอลัมน์ items (JSON)
+ *   อนุมัติ = ตรวจยอดคงเหลือทุกรายการก่อน ถ้ามีรายการไหนไม่พอจะไม่ตัดสต็อกเลย
+ *   ยกเลิก  = คืนยอดทุกรายการของใบนั้น
+ *
  * ประวัติการเคลื่อนไหวสต็อก (รับเข้า/เบิกออก/ปรับยอด/ยกเลิก) → ชีต Stock_Movements (ดูใน Code.js)
  ******************************************************************************/
 
@@ -59,8 +63,11 @@ const REQ_HEADERS = [
   'deliveryMethod', 'shipVia', 'shipCarrier', 'shipNote', 'shippedBy', 'shippedByName', 'shippedAt',
   'receivedBy', 'receivedAt', 'receiveNote',
   // เชื่อมกับประวัติการเบิก + การยกเลิกใบเบิก
-  'txId', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'cancelReason'
+  'txId', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'cancelReason',
+  // ใบเบิกหลายรายการ: JSON [{assetId, assetName, category, quantity}]  (ใบเก่าที่ไม่มีค่า = 1 รายการจาก assetId/quantity)
+  'items'
 ];
+const MAX_REQ_ITEMS = 30;                   // จำนวนรายการสูงสุดต่อใบเบิก
 const SHIP_VIA = ['ฝ่ายบริการ', 'ฝ่ายขาย', 'อื่น ๆ'];
 const USER_HEADERS = [
   'username', 'password', 'passwordHash', 'salt', 'fullName', 'role', 'branch',
@@ -386,6 +393,7 @@ function listRequests_(user) {
     .map(r => {
       const o = Object.assign({}, r);
       o.status = effStatus_(r);
+      o.items = reqItems_(r);
       o.hasIssuerSig = !!o.issuerSig;
       o.hasReceiverSig = !!o.receiverSig;
       delete o._row; delete o.requesterSig; delete o.approverSig; delete o.issuerSig; delete o.receiverSig;
@@ -400,15 +408,49 @@ function getRequestDetail_(id, user) {
   }
   const o = Object.assign({}, r); delete o._row;
   o.status = effStatus_(r);
+  o.items = reqItems_(r);
   return { status: 'success', data: o };
+}
+
+/** รายการอุปกรณ์ในใบเบิก (รองรับใบเก่าแบบ 1 รายการ) */
+function reqItems_(r) {
+  if (r.items) {
+    try {
+      const a = JSON.parse(r.items);
+      if (Array.isArray(a) && a.length) return a;
+    } catch (e) {}
+  }
+  return [{ assetId: String(r.assetId || ''), assetName: String(r.assetName || ''), category: String(r.category || ''), quantity: Number(r.quantity) || 0 }];
+}
+
+/** รับรายการจากหน้าเว็บ (items[] หรือแบบเดิม assetId/quantity) → ตรวจ + รวมรหัสซ้ำ */
+function parseReqItems_(d) {
+  const src = Array.isArray(d.items) && d.items.length ? d.items
+    : [{ assetId: d.assetId, assetName: d.assetName, category: d.category, quantity: d.quantity }];
+  const map = {}, out = [];
+  for (let i = 0; i < src.length; i++) {
+    const it = src[i] || {};
+    const id = String(it.assetId || '').trim();
+    const q = parseInt(it.quantity, 10);
+    if (!id) return { error: 'รายการที่ ' + (i + 1) + ': ไม่ได้เลือกอุปกรณ์' };
+    if (!(q > 0)) return { error: 'รายการที่ ' + (i + 1) + ' (' + id + '): จำนวนไม่ถูกต้อง' };
+    if (map[id]) { map[id].quantity += q; continue; }
+    map[id] = { assetId: id, assetName: String(it.assetName || ''), category: String(it.category || ''), quantity: q };
+    out.push(map[id]);
+  }
+  if (!out.length) return { error: 'กรุณาเพิ่มอุปกรณ์อย่างน้อย 1 รายการ' };
+  if (out.length > MAX_REQ_ITEMS) return { error: 'ใบเบิก 1 ใบเบิกได้ไม่เกิน ' + MAX_REQ_ITEMS + ' รายการ' };
+  return { items: out };
 }
 
 function createRequest_(d, user) {
   const branch = user.role === 'BRANCH' && user.branch ? user.branch : String(d.branch || '');
-  if (!d.staffName || !d.assetId) return { status: 'error', message: 'ข้อมูลไม่ครบ (ผู้เบิก / อุปกรณ์)' };
+  if (!d.staffName) return { status: 'error', message: 'ข้อมูลไม่ครบ (ชื่อผู้เบิก)' };
   if (BRANCHES.indexOf(branch) < 0) return { status: 'error', message: 'กรุณาเลือกสาขาให้ถูกต้อง' };
-  const qty = parseInt(d.quantity, 10);
-  if (!(qty > 0)) return { status: 'error', message: 'จำนวนไม่ถูกต้อง' };
+  const parsed = parseReqItems_(d);
+  if (parsed.error) return { status: 'error', message: parsed.error };
+  const items = parsed.items, multi = items.length > 1;
+  const qty = items.reduce((s, x) => s + x.quantity, 0);
   if (!d.requesterSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้ขอเบิก' };
 
   const lock = LockService.getScriptLock();
@@ -424,7 +466,11 @@ function createRequest_(d, user) {
     appendObj_(t, {
       requestId: requestId,
       timestamp: Utilities.formatDate(now, APP_CONFIG.TZ, 'dd/MM/yyyy HH:mm'),
-      assetId: d.assetId, assetName: d.assetName || '', category: d.category || '',
+      // คอลัมน์เดิมเก็บสรุป (รายการแรก / ยอดรวม) → ชีตอ่านง่าย · รายละเอียดทุกรายการอยู่ในคอลัมน์ items
+      assetId: items[0].assetId,
+      assetName: multi ? items[0].assetName + ' และอีก ' + (items.length - 1) + ' รายการ' : items[0].assetName,
+      category: multi ? 'หลายรายการ (' + items.length + ')' : items[0].category,
+      items: JSON.stringify(items),
       quantity: qty, staffName: d.staffName, department: d.department || '',
       branch: branch, notes: d.notes || '-',
       imageUrl: img.url, imageFileId: img.id,
@@ -457,23 +503,19 @@ function decideRequest_(d, approve, user) {
   }
 
   if (approve) {
-    // 2) ตัดสต็อก + บันทึก Log ผ่านระบบเดิม (doPostLegacy) ด้วย payload รูปแบบเดิม
+    // 2) ตัดสต็อก + บันทึก Log ทุกรายการในใบเดียว (ตรวจยอดครบทุกรายการก่อน → ตัดทั้งหมด หรือไม่ตัดเลย)
     try {
+      if (typeof processRequisitionBatch_ !== 'function') throw new Error(LEGACY_MISSING_MSG_);
       // ส่งลิงก์รูปใน Drive (ไม่ส่ง base64) → เร็วกว่า และไม่ชนลิมิต 50,000 ตัวอักษรต่อเซลล์ของชีต Log
-      const contents = JSON.stringify({
+      const j = processRequisitionBatch_({
         requestId: r.requestId,
         staffName: r.staffName, department: r.department, branch: r.branch,
-        assetId: r.assetId, quantity: Number(r.quantity),
+        items: reqItems_(r),
         requisitionNotes: (r.notes || '-') + ' [ใบเบิก ' + r.requestId + ' อนุมัติโดย ' + approverName + ']',
         imageBase64: r.imageUrl || ''
       });
-      const out = legacyPost_({ postData: { contents: contents, type: 'text/plain', length: contents.length }, parameter: {}, parameters: {} });
-      let j = null;
-      try { j = JSON.parse(out && out.getContent ? out.getContent() : ''); } catch (e) {}
-      if (j && (j.status === 'error' || j.success === false || j.result === 'error')) {
-        throw new Error(j.message || j.error || 'ระบบเดิมแจ้งข้อผิดพลาด');
-      }
-      if (j && j.txId) setCell_(t, r._row, 'txId', j.txId);     // ผูกใบเบิกกับแถวประวัติ → ใช้ตอนยกเลิก
+      if (!j || j.status !== 'success') throw new Error((j && j.message) || 'ตัดสต็อกไม่สำเร็จ');
+      if (j.txIds && j.txIds.length) setCell_(t, r._row, 'txId', j.txIds.join(','));   // ผูกใบเบิกกับแถวประวัติ → ใช้ตอนยกเลิก
     } catch (err) {
       setCell_(t, r._row, 'status', 'PENDING');
       return { status: 'error', message: 'ตัดสต็อกไม่สำเร็จ: ' + (err.message || err) };
@@ -660,7 +702,8 @@ function cancelRequest_(d, user) {
       const res = reverseRequisition_(r.requestId, r.txId, reason);
       if (!res || res.status !== 'success') throw new Error((res && res.message) || 'คืนยอดไม่สำเร็จ');
       note = res.logFound
-        ? (res.assetFound ? ' · คืนยอดเข้าคลัง ' + res.restored + ' ชิ้น' : ' · ไม่พบอุปกรณ์ในคลัง (อาจถูกลบไปแล้ว) จึงไม่คืนยอด')
+        ? (res.restored > 0 ? ' · คืนยอดเข้าคลัง ' + res.restored + ' ชิ้น' + (res.lines > 1 ? ' (' + res.lines + ' รายการ)' : '') : '')
+          + (res.missingAssets && res.missingAssets.length ? ' · ไม่พบในคลัง (อาจถูกลบไปแล้ว) จึงไม่คืนยอด: ' + res.missingAssets.join(', ') : '')
         : ' · ไม่พบประวัติการเบิก (เคยถูกลบและคืนยอดไปแล้ว) จึงไม่คืนยอดซ้ำ';
       note += res.warn || '';
     } catch (err) {

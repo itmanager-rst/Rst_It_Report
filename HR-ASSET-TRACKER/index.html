@@ -328,8 +328,20 @@
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-600 mb-1" for="quantity">จำนวนที่เบิก <span class="text-red-500">*</span></label>
-          <input type="number" id="quantity" min="1" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ใส่จำนวน">
+          <div class="flex gap-2">
+            <input type="number" id="quantity" min="1" onkeydown="if(event.key==='Enter'){event.preventDefault();addCartItem();}" class="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="ใส่จำนวน">
+            <button type="button" onclick="addCartItem()" class="shrink-0 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold px-3 rounded-xl cursor-pointer">➕ เพิ่มลงรายการ</button>
+          </div>
           <p id="qtyHint" class="text-[11px] text-slate-400 mt-1"></p>
+        </div>
+
+        <!-- 🧺 รายการที่จะเบิก (เบิกได้หลายรายการในใบเดียว) -->
+        <div class="md:col-span-3">
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold text-slate-600">รายการที่จะเบิกในใบนี้ <span id="cartCount" class="ml-1 bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-md">0</span></label>
+            <button type="button" id="cartClearBtn" onclick="clearCart()" class="hidden text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🗑️ ล้างรายการทั้งหมด</button>
+          </div>
+          <div id="cartBox" class="border border-slate-200 rounded-xl overflow-hidden"></div>
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-600 mb-1" for="staffName">ชื่อผู้เบิก <span class="text-red-500">*</span></label>
@@ -1125,6 +1137,7 @@
       if (u.role === "BRANCH" && u.branch) { br.value = u.branch; br.disabled = true; }
       else { br.disabled = false; if (!br.value && BRANCHES.includes(u.branch)) br.value = u.branch; }
       if (!$("staffName").value) $("staffName").value = u.fullName || "";
+      renderCart();
     }
 
     function fillBranchSelect(sel, allowAll) {
@@ -1291,7 +1304,79 @@
       if (!a || getRemaining(a.id) <= 0) return;
       setPickerSelected(a);
       $("assetResults").classList.add("hidden");
-      $("quantity").focus();
+      const inCart = reqCart.find(x => x.assetId === String(a.id));
+      if (!$("quantity").value) $("quantity").value = 1;
+      if (inCart) $("qtyHint").innerText += ` · มีในรายการแล้ว ${inCart.quantity} ชิ้น (เพิ่มอีกจะรวมยอด)`;
+      $("quantity").focus(); $("quantity").select();
+    }
+
+    /* =========================================================
+       🧺 ตะกร้ารายการเบิก — 1 ใบเบิกได้หลายรายการ
+       ========================================================= */
+    const MAX_REQ_ITEMS = 30;
+    let reqCart = [];   // [{ assetId, assetName, category, quantity }]
+
+    function addCartItem() {
+      const a = findAsset($("assetSelect").value);
+      if (!a) { showToast("🔍 กรุณาค้นหาและเลือกอุปกรณ์ก่อน", "warn"); $("assetSearch").focus(); return false; }
+      const qty = parseInt($("quantity").value) || 0;
+      if (qty < 1) { showToast("กรุณาใส่จำนวนที่เบิก", "warn"); $("quantity").focus(); return false; }
+      const rem = getRemaining(a.id);
+      const cur = reqCart.find(x => x.assetId === String(a.id));
+      const total = (cur ? cur.quantity : 0) + qty;
+      if (total > rem) { alert(`⚠️ ${a.name}\nจำนวนรวมที่ขอเบิก (${total}) มากกว่ายอดคงเหลือ (${rem})`); $("quantity").focus(); return false; }
+      if (!cur && reqCart.length >= MAX_REQ_ITEMS) { alert(`ใบเบิก 1 ใบเบิกได้ไม่เกิน ${MAX_REQ_ITEMS} รายการ`); return false; }
+      if (cur) cur.quantity = total;
+      else reqCart.push({ assetId: String(a.id), assetName: a.name, category: a.category || "", quantity: qty });
+      $("quantity").value = "";
+      clearPickerAsset(false);
+      renderCart();
+      showToast(`➕ ${a.name} × ${total} อยู่ในรายการแล้ว`, "ok");
+      $("assetSearch").focus();
+      return true;
+    }
+    function removeCartItem(i) { reqCart.splice(i, 1); renderCart(); }
+    function clearCart(skipConfirm) {
+      if (!skipConfirm && reqCart.length && !confirm("ล้างรายการที่จะเบิกทั้งหมด?")) return;
+      reqCart = []; renderCart();
+    }
+    function setCartQty(i, v) {
+      const it = reqCart[i]; if (!it) return;
+      const rem = getRemaining(it.assetId);
+      let q = parseInt(v) || 0;
+      if (q < 1) q = 1;
+      if (q > rem) { showToast(`⚠️ ${it.assetName} คงเหลือ ${rem} ชิ้น`, "warn"); q = Math.max(1, rem); }
+      it.quantity = q; renderCart();
+    }
+    function renderCart() {
+      $("cartCount").innerText = reqCart.length;
+      $("cartClearBtn").classList.toggle("hidden", !reqCart.length);
+      const box = $("cartBox");
+      if (!reqCart.length) {
+        box.innerHTML = '<div class="p-4 text-center text-xs text-slate-400 bg-slate-50">ยังไม่มีรายการ — ค้นหาอุปกรณ์ ใส่จำนวน แล้วกด ➕ เพิ่มลงรายการ (เพิ่มได้หลายรายการในใบเดียว)</div>';
+        return;
+      }
+      const sum = reqCart.reduce((s, x) => s + x.quantity, 0);
+      box.innerHTML = `
+        <table class="w-full text-xs text-slate-700">
+          <thead class="bg-slate-50 text-slate-500"><tr>
+            <th class="p-2 text-center w-10">#</th><th class="p-2 text-left">อุปกรณ์</th>
+            <th class="p-2 text-center w-20">คงเหลือ</th><th class="p-2 text-center w-28">จำนวนเบิก</th><th class="p-2 w-10"></th>
+          </tr></thead>
+          <tbody>${reqCart.map((it, i) => {
+            const rem = getRemaining(it.assetId), over = it.quantity > rem;
+            return `<tr class="border-t border-slate-100 ${over ? "bg-rose-50" : ""}">
+              <td class="p-2 text-center text-slate-400">${i + 1}</td>
+              <td class="p-2"><div class="font-bold text-slate-800">${esc(it.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(it.assetId)} · ${esc(it.category || "-")}</div></td>
+              <td class="p-2 text-center ${over ? "text-rose-600 font-bold" : "text-slate-500"}">${rem}</td>
+              <td class="p-2 text-center"><input type="number" min="1" max="${rem}" value="${it.quantity}" onchange="setCartQty(${i}, this.value)" class="w-20 px-2 py-1 border border-slate-300 rounded-lg text-center text-sm font-bold"></td>
+              <td class="p-2 text-center"><button type="button" onclick="removeCartItem(${i})" class="h-7 w-7 rounded-md text-rose-500 hover:bg-rose-50 cursor-pointer" title="ลบรายการ">✕</button></td>
+            </tr>`;
+          }).join("")}</tbody>
+          <tfoot class="bg-slate-50 font-bold"><tr class="border-t border-slate-200">
+            <td colspan="3" class="p-2 text-right">รวม ${reqCart.length} รายการ</td><td class="p-2 text-center text-blue-800">${sum} ชิ้น</td><td></td>
+          </tr></tfoot>
+        </table>`;
     }
 
     function setPickerSelected(a, keepText) {
@@ -1324,6 +1409,7 @@
     function refreshPickerSelection() {
       const id = $("assetSelect").value;
       if (id) { const a = findAsset(id); a && getRemaining(id) > 0 ? setPickerSelected(a) : clearPickerAsset(false); }
+      renderCart();   // อัปเดตยอดคงเหลือในตะกร้า
     }
 
     function handlePickerKey(e) {
@@ -1776,12 +1862,11 @@
        ========================================================= */
     async function handleSubmit(e) {
       e.preventDefault();
-      const assetId = $("assetSelect").value;
-      const asset = findAsset(assetId);
-      const qty = parseInt($("quantity").value) || 0;
-
-      if (!asset) { alert("🔍 กรุณาค้นหาและเลือกอุปกรณ์ที่ต้องการเบิกจากรายการ"); $("assetSearch").focus(); return; }
-      if (qty > getRemaining(assetId)) { alert(`⚠️ จำนวนที่ขอเบิก (${qty}) มากกว่ายอดคงเหลือ (${getRemaining(assetId)})`); return; }
+      // เลือกอุปกรณ์ + ใส่จำนวนไว้แต่ยังไม่กดเพิ่ม → เพิ่มลงรายการให้อัตโนมัติ
+      if ($("assetSelect").value && parseInt($("quantity").value) > 0 && !addCartItem()) return;
+      if (!reqCart.length) { alert("🔍 กรุณาค้นหาอุปกรณ์ ใส่จำนวน แล้วกด ➕ เพิ่มลงรายการ อย่างน้อย 1 รายการ"); $("assetSearch").focus(); return; }
+      const over = reqCart.filter(it => it.quantity > getRemaining(it.assetId));
+      if (over.length) { alert("⚠️ จำนวนที่ขอเบิกมากกว่ายอดคงเหลือ:\n" + over.map(it => `• ${it.assetName}: ขอ ${it.quantity} / คงเหลือ ${getRemaining(it.assetId)}`).join("\n")); return; }
       if (!$("branch").value) { alert("กรุณาเลือกสาขา"); return; }
       if (!compressedBase64) { alert("กรุณาแนบรูปภาพหลักฐาน หรือรอระบบโหลดรูปภาพสักครู่"); return; }
       if (sigPads.requester.isEmpty) { alert("✍️ กรุณาเซ็นลายเซ็นผู้ขอเบิกก่อนส่งคำขอ"); return; }
@@ -1795,16 +1880,16 @@
           staffName: $("staffName").value.trim(),
           department: $("department").value.trim(),
           branch: $("branch").value,
-          assetId: asset.id, assetName: asset.name, category: asset.category || "",
-          quantity: qty,
+          items: reqCart.map(it => ({ assetId: it.assetId, assetName: it.assetName, category: it.category, quantity: it.quantity })),
           notes: $("requisitionNotes").value.trim() || "-",
           imageBase64: compressedBase64,
           requesterSig: sigPads.requester.toDataURL()
         });
         if (r.status !== "success") throw new Error(r.message || "ไม่ทราบสาเหตุ");
-        alert(`✅ ส่งคำขอเบิกเรียบร้อย\nเลขที่ใบเบิก: ${r.requestId}\nสถานะ: รออนุมัติ`);
+        alert(`✅ ส่งคำขอเบิกเรียบร้อย\nเลขที่ใบเบิก: ${r.requestId}\nจำนวน ${reqCart.length} รายการ\nสถานะ: รออนุมัติ`);
         $("assetForm").reset();
         clearPickerAsset(false);
+        clearCart(true);
         compressedBase64 = "";
         $("previewContainer").classList.add("hidden");
         sigPads.requester.clear();
@@ -1845,6 +1930,46 @@
     }
     function setReqStatus(s) { reqStatusFilter = s; reqPage = 1; renderRequests(); }
 
+    /** รายการอุปกรณ์ในใบเบิก (ใบเก่า = 1 รายการ) */
+    function reqItems(r) {
+      let a = r && r.items;
+      if (typeof a === "string") { try { a = JSON.parse(a); } catch (_) { a = null; } }
+      if (Array.isArray(a) && a.length) return a;
+      return [{ assetId: r.assetId, assetName: r.assetName, category: r.category, quantity: r.quantity }];
+    }
+    /** แสดงรายการอุปกรณ์แบบย่อ (ตาราง / modal) */
+    function reqItemsCell(r, max) {
+      const items = reqItems(r);
+      if (items.length === 1) return `<div class="font-bold text-slate-800">${esc(items[0].assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(items[0].assetId)}</div>`;
+      max = max || 3;
+      return `<div class="text-[10px] font-bold text-indigo-700 mb-0.5">📦 ${items.length} รายการ</div>` +
+        items.slice(0, max).map(it => `<div class="text-slate-800"><span class="font-semibold">${esc(it.assetName)}</span> <span class="text-slate-400">× ${esc(it.quantity)}</span></div>`).join("") +
+        (items.length > max ? `<div class="text-[10px] text-slate-400">และอีก ${items.length - max} รายการ</div>` : "");
+    }
+    /** ตารางรายการอุปกรณ์เต็ม (+ เช็กสต็อกถ้า withStock) */
+    function reqItemsTable(r, withStock) {
+      const items = reqItems(r);
+      return `<div class="border border-slate-200 rounded-xl overflow-hidden"><table class="w-full text-xs">
+        <thead class="bg-slate-50 text-slate-500"><tr><th class="p-2 w-8 text-center">#</th><th class="p-2 text-left">อุปกรณ์</th><th class="p-2 text-center w-16">จำนวน</th>${withStock ? '<th class="p-2 text-center w-32">สต็อก</th>' : ""}</tr></thead>
+        <tbody>${items.map((it, i) => {
+          let st = "";
+          if (withStock) {
+            const a = findAsset(it.assetId), rem = a ? getRemaining(a.id) : null, q = parseInt(it.quantity) || 0;
+            st = rem === null ? '<span class="text-slate-500">ไม่พบในคลัง</span>'
+              : rem >= q ? `<span class="text-emerald-700 font-semibold">🟢 ${rem} → ${rem - q}</span>`
+              : `<span class="text-rose-700 font-bold">🔴 คงเหลือ ${rem}</span>`;
+            st = `<td class="p-2 text-center">${st}</td>`;
+          }
+          return `<tr class="border-t border-slate-100"><td class="p-2 text-center text-slate-400">${i + 1}</td>
+            <td class="p-2"><div class="font-bold text-slate-800">${esc(it.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(it.assetId)}${it.category ? " · " + esc(it.category) : ""}</div></td>
+            <td class="p-2 text-center font-black">${esc(it.quantity)}</td>${st}</tr>`;
+        }).join("")}</tbody></table></div>`;
+    }
+    /** รายการที่สต็อกไม่พอ */
+    function reqShortItems(r) {
+      return reqItems(r).filter(it => { const a = findAsset(it.assetId); return !a || (parseInt(it.quantity) || 0) > getRemaining(a.id); });
+    }
+
     /** ยกเลิกใบเบิก: รออนุมัติ = ผู้ขอ/ผู้อนุมัติ · อนุมัติแล้ว/รอฝากส่ง = HR Admin (คืนยอดเข้าคลัง) */
     function canCancel(r) {
       const u = (session && session.user) || {};
@@ -1859,7 +1984,9 @@
       const extra = back
         ? `\n\n⚠️ ระบบจะคืนยอด ${r.quantity} ชิ้น เข้าคลัง` + (r.status === "ISSUED" ? "\n(ใบนี้ HR จ่ายของไปแล้ว — ต้องได้ของคืนมาที่ HR ก่อน)" : "")
         : "";
-      const reason = prompt(`🚫 ยกเลิกใบเบิก ${id}\n${r.assetName} × ${r.quantity} · ${r.branch}${extra}\n\nกรุณาระบุเหตุผลที่ยกเลิก:`, "");
+      const its = reqItems(r);
+      const itemTxt = its.slice(0, 8).map(it => `• ${it.assetName} × ${it.quantity}`).join("\n") + (its.length > 8 ? `\n• และอีก ${its.length - 8} รายการ` : "");
+      const reason = prompt(`🚫 ยกเลิกใบเบิก ${id} · ${r.branch}\n${itemTxt}${extra}\n\nกรุณาระบุเหตุผลที่ยกเลิก:`, "");
       if (reason === null) return;
       if (!reason.trim()) { alert("กรุณาระบุเหตุผลที่ยกเลิก"); return; }
       try {
@@ -1899,7 +2026,7 @@
       const q = $("reqSearch").value.toLowerCase().trim();
       const list = globalRequests.filter(r =>
         (reqStatusFilter === "ALL" || r.status === reqStatusFilter) &&
-        (!q || [r.requestId, r.staffName, r.assetName, r.assetId, r.branch, r.department].join(" ").toLowerCase().includes(q)));
+        (!q || [r.requestId, r.staffName, r.branch, r.department].concat(reqItems(r).map(it => it.assetName + " " + it.assetId)).join(" ").toLowerCase().includes(q)));
       const pages = Math.max(1, Math.ceil(list.length / REQ_PAGE_SIZE));
       if (reqPage > pages) reqPage = pages;
       const pageItems = list.slice((reqPage - 1) * REQ_PAGE_SIZE, reqPage * REQ_PAGE_SIZE);
@@ -1936,8 +2063,8 @@
               <tr class="border-b border-slate-100 hover:bg-slate-50">
                 <td class="p-3 font-mono font-bold text-indigo-900 whitespace-nowrap">${id}</td>
                 <td class="p-3 text-slate-500 whitespace-nowrap">${esc(r.timestamp)}</td>
-                <td class="p-3"><div class="font-bold text-slate-800">${esc(r.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.assetId)}</div></td>
-                <td class="p-3 text-center font-black text-slate-900">${esc(r.quantity)}</td>
+                <td class="p-3">${reqItemsCell(r)}</td>
+                <td class="p-3 text-center font-black text-slate-900">${esc(r.quantity)}${reqItems(r).length > 1 ? '<div class="text-[10px] font-normal text-slate-400">ชิ้นรวม</div>' : ""}</td>
                 <td class="p-3"><div class="font-medium">${esc(r.staffName)}</div><div class="text-[10px] text-slate-400">แผนก: ${esc(r.department)}</div></td>
                 <td class="p-3 text-slate-700">${esc(r.branch)}</td>
                 <td class="p-3 text-center">${statusBadge(r.status)}${reason}</td>
@@ -1986,18 +2113,17 @@
 
       try {
         const r = await fetchRequestDetail(id, true);
-        const qty = parseInt(r.quantity) || 0, a = findAsset(r.assetId), rem = a ? getRemaining(a.id) : null;
-        const stock = rem === null
-          ? '<div class="p-2.5 rounded-xl bg-slate-100 text-slate-600 text-xs">ไม่พบอุปกรณ์นี้ในคลัง (อาจถูกลบไปแล้ว)</div>'
-          : rem >= qty
-            ? `<div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">🟢 สต็อกเพียงพอ: คงเหลือ ${rem} ชิ้น → หลังอนุมัติเหลือ ${rem - qty} ชิ้น</div>`
-            : `<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">🔴 สต็อกไม่พอ: คงเหลือ ${rem} ชิ้น แต่ขอเบิก ${qty} ชิ้น</div>`;
+        const items = reqItems(r), short = reqShortItems(r);
+        const stock = (!short.length
+          ? `<div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">🟢 สต็อกเพียงพอทุกรายการ (${items.length} รายการ · รวม ${esc(r.quantity)} ชิ้น)</div>`
+          : `<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">🔴 สต็อกไม่พอ / ไม่พบในคลัง ${short.length} รายการ — ระบบจะไม่ตัดสต็อกจนกว่าจะพอทุกรายการ</div>`)
+          + `<div class="mt-2">${reqItemsTable(r, true)}</div>`;
         const f = (l, v) => `<div><p class="text-[10px] text-slate-400">${l}</p><p class="font-bold text-slate-800">${esc(v || "-")}</p></div>`;
         box.innerHTML = `
           <div class="space-y-3">
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-50 border border-slate-200 rounded-xl p-4">
               ${f("วันที่ขอเบิก", r.timestamp)}${f("ผู้ขอเบิก", r.staffName)}${f("แผนก", r.department)}
-              ${f("สาขา", r.branch)}${f("อุปกรณ์", `${r.assetName} (${r.assetId})`)}${f("จำนวนที่ขอเบิก", qty + " ชิ้น")}
+              ${f("สาขา", r.branch)}${f("จำนวนรายการ", items.length + " รายการ")}${f("จำนวนที่ขอเบิกรวม", r.quantity + " ชิ้น")}
               <div class="col-span-full"><p class="text-[10px] text-slate-400">เหตุผลการเบิก</p><p class="text-slate-700">${esc(r.notes || "-")}</p></div>
             </div>
             ${stock}
@@ -2019,8 +2145,12 @@
       const reason = $("apvRejectReason").value.trim();
       if (isApprove) {
         if (sigPads.approver.isEmpty) { alert("✍️ กรุณาเซ็นลายเซ็นผู้อนุมัติก่อนกดอนุมัติ"); return; }
-        const r = reqDetailCache[id], rem = r ? getRemaining(r.assetId) : null;
-        if (r && (parseInt(r.quantity) || 0) > rem && !confirm("⚠️ สต็อกไม่พอสำหรับใบเบิกนี้ ต้องการอนุมัติต่อหรือไม่?")) return;
+        const r = reqDetailCache[id], short = r ? reqShortItems(r) : [];
+        if (short.length) {
+          alert("⚠️ สต็อกไม่พอ / ไม่พบในคลัง:\n" + short.map(it => `• ${it.assetName}: ขอ ${it.quantity} / คงเหลือ ${getRemaining(it.assetId)}`).join("\n") +
+            "\n\nกรุณาเติมสต็อกก่อน หรือ \"ไม่อนุมัติ\" แล้วให้สาขาส่งคำขอใหม่");
+          return;
+        }
 
       } else {
         if (!reason) { alert("กรุณาระบุเหตุผลที่ไม่อนุมัติ"); $("apvRejectReason").focus(); return; }
@@ -2063,7 +2193,7 @@
       const issued = ISSUED_PLUS.includes(r.status);
       const stamp = { APPROVED: "✔ อนุมัติแล้ว", ISSUED: "✔ จ่ายของแล้ว", SHIPPED: "🚚 ส่งไปสาขาแล้ว", RECEIVED: "✔ สาขารับของแล้ว" }[r.status];
 
-      const asset = findAsset(r.assetId) || {};
+      const items = reqItems(r);
       const sig = src => src ? `<img src="${esc(src)}" style="height:58px;max-width:100%;object-fit:contain;display:block;margin:0 auto;">` : '<div style="height:58px;"></div>';
       const box = (title, s, name, pos, date) => `
         <div style="border:1px solid #94a3b8;border-radius:8px;padding:10px 8px;text-align:center;font-size:11px;">
@@ -2101,10 +2231,11 @@
               <th style="${td}width:40px;text-align:center;">ลำดับ</th><th style="${td}width:110px;">รหัสอุปกรณ์</th><th style="${td}">รายการพัสดุ / อุปกรณ์</th>
               <th style="${td}width:90px;text-align:center;">หมวดหมู่</th><th style="${td}width:80px;text-align:center;">จำนวนขอเบิก</th><th style="${td}width:80px;text-align:center;">จำนวนจ่ายจริง</th>
             </tr></thead>
-            <tbody><tr>
-              <td style="${td}text-align:center;">1</td><td style="${td}font-family:monospace;font-weight:700;">${esc(r.assetId)}</td><td style="${td}font-weight:700;">${esc(r.assetName)}</td>
-              <td style="${td}text-align:center;">${esc(r.category || asset.category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(r.quantity) : ""}</td>
-            </tr></tbody>
+            <tbody>${items.map((it, i) => `<tr>
+              <td style="${td}text-align:center;">${i + 1}</td><td style="${td}font-family:monospace;font-weight:700;">${esc(it.assetId)}</td><td style="${td}font-weight:700;">${esc(it.assetName)}</td>
+              <td style="${td}text-align:center;">${esc(it.category || (findAsset(it.assetId) || {}).category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(it.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(it.quantity) : ""}</td>
+            </tr>`).join("")}</tbody>
+            ${items.length > 1 ? `<tfoot><tr style="background:#f1f5f9;font-weight:800;"><td colspan="4" style="${td}text-align:right;">รวม ${items.length} รายการ</td><td style="${td}text-align:center;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-size:14px;">${issued ? esc(r.quantity) : ""}</td></tr></tfoot>` : ""}
           </table>
           <div style="margin-bottom:${r.shipVia || r.deliveryMethod === "PICKUP" ? 8 : 22}px;"><b>เหตุผลการเบิก:</b> ${esc(r.notes || "-")}</div>
           ${r.shipVia ? `<div style="margin-bottom:22px;padding:6px 10px;border:1px dashed #64748b;border-radius:6px;"><b>🚚 การจัดส่ง:</b> ฝากส่งกับ${esc(r.shipVia)} — ผู้นำส่ง <b>${esc(r.shipCarrier || "-")}</b> · วันที่ฝาก ${esc(r.shippedAt || "-")} · ส่งถึง <b>${esc(r.branch)}</b>${r.shipNote ? " · " + esc(r.shipNote) : ""}</div>`
@@ -2563,9 +2694,10 @@
       document.querySelector('input[name="issMethod"][value="SHIP"]').checked = true;
       onIssMethodChange();
       $("issDetail").innerHTML = `
+        <div class="mb-3">${reqItemsTable(r, false)}</div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><p class="text-[10px] text-slate-400">อุปกรณ์</p><p class="font-bold text-slate-800">${esc(r.assetName)} <span class="font-mono font-normal text-slate-400">(${esc(r.assetId)})</span></p></div>
-          <div><p class="text-[10px] text-slate-400">จำนวนที่ต้องจ่าย</p><p class="font-black text-lg text-slate-900">${esc(r.quantity)} ชิ้น</p></div>
+          <div><p class="text-[10px] text-slate-400">จำนวนรายการ</p><p class="font-bold text-slate-800">${reqItems(r).length} รายการ</p></div>
+          <div><p class="text-[10px] text-slate-400">จำนวนที่ต้องจ่ายรวม</p><p class="font-black text-lg text-slate-900">${esc(r.quantity)} ชิ้น</p></div>
           <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก / สาขา</p><p class="font-bold text-slate-800">${esc(r.staffName)} · ${esc(r.branch)}</p></div>
           <div><p class="text-[10px] text-slate-400">อนุมัติโดย</p><p class="font-bold text-slate-800">${esc(r.approverName || "-")}</p></div>
         </div>
@@ -2620,9 +2752,10 @@
     let currentShipId = null;
     function reqSummaryHtml(r) {
       return `
+        <div class="mb-3">${reqItemsTable(r, false)}</div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><p class="text-[10px] text-slate-400">อุปกรณ์</p><p class="font-bold text-slate-800">${esc(r.assetName)} <span class="font-mono font-normal text-slate-400">(${esc(r.assetId)})</span></p></div>
-          <div><p class="text-[10px] text-slate-400">จำนวน</p><p class="font-black text-lg text-slate-900">${esc(r.quantity)} ชิ้น</p></div>
+          <div><p class="text-[10px] text-slate-400">จำนวนรายการ</p><p class="font-bold text-slate-800">${reqItems(r).length} รายการ</p></div>
+          <div><p class="text-[10px] text-slate-400">จำนวนรวม</p><p class="font-black text-lg text-slate-900">${esc(r.quantity)} ชิ้น</p></div>
           <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก</p><p class="font-bold text-slate-800">${esc(r.staffName)}</p></div>
           <div><p class="text-[10px] text-slate-400">ส่งไปสาขา</p><p class="font-bold text-indigo-800">${esc(r.branch)}</p></div>
         </div>`;
