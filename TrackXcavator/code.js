@@ -1,4 +1,4 @@
-// CODE_VERSION: r04-2026-11-10-refund-status-labels
+// CODE_VERSION: r05-2026-11-10-coupon-overdue-batch
 // ==========================================
 // CONFIGURATION & HELPER FUNCTIONS
 // ==========================================
@@ -494,7 +494,7 @@ function doGet(e) {
     if (action === "getAllData") {
       return getAllData(e.parameter);
     } else if (action === "checkStatus") {
-      return responseJSON({ status: "success", codeVersion: "r04-2026-11-10-refund-status-labels" });
+      return responseJSON({ status: "success", codeVersion: "r05-2026-11-10-coupon-overdue-batch" });
     } else if (action === "getDashboard") {
       return getDashboardData();
     } else if (action === "getReportList") {
@@ -1399,7 +1399,11 @@ function claimCoupon(p, isRawObject) {
 // ข้อมูลส่วนนี้อ่านจาก Google Sheet โดยตรง (ไม่ผ่าน BigQuery) เพราะ External Table
 // ใน BigQuery จะไม่เห็นคอลัมน์ใหม่จนกว่าจะแก้ schema ของตาราง
 var COUPON_VALUE = 4000;
-var COUPON_REFUND_COLUMNS = ['coupon_no', 'coupon_sent_date', 'refund_amount', 'refund_date', 'refund_ref', 'refund_remark'];
+var COUPON_REFUND_COLUMNS = ['coupon_no', 'coupon_sent_date', 'refund_amount', 'refund_date', 'refund_ref', 'refund_remark', 'coupon_batch_no'];
+// ส่งคูปองให้ Yanmar แล้วเกินกี่วันยังไม่ได้เงินคืน → ถือว่า "ค้างนาน" (แสดงเตือนในแอป)
+var COUPON_OVERDUE_DAYS = 60;
+// รูปแบบเลขรอบส่งอัตโนมัติ: YB-ปีเดือน-ลำดับ เช่น YB-2611-01
+var COUPON_BATCH_PREFIX = 'YB';
 
 /**
  * 🔧 รันครั้งเดียวใน Apps Script Editor (หรือปล่อยให้ระบบเรียกเองตอนบันทึกคูปองครั้งแรก)
@@ -1435,9 +1439,33 @@ function setupCouponRefundColumns() {
 /** เรียกก่อนเขียนข้อมูลคูปอง: ถ้ายังไม่มีคอลัมน์ใหม่ ให้สร้างให้อัตโนมัติ (เช็กซ้ำทุก 6 ชม.) */
 function ensureCouponColumns() {
   var cache = CacheService.getScriptCache();
-  if (cache.get('coupon_cols_ok') === '1') return;
+  if (cache.get('coupon_cols_ok_v2') === '1') return;
   setupCouponRefundColumns();
-  cache.put('coupon_cols_ok', '1', 21600);
+  cache.put('coupon_cols_ok_v2', '1', 21600);
+}
+
+function normalizeBatchNo(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).trim().replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * ออกเลขรอบส่งถัดไปของเดือนที่ส่ง เช่น YB-2611-01, YB-2611-02 ...
+ * sentDate: 'yyyy-MM-dd' (ใช้ปี/เดือนของวันที่ส่ง)
+ */
+function nextCouponBatchNo_(rows, sentDate) {
+  var d = new Date(String(sentDate) + 'T00:00:00');
+  if (isNaN(d.getTime())) d = new Date();
+  var prefix = COUPON_BATCH_PREFIX + '-' + Utilities.formatDate(d, 'Asia/Bangkok', 'yyMM') + '-';
+  var maxSeq = 0;
+  rows.forEach(function (r) {
+    var b = normalizeBatchNo(ciGet(r, 'coupon_batch_no'));
+    if (b.indexOf(prefix) !== 0) return;
+    var n = parseInt(b.substring(prefix.length), 10);
+    if (!isNaN(n) && n > maxSeq) maxSeq = n;
+  });
+  var seq = String(maxSeq + 1);
+  return prefix + (seq.length < 2 ? '0' + seq : seq);
 }
 
 function normalizeCouponNo(val) {
@@ -1510,12 +1538,13 @@ function computeRefundStatus(r) {
   var waitingDays = null;
   if (key === 'waiting') {
     var d = new Date(sentDate);
-    if (!isNaN(d.getTime())) waitingDays = Math.floor((new Date().getTime() - d.getTime()) / 86400000);
+    if (!isNaN(d.getTime())) waitingDays = Math.max(0, Math.floor((new Date().getTime() - d.getTime()) / 86400000));
   }
   return {
     expected: expected, refund: refund, diff: refund === null ? null : refund - expected,
     key: key, label: label, sentDate: sentDate, refundDate: _fmtSheetDate(ciGet(r, 'refund_date')),
-    waitingDays: waitingDays
+    waitingDays: waitingDays,
+    overdue: key === 'waiting' && waitingDays !== null && waitingDays > COUPON_OVERDUE_DAYS
   };
 }
 
@@ -1580,8 +1609,10 @@ function getCouponRefundList(isRawObject) {
       totalCoupons: 0, expectedTotal: 0, notSentCount: 0, noCouponNoCount: 0,
       waitingCount: 0, waitingAmount: 0, receivedCount: 0, receivedTotal: 0,
       fullCount: 0, partialCount: 0, unpaidCount: 0, overCount: 0, shortfallTotal: 0, duplicateCount: 0,
-      pendingCouponCount: 0, pendingCouponAmount: 0, entitledCount: 0, entitledTotal: 0
+      pendingCouponCount: 0, pendingCouponAmount: 0, entitledCount: 0, entitledTotal: 0,
+      overdueCount: 0, overdueAmount: 0, overdueDays: COUPON_OVERDUE_DAYS, oldestWaitingDays: 0
     };
+    var batches = {};
     var list = [];
 
     rows.forEach(function (r) {
@@ -1594,7 +1625,7 @@ function getCouponRefundList(isRawObject) {
         if (pmRound <= 0 || !hasCouponEntitlement_(r)) return;
         st = {
           expected: COUPON_VALUE, refund: null, diff: null, key: 'pending_coupon',
-          label: 'ค้างส่งคูปอง (ยังไม่ได้รับคูปอง)', sentDate: '', refundDate: '', waitingDays: null
+          label: 'ค้างส่งคูปอง (ยังไม่ได้รับคูปอง)', sentDate: '', refundDate: '', waitingDays: null, overdue: false
         };
         s.pendingCouponCount++;
         s.pendingCouponAmount += st.expected;
@@ -1613,7 +1644,31 @@ function getCouponRefundList(isRawObject) {
       if (dup) s.duplicateCount++;
       if (st.key === 'not_sent') s.notSentCount++;
       if (st.key === 'no_coupon_no') s.noCouponNoCount++;
-      if (st.key === 'waiting') { s.waitingCount++; s.waitingAmount += st.expected; }
+      if (st.key === 'waiting') {
+        s.waitingCount++; s.waitingAmount += st.expected;
+        if (st.waitingDays !== null && st.waitingDays > s.oldestWaitingDays) s.oldestWaitingDays = st.waitingDays;
+      }
+      if (st.overdue) { s.overdueCount++; s.overdueAmount += st.expected; }
+
+      // สรุปตามรอบส่ง (ใบที่ส่งก่อนมีระบบเลขรอบ จัดเป็น "ไม่มีเลขรอบ")
+      if (st.sentDate) {
+        var bNo = normalizeBatchNo(ciGet(r, 'coupon_batch_no')) || '(ไม่มีเลขรอบ)';
+        var b = batches[bNo] || (batches[bNo] = {
+          batchNo: bNo, sentDate: st.sentDate, count: 0, expected: 0, received: 0,
+          waitingCount: 0, fullCount: 0, problemCount: 0, overdueCount: 0, maxWaitingDays: 0
+        });
+        if (st.sentDate < b.sentDate) b.sentDate = st.sentDate;
+        b.count++;
+        b.expected += st.expected;
+        if (st.refund !== null) b.received += Math.max(st.refund, 0);
+        if (st.key === 'waiting') {
+          b.waitingCount++;
+          if (st.waitingDays !== null && st.waitingDays > b.maxWaitingDays) b.maxWaitingDays = st.waitingDays;
+        }
+        if (st.key === 'full' || st.key === 'over') b.fullCount++;
+        if (st.key === 'partial' || st.key === 'unpaid') b.problemCount++;
+        if (st.overdue) b.overdueCount++;
+      }
       if (st.refund !== null) { s.receivedCount++; s.receivedTotal += Math.max(st.refund, 0); }
       if (st.key === 'full') s.fullCount++;
       if (st.key === 'over') s.overCount++;
@@ -1624,8 +1679,10 @@ function getCouponRefundList(isRawObject) {
       list.push(buildCouponListItem_(r, cn, coupon, st, dup));
     });
     s.outstandingTotal = s.expectedTotal - s.receivedTotal;
+    var batchList = Object.keys(batches).map(function (k) { return batches[k]; })
+      .sort(function (a, b) { return String(b.sentDate).localeCompare(String(a.sentDate)) || String(b.batchNo).localeCompare(String(a.batchNo)); });
 
-    return responseJSON({ status: 'success', summary: s, data: list }, isRawObject);
+    return responseJSON({ status: 'success', summary: s, data: list, batches: batchList }, isRawObject);
   } catch (err) {
     return responseJSON({ status: 'error', message: err.toString(), summary: {}, data: [] }, isRawObject);
   }
@@ -1651,6 +1708,8 @@ function buildCouponListItem_(r, cn, coupon, st, dup) {
         statusKey: st.key,
         statusLabel: st.label,
         waitingDays: st.waitingDays,
+        overdue: !!st.overdue,
+        batchNo: normalizeBatchNo(ciGet(r, 'coupon_batch_no')),
         duplicate: dup
   };
 }
@@ -1671,14 +1730,16 @@ function markCouponsSent(p, isRawObject) {
 
     var sheet = getSheet(SHEET_TABS.pm_log);
     var rows = sheetToObjects(sheet);
+    // เลขรอบส่ง: ใช้ที่ผู้ใช้ระบุ ถ้าว่างให้ระบบออกเลขถัดไปของเดือนที่ส่ง
+    var batchNo = clear ? '' : (normalizeBatchNo(p.batchNo) || nextCouponBatchNo_(rows, sentDate));
     var updated = [], notFound = [];
     nos.forEach(function (cn) {
       var row = findRowByCouponNo_(rows, cn);
       if (!row) { notFound.push(cn); return; }
-      updateRowByObject(sheet, row.__row, { coupon_sent_date: clear ? '' : sentDate });
+      updateRowByObject(sheet, row.__row, { coupon_sent_date: clear ? '' : sentDate, coupon_batch_no: batchNo });
       updated.push(cn);
     });
-    return responseJSON({ status: 'success', updated: updated, notFound: notFound }, isRawObject);
+    return responseJSON({ status: 'success', updated: updated, notFound: notFound, batchNo: batchNo }, isRawObject);
   } catch (err) {
     return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
   } finally {

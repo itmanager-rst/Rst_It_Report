@@ -573,6 +573,7 @@ body {
           </button>
           <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-coupon" type="button" onclick="loadCouponRefund()">
             <i class="fa-solid fa-money-bill-transfer me-2"></i> เงินคืนคูปอง Yanmar
+            <span class="badge rounded-pill bg-danger ms-1 d-none" id="cpNavBadge" title="คูปองรอเงินโอนค้างนาน"></span>
           </button>
         </div>
         <div>
@@ -589,6 +590,11 @@ body {
           <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
             <h5 class="fw-bold mb-0"><i class="fa-solid fa-chart-pie text-danger me-2"></i>ภาพรวมเครื่องจักรและงาน PM</h5>
             <small class="text-muted" id="ovUpdatedAt">กำลังโหลดข้อมูล...</small>
+          </div>
+          <div class="alert alert-danger py-2 px-3 mb-3 d-none d-flex align-items-center flex-wrap gap-2 cp-overdue-alert" id="ovCouponOverdueAlert" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span class="me-auto" id="ovCouponOverdueText"></span>
+            <button class="btn btn-sm btn-danger" onclick="goToCouponOverdue()"><i class="fa-solid fa-arrow-right me-1"></i> ดูรายการ</button>
           </div>
           <p class="text-muted small mb-3">คลิกที่การ์ดหรือรายการในกราฟ เพื่อไปดูรายละเอียดในตารางสถานะเครื่องจักร</p>
 
@@ -1143,6 +1149,42 @@ body {
             </div>
           </div>
 
+          <div class="alert alert-danger py-2 px-3 mb-3 d-none d-flex align-items-center flex-wrap gap-2 cp-overdue-alert" id="cpOverdueAlert" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span class="me-auto" id="cpOverdueText"></span>
+            <button class="btn btn-sm btn-danger" onclick="goToCouponOverdue()"><i class="fa-solid fa-filter me-1"></i> แสดงเฉพาะใบค้างนาน</button>
+          </div>
+
+          <div class="table-container mb-3">
+            <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+              <h6 class="fw-bold mb-0 me-auto"><i class="fa-solid fa-layer-group me-1 text-primary"></i> สรุปตามรอบส่ง (ใบนำส่ง)</h6>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#cpBatchCollapse"><i class="fa-solid fa-chevron-down me-1"></i> แสดง/ซ่อน</button>
+            </div>
+            <div class="collapse show" id="cpBatchCollapse">
+              <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                <table class="table table-sm table-hover align-middle mb-0" id="tbCouponBatchTable">
+                  <thead>
+                    <tr>
+                      <th>เลขรอบส่ง</th>
+                      <th>วันที่ส่ง</th>
+                      <th class="text-center">จำนวน</th>
+                      <th class="text-end">มูลค่า</th>
+                      <th class="text-end">ได้เงินคืนแล้ว</th>
+                      <th class="text-center">รอเงิน</th>
+                      <th class="text-center">เงินคืนครบ</th>
+                      <th class="text-center">ไม่ครบ / ไม่จ่าย</th>
+                      <th>ความคืบหน้า</th>
+                      <th class="text-center">ดู</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbCouponBatch">
+                    <tr><td colspan="10" class="text-center py-3 text-muted">ยังไม่มีรอบส่ง</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <div class="table-container">
             <div class="row g-2 mb-3 align-items-center">
               <div class="col-lg-4">
@@ -1155,6 +1197,7 @@ body {
                 <button class="btn btn-sm btn-outline-dark cp-filter active" onclick="setCouponFilter('all', this)">ทั้งหมด</button>
                 <button class="btn btn-sm btn-outline-secondary cp-filter" onclick="setCouponFilter('not_sent', this)">ยังไม่ส่งคูปอง</button>
                 <button class="btn btn-sm btn-outline-info cp-filter" onclick="setCouponFilter('waiting', this)">รอเงินโอน</button>
+                <button class="btn btn-sm btn-outline-danger cp-filter" id="cpFilterOverdueBtn" onclick="setCouponFilter('overdue', this)">ค้างนาน &gt; 60 วัน</button>
                 <button class="btn btn-sm btn-outline-success cp-filter" onclick="setCouponFilter('full', this)">เงินคืนครบ</button>
                 <button class="btn btn-sm btn-outline-danger cp-filter" onclick="setCouponFilter('problem', this)">เงินคืนไม่ครบ / ไม่จ่าย</button>
                 <button class="btn btn-sm btn-outline-warning text-dark cp-filter" onclick="setCouponFilter('no_coupon_no', this)">ไม่มีเลขคูปอง</button>
@@ -1181,7 +1224,7 @@ body {
                     <th>รหัสเครื่อง / ลูกค้า</th>
                     <th class="text-center">รอบ PM</th>
                     <th class="text-end">มูลค่าคูปอง</th>
-                    <th>วันที่ส่ง Yanmar</th>
+                    <th>วันที่ส่ง / รอบส่ง</th>
                     <th class="text-end">Yanmar โอนคืน</th>
                     <th>วันที่ได้รับ / อ้างอิง</th>
                     <th class="text-end">ส่วนต่าง</th>
@@ -1250,8 +1293,17 @@ body {
         </div>
         <div class="modal-body">
           <div class="mb-2 small" id="markSentInfo">-</div>
-          <label class="form-label form-label-sm fw-bold">วันที่ส่งคูปอง *</label>
-          <input type="date" id="markSentDateInput" class="form-control form-control-sm">
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label form-label-sm fw-bold">วันที่ส่งคูปอง *</label>
+              <input type="date" id="markSentDateInput" class="form-control form-control-sm" onchange="suggestBatchNo()">
+            </div>
+            <div class="col-6">
+              <label class="form-label form-label-sm fw-bold">เลขรอบส่ง (ใบนำส่ง)</label>
+              <input type="text" id="markSentBatchInput" class="form-control form-control-sm font-monospace" placeholder="ระบบออกเลขให้อัตโนมัติ">
+            </div>
+          </div>
+          <div class="small text-muted mt-1">ระบบออกเลขให้เป็น YB-ปีเดือน-ลำดับ ถ้าต้องการเพิ่มใบเข้ารอบเดิม พิมพ์เลขรอบเดิมแทนได้</div>
         </div>
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-sm btn-outline-danger me-auto" onclick="submitMarkSent(true)">ยกเลิกสถานะส่ง</button>
@@ -2364,6 +2416,7 @@ function loadAllData(forceRefresh = false) {
     // Matrix ต้องใช้ทั้ง service_report และ pm_log → สร้างหลังโหลดครบทั้งคู่
     rawMatrixData = buildPMMatrixFromDashboard(rawDashboardData);
     reapplyAllFilters();
+    primeCouponAlerts();
   }).finally(() => {
     allDataLoadPromise = null;
   });
@@ -3928,6 +3981,7 @@ function loadCouponRefund(forceRefresh = false) {
       // คีย์ไม่ซ้ำต่องาน PM (ticket id ใน pm_log อาจซ้ำได้)
       couponRefundData = (res.data || []).map(c => Object.assign(c, { key: `${c.machineId}|${c.pmRound}` }));
       couponRefundSummary = res.summary || {};
+      couponBatchData = Array.isArray(res.batches) ? res.batches : [];
       couponRefundLoaded = true;
       couponSelected.clear();
       renderCouponSummary();
@@ -3941,7 +3995,95 @@ function loadCouponRefund(forceRefresh = false) {
   return couponRefundPromise;
 }
 
+let couponBatchData = [];
+
+// ---------- แจ้งเตือนคูปองค้างนาน ----------
+function renderCouponOverdueAlerts() {
+  const s = couponRefundSummary || {};
+  const n = Number(s.overdueCount || 0);
+  const days = s.overdueDays || 60;
+  const txt = `มีคูปองส่งให้ Yanmar แล้วเกิน ${days} วันยังไม่ได้เงินคืน <strong>${cpMoney(n)} ใบ</strong> รวม <strong>${cpMoney(s.overdueAmount)} บาท</strong>` +
+    (s.oldestWaitingDays ? ` · ค้างนานสุด ${cpMoney(s.oldestWaitingDays)} วัน` : '') + ' — ควรติดตามกับ Yanmar';
+  [['ovCouponOverdueAlert', 'ovCouponOverdueText'], ['cpOverdueAlert', 'cpOverdueText']].forEach(([boxId, textId]) => {
+    const box = document.getElementById(boxId), t = document.getElementById(textId);
+    if (!box) return;
+    box.classList.toggle('d-none', n === 0);
+    if (t) t.innerHTML = txt;
+  });
+  const badge = document.getElementById('cpNavBadge');
+  if (badge) { badge.innerText = n; badge.classList.toggle('d-none', n === 0); }
+  const fb = document.getElementById('cpFilterOverdueBtn');
+  if (fb) fb.innerText = `ค้างนาน > ${days} วัน` + (n ? ` (${n})` : '');
+}
+
+function goToCouponOverdue() {
+  const navBtn = document.querySelector('[data-bs-target="#tab-coupon"]');
+  if (navBtn) bootstrap.Tab.getOrCreateInstance(navBtn).show();
+  const go = () => setCouponFilter('overdue', document.getElementById('cpFilterOverdueBtn'));
+  if (couponRefundLoaded) go(); else loadCouponRefund().then(go);
+}
+
+// โหลดข้อมูลคูปองเบื้องหลังครั้งแรก เพื่อแสดงแจ้งเตือนในหน้าภาพรวม/แท็บ โดยไม่ต้องกดเข้าแท็บคูปอง
+function primeCouponAlerts() {
+  if (couponRefundLoaded || couponRefundPromise) return;
+  setTimeout(() => { if (!couponRefundLoaded && !couponRefundPromise) loadCouponRefund(); }, 1500);
+}
+
+// ---------- สรุปตามรอบส่ง ----------
+function renderCouponBatchTable() {
+  const tbody = document.getElementById('tbCouponBatch');
+  if (!tbody) return;
+  if (!couponBatchData.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-3 text-muted">ยังไม่มีรอบส่ง — ติ๊กเลือกคูปองแล้วกด "ส่งให้ Yanmar แล้ว" เพื่อสร้างรอบส่ง</td></tr>';
+    return;
+  }
+  tbody.innerHTML = couponBatchData.map(b => {
+    const done = b.fullCount + b.problemCount;
+    const pct = b.count ? Math.round(done * 100 / b.count) : 0;
+    const noBatch = b.batchNo.startsWith('(');
+    return `
+      <tr class="${b.overdueCount ? 'table-danger' : ''}">
+        <td><strong class="font-monospace">${cpText(b.batchNo)}</strong></td>
+        <td>${cpText(b.sentDate)}</td>
+        <td class="text-center">${cpMoney(b.count)}</td>
+        <td class="text-end">${cpMoney(b.expected)}</td>
+        <td class="text-end text-success fw-bold">${cpMoney(b.received)}</td>
+        <td class="text-center">${b.waitingCount ? `<span class="badge bg-info text-dark">${b.waitingCount}</span>${b.maxWaitingDays ? `<div class="small ${b.overdueCount ? 'text-danger fw-bold' : 'text-muted'}">${b.maxWaitingDays} วัน</div>` : ''}` : '-'}</td>
+        <td class="text-center">${b.fullCount ? `<span class="badge bg-success">${b.fullCount}</span>` : '-'}</td>
+        <td class="text-center">${b.problemCount ? `<span class="badge bg-danger">${b.problemCount}</span>` : '-'}</td>
+        <td style="min-width:120px;">
+          <div class="progress" style="height:8px;" title="ปิดยอดแล้ว ${done}/${b.count}"><div class="progress-bar ${b.problemCount ? 'bg-warning' : 'bg-success'}" style="width:${pct}%"></div></div>
+          <div class="small text-muted">${done}/${b.count} ใบ (${pct}%)</div>
+        </td>
+        <td class="text-center">${noBatch ? '' : `<button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="showCouponBatch('${cpAttr(b.batchNo)}')"><i class="fa-solid fa-eye"></i></button>`}</td>
+      </tr>`;
+  }).join('');
+}
+
+function showCouponBatch(batchNo) {
+  const searchEl = document.getElementById('searchCoupon');
+  if (searchEl) searchEl.value = batchNo;
+  const allBtn = document.querySelector('.cp-filter');
+  setCouponFilter('all', allBtn);
+  const tbl = document.getElementById('tbCouponTable');
+  if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// เลขรอบส่งถัดไป (คำนวณจากข้อมูลที่โหลดมา ฝั่งเซิร์ฟเวอร์ออกเลขซ้ำให้อีกชั้นถ้าช่องนี้ว่าง)
+function suggestBatchNo() {
+  const dateVal = document.getElementById('markSentDateInput').value || cpToday();
+  const prefix = `YB-${dateVal.slice(2, 4)}${dateVal.slice(5, 7)}-`;
+  let maxSeq = 0;
+  couponRefundData.forEach(c => {
+    const b = String(c.batchNo || '');
+    if (b.startsWith(prefix)) { const n = parseInt(b.slice(prefix.length), 10); if (!isNaN(n) && n > maxSeq) maxSeq = n; }
+  });
+  document.getElementById('markSentBatchInput').value = prefix + String(maxSeq + 1).padStart(2, '0');
+}
+
 function renderCouponSummary() {
+  renderCouponOverdueAlerts();
+  renderCouponBatchTable();
   const s = couponRefundSummary || {};
   const set = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
   // สิทธิ์ทั้งหมด = ได้รับคูปองแล้ว + ค้างส่งคูปอง (ตรงกับการ์ดยอดรวมสิทธิ์คูปองหน้าตารางสถานะเครื่องจักร)
@@ -3970,8 +4112,9 @@ function getFilteredCoupons() {
     if (couponFilter === 'problem' && !(c.statusKey === 'partial' || c.statusKey === 'unpaid')) return false;
     if (couponFilter === 'full' && !(c.statusKey === 'full' || c.statusKey === 'over')) return false;
     if (['not_sent', 'waiting', 'no_coupon_no', 'pending_coupon'].includes(couponFilter) && c.statusKey !== couponFilter) return false;
+    if (couponFilter === 'overdue' && !c.overdue) return false;
     if (!q) return true;
-    return [c.couponNo, c.ticketId, c.machineId, c.customer, c.model, c.refundRef]
+    return [c.couponNo, c.ticketId, c.machineId, c.customer, c.model, c.refundRef, c.batchNo]
       .some(v => String(v || '').toLowerCase().includes(q));
   });
 }
@@ -3990,7 +4133,7 @@ function couponStatusBadge(c) {
   const [cls, icon] = map[c.statusKey] || ['bg-light text-dark', 'fa-circle'];
   let extra = '';
   if (c.statusKey === 'waiting' && c.waitingDays !== null) {
-    extra = `<div class="small ${c.waitingDays > 60 ? 'text-danger fw-bold' : 'text-muted'}">รอมาแล้ว ${c.waitingDays} วัน</div>`;
+    extra = `<div class="small ${c.overdue ? 'text-danger fw-bold' : 'text-muted'}">${c.overdue ? '⚠️ ค้างนาน ' : 'รอมาแล้ว '}${c.waitingDays} วัน</div>`;
   }
   if (c.duplicate) extra += `<div class="small text-danger fw-bold">⚠️ เลขคูปองซ้ำ</div>`;
   return `<span class="badge ${cls}"><i class="fa-solid ${icon} me-1"></i>${cpText(c.statusLabel)}</span>${extra}`;
@@ -4018,14 +4161,14 @@ function renderCouponRefundTable() {
       : `<span class="text-success">0</span>`;
     const tid = cpAttr(c.key);
     return `
-      <tr>
+      <tr class="${c.overdue ? 'table-danger' : ''}">
         <td class="text-center cp-admin" style="${admin ? '' : 'display:none'}"><input type="checkbox" class="form-check-input cp-check" value="${tid}" ${couponSelected.has(c.key) ? 'checked' : ''} onchange="toggleCouponSelect('${tid}', this.checked)"></td>
         <td>${c.couponNo ? `<strong class="font-monospace">${cpText(c.couponNo)}</strong>` : '<span class="text-warning fw-bold">— ยังไม่กรอก —</span>'}</td>
         <td><span class="badge bg-secondary">${cpText(c.ticketId) || '-'}</span><div class="small text-muted">${cpText(c.serviceDate)}</div></td>
         <td><strong>${cpText(c.machineId)}</strong><div class="small text-muted">${cpText(c.customer)}</div></td>
         <td class="text-center fw-bold text-primary">${c.pmRound}</td>
         <td class="text-end">${cpMoney(c.expected)}</td>
-        <td>${cpText(c.couponSentDate) || '<span class="text-muted">-</span>'}</td>
+        <td>${cpText(c.couponSentDate) || '<span class="text-muted">-</span>'}${c.batchNo ? `<div class="small"><a href="javascript:void(0)" class="font-monospace text-decoration-none" onclick="showCouponBatch('${cpAttr(c.batchNo)}')">${cpText(c.batchNo)}</a></div>` : ''}</td>
         <td class="text-end fw-bold">${c.refundAmount === null ? '<span class="text-muted">-</span>' : cpMoney(c.refundAmount)}</td>
         <td>${cpText(c.refundDate) || '-'}${c.refundRef ? `<div class="small text-muted">${cpText(c.refundRef)}</div>` : ''}${c.refundRemark ? `<div class="small fst-italic text-muted">${cpText(c.refundRemark)}</div>` : ''}</td>
         <td class="text-end">${diffHtml}</td>
@@ -4064,6 +4207,7 @@ function openMarkSentModal() {
     `คูปองที่เลือก <strong>${sel.length}</strong> ใบ มูลค่ารวม <strong>${cpMoney(sel.reduce((s, c) => s + c.expected, 0))}</strong> บาท` +
     (noNumber ? `<div class="text-danger mt-1">⚠️ มี ${noNumber} ใบที่ยังไม่กรอกหมายเลขคูปอง จะถูกข้าม</div>` : '');
   document.getElementById("markSentDateInput").value = cpToday();
+  suggestBatchNo();
   bootstrap.Modal.getOrCreateInstance(document.getElementById("markSentModal")).show();
 }
 
@@ -4075,10 +4219,11 @@ async function submitMarkSent(clear) {
   try {
     const couponNos = couponRefundData.filter(c => couponSelected.has(c.key) && c.couponNo).map(c => c.couponNo);
     if (!couponNos.length) { hideOperation(); alert("คูปองที่เลือกยังไม่มีหมายเลขคูปอง"); return; }
-    const res = await postJson({ action: "markCouponsSent", couponNos, sentDate, clear: !!clear, updatedBy: currentUser });
+    const batchNo = clear ? '' : (document.getElementById("markSentBatchInput").value || '').trim();
+    const res = await postJson({ action: "markCouponsSent", couponNos, sentDate, batchNo, clear: !!clear, updatedBy: currentUser });
     hideOperation();
     if (res.status !== 'success') throw new Error(res.message);
-    let msg = `บันทึกแล้ว ${res.updated.length} ใบ`;
+    let msg = `บันทึกแล้ว ${res.updated.length} ใบ` + (res.batchNo ? `\nเลขรอบส่ง: ${res.batchNo}` : '');
     const skippedNoNumber = couponRefundData.filter(c => couponSelected.has(c.key) && !c.couponNo).length;
     if (skippedNoNumber) msg += `\nข้าม ${skippedNoNumber} ใบ (ยังไม่มีเลขคูปอง)`;
     if (res.notFound && res.notFound.length) msg += `\nไม่พบ: ${res.notFound.join(', ')}`;
