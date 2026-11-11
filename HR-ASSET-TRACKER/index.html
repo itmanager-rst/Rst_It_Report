@@ -332,7 +332,7 @@
           </select>
         </div>
       </div>
-      <p class="-mt-2 mb-3 text-[11px] text-slate-500">💡 เบิกของจาก HR และ HQ_Office พร้อมกันได้ในครั้งเดียว — ระบบจะแยกเป็นใบเบิกของแต่ละแผนกให้อัตโนมัติ (เลขที่ RQ-… / HQ-…)</p>
+      <p class="-mt-2 mb-3 text-[11px] text-slate-500">💡 เบิกของจาก HR และ HQ_Office พร้อมกันได้ในครั้งเดียว — ระบบจะแยกเป็นใบเบิกของแต่ละแผนกให้อัตโนมัติ (เลขที่ RQ-… / HQ-…)<br>✏️ <b class="text-amber-700">HQ_Office:</b> ถ้าค้นหาไม่เจอ พิมพ์ชื่อสินค้าแล้วเลือก "เบิกแบบพิมพ์ชื่อเอง" ได้เลย (ระหว่างปรับปรุงฐานข้อมูล — ไม่ตัดสต็อก)</p>
 
       <form id="assetForm" onsubmit="handleSubmit(event)" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <!-- 🔍 ช่องค้นหาสินค้าในการเบิก (Asset Picker) -->
@@ -1364,8 +1364,9 @@
       const hid = $("assetSelect");
       let query = (q || "").trim().toLowerCase();
       if (hid.value) {
-        const cur = findAsset(hid.value);
-        if (cur && pickerLabel(cur) === q) query = "";        // เพิ่งเลือก/โฟกัสกลับ → แสดงทั้งหมด
+        const cur = hid.value === MANUAL_PICK ? null : findAsset(hid.value);
+        if (hid.value === MANUAL_PICK && q === manualLabel(manualPickName)) query = "";   // โฟกัสกลับหลังเลือกแบบพิมพ์เอง
+        else if (cur && pickerLabel(cur) === q) query = "";   // เพิ่งเลือก/โฟกัสกลับ → แสดงทั้งหมด
         else setPickerSelected(null, true);                    // พิมพ์ใหม่ = ยกเลิกที่เลือก
       }
       const pd = ($("pickDept") || {}).value || "ALL";
@@ -1374,15 +1375,30 @@
       pickList = all.slice(0, 50);
       pickIdx = pickList.findIndex(a => getRemaining(a.id) > 0);
 
+      // ✏️ HQ_Office: ระหว่างปรับปรุงฐานข้อมูล → พิมพ์ชื่อสินค้าเองได้ (ไม่ต้องเพิ่มเข้าสต็อกก่อน)
+      const typed = String(q || "").trim();
+      const manualOpt = MANUAL_ITEM_DEPTS.includes("HQ") && pd !== "HR" && typed && hid.value !== MANUAL_PICK;
+      if (manualOpt) {
+        pickList.push({ manual: true, name: typed });
+        if (pickIdx < 0) pickIdx = pickList.length - 1;
+      }
+      const manualHtml = manualOpt ? `
+        <button type="button" data-i="${pickList.length - 1}" onmousedown="event.preventDefault()" onclick="pickAsset(${pickList.length - 1})"
+                class="picker-item w-full text-left px-3 py-2.5 bg-amber-50/60 hover:bg-amber-100 cursor-pointer border-t border-amber-200 ${pickIdx === pickList.length - 1 ? "bg-amber-100" : ""}">
+          <div class="flex items-center gap-2 text-xs">${deptBadge("HQ")}
+            <span class="font-bold text-amber-800">✏️ เบิกแบบพิมพ์ชื่อเอง:</span><span class="font-semibold text-slate-800 truncate">"${esc(typed)}"</span></div>
+          <div class="text-[10px] text-amber-700 mt-0.5">ไม่มีในรายการ? ใช้ชื่อที่พิมพ์ได้เลย — เฉพาะคลัง HQ_Office · ไม่ตัดสต็อก (ระหว่างปรับปรุงฐานข้อมูล)</div>
+        </button>` : "";
+
       const box = $("assetResults");
-      if (!cachedAssets.length) {
+      if (!cachedAssets.length && !manualOpt) {
         box.innerHTML = '<div class="p-4 text-center text-xs text-slate-400"><span class="loader mr-1"></span> กำลังโหลดรายการอุปกรณ์...</div>';
-      } else if (!pickList.length) {
-        box.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">ไม่พบอุปกรณ์ที่ตรงกับคำค้นหา</div>';
+      } else if (!all.length) {
+        box.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">ไม่พบอุปกรณ์ที่ตรงกับคำค้นหา</div>' + manualHtml;
       } else {
         box.innerHTML =
           `<div class="px-3 py-1.5 text-[10px] text-slate-400 border-b border-slate-100 sticky top-0 bg-white">พบ ${all.length} รายการ${all.length > 50 ? " (แสดง 50 รายการแรก — พิมพ์เพิ่มเพื่อกรอง)" : ""}</div>` +
-          pickList.map((a, i) => {
+          pickList.filter(a => !a.manual).map((a, i) => {
             const rem = getRemaining(a.id), out = rem <= 0;
             const badge = out ? "bg-rose-100 text-rose-700" : rem <= 2 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
             return `<button type="button" data-i="${i}" ${out ? 'aria-disabled="true"' : ""} onmousedown="event.preventDefault()" onclick="pickAsset(${i})"
@@ -1394,13 +1410,48 @@
                 </div>
                 <div class="text-[10px] text-slate-400 mt-0.5 truncate">${esc(a.category || "-")}${a.notes && a.notes !== "-" ? " • " + esc(a.notes) : ""}</div>
               </button>`;
-          }).join("");
+          }).join("") + manualHtml;
       }
       box.classList.remove("hidden");
     }
 
+    /* ✏️ เบิกแบบพิมพ์ชื่อสินค้าเอง (ไม่ผูกกับสต็อก) — เปิดให้เฉพาะแผนกในรายการนี้
+       เมื่อ HQ_Office ปรับฐานข้อมูลเสร็จ ให้เปลี่ยนเป็น [] เพื่อปิดฟังก์ชันนี้ */
+    const MANUAL_ITEM_DEPTS = ["HQ"];
+    const MANUAL_PICK = "__MANUAL__";
+    let manualPickName = "";
+    const manualLabel = n => `✏️ ${n} [HQ_Office · พิมพ์เอง]`;
+
+    function pickManual(name) {
+      name = String(name || "").trim().slice(0, 120);
+      if (!name) return;
+      manualPickName = name;
+      $("assetSelect").value = MANUAL_PICK;
+      $("assetSearch").value = manualLabel(name);
+      $("assetPickerClear").classList.remove("hidden");
+      $("assetResults").classList.add("hidden");
+      const q = $("quantity");
+      q.removeAttribute("max");
+      $("qtyHint").innerText = "พิมพ์ชื่อเอง · ไม่ตัดสต็อก";
+      const sel = $("assetSelected");
+      sel.innerHTML = `
+        <div class="flex items-center gap-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+          <div class="h-11 w-11 rounded-lg bg-white border flex items-center justify-center text-lg">✏️</div>
+          <div class="flex-1 min-w-0 text-xs">
+            <div class="font-bold text-slate-800 truncate">${deptBadge("HQ")} ${esc(name)}</div>
+            <div class="text-[11px] text-amber-700">พิมพ์ชื่อเอง — HQ_Office จ่ายของตามชื่อนี้ ไม่ตัดสต็อกในระบบ</div>
+          </div>
+        </div>`;
+      sel.classList.remove("hidden");
+      const inCart = reqCart.find(x => x.manual && x.assetName.toLowerCase() === name.toLowerCase());
+      if (inCart) $("qtyHint").innerText += ` · มีในรายการแล้ว ${inCart.quantity} ชิ้น (เพิ่มอีกจะรวมยอด)`;
+      if (!q.value) q.value = 1;
+      q.focus(); q.select();
+    }
+
     function pickAsset(i) {
       const a = pickList[i];
+      if (a && a.manual) { pickManual(a.name); return; }
       if (!a || getRemaining(a.id) <= 0) return;
       setPickerSelected(a);
       $("assetResults").classList.add("hidden");
@@ -1417,6 +1468,20 @@
     let reqCart = [];   // [{ assetId, assetName, category, quantity }]
 
     function addCartItem() {
+      if ($("assetSelect").value === MANUAL_PICK) {                 // ✏️ พิมพ์ชื่อเอง (HQ_Office)
+        const name = manualPickName, qty = parseInt($("quantity").value) || 0;
+        if (qty < 1) { showToast("กรุณาใส่จำนวนที่เบิก", "warn"); $("quantity").focus(); return false; }
+        const cur = reqCart.find(x => x.manual && x.assetName.toLowerCase() === name.toLowerCase());
+        if (!cur && reqCart.length >= MAX_REQ_ITEMS) { alert(`ใบเบิก 1 ใบเบิกได้ไม่เกิน ${MAX_REQ_ITEMS} รายการ`); return false; }
+        if (cur) cur.quantity += qty;
+        else reqCart.push({ manual: true, assetId: "M:" + name, code: "", dept: "HQ", assetName: name, category: "พิมพ์ชื่อเอง", quantity: qty });
+        $("quantity").value = "";
+        clearPickerAsset(false);
+        renderCart();
+        showToast(`➕ ${name} × ${cur ? cur.quantity : qty} อยู่ในรายการแล้ว (พิมพ์ชื่อเอง)`, "ok");
+        $("assetSearch").focus();
+        return true;
+      }
       const a = findAsset($("assetSelect").value);
       if (!a) { showToast("🔍 กรุณาค้นหาและเลือกอุปกรณ์ก่อน", "warn"); $("assetSearch").focus(); return false; }
       const qty = parseInt($("quantity").value) || 0;
@@ -1442,7 +1507,7 @@
     }
     function setCartQty(i, v) {
       const it = reqCart[i]; if (!it) return;
-      const rem = getRemaining(it.assetId);
+      const rem = it.manual ? Infinity : getRemaining(it.assetId);
       let q = parseInt(v) || 0;
       if (q < 1) q = 1;
       if (q > rem) { showToast(`⚠️ ${it.assetName} คงเหลือ ${rem} ชิ้น`, "warn"); q = Math.max(1, rem); }
@@ -1464,6 +1529,13 @@
             <th class="p-2 text-center w-20">คงเหลือ</th><th class="p-2 text-center w-28">จำนวนเบิก</th><th class="p-2 w-10"></th>
           </tr></thead>
           <tbody>${reqCart.map((it, i) => {
+            if (it.manual) return `<tr class="border-t border-slate-100 bg-amber-50/40">
+              <td class="p-2 text-center text-slate-400">${i + 1}</td>
+              <td class="p-2"><div class="font-bold text-slate-800">${deptBadge(it.dept)} ${esc(it.assetName)}</div><div class="text-[10px] text-amber-700">✏️ พิมพ์ชื่อเอง · ไม่ตัดสต็อก</div></td>
+              <td class="p-2 text-center text-slate-400">—</td>
+              <td class="p-2 text-center"><input type="number" min="1" value="${it.quantity}" onchange="setCartQty(${i}, this.value)" class="w-20 px-2 py-1 border border-slate-300 rounded-lg text-center text-sm font-bold"></td>
+              <td class="p-2 text-center"><button type="button" onclick="removeCartItem(${i})" class="h-7 w-7 rounded-md text-rose-500 hover:bg-rose-50 cursor-pointer" title="ลบรายการ">✕</button></td>
+            </tr>`;
             const rem = getRemaining(it.assetId), over = it.quantity > rem;
             return `<tr class="border-t border-slate-100 ${over ? "bg-rose-50" : ""}">
               <td class="p-2 text-center text-slate-400">${i + 1}</td>
@@ -1502,6 +1574,7 @@
     }
 
     function clearPickerAsset(focus) {
+      manualPickName = "";
       setPickerSelected(null);
       $("assetResults").classList.add("hidden");
       if (focus) { $("assetSearch").focus(); searchPickerAssets(""); }
@@ -1509,7 +1582,7 @@
 
     function refreshPickerSelection() {
       const id = $("assetSelect").value;
-      if (id) { const a = findAsset(id); a && getRemaining(id) > 0 ? setPickerSelected(a) : clearPickerAsset(false); }
+      if (id && id !== MANUAL_PICK) { const a = findAsset(id); a && getRemaining(id) > 0 ? setPickerSelected(a) : clearPickerAsset(false); }
       renderCart();   // อัปเดตยอดคงเหลือในตะกร้า
     }
 
@@ -1524,10 +1597,12 @@
         const step = e.key === "ArrowDown" ? 1 : -1;
         for (let n = 0; n < items.length; n++) {                   // ข้ามรายการที่ของหมด
           pickIdx = (pickIdx + step + items.length) % items.length;
-          if (getRemaining(pickList[pickIdx].id) > 0) break;
+          if (pickList[pickIdx].manual || getRemaining(pickList[pickIdx].id) > 0) break;
         }
-        items.forEach((it, i) => it.classList.toggle("bg-blue-50", i === pickIdx));
-        items[pickIdx].scrollIntoView({ block: "nearest" });
+        items.forEach(it => it.classList.toggle("bg-blue-50", Number(it.dataset.i) === pickIdx));
+        items.forEach(it => it.classList.toggle("bg-amber-100", Number(it.dataset.i) === pickIdx && !!pickList[pickIdx].manual));
+        const curEl = [...items].find(it => Number(it.dataset.i) === pickIdx);
+        if (curEl) curEl.scrollIntoView({ block: "nearest" });
       } else if (e.key === "Enter" && !box.classList.contains("hidden")) {
         e.preventDefault();
         pickAsset(pickIdx);
@@ -1995,7 +2070,7 @@
       // เลือกอุปกรณ์ + ใส่จำนวนไว้แต่ยังไม่กดเพิ่ม → เพิ่มลงรายการให้อัตโนมัติ
       if ($("assetSelect").value && parseInt($("quantity").value) > 0 && !addCartItem()) return;
       if (!reqCart.length) { alert("🔍 กรุณาค้นหาอุปกรณ์ ใส่จำนวน แล้วกด ➕ เพิ่มลงรายการ อย่างน้อย 1 รายการ"); $("assetSearch").focus(); return; }
-      const over = reqCart.filter(it => it.quantity > getRemaining(it.assetId));
+      const over = reqCart.filter(it => !it.manual && it.quantity > getRemaining(it.assetId));
       if (over.length) { alert("⚠️ จำนวนที่ขอเบิกมากกว่ายอดคงเหลือ:\n" + over.map(it => `• ${it.assetName}: ขอ ${it.quantity} / คงเหลือ ${getRemaining(it.assetId)}`).join("\n")); return; }
       if (!$("branch").value) { alert("กรุณาเลือกสาขา"); return; }
       if (!compressedBase64) { alert("กรุณาแนบรูปภาพหลักฐาน หรือรอระบบโหลดรูปภาพสักครู่"); return; }
@@ -2010,7 +2085,9 @@
           staffName: $("staffName").value.trim(),
           department: $("department").value.trim(),
           branch: $("branch").value,
-          items: reqCart.map(it => ({ assetId: it.code, dept: it.dept, assetName: it.assetName, category: it.category, quantity: it.quantity })),
+          items: reqCart.map(it => it.manual
+            ? { manual: true, assetId: "", dept: "HQ", assetName: it.assetName, category: it.category, quantity: it.quantity }
+            : { assetId: it.code, dept: it.dept, assetName: it.assetName, category: it.category, quantity: it.quantity }),
           notes: $("requisitionNotes").value.trim() || "-",
           imageBase64: compressedBase64,
           requesterSig: sigPads.requester.toDataURL()
@@ -2066,12 +2143,15 @@
       let a = r && r.items;
       if (typeof a === "string") { try { a = JSON.parse(a); } catch (_) { a = null; } }
       if (!(Array.isArray(a) && a.length)) a = [{ assetId: r.assetId, assetName: r.assetName, category: r.category, quantity: r.quantity }];
-      return a.map(it => Object.assign({}, it, { key: akey(r.dept, it.assetId) }));   // key → หาในคลังของแผนกเจ้าของใบเบิก
+      return a.map(it => Object.assign({}, it, {
+        key: akey(r.dept, it.assetId),                                   // key → หาในคลังของแผนกเจ้าของใบเบิก
+        manual: it.manual === true || it.manual === "true" || !String(it.assetId || "").trim()   // ✏️ พิมพ์ชื่อเอง
+      }));
     }
     /** แสดงรายการอุปกรณ์แบบย่อ (ตาราง / modal) */
     function reqItemsCell(r, max) {
       const items = reqItems(r);
-      if (items.length === 1) return `<div class="font-bold text-slate-800">${esc(items[0].assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(items[0].assetId)}</div>`;
+      if (items.length === 1) return `<div class="font-bold text-slate-800">${esc(items[0].assetName)}</div><div class="text-[10px] font-mono text-slate-400">${items[0].manual ? "✏️ พิมพ์ชื่อเอง" : esc(items[0].assetId)}</div>`;
       max = max || 3;
       return `<div class="text-[10px] font-bold text-indigo-700 mb-0.5">📦 ${items.length} รายการ</div>` +
         items.slice(0, max).map(it => `<div class="text-slate-800"><span class="font-semibold">${esc(it.assetName)}</span> <span class="text-slate-400">× ${esc(it.quantity)}</span></div>`).join("") +
@@ -2084,7 +2164,9 @@
         <thead class="bg-slate-50 text-slate-500"><tr><th class="p-2 w-8 text-center">#</th><th class="p-2 text-left">อุปกรณ์</th><th class="p-2 text-center w-16">จำนวน</th>${withStock ? '<th class="p-2 text-center w-32">สต็อก</th>' : ""}</tr></thead>
         <tbody>${items.map((it, i) => {
           let st = "";
-          if (withStock) {
+          if (withStock && it.manual) {
+            st = '<td class="p-2 text-center"><span class="text-amber-700 font-semibold">✏️ พิมพ์เอง · ไม่ตัดสต็อก</span></td>';
+          } else if (withStock) {
             const a = findAsset(it.key), rem = a ? getRemaining(a.id) : null, q = parseInt(it.quantity) || 0;
             st = rem === null ? '<span class="text-slate-500">ไม่พบในคลัง</span>'
               : rem >= q ? `<span class="text-emerald-700 font-semibold">🟢 ${rem} → ${rem - q}</span>`
@@ -2092,13 +2174,13 @@
             st = `<td class="p-2 text-center">${st}</td>`;
           }
           return `<tr class="border-t border-slate-100"><td class="p-2 text-center text-slate-400">${i + 1}</td>
-            <td class="p-2"><div class="font-bold text-slate-800">${esc(it.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${esc(it.assetId)}${it.category ? " · " + esc(it.category) : ""}</div></td>
+            <td class="p-2"><div class="font-bold text-slate-800">${esc(it.assetName)}</div><div class="text-[10px] font-mono text-slate-400">${it.manual ? "✏️ พิมพ์ชื่อเอง" : esc(it.assetId)}${it.category && !it.manual ? " · " + esc(it.category) : ""}</div></td>
             <td class="p-2 text-center font-black">${esc(it.quantity)}</td>${st}</tr>`;
         }).join("")}</tbody></table></div>`;
     }
     /** รายการที่สต็อกไม่พอ */
     function reqShortItems(r) {
-      return reqItems(r).filter(it => { const a = findAsset(it.key); return !a || (parseInt(it.quantity) || 0) > getRemaining(a.id); });
+      return reqItems(r).filter(it => { if (it.manual) return false; const a = findAsset(it.key); return !a || (parseInt(it.quantity) || 0) > getRemaining(a.id); });
     }
 
     /** ยกเลิกใบเบิก: รออนุมัติ = ผู้ขอ/ผู้อนุมัติ · อนุมัติแล้ว/รอฝากส่ง = HR Admin (คืนยอดเข้าคลัง) */
@@ -2368,7 +2450,7 @@
               <th style="${td}width:150px;text-align:center;white-space:nowrap;">หมวดหมู่</th><th style="${td}width:62px;text-align:center;font-size:11px;line-height:1.25;">จำนวน<br>ขอเบิก</th><th style="${td}width:62px;text-align:center;font-size:11px;line-height:1.25;">จำนวน<br>จ่ายจริง</th>
             </tr></thead>
             <tbody>${items.map((it, i) => `<tr style="page-break-inside:avoid;">
-              <td style="${td}text-align:center;">${i + 1}</td><td style="${td}font-family:monospace;font-weight:700;white-space:nowrap;">${esc(it.assetId)}</td><td style="${td}font-weight:700;">${esc(it.assetName)}</td>
+              <td style="${td}text-align:center;">${i + 1}</td><td style="${td}font-family:monospace;font-weight:700;white-space:nowrap;">${it.manual ? '<span style="font-family:Sarabun,sans-serif;font-weight:400;color:#64748b;">(พิมพ์เอง)</span>' : esc(it.assetId)}</td><td style="${td}font-weight:700;">${esc(it.assetName)}</td>
               <td style="${td}text-align:center;white-space:nowrap;font-size:11.5px;">${esc(it.category || (findAsset(it.key) || {}).category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(it.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(it.quantity) : ""}</td>
             </tr>`).join("")}</tbody>
             ${items.length > 1 ? `<tfoot><tr style="background:#f1f5f9;font-weight:800;"><td colspan="4" style="${td}text-align:right;">รวม ${items.length} รายการ</td><td style="${td}text-align:center;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-size:14px;">${issued ? esc(r.quantity) : ""}</td></tr></tfoot>` : ""}
@@ -2580,7 +2662,8 @@
       const br = $("dashBranch").value, cat = $("dashCategory").value, dp = $("dashDept").value;
       return globalLogData.map(l => {
         const k = akey(l.dept, l.assetId), a = findAsset(k);
-        return { ...l, _key: k, _d: parseTs(l.timestamp), _qty: parseInt(l.quantity) || 0, _cat: (a && a.category) || "-", _branch: BRANCHES.includes(l.branch) ? l.branch : "อื่น ๆ" };
+        // ✏️ พิมพ์เอง (รหัสว่าง) → แยกตามชื่อสินค้า
+        return { ...l, _key: String(l.assetId || "").trim() ? k : k + "|" + l.assetName, _d: parseTs(l.timestamp), _qty: parseInt(l.quantity) || 0, _cat: (a && a.category) || "-", _branch: BRANCHES.includes(l.branch) ? l.branch : "อื่น ๆ" };
       }).filter(l => l._d && l._d >= from && l._d <= to && (dp === "ALL" || l.dept === dp) &&
         (br === "ALL" || l._branch === br) && (cat === "ALL" || l._cat === cat));
     }

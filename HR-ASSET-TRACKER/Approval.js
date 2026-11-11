@@ -40,6 +40,8 @@
  *                         APPROVED / ISSUED: ADMIN ยกเลิกได้ → คืนยอดเข้าคลัง + บันทึกประวัติสต็อก
  *   * ถ้าผู้รับมารับของเองที่ HR → ISSUED ข้ามไป RECEIVED ได้ทันที
  *
+ * ✏️ HQ_Office พิมพ์ชื่อสินค้าเองได้ (MANUAL_ITEM_DEPTS) — items[].manual = true, assetId ว่าง
+ *    อนุมัติ → บันทึกใน HQ_Requisition_Log (รหัสว่าง) แต่ไม่ตัดสต็อก · ยกเลิก → ลบประวัติ ไม่คืนยอด
  * ใบเบิก 1 ใบเบิกได้หลายรายการ (สูงสุด MAX_REQ_ITEMS) — เก็บในคอลัมน์ items (JSON)
  *   อนุมัติ = ตรวจยอดคงเหลือทุกรายการก่อน ถ้ามีรายการไหนไม่พอจะไม่ตัดสต็อกเลย
  *   ยกเลิก  = คืนยอดทุกรายการของใบนั้น
@@ -94,6 +96,11 @@ const REQ_HEADERS = [
   'items'
 ];
 const MAX_REQ_ITEMS = 30;                   // จำนวนรายการสูงสุดต่อใบเบิก
+/**
+ * ✏️ แผนกที่ให้ "พิมพ์ชื่อสินค้าเอง" ได้ (ไม่ต้องเพิ่มเข้าสต็อกก่อน · อนุมัติแล้วบันทึกประวัติการเบิก แต่ไม่ตัดสต็อก)
+ *    ใช้ระหว่างที่ HQ_Office ปรับปรุงฐานข้อมูล — เสร็จแล้วเปลี่ยนเป็น [] เพื่อปิด (และแก้ MANUAL_ITEM_DEPTS ใน index.html ด้วย)
+ */
+const MANUAL_ITEM_DEPTS = ['HQ'];
 const SHIP_VIA = ['ฝ่ายบริการ', 'ฝ่ายขาย', 'อื่น ๆ'];
 const USER_HEADERS = [
   'username', 'password', 'passwordHash', 'salt', 'fullName', 'role', 'branch',
@@ -487,20 +494,29 @@ function parseReqItems_(d) {
   const map = {}, out = [];
   for (let i = 0; i < src.length; i++) {
     const it = src[i] || {};
-    const id = String(it.assetId || '').trim();
+    const manual = it.manual === true || it.manual === 'true';   // ✏️ พิมพ์ชื่อสินค้าเอง (ไม่ผูกสต็อก)
     const dept = normDept_(it.dept || d.dept);
+    const id = manual ? '' : String(it.assetId || '').trim();
+    const name = String(it.assetName || '').trim().slice(0, 120);
     const q = parseInt(it.quantity, 10);
-    if (!id) return { error: 'รายการที่ ' + (i + 1) + ': ไม่ได้เลือกอุปกรณ์' };
-    if (!(q > 0)) return { error: 'รายการที่ ' + (i + 1) + ' (' + id + '): จำนวนไม่ถูกต้อง' };
-    const key = dept + '|' + id;                       // รหัสซ้ำกันได้ถ้าอยู่คนละคลัง
+    if (manual) {
+      if (MANUAL_ITEM_DEPTS.indexOf(dept) < 0) return { error: 'รายการที่ ' + (i + 1) + ': พิมพ์ชื่อสินค้าเองได้เฉพาะคลัง ' + MANUAL_ITEM_DEPTS.map(k => DEPT_LABEL[k]).join(', ') };
+      if (!name) return { error: 'รายการที่ ' + (i + 1) + ': กรุณาพิมพ์ชื่อสินค้า' };
+    } else if (!id) return { error: 'รายการที่ ' + (i + 1) + ': ไม่ได้เลือกอุปกรณ์' };
+    if (!(q > 0)) return { error: 'รายการที่ ' + (i + 1) + ' (' + (id || name) + '): จำนวนไม่ถูกต้อง' };
+    const key = dept + '|' + (manual ? 'M:' + name.toLowerCase() : id);   // รหัสซ้ำกันได้ถ้าอยู่คนละคลัง
     if (map[key]) { map[key].quantity += q; continue; }
-    map[key] = { dept: dept, assetId: id, assetName: String(it.assetName || ''), category: String(it.category || ''), quantity: q };
+    map[key] = { dept: dept, assetId: id, assetName: name, category: manual ? 'พิมพ์ชื่อเอง' : String(it.category || ''), quantity: q, manual: manual };
     out.push(map[key]);
   }
   if (!out.length) return { error: 'กรุณาเพิ่มอุปกรณ์อย่างน้อย 1 รายการ' };
   // แยกตามแผนก → 1 แผนก = 1 ใบเบิก
   const groups = {};
-  out.forEach(x => (groups[x.dept] = groups[x.dept] || []).push({ assetId: x.assetId, assetName: x.assetName, category: x.category, quantity: x.quantity }));
+  out.forEach(x => {
+    const o = { assetId: x.assetId, assetName: x.assetName, category: x.category, quantity: x.quantity };
+    if (x.manual) o.manual = true;
+    (groups[x.dept] = groups[x.dept] || []).push(o);
+  });
   for (const k in groups) {
     if (groups[k].length > MAX_REQ_ITEMS) return { error: 'ใบเบิก ' + DEPT_LABEL[k] + ' เบิกได้ไม่เกิน ' + MAX_REQ_ITEMS + ' รายการต่อใบ' };
   }

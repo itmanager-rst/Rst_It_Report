@@ -572,6 +572,7 @@ function reverseRequisition_(requestId, txId, reason, dept) {
 
     var logData = logSheet.getDataRange().getValues();
     var hits = [];
+    // หมายเหตุ: แถวที่รหัสอุปกรณ์ว่าง = รายการพิมพ์ชื่อเอง (HQ_Office) → ลบประวัติแต่ไม่คืนยอด
     for (var i = logData.length - 1; i >= 1; i--) {         // ล่าง → บน (ลบแถวแล้วเลขแถวด้านบนไม่เลื่อน)
       if (txSet[String(logData[i][0])] || reqIdFromNote_(logData[i][9]) === String(requestId)) hits.push(i);
     }
@@ -582,6 +583,7 @@ function reverseRequisition_(requestId, txId, reason, dept) {
       var row = logData[idx];
       var qty = parseInt(row[4]) || 0;
       logSheet.deleteRow(idx + 1);
+      if (!String(row[2] || "").trim()) return;               // ✏️ รายการพิมพ์ชื่อเอง: ไม่เคยตัดสต็อก → ไม่ต้องคืนยอด
       var s = restoreStock_(stockSheet, row[2], qty);
       if (s.found) {
         restored += qty;
@@ -627,9 +629,16 @@ function processRequisitionBatch_(data) {
       idx[id] = { row: i + 1, name: stockData[i][1], total: total, rem: rem, need: 0 };
     }
 
+    // ✏️ รายการที่พิมพ์ชื่อเอง (assetId ว่าง) → บันทึกประวัติการเบิกอย่างเดียว ไม่ตัดสต็อก
+    var isManual = function (it) { return it.manual === true || it.manual === "true" || !String(it.assetId || "").trim(); };
     var errs = [];
     items.forEach(function (it) {
       var aid = String(it.assetId || "").trim(), q = parseInt(it.quantity);
+      if (isManual(it)) {
+        if (!(q > 0)) errs.push((it.assetName || "รายการพิมพ์เอง") + ": จำนวนไม่ถูกต้อง");
+        else if (!String(it.assetName || "").trim()) errs.push("รายการพิมพ์เอง: ไม่มีชื่อสินค้า");
+        return;
+      }
       if (!(q > 0)) { errs.push(aid + ": จำนวนไม่ถูกต้อง"); return; }
       if (!idx[aid]) { errs.push(aid + ": ไม่พบในคลัง " + DEPTS_[dept].label); return; }
       idx[aid].need += q;
@@ -643,16 +652,21 @@ function processRequisitionBatch_(data) {
     var now = new Date(), base = now.getTime();
     var img = toImageCell_(data.imageBase64, "log_" + (data.requestId || base));
     var txIds = [], rows = [];
+    var manualCount = 0;
     items.forEach(function (it, n) {
-      var aid = String(it.assetId).trim();
+      var man = isManual(it);
+      var aid = man ? "" : String(it.assetId).trim();
       var tx = "TX-" + base + (items.length > 1 ? "-" + (n + 1) : "");
       txIds.push(tx);
-      rows.push([tx, now, aid, idx[aid].name, parseInt(it.quantity), data.staffName, data.department, data.branch, img, data.requisitionNotes || "-"]);
+      if (man) manualCount++;
+      rows.push([tx, now, aid, man ? String(it.assetName).trim() : idx[aid].name, parseInt(it.quantity), data.staffName, data.department, data.branch, img,
+        (data.requisitionNotes || "-") + (man ? " [พิมพ์ชื่อเอง · ไม่ตัดสต็อก]" : "")]);
     });
     logSheet.getRange(logSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 
-    var warn = "";
+    var warn = manualCount ? " (✏️ พิมพ์ชื่อเอง " + manualCount + " รายการ ไม่ตัดสต็อก)" : "";
     items.forEach(function (it) {
+      if (isManual(it)) return;
       var aid = String(it.assetId).trim(), q = parseInt(it.quantity), s = idx[aid];
       var before = s.rem;
       s.rem -= q;
