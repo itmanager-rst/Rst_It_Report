@@ -2329,15 +2329,17 @@
 
       const items = reqItems(r);
       const sig = src => src ? `<img src="${esc(src)}" style="height:58px;max-width:100%;object-fit:contain;display:block;margin:0 auto;">` : '<div style="height:58px;"></div>';
-      const box = (title, s, name, pos, date) => `
-        <div style="border:1px solid #94a3b8;border-radius:8px;padding:10px 8px;text-align:center;font-size:11px;">
-          <div style="font-weight:800;margin-bottom:4px;">${title}</div>${sig(s)}
-          <div style="border-top:1px dotted #475569;margin:4px 10px;"></div>
-          <div>( ${name ? esc(name) : "......................................"} )</div>
-          <div style="color:#64748b;font-size:10px;margin-top:2px;">${pos ? esc(pos) : "ตำแหน่ง ............................"}</div>
-          <div style="color:#64748b;font-size:10px;">วันที่ ${date ? esc(date) : "......../......../........"}</div>
+      // 5 ช่องลายเซ็นในแถวเดียว → ย่อ padding / ขนาดตัวอักษรให้พอดีหน้า A4
+      const box = (title, s, name, pos, date, timeLine) => `
+        <div style="border:1px solid #94a3b8;border-radius:8px;padding:8px 5px;text-align:center;font-size:10.5px;">
+          <div style="font-weight:800;margin-bottom:4px;white-space:nowrap;">${title}</div>${sig(s)}
+          <div style="border-top:1px dotted #475569;margin:4px 6px;"></div>
+          <div style="word-break:break-word;">( ${name ? esc(name) : "................................"} )</div>
+          <div style="color:#64748b;font-size:9.5px;margin-top:2px;">${pos ? esc(pos) : "ตำแหน่ง ......................."}</div>
+          <div style="color:#64748b;font-size:9.5px;">วันที่ ${date ? esc(date) : "....../....../......"}</div>
+          ${timeLine ? `<div style="color:#64748b;font-size:9.5px;">เวลา ............ น.</div>` : ""}
         </div>`;
-      const td = "border:1px solid #64748b;padding:7px;";
+      const td = "border:1px solid #64748b;padding:4px 6px;";
       const printedAt = new Date().toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
       const printedBy = session ? (session.user.fullName || session.user.username) : "";
 
@@ -2362,22 +2364,23 @@
           </table>
           <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
             <thead><tr style="background:#e2e8f0;font-weight:800;">
-              <th style="${td}width:40px;text-align:center;">ลำดับ</th><th style="${td}width:110px;">รหัสอุปกรณ์</th><th style="${td}">รายการพัสดุ / อุปกรณ์</th>
-              <th style="${td}width:90px;text-align:center;">หมวดหมู่</th><th style="${td}width:80px;text-align:center;">จำนวนขอเบิก</th><th style="${td}width:80px;text-align:center;">จำนวนจ่ายจริง</th>
+              <th style="${td}width:36px;text-align:center;">ลำดับ</th><th style="${td}width:90px;white-space:nowrap;">รหัสอุปกรณ์</th><th style="${td}">รายการพัสดุ / อุปกรณ์</th>
+              <th style="${td}width:150px;text-align:center;white-space:nowrap;">หมวดหมู่</th><th style="${td}width:62px;text-align:center;font-size:11px;line-height:1.25;">จำนวน<br>ขอเบิก</th><th style="${td}width:62px;text-align:center;font-size:11px;line-height:1.25;">จำนวน<br>จ่ายจริง</th>
             </tr></thead>
-            <tbody>${items.map((it, i) => `<tr>
-              <td style="${td}text-align:center;">${i + 1}</td><td style="${td}font-family:monospace;font-weight:700;">${esc(it.assetId)}</td><td style="${td}font-weight:700;">${esc(it.assetName)}</td>
-              <td style="${td}text-align:center;">${esc(it.category || (findAsset(it.key) || {}).category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(it.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(it.quantity) : ""}</td>
+            <tbody>${items.map((it, i) => `<tr style="page-break-inside:avoid;">
+              <td style="${td}text-align:center;">${i + 1}</td><td style="${td}font-family:monospace;font-weight:700;white-space:nowrap;">${esc(it.assetId)}</td><td style="${td}font-weight:700;">${esc(it.assetName)}</td>
+              <td style="${td}text-align:center;white-space:nowrap;font-size:11.5px;">${esc(it.category || (findAsset(it.key) || {}).category || "-")}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${esc(it.quantity)}</td><td style="${td}text-align:center;font-weight:900;font-size:14px;">${issued ? esc(it.quantity) : ""}</td>
             </tr>`).join("")}</tbody>
             ${items.length > 1 ? `<tfoot><tr style="background:#f1f5f9;font-weight:800;"><td colspan="4" style="${td}text-align:right;">รวม ${items.length} รายการ</td><td style="${td}text-align:center;font-size:14px;">${esc(r.quantity)}</td><td style="${td}text-align:center;font-size:14px;">${issued ? esc(r.quantity) : ""}</td></tr></tfoot>` : ""}
           </table>
           <div style="margin-bottom:${r.shipVia || r.deliveryMethod === "PICKUP" ? 8 : 22}px;"><b>เหตุผลการเบิก:</b> ${esc(r.notes || "-")}</div>
           ${r.shipVia ? `<div style="margin-bottom:22px;padding:6px 10px;border:1px dashed #64748b;border-radius:6px;"><b>🚚 การจัดส่ง:</b> ฝากส่งกับ${esc(r.shipVia)} — ผู้นำส่ง <b>${esc(r.shipCarrier || "-")}</b> · วันที่ฝาก ${esc(r.shippedAt || "-")} · ส่งถึง <b>${esc(r.branch)}</b>${r.shipNote ? " · " + esc(r.shipNote) : ""}</div>`
             : r.deliveryMethod === "PICKUP" ? '<div style="margin-bottom:22px;"><b>การส่งมอบ:</b> ผู้รับมารับของเองที่ฝ่าย HR</div>' : ""}
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;page-break-inside:avoid;">
             ${box("ผู้ขอเบิก", r.requesterSig, r.staffName, r.department ? "แผนก " + r.department : "", String(r.timestamp || "").split(" ")[0])}
             ${box("ผู้อนุมัติ", r.approverSig, r.approverName, r.approverPosition, String(r.actionAt || "").split(" ")[0])}
             ${box("ผู้จ่ายพัสดุ (" + DEPTS[normDept(r.dept)].label + ")", r.issuerSig, r.issuedByName || "", r.issuedByName ? DEPTS[normDept(r.dept)].full : "", String(r.issuedAt || "").split(" ")[0])}
+            ${box("ผู้ตรวจปล่อยรถ", "", "", "", "", true)}
             ${box("ผู้รับพัสดุ (สาขา)", r.receiverSig, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", r.receiverSig ? String(r.receivedAt || r.issuedAt || "").split(" ")[0] : "")}
           </div>
           <div style="margin-top:18px;padding:8px 10px;background:#f1f5f9;border-radius:6px;font-size:11px;color:#334155;">
