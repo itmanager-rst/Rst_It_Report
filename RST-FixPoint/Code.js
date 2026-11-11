@@ -4,6 +4,7 @@
  *
  * CODE_VERSION: r27-2026-11-11-supervisor
  *
+ *  - r28: [ลายเซ็นผู้แจ้ง] แบบฟอร์มแจ้งซ่อมต้องเซ็นลายเซ็นผู้แจ้ง บันทึกเป็น RequesterSignURL และพิมพ์ในช่อง "ผู้แจ้งซ่อม"
  *  - r26: [สาขา] คืนสาขา "สำนักงานใหญ่" (HQ) + เพิ่ม 10 สาขาใหม่ (ขุขันธุ์ ... กุฉินารายณ์)
  *         · setupDatabase ใช้รายชื่อ BRANCH_SEED (ฐานข้อมูลใหม่) · seedBranches() เพิ่มเฉพาะสาขาที่ยังไม่มี (ฐานข้อมูลเดิม, รันซ้ำได้ปลอดภัย)
  *  - r25: [KPI] กระทบยอด ASIA-MTN-04 — รายงานเทียบจำนวนงานแจ้งซ่อมกับค่าใน KPI_Data รายเดือน (อ่านอย่างเดียว, kpiReconcile)
@@ -57,7 +58,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r27-2026-11-11-supervisor';
+const CODE_VERSION = 'r28-2026-11-11-requester-sign';
 
 // r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
 const SUP_ASSIGN_SLA_HOURS = 4;
@@ -98,7 +99,7 @@ const SHEETS = {
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL', 'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos',
-      'Supervisor', 'SupervisorName', 'DispatchedAt', 'TechAssignedAt'] // r16: รูปเพิ่มเติม (JSON) • r27: ข้อมูลหัวหน้าช่าง
+      'Supervisor', 'SupervisorName', 'DispatchedAt', 'TechAssignedAt', 'RequesterSignURL'] // r16: รูปเพิ่มเติม (JSON) • r27: ข้อมูลหัวหน้าช่าง
   },
   DELETED: {
     name: 'DeletedTickets',
@@ -106,7 +107,7 @@ const SHEETS = {
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL',
       'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos',
-      'Supervisor', 'SupervisorName', 'DispatchedAt', 'TechAssignedAt',
+      'Supervisor', 'SupervisorName', 'DispatchedAt', 'TechAssignedAt', 'RequesterSignURL',
       'DeletedAt', 'DeletedBy', 'DeleteReason']
   },
   USER_LOG: {  // r16: ประวัติการจัดการผู้ใช้ (ไม่เก็บรหัสผ่าน)
@@ -675,7 +676,7 @@ function photosOf_(t) {
 }
 
 function ticketFileIds_(t) {
-  return [t.ImageURL, t.AfterImageURL, t.ApproverSignURL].concat(extraPhotosOf_(t).map(p => p.url))
+  return [t.ImageURL, t.AfterImageURL, t.ApproverSignURL, t.RequesterSignURL].concat(extraPhotosOf_(t).map(p => p.url))
     .map(fileIdFromUrl_).filter(String);
 }
 
@@ -750,6 +751,7 @@ function createTicket_(u, req) {
   let branch = String(d.branch || '').trim();
   if (!isAllBranch_(u)) branch = String(u.Branch); // ผู้ใช้สาขาหนึ่งแจ้งได้เฉพาะสาขาตัวเอง
   if (!branch) throw new Error('กรุณาเลือกสาขา');
+  if (!d.signature || String(d.signature).indexOf('data:image/') !== 0) throw new Error('กรุณาเซ็นลายเซ็นผู้แจ้งซ่อมก่อนส่งรายการ');
 
   const images = Array.isArray(d.images) ? d.images : (d.image ? [d.image] : []);
   if (images.length > 5) throw new Error('แนบรูปได้ไม่เกิน 5 รูปต่อครั้ง');
@@ -757,6 +759,8 @@ function createTicket_(u, req) {
 
   const tickets = readAll_(SHEETS.TICKETS);
   const id = nextTicketId_(tickets);
+  const reqSig = saveImage_({ base64: d.signature, type: 'image/png', name: 'signature.png' }, id + '_sign_request');
+  if (!reqSig.url) throw new Error('บันทึกลายเซ็นไม่สำเร็จ — ' + (reqSig.warning || 'ลองใหม่อีกครั้ง'));
   const saved = saveImages_(images, id + '_before');
   const now = new Date();
   const patch = addPhotoPatch_({}, 'before', saved.urls, u.Username);
@@ -774,7 +778,8 @@ function createTicket_(u, req) {
     Description: String(d.description || ''),
     Priority: String(d.priority || 'ปกติ'),
     Status: ST.PENDING,
-    UpdatedAt: now
+    UpdatedAt: now,
+    RequesterSignURL: reqSig.url
   }, patch));
   addLog_(id, 'สร้างรายการแจ้งซ่อม', u, '', ST.PENDING, d.title + (saved.urls.length > 1 ? ' (รูป ' + saved.urls.length + ' รูป)' : ''));
 
@@ -840,6 +845,7 @@ function printTickets_(u, req) {
         .sort((a, b) => (toDate_(a.Timestamp) || 0) - (toDate_(b.Timestamp) || 0)).map(clean_)
     };
     item.signImg = imageData_(t.ApproverSignURL);
+    item.reqSignImg = imageData_(t.RequesterSignURL);
     item.requesterImg = imageData_(profilePhotoOf_(t.Username)); // r13: รูปผู้แจ้งในใบแจ้งซ่อม
     if (req.withImages) {
       // r16: ส่งรูปทั้งหมด (สูงสุด 6 รูปต่อประเภท) — beforeImg/afterImg = รูปแรกเพื่อความเข้ากันได้

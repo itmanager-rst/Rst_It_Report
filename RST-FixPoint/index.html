@@ -237,6 +237,13 @@
                         <label class="lbl">แนบรูปภาพอุปกรณ์ที่ชำรุด (แนบได้หลายรูป)</label>
                         <div id="newPicker"></div>
                     </div>
+                    <div>
+                        <div class="flex justify-between items-end mb-1">
+                            <label class="lbl mb-0">ลายเซ็นผู้แจ้งซ่อม * <span class="text-xs font-normal text-slate-500">(เซ็นในกรอบ — ใช้นิ้วหรือปากกาสไตลัส)</span></label>
+                            <button type="button" onclick="reqSigClear()" class="text-xs text-sky-700 underline">ล้าง</button>
+                        </div>
+                        <canvas id="reqSigPad" class="w-full h-36 rounded-lg border-2 border-dashed border-slate-300 bg-white" style="touch-action:none"></canvas>
+                    </div>
                     <button id="submitBtn" class="btn w-full bg-sky-800 hover:bg-sky-900 text-white py-2.5 shadow-md">ส่งข้อมูลแจ้งซ่อม</button>
                 </form>
             </div>
@@ -742,19 +749,24 @@ function initSignPad(c) {
     const end = () => { drawing = false; };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', end);
-    sigState = {
+    const st = {
         canvas: c,
         hasInk: () => ink && c.isConnected,
         clear: () => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.restore(); ink = false; },
         toDataURL: () => c.toDataURL('image/png')
     };
+    return st;
 }
 function sigClear() { if (sigState && sigState.canvas.isConnected) sigState.clear(); }
+// ลายเซ็นผู้แจ้งซ่อม (แบบฟอร์มแจ้งซ่อมใหม่) — สร้างเมื่อเปิดหน้า "แจ้งซ่อม" เพราะตอนโหลดหน้าถูกซ่อนอยู่
+let reqSigState = null;
+function reqSigClear() { if (reqSigState && reqSigState.canvas.isConnected) reqSigState.clear(); }
+function ensureReqSignPad() { const c = document.getElementById('reqSigPad'); if (c && !c.dataset.init) reqSigState = initSignPad(c); }
 
 new MutationObserver(() => {
     hydrateImages();
     const c = document.getElementById('sigPad');
-    if (c && !c.dataset.init) initSignPad(c);
+    if (c && !c.dataset.init) sigState = initSignPad(c);
 }).observe(document.body, { childList: true, subtree: true });
 
 // ---------------- Auth ----------------
@@ -789,6 +801,8 @@ function logout(expired) {
     store(LS_TOKEN, null);
     store(LS_USER, null);
     currentUser = null;
+    lastCounts = null;                 // รีเซ็ตการตรวจงานใหม่ของผู้ใช้เดิม
+    document.title = baseTitle;
     technicians = null;
     Object.keys(loaded).forEach(k => delete loaded[k]);
     Object.values(charts).forEach(c => c.destroy());
@@ -897,6 +911,7 @@ function switchPage(name) {
     const moreBtn = document.querySelector('.bnav-btn[data-page="more"]');
     if (moreBtn) moreBtn.classList.toggle('active', moreItems.includes(name));
     window.scrollTo(0, 0);
+    if (name === 'new') ensureReqSignPad();
     if (!loaded[name]) {
         loaded[name] = true;
         ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses, kpi: () => loadKpiPage(false), supkpi: loadSupKpi }[name] || (() => {}))();
@@ -910,13 +925,62 @@ function setBadge(id, n) {
     });
 }
 
+// ---------------- แจ้งงานใหม่แบบอัตโนมัติ (ทำงานทั้งคอมและมือถือ) ----------------
+// เดิมระบบดึงจำนวนงานเฉพาะตอนเข้าสู่ระบบ/หลังกดปุ่ม จึงไม่เห็นงานที่เพิ่งถูกอนุมัติจากเครื่องอื่น
+// ตอนนี้จะตรวจทุก 30 วินาที และตรวจทันทีเมื่อกลับมาที่แอป (แท็บ/แอปถูกเปิดกลับ, กลับมาออนไลน์)
+const POLL_MS = 30000;
+const BADGE_KEYS = ['approvals', 'dispatch', 'jobs'];
+const BADGE_ROLES = { approvals: ['manager', 'admin'], dispatch: ['supervisor', 'admin'], jobs: ['technician', 'admin'] };
+const NEW_JOB_TEXT = { approvals: 'งานรออนุมัติ', dispatch: 'งานรอหัวหน้าช่างมอบหมาย', jobs: 'งานรอช่างรับ' };
+let lastCounts = null, countsBusy = false;
+const baseTitle = document.title;
+
+function canSeeBadge(k) { return hasRole(...BADGE_ROLES[k]); }
+
+/** โหลดรายการของหน้าที่เปิดอยู่ใหม่ และให้หน้าอื่นโหลดใหม่เมื่อถูกเปิดครั้งถัดไป */
+function reloadVisiblePage() {
+    const el = document.querySelector('.page:not(.hidden)');
+    const visible = el ? el.id.replace('page-', '') : '';
+    const loaders = { dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, expenses: loadExpenses, supkpi: loadSupKpi };
+    ['mine', 'approvals', 'dispatch', 'jobs', 'all', 'dashboard', 'expenses', 'supkpi'].forEach(k => { if (k !== visible) loaded[k] = false; });
+    if (loaders[visible]) { loaded[visible] = true; loaders[visible](); }
+}
+
+/** แจ้งเตือนเมื่อจำนวนงานที่รอเพิ่มขึ้น (มี toast + Notification ของเบราว์เซอร์ถ้าได้รับอนุญาต) */
+function notifyNewJobs(prev, r) {
+    const rises = BADGE_KEYS.filter(k => canSeeBadge(k) && (r[k] || 0) > (prev[k] || 0));
+    if (!rises.length) return;
+    const msg = rises.map(k => `${NEW_JOB_TEXT[k]} ${r[k]} รายการ`).join(' · ');
+    toast('🔔 มีงานใหม่: ' + msg, 'warn');
+    try {
+        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+            new Notification('RST FixPoint — มีงานใหม่', { body: msg, tag: 'fixpoint-new-job' });
+        }
+    } catch (e) { /* ไม่รองรับ Notification (เช่น iOS ที่ยังไม่ได้เพิ่มลงหน้าจอโฮม) */ }
+}
+
 async function refreshBadges() {
+    if (!currentUser || countsBusy) return;
+    countsBusy = true;
     try {
         const r = await api('counts');
+        const prev = lastCounts;
+        lastCounts = r;
         if (hasRole('manager', 'admin')) setBadge('approvals', r.approvals);
         if (hasRole('technician', 'admin')) setBadge('jobs', r.jobs);
         if (hasRole('supervisor', 'admin')) setBadge('dispatch', r.dispatch);   // r27
-    } catch (e) { /* ignore */ }
+        const total = BADGE_KEYS.filter(canSeeBadge).reduce((s, k) => s + (r[k] || 0), 0);
+        document.title = total > 0 ? `(${total > 99 ? '99+' : total}) ${baseTitle}` : baseTitle;
+        if (!prev) return;                                   // ครั้งแรกหลังเข้าสู่ระบบ — ไม่ต้องแจ้งเตือน
+        if (!BADGE_KEYS.some(k => (r[k] || 0) !== (prev[k] || 0))) return;   // ไม่มีการเปลี่ยนแปลง
+        notifyNewJobs(prev, r);
+        reloadVisiblePage();                                 // รายการที่เปิดอยู่อัปเดตทันที
+    } catch (e) { /* ignore — จะลองใหม่รอบถัดไป */ }
+    finally { countsBusy = false; }
+}
+
+function refreshOnForeground() {
+    if (currentUser && !document.hidden) { pingServer(); refreshBadges(); }
 }
 
 function fillBranchSelects() {
@@ -946,6 +1010,7 @@ function resetNewForm() {
     if (currentUser.department) $('fDepartment').value = currentUser.department;
     if (!isAllBranch()) $('fBranch').value = currentUser.branch;
     clearPicks('new');
+    reqSigClear();
 }
 
 // ---------------- r16: รูปหลายรูปต่องาน (เลือกจากเครื่อง + ถ่ายรูป) ----------------
@@ -1049,7 +1114,9 @@ $('repairForm').addEventListener('submit', async (e) => {
     const btn = $('submitBtn');
     setBusy(btn, true, 'กำลังบันทึกข้อมูล...');
     try {
+        if (!reqSigState || !reqSigState.hasInk()) { toast('❌ กรุณาเซ็นลายเซ็นผู้แจ้งซ่อมก่อนส่งรายการ', 'err'); return; }
         const ticket = {
+            signature: reqSigState.toDataURL(),
             requester: $('fRequester').value.trim(),
             branch: $('fBranch').value,
             department: $('fDepartment').value,
@@ -1702,6 +1769,7 @@ async function openTicket(id) {
                 ${t.Cost !== undefined ? row('ค่าใช้จ่ายในการซ่อม', t.Cost === '' ? '-' : '฿' + Number(t.Cost).toLocaleString('th-TH', { minimumFractionDigits: 2 })) : ''}
             </div>
             ${t.Description ? `<div class="mt-3"><div class="text-xs text-slate-500">รายละเอียด</div><p class="text-sm whitespace-pre-line">${esc(t.Description)}</p></div>` : ''}
+            ${t.RequesterSignURL ? `<div class="mt-3"><div class="text-xs text-slate-500 mb-1">ลายเซ็นผู้แจ้งซ่อม${t.CreatedAt ? ' · ' + fmtDate(t.CreatedAt) : ''}</div>${gimg(t.RequesterSignURL, 'h-24 w-60 object-contain bg-white rounded-lg border')}</div>` : ''}
             ${t.ApproverSignURL ? `<div class="mt-3"><div class="text-xs text-slate-500 mb-1">ลายเซ็นผู้อนุมัติ${t.ApprovedAt ? ' · ' + fmtDate(t.ApprovedAt) : ''}</div>${gimg(t.ApproverSignURL, 'h-24 w-60 object-contain bg-white rounded-lg border')}</div>` : ''}
             ${t.ManagerNote ? `<div class="mt-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3"><b>หมายเหตุผู้จัดการ:</b> ${esc(t.ManagerNote)}</div>` : ''}
             ${t.TechNote ? `<div class="mt-3 text-sm bg-indigo-50 border border-indigo-200 rounded-lg p-3"><b>บันทึกช่าง:</b> ${esc(t.TechNote)}</div>` : ''}
@@ -2233,10 +2301,17 @@ function showServerInfo() {
 }
 
 document.querySelectorAll('[data-srv]').forEach(el => el.addEventListener('click', showServerInfo));
-window.addEventListener('online', pingServer);
+window.addEventListener('online', () => { pingServer(); refreshBadges(); });
 window.addEventListener('offline', () => setServer({ state: 'down', latency: null, error: 'อุปกรณ์ไม่ได้เชื่อมต่ออินเทอร์เน็ต', lastCheck: new Date() }));
-document.addEventListener('visibilitychange', () => { if (!document.hidden) pingServer(); });
+document.addEventListener('visibilitychange', refreshOnForeground);   // มือถือ: เปิดแอปกลับมาจากพื้นหลัง → ดึงงานใหม่ทันที
+window.addEventListener('focus', refreshOnForeground);
+window.addEventListener('pageshow', refreshOnForeground);
 setInterval(() => { if (!document.hidden) pingServer(); }, 60000);
+setInterval(() => { if (!document.hidden) refreshBadges(); }, POLL_MS);   // ตรวจงานใหม่ทุก 30 วินาที
+// ขออนุญาตแสดง Notification ครั้งแรกที่ผู้ใช้แตะหน้าจอ (เบราว์เซอร์บังคับให้ขออนุญาตจากการกระทำของผู้ใช้เท่านั้น)
+document.addEventListener('click', () => {
+    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); } catch (e) {}
+}, { once: true });
 
 // ---------------- Print work orders ----------------
 function openPrintDialog(ids) {
@@ -2260,7 +2335,7 @@ async function doPrint(ids, btn) {
     try {
         const r = await api('printTickets', { ticketIds: ids, withImages: opts.images });
         $('printArea').innerHTML = r.items.map(it => workOrderHtml(Object.assign({}, it.ticket, {
-            signImg: it.signImg, requesterImg: it.requesterImg,
+            signImg: it.signImg, reqSignImg: it.reqSignImg, requesterImg: it.requesterImg,
             beforeImgs: it.beforeImgs || [], afterImgs: it.afterImgs || []
         }), it.logs, r, opts)).join('');
         await waitImages($('printArea'), 10000);
@@ -2348,7 +2423,7 @@ function workOrderHtml(t, logs, meta, opts) {
             ${logs.map(l => `<tr><td>${fmtDate(l.Timestamp)}</td><td>${v(l.Action)}</td><td>${v(l.ByName)}</td><td>${esc(l.Note || '')}</td></tr>`).join('')}
         </table>` : ''}
 
-        ${opts.sign ? `<div style="display:flex;gap:8px;margin-top:18px">${sign('ผู้แจ้งซ่อม')}${sign('ผู้อนุมัติ', t.signImg, t.signImg ? t.ApprovedBy : '', t.signImg && t.ApprovedAt ? fmtDate(t.ApprovedAt, false) : '')}${sign('ช่างผู้ปฏิบัติงาน')}${sign('ผู้ตรวจรับงาน')}</div>` : ''}
+        ${opts.sign ? `<div style="display:flex;gap:8px;margin-top:18px">${sign('ผู้แจ้งซ่อม', t.reqSignImg, t.Requester, t.CreatedAt ? fmtDate(t.CreatedAt, false) : '')}${sign('ผู้อนุมัติ', t.signImg, t.signImg ? t.ApprovedBy : '', t.signImg && t.ApprovedAt ? fmtDate(t.ApprovedAt, false) : '')}${sign('ช่างผู้ปฏิบัติงาน')}${sign('ผู้ตรวจรับงาน')}</div>` : ''}
 
         <div style="margin-top:14px;border-top:1px solid #cbd5e1;padding-top:4px;font-size:10px;color:#64748b;display:flex;justify-content:space-between">
             <span>พิมพ์โดย ${esc(meta.printedBy)} เมื่อ ${fmtDate(meta.printedAt)}</span><span>RST FixPoint</span>
