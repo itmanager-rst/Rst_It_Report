@@ -2677,7 +2677,7 @@ function kpiReconcileRoute_(u, req) {
       cancelled: cancelled,
       outOfScope: outOfScope,
       kpiActual: selRow ? selRow.kpiActual : null,
-      consistent: counted.length === (counts[sel] || 0)
+      consistent: counted.length === (counts[sel] || 0) 
     }
   };
 }
