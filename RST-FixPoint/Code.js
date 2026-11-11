@@ -2,7 +2,7 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r26-2026-11-10-branches
+ * CODE_VERSION: r27-2026-11-11-supervisor
  *
  *  - r26: [สาขา] คืนสาขา "สำนักงานใหญ่" (HQ) + เพิ่ม 10 สาขาใหม่ (ขุขันธุ์ ... กุฉินารายณ์)
  *         · setupDatabase ใช้รายชื่อ BRANCH_SEED (ฐานข้อมูลใหม่) · seedBranches() เพิ่มเฉพาะสาขาที่ยังไม่มี (ฐานข้อมูลเดิม, รันซ้ำได้ปลอดภัย)
@@ -1094,14 +1094,14 @@ function approveTicket_(u, req) {
   const t = getTicketRow_(req.ticketId);
   if (!inScope_(u, t.Branch)) throw new Error('รายการนี้ไม่อยู่ในสาขาที่คุณดูแล');
   requireStatus_(t, [ST.PENDING]);
-  if (!req.signature || String(req.signature).indexOf('data:image/') !== 0) throw new Error('กรุณาเซ็นลายเซ็นก่อนอนุมัติ');
-  const sig = saveImage_({ base64: req.signature, type: 'image/png', name: 'signature.png' }, t.TicketID + '_sign_approve');
-  if (!sig.url) throw new Error('บันทึกลายเซ็นไม่สำเร็จ — ' + (sig.warning || 'ลองใหม่อีกครั้ง'));
   // r27: ผู้จัดการอนุมัติ แล้วส่งต่อให้หัวหน้าช่าง (ต้องเลือกหัวหน้าช่างทุกครั้ง) — หัวหน้าช่างจะเป็นผู้เลือกช่างเอง
   if (!req.supervisor) throw new Error('กรุณาเลือกหัวหน้าช่างที่จะรับงานต่อ');
   const sup = findUser_(req.supervisor);
   if (!sup || sup.Role !== 'supervisor' || !isActive_(sup.Active)) throw new Error('ไม่พบหัวหน้าช่างที่เลือก');
   if (!inScope_(sup, t.Branch)) throw new Error('หัวหน้าช่างที่เลือกไม่ได้อยู่ในสาขาของรายการนี้');
+  if (!req.signature || String(req.signature).indexOf('data:image/') !== 0) throw new Error('กรุณาเซ็นลายเซ็นก่อนอนุมัติ');
+  const sig = saveImage_({ base64: req.signature, type: 'image/png', name: 'signature.png' }, t.TicketID + '_sign_approve');
+  if (!sig.url) throw new Error('บันทึกลายเซ็นไม่สำเร็จ — ' + (sig.warning || 'ลองใหม่อีกครั้ง'));
   const supName = sup.FullName || sup.Username;
   const now = new Date();
   const extra = {
@@ -2677,7 +2677,7 @@ function kpiReconcileRoute_(u, req) {
       cancelled: cancelled,
       outOfScope: outOfScope,
       kpiActual: selRow ? selRow.kpiActual : null,
-      consistent: counted.length === (counts[sel] || 0) 
+      consistent: counted.length === (counts[sel] || 0)
     }
   };
 }
