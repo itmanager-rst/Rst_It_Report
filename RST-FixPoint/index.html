@@ -261,6 +261,61 @@
             <div id="approvalList" class="grid gap-3"></div>
         </div>
 
+        <!-- r27: หัวหน้าช่าง — งานที่ผู้จัดการส่งต่อให้ รอเลือกช่างที่ปฏิบัติงาน -->
+        <div id="page-dispatch" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">รอมอบหมายช่าง</h2>
+                <div id="dispatchChips" class="flex flex-wrap gap-1"></div>
+                <button class="btn bg-white border hover:bg-slate-50" onclick="loadDispatch()">รีเฟรช</button>
+            </div>
+            <p class="text-xs text-slate-500">งานที่ผู้จัดการอนุมัติและส่งต่อมาให้คุณ — เปิดรายการเพื่อเลือกช่างที่จะปฏิบัติงาน</p>
+            <div id="dispatchList" class="grid gap-3"></div>
+        </div>
+
+        <!-- r27: KPI หัวหน้าช่าง -->
+        <div id="page-supkpi" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-end gap-3 bg-white rounded-xl shadow-sm p-4">
+                <div>
+                    <label class="lbl">ช่วงเวลา</label>
+                    <select id="skRange" class="inp">
+                        <option value="mtd">เดือนนี้ (MTD)</option>
+                        <option value="lastMonth">เดือนที่แล้ว</option>
+                        <option value="ytd">ปีนี้ (YTD)</option>
+                        <option value="lastYear">ปีที่แล้ว</option>
+                        <option value="all">ทั้งหมด</option>
+                    </select>
+                </div>
+                <div id="skPersonWrap" class="hidden">
+                    <label class="lbl">หัวหน้าช่าง</label>
+                    <select id="skPerson" class="inp"></select>
+                </div>
+                <button id="skRefresh" class="btn bg-sky-800 hover:bg-sky-900 text-white">รีเฟรช</button>
+            </div>
+            <div id="skSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+            <div class="bg-white rounded-xl shadow-sm p-4 overflow-x-auto">
+                <table class="w-full text-sm min-w-[860px]">
+                    <thead class="text-left text-xs text-slate-500 border-b">
+                        <tr>
+                            <th class="p-2">หัวหน้าช่าง</th>
+                            <th class="p-2 text-right">ได้รับงาน</th>
+                            <th class="p-2 text-right">เลือกช่างแล้ว</th>
+                            <th class="p-2 text-right">เฉลี่ยเวลาเลือกช่าง (ชม.)</th>
+                            <th class="p-2 text-right">ตาม SLA</th>
+                            <th class="p-2 text-right">เฉลี่ยช่างเริ่มงาน (ชม.)</th>
+                            <th class="p-2 text-right">ปิดงานแล้ว</th>
+                            <th class="p-2 text-right">อัตราปิดงาน</th>
+                            <th class="p-2 text-right">เฉลี่ยเวลาปิดงาน (ชม.)</th>
+                            <th class="p-2 text-right">คะแนนผู้แจ้ง</th>
+                            <th class="p-2 text-right">เปลี่ยนช่าง</th>
+                            <th class="p-2 text-right">ค้าง / กำลังดูแล</th>
+                        </tr>
+                    </thead>
+                    <tbody id="skTable"></tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-500">เกณฑ์ SLA: เลือกช่างให้เสร็จภายใน <span id="skSla">-</span> ชั่วโมง นับจากวันที่ผู้จัดการส่งต่อ · ค่าเฉลี่ยในการ์ดสรุปถ่วงน้ำหนักตามจำนวนงาน · "ค้าง" = งานรอเลือกช่าง (ณ ปัจจุบัน) · "กำลังดูแล" = งานที่ช่างรับไปแล้วยังไม่ปิด</p>
+        </div>
+
         <!-- Technician jobs -->
         <div id="page-jobs" class="page hidden space-y-4">
             <div class="flex flex-wrap items-center gap-2">
@@ -464,9 +519,10 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxVdd-VRIuVCIC
 const LS_TOKEN = 'rst_fixpoint_token';
 const LS_USER = 'rst_fixpoint_user';
 
-const ROLE_TH = { employee: 'พนักงาน', technician: 'ช่างซ่อมบำรุง', manager: 'ผู้จัดการ', admin: 'ผู้ดูแลระบบ' };
+const ROLE_TH = { employee: 'พนักงาน', technician: 'ช่างซ่อมบำรุง', supervisor: 'หัวหน้าช่าง', manager: 'ผู้จัดการ', admin: 'ผู้ดูแลระบบ' };
 const STATUS = {
     'Pending':     { th: 'รออนุมัติ',          cls: 'bg-amber-100 text-amber-800',     color: '#f59e0b' },
+    'Dispatched':  { th: 'รอหัวหน้าช่างมอบหมาย', cls: 'bg-violet-100 text-violet-800',   color: '#8b5cf6' },
     'Approved':    { th: 'อนุมัติแล้ว / รอช่าง', cls: 'bg-sky-100 text-sky-800',         color: '#0ea5e9' },
     'In Progress': { th: 'กำลังดำเนินการ',     cls: 'bg-indigo-100 text-indigo-800',   color: '#6366f1' },
     'Completed':   { th: 'เสร็จสิ้น',           cls: 'bg-emerald-100 text-emerald-800', color: '#10b981' },
@@ -485,13 +541,15 @@ const CATEGORIES = [
 ];
 const NAV = [
     { id: 'dashboard', label: 'Dashboard',       roles: ['manager', 'admin'] },
-    { id: 'new',       label: 'แจ้งซ่อม',          roles: ['employee', 'technician', 'manager', 'admin'] },
-    { id: 'mine',      label: 'งานที่ฉันแจ้ง',       roles: ['employee', 'technician', 'manager', 'admin'] },
+    { id: 'new',       label: 'แจ้งซ่อม',          roles: ['employee', 'technician', 'supervisor', 'manager', 'admin'] },
+    { id: 'mine',      label: 'งานที่ฉันแจ้ง',       roles: ['employee', 'technician', 'supervisor', 'manager', 'admin'] },
     { id: 'approvals', label: 'รออนุมัติ',          roles: ['manager', 'admin'], badge: true },
+    { id: 'dispatch',  label: 'รอมอบหมายช่าง',       roles: ['supervisor', 'admin'], badge: true },   // r27
     { id: 'jobs',      label: 'งานช่าง',           roles: ['technician', 'admin'], badge: true },
     { id: 'all',       label: 'งานซ่อมทั้งหมด',     roles: ['manager', 'admin'] },
     { id: 'kpi',       label: 'KPI ซ่อมบำรุง',       roles: ['technician', 'manager', 'admin'] },
-    { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'manager', 'admin'] },
+    { id: 'supkpi',    label: 'KPI หัวหน้าช่าง',     roles: ['supervisor', 'manager', 'admin'] },   // r27
+    { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'supervisor', 'manager', 'admin'] },
     { id: 'expenses',  label: 'ค่าใช้จ่าย',          roles: ['admin'] },
     { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
 ];
@@ -502,6 +560,7 @@ let technicians = null;
 let charts = {};
 let mineData = [], jobsData = [], allData = [], usersData = [];
 let mineFilter = '', jobFilter = 'Approved';
+let dispatchScope = 'dispatch';   // r27: หน้า "รอมอบหมายช่าง" ของหัวหน้าช่าง
 const loaded = {};
 
 // ---------------- Utilities ----------------
@@ -766,7 +825,7 @@ async function startApp(user, preBranches) {
     fillStatusSelects();
     resetNewForm();
 
-    const first = hasRole('manager', 'admin') ? 'dashboard' : hasRole('technician') ? 'jobs' : 'new';
+    const first = hasRole('manager', 'admin') ? 'dashboard' : hasRole('supervisor') ? 'dispatch' : hasRole('technician') ? 'jobs' : 'new';
     switchPage(first);
     refreshBadges();
 }
@@ -793,10 +852,12 @@ const NAV_ICON = {
     profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     expenses: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
     kpi: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-    more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
+    dispatch: '<circle cx="9" cy="7" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
+    supkpi: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+    more:'<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
 };
-const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', kpi: 'KPI', more: 'เพิ่มเติม' };
-const MOBILE_PRIORITY = ['dashboard', 'approvals', 'jobs', 'new', 'mine', 'all', 'kpi', 'profile', 'admin'];
+const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', dispatch: 'มอบหมาย', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', kpi: 'KPI', supkpi: 'KPI หัวหน้า', more: 'เพิ่มเติม' };
+const MOBILE_PRIORITY = ['dashboard', 'approvals', 'dispatch', 'jobs', 'new', 'mine', 'all', 'kpi', 'supkpi', 'profile', 'admin'];
 let moreItems = [];
 
 function bnavBtn(id, badge) {
@@ -838,7 +899,7 @@ function switchPage(name) {
     window.scrollTo(0, 0);
     if (!loaded[name]) {
         loaded[name] = true;
-        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses, kpi: () => loadKpiPage(false) }[name] || (() => {}))();
+        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses, kpi: () => loadKpiPage(false), supkpi: loadSupKpi }[name] || (() => {}))();
     }
 }
 
@@ -854,6 +915,7 @@ async function refreshBadges() {
         const r = await api('counts');
         if (hasRole('manager', 'admin')) setBadge('approvals', r.approvals);
         if (hasRole('technician', 'admin')) setBadge('jobs', r.jobs);
+        if (hasRole('supervisor', 'admin')) setBadge('dispatch', r.dispatch);   // r27
     } catch (e) { /* ignore */ }
 }
 
@@ -1040,6 +1102,7 @@ function ticketCard(t) {
                 <span>📍 ${esc(t.Branch)} · ${esc(t.Location)}</span>
                 <span class="inline-flex items-center gap-1.5">${avatarHtml(t.Requester, t.requesterPhotoUrl, 'w-5 h-5')}${esc(t.Requester)}</span>
                 <span>🕒 ${fmtDate(t.CreatedAt)}</span>
+                ${t.SupervisorName ? `<span>🧑‍💼 ${esc(t.SupervisorName)}</span>` : ''}
                 ${t.TechnicianName ? `<span>🔧 ${esc(t.TechnicianName)}</span>` : ''}
             </div>
         </div>
@@ -1093,6 +1156,86 @@ function renderJobs() {
         jobFilter, v => { jobFilter = v; renderJobs(); });
     const list = jobsData.filter(t => t.Status === jobFilter);
     $('jobList').innerHTML = list.length ? list.map(ticketCard).join('') : emptyHtml('ไม่มีรายการ');
+}
+
+// ---------------- r27: หัวหน้าช่าง — รอมอบหมายช่าง ----------------
+async function loadDispatch() {
+    $('dispatchList').innerHTML = loadingHtml();
+    renderChips('dispatchChips', [['dispatch', 'รอเลือกช่าง'], ['supervised', 'งานที่ส่งต่อให้ฉันทั้งหมด']], dispatchScope,
+        v => { dispatchScope = v; loadDispatch(); });
+    try {
+        const r = await api('listTickets', { filter: { scope: dispatchScope } });
+        if (dispatchScope === 'dispatch') setBadge('dispatch', r.total);
+        $('dispatchList').innerHTML = r.tickets.length ? r.tickets.map(ticketCard).join('')
+            : emptyHtml(dispatchScope === 'dispatch' ? 'ไม่มีงานรอมอบหมายช่าง 🎉' : 'ยังไม่มีงานที่ส่งต่อให้คุณ');
+    } catch (e) { $('dispatchList').innerHTML = emptyHtml(e.message); }
+}
+
+// ---------------- r27: KPI หัวหน้าช่าง ----------------
+const fmtHrs = v => (v === null || v === undefined) ? '-' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 1 });
+const fmtPct = v => (v === null || v === undefined) ? '-' : v + '%';
+const slaCls = v => v === null || v === undefined ? 'text-slate-400' : v >= 90 ? 'text-emerald-600 font-semibold' : v >= 70 ? 'text-amber-600 font-semibold' : 'text-rose-600 font-semibold';
+
+async function loadSupKpi() {
+    if (!$('skRefresh').dataset.bound) {
+        $('skRefresh').dataset.bound = '1';
+        $('skRefresh').onclick = loadSupKpi;
+        $('skRange').onchange = loadSupKpi;
+        $('skPerson').onchange = loadSupKpi;
+    }
+    const isBoss = hasRole('manager', 'admin');
+    $('skPersonWrap').classList.toggle('hidden', !isBoss);
+    if (isBoss && !$('skPerson').options.length) {
+        try {
+            const sups = (await api('listSupervisors')).supervisors;
+            $('skPerson').innerHTML = `<option value="">ทั้งหมด</option>` + sups.map(s => `<option value="${esc(s.username)}">${esc(s.fullName)}</option>`).join('');
+        } catch (e) { /* ignore */ }
+    }
+    const p = periodFor($('skRange').value);
+    const filter = {};
+    if (p && p.from) filter.dateFrom = ymd(p.from);
+    if (p && p.to) filter.dateTo = ymd(p.to);
+    if (isBoss && $('skPerson').value) filter.supervisor = $('skPerson').value;
+    $('skTable').innerHTML = `<tr><td colspan="12">${loadingHtml()}</td></tr>`;
+    try {
+        renderSupKpi(await api('supervisorKpi', { filter }));
+    } catch (e) {
+        $('skTable').innerHTML = `<tr><td colspan="12">${emptyHtml(e.message)}</td></tr>`;
+    }
+}
+
+function renderSupKpi(d) {
+    $('skSla').textContent = d.slaHours;
+    const rows = d.supervisors || [];
+    // ค่าเฉลี่ยถ่วงน้ำหนักตามจำนวนงาน
+    const wavg = (key, weightKey) => {
+        const pts = rows.filter(r => r[key] !== null && r[key] !== undefined && r[weightKey] > 0);
+        const w = pts.reduce((a, r) => a + r[weightKey], 0);
+        return w ? Math.round(pts.reduce((a, r) => a + r[key] * r[weightKey], 0) / w * 10) / 10 : null;
+    };
+    const sum = key => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+    const pendingTotal = sum('pendingNow'), openTotal = sum('openNow');
+    $('skSummary').innerHTML =
+        kpi('ได้รับงานส่งต่อ', sum('received'), `ค้างรอเลือกช่าง ${pendingTotal} งาน`, '#8b5cf6') +
+        kpi('เลือกช่างแล้ว', sum('assigned'), `กำลังดูแล ${openTotal} งาน`, '#0ea5e9') +
+        kpi('เฉลี่ยเวลาเลือกช่าง', fmtHrs(wavg('avgAssignHours', 'assigned')) + (wavg('avgAssignHours', 'assigned') !== null ? ' ชม.' : ''), '', '#6366f1') +
+        kpi('ตาม SLA', fmtPct(wavg('slaRate', 'assigned')), `เกณฑ์ ${d.slaHours} ชม.`, '#10b981');
+
+    $('skTable').innerHTML = rows.length ? rows.map(r => `
+        <tr class="border-t ${r.me ? 'bg-sky-50' : ''}">
+            <td class="p-2"><div class="font-medium">${esc(r.fullName)}${r.me ? ' <span class="text-xs text-sky-700">(คุณ)</span>' : ''}</div><div class="text-xs text-slate-500">${esc(r.branch)}</div></td>
+            <td class="p-2 text-right">${r.received}</td>
+            <td class="p-2 text-right">${r.assigned}</td>
+            <td class="p-2 text-right">${fmtHrs(r.avgAssignHours)}</td>
+            <td class="p-2 text-right ${slaCls(r.slaRate)}">${fmtPct(r.slaRate)}</td>
+            <td class="p-2 text-right">${fmtHrs(r.avgStartHours)}</td>
+            <td class="p-2 text-right">${r.completed}</td>
+            <td class="p-2 text-right">${fmtPct(r.completionRate)}</td>
+            <td class="p-2 text-right">${fmtHrs(r.avgResolveHours)}</td>
+            <td class="p-2 text-right">${r.avgRating !== null ? `★ ${r.avgRating} <span class="text-xs text-slate-400">(${r.ratingCount})</span>` : '-'}</td>
+            <td class="p-2 text-right">${r.reassigns}</td>
+            <td class="p-2 text-right">${r.pendingNow} / ${r.openNow}</td>
+        </tr>`).join('') : `<tr><td colspan="12">${emptyHtml('ไม่มีข้อมูลหัวหน้าช่างในช่วงเวลานี้')}</td></tr>`;
 }
 
 async function loadAll() {
@@ -1487,12 +1630,12 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeMo
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 function stepper(status) {
-    const steps = ['Pending', 'Approved', 'In Progress', 'Completed'];
+    const steps = ['Pending', 'Dispatched', 'Approved', 'In Progress', 'Completed']; // r27: เพิ่มขั้นส่งต่อหัวหน้าช่าง
     if (status === 'Rejected' || status === 'Cancelled') {
         return `<div class="rounded-lg p-3 text-sm ${STATUS[status].cls}">รายการนี้ถูก${esc(STATUS[status].th)}</div>`;
     }
     const idx = steps.indexOf(status);
-    const labels = ['รออนุมัติ', 'อนุมัติแล้ว', 'กำลังซ่อม', 'เสร็จสิ้น'];
+    const labels = ['รออนุมัติ', 'ส่งหัวหน้าช่าง', 'มอบหมายช่าง', 'กำลังซ่อม', 'เสร็จสิ้น'];
     return `<div class="flex items-center">${steps.map((s, i) => `
         <div class="flex flex-col items-center gap-1 shrink-0">
             <div class="step-dot ${i <= idx ? 'bg-sky-700 text-white' : 'bg-slate-200 text-slate-500'}">${i < idx ? '✓' : i + 1}</div>
@@ -1505,14 +1648,26 @@ async function getTechnicians() {
     return technicians;
 }
 
+// r27: รายชื่อหัวหน้าช่าง (ดึงใหม่ทุกครั้งที่เปิดรายการ เพื่อให้เห็นผู้ใช้ที่เพิ่งเพิ่ม)
+async function getSupervisors() {
+    return (await api('listSupervisors')).supervisors;
+}
+
 async function openTicket(id) {
     openModal(loadingHtml());
     try {
         const { ticket: t, logs } = await api('getTicket', { ticketId: id });
         currentTicket = t;
         PICKS.act = []; // r16: ล้างรูปที่เลือกค้างจากรายการก่อนหน้า
-        let techOpts = '';
-        if (hasRole('manager', 'admin') && ['Pending', 'Approved', 'In Progress'].includes(t.Status)) {
+        let techOpts = '', supOpts = '';
+        // r27: ผู้จัดการ → ส่งต่อให้หัวหน้าช่าง (ตอนรออนุมัติ)
+        if (hasRole('manager', 'admin') && t.Status === 'Pending') {
+            const sups = (await getSupervisors()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
+            supOpts = sups.map(x => `<option value="${esc(x.username)}">${esc(x.fullName)} (${esc(x.branch)})</option>`).join('');
+        }
+        // r27: หัวหน้าช่างที่ได้รับงาน → เลือก/เปลี่ยนช่าง
+        const supOwner = (t.Supervisor || '').toLowerCase() === currentUser.username.toLowerCase();
+        if (hasRole('supervisor', 'admin') && (supOwner || hasRole('admin')) && ['Dispatched', 'Approved', 'In Progress'].includes(t.Status)) {
             const techs = (await getTechnicians()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
             techOpts = techs.map(x => `<option value="${esc(x.username)}" ${x.username === t.Technician ? 'selected' : ''}>${esc(x.fullName)} (${esc(x.branch)})</option>`).join('');
         }
@@ -1541,6 +1696,7 @@ async function openTicket(id) {
                 ${row('สาขา', esc(t.Branch))}${row('สถานที่', esc(t.Location))}
                 ${row('หมวดหมู่', esc(t.Category))}${row('วันที่แจ้ง', fmtDate(t.CreatedAt))}
                 ${t.ApprovedBy ? row(t.Status === 'Rejected' ? 'ไม่อนุมัติโดย' : 'อนุมัติโดย', esc(t.ApprovedBy) + ' · ' + fmtDate(t.ApprovedAt)) : ''}
+                ${t.SupervisorName ? row('หัวหน้าช่างผู้ดูแล', esc(t.SupervisorName) + (t.DispatchedAt ? ' · ' + fmtDate(t.DispatchedAt) : '')) : ''}
                 ${t.TechnicianName ? row('ช่างผู้รับผิดชอบ', esc(t.TechnicianName)) : ''}
                 ${t.CompletedAt ? row('ปิดงานเมื่อ', fmtDate(t.CompletedAt)) : ''}
                 ${t.Cost !== undefined ? row('ค่าใช้จ่ายในการซ่อม', t.Cost === '' ? '-' : '฿' + Number(t.Cost).toLocaleString('th-TH', { minimumFractionDigits: 2 })) : ''}
@@ -1551,7 +1707,7 @@ async function openTicket(id) {
             ${t.TechNote ? `<div class="mt-3 text-sm bg-indigo-50 border border-indigo-200 rounded-lg p-3"><b>บันทึกช่าง:</b> ${esc(t.TechNote)}</div>` : ''}
             ${photoGalleryHtml(t)}
             ${evaluationHtml(t)}
-            ${actionPanel(t, techOpts)}
+            ${actionPanel(t, techOpts, supOpts)}
             <div class="mt-5">
                 <h4 class="font-semibold text-sm mb-2">ประวัติการดำเนินงาน</h4>
                 <ol class="border-l-2 border-slate-200 ml-2 space-y-3">
@@ -1568,16 +1724,18 @@ async function openTicket(id) {
     }
 }
 
-function actionPanel(t, techOpts) {
+function actionPanel(t, techOpts, supOpts) {
     const me = currentUser.username;
     const blocks = [];
     const isMine = (t.Technician || '').toLowerCase() === me.toLowerCase();
+    const isSupOwner = (t.Supervisor || '').toLowerCase() === me.toLowerCase();
 
     if (hasRole('manager', 'admin') && t.Status === 'Pending') {
         blocks.push(`
             <h4 class="font-semibold text-sm">การอนุมัติ (ผู้จัดการ)</h4>
-            <div><label class="lbl">มอบหมายช่าง (ไม่บังคับ)</label>
-                <select id="actTech" class="inp"><option value="">-- ให้ช่างกดรับงานเอง --</option>${techOpts}</select></div>
+            <div><label class="lbl">ส่งต่อให้หัวหน้าช่างที่ดูแลช่าง *</label>
+                <select id="actSup" class="inp"><option value="">-- เลือกหัวหน้าช่าง --</option>${supOpts}</select>
+                <p class="text-xs text-slate-500 mt-1">หัวหน้าช่างที่รับงานจะเป็นผู้เลือกช่างที่ปฏิบัติงาน</p></div>
             <div><label class="lbl">หมายเหตุ / เหตุผล</label><textarea id="actNote" rows="2" class="inp" placeholder="จำเป็นต้องระบุเมื่อไม่อนุมัติ"></textarea></div>
             <div>
                 <div class="flex justify-between items-end mb-1">
@@ -1591,12 +1749,15 @@ function actionPanel(t, techOpts) {
                 <button class="btn flex-1 bg-rose-600 hover:bg-rose-700 text-white" onclick="doAction(this,'rejectTicket','${esc(t.TicketID)}')">✕ ไม่อนุมัติ</button>
             </div>`);
     }
-    if (hasRole('manager', 'admin') && ['Approved', 'In Progress'].includes(t.Status)) {
+    // r27: หัวหน้าช่างที่รับงาน (หรือ admin) เลือก/เปลี่ยนช่าง
+    if (techOpts && ['Dispatched', 'Approved', 'In Progress'].includes(t.Status) && (isSupOwner || hasRole('admin'))) {
+        const first = t.Status === 'Dispatched';
         blocks.push(`
-            <h4 class="font-semibold text-sm">มอบหมาย / เปลี่ยนช่าง</h4>
+            <h4 class="font-semibold text-sm">${first ? 'เลือกช่างที่จะปฏิบัติงาน (หัวหน้าช่าง)' : 'เปลี่ยนช่าง (หัวหน้าช่าง)'}</h4>
+            ${first ? '<p class="text-xs text-slate-500 -mt-2">เลือกช่างแล้ว งานจะไปอยู่ที่ช่างเพื่อกดรับงานต่อ</p>' : ''}
             <div class="flex gap-2">
                 <select id="actAssign" class="inp"><option value="">-- เลือกช่าง --</option>${techOpts}</select>
-                <button class="btn bg-sky-800 hover:bg-sky-900 text-white whitespace-nowrap" onclick="doAction(this,'assignTechnician','${esc(t.TicketID)}')">มอบหมาย</button>
+                <button class="btn bg-sky-800 hover:bg-sky-900 text-white whitespace-nowrap" onclick="doAction(this,'assignTechnician','${esc(t.TicketID)}')">${first ? 'มอบหมายช่าง' : 'เปลี่ยนช่าง'}</button>
             </div>`);
     }
     if (hasRole('technician', 'admin') && t.Status === 'Approved' && (!t.Technician || isMine || hasRole('admin'))) {
@@ -1627,7 +1788,8 @@ async function doAction(btn, action, ticketId) {
     const payload = { ticketId, note: ($('actNote') || {}).value || '' };
     if ((action === 'updateProgress' || action === 'completeTicket') && $('actCost') && $('actCost').value !== '') payload.cost = $('actCost').value;
     if (action === 'approveTicket') {
-        payload.technician = $('actTech').value;
+        payload.supervisor = $('actSup').value;   // r27: ต้องส่งต่อให้หัวหน้าช่าง
+        if (!payload.supervisor) { toast('กรุณาเลือกหัวหน้าช่างที่จะส่งต่องาน', 'err'); $('actSup').focus(); return; }
         if (!sigState || !sigState.hasInk()) { toast('❌ กรุณาเซ็นลายเซ็นในกรอบก่อนอนุมัติ', 'err'); return; }
         payload.signature = sigState.toDataURL();
     }
@@ -1659,10 +1821,10 @@ async function doAction(btn, action, ticketId) {
 
 // โหลดรายการในหน้าที่เปิดอยู่ใหม่ และให้หน้าอื่นโหลดใหม่เมื่อเปิด
 function refreshAfterChange() {
-    ['mine', 'approvals', 'jobs', 'all', 'dashboard', 'expenses'].forEach(k => loaded[k] = false);
+    ['mine', 'approvals', 'dispatch', 'jobs', 'all', 'dashboard', 'expenses', 'supkpi'].forEach(k => loaded[k] = false);
     const visible = document.querySelector('.page:not(.hidden)').id.replace('page-', '');
     loaded[visible] = true;
-    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, jobs: loadJobs, all: loadAll, expenses: loadExpenses }[visible] || (() => {}))();
+    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, expenses: loadExpenses, supkpi: loadSupKpi }[visible] || (() => {}))();
     refreshBadges();
 }
 
@@ -1926,6 +2088,7 @@ async function loadDashboard() {
             kpi('แจ้งซ่อมเข้า', d.total, pv ? delta(d.total, pv.total, 'neutral') : `เปิดอยู่ ${d.open} งาน`, '#0c4a6e') +
             kpi('ปิดงานในช่วงนี้', d.closedInPeriod, pv ? delta(d.closedInPeriod, pv.closedInPeriod, 'up') : `อัตราปิดงาน ${d.completionRate}%`, STATUS['Completed'].color) +
             kpi('รออนุมัติ', s['Pending'] || 0, '', STATUS['Pending'].color) +
+            kpi('รอหัวหน้าช่างมอบหมาย', s['Dispatched'] || 0, '', STATUS['Dispatched'].color) +
             kpi('รอช่างรับงาน', s['Approved'] || 0, '', STATUS['Approved'].color) +
             kpi('กำลังดำเนินการ', s['In Progress'] || 0, `ไม่อนุมัติ ${s['Rejected'] || 0} · ยกเลิก ${s['Cancelled'] || 0}`, STATUS['In Progress'].color) +
             kpi('เวลาซ่อมเฉลี่ย', hrs(cur.avgResolveHours), pv ? delta(cur.avgResolveHours, pv.avgResolveHours, 'down', hrs) : `อนุมัติเฉลี่ย ${hrs(d.avgApproveHours)}`, '#64748b');

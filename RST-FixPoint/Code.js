@@ -57,7 +57,10 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r26-2026-11-10-branches';
+const CODE_VERSION = 'r27-2026-11-11-supervisor';
+
+// r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
+const SUP_ASSIGN_SLA_HOURS = 4;
 
 // 📌 ID ของ Google Sheet ฐานข้อมูล (ถ้าสคริปต์นี้สร้างจาก Extensions > Apps Script ของชีตอยู่แล้ว เว้นว่างได้)
 const SPREADSHEET_ID = '';
@@ -94,7 +97,8 @@ const SHEETS = {
     name: 'Tickets',
     headers: ['TicketID', 'CreatedAt', 'Username', 'Requester', 'Branch', 'Department', 'Location', 'Category', 'Title',
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
-      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL', 'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos'] // r16: รูปเพิ่มเติม (JSON)
+      'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL', 'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos',
+      'Supervisor', 'SupervisorName', 'DispatchedAt', 'TechAssignedAt'] // r16: รูปเพิ่มเติม (JSON) • r27: ข้อมูลหัวหน้าช่าง
   },
   DELETED: {
     name: 'DeletedTickets',
@@ -102,6 +106,7 @@ const SHEETS = {
       'Description', 'Priority', 'Status', 'ImageURL', 'ApprovedBy', 'ApprovedAt', 'ManagerNote', 'Technician',
       'TechnicianName', 'AcceptedAt', 'CompletedAt', 'TechNote', 'AfterImageURL', 'UpdatedAt', 'ApproverSignURL',
       'Cost', 'Rating', 'RatingComment', 'RatedBy', 'RatedAt', 'ExtraPhotos',
+      'Supervisor', 'SupervisorName', 'DispatchedAt', 'TechAssignedAt',
       'DeletedAt', 'DeletedBy', 'DeleteReason']
   },
   USER_LOG: {  // r16: ประวัติการจัดการผู้ใช้ (ไม่เก็บรหัสผ่าน)
@@ -114,16 +119,17 @@ const SHEETS = {
   }
 };
 
-const ROLES = ['employee', 'technician', 'manager', 'admin'];
+const ROLES = ['employee', 'technician', 'supervisor', 'manager', 'admin']; // r27: supervisor = พนักงานที่ดูแลช่าง
 const ST = {
   PENDING: 'Pending',
-  APPROVED: 'Approved',
+  DISPATCHED: 'Dispatched',   // r27: ผู้จัดการอนุมัติแล้ว ส่งต่อให้หัวหน้าช่างเลือกช่าง
+  APPROVED: 'Approved',       // หัวหน้าช่างเลือกช่างแล้ว → รอช่างกดรับงาน
   IN_PROGRESS: 'In Progress',
   COMPLETED: 'Completed',
   REJECTED: 'Rejected',
   CANCELLED: 'Cancelled'
 };
-const ALL_STATUS = [ST.PENDING, ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED, ST.REJECTED, ST.CANCELLED];
+const ALL_STATUS = [ST.PENDING, ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED, ST.REJECTED, ST.CANCELLED];
 
 // ---------------------------------------------------------------------------
 // Routing
@@ -131,6 +137,7 @@ const ALL_STATUS = [ST.PENDING, ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED, ST.RE
 
 const ALL_ROLES = ROLES;
 const MGR = ['manager', 'admin'];
+const SUP = ['supervisor', 'admin'];   // r27: หัวหน้าช่าง (ผู้ดูแลช่าง) — เลือกช่างให้งานที่ผู้จัดการส่งต่อ
 const TECH = ['technician', 'admin'];
 const ADMIN = ['admin'];
 
@@ -152,10 +159,12 @@ const ROUTES = {
   cancelTicket:    { roles: ALL_ROLES, fn: cancelTicket_, write: true },
   rateTicket:      { roles: ALL_ROLES, fn: rateTicket_, write: true }, // r12: ผู้แจ้งประเมินช่างหลังปิดงาน
 
-  approveTicket:   { roles: MGR, fn: approveTicket_, write: true },
+  approveTicket:   { roles: MGR, fn: approveTicket_, write: true },        // r27: อนุมัติ + ส่งต่อหัวหน้าช่าง
   rejectTicket:    { roles: MGR, fn: rejectTicket_, write: true },
-  assignTechnician:{ roles: MGR, fn: assignTechnician_, write: true },
-  listTechnicians: { roles: MGR, fn: (u) => ({ technicians: listTechnicians_(u) }) },
+  assignTechnician:{ roles: SUP, fn: assignTechnician_, write: true },    // r27: หัวหน้าช่างเลือกช่าง (แทนผู้จัดการ)
+  listTechnicians: { roles: MGR.concat(['supervisor']), fn: (u) => ({ technicians: listTechnicians_(u) }) },
+  listSupervisors: { roles: MGR, fn: (u) => ({ supervisors: listSupervisors_(u) }) },   // r27
+  supervisorKpi:   { roles: ['supervisor', 'manager', 'admin'], fn: supervisorKpi_ },   // r27: KPI หัวหน้าช่าง
   dashboard:       { roles: MGR, fn: dashboard_ },
 
   acceptTicket:    { roles: TECH, fn: acceptTicket_, write: true },
@@ -622,10 +631,16 @@ function addLog_(ticketId, action, u, from, to, note) {
 function canSee_(u, t) {
   if (u.Role === 'admin') return true;
   if (norm_(t.Username) === norm_(u.Username)) return true;
+  if (u.Role === 'supervisor') return supOwns_(u, t);   // r27: หัวหน้าช่างเห็นเฉพาะงานที่ถูกส่งต่อมาให้ตน
   if (!inScope_(u, t.Branch)) return false;
   if (u.Role === 'manager') return true;
   if (u.Role === 'technician') return [ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1;
   return false;
+}
+
+/** r27: งานนี้ถูกส่งต่อให้หัวหน้าช่างคนนี้หรือไม่ (admin ถือว่าเกี่ยวข้องทุกงาน) */
+function supOwns_(u, t) {
+  return u.Role === 'admin' || (!!String(t.Supervisor || '') && norm_(t.Supervisor) === norm_(u.Username));
 }
 
 function getTicketRow_(id) {
@@ -777,6 +792,8 @@ function listTickets_(u, req) {
 
   if (scope === 'mine') list = list.filter(t => norm_(t.Username) === norm_(u.Username));
   if (scope === 'approvals') list = list.filter(t => t.Status === ST.PENDING && inScope_(u, t.Branch));
+  if (scope === 'dispatch') list = list.filter(t => t.Status === ST.DISPATCHED && supOwns_(u, t));          // r27: รอหัวหน้าช่างเลือกช่าง
+  if (scope === 'supervised') list = list.filter(t => supOwns_(u, t) && [ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1); // r27
   if (scope === 'jobs') {
     const mine = t => u.Role === 'admin' || norm_(t.Technician) === norm_(u.Username);
     list = list.filter(t => inScope_(u, t.Branch) && (
@@ -866,6 +883,9 @@ function counts_(u) {
   const out = { approvals: 0, jobs: 0 };
   if (MGR.indexOf(u.Role) > -1) {
     out.approvals = all.filter(t => t.Status === ST.PENDING && inScope_(u, t.Branch)).length;
+  }
+  if (SUP.indexOf(u.Role) > -1) {  // r27
+    out.dispatch = all.filter(t => t.Status === ST.DISPATCHED && supOwns_(u, t)).length;
   }
   if (TECH.indexOf(u.Role) > -1) {
     out.jobs = all.filter(t => t.Status === ST.APPROVED && inScope_(u, t.Branch) &&
@@ -1077,15 +1097,19 @@ function approveTicket_(u, req) {
   if (!req.signature || String(req.signature).indexOf('data:image/') !== 0) throw new Error('กรุณาเซ็นลายเซ็นก่อนอนุมัติ');
   const sig = saveImage_({ base64: req.signature, type: 'image/png', name: 'signature.png' }, t.TicketID + '_sign_approve');
   if (!sig.url) throw new Error('บันทึกลายเซ็นไม่สำเร็จ — ' + (sig.warning || 'ลองใหม่อีกครั้ง'));
-  const extra = { ApprovedBy: u.FullName || u.Username, ApprovedAt: new Date(), ManagerNote: String(req.note || ''), ApproverSignURL: sig.url };
-  if (req.technician) {
-    const tech = findUser_(req.technician);
-    if (!tech || tech.Role !== 'technician') throw new Error('ไม่พบช่างที่เลือก');
-    extra.Technician = tech.Username;
-    extra.TechnicianName = tech.FullName || tech.Username;
-  }
-  const note = [req.note, extra.TechnicianName ? 'มอบหมาย: ' + extra.TechnicianName : ''].filter(String).join(' | ');
-  return transition_(u, t, ST.APPROVED, 'อนุมัติงานซ่อม', note, extra);
+  // r27: ผู้จัดการอนุมัติ แล้วส่งต่อให้หัวหน้าช่าง (ต้องเลือกหัวหน้าช่างทุกครั้ง) — หัวหน้าช่างจะเป็นผู้เลือกช่างเอง
+  if (!req.supervisor) throw new Error('กรุณาเลือกหัวหน้าช่างที่จะรับงานต่อ');
+  const sup = findUser_(req.supervisor);
+  if (!sup || sup.Role !== 'supervisor' || !isActive_(sup.Active)) throw new Error('ไม่พบหัวหน้าช่างที่เลือก');
+  if (!inScope_(sup, t.Branch)) throw new Error('หัวหน้าช่างที่เลือกไม่ได้อยู่ในสาขาของรายการนี้');
+  const supName = sup.FullName || sup.Username;
+  const now = new Date();
+  const extra = {
+    ApprovedBy: u.FullName || u.Username, ApprovedAt: now, ManagerNote: String(req.note || ''), ApproverSignURL: sig.url,
+    Supervisor: sup.Username, SupervisorName: supName, DispatchedAt: now
+  };
+  const note = [req.note, 'ส่งต่อหัวหน้าช่าง: ' + supName].filter(String).join(' | ');
+  return transition_(u, t, ST.DISPATCHED, 'อนุมัติงานซ่อม', note, extra);
 }
 
 function rejectTicket_(u, req) {
@@ -1098,16 +1122,29 @@ function rejectTicket_(u, req) {
   });
 }
 
+/**
+ * r27: หัวหน้าช่างเลือกช่างให้งานที่ถูกส่งต่อมา (Dispatched → Approved รอช่างรับงาน)
+ * หรือเปลี่ยนช่างตอนงานยังเป็น Approved / In Progress — ทำได้เฉพาะงานที่ส่งต่อให้ตนเอง (admin ทำได้ทุกงาน)
+ * บันทึกเวลา TechAssignedAt เฉพาะการมอบหมายครั้งแรก เพื่อใช้วัด KPI ความเร็วในการเลือกช่าง
+ */
 function assignTechnician_(u, req) {
   const t = getTicketRow_(req.ticketId);
-  if (!inScope_(u, t.Branch)) throw new Error('รายการนี้ไม่อยู่ในสาขาที่คุณดูแล');
-  requireStatus_(t, [ST.APPROVED, ST.IN_PROGRESS]);
+  if (!supOwns_(u, t)) throw new Error('งานนี้ไม่ได้ถูกส่งต่อให้คุณ');
+  requireStatus_(t, [ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS]);
   const tech = findUser_(req.technician);
-  if (!tech || tech.Role !== 'technician') throw new Error('ไม่พบช่างที่เลือก');
+  if (!tech || tech.Role !== 'technician' || !isActive_(tech.Active)) throw new Error('ไม่พบช่างที่เลือก');
+  if (!inScope_(tech, t.Branch)) throw new Error('ช่างที่เลือกไม่ได้อยู่ในสาขาของรายการนี้');
   const name = tech.FullName || tech.Username;
-  updateRow_(SHEETS.TICKETS, t._row, { Technician: tech.Username, TechnicianName: name, UpdatedAt: new Date() });
-  addLog_(t.TicketID, 'มอบหมายช่าง', u, t.Status, t.Status, name);
-  return { message: 'มอบหมายงานให้ ' + name + ' แล้ว' };
+  const now = new Date();
+  const extra = { Technician: tech.Username, TechnicianName: name, UpdatedAt: now };
+  if (!String(t.TechAssignedAt || '')) extra.TechAssignedAt = now;
+  const action = 'มอบหมายช่าง (หัวหน้าช่าง)';
+  if (t.Status === ST.DISPATCHED) {
+    return transition_(u, t, ST.APPROVED, action, name, extra);   // ช่างยังไม่ได้รับ → สถานะ Approved รอช่างกดรับงาน
+  }
+  updateRow_(SHEETS.TICKETS, t._row, extra);
+  addLog_(t.TicketID, action, u, t.Status, t.Status, name);
+  return { message: 'เปลี่ยนช่างเป็น ' + name + ' แล้ว' };
 }
 
 function acceptTicket_(u, req) {
@@ -1320,6 +1357,91 @@ function listTechnicians_(u) {
     .map(x => ({ username: String(x.Username), fullName: String(x.FullName || x.Username), branch: String(x.Branch) }));
 }
 
+/** r27: รายชื่อหัวหน้าช่าง (ผู้ดูแลช่าง) ที่ผู้จัดการเลือกส่งต่องานได้ */
+function listSupervisors_(u) {
+  return readAll_(SHEETS.USERS)
+    .filter(x => x.Role === 'supervisor' && isActive_(x.Active))
+    .filter(x => isAllBranch_(u) || String(x.Branch) === String(u.Branch) || String(x.Branch).toUpperCase() === 'ALL')
+    .map(x => ({ username: String(x.Username), fullName: String(x.FullName || x.Username), branch: String(x.Branch) }));
+}
+
+// ---------------------------------------------------------------------------
+// r27: KPI หัวหน้าช่าง — วัดจากงานที่หัวหน้าช่างคนนั้นได้รับมอบหมาย (ส่งต่อจากผู้จัดการ) และเลือกช่างให้
+//   • ส่งต่อ (received)            : งานที่ผู้จัดการส่งมาในช่วงเวลา (DispatchedAt)
+//   • เลือกช่าง (assigned)         : งานที่เลือกช่างแล้วในช่วงเวลา (TechAssignedAt)
+//   • เวลาเลือกช่าง (avgAssignHours): ชั่วโมงเฉลี่ยจากส่งต่อ → เลือกช่าง • SLA = % ที่เสร็จภายใน SUP_ASSIGN_SLA_HOURS
+//   • เวลาเริ่มงาน (avgStartHours) : ชั่วโมงเฉลี่ยจากเลือกช่าง → ช่างกดรับงาน
+//   • ปิดงาน / อัตราปิดงาน / เวลาปิดงาน / คะแนนผู้แจ้ง / การเปลี่ยนช่าง (reassigns)
+// ---------------------------------------------------------------------------
+
+const SUP_ASSIGN_ACTIONS = ['มอบหมายช่าง', 'มอบหมายช่าง (หัวหน้าช่าง)'];
+
+function supervisorKpi_(u, req) {
+  const f = req.filter || {};
+  const from = f.dateFrom ? new Date(f.dateFrom + 'T00:00:00+07:00') : null;
+  const to = f.dateTo ? new Date(f.dateTo + 'T23:59:59+07:00') : null;
+  const inRange = d => !!d && (!from || d >= from) && (!to || d <= to);
+  const hrs = (a, b) => {
+    const x = toDate_(a), y = toDate_(b);
+    return x && y && y >= x ? (y - x) / 36e5 : null;
+  };
+  const nums = a => a.filter(v => v !== null && isFinite(v));
+  const avg = a => { const n = nums(a); return n.length ? Math.round(n.reduce((x, y) => x + y, 0) / n.length * 10) / 10 : null; };
+  const pct = (part, whole) => whole ? Math.round(part / whole * 100) : null;
+
+  // ผู้ถูกแสดง: หัวหน้าช่างเห็นเฉพาะตนเอง • ผู้จัดการเห็นในสาขาตน • admin เห็นทั้งหมด
+  let sups = readAll_(SHEETS.USERS).filter(x => x.Role === 'supervisor' && isActive_(x.Active) && inScope_(u, x.Branch));
+  if (u.Role === 'supervisor') sups = sups.filter(x => norm_(x.Username) === norm_(u.Username));
+  if (f.supervisor) sups = sups.filter(x => norm_(x.Username) === norm_(f.supervisor));
+
+  const tickets = readAll_(SHEETS.TICKETS).filter(t => t.Supervisor && (
+    u.Role === 'supervisor' ? norm_(t.Supervisor) === norm_(u.Username) : inScope_(u, t.Branch)));
+  const assignLogs = readAll_(SHEETS.LOGS).filter(l => SUP_ASSIGN_ACTIONS.indexOf(String(l.Action)) > -1);
+
+  const rows = sups.map(s => {
+    const key = norm_(s.Username);
+    const ts = tickets.filter(t => norm_(t.Supervisor) === key);
+    const received = ts.filter(t => inRange(toDate_(t.DispatchedAt)));
+    const assigned = ts.filter(t => inRange(toDate_(t.TechAssignedAt)));
+    const completed = received.filter(t => t.Status === ST.COMPLETED);
+    const rated = ts.filter(t => String(t.Rating || '') !== '' && inRange(toDate_(t.RatedAt)));
+
+    const evs = assignLogs.filter(l => norm_(l.ByUser) === key && inRange(toDate_(l.Timestamp)));
+    const reassigns = Math.max(0, evs.length - new Set(evs.map(l => String(l.TicketID))).size);
+
+    const assignHrs = assigned.map(t => hrs(t.DispatchedAt, t.TechAssignedAt));
+    const withinSla = nums(assignHrs).filter(h => h <= SUP_ASSIGN_SLA_HOURS).length;
+
+    return {
+      username: String(s.Username),
+      fullName: String(s.FullName || s.Username),
+      branch: String(s.Branch || ''),
+      me: norm_(s.Username) === norm_(u.Username),
+      received: received.length,
+      assigned: assigned.length,
+      pendingNow: ts.filter(t => t.Status === ST.DISPATCHED).length,       // งานที่ค้างรอเลือกช่าง (ณ ปัจจุบัน)
+      openNow: ts.filter(t => [ST.APPROVED, ST.IN_PROGRESS].indexOf(String(t.Status)) > -1).length, // งานที่ช่างกำลังดูแล (ณ ปัจจุบัน)
+      avgAssignHours: avg(assignHrs),
+      slaRate: pct(withinSla, nums(assignHrs).length),
+      avgStartHours: avg(assigned.map(t => hrs(t.TechAssignedAt, t.AcceptedAt))),
+      completed: completed.length,
+      completionRate: pct(completed.length, received.length),
+      avgResolveHours: avg(completed.map(t => hrs(t.DispatchedAt, t.CompletedAt))),
+      avgRating: avg(rated.map(t => Number(t.Rating))),
+      ratingCount: rated.length,
+      reassigns: reassigns
+    };
+  }).sort((a, b) => b.received - a.received || a.fullName.localeCompare(b.fullName, 'th'));
+
+  return {
+    slaHours: SUP_ASSIGN_SLA_HOURS,
+    dateFrom: f.dateFrom || '',
+    dateTo: f.dateTo || '',
+    supervisors: rows,
+    generatedAt: new Date().toISOString()
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
@@ -1422,7 +1544,7 @@ function dashboard_(u, req) {
   const prevFrom = f.prevFrom ? new Date(f.prevFrom + 'T00:00:00+07:00') : null;
   const prevTo = f.prevTo ? new Date(f.prevTo + 'T23:59:59+07:00') : null;
   const prev = prevFrom && prevTo ? summarize(prevFrom, prevTo) : null;
-  const open = list.filter(t => [ST.PENDING, ST.APPROVED, ST.IN_PROGRESS].indexOf(String(t.Status)) > -1);
+  const open = list.filter(t => [ST.PENDING, ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS].indexOf(String(t.Status)) > -1);
   const urgentOpen = open
     .filter(t => t.Priority === 'ด่วนมาก' || t.Priority === 'ด่วน')
     .sort((a, b) => (toDate_(a.CreatedAt) || 0) - (toDate_(b.CreatedAt) || 0))
@@ -1804,6 +1926,7 @@ function setupDatabase() {
       ['admin', 'admin1234', 'ผู้ดูแลระบบ', 'admin', 'ALL', 'IT'],
       ['manager1', '1234', 'ผู้จัดการ สำนักงานใหญ่', 'manager', 'สำนักงานใหญ่', 'Management'],
       ['tech1', '1234', 'ช่างซ่อมบำรุง 1', 'technician', 'สำนักงานใหญ่', 'Maintenance'],
+      ['sup1', '1234', 'หัวหน้าช่าง สำนักงานใหญ่', 'supervisor', 'สำนักงานใหญ่', 'Maintenance'],   // r27
       ['staff1', '1234', 'พนักงานทดสอบ', 'employee', 'สำนักงานใหญ่', 'Accounting']
     ].forEach(r => appendObj_(SHEETS.USERS, {
       Username: r[0], PasswordHash: hash_(r[1], r[0]), FullName: r[2], Role: r[3],
