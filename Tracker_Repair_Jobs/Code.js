@@ -1,5 +1,5 @@
 /**
- * CODE_VERSION: r08-2026-10-24-fix-validation
+ * CODE_VERSION: r09-2026-11-12-ecount
  * =====================================================================
  *  ระบบติดตามสถานะงานซ่อม / PM  (Service Repair & PM Tracker)
  *  Backend : Google Apps Script  |  Database : Google Sheets
@@ -39,7 +39,19 @@ const CONFIG = {
   ],
 
   // ประเภทงาน (ตัวเลือกใน dropdown หน้าเว็บ)
-  JOB_TYPES: ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'ปรับสภาพมือสอง', 'งานซ่อมลูกค้า', 'อื่นๆ'],
+  //  (2 โครงการแรก = ชื่อโครงการใน Ecount — ต้องสะกดตรงกับ Ecount เพื่อให้นำเข้า/กรองได้)
+  JOB_TYPES: ['ปรับสภาพมือสอง', 'งานซ่อมรถยนต์/รถบรรทุก', 'ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'งานซ่อมลูกค้า', 'อื่นๆ'],
+
+  // ---- นำเข้าจาก Ecount (รายการย้ายคลัง) ----
+  ECOUNT: {
+    SHEET: 'Ecount_Transfers',
+    // ดึงมาใช้เฉพาะ 2 โครงการนี้ (ตรงกับตัวกรองโครงการใน Ecount)
+    PROJECTS: ['ปรับสภาพมือสอง', 'งานซ่อมรถยนต์/รถบรรทุก'],
+    // ชื่อสถานที่ที่ถือว่าเป็น "คลังซ่อม" (มีคำนี้อยู่ในชื่อ) : ย้ายเข้า = ส่งเข้าซ่อม, ย้ายออก = ซ่อมเสร็จส่งคืน
+    REPAIR_LOCATION_KEYWORD: 'ซ่อม',
+    // สร้าง/ปิดงานใน Repair_Jobs อัตโนมัติจากใบย้ายคลัง
+    AUTO_SYNC_JOBS: true,
+  },
 
   // SLA (วัน) เริ่มต้นตามประเภทงาน — ใช้เมื่อช่อง SLA_Target_Days ว่าง
   //  (มีประเภทเก่าไว้ด้วย เพื่อให้งานเดิมคำนวณกำหนดเสร็จได้เหมือนเดิม)
@@ -52,6 +64,7 @@ const CONFIG = {
     'ติดอุ้มรถเกี่ยว': 7,
     'พ่นสี': 7,
     'งานซ่อมลูกค้า': 7,
+    'งานซ่อมรถยนต์/รถบรรทุก': 14,
     'อื่นๆ': 14,
   },
   DEFAULT_SLA_DAYS: 14,
@@ -82,14 +95,18 @@ const CONFIG = {
   },
 };
 
-const CODE_VERSION = 'r08-2026-10-24-fix-validation';
+const CODE_VERSION = 'r09-2026-11-12-ecount';
 
 const HEADERS = {
   Repair_Jobs: [
     'Ticket_ID', 'Machine_ID', 'Customer_Name', 'Status', 'Technician_Name',
     'Start_Date', 'SLA_Target_Days', 'Target_Finish_Date', 'Actual_Finish_Date',
     'Parts_Status', 'Delay_Category', 'Delay_Remark', 'Updated_At',
-    'Department', 'Job_Type', 'Product', 'Delivery_No', 'Work_Detail',
+    'Department', 'Job_Type', 'Product', 'Delivery_No', 'Work_Detail', 'Source',
+  ],
+  Ecount_Transfers: [
+    'Row_Key', 'Date_Seq', 'Doc_Date', 'Project', 'Transfer_No', 'From_Location', 'To_Location',
+    'Product', 'Qty', 'Serial_Lot', 'Detail', 'Remark', 'Direction', 'Imported_At',
   ],
   Technicians: ['Tech_ID', 'Tech_Name', 'Tech_Phone'],
   Delay_Reasons: ['Reason_Name'],
@@ -129,6 +146,7 @@ function doPost(e) {
       case 'data': out = getRepairJobsData(); break;
       case 'save': out = saveJob(body); break;
       case 'delete': out = deleteJobs(body); break;
+      case 'importEcount': out = importEcount(body); break;
       case 'checkStatus': out = JSON.stringify({ ok: true, codeVersion: CODE_VERSION }); break;
       default: out = JSON.stringify({ ok: false, message: 'ไม่รู้จัก action: ' + body.action });
     }
@@ -148,6 +166,7 @@ function onOpen() {
     .addItem('🔄 คำนวณวันกำหนดเสร็จใหม่ทั้งหมด', 'recalculateAllTargets')
     .addItem('🩹 แก้ปัญหา "ละเมิดกฎการตรวจสอบข้อมูล"', 'fixValidationRules')
     .addSeparator()
+    .addItem('🔁 ซิงก์งานซ่อมจาก Ecount ใหม่ (Ecount_Transfers → Repair_Jobs)', 'resyncEcountJobs')
     .addItem('📥 นำเข้าข้อมูลจริง (แทนที่ข้อมูลเดิม)', 'importRealData')
     .addToUi();
 }
@@ -161,6 +180,7 @@ function setupDatabase() {
   const reasonsSh = ensureSheet_(ss, CONFIG.SHEETS.REASONS, HEADERS.Delay_Reasons);
   const techSh = ensureSheet_(ss, CONFIG.SHEETS.TECHS, HEADERS.Technicians);
   const jobsSh = ensureSheet_(ss, CONFIG.SHEETS.JOBS, HEADERS.Repair_Jobs);
+  setupEcountSheet_(ss);
 
   if (reasonsSh.getLastRow() < 2) {
     reasonsSh.getRange(2, 1, DEFAULT_DELAY_REASONS.length, 1)
@@ -254,15 +274,16 @@ function fixValidationRules() {
 }
 
 /** ก่อนเขียนแถว: เปลี่ยนกฎที่ "ปฏิเสธข้อมูล" ในแถวนั้นเป็น "แสดงคำเตือน" กันบันทึกล้ม */
-function relaxRowValidation_(sh, rowNum, width) {
-  const rng = sh.getRange(rowNum, 1, 1, width);
-  const rules = rng.getDataValidations()[0];
+function relaxRowValidation_(sh, rowNum, width, numRows) {
+  const rng = sh.getRange(rowNum, 1, numRows || 1, width);
   let changed = false;
-  const out = rules.map(function (r) {
-    if (r && !r.getAllowInvalid()) { changed = true; return r.copy().setAllowInvalid(true).build(); }
-    return r;
+  const out = rng.getDataValidations().map(function (rules) {
+    return rules.map(function (r) {
+      if (r && !r.getAllowInvalid()) { changed = true; return r.copy().setAllowInvalid(true).build(); }
+      return r;
+    });
   });
-  if (changed) rng.setDataValidations([out]);
+  if (changed) rng.setDataValidations(out);
 }
 
 function ensureSheet_(ss, name, headers) {
@@ -390,6 +411,9 @@ function getRepairJobsData() {
       defaultSla: CONFIG.DEFAULT_SLA_DAYS,
       requirePin: !!CONFIG.EDIT_PIN,
       company: CONFIG.COMPANY,
+      projects: CONFIG.ECOUNT.PROJECTS,
+      ecount: readEcount_(ss),
+      ecountMeta: readEcountMeta_(),
       jobs: jobs,
     });
   } catch (err) {
@@ -431,6 +455,7 @@ function enrichJob_(r, techMap, today) {
     delayRemark: String(r.Delay_Remark || '').trim(),
     deliveryNo: String(r.Delivery_No || '').trim(),
     workDetail: String(r.Work_Detail || '').trim(),
+    source: String(r.Source || '').trim(),
     updatedAt: toDateTimeStr_(r.Updated_At),
   };
 
@@ -889,3 +914,298 @@ function nextTicketId_(ids, dept) {
 
 function clean_(v) { return v === null || v === undefined ? '' : String(v).trim(); }
 function objValues_(o) { return Object.keys(o).map(function (k) { return o[k]; }); }
+// ---------------------------------------------------------------------
+// 11) ECOUNT : นำเข้า "รายการย้ายคลัง" ที่ export จาก Ecount (.xlsx)
+//     - หน้าเว็บอ่านไฟล์ Excel แล้วส่งแถวมาที่ importEcount()
+//     - เก็บเฉพาะโครงการใน CONFIG.ECOUNT.PROJECTS ลงชีต Ecount_Transfers
+//       (นำเข้าไฟล์เดิมซ้ำได้ — แถวเดิมจะถูกอัปเดต ไม่เพิ่มซ้ำ)
+//     - ซิงก์ Repair_Jobs อัตโนมัติ:
+//         ย้ายเข้า คลังซ่อม  -> เปิดงานใหม่ (สถานะ กำลังซ่อม, ช่าง = รายละเอียดเพิ่มเติม)
+//         ย้ายออก คลังซ่อม  -> ปิดงานของ Serial เดียวกัน (ซ่อมเสร็จแล้ว + วันที่เสร็จจริง)
+// ---------------------------------------------------------------------
+
+/**
+ * payload = { pin, fileName, title, rows: [ { dateSeq, project, transferNo, from, to,
+ *             product, qty, serial, detail, remark }, ... ] }
+ */
+function importEcount(payload) {
+  return runWrite_(function () {
+    const p = parsePayload_(payload);
+    checkPin_(p.pin);
+    const input = Array.isArray(p.rows) ? p.rows : [];
+    if (!input.length) throw new Error('ไม่พบแถวข้อมูลของโครงการที่กำหนดในไฟล์');
+    if (input.length > 5000) throw new Error('นำเข้าได้ครั้งละไม่เกิน 5,000 แถว');
+
+    const recs = [];
+    let skipped = 0;
+    input.forEach(function (r) {
+      const rec = normalizeEcountRow_(r);
+      if (rec) recs.push(rec); else skipped++;
+    });
+    if (!recs.length) throw new Error('ไม่มีแถวของโครงการ ' + CONFIG.ECOUNT.PROJECTS.join(' / ') + ' ในไฟล์นี้');
+
+    const ss = getSpreadsheet_();
+    const sh = setupEcountSheet_(ss);
+    const up = upsertEcount_(sh, recs);
+    const sync = CONFIG.ECOUNT.AUTO_SYNC_JOBS ? syncJobsFromEcount_(recs) : { created: 0, closed: 0, linked: 0, unmatched: 0 };
+
+    const meta = {
+      fileName: clean_(p.fileName),
+      title: clean_(p.title),
+      importedAt: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm'),
+      rows: recs.length, added: up.added, updated: up.updated,
+    };
+    PropertiesService.getScriptProperties().setProperty('ECOUNT_META', JSON.stringify(meta));
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true, codeVersion: CODE_VERSION,
+      added: up.added, updated: up.updated, skipped: skipped,
+      jobsCreated: sync.created, jobsClosed: sync.closed, jobsLinked: sync.linked, unmatched: sync.unmatched,
+      message: 'นำเข้า Ecount ' + recs.length + ' แถว (ใหม่ ' + up.added + ' · อัปเดต ' + up.updated + ')' +
+        ' · เปิดงานซ่อมใหม่ ' + sync.created + ' · ปิดงาน ' + sync.closed,
+    };
+  });
+}
+
+/** เมนู: ซิงก์ Repair_Jobs ใหม่จากข้อมูลทั้งหมดใน Ecount_Transfers */
+function resyncEcountJobs() {
+  const res = JSON.parse(runWrite_(function () {
+    const recs = readEcount_(getSpreadsheet_());
+    const s = syncJobsFromEcount_(recs);
+    return { ok: true, message: 'ซิงก์แล้ว: เปิดงานใหม่ ' + s.created + ' · ปิดงาน ' + s.closed + ' · ส่งคืนแต่ไม่พบงาน ' + s.unmatched };
+  }));
+  toast_(res.message);
+  return res.message;
+}
+
+function setupEcountSheet_(ss) {
+  const sh = ensureSheet_(ss, CONFIG.ECOUNT.SHEET, HEADERS.Ecount_Transfers);
+  const col = headerIndex_(sh);
+  const n = sh.getMaxRows() - 1;
+  if (n > 0) {
+    ['Row_Key', 'Date_Seq', 'Transfer_No', 'Serial_Lot'].forEach(function (h) { if (col[h]) sh.getRange(2, col[h], n, 1).setNumberFormat('@'); });
+    if (col['Doc_Date']) sh.getRange(2, col['Doc_Date'], n, 1).setNumberFormat('yyyy-mm-dd');
+    if (col['Imported_At']) sh.getRange(2, col['Imported_At'], n, 1).setNumberFormat('yyyy-mm-dd hh:mm');
+  }
+  return sh;
+}
+
+/** ชื่อโครงการจากไฟล์ -> ชื่อมาตรฐานใน CONFIG (ไม่สนช่องว่าง) หรือ '' ถ้าไม่ใช่โครงการที่ต้องการ */
+function ecountProject_(name) {
+  const k = clean_(name).replace(/\s+/g, '');
+  if (!k) return '';
+  const list = CONFIG.ECOUNT.PROJECTS;
+  for (let i = 0; i < list.length; i++) if (list[i].replace(/\s+/g, '') === k) return list[i];
+  return '';
+}
+
+function isRepairLocation_(loc) {
+  const kw = CONFIG.ECOUNT.REPAIR_LOCATION_KEYWORD;
+  return !!kw && clean_(loc).indexOf(kw) > -1;
+}
+
+/** Serial สำหรับจับคู่ (ตัดช่องว่าง/จุดท้าย, ตัวพิมพ์ใหญ่) */
+function serialKey_(v) {
+  const s = clean_(v).replace(/\s+/g, '').replace(/[.\-–—]+$/, '').toUpperCase();
+  return /^[-–—.]*$/.test(s) ? '' : s;
+}
+
+/** แถวจากหน้าเว็บ -> record มาตรฐาน (null = ข้าม) */
+function normalizeEcountRow_(r) {
+  if (!r) return null;
+  const project = ecountProject_(r.project);
+  if (!project) return null;
+  const dateSeq = clean_(r.dateSeq);
+  // รูปแบบ Ecount: YY/MM/DD-ลำดับ เช่น 26/11/04-7 (ปี ค.ศ. 2 หลัก)
+  const m = dateSeq.match(/^(\d{2,4})[\/.-](\d{1,2})[\/.-](\d{1,2})(?:\s*-\s*(\d+))?$/);
+  if (!m) return null;
+  let y = +m[1];
+  if (y < 100) y += 2000;
+  if (y > 2400) y -= 543;
+  const mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const from = clean_(r.from), to = clean_(r.to);
+  let serial = clean_(r.serial);
+  if (!serialKey_(serial)) serial = '';
+  const qty = Number(String(r.qty === undefined ? '' : r.qty).replace(/,/g, ''));
+  const inRepTo = isRepairLocation_(to), inRepFrom = isRepairLocation_(from);
+  const transferNo = clean_(r.transferNo);
+  return {
+    key: dateSeq + '|' + transferNo,
+    dateSeq: dateSeq,
+    date: y + '-' + pad2_(mo) + '-' + pad2_(d),
+    seq: m[4] ? +m[4] : 0,
+    project: project,
+    transferNo: transferNo,
+    from: from, to: to,
+    product: clean_(r.product),
+    qty: r.qty === '' || r.qty === undefined || !isFinite(qty) ? '' : qty,
+    serial: serial,
+    detail: clean_(r.detail),
+    remark: clean_(r.remark),
+    direction: inRepTo && !inRepFrom ? 'IN' : inRepFrom && !inRepTo ? 'OUT' : '',
+  };
+}
+
+/** เขียนลง Ecount_Transfers : key ซ้ำ = อัปเดต, ไม่ซ้ำ = เพิ่มท้าย */
+function upsertEcount_(sh, recs) {
+  const col = headerIndex_(sh);
+  const width = sh.getLastColumn();
+  const last = sh.getLastRow();
+  const data = last > 1 ? sh.getRange(2, 1, last - 1, width).getValues() : [];
+  const idx = {};
+  data.forEach(function (row, i) { const k = clean_(row[col['Row_Key'] - 1]); if (k) idx[k] = i; });
+  const now = new Date();
+  const toRow = function (t, base) {
+    const out = base ? base.slice() : new Array(width).fill('');
+    const v = {
+      Row_Key: t.key, Date_Seq: t.dateSeq, Doc_Date: strToSheetDate_(t.date), Project: t.project,
+      Transfer_No: t.transferNo, From_Location: t.from, To_Location: t.to, Product: t.product, Qty: t.qty,
+      Serial_Lot: t.serial, Detail: t.detail, Remark: t.remark, Direction: t.direction, Imported_At: now,
+    };
+    Object.keys(v).forEach(function (k) { if (col[k]) out[col[k] - 1] = v[k]; });
+    return out;
+  };
+  const added = [];
+  let updated = 0;
+  const seen = {};
+  recs.forEach(function (t) {
+    if (seen[t.key]) return; // แถวซ้ำในไฟล์เดียวกัน
+    seen[t.key] = true;
+    if (idx[t.key] !== undefined) { data[idx[t.key]] = toRow(t, data[idx[t.key]]); updated++; }
+    else added.push(toRow(t));
+  });
+  if (data.length && updated) sh.getRange(2, 1, data.length, width).setValues(data);
+  if (added.length) {
+    const start = last + 1;
+    const need = start + added.length - 1 - sh.getMaxRows();
+    if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need);
+    ['Row_Key', 'Date_Seq', 'Transfer_No', 'Serial_Lot'].forEach(function (h) {
+      if (col[h]) sh.getRange(start, col[h], added.length, 1).setNumberFormat('@');
+    });
+    sh.getRange(start, 1, added.length, width).setValues(added);
+  }
+  return { added: added.length, updated: updated };
+}
+
+/** อ่าน Ecount_Transfers (เฉพาะโครงการที่กำหนด) -> array ของ record มาตรฐาน */
+function readEcount_(ss) {
+  return readSheetAsObjects_(ss, CONFIG.ECOUNT.SHEET).map(function (o) {
+    const t = normalizeEcountRow_({
+      dateSeq: o.Date_Seq, project: o.Project, transferNo: o.Transfer_No, from: o.From_Location, to: o.To_Location,
+      product: o.Product, qty: o.Qty, serial: o.Serial_Lot, detail: o.Detail, remark: o.Remark,
+    });
+    if (t) t.row = o._row;
+    return t;
+  }).filter(Boolean);
+}
+
+function readEcountMeta_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('ECOUNT_META') || 'null'); }
+  catch (e) { return null; }
+}
+
+/** ชื่อสถานที่ใน Ecount -> สถานที่ใน CONFIG.DEPARTMENTS (เช่น ตระการพืชผล -> สาขาตระการ) */
+function mapDepartment_(loc) {
+  const n = clean_(loc);
+  if (!n) return '';
+  const list = CONFIG.DEPARTMENTS;
+  for (let i = 0; i < list.length; i++) {
+    const core = list[i].replace(/^สาขา/, '');
+    if (list[i] === n || core === n || n.indexOf(core) === 0 || core.indexOf(n) === 0 || core.slice(0, 6) === n.slice(0, 6)) return list[i];
+  }
+  return n;
+}
+
+/** "รายละเอียดเพิ่มเติม" ของใบส่งเข้าซ่อมมักเป็นชื่อช่าง (เช่น คมกฤช) */
+function looksLikeName_(s) {
+  s = clean_(s);
+  return !!s && s.length <= 30 && !/\d/.test(s) && !/^(ส่ง|รับ|เบิก|คืน)/.test(s);
+}
+
+/** สร้าง/ปิดงานใน Repair_Jobs จากใบย้ายคลัง (idempotent : รันซ้ำไม่สร้างงานซ้ำ) */
+function syncJobsFromEcount_(recs) {
+  const S = CONFIG.STATUS;
+  const sh = jobsSheet_();
+  ensureColumn_(sh, 'Work_Detail');
+  ensureColumn_(sh, 'Source');
+  const col = headerIndex_(sh);
+  const width = sh.getLastColumn();
+  const last = sh.getLastRow();
+  const data = last > 1 ? sh.getRange(2, 1, last - 1, width).getValues() : [];
+  const origLen = data.length;
+  const changed = {};
+  const g = function (row, k) { return col[k] ? row[col[k] - 1] : ''; };
+  const set = function (row, k, v) { if (col[k]) row[col[k] - 1] = v; };
+  const isActive = function (row) { const s = clean_(g(row, 'Status')) || S.IN_PROGRESS; return s !== S.DONE && s !== S.CANCELLED; };
+  const findIdx = function (fn) { for (let i = 0; i < data.length; i++) if (fn(data[i])) return i; return -1; };
+  const res = { created: 0, closed: 0, linked: 0, unmatched: 0 };
+  const now = new Date();
+
+  recs.filter(function (t) { return t.direction; })
+    .sort(function (a, b) { return a.date === b.date ? a.seq - b.seq : (a.date < b.date ? -1 : 1); })
+    .forEach(function (t) {
+      const sk = serialKey_(t.serial);
+      const ticket = t.transferNo || ('EC-' + t.dateSeq.replace(/\//g, ''));
+
+      if (t.direction === 'IN') {
+        if (findIdx(function (r) { return clean_(g(r, 'Ticket_ID')) === ticket; }) > -1) return; // มีงานนี้แล้ว
+        if (sk && findIdx(function (r) { return serialKey_(g(r, 'Machine_ID')) === sk && isActive(r); }) > -1) { res.linked++; return; } // มีงานค้างของคันนี้อยู่แล้ว (คีย์มือ)
+        const sla = slaForType_(t.project);
+        const target = calculateTargetFinishDate(t.date, sla);
+        const isName = looksLikeName_(t.detail);
+        const row = new Array(width).fill('');
+        const v = {
+          Ticket_ID: ticket, Machine_ID: t.serial, Customer_Name: '', Status: S.IN_PROGRESS,
+          Technician_Name: isName ? t.detail : '', Start_Date: strToSheetDate_(t.date), SLA_Target_Days: sla,
+          Target_Finish_Date: target ? strToSheetDate_(target) : '', Actual_Finish_Date: '', Parts_Status: '',
+          Delay_Category: '', Delay_Remark: t.remark, Updated_At: now, Department: mapDepartment_(t.from),
+          Job_Type: t.project, Product: t.product, Delivery_No: '', Work_Detail: isName ? '' : t.detail, Source: 'Ecount',
+        };
+        Object.keys(v).forEach(function (k) { set(row, k, v[k]); });
+        data.push(row);
+        res.created++;
+        return;
+      }
+
+      // OUT : ซ่อมเสร็จ ส่งคืนจากคลังซ่อม
+      if (findIdx(function (r) { return clean_(g(r, 'Delivery_No')) === ticket; }) > -1) return; // ปิดด้วยใบนี้ไปแล้ว
+      let best = -1, bestStart = '';
+      if (sk) data.forEach(function (r, i) {
+        if (serialKey_(g(r, 'Machine_ID')) !== sk || !isActive(r)) return;
+        const st = toDateStr_(g(r, 'Start_Date'));
+        if (st && st > t.date) return;
+        if (best === -1 || st > bestStart) { best = i; bestStart = st; }
+      });
+      if (best === -1) { res.unmatched++; return; }
+      const r = data[best];
+      set(r, 'Status', S.DONE);
+      set(r, 'Actual_Finish_Date', strToSheetDate_(t.date));
+      set(r, 'Delivery_No', ticket);
+      if (t.remark && !clean_(g(r, 'Delay_Remark'))) set(r, 'Delay_Remark', t.remark);
+      set(r, 'Updated_At', now);
+      if (best < origLen) changed[best] = true;
+      res.closed++;
+    });
+
+  // เขียนแถวที่แก้ไข
+  Object.keys(changed).forEach(function (i) {
+    const rowNum = +i + 2;
+    relaxRowValidation_(sh, rowNum, width);
+    sh.getRange(rowNum, 1, 1, width).setValues([data[+i]]);
+  });
+  // เพิ่มแถวใหม่
+  const added = data.slice(origLen);
+  if (added.length) {
+    const start = last + 1;
+    const need = start + added.length - 1 - sh.getMaxRows();
+    if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need);
+    ['Ticket_ID', 'Machine_ID', 'Delivery_No'].forEach(function (h) {
+      if (col[h]) sh.getRange(start, col[h], added.length, 1).setNumberFormat('@');
+    });
+    relaxRowValidation_(sh, start, width, added.length);
+    sh.getRange(start, 1, added.length, width).setValues(added);
+  }
+  return res;
+}

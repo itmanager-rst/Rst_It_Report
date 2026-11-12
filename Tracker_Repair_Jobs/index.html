@@ -186,6 +186,37 @@
   .opt-card .d { font-size: .75rem; color: var(--ink-3); }
   .del-list { max-height: 160px; overflow: auto; font-size: .82rem; background: var(--line-2); border-radius: 8px; padding: 8px 12px; }
 
+  /* ---------- (r09) โครงการ Ecount + หน้า รายการ ---------- */
+  .proj-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .proj-bar .lbl { font-size: .78rem; font-weight: 700; color: var(--ink-3); margin-right: 2px; }
+  .proj-chip { border: 1px solid #c7d2fe; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 5px 14px; font-size: .85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .proj-chip:hover { background: #e0e7ff; }
+  .proj-chip.active { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .proj-chip .cnt { font-size: .72rem; background: rgba(79,70,229,.14); border-radius: 999px; padding: 0 7px; }
+  .proj-chip.active .cnt { background: rgba(255,255,255,.25); }
+  .view-hd { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px 0; border-bottom: 1px solid var(--line); }
+  .view-tabs { display: flex; gap: 2px; }
+  .view-tab { border: 0; background: none; padding: 8px 12px; font-size: .88rem; font-weight: 600; color: var(--ink-3); border-bottom: 2px solid transparent; }
+  .view-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .ec-table td, .ec-table th { padding: 9px 8px; }
+  .ec-table td { font-size: .8rem; }
+  .ec-table thead th { white-space: nowrap; font-size: .72rem; }
+  .ec-table .ec-ds { font-weight: 700; white-space: nowrap; }
+  .ec-table .ec-no { font-weight: 600; white-space: nowrap; }
+  .ec-table .ec-prod { min-width: 170px; }
+  .ec-loc { white-space: nowrap; }
+  .ec-loc.rep { color: #3730a3; font-weight: 700; }
+  .dir { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 7px; border-radius: 5px; margin-top: 3px; white-space: nowrap; }
+  .dir-in { background: #eaf2fc; color: #1c5cab; }
+  .dir-out { background: #ecfdf3; color: #166534; }
+  .proj-pill { display: inline-block; font-size: .74rem; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; white-space: nowrap; font-weight: 600; }
+  .ec-prev { max-height: 260px; overflow: auto; font-size: .78rem; border: 1px solid var(--line); border-radius: 8px; }
+  .ec-prev table { margin: 0; }
+  .ec-prev th { position: sticky; top: 0; background: var(--line-2); font-size: .74rem; white-space: nowrap; }
+  .ec-stat { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .ec-stat div { background: var(--line-2); border-radius: 8px; padding: 6px 12px; font-size: .8rem; }
+  .ec-stat b { font-size: 1rem; }
+
   .loading { position: fixed; inset: 0; background: rgba(245,246,248,.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
   .loading.hide { display: none; }
 
@@ -309,6 +340,9 @@
 
   <main class="container-xxl py-3">
 
+    <!-- ================= (r09) โครงการ (ตามตัวกรองโครงการใน Ecount) ================= -->
+    <section class="proj-bar mb-3" id="projBar"></section>
+
     <!-- ================= KPI ================= -->
     <section class="row g-2 g-md-3 mb-3" id="kpiRow">
       <div class="col-6 col-md-4 col-xl">
@@ -371,7 +405,62 @@
     </section>
 
     <!-- ================= TABLE ================= -->
-    <section class="panel">
+    <section class="panel" id="listPanel">
+      <div class="view-hd">
+        <div class="view-tabs" role="tablist">
+          <button type="button" class="view-tab active" data-view="ecount"><i class="bi bi-arrow-left-right"></i> รายการย้ายคลัง (Ecount)</button>
+          <button type="button" class="view-tab" data-view="jobs"><i class="bi bi-tools"></i> งานซ่อม</button>
+        </div>
+        <div class="muted pb-2" id="ecMeta"></div>
+      </div>
+
+      <!-- ===== VIEW : รายการย้ายคลัง (ตามไฟล์ Excel ที่ export จาก Ecount) ===== -->
+      <div id="ecView">
+        <div class="toolbar">
+          <div class="search"><i class="bi bi-search"></i><input id="ecSearch" type="search" name="ec-search-q" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore class="form-control" placeholder="ค้นหา เลขที่ใบย้ายคลัง / สินค้า / Serial / รายละเอียด"></div>
+          <div class="seg" id="ecDirSeg">
+            <button type="button" data-dir="" class="active">ทั้งหมด</button>
+            <button type="button" data-dir="IN">ส่งเข้าซ่อม</button>
+            <button type="button" data-dir="OUT">ส่งคืนจากซ่อม</button>
+            <button type="button" data-dir="OPEN">ยังอยู่ระหว่างซ่อม</button>
+          </div>
+        </div>
+        <div class="px-3 pt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div class="small text-secondary"><span id="ecCount" class="num">0</span> รายการ <span id="ecFilters"></span></div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button type="button" class="btn-ghost" id="btnEcCsv"><i class="bi bi-download"></i> CSV</button>
+            <button type="button" class="btn-brand" id="btnEcImport"><i class="bi bi-upload"></i> นำเข้าไฟล์ Ecount (.xlsx)</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table job-table ec-table align-middle">
+            <thead>
+              <tr>
+                <th class="sortable-ec" data-sort="dateSeq">วันที่-ลำดับ <i class="bi bi-sort-down"></i></th>
+                <th>ชื่อโครงการ</th>
+                <th>เลขที่ใบย้ายคลัง</th>
+                <th>ชื่อสถานที่จ่าย</th>
+                <th>ชื่อสถานที่รับสินค้า</th>
+                <th>ชื่อสินค้า [ชื่อข้อมูลจำเพาะ]</th>
+                <th class="text-end">จำนวน</th>
+                <th>หมายเลข Serial/Lot</th>
+                <th>รายละเอียดเพิ่มเติม</th>
+                <th>หมายเหตุ</th>
+                <th>สถานะงานซ่อม</th>
+              </tr>
+            </thead>
+            <tbody id="ecBody"></tbody>
+          </table>
+        </div>
+        <div class="empty d-none" id="ecEmpty"><i class="bi bi-file-earmark-spreadsheet"></i><span id="ecEmptyMsg">ยังไม่มีข้อมูลจาก Ecount</span><br><button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="btnEcImport2"><i class="bi bi-upload"></i> นำเข้าไฟล์ Ecount</button></div>
+        <div class="tbl-foot">
+          <div class="muted" id="ecPageInfo">-</div>
+          <div class="pager btn-group" id="ecPager"></div>
+        </div>
+      </div>
+
+      <!-- ===== VIEW : งานซ่อม (เดิม) ===== -->
+      <div id="jobView" class="d-none">
       <div class="toolbar">
         <div class="search"><i class="bi bi-search"></i><input id="searchInput" type="search" name="job-search-q" autocomplete="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore class="form-control" placeholder="ค้นหาเลขที่งาน / สินค้า / หมายเลขสินค้า / ลูกค้า"></div>
         <select id="typeFilter" class="form-select"><option value="">ทุกประเภทงาน</option></select>
@@ -420,6 +509,7 @@
         <div class="muted" id="pageInfo">-</div>
         <div class="pager btn-group" id="pager"></div>
       </div>
+      </div><!-- /jobView -->
     </section>
 
     <footer class="text-center muted mt-3 mb-5" id="footerLabel">ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที</footer>
@@ -630,6 +720,41 @@
     </div>
   </div>
 
+  <!-- ================= MODAL : นำเข้าไฟล์ Ecount ================= -->
+  <div class="modal fade" id="ecModal" tabindex="-1" aria-labelledby="ecTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="ecTitle"><i class="bi bi-upload"></i> นำเข้ารายการย้ายคลังจาก Ecount</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <ol class="small text-secondary ps-3 mb-2">
+            <li>ใน Ecount เปิด <b>รายการย้ายคลัง</b> → ตัวกรองโครงการเลือก <span class="proj-pill">ปรับสภาพมือสอง</span> <span class="proj-pill">งานซ่อมรถยนต์/รถบรรทุก</span> (หรือไม่กรองก็ได้ ระบบคัดให้เอง)</li>
+            <li>กด Excel เพื่อ export แล้วเลือกไฟล์ด้านล่าง → ตรวจตัวอย่าง → กด <b>นำเข้า</b></li>
+            <li>นำเข้าไฟล์ช่วงวันที่ซ้อนกันได้ — แถวเดิมจะถูกอัปเดต ไม่เพิ่มซ้ำ</li>
+          </ol>
+          <input type="file" class="form-control" id="ecFile" accept=".xlsx,.xls,.csv">
+          <div class="alert alert-danger py-2 small mt-2 d-none" id="ecErr"></div>
+          <div id="ecPreview" class="d-none">
+            <div class="muted mt-2" id="ecPrevTitle"></div>
+            <div class="ec-stat" id="ecPrevStat"></div>
+            <div class="ec-prev"><table class="table table-sm"><thead><tr><th>วันที่-ลำดับ</th><th>โครงการ</th><th>เลขที่</th><th>จ่าย → รับ</th><th>สินค้า</th><th>Serial/Lot</th><th>รายละเอียด</th></tr></thead><tbody id="ecPrevBody"></tbody></table></div>
+          </div>
+          <div class="mt-2 d-none pinWrap">
+            <label class="form-label small fw-semibold" for="ePin">PIN ยืนยัน</label>
+            <input type="password" inputmode="numeric" autocomplete="new-password" class="form-control" id="ePin">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span class="muted me-auto">ใบย้ายเข้า <b>คลังซ่อม</b> = เปิดงานซ่อม · ย้ายออก = ปิดงาน (ซ่อมเสร็จ)</span>
+          <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="button" class="btn btn-brand" id="btnEcDoImport" disabled><span class="spinner-border spinner-border-sm d-none me-1" id="ecSpin"></span><i class="bi bi-check2"></i> นำเข้า</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="loading" class="loading"><div class="spinner-border text-secondary" role="status"></div><div class="mt-2 small text-secondary">กำลังโหลดข้อมูล...</div></div>
 
   <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:2100">
@@ -663,8 +788,12 @@
     'สำนักงานใหญ่', 'สาขาศรีเมืองใหม่', 'สาขากุฉินารายณ์', 'สาขาตระการ',
     'สาขาเดชอุดม', 'สาขาขุขันธ์', 'สาขาเบญจลักษณ์', 'สาขาอำนาจเจริญ',
   ];
-  var JOB_TYPES = ['ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'ปรับสภาพมือสอง', 'งานซ่อมลูกค้า', 'อื่นๆ'];
-  var SLA_BY_TYPE = { 'ติดตั้งใบมีด': 7, 'ติดถังอุ้มรถเกี่ยว': 7, 'พ่นสี': 7, 'ปรับสภาพมือสอง': 30, 'งานซ่อมลูกค้า': 7, 'อื่นๆ': 14 };
+  // (r09) 2 โครงการจาก Ecount — สะกดให้ตรงกับชื่อโครงการใน Ecount และ CONFIG.ECOUNT.PROJECTS ใน Code.gs
+  var PROJECTS = ['ปรับสภาพมือสอง', 'งานซ่อมรถยนต์/รถบรรทุก'];
+  var JOB_TYPES = ['ปรับสภาพมือสอง', 'งานซ่อมรถยนต์/รถบรรทุก', 'ติดตั้งใบมีด', 'ติดถังอุ้มรถเกี่ยว', 'พ่นสี', 'งานซ่อมลูกค้า', 'อื่นๆ'];
+  var SLA_BY_TYPE = { 'ปรับสภาพมือสอง': 30, 'งานซ่อมรถยนต์/รถบรรทุก': 14, 'ติดตั้งใบมีด': 7, 'ติดถังอุ้มรถเกี่ยว': 7, 'พ่นสี': 7, 'งานซ่อมลูกค้า': 7, 'อื่นๆ': 14 };
+  var REPAIR_LOC_KEYWORD = 'ซ่อม'; // สถานที่ที่มีคำนี้ = คลังซ่อม
+  var XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
   var COMPANY_DEFAULT = {
     nameTh: 'ห้างหุ้นส่วนจำกัด บ้านและที่ดินรวมสินไทย', nameEn: 'RUAMSINTHAI GROUP',
@@ -695,6 +824,7 @@
     sortKey: '', sortDir: 1, page: 1, charts: {},
     selected: {}, byKey: {}, view: [], pin: '',
     form: { mode: 'add', job: null, slaTouched: false }, delItems: [],
+    project: '', listView: 'ecount', ec: { search: '', dir: '', page: 1, sortDir: -1 }, ecImport: null,
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -709,6 +839,7 @@
   // ------------------------------------------------------------------ events
   function bindEvents() {
     $('btnRefresh').addEventListener('click', function () { loadData(false); });
+    bindEcountEvents();
     var t;
     $('searchInput').addEventListener('input', function (e) {
       // กันบั๊ก: เบราว์เซอร์ (Chrome) เติมชื่อผู้ใช้/อีเมลที่จำไว้ลงช่องค้นหาเองตอนคลิก/ติ๊กเลือก
@@ -723,7 +854,7 @@
     document.querySelectorAll('[data-quick]').forEach(function (el) {
       el.addEventListener('click', function () {
         setQuick(el.getAttribute('data-quick'));
-        if (el.classList.contains('kpi')) document.querySelector('.toolbar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (el.classList.contains('kpi')) $('listPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
     document.querySelectorAll('th.sortable').forEach(function (th) {
@@ -802,6 +933,7 @@
 
   function setQuick(q) {
     ST.quick = q; ST.page = 1;
+    if (ST.listView !== 'jobs') setView('jobs');
     document.querySelectorAll('#quickSeg button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-quick') === q); });
     document.querySelectorAll('#kpiRow .kpi').forEach(function (b) { b.classList.toggle('selected', b.getAttribute('data-quick') === q); });
     renderTable();
@@ -870,6 +1002,8 @@
     if (!data || !data.ok) return onError({ message: (data && data.message) || 'โหลดข้อมูลไม่สำเร็จ' });
     data.departments = DEPARTMENTS.slice();
     data.jobTypes = JOB_TYPES.slice();
+    data.projects = (data.projects && data.projects.length) ? data.projects : PROJECTS.slice();
+    data.ecount = data.ecount || [];
     data.slaByType = Object.assign({}, data.slaByType || {}, SLA_BY_TYPE);
     ST.data = data;
     ST.company = Object.assign({}, COMPANY_DEFAULT, data.company || {});
@@ -903,18 +1037,23 @@
   function renderBrand() {
     var c = ST.company;
     $('brandLogo').innerHTML = c.logoUrl ? '<img src="' + esc(c.logoUrl) + '" alt="logo">' : 'RST';
-    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที · หน้าเว็บ r07 · Backend ' + (ST.data.codeVersion || 'เวอร์ชันเก่า (ยังไม่ได้ Deploy ใหม่)');
+    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที · หน้าเว็บ r09 · Backend ' + (ST.data.codeVersion || 'เวอร์ชันเก่า (ยังไม่ได้ Deploy ใหม่)');
   }
 
   function keyOf(j) { return j.ticketId ? 't:' + j.ticketId : 'r:' + j.row; }
 
   function deptJobs() {
     if (!ST.data) return [];
-    return ST.data.jobs.filter(function (j) { return !ST.dept || j.department === ST.dept; });
+    return ST.data.jobs.filter(function (j) {
+      return (!ST.dept || j.department === ST.dept) && (!ST.project || j.jobType === ST.project);
+    });
   }
 
   function renderAll() {
     renderTabs();
+    renderProjects();
+    renderEcMeta();
+    renderEcount();
     var jobs = deptJobs();
     renderFilters(jobs);
     renderKPIs(jobs);
@@ -1168,7 +1307,7 @@
     var fl = filtered();
     $('selFilteredCnt').textContent = fl.length;
     $('selAllFiltered').classList.toggle('d-none', fl.every(function (j) { return ST.selected[keyOf(j)]; }));
-    $('selBar').classList.toggle('show', n > 0);
+    $('selBar').classList.toggle('show', n > 0 && ST.listView === 'jobs');
   }
 
   function rowHtml(j) {
@@ -1579,6 +1718,308 @@
       '<tr><th class="ws">ซ่อม</th><th class="ws">รอพ่นสี</th><th class="ws">รออะไหล่</th><th class="ws">รอซ่อมต่อ</th></tr></thead><tbody>' + wrows + '</tbody></table>' +
       sigRow(['วันที่ส่งงาน', 'ผู้ส่งงาน', 'ผู้บันทึกข้อมูล']) + '</div>';
     return '<div class="rp-card">' + head + title + info + detail + note + work + rpFoot(meta) + '</div>';
+  }
+
+  // ================================================================== (r09) ECOUNT : หน้า รายการย้ายคลัง
+  function bindEcountEvents() {
+    document.querySelectorAll('.view-tab').forEach(function (b) {
+      b.addEventListener('click', function () { setView(b.getAttribute('data-view')); });
+    });
+    var t;
+    $('ecSearch').addEventListener('input', function (e) {
+      if (document.activeElement !== e.target) { e.target.value = ST.ec.search; return; }
+      clearTimeout(t);
+      t = setTimeout(function () { ST.ec.search = e.target.value.trim().toLowerCase(); ST.ec.page = 1; renderEcount(); }, 180);
+    });
+    document.querySelectorAll('#ecDirSeg button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        ST.ec.dir = b.getAttribute('data-dir'); ST.ec.page = 1;
+        document.querySelectorAll('#ecDirSeg button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderEcount();
+      });
+    });
+    document.querySelector('.sortable-ec').addEventListener('click', function () {
+      ST.ec.sortDir = -ST.ec.sortDir;
+      this.querySelector('.bi').className = 'bi ' + (ST.ec.sortDir > 0 ? 'bi-sort-up' : 'bi-sort-down');
+      renderEcount();
+    });
+    $('ecBody').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-ec-job]');
+      if (!b || !ST.data) return;
+      var j = ST.byKey[b.getAttribute('data-ec-job')];
+      if (j) openForm(j);
+    });
+    $('btnEcCsv').addEventListener('click', exportEcountCsv);
+    $('btnEcImport').addEventListener('click', openEcImport);
+    $('btnEcImport2').addEventListener('click', openEcImport);
+    $('ecFile').addEventListener('change', function (e) { if (e.target.files[0]) readEcountFile(e.target.files[0]); });
+    $('btnEcDoImport').addEventListener('click', doEcImport);
+    $('projBar').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-proj]');
+      if (!b) return;
+      ST.project = b.getAttribute('data-proj'); ST.page = 1; ST.ec.page = 1; ST.type = '';
+      renderAll();
+    });
+  }
+
+  function setView(v) {
+    ST.listView = v;
+    document.querySelectorAll('.view-tab').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-view') === v); });
+    $('ecView').classList.toggle('d-none', v !== 'ecount');
+    $('jobView').classList.toggle('d-none', v !== 'jobs');
+    updateSelectionUI();
+  }
+
+  function projects() { return (ST.data && ST.data.projects) || PROJECTS; }
+
+  /** ปุ่มกรองโครงการ (เหมือนตัวกรองโครงการใน Ecount) — มีผลกับ KPI / กราฟ / ตารางทั้งหมด */
+  function renderProjects() {
+    var jobs = ST.data.jobs, ec = ST.data.ecount;
+    var chip = function (key, label) {
+      var act = jobs.filter(function (j) { return j.isActive && (!key || j.jobType === key) && (!ST.dept || j.department === ST.dept); }).length;
+      var n = ec.filter(function (t) { return !key || t.project === key; }).length;
+      return '<button type="button" class="proj-chip' + (ST.project === key ? ' active' : '') + '" data-proj="' + esc(key) + '" title="งานค้าง ' + act + ' · ใบย้ายคลัง ' + n + '">' +
+        esc(label) + '<span class="cnt num">' + act + '</span></button>';
+    };
+    $('projBar').innerHTML = '<span class="lbl">โครงการ</span>' + chip('', 'ทั้งหมด') +
+      projects().map(function (p) { return chip(p, p); }).join('');
+  }
+
+  function renderEcMeta() {
+    var m = ST.data.ecountMeta;
+    $('ecMeta').textContent = m ? 'นำเข้าล่าสุด ' + m.importedAt + (m.title ? ' · ' + m.title.replace(/^ชื่อบริษัท\s*:\s*[^/]*\/\s*/, 'ช่วงข้อมูล ') : '') : 'ยังไม่เคยนำเข้าไฟล์ Ecount';
+  }
+
+  function isRepLoc(loc) { return !!loc && String(loc).indexOf(REPAIR_LOC_KEYWORD) > -1; }
+  function deptMatch(loc, dept) {
+    if (!loc || !dept) return false;
+    var core = dept.replace(/^สาขา/, '');
+    return loc === dept || loc.indexOf(core) === 0 || core.indexOf(loc) === 0 || core.slice(0, 6) === loc.slice(0, 6);
+  }
+  function serialKey(v) {
+    var s = String(v || '').replace(/\s+/g, '').replace(/[.\-–—]+$/, '').toUpperCase();
+    return /^[-–—.]*$/.test(s) ? '' : s;
+  }
+
+  /** หางานซ่อมที่ผูกกับใบย้ายคลัง : ใบเข้า = Ticket_ID, ใบออก = Delivery_No, สำรอง = Serial */
+  function ecJob(t) {
+    var jobs = ST.data.jobs, sk = serialKey(t.serial), i;
+    if (t.transferNo) for (i = 0; i < jobs.length; i++) {
+      if ((t.direction !== 'OUT' && jobs[i].ticketId === t.transferNo) || (t.direction === 'OUT' && jobs[i].deliveryNo === t.transferNo)) return jobs[i];
+    }
+    if (!sk) return null;
+    var best = null, bestGap = Infinity;
+    jobs.forEach(function (j) {
+      if (serialKey(j.machineId) !== sk) return;
+      if (t.direction === 'OUT' && j.actualDate !== t.date) return;
+      // ใบเข้า/อื่นๆ : เลือกงานของ Serial นี้ที่วันเปิดงานใกล้วันที่ใบย้ายคลังที่สุด
+      var gap = j.startDate ? Math.abs(Date.parse(j.startDate) - Date.parse(t.date)) : 9e15;
+      if (gap < bestGap) { best = j; bestGap = gap; }
+    });
+    return best;
+  }
+
+  function ecFiltered() {
+    if (!ST.data) return [];
+    var q = ST.ec.search;
+    return ST.data.ecount.filter(function (t) {
+      if (ST.project && t.project !== ST.project) return false;
+      if (ST.dept && !deptMatch(t.from, ST.dept) && !deptMatch(t.to, ST.dept)) return false;
+      if (q && [t.dateSeq, t.project, t.transferNo, t.from, t.to, t.product, t.serial, t.detail, t.remark].join(' ').toLowerCase().indexOf(q) === -1) return false;
+      if (ST.ec.dir === 'IN' || ST.ec.dir === 'OUT') return t.direction === ST.ec.dir;
+      if (ST.ec.dir === 'OPEN') { var j = t.direction === 'IN' && ecJob(t); return !!(j && j.isActive); }
+      return true;
+    }).sort(function (a, b) {
+      return (a.date === b.date ? a.seq - b.seq : (a.date < b.date ? -1 : 1)) * ST.ec.sortDir;
+    });
+  }
+
+  function renderEcount() {
+    if (!ST.data) return;
+    var rows = ecFiltered();
+    var pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (ST.ec.page > pages) ST.ec.page = pages;
+    var from = (ST.ec.page - 1) * PAGE_SIZE, view = rows.slice(from, from + PAGE_SIZE);
+    $('ecCount').textContent = rows.length;
+    var tags = [];
+    if (ST.project) tags.push('โครงการ: ' + ST.project);
+    if (ST.dept) tags.push(ST.dept);
+    if (ST.ec.search) tags.push('ค้นหา: "' + ST.ec.search + '"');
+    $('ecFilters').textContent = tags.length ? '· ' + tags.join(' · ') : '';
+    $('ecEmpty').classList.toggle('d-none', rows.length > 0);
+    $('ecEmptyMsg').textContent = ST.data.ecount.length ? 'ไม่พบรายการที่ตรงกับเงื่อนไข' : 'ยังไม่มีข้อมูลจาก Ecount — กดนำเข้าไฟล์ Excel ที่ export จาก Ecount';
+    $('ecBody').innerHTML = view.map(ecRowHtml).join('');
+    $('ecPageInfo').textContent = rows.length ? 'แสดง ' + (from + 1) + '–' + (from + view.length) + ' จาก ' + rows.length : '';
+    var btn = function (label, p, dis, act) {
+      return '<button type="button" class="btn btn-outline-secondary' + (act ? ' active' : '') + '" ' + (dis ? 'disabled' : '') + ' data-p="' + p + '">' + label + '</button>';
+    };
+    var html = btn('‹', ST.ec.page - 1, ST.ec.page === 1);
+    var start = Math.max(1, Math.min(ST.ec.page - 2, pages - 4)), end = Math.min(pages, start + 4);
+    for (var p = start; p <= end; p++) html += btn(p, p, false, p === ST.ec.page);
+    html += btn('›', ST.ec.page + 1, ST.ec.page === pages);
+    $('ecPager').innerHTML = pages > 1 ? html : '';
+    $('ecPager').querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () { ST.ec.page = +b.getAttribute('data-p'); renderEcount(); });
+    });
+  }
+
+  function ecStatusText(t, j) {
+    if (j) return j.status;
+    if (t.direction === 'IN') return 'ยังไม่มีงานซ่อม';
+    if (t.direction === 'OUT') return 'ไม่พบใบส่งเข้าซ่อม';
+    return '';
+  }
+
+  function ecRowHtml(t) {
+    var j = ecJob(t);
+    var dir = t.direction === 'IN' ? '<span class="dir dir-in">→ ส่งเข้าซ่อม</span>' : t.direction === 'OUT' ? '<span class="dir dir-out">← ส่งคืนจากซ่อม</span>' : '';
+    var loc = function (v) { return '<span class="ec-loc' + (isRepLoc(v) ? ' rep' : '') + '">' + esc(v || '-') + '</span>'; };
+    var st;
+    if (j) {
+      st = statusBadge(j.status) + '<div>' + slaBadge(j) + '</div>' +
+        '<div class="muted mt-1">' + (j.ageDays != null ? 'อายุงาน ' + j.ageDays + ' วัน · ' : '') +
+        '<a href="#" class="text-decoration-none" data-ec-job="' + esc(keyOf(j)) + '" onclick="return false">เปิดงาน ' + esc(j.ticketId || '') + '</a></div>';
+    } else {
+      st = t.direction ? '<span class="muted">' + esc(ecStatusText(t, null)) + '</span>' : '<span class="muted">-</span>';
+    }
+    return '<tr' + (j && j.isOverdue ? ' class="is-overdue"' : '') + '>' +
+      td('วันที่-ลำดับ', '<div class="ec-ds num">' + esc(t.dateSeq) + '</div><div class="t-meta">' + fmtDate(t.date) + '</div>') +
+      td('ชื่อโครงการ', '<span class="proj-pill">' + esc(t.project) + '</span>') +
+      td('เลขที่ใบย้ายคลัง', '<div class="ec-no">' + esc(t.transferNo || '-') + '</div>' + dir) +
+      td('สถานที่จ่าย', loc(t.from)) +
+      td('สถานที่รับสินค้า', loc(t.to)) +
+      td('ชื่อสินค้า', '<div class="ec-prod">' + esc(t.product || '-') + '</div>') +
+      td('จำนวน', '<span class="num">' + esc(t.qty === '' ? '-' : t.qty) + '</span>', 'text-end') +
+      td('Serial/Lot', '<span class="num">' + esc(t.serial || '-') + '</span>') +
+      td('รายละเอียดเพิ่มเติม', esc(t.detail || '-')) +
+      td('หมายเหตุ', t.remark ? '<div class="remark">' + esc(t.remark) + '</div>' : '<span class="muted">-</span>') +
+      td('สถานะงานซ่อม', st) +
+      '</tr>';
+  }
+
+  function exportEcountCsv() {
+    var rows = ecFiltered();
+    var head = ['วันที่-ลำดับ', 'ชื่อโครงการ', 'เลขที่ใบย้ายคลัง', 'ชื่อสถานที่จ่าย', 'ชื่อสถานที่รับสินค้า', 'ชื่อสินค้า [ชื่อข้อมูลจำเพาะ]', 'จำนวน', 'หมายเลข Serial/Lot', 'รายละเอียดเพิ่มเติม', 'หมายเหตุ', 'ทิศทาง', 'สถานะงานซ่อม', 'เลขที่งานซ่อม'];
+    var q = function (v) { v = v == null ? '' : String(v); return '"' + v.replace(/"/g, '""') + '"'; };
+    var csv = '﻿' + head.map(q).join(',') + '\n' + rows.map(function (t) {
+      var j = ecJob(t);
+      return [t.dateSeq, t.project, t.transferNo, t.from, t.to, t.product, t.qty, t.serial, t.detail, t.remark,
+        t.direction === 'IN' ? 'ส่งเข้าซ่อม' : t.direction === 'OUT' ? 'ส่งคืนจากซ่อม' : '', ecStatusText(t, j), j ? j.ticketId : ''].map(q).join(',');
+    }).join('\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'ecount-transfers-' + (ST.data ? ST.data.today : 'export') + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ---------------- นำเข้าไฟล์ Excel จาก Ecount ----------------
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = XLSX_URL; sc.onload = resolve;
+      sc.onerror = function () { reject(new Error('โหลดตัวอ่านไฟล์ Excel ไม่สำเร็จ — ตรวจการเชื่อมต่ออินเทอร์เน็ต')); };
+      document.head.appendChild(sc);
+    });
+  }
+
+  function openEcImport() {
+    ST.ecImport = null;
+    $('ecFile').value = '';
+    $('ecErr').classList.add('d-none');
+    $('ecPreview').classList.add('d-none');
+    $('btnEcDoImport').disabled = true;
+    $('ePin').value = ST.pin;
+    modal('ecModal').show();
+    loadXlsx().catch(function () {}); // โหลดรอไว้
+  }
+
+  function ecErr(msg) { $('ecErr').textContent = msg; $('ecErr').classList.toggle('d-none', !msg); }
+
+  var EC_HEAD = [
+    ['dateSeq', /^วันที่\s*-\s*ลำดับ/], ['project', /^(ชื่อ)?โครงการ/], ['transferNo', /^เลขที่/],
+    ['from', /สถานที่จ่าย|คลังจ่าย/], ['to', /สถานที่รับ|คลังรับ/], ['product', /^(ชื่อ)?สินค้า/],
+    ['qty', /^จำนวน/], ['serial', /serial|lot/i], ['detail', /^รายละเอียด/], ['remark', /^หมายเหตุ/],
+  ];
+  var DATE_SEQ_RE = /^\d{2,4}\/\d{1,2}\/\d{1,2}-\d+$/;
+
+  function normProject(v) {
+    var k = String(v || '').replace(/\s+/g, '');
+    var list = projects();
+    for (var i = 0; i < list.length; i++) if (list[i].replace(/\s+/g, '') === k) return list[i];
+    return '';
+  }
+
+  function readEcountFile(file) {
+    ecErr(''); $('ecPreview').classList.add('d-none'); $('btnEcDoImport').disabled = true;
+    loadXlsx().then(function () { return file.arrayBuffer(); }).then(function (buf) {
+      var wb = XLSX.read(buf, { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      var hi = -1;
+      for (var i = 0; i < Math.min(aoa.length, 20); i++) {
+        if (aoa[i].some(function (c) { return /^วันที่\s*-\s*ลำดับ/.test(String(c).trim()); })) { hi = i; break; }
+      }
+      if (hi < 0) throw new Error('ไม่พบหัวคอลัมน์ "วันที่-ลำดับ" — กรุณาใช้ไฟล์ Excel ที่ export จากหน้า รายการย้ายคลัง ของ Ecount');
+      var idx = {};
+      aoa[hi].forEach(function (h, c) {
+        h = String(h).trim();
+        for (var k = 0; k < EC_HEAD.length; k++) {
+          if (idx[EC_HEAD[k][0]] === undefined && EC_HEAD[k][1].test(h)) { idx[EC_HEAD[k][0]] = c; break; }
+        }
+      });
+      if (idx.project === undefined) throw new Error('ไฟล์ไม่มีคอลัมน์ "ชื่อโครงการ" — ตอน export จาก Ecount ให้เปิดแสดงคอลัมน์โครงการด้วย');
+      var title = String((aoa[0] || [])[0] || '').trim();
+      var all = [], rows = [];
+      aoa.slice(hi + 1).forEach(function (r) {
+        var o = {};
+        EC_HEAD.forEach(function (h) { o[h[0]] = idx[h[0]] === undefined ? '' : String(r[idx[h[0]]] == null ? '' : r[idx[h[0]]]).trim(); });
+        if (!DATE_SEQ_RE.test(o.dateSeq)) return; // แถวสรุป/เวลาพิมพ์ท้ายไฟล์
+        all.push(o);
+        var p = normProject(o.project);
+        if (!p) return;
+        o.project = p;
+        rows.push(o);
+      });
+      if (!all.length) throw new Error('ไม่พบแถวข้อมูลในไฟล์');
+      ST.ecImport = { fileName: file.name, title: /^ชื่อบริษัท/.test(title) ? title : '', rows: rows };
+      showEcPreview(all.length, rows);
+    }).catch(function (err) { ecErr('⚠️ ' + (err && err.message ? err.message : err)); });
+  }
+
+  function showEcPreview(total, rows) {
+    var by = {}, nin = 0, nout = 0;
+    rows.forEach(function (o) {
+      by[o.project] = (by[o.project] || 0) + 1;
+      if (isRepLoc(o.to) && !isRepLoc(o.from)) nin++; else if (isRepLoc(o.from) && !isRepLoc(o.to)) nout++;
+    });
+    $('ecPrevTitle').textContent = (ST.ecImport.title || ST.ecImport.fileName);
+    $('ecPrevStat').innerHTML = '<div>แถวในไฟล์ <b class="num">' + total + '</b></div>' +
+      '<div>ตรง 2 โครงการ <b class="num">' + rows.length + '</b></div>' +
+      projects().map(function (p) { return '<div>' + esc(p) + ' <b class="num">' + (by[p] || 0) + '</b></div>'; }).join('') +
+      '<div>ส่งเข้าซ่อม <b class="num">' + nin + '</b></div><div>ส่งคืนจากซ่อม <b class="num">' + nout + '</b></div>';
+    $('ecPrevBody').innerHTML = rows.length ? rows.map(function (o) {
+      return '<tr><td class="num">' + esc(o.dateSeq) + '</td><td>' + esc(o.project) + '</td><td>' + esc(o.transferNo) + '</td><td>' +
+        esc(o.from) + ' → ' + esc(o.to) + '</td><td>' + esc(o.product) + '</td><td>' + esc(o.serial) + '</td><td>' + esc(o.detail) + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="text-center text-secondary py-3">ไม่มีแถวของโครงการ ' + esc(projects().join(' / ')) + ' ในไฟล์นี้</td></tr>';
+    $('ecPreview').classList.remove('d-none');
+    $('btnEcDoImport').disabled = !rows.length;
+  }
+
+  function doEcImport() {
+    if (!ST.ecImport || !ST.ecImport.rows.length) return;
+    var pin = $('ePin').value;
+    $('btnEcDoImport').disabled = true; $('ecSpin').classList.remove('d-none'); ecErr('');
+    callServer('importEcount', 'importEcount', { pin: pin, fileName: ST.ecImport.fileName, title: ST.ecImport.title, rows: ST.ecImport.rows })
+      .then(function (res) {
+        ST.pin = pin;
+        modal('ecModal').hide();
+        toast('✅ ' + res.message + (res.unmatched ? ' · ส่งคืนแต่ไม่พบใบส่งเข้าซ่อม ' + res.unmatched : ''), 'ok');
+        setView('ecount');
+        loadData(true);
+      })
+      .catch(function (err) { ecErr('⚠️ ' + err.message); $('btnEcDoImport').disabled = false; })
+      .then(function () { $('ecSpin').classList.add('d-none'); });
   }
 
   // ------------------------------------------------------------------ CSV
