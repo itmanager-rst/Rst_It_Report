@@ -1003,6 +1003,10 @@
     data.departments = DEPARTMENTS.slice();
     data.jobTypes = JOB_TYPES.slice();
     data.projects = (data.projects && data.projects.length) ? data.projects : PROJECTS.slice();
+    if (!data.ecount && !ST.warnedEc) {
+      ST.warnedEc = true;
+      setTimeout(function () { toast('⚠️ Backend ที่ API_URL ยังเป็นเวอร์ชันเก่า (' + (data.codeVersion || 'ไม่ทราบ') + ') — ยังนำเข้า Ecount ไม่ได้: Deploy → Manage deployments → แก้ไข deployment เดิม → Version: New version', 'err'); }, 300);
+    }
     data.ecount = data.ecount || [];
     data.slaByType = Object.assign({}, data.slaByType || {}, SLA_BY_TYPE);
     ST.data = data;
@@ -2018,7 +2022,14 @@
         setView('ecount');
         loadData(true);
       })
-      .catch(function (err) { ecErr('⚠️ ' + err.message); $('btnEcDoImport').disabled = false; })
+      .catch(function (err) {
+        var m = err.message;
+        if (/ไม่รู้จัก action|importEcount is not a function|Script function not found/i.test(m)) {
+          m = 'Backend (Code.gs) ที่หน้าเว็บเรียกใช้ยังเป็นเวอร์ชันเก่า (' + ((ST.data && ST.data.codeVersion) || '?') + ') — ' +
+            'ใน Apps Script กด Deploy → Manage deployments → ✏️ แก้ไข deployment เดิม (URL เดียวกับ API_URL) → Version: New version → Deploy แล้วลองใหม่';
+        }
+        ecErr('⚠️ ' + m); $('btnEcDoImport').disabled = false;
+      })
       .then(function () { $('ecSpin').classList.add('d-none'); });
   }
 
