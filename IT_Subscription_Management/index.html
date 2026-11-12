@@ -254,6 +254,7 @@
 
   <nav class="pagenav no-print" id="pageNav">
     <button data-page="overview" class="active">📊 ภาพรวมทุกระบบ</button>
+    <button data-page="summary">📋 สรุปผู้บริหาร</button>
     <button data-page="m365">🟦 Microsoft 365</button>
     <button data-page="gsuite">🟥 Google Workspace</button>
     <button data-page="bluehost">🌐 Bluehost · Hosting &amp; Domain <span class="cnt" id="bhNavCnt"></span></button>
@@ -477,6 +478,16 @@
   </div><!-- /page-bluehost -->
 
   <!-- ===================== หน้า: Microsoft 365 ===================== -->
+  <!-- ===================== หน้า: สรุปผู้บริหาร (เปรียบเทียบรายระบบ) ===================== -->
+  <div id="page-summary" class="page" hidden>
+    <div class="bh-head">
+      <div>
+        <h2>สรุปผู้บริหาร · เปรียบเทียบรายระบบ</h2>
+        <p>Microsoft 365, Google Workspace, Bluehost และค่าใช้จ่าย IT</p>
+      </div>
+    </div>
+    <div id="sumBody"></div>
+  </div><!-- /page-summary -->
   <div id="page-m365" class="page" hidden>
     <div class="bh-head">
       <div>
@@ -1273,6 +1284,7 @@ function render() {
   renderRenewStrip();
   renderBudget();
   renderBluehost();
+  renderSummary();
 }
 
 /* ---------- โหมดรายปี ---------- */
@@ -1348,12 +1360,12 @@ function renderMonthly() {
   setText("k-total-lbl", "ค่าใช้จ่ายรวม · " + rangeLabel(months));
   setText("k-avg-lbl", "เฉลี่ยต่อเดือน");
   setText("k-run-lbl", "ประมาณการต่อปี (Run-rate)");
-  setText("k-run-note", state.bhpay.length ? "M365 + GWS เดือนล่าสุด × 12 + Bluehost และ IT ย้อนหลัง 12 เดือน" : "เดือนล่าสุด × 12");
+  setText("k-run-note", "M365 + GWS เฉลี่ย 3 เดือนล่าสุด × 12 + Bluehost และ IT ย้อนหลัง 12 เดือน");
   setKpi("k-total", T);
   setKpi("k-avg", n ? T / n : 0);
   const last = n ? total[n - 1] : 0, prev = n > 1 ? total[n - 2] : 0;
   setKpi("k-last", last);
-  setKpi("k-run", n ? (m365[n - 1] + gws[n - 1]) * 12 + bhTrailing12(months[n - 1]) + itTrailing12(months[n - 1]) : 0);
+  setKpi("k-run", n ? annualRunRate(months) : 0);
   setText("k-last-lbl", "เดือนล่าสุด · " + (n ? monthLabel(months[n - 1]) : "-"));
   setDelta(n > 1 ? pct(last, prev) : null, n > 1 ? "เทียบ " + monthLabel(months[n - 2]) : "");
 
@@ -1449,7 +1461,14 @@ function shareSentence(a, b, c, d = 0) {
 function itTrailing12(endYm) {
   const [y, m] = endYm.split("-").map(Number), d = new Date(y, m - 12, 1);
   const startYm = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-  return state.it.filter(r => { const k = r.date.slice(0, 7); return k > startYm && k <= endYm; }).reduce((s, r) => s + conv(r), 0);
+  return state.it.filter(r => { const k = r.date.slice(0, 7); return k >= startYm && k <= endYm; }).reduce((s, r) => s + conv(r), 0);
+}
+/** ประมาณการทั้งปี: M365/GWS = เฉลี่ย 3 เดือนล่าสุด × 12 + Bluehost และ IT ย้อนหลัง 12 เดือน (ตรงกับการ์ดงบประมาณ) */
+function annualRunRate(months) {
+  const last3 = months.slice(-3);
+  const avg = list => last3.reduce((s, m) => s + monthly(list, [m])[0], 0) / last3.length;
+  const end = months[months.length - 1];
+  return (avg(state.m365) + avg(state.gsuite)) * 12 + bhTrailing12(end) + itTrailing12(end);
 }
 /** ยอด Bluehost ที่จ่ายจริงใน 12 เดือนล่าสุด (นับถึงเดือน endYm) */
 function bhTrailing12(endYm) {
@@ -1479,8 +1498,8 @@ function renderInsights(months, m365, gws, total, bh = [], it = []) {
   biggestChange(m365, "Microsoft 365");
   biggestChange(gws, "Google Workspace");
 
-  const run = (m365[n - 1] + gws[n - 1]) * 12 + bhTrailing12(months[n - 1]) + itTrailing12(months[n - 1]);
-  out.push(`ประมาณการทั้งปี (M365 + GWS ระดับเดือนล่าสุด × 12${state.bhpay.length ? " + Bluehost 12 เดือนล่าสุด" : ""}${state.it.length ? " + IT 12 เดือนล่าสุด" : ""}) อยู่ที่ <b>${fmtView(run)}</b> (${fmtAlt(run)})`);
+  const run = annualRunRate(months);
+  out.push(`ประมาณการทั้งปี (M365 + GWS เฉลี่ย 3 เดือนล่าสุด × 12 + Bluehost และ IT 12 เดือนล่าสุด) อยู่ที่ <b>${fmtView(run)}</b> (${fmtAlt(run)})`);
   const pending = state.gsuite.concat(state.m365).filter(r => /pend|unpaid|due|ยังไม่ปิด|ค้าง/i.test(r.status));
   if (pending.length) out.push(`มี <b>${pending.length}</b> รายการยังไม่ชำระ (รวมรอบที่ยังไม่ปิด) รวม <b>${fmtView(pending.reduce((s, r) => s + conv(r), 0))}</b> (${fmtAlt(pending.reduce((s, r) => s + conv(r), 0))}) (ตัดบัตรอัตโนมัติรอบถัดไป)`);
   out.push(`ยอดเงินบาทคำนวณที่ 1 USD = ${rate.value.toFixed(2)} THB (ยอดที่ธนาคารเรียกเก็บจริงอาจต่างเล็กน้อยตามอัตราวันตัดบัตร)`);
@@ -2401,10 +2420,129 @@ function showPage(p) {
   document.querySelectorAll(".ov-only").forEach(el => el.style.display = p === "overview" ? "" : "none");
   if (p === "itbq" && !bqLoaded) { loadBq(); checkBqStatus(); }
   if (p in SYS_PAGES) renderSysPage(p);
+  if (p === "summary") renderSummary();
   if (location.hash !== "#" + p) history.replaceState(null, "", "#" + p);
   requestAnimationFrame(() => [trendChart, shareChart, monthPie, bhChart].forEach(c => c && c.resize()));
   window.scrollTo({ top: 0 });
 }
+/* ---------- หน้าสรุปผู้บริหาร: เปรียบเทียบรายระบบ (ใช้เฉพาะเดือนที่ปิดรอบแล้ว) ---------- */
+function renderSummary() {
+  const body = document.getElementById("sumBody");
+  if (!body) return;
+  const cur = todayISO().slice(0, 7);
+  const months = calendarMonths().filter(m => m < cur);
+  if (!months.length) {
+    body.innerHTML = `<p style="color:var(--text-3)">ยังไม่มีข้อมูลที่ปิดรอบแล้ว — เปิดส่วน “นำเข้าข้อมูล” ที่หน้าภาพรวม</p>`;
+    return;
+  }
+  const last12 = months.slice(-12), last3 = months.slice(-3), prev3 = months.slice(-6, -3);
+  const sumM = (list, ms) => list.filter(r => ms.includes(r.date.slice(0, 7))).reduce((s, r) => s + toUSD(r), 0);
+  const avgM = (list, ms) => ms.length ? sumM(list, ms) / ms.length : 0;
+  const activeBH = state.bluehost.filter(r => !isCancelled(r) && isISO(r.renewal)).sort((a, b) => a.renewal.localeCompare(b.renewal));
+  const esc2 = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const rows = [
+    { name: "Microsoft 365", color: "#0078d4", t12: sumM(state.m365, last12), run: avgM(state.m365, last3) * 12,
+      trend: pct(avgM(state.m365, last3), avgM(state.m365, prev3)), note: "ราคาเฉลี่ย 3 เดือนล่าสุด " + fmtUSD(avgM(state.m365, last3)) + " / เดือน" },
+    { name: "Google Workspace", color: "#ea4335", t12: sumM(state.gsuite, last12), run: avgM(state.gsuite, last3) * 12,
+      trend: pct(avgM(state.gsuite, last3), avgM(state.gsuite, prev3)), note: "เฉลี่ย 3 เดือนล่าสุด " + fmtUSD(avgM(state.gsuite, last3)) + " / เดือน" },
+    { name: "Bluehost (Hosting / Domain)", color: "#4338ca", t12: sumM(state.bhpay, last12), run: sumM(state.bhpay, last12), trend: null,
+      note: activeBH.length ? "ต่ออายุใกล้สุด: " + esc2(activeBH[0].service) + " (" + activeBH[0].renewal + ")" : "ยังไม่มีรายการ" },
+    { name: "ค่าใช้จ่าย IT (BigQuery)", color: "#f59e0b", t12: sumM(state.it, last12), run: sumM(state.it, last12), trend: null,
+      note: "ค่าซื้อของแผนก IT ไม่ใช่ค่า Subscription" }
+  ];
+  const totalRun = rows.reduce((s, r) => s + r.run, 0), total12 = rows.reduce((s, r) => s + r.t12, 0);
+  const share = v => totalRun ? (v / totalRun * 100).toFixed(1) + "%" : "-";
+  const chip = t => (t == null || !isFinite(t)) ? `<span class="chip">—</span>`
+    : `<span class="chip ${t > 0.5 ? "up" : t < -0.5 ? "down" : ""}">${t > 0 ? "▲" : t < 0 ? "▼" : "■"} ${Math.abs(t).toFixed(1)}%</span>`;
+  const span = `${monthLabel(last12[0])} – ${monthLabel(last12[last12.length - 1])}`;
+
+  const cards = `<div class="kpi" style="border-top:4px solid var(--text-1)">
+      <div class="label">ประมาณการรวม 12 เดือนข้างหน้า</div>
+      <div class="value num">${fmtView(totalRun)}</div>
+      <div class="alt num">${fmtAlt(totalRun)} · ยอดจ่ายจริง 12 เดือนล่าสุด ${fmtView(total12)}</div></div>` +
+    rows.map(r => `<div class="kpi" style="border-top:4px solid ${r.color}">
+      <div class="label">${r.name}</div>
+      <div class="value num">${fmtView(r.run)}</div>
+      <div class="alt num">${fmtAlt(r.run)} · ${share(r.run)} ของยอดรวม</div>
+      <div style="margin-top:8px">${chip(r.trend)} <span class="hint">แนวโน้ม 3 เดือน</span></div></div>`).join("");
+
+  const table = `<div class="table-wrap"><table>
+    <thead><tr><th>ระบบ</th><th class="r">ยอดจ่ายจริง 12 เดือนล่าสุด</th><th class="r">สัดส่วน</th><th class="r">ประมาณการ 12 เดือนข้างหน้า</th><th>แนวโน้ม 3 เดือน</th><th>ข้อควรรู้</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${r.color};margin-right:6px"></i>${r.name}</td>
+      <td class="r num">${fmtView(r.t12)}<div class="meta">${fmtAlt(r.t12)}</div></td>
+      <td class="r num">${total12 ? (r.t12 / total12 * 100).toFixed(1) + "%" : "-"}</td>
+      <td class="r num"><b>${fmtView(r.run)}</b><div class="meta">${fmtAlt(r.run)}</div></td>
+      <td>${chip(r.trend)}</td>
+      <td class="meta">${r.note}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>รวม</td><td class="r num">${fmtView(total12)}</td><td class="r num">100%</td><td class="r num">${fmtView(totalRun)}</td><td></td><td></td></tr></tfoot>
+  </table></div>`;
+
+  body.innerHTML = `<div class="kpis">${cards}</div>
+    <div class="panel"><div class="panel-head"><h2>เปรียบเทียบรายระบบ</h2><span class="hint">${span}</span></div>${table}</div>
+    <p class="hint">ช่วงข้อมูล ${span} (เฉพาะเดือนที่ปิดรอบแล้ว ไม่รวมเดือนปัจจุบัน) · M365 และ Google Workspace ประมาณการจากค่าเฉลี่ย 3 เดือนล่าสุด × 12 · Bluehost และ IT ใช้ยอดย้อนหลัง 12 เดือน · อัตรา 1 USD = ${rate.value.toFixed(2)} THB</p>`;
+  body.insertAdjacentHTML("beforeend", yearCompareHTML());
+}
+
+/* ---------- เปรียบเทียบรายปี: ระบบไหนเพิ่ม/ลด และเพราะอะไร (แยกผลจากราคาต่อหน่วย กับจำนวนหน่วย) ---------- */
+let sumYA = null, sumYB = null;
+function setSumYear(k, v) { if (k === "a") sumYA = v; else sumYB = v; renderSummary(); }
+function yearCompareHTML() {
+  const years = allYears();
+  const mBE = y => `ปี ${beYear(y)}`;
+  if (years.length < 2) return `<div class="panel"><p class="hint">ต้องมีข้อมูลอย่างน้อย 2 ปีจึงเปรียบเทียบได้</p></div>`;
+  const A = sumYA && years.includes(sumYA) ? sumYA : years[years.length - 2];
+  const B = sumYB && years.includes(sumYB) ? sumYB : years[years.length - 1];
+  const opts = sel => years.map(y => `<option value="${y}" ${y === sel ? "selected" : ""}>${mBE(y)}</option>`).join("");
+  const sys = [
+    { name: "Microsoft 365", color: "#0078d4", list: state.m365, unit: "เดือน", lumpy: false },
+    { name: "Google Workspace", color: "#ea4335", list: state.gsuite, unit: "เดือน", lumpy: false },
+    { name: "Bluehost", color: "#4338ca", list: state.bhpay, unit: "รายการชำระ", lumpy: true },
+    { name: "ค่าใช้จ่าย IT", color: "#f59e0b", list: state.it, unit: "รายการ PO", lumpy: true }
+  ];
+  const stat = (list, y, lumpy) => {
+    const rs = list.filter(r => r.date.startsWith(y) && r.amount > 0);
+    const total = rs.reduce((s, r) => s + toUSD(r), 0);
+    const count = lumpy ? rs.length : new Set(rs.map(r => r.date.slice(0, 7))).size;
+    return { total, count, avg: count ? total / count : 0 };
+  };
+  const money = v => fmtView(Math.abs(v));
+  const rows = sys.map(sy => {
+    const a = stat(sy.list, A, sy.lumpy), b = stat(sy.list, B, sy.lumpy);
+    const first = sy.list.map(r => r.date).sort()[0] || "";
+    const coverage = first ? `ข้อมูลในชีตเริ่ม ${first.slice(0, 7)}` : "ยังไม่มีข้อมูล";
+    let why;
+    if (!a.count && !b.count) why = "ไม่มีข้อมูลทั้งสองปี";
+    else if (!a.count) why = `ไม่มีข้อมูลในปี ${beYear(A)} (${coverage}) จึงเปรียบเทียบไม่ได้`;
+    else if (!b.count) why = `ไม่มีข้อมูลในปี ${beYear(B)} จึงเปรียบเทียบไม่ได้`;
+    else {
+      const rateE = (b.avg - a.avg) * b.count, volE = a.avg * (b.count - a.count);
+      const pAvg = pct(b.avg, a.avg);
+      const parts = [];
+      parts.push(`ราคาเฉลี่ยต่อ${sy.unit} ${fmtUSD(a.avg)} → ${fmtUSD(b.avg)}${pAvg == null ? "" : ` (${pAvg > 0 ? "+" : ""}${pAvg.toFixed(1)}%)`} ${rateE >= 0 ? "เพิ่ม" : "ลด"}ค่าใช้จ่าย ${money(rateE)}`);
+      parts.push(`จำนวน${sy.unit} ${a.count} → ${b.count} ${volE >= 0 ? "เพิ่ม" : "ลด"}ค่าใช้จ่าย ${money(volE)}`);
+      why = parts.join(" · ") + ` · ${coverage}`;
+    }
+    const d = b.total - a.total, dp = pct(b.total, a.total);
+    return `<tr>
+      <td><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${sy.color};margin-right:6px"></i>${sy.name}</td>
+      <td class="r num">${a.count ? fmtView(a.total) : "-"}</td>
+      <td class="r num">${b.count ? fmtView(b.total) : "-"}</td>
+      <td class="r num"><span style="color:${d > 0.5 ? "var(--up)" : d < -0.5 ? "var(--down)" : "inherit"}">${a.count && b.count ? `${d > 0 ? "▲" : d < 0 ? "▼" : "■"} ${fmtView(Math.abs(d))}${dp == null ? "" : ` (${dp > 0 ? "+" : ""}${dp.toFixed(1)}%)`}` : "-"}</span></td>
+      <td class="meta" style="white-space:normal;min-width:260px">${why}</td></tr>`;
+  }).join("");
+  const sel = (k, cur) => `<select onchange="setSumYear('${k}', this.value)" style="padding:4px 8px;border-radius:6px">${opts(cur)}</select>`;
+  return `<div class="panel" style="margin-top:20px">
+    <div class="panel-head"><h2>เปรียบเทียบรายปี: เพิ่มหรือลด และเพราะอะไร</h2>
+      <span class="hint">เทียบ ${sel("a", A)} กับ ${sel("b", B)}</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ระบบ</th><th class="r">${mBE(A)}</th><th class="r">${mBE(B)}</th><th class="r">เปลี่ยนแปลง</th><th>สาเหตุ</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="hint" style="margin-top:8px">สาเหตุแยกเป็น 2 ส่วน คือราคาต่อหน่วยที่เปลี่ยน กับจำนวนหน่วยที่เรียกเก็บต่างกัน ผลรวมของสองส่วนเท่ากับยอดเปลี่ยนแปลง</p>
+  </div>`;
+}
+
 function setupPages() {
   document.querySelectorAll("#pageNav button").forEach(b => b.addEventListener("click", () => showPage(b.dataset.page)));
   document.getElementById("bqRefresh").addEventListener("click", () => { loadBq(); checkBqStatus(); });
@@ -2413,7 +2551,7 @@ function setupPages() {
   document.getElementById("bqCompany").addEventListener("change", renderBq);
   document.getElementById("bqMonth").addEventListener("change", renderBq);
   const h = location.hash.slice(1);
-  showPage(["m365", "gsuite", "bluehost", "itbq"].includes(h) ? h : "overview");
+  showPage(["summary", "m365", "gsuite", "bluehost", "itbq"].includes(h) ? h : "overview");
 }
 
 function exportBluehostExcel() {
