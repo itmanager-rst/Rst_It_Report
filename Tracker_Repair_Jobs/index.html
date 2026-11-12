@@ -186,6 +186,19 @@
   .opt-card .d { font-size: .75rem; color: var(--ink-3); }
   .del-list { max-height: 160px; overflow: auto; font-size: .82rem; background: var(--line-2); border-radius: 8px; padding: 8px 12px; }
 
+  /* ---------- (r09) สถานะการเชื่อมต่อเซิร์ฟเวอร์ ---------- */
+  .conn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 11px; font-size: .78rem; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+  .conn .cdot { width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; flex: none; }
+  .conn-ok { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+  .conn-ok .cdot { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
+  .conn-wait .cdot { background: #f59e0b; animation: cblink 1s infinite; }
+  .conn-old { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+  .conn-old .cdot { background: #ea580c; }
+  .conn-err { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+  .conn-err .cdot { background: #dc2626; }
+  @keyframes cblink { 50% { opacity: .3; } }
+  @media (max-width: 575.98px) { .conn .ctext { display: none; } .conn { padding: 7px; } }
+
   /* ---------- (r09) โครงการ Ecount + หน้า รายการ ---------- */
   .proj-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .proj-bar .lbl { font-size: .78rem; font-weight: 700; color: var(--ink-3); margin-right: 2px; }
@@ -332,6 +345,7 @@
           <div class="app-sub text-truncate" id="todayLabel">-</div>
         </div>
         <div class="updated d-none d-md-block">อัปเดต <span id="lastUpdated" class="num">-</span></div>
+        <button id="connStatus" class="conn conn-wait" type="button" title="กำลังเชื่อมต่อเซิร์ฟเวอร์..."><span class="cdot"></span><span class="ctext">กำลังเชื่อมต่อ...</span></button>
         <button id="btnRefresh" class="btn-ghost" type="button"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-sm-inline"> รีเฟรช</span></button>
       </div>
       <nav class="dept-tabs" id="deptTabs"></nav>
@@ -839,6 +853,7 @@
   // ------------------------------------------------------------------ events
   function bindEvents() {
     $('btnRefresh').addEventListener('click', function () { loadData(false); });
+    $('connStatus').addEventListener('click', function () { loadData(false); });
     bindEcountEvents();
     var t;
     $('searchInput').addEventListener('input', function (e) {
@@ -979,8 +994,19 @@
   }
 
   // ------------------------------------------------------------------ data
+  /** แสดงสถานะการเชื่อมต่อ : ok | wait | old | err */
+  function setConn(state, text, detail) {
+    var el = $('connStatus');
+    el.className = 'conn conn-' + state;
+    el.querySelector('.ctext').textContent = text;
+    el.title = (detail ? detail + '\n' : '') + 'คลิกเพื่อเชื่อมต่อ/โหลดข้อมูลใหม่';
+  }
+  function connMode() { return hasGas() ? 'Apps Script (google.script.run)' : 'API: ' + API_URL.replace(/^(.{45}).*(.{12})$/, '$1…$2'); }
+
   function loadData(silent) {
     if (!silent) showLoading(true);
+    ST.connT0 = Date.now();
+    if (!ST.data || !silent) setConn('wait', 'กำลังเชื่อมต่อ...', connMode());
     if (!hasGas()) {
       if (API_URL) {
         return fetch(API_URL + (API_URL.indexOf('?') === -1 ? '?' : '&') + 'action=data&t=' + Date.now())
@@ -1003,12 +1029,17 @@
     data.departments = DEPARTMENTS.slice();
     data.jobTypes = JOB_TYPES.slice();
     data.projects = (data.projects && data.projects.length) ? data.projects : PROJECTS.slice();
-    if (!data.ecount && !ST.warnedEc) {
+    var backendOld = !data.ecount;
+    if (backendOld && !ST.warnedEc) {
       ST.warnedEc = true;
       setTimeout(function () { toast('⚠️ Backend ที่ API_URL ยังเป็นเวอร์ชันเก่า (' + (data.codeVersion || 'ไม่ทราบ') + ') — ยังนำเข้า Ecount ไม่ได้: Deploy → Manage deployments → แก้ไข deployment เดิม → Version: New version', 'err'); }, 300);
     }
     data.ecount = data.ecount || [];
     data.slaByType = Object.assign({}, data.slaByType || {}, SLA_BY_TYPE);
+    var ms = Date.now() - (ST.connT0 || Date.now());
+    var det = 'Backend ' + (data.codeVersion || '?') + ' · ' + connMode() + ' · ตอบกลับ ' + (ms / 1000).toFixed(1) + ' วิ · ข้อมูล ณ ' + data.generatedAt;
+    if (!backendOld) setConn('ok', 'เชื่อมต่อเซิร์ฟเวอร์แล้ว', det);
+    else setConn('old', 'เชื่อมต่อแล้ว · Backend เก่า', det + '\nยังนำเข้า Ecount ไม่ได้ — Deploy New version');
     ST.data = data;
     ST.company = Object.assign({}, COMPANY_DEFAULT, data.company || {});
     ST.byKey = {};
@@ -1027,6 +1058,8 @@
 
   function onError(err) {
     showLoading(false);
+    setConn('err', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', (err && err.message ? err.message : String(err)) + '\n' + connMode() +
+      (ST.data ? '\nกำลังแสดงข้อมูลล่าสุด ณ ' + ST.data.generatedAt : ''));
     toast('⚠️ ' + (err && err.message ? err.message : err), 'err');
   }
   function toast(msg, type) {
