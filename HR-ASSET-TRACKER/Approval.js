@@ -38,7 +38,9 @@
  *   ↘ REJECTED (ไม่อนุมัติ)
  *   ↘ CANCELLED (ยกเลิก) — PENDING: ผู้ขอ/ผู้อนุมัติ/ADMIN ยกเลิกได้
  *                         APPROVED / ISSUED: ADMIN ยกเลิกได้ → คืนยอดเข้าคลัง + บันทึกประวัติสต็อก
- *   * ถ้าผู้รับมารับของเองที่ HR → ISSUED ข้ามไป RECEIVED ได้ทันที
+ *   * ผู้รับมารับของเองที่ HR → แอดมินจ่ายของ (แนบรูป) = ISSUED (deliveryMethod=PICKUP)
+ *     → พนักงานผู้มารับกด 📥 ยืนยันรับของในระบบเอง (เซ็น หรือ แนบรูป) → RECEIVED
+ *   * จ่ายของ: แนบรูปหลักฐาน (issuerPhoto) แทนการเซ็น · รับของ: เซ็น หรือ แนบรูปใบเบิกที่เซ็นรับแล้ว อย่างใดอย่างหนึ่ง
  *
  * ✏️ HQ_Office พิมพ์ชื่อสินค้าเองได้ (MANUAL_ITEM_DEPTS) — items[].manual = true, assetId ว่าง
  *    อนุมัติ → บันทึกใน HQ_Requisition_Log (รหัสว่าง) แต่ไม่ตัดสต็อก · ยกเลิก → ลบประวัติ ไม่คืนยอด
@@ -93,7 +95,9 @@ const REQ_HEADERS = [
   // เชื่อมกับประวัติการเบิก + การยกเลิกใบเบิก
   'txId', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'cancelReason',
   // ใบเบิกหลายรายการ: JSON [{assetId, assetName, category, quantity}]  (ใบเก่าที่ไม่มีค่า = 1 รายการจาก assetId/quantity)
-  'items'
+  'items',
+  // รูปหลักฐาน (ลิงก์ Drive): ผู้จ่ายแนบรูปแทนลายเซ็น · ผู้รับแนบรูปใบเบิกที่เซ็นรับแล้ว
+  'issuerPhoto', 'receiverPhoto'
 ];
 const MAX_REQ_ITEMS = 30;                   // จำนวนรายการสูงสุดต่อใบเบิก
 /**
@@ -442,8 +446,8 @@ function listRequests_(user) {
       delete o._ord;
       o.status = effStatus_(r);
       o.items = reqItems_(r);
-      o.hasIssuerSig = !!o.issuerSig;
-      o.hasReceiverSig = !!o.receiverSig;
+      o.hasIssuerSig = !!(o.issuerSig || o.issuerPhoto);       // มีลายเซ็น หรือ รูปหลักฐานการจ่าย
+      o.hasReceiverSig = !!(o.receiverSig || o.receiverPhoto);
       delete o._row; delete o.requesterSig; delete o.approverSig; delete o.issuerSig; delete o.receiverSig;
       return o;
     });
@@ -632,55 +636,50 @@ function effStatus_(r) {
 }
 
 /**
- * ขั้นที่ 3 — HR จ่ายของตามใบเบิกที่อนุมัติแล้ว
+ * ขั้นที่ 3 — แอดมินคลังจ่ายของตามใบเบิกที่อนุมัติแล้ว (แนบรูปหลักฐานแทนการเซ็น)
  *   deliveryMethod = 'SHIP'   → ISSUED (รอฝากส่งไปสาขา)  [ค่าเริ่มต้น]
- *   deliveryMethod = 'PICKUP' → RECEIVED (ผู้รับมารับเองที่ HR ต้องมีลายเซ็นผู้รับ)
- * ใบที่จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR → เซ็นย้อนหลังได้ (ไม่เปลี่ยนสถานะ)
+ *   deliveryMethod = 'PICKUP' → ISSUED (รอพนักงานที่มารับของกด 📥 ยืนยันรับของเอง)
+ * ใบที่จ่ายไปแล้วแต่ยังไม่มีรูป/ลายเซ็นผู้จ่าย → แนบย้อนหลังได้ (ไม่เปลี่ยนสถานะ)
  */
 function issueRequest_(d, user) {
-  if (!d.issuerSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุ (HR)' };
+  if (!d.issuerPhoto && !d.issuerSig) return { status: 'error', message: 'กรุณาแนบรูปหลักฐานการจ่ายของ' };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const { t, r } = findReq_(d.requestId);
     if (!r) return { status: 'error', message: 'ไม่พบใบเบิกเลขที่ ' + d.requestId };
     const st = effStatus_(r);
-    const lateSign = ['ISSUED', 'SHIPPED', 'RECEIVED'].indexOf(st) >= 0 && !r.issuerSig;
+    const lateSign = ['ISSUED', 'SHIPPED', 'RECEIVED'].indexOf(st) >= 0 && !r.issuerSig && !r.issuerPhoto;
     if (st !== 'APPROVED' && !lateSign) {
       return { status: 'error', message: 'จ่ายของได้เฉพาะใบเบิกที่อนุมัติแล้ว (สถานะปัจจุบัน: ' + st + ')' };
     }
+    const putProof = () => {
+      if (d.issuerPhoto) {
+        const ph = savePhoto_(d.issuerPhoto, r.requestId + '_issue');
+        if (!ph) throw new Error('บันทึกรูปหลักฐานการจ่ายไม่สำเร็จ');
+        setCell_(t, r._row, 'issuerPhoto', ph);
+      }
+      if (d.issuerSig) setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
+    };
 
-    if (lateSign) {                                   // เซ็นย้อนหลังอย่างเดียว
+    if (lateSign) {                                   // แนบรูปย้อนหลังอย่างเดียว
       if (!r.issuedBy) {
         setCell_(t, r._row, 'issuedBy', user.username);
         setCell_(t, r._row, 'issuedByName', (user.fullName || user.username) + proxyTag_(user, r.dept));
         setCell_(t, r._row, 'issuedAt', nowStr_());
       }
-      setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
+      putProof();
       return { status: 'success', requestId: r.requestId, newStatus: st };
     }
 
     const pickup = d.deliveryMethod === 'PICKUP';
-    const receiverName = String(d.receiverName || '').trim();
-    if (pickup && (!receiverName || !d.receiverSig)) {
-      return { status: 'error', message: 'รับของเองที่ HR: กรุณาระบุชื่อและลายเซ็นผู้รับพัสดุ' };
-    }
-    const now = nowStr_();
+    putProof();
     setCell_(t, r._row, 'issuedBy', user.username);
     setCell_(t, r._row, 'issuedByName', (user.fullName || user.username) + proxyTag_(user, r.dept));
-    setCell_(t, r._row, 'issuedAt', now);
-    setCell_(t, r._row, 'issuerSig', storeSig_(d.issuerSig, r.requestId + '_issuer'));
+    setCell_(t, r._row, 'issuedAt', nowStr_());
     setCell_(t, r._row, 'deliveryMethod', pickup ? 'PICKUP' : 'SHIP');
-    if (pickup) {
-      setCell_(t, r._row, 'receiverName', receiverName);
-      setCell_(t, r._row, 'receiverSig', storeSig_(d.receiverSig, r.requestId + '_receiver'));
-      setCell_(t, r._row, 'receivedBy', user.username);
-      setCell_(t, r._row, 'receivedAt', now);
-      setCell_(t, r._row, 'receiveNote', 'รับของเองที่ HR');
-    }
-    const newStatus = pickup ? 'RECEIVED' : 'ISSUED';
-    setCell_(t, r._row, 'status', newStatus);
-    return { status: 'success', requestId: r.requestId, newStatus: newStatus };
+    setCell_(t, r._row, 'status', 'ISSUED');          // PICKUP: รอผู้มารับกดยืนยันรับของเอง
+    return { status: 'success', requestId: r.requestId, newStatus: 'ISSUED', deliveryMethod: pickup ? 'PICKUP' : 'SHIP' };
   } finally {
     lock.releaseLock();
   }
@@ -716,11 +715,15 @@ function shipRequest_(d, user) {
   }
 }
 
-/** ขั้นที่ 5 — สาขายืนยันได้รับของ (พนักงานสาขาเดียวกัน / ADMIN / MANAGER) → RECEIVED */
+/**
+ * ขั้นที่ 5 — ยืนยันได้รับของ (พนักงานสาขาเดียวกัน / ADMIN / MANAGER) → RECEIVED
+ *   ใช้ได้ทั้งของที่ฝากส่ง (SHIPPED) และของที่มารับเองที่ HR (ISSUED + PICKUP)
+ *   หลักฐาน: ลายเซ็นในระบบ หรือ รูปใบเบิกที่เซ็นรับแล้ว (อย่างใดอย่างหนึ่ง / ทั้งสองอย่าง)
+ */
 function receiveRequest_(d, user) {
   const receiverName = String(d.receiverName || '').trim();
   if (!receiverName) return { status: 'error', message: 'กรุณาระบุชื่อผู้รับพัสดุ' };
-  if (!d.receiverSig) return { status: 'error', message: 'กรุณาเซ็นลายเซ็นผู้รับพัสดุ' };
+  if (!d.receiverSig && !d.receiverPhoto) return { status: 'error', message: 'กรุณาเซ็นชื่อ หรือแนบรูปใบเบิกที่เซ็นรับของแล้ว' };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -732,11 +735,16 @@ function receiveRequest_(d, user) {
     if (st !== 'SHIPPED' && st !== 'ISSUED') {
       return { status: 'error', message: 'ยืนยันรับของได้เฉพาะใบที่ HR จ่าย/ฝากส่งแล้ว (สถานะปัจจุบัน: ' + st + ')' };
     }
+    if (d.receiverPhoto) {
+      const ph = savePhoto_(d.receiverPhoto, r.requestId + '_receive');
+      if (!ph) return { status: 'error', message: 'บันทึกรูปหลักฐานการรับของไม่สำเร็จ (ไฟล์ต้องเป็นรูปภาพ)' };
+      setCell_(t, r._row, 'receiverPhoto', ph);
+    }
     setCell_(t, r._row, 'receiverName', receiverName);
-    setCell_(t, r._row, 'receiverSig', storeSig_(d.receiverSig, r.requestId + '_receiver'));
+    if (d.receiverSig) setCell_(t, r._row, 'receiverSig', storeSig_(d.receiverSig, r.requestId + '_receiver'));
     setCell_(t, r._row, 'receivedBy', user.username);
     setCell_(t, r._row, 'receivedAt', nowStr_());
-    setCell_(t, r._row, 'receiveNote', String(d.receiveNote || '').trim());
+    setCell_(t, r._row, 'receiveNote', String(d.receiveNote || '').trim() || (r.deliveryMethod === 'PICKUP' ? 'รับของเองที่ ' + DEPT_LABEL[r.dept] : ''));
     if (!r.deliveryMethod) setCell_(t, r._row, 'deliveryMethod', 'SHIP');
     setCell_(t, r._row, 'status', 'RECEIVED');
     return { status: 'success', requestId: r.requestId, newStatus: 'RECEIVED' };
@@ -873,6 +881,13 @@ function nowStr_() { return Utilities.formatDate(new Date(), APP_CONFIG.TZ, 'dd/
 function storeSig_(dataUrl, name) {
   if (!dataUrl) return '';
   if (String(dataUrl).length < 45000) return dataUrl;
+  return saveImage_(dataUrl, name).url;
+}
+
+/** รูปหลักฐาน (ถ่ายใบเบิก/ของ) → เก็บใน Drive เสมอ คืนลิงก์ */
+function savePhoto_(dataUrl, name) {
+  if (!dataUrl) return '';
+  if (/^https?:\/\//.test(String(dataUrl))) return String(dataUrl);
   return saveImage_(dataUrl, name).url;
 }
 

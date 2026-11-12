@@ -382,8 +382,8 @@
           <select id="branch" required class="branch-select w-full px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-600"></select>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1" for="assetImage">อัปโหลดรูปภาพหลักฐานการเบิก <span class="text-red-500">*</span></label>
-          <input type="file" id="assetImage" accept="image/*" required class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50">
+          <label class="block text-xs font-semibold text-slate-600 mb-1" for="assetImage">อัปโหลดรูปภาพหลักฐานการเบิก <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+          <input type="file" id="assetImage" accept="image/*" class="w-full text-xs p-1 border border-slate-300 rounded-xl bg-slate-50">
         </div>
         <div class="md:col-span-2">
           <label class="block text-xs font-semibold text-slate-600 mb-1" for="requisitionNotes">เหตุผลการเบิก / หมายเหตุเพิ่มเติม</label>
@@ -426,7 +426,7 @@
         <div class="flex items-center gap-1.5 flex-wrap m-tabs">
           <button data-req-tab="PENDING" onclick="setReqStatus('PENDING')">⏳ รออนุมัติ (<span class="cnt">0</span>)</button>
           <button data-req-tab="APPROVED" onclick="setReqStatus('APPROVED')">✅ อนุมัติแล้ว · รอจ่ายของ (<span class="cnt">0</span>)</button>
-          <button data-req-tab="ISSUED" onclick="setReqStatus('ISSUED')">📦 รอฝากส่ง (<span class="cnt">0</span>)</button>
+          <button data-req-tab="ISSUED" onclick="setReqStatus('ISSUED')">📦 จ่ายแล้ว · รอส่ง/รอรับ (<span class="cnt">0</span>)</button>
           <button data-req-tab="SHIPPED" onclick="setReqStatus('SHIPPED')">🚚 กำลังส่งไปสาขา (<span class="cnt">0</span>)</button>
           <button data-req-tab="RECEIVED" onclick="setReqStatus('RECEIVED')">🏁 สาขารับของแล้ว (<span class="cnt">0</span>)</button>
           <button data-req-tab="REJECTED" onclick="setReqStatus('REJECTED')">❌ ไม่อนุมัติ (<span class="cnt">0</span>)</button>
@@ -754,13 +754,12 @@
       <div id="issDetail" class="text-xs bg-slate-50 border border-slate-200 rounded-xl p-4"></div>
 
       <div>
-        <div class="flex items-center justify-between mb-1">
-          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้จ่ายพัสดุ (แอดมินคลัง) <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
-          <button type="button" onclick="sigPads.issuer.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
-        </div>
-        <div class="relative">
-          <canvas id="issuerSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-400 rounded-xl cursor-crosshair"></canvas>
-          <span id="issuerSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">แอดมินคลังเซ็นชื่อผู้จ่ายพัสดุในกรอบนี้</span>
+        <label class="block text-xs font-semibold text-slate-600 mb-1" for="issPhoto">📷 แนบรูปหลักฐานการจ่ายของ <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
+        <input type="file" id="issPhoto" accept="image/*" class="w-full text-xs p-1.5 border border-slate-300 rounded-xl bg-slate-50">
+        <p class="text-[11px] text-slate-400 mt-1">เช่น ถ่ายรูปของที่จัดเตรียม / ใบเบิกที่แนบไปกับของ (ไม่ต้องเซ็นชื่อ)</p>
+        <div id="issPhotoPreview" class="hidden mt-2 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+          <img src="" alt="" class="h-16 w-16 object-cover rounded-lg border cursor-pointer" onclick="openZoomModal(this.src)">
+          <span class="text-xs text-emerald-600 font-medium">✓ แนบรูปเรียบร้อย (คลิกเพื่อซูม)</span>
         </div>
       </div>
 
@@ -774,25 +773,12 @@
             </label>
             <label class="flex items-start gap-2 border border-slate-300 rounded-xl p-3 cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
               <input type="radio" name="issMethod" value="PICKUP" onchange="onIssMethodChange()" class="mt-0.5">
-              <span><b>🙋 ผู้รับมารับเองที่ HR</b><br><span class="text-slate-500">ผู้รับเซ็นรับของทันที → ปิดงาน</span></span>
+              <span><b>🙋 ผู้รับมารับเองที่ HR</b><br><span class="text-slate-500">พนักงานที่มารับของกด 📥 ยืนยันรับของในระบบเอง → ปิดงาน</span></span>
             </label>
           </div>
         </div>
-        <div id="issPickupBox" class="hidden space-y-3">
-          <div class="text-xs">
-            <label class="block font-semibold text-slate-600 mb-1">ชื่อผู้รับพัสดุ <span class="text-red-500">*</span></label>
-            <input type="text" id="issReceiverName" class="w-full px-3 py-2 border border-slate-300 rounded-xl" placeholder="ชื่อ-นามสกุล ผู้มารับของ">
-          </div>
-          <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้รับพัสดุ <span class="text-red-500">*</span></label>
-              <button type="button" onclick="sigPads.receiver.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
-            </div>
-            <div class="relative">
-              <canvas id="receiverSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-crosshair"></canvas>
-              <span id="receiverSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับพัสดุเซ็นชื่อในกรอบนี้</span>
-            </div>
-          </div>
+        <div id="issPickupBox" class="hidden text-xs bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-3">
+          🙋 หลังบันทึก ใบเบิกจะอยู่สถานะ <b>“จ่ายแล้ว · รอผู้รับยืนยัน”</b> — ให้พนักงานที่มารับของ Login แล้วกด <b>📥 ยืนยันรับของ</b> (เซ็นชื่อ หรือ แนบรูปใบเบิกที่เซ็นรับแล้ว) เพื่อปิดงาน
         </div>
       </div>
 
@@ -858,14 +844,24 @@
       </div>
       <div>
         <div class="flex items-center justify-between mb-1">
-          <label class="block text-xs font-semibold text-slate-600">ลายเซ็นผู้รับพัสดุ <span class="text-red-500">*</span></label>
+          <label class="block text-xs font-semibold text-slate-600">✍️ เซ็นรับของในกรอบ</label>
           <button type="button" onclick="sigPads.rcv.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
         </div>
         <div class="relative">
           <canvas id="rcvSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-400 rounded-xl cursor-crosshair"></canvas>
-          <span id="rcvSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับของที่สาขาเซ็นชื่อในกรอบนี้</span>
+          <span id="rcvSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้รับของเซ็นชื่อในกรอบนี้</span>
         </div>
       </div>
+      <div class="flex items-center gap-2 text-[11px] font-bold text-slate-400"><span class="flex-1 border-t border-slate-200"></span>และ / หรือ<span class="flex-1 border-t border-slate-200"></span></div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1" for="rcvPhoto">📷 แนบรูปใบเบิกที่เซ็นรับของแล้ว</label>
+        <input type="file" id="rcvPhoto" accept="image/*" class="w-full text-xs p-1.5 border border-slate-300 rounded-xl bg-slate-50">
+        <div id="rcvPhotoPreview" class="hidden mt-2 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+          <img src="" alt="" class="h-16 w-16 object-cover rounded-lg border cursor-pointer" onclick="openZoomModal(this.src)">
+          <span class="text-xs text-emerald-600 font-medium">✓ แนบรูปเรียบร้อย (คลิกเพื่อซูม)</span>
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-400">* ต้องมีอย่างน้อย 1 อย่าง: เซ็นชื่อในกรอบ หรือ แนบรูปใบเบิกที่เซ็นรับแล้ว</p>
       <div class="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
         <button type="button" onclick="toggleEl('receiveModal', false)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer">ยกเลิก</button>
         <button type="button" id="rcvSaveBtn" onclick="submitReceive()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl cursor-pointer shadow-md">📥 ยืนยันได้รับของครบถ้วน</button>
@@ -1038,6 +1034,7 @@
 
     let session = null;
     let compressedBase64 = "";
+    let issPhotoB64 = "", rcvPhotoB64 = "";          // รูปหลักฐานจ่ายของ / รับของ
     let newAssetBase64 = "";
     let globalLogData = [];
     let cachedAssets = [];
@@ -1075,8 +1072,6 @@
     window.onload = function () {
       sigPads.requester = createSignaturePad("requesterSigPad");
       sigPads.approver = createSignaturePad("approverSigPad");
-      sigPads.issuer = createSignaturePad("issuerSigPad");
-      sigPads.receiver = createSignaturePad("receiverSigPad");
       sigPads.rcv = createSignaturePad("rcvSigPad");
       fillBranchSelect($("branch"), false);
       setupImageListeners();
@@ -2073,7 +2068,7 @@
       const over = reqCart.filter(it => !it.manual && it.quantity > getRemaining(it.assetId));
       if (over.length) { alert("⚠️ จำนวนที่ขอเบิกมากกว่ายอดคงเหลือ:\n" + over.map(it => `• ${it.assetName}: ขอ ${it.quantity} / คงเหลือ ${getRemaining(it.assetId)}`).join("\n")); return; }
       if (!$("branch").value) { alert("กรุณาเลือกสาขา"); return; }
-      if (!compressedBase64) { alert("กรุณาแนบรูปภาพหลักฐาน หรือรอระบบโหลดรูปภาพสักครู่"); return; }
+      if ($("assetImage").files.length && !compressedBase64) { alert("⏳ ระบบกำลังโหลดรูปภาพ กรุณารอสักครู่แล้วกดส่งอีกครั้ง"); return; }
       if (sigPads.requester.isEmpty) { alert("✍️ กรุณาเซ็นลายเซ็นผู้ขอเบิกก่อนส่งคำขอ"); return; }
 
       const btn = $("submitBtn");
@@ -2089,7 +2084,7 @@
             ? { manual: true, assetId: "", dept: "HQ", assetName: it.assetName, category: it.category, quantity: it.quantity }
             : { assetId: it.code, dept: it.dept, assetName: it.assetName, category: it.category, quantity: it.quantity }),
           notes: $("requisitionNotes").value.trim() || "-",
-          imageBase64: compressedBase64,
+          imageBase64: compressedBase64 || "",
           requesterSig: sigPads.requester.toDataURL()
         });
         if (r.status !== "success") throw new Error(r.message || "ไม่ทราบสาเหตุ");
@@ -2218,6 +2213,7 @@
     function statusBadge(s) {
       if (s === "APPROVED") return '<span class="bg-emerald-100 text-emerald-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">✅ อนุมัติแล้ว · รอจ่ายของ</span>';
       if (s === "ISSUED") return '<span class="bg-orange-100 text-orange-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">📦 จ่ายแล้ว · รอฝากส่ง</span>';
+      if (s === "ISSUED_PICKUP") return '<span class="bg-cyan-100 text-cyan-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🙋 จ่ายแล้ว · รอผู้รับยืนยัน</span>';
       if (s === "SHIPPED") return '<span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🚚 กำลังส่งไปสาขา</span>';
       if (s === "RECEIVED") return '<span class="bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">🏁 สาขารับของแล้ว</span>';
       if (s === "REJECTED") return '<span class="bg-rose-100 text-rose-800 font-semibold px-2 py-1 rounded-lg whitespace-nowrap">❌ ไม่อนุมัติ</span>';
@@ -2259,16 +2255,19 @@
               act = `<button data-id="${id}" onclick="printRequisition(this.dataset.id)" class="bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold cursor-pointer mt-1">🖨️ พิมพ์</button>`;
               if (r.status === "APPROVED" && canIssue())
                 act += B("issueRequest", "bg-slate-800 hover:bg-slate-900 text-white", "📦 จ่ายของ");
-              if (r.status === "ISSUED" && canIssue())
+              const pickup = r.deliveryMethod === "PICKUP";
+              if (r.status === "ISSUED" && canIssue() && !pickup)
                 act += B("openShipModal", "bg-indigo-700 hover:bg-indigo-800 text-white", "🚚 ฝากส่ง");
               if (r.status === "SHIPPED" && canIssue())
                 act += B("openShipModal", "bg-slate-200 hover:bg-slate-300 text-slate-700", "✏️", "แก้ไขข้อมูลผู้นำส่ง");
-              if ((r.status === "SHIPPED" || (r.status === "ISSUED" && canIssue())) && canReceive(r))
+              if ((r.status === "SHIPPED" || (r.status === "ISSUED" && (canIssue() || pickup))) && canReceive(r))
                 act += B("openReceiveModal", "bg-blue-600 hover:bg-blue-700 text-white", "📥 ยืนยันรับของ");
-              if (r.status === "ISSUED" && !canIssue())
+              if (r.status === "ISSUED" && pickup)
+                act += ' <div class="text-[10px] text-blue-600 font-semibold mt-1">🙋 รอผู้มารับกดยืนยันรับของ</div>';
+              else if (r.status === "ISSUED" && !canIssue())
                 act += ' <div class="text-[10px] text-orange-600 font-semibold mt-1">รอ HR ฝากส่ง</div>';
               if (ISSUED_PLUS.includes(r.status) && !r.hasIssuerSig && canIssue())
-                act += B("issueRequest", "bg-amber-500 hover:bg-amber-600 text-slate-900", "✍️ เซ็นผู้จ่าย", "ใบนี้จ่ายไปแล้วแต่ยังไม่มีลายเซ็น HR");
+                act += B("issueRequest", "bg-amber-500 hover:bg-amber-600 text-slate-900", "📷 แนบรูปจ่าย", "ใบนี้จ่ายไปแล้วแต่ยังไม่มีรูปหลักฐานการจ่าย");
             }
             if (canCancel(r))
               act += ` <button data-id="${id}" onclick="cancelRequest(this.dataset.id)" class="bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1 mt-1" title="ยกเลิกใบเบิก${r.status === "PENDING" ? "" : " และคืนยอดเข้าคลัง"}">🚫 ยกเลิก</button>`;
@@ -2282,7 +2281,7 @@
                 <td class="p-3 text-center font-black text-slate-900">${esc(r.quantity)}${reqItems(r).length > 1 ? '<div class="text-[10px] font-normal text-slate-400">ชิ้นรวม</div>' : ""}</td>
                 <td class="p-3"><div class="font-medium">${esc(r.staffName)}</div><div class="text-[10px] text-slate-400">แผนก: ${esc(r.department)}</div></td>
                 <td class="p-3 text-slate-700">${esc(r.branch)}</td>
-                <td class="p-3 text-center">${statusBadge(r.status)}${reason}</td>
+                <td class="p-3 text-center">${statusBadge(r.status === "ISSUED" && r.deliveryMethod === "PICKUP" ? "ISSUED_PICKUP" : r.status)}${reason}</td>
                 <td class="p-3"><div>${esc(r.approverName || "-")}</div><div class="text-[10px] text-slate-400">${esc(r.actionAt || "")}</div>${trackInfo(r)}</td>
                 <td class="p-3 text-center whitespace-nowrap">${act}</td>
               </tr>`;
@@ -2296,6 +2295,8 @@
       let h = "";
       if (ISSUED_PLUS.includes(r.status) && (r.issuedByName || r.issuedAt)) h += line(`📦 จ่ายโดย ${esc(r.issuedByName || "-")} · ${esc(r.issuedAt || "")}`);
       if (r.shipVia) h += line(`🚚 ฝาก${esc(r.shipVia)}: <b>${esc(r.shipCarrier || "-")}</b> · ${esc(r.shippedAt || "")}${r.shipNote ? `<br><span class="text-slate-400">${esc(r.shipNote)}</span>` : ""}`);
+      if (r.issuerPhoto) h += line(`<a href="#" data-src="${esc(r.issuerPhoto)}" onclick="openZoomModal(this.dataset.src);return false" class="text-indigo-600 underline">📷 รูปจ่ายของ</a>`);
+      if (r.receiverPhoto) h += line(`<a href="#" data-src="${esc(r.receiverPhoto)}" onclick="openZoomModal(this.dataset.src);return false" class="text-indigo-600 underline">📷 รูปใบเบิกที่เซ็นรับ</a>`);
       if (r.status === "RECEIVED") h += line(`🏁 รับโดย ${esc(r.receiverName || "-")}${r.deliveryMethod === "PICKUP" ? " (รับเองที่ HR)" : ""} · ${esc(r.receivedAt || r.issuedAt || "")}${r.receiveNote && r.deliveryMethod !== "PICKUP" ? `<br><span class="text-slate-400">${esc(r.receiveNote)}</span>` : ""}`);
       return h;
     }
@@ -2457,13 +2458,13 @@
           </table>
           <div style="margin-bottom:${r.shipVia || r.deliveryMethod === "PICKUP" ? 8 : 22}px;"><b>เหตุผลการเบิก:</b> ${esc(r.notes || "-")}</div>
           ${r.shipVia ? `<div style="margin-bottom:22px;padding:6px 10px;border:1px dashed #64748b;border-radius:6px;"><b>🚚 การจัดส่ง:</b> ฝากส่งกับ${esc(r.shipVia)} — ผู้นำส่ง <b>${esc(r.shipCarrier || "-")}</b> · วันที่ฝาก ${esc(r.shippedAt || "-")} · ส่งถึง <b>${esc(r.branch)}</b>${r.shipNote ? " · " + esc(r.shipNote) : ""}</div>`
-            : r.deliveryMethod === "PICKUP" ? '<div style="margin-bottom:22px;"><b>การส่งมอบ:</b> ผู้รับมารับของเองที่ฝ่าย HR</div>' : ""}
+            : r.deliveryMethod === "PICKUP" ? '<div style="margin-bottom:22px;"><b>การส่งมอบ:</b> ผู้รับมารับของเองที่ฝ่าย ' + esc(DEPTS[normDept(r.dept)].label) + '</div>' : ""}
           <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;page-break-inside:avoid;">
             ${box("ผู้ขอเบิก", r.requesterSig, r.staffName, r.department ? "แผนก " + r.department : "", String(r.timestamp || "").split(" ")[0])}
             ${box("ผู้อนุมัติ", r.approverSig, r.approverName, r.approverPosition, String(r.actionAt || "").split(" ")[0])}
-            ${box("ผู้จ่ายพัสดุ (" + DEPTS[normDept(r.dept)].label + ")", r.issuerSig, r.issuedByName || "", r.issuedByName ? DEPTS[normDept(r.dept)].full : "", String(r.issuedAt || "").split(" ")[0])}
+            ${box("ผู้จ่ายพัสดุ (" + DEPTS[normDept(r.dept)].label + ")", r.issuerSig || r.issuerPhoto, r.issuedByName || "", r.issuedByName ? DEPTS[normDept(r.dept)].full : "", String(r.issuedAt || "").split(" ")[0])}
             ${box("ผู้ตรวจปล่อยรถ", "", "", "", "", true)}
-            ${box("ผู้รับพัสดุ (สาขา)", r.receiverSig, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", r.receiverSig ? String(r.receivedAt || r.issuedAt || "").split(" ")[0] : "")}
+            ${box("ผู้รับพัสดุ (สาขา)", r.receiverSig || r.receiverPhoto, r.receiverName || "", r.receiverName && r.branch ? r.branch : "", (r.receiverSig || r.receiverPhoto) ? String(r.receivedAt || r.issuedAt || "").split(" ")[0] : "")}
           </div>
           <div style="margin-top:18px;padding:8px 10px;background:#f1f5f9;border-radius:6px;font-size:11px;color:#334155;">
             📌 ${r.shipVia ? "ใบนี้แนบไปกับพัสดุ — ผู้รับที่สาขาตรวจนับของให้ครบ แล้วลงนามผู้รับ และกด 📥 ยืนยันรับของ ในระบบ"
@@ -2914,8 +2915,8 @@
       currentIssueId = id;
       const r = globalRequests.find(x => x.requestId === id) || {};
       $("issReqId").innerText = id;
-      $("issIssuerName").innerText = session.user.fullName || session.user.username;
-      $("issReceiverName").value = r.staffName || "";
+      $("issIssuerName").innerText = "ผู้จ่าย: " + (session.user.fullName || session.user.username);
+      issPhotoB64 = ""; resetPhoto("issPhoto", "issPhotoPreview");
       const late = ISSUED_PLUS.includes(r.status);
       $("issDeliveryBox").classList.toggle("hidden", late);
       document.querySelector('input[name="issMethod"][value="SHIP"]').checked = true;
@@ -2928,43 +2929,35 @@
           <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก / สาขา</p><p class="font-bold text-slate-800">${esc(r.staffName)} · ${esc(r.branch)}</p></div>
           <div><p class="text-[10px] text-slate-400">อนุมัติโดย</p><p class="font-bold text-slate-800">${esc(r.approverName || "-")}</p></div>
         </div>
-        ${late ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — เซ็นลายเซ็นย้อนหลังเพื่อให้ใบเบิกที่พิมพ์มีลายเซ็นครบ</p>' : ""}`;
+        ${late ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — แนบรูปหลักฐานการจ่ายย้อนหลังได้</p>' : ""}`;
       toggleIssueModal(true);
-      sigPads.issuer.setup();
-      sigPads.receiver.setup();
     }
 
     function issMethod() { const el = document.querySelector('input[name="issMethod"]:checked'); return el ? el.value : "SHIP"; }
     function onIssMethodChange() {
       const pickup = issMethod() === "PICKUP";
       $("issPickupBox").classList.toggle("hidden", !pickup);
-      if (pickup) setTimeout(() => sigPads.receiver.setup(), 30);
     }
 
     async function submitIssue(andPrint) {
       const id = currentIssueId;
       const late = $("issDeliveryBox").classList.contains("hidden");
       const method = late ? "" : issMethod();
-      if (sigPads.issuer.isEmpty) { showToast("✍️ กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุ (HR) ก่อนบันทึก", "warn"); return; }
-      if (method === "PICKUP" && (!$("issReceiverName").value.trim() || sigPads.receiver.isEmpty)) {
-        showToast("🙋 รับของเองที่ HR: กรุณาระบุชื่อและให้ผู้รับเซ็นชื่อ", "warn"); return;
-      }
+      if (!issPhotoB64) { showToast($("issPhoto").files.length ? "⏳ กำลังโหลดรูป กรุณารอสักครู่" : "📷 กรุณาแนบรูปหลักฐานการจ่ายของ", "warn"); return; }
       const btns = [$("issSaveBtn"), $("issSavePrintBtn")], olds = btns.map(b => b.innerHTML);
       btns.forEach(b => b.disabled = true);
       (andPrint ? btns[1] : btns[0]).innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
       try {
         const res = await apiPost({
           action: "issueRequest", requestId: id,
-          issuerSig: sigPads.issuer.toDataURL(),
-          deliveryMethod: method,
-          receiverName: method === "PICKUP" ? $("issReceiverName").value.trim() : "",
-          receiverSig: method === "PICKUP" && !sigPads.receiver.isEmpty ? sigPads.receiver.toDataURL() : ""
+          issuerPhoto: issPhotoB64,
+          deliveryMethod: method
         });
         if (res.status !== "success") throw new Error(res.message);
         delete reqDetailCache[id];
         toggleIssueModal(false);
-        showToast(late ? `✍️ บันทึกลายเซ็นผู้จ่าย ${id} แล้ว`
-          : method === "PICKUP" ? `🏁 ${id} ส่งมอบของเรียบร้อย (รับเองที่ HR) — ปิดงานแล้ว`
+        showToast(late ? `📷 บันทึกรูปหลักฐานการจ่าย ${id} แล้ว`
+          : method === "PICKUP" ? `📦 จ่ายของ ${id} แล้ว — รอพนักงานที่มารับกด 📥 ยืนยันรับของในระบบ`
           : `📦 จ่ายของ ${id} แล้ว — อยู่ในแท็บ "รอฝากส่ง" กด 🚚 ฝากส่ง เมื่อมีคนผ่านเส้นทางสาขา`, "ok");
         loadRequests();
         if (andPrint) printRequisition(id);
@@ -3034,9 +3027,11 @@
       $("rcvReqId").innerText = id;
       $("rcvDetail").innerHTML = reqSummaryHtml(r) +
         (r.shipVia ? `<p class="mt-2 text-blue-700 font-semibold">🚚 ฝากมากับ${esc(r.shipVia)}: ${esc(r.shipCarrier || "-")} · ${esc(r.shippedAt || "")}</p>` : "") +
-        '<p class="mt-2 text-slate-500">ตรวจนับของให้ครบตามจำนวนก่อนเซ็นรับ</p>';
+        (r.deliveryMethod === "PICKUP" ? '<p class="mt-2 text-blue-700 font-semibold">🙋 รับของเองที่ ' + esc(DEPTS[normDept(r.dept)].label) + (r.issuedAt ? " · จ่ายเมื่อ " + esc(r.issuedAt) : "") + '</p>' : "") +
+        '<p class="mt-2 text-slate-500">ตรวจนับของให้ครบตามจำนวน แล้วเซ็นชื่อ หรือแนบรูปใบเบิกที่เซ็นรับแล้ว</p>';
       $("rcvName").value = hasRole("BRANCH") ? (session.user.fullName || "") : (r.staffName || "");
       $("rcvNote").value = "";
+      rcvPhotoB64 = ""; resetPhoto("rcvPhoto", "rcvPhotoPreview");
       toggleEl("receiveModal", true);
       sigPads.rcv.setup();
     }
@@ -3044,11 +3039,13 @@
       const id = currentReceiveId;
       const name = $("rcvName").value.trim();
       if (!name) { showToast("กรุณาระบุชื่อผู้รับพัสดุ", "warn"); $("rcvName").focus(); return; }
-      if (sigPads.rcv.isEmpty) { showToast("✍️ กรุณาเซ็นลายเซ็นผู้รับพัสดุ", "warn"); return; }
+      if ($("rcvPhoto").files.length && !rcvPhotoB64) { showToast("⏳ กำลังโหลดรูป กรุณารอสักครู่", "warn"); return; }
+      if (sigPads.rcv.isEmpty && !rcvPhotoB64) { showToast("✍️ กรุณาเซ็นชื่อในกรอบ หรือแนบรูปใบเบิกที่เซ็นรับแล้ว", "warn"); return; }
       const btn = $("rcvSaveBtn"), old = btn.innerHTML;
       btn.disabled = true; btn.innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
       try {
-        const res = await apiPost({ action: "receiveRequest", requestId: id, receiverName: name, receiveNote: $("rcvNote").value.trim(), receiverSig: sigPads.rcv.toDataURL() });
+        const res = await apiPost({ action: "receiveRequest", requestId: id, receiverName: name, receiveNote: $("rcvNote").value.trim(),
+          receiverSig: sigPads.rcv.isEmpty ? "" : sigPads.rcv.toDataURL(), receiverPhoto: rcvPhotoB64 });
         if (res.status !== "success") throw new Error(res.message);
         delete reqDetailCache[id];
         toggleEl("receiveModal", false);
@@ -3114,14 +3111,22 @@
         $("previewContainer").classList.remove("hidden");
       }));
       $("newAssetImage").addEventListener("change", e => compressImage(e.target.files[0], b64 => { newAssetBase64 = b64; }));
+      // รูปหลักฐานจ่าย/รับของ → ความละเอียดสูงกว่า (อ่านลายเซ็นบนใบเบิกได้) เก็บใน Drive
+      const photo = (inputId, boxId, set) => $(inputId).addEventListener("change", e => {
+        set(""); $(boxId).classList.add("hidden");
+        compressImage(e.target.files[0], b64 => { set(b64); $(boxId).querySelector("img").src = b64; $(boxId).classList.remove("hidden"); }, 1200);
+      });
+      photo("issPhoto", "issPhotoPreview", v => issPhotoB64 = v);
+      photo("rcvPhoto", "rcvPhotoPreview", v => rcvPhotoB64 = v);
     }
-    function compressImage(file, cb) {
+    function resetPhoto(inputId, boxId) { $(inputId).value = ""; $(boxId).classList.add("hidden"); $(boxId).querySelector("img").src = ""; }
+    function compressImage(file, cb, maxW) {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = ev => {
         const img = new Image();
         img.onload = () => {
-          const c = document.createElement("canvas"), W = Math.min(400, img.width);   // 400px เหมือนเดิม (ระบบเดิมเก็บรูปลงเซลล์)
+          const c = document.createElement("canvas"), W = Math.min(maxW || 400, img.width);   // 400px เหมือนเดิม (ระบบเดิมเก็บรูปลงเซลล์)
           c.width = W; c.height = img.height * (W / img.width);
           c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
           cb(c.toDataURL("image/jpeg", 0.7));
