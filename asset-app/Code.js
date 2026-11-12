@@ -5,6 +5,8 @@
 // v5.3 : เชื่อม SiteAsset-Tracker — อนุมัติ/ไม่อนุมัติใบคืนจากสาขา อัปเดตชีตสาขาอัตโนมัติ (siteSyncDecision_)
 // v5.4 : KPI รายเดือน (IT) — คำนวณจาก Ticket + ส่งเข้า Rst-Kpi-Mtd อัตโนมัติทุกต้นเดือน (handleKpi_ / kpiMonthlyJob)
 //        หลังวางโค้ดในโปรเจกต์ Ticket ให้ Run kpiSetup 1 ครั้ง (อนุญาตสิทธิ์ ScriptApp + เปิดไฟล์ KPI)
+// v5.6 : Software — บันทึกชื่อ + ลายเซ็นผู้อนุมัติ (คอลัมน์ J, M)
+// v5.5 : Software Requisition & Audit — ชีต SoftwareRequests (handleSoftware_) · Run swSetup 1 ครั้ง
 // v5.2 : อ่าน/เขียนไฟล์ใน SHEET_FILES โดยตรง (IT Assets / IT Tickets / IT Transfers) — หลังวางโค้ดให้ Run checkFiles 1 ครั้ง
 // ───────────────────────────────────────────────────────────────
 // ใช้โค้ดไฟล์นี้ชุดเดียวกันทั้ง 3 โปรเจกต์ (Asset / Ticket / Transfer)
@@ -39,6 +41,7 @@ var SHEET_FILES = {
   transfer: '1YhRbb3mTJmeWcy6H9vubv_oLpcryFa-gwcfzuFgbOd8'    // IT Transfers
 };
 
+var SERVER_VER       = '5.6-sw';   // เปิด <URL>?action=ping เพื่อตรวจว่า Deploy เวอร์ชันนี้แล้วหรือยัง
 var PIN_LENGTH       = 6;
 var MAX_FAIL_DEVICE  = 5;        // ผิดได้กี่ครั้ง / เครื่อง
 var MAX_FAIL_GLOBAL  = 30;       // ผิดรวมทุกเครื่อง
@@ -249,7 +252,7 @@ function main(e) {
   try {
     var action = param.action || '';
 
-    if (action === 'ping')  return out({ status: 'ok', msg: 'alive', secured: !!props().getProperty('AUTH_SECRET') }, cb);
+    if (action === 'ping')  return out({ status: 'ok', msg: 'alive', ver: SERVER_VER, kind: props().getProperty('SCRIPT_KIND') || '', secured: !!props().getProperty('AUTH_SECRET') }, cb);
     if (action === 'login') return handleLogin(param, cb);
 
     // ── ทุกคำสั่งหลังจากนี้ต้องมี Token ที่ถูกต้อง ──
@@ -265,6 +268,7 @@ function main(e) {
 
     if (action.indexOf('line') === 0) return handleLine(action, param, cb, role);
     if (action.indexOf('kpi') === 0) return out(handleKpi_(action, param, role), cb);
+    if (action.indexOf('sw') === 0) return out(handleSoftware_(action, param, role), cb);   // v5.5 Software Requisition
 
     var sheetName = param.sheet || '';
     var ss = getSS(kindOfSheetName(sheetName));
@@ -562,7 +566,7 @@ function out(obj, cb) {
 // ═══════════════════════════════════════════════════
 // LINE Messaging API — IT Asset (RuamsinthaiGroup)
 // ═══════════════════════════════════════════════════
-var LINE_DEFAULT_EVENTS = { ticket: true, close: true, asset: true, transfer: false };
+var LINE_DEFAULT_EVENTS = { ticket: true, close: true, asset: true, transfer: false, software: true, swStatus: true };
 var APP_URL = 'https://itmanager-rst.github.io/Rst_It_Report/asset-app/index.html';
 
 function lineProps() { return props(); }
@@ -1117,3 +1121,115 @@ function kpiDur_(min) {
   var d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), mm = min % 60;
   return (d ? d + ' วัน ' : '') + (h ? h + ' ชม. ' : '') + mm + ' นาที';
 }
+// ═══════════════════ SOFTWARE REQUISITION & AUDIT (v5.5) ═══════════════════
+// แบบสำรวจ/คำขอใช้โปรแกรมสำเร็จรูป (Software) — เก็บในชีต "SoftwareRequests" ของไฟล์ IT Assets
+// Actions (ต้องมี Token เหมือนคำสั่งอื่น):
+//   swList   — ทุกบทบาท : ดึงรายการทั้งหมด (ใหม่สุดก่อน)
+//   swAdd    — ทุกบทบาท : ส่งคำขอใหม่ (สถานะเริ่มต้น = pending เสมอ)
+//   swStatus — admin/manager : เปลี่ยนสถานะ + ชื่อผู้อนุมัติ + ลายเซ็น (v5.6) + หมายเหตุ
+//   swDelete — admin/manager : ลบรายการ
+// Run จาก Editor ครั้งแรก: swSetup()  → สร้างชีต + หัวคอลัมน์ให้อัตโนมัติ (ถ้ายังไม่มี)
+var SW = {
+  SHEET: 'SoftwareRequests',
+  HEADERS: ['ID', 'Timestamp', 'Employee Name', 'Position', 'Department', 'Required Software',
+            'Reason / Note', 'Signature', 'Status', 'Reviewed By', 'Reviewed At', 'Admin Note', 'Reviewer Signature'],
+  STATUS: ['pending', 'approved', 'installed', 'rejected'],
+  MAX_SIG: 20000
+};
+
+function swSheet_() {
+  var ss = getSS('asset'), sh = ss.getSheetByName(SW.SHEET);
+  if (!sh) sh = ss.insertSheet(SW.SHEET);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, SW.HEADERS.length).setValues([SW.HEADERS])
+      .setFontWeight('bold').setBackground('#1e293b').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    sh.getRange('A:A').setNumberFormat('@');
+    sh.setColumnWidth(8, 120);
+  }
+  // อัปเกรดชีตเดิม (v5.5 มี 12 คอลัมน์) → เพิ่มหัวคอลัมน์ M "Reviewer Signature"
+  if (sh.getLastColumn() < SW.HEADERS.length && sh.getLastRow() >= 1) {
+    sh.getRange(1, 1, 1, SW.HEADERS.length).setValues([SW.HEADERS]).setFontWeight('bold').setBackground('#1e293b').setFontColor('#ffffff');
+  }
+  return sh;
+}
+function swSetup() {
+  var sh = swSheet_();
+  Logger.log('✓ ชีต ' + sh.getName() + ' พร้อมใช้งาน (' + Math.max(sh.getLastRow() - 1, 0) + ' รายการ) ในไฟล์ ' + getSS('asset').getName());
+}
+
+// ตัดอักขระควบคุม + กันสูตร (=,+,-,@) ถูกตีความใน Sheets
+function swClean_(v, max) {
+  var s = String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max || 200);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+function swIso_(v) { return v instanceof Date ? v.toISOString() : String(v || ''); }
+function swRowObj_(r) {
+  return {
+    id: String(r[0]), ts: swIso_(r[1]), name: String(r[2] || ''), position: String(r[3] || ''), dept: String(r[4] || ''),
+    software: String(r[5] || '').split(',').map(function (x) { return x.trim(); }).filter(String),
+    note: String(r[6] || ''), sig: String(r[7] || ''), status: String(r[8] || 'pending'),
+    by: String(r[9] || ''), at: swIso_(r[10]), adminNote: String(r[11] || ''), bySig: String(r[12] || '')
+  };
+}
+
+function handleSoftware_(action, param, role) {
+  var sh = swSheet_();
+
+  if (action === 'swList') {
+    var last = sh.getLastRow();
+    if (last < 2) return { status: 'ok', rows: [] };
+    var vals = sh.getRange(2, 1, last - 1, SW.HEADERS.length).getValues();
+    var rows = [];
+    for (var i = vals.length - 1; i >= 0; i--) if (String(vals[i][0])) rows.push(swRowObj_(vals[i]));
+    return { status: 'ok', rows: rows };
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (action === 'swAdd') {
+      var d = JSON.parse(param.data || '{}');
+      var name = swClean_(d.name, 120), position = swClean_(d.position, 120);
+      var list = (Array.isArray(d.software) ? d.software : []).slice(0, 25)
+        .map(function (x) { return swClean_(String(x).replace(/,/g, ' '), 60); }).filter(String);
+      if (!name) return { status: 'error', msg: 'กรุณากรอกชื่อ-สกุล' };
+      if (!list.length) return { status: 'error', msg: 'กรุณาเลือกโปรแกรมอย่างน้อย 1 รายการ' };
+      var sig = String(d.sig || '');
+      if (sig.length > SW.MAX_SIG || /[^MLl0-9 .\-]/.test(sig)) return { status: 'error', msg: 'ข้อมูลลายเซ็นไม่ถูกต้อง' };
+      // ID มาจากเครื่องลูก (กันกดส่งซ้ำ / เน็ตหลุดแล้วส่งใหม่ = ไม่เกิดแถวซ้ำ)
+      var id = /^SW-[\w-]{6,40}$/.test(String(d.id || '')) ? String(d.id)
+             : 'SW-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyMMdd-HHmmss') + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
+      if (findRowByKey(sh, id)) return { status: 'ok', id: id, dup: true };
+      var row = [id, new Date(), name, position, swClean_(d.dept, 80), list.join(', '),
+                 swClean_(d.note, 500), sig, 'pending', '', '', ''];
+      var target = sh.getLastRow() + 1;
+      sh.getRange(target, 1).setNumberFormat('@');
+      sh.getRange(target, 1, 1, row.length).setValues([row]);
+      SpreadsheetApp.flush();
+      return { status: 'ok', id: id };
+    }
+
+    if (action === 'swStatus' || action === 'swDelete') {
+      if (!isMgr(role)) return { status: 'error', code: 'forbidden', msg: 'เฉพาะ IT Admin / Manager เท่านั้น' };
+      var f = findRowByKey(sh, String(param.id || ''));
+      if (!f) return { status: 'error', msg: 'ไม่พบรายการ ' + param.id };
+      if (action === 'swDelete') { sh.deleteRow(f.row); return { status: 'ok' }; }
+      var st = String(param.st || '');
+      if (SW.STATUS.indexOf(st) < 0) return { status: 'error', msg: 'สถานะไม่ถูกต้อง' };
+      // บันทึก "ชื่อผู้อนุมัติ (บทบาท PIN)" + ลายเซ็น — ตรวจย้อนหลังได้ว่าใครเป็นคนอนุมัติ
+      var who = swClean_(param.name, 100);
+      if (!who) return { status: 'error', msg: 'กรุณาระบุชื่อผู้อนุมัติ' };
+      var asig = String(param.sig || '');
+      if (!asig) return { status: 'error', msg: 'กรุณาเซ็นชื่อผู้อนุมัติ' };
+      if (asig.length > SW.MAX_SIG || /[^MLl0-9 .\-]/.test(asig)) return { status: 'error', msg: 'ข้อมูลลายเซ็นไม่ถูกต้อง' };
+      sh.getRange(f.row, 9, 1, 5).setValues([[st, who + ' (' + role + ')', new Date(), swClean_(param.note, 500), asig]]);
+      return { status: 'ok' };
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return { status: 'error', msg: 'unknown software action: ' + action };
+}
+
+// แจ้งเตือน LINE: หน้าเว็บส่งผ่าน action 'lineNotify' ไปที่โปรเจกต์ Ticket (ที่เก็บ LINE Token) — event 'software' / 'swStatus'
