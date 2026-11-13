@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generate Code · Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontSize: { xs:['13px','1.45'], sm:['14.5px','1.5'] },
+      fontFamily: { sans: ['"IBM Plex Sans Thai"', 'sans-serif'], mono: ['"JetBrains Mono"', 'monospace'] },
+      colors: { brand: { 50:'#eef6ff',100:'#d9eaff',200:'#bcdaff',500:'#2f7cf6',600:'#1d63e0',700:'#1a4fb5',800:'#1c438f',900:'#1d3a70' } }
+    } } };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    /* ═══════════════════════════════════════════════════════════════
+       🐬 WORKBENCH THEME — หน้าตาแบบ MySQL Workbench
+       ═══════════════════════════════════════════════════════════════ */
+    :root{
+      --wb-bg:#d5dbe2; --wb-chrome:#2b4a6f; --wb-chrome-2:#1f3958; --wb-line:#b9c2cc; --wb-line-soft:#dde2e8;
+      --wb-head-1:#fbfcfd; --wb-head-2:#e6eaef; --wb-text:#1d2733; --wb-muted:#3e4a58;
+      --wb-accent:#1f6fb2; --wb-accent-soft:#d3e5f7; --wb-orange:#e8890c;
+    }
+    [x-cloak]{display:none!important}
+    html,body{height:100%}
+    body{-webkit-font-smoothing:antialiased;background:var(--wb-bg);color:var(--wb-text);font-size:15px}
+
+    /* ---- พื้นฐาน: panel / input / button ---- */
+    .card{background:#fff;border:1px solid var(--wb-line);border-radius:3px;box-shadow:none}
+    .wb-head{display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;font-size:14.5px;font-weight:700;color:#12324f;
+      background:linear-gradient(var(--wb-head-1),var(--wb-head-2));border-bottom:1px solid var(--wb-line)}
+    .wb-head .sub{font-weight:400;color:var(--wb-muted);font-size:13.5px}
+    .inp{width:100%;border:1px solid #a9b3be;border-radius:2px;padding:.42rem .6rem;font-size:15px;background:#fff;outline:none;transition:.12s;color:var(--wb-text)}
+    .inp:focus{border-color:var(--wb-accent);box-shadow:0 0 0 2px rgba(31,111,178,.22)}
+    .inp:disabled{background:#eef1f4;color:#9aa4af}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;border-radius:3px;padding:.42rem .9rem;font-size:14.5px;font-weight:600;
+      transition:.12s;white-space:nowrap;border:1px solid #8f9aa6;background:linear-gradient(#fdfdfd,#e3e7ec);color:var(--wb-text)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-primary{background:linear-gradient(#2c80c6,#1d68a8);border-color:#17588f;color:#fff}.btn-primary:hover:not(:disabled){background:linear-gradient(#2a78ba,#185b93)}
+    .btn-ghost:hover:not(:disabled){background:#fff;border-color:#6f7b88}
+    .btn-green{background:linear-gradient(#22a06b,#138a57);border-color:#0f7046;color:#fff}.btn-green:hover:not(:disabled){background:linear-gradient(#1d9362,#0f7a4c)}
+    .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;border-radius:3px;color:#5b6776;border:1px solid transparent}
+    .icon-btn:hover{background:linear-gradient(#fff,#e9edf1);border-color:#aab4bf;color:var(--wb-accent)}
+    .lbl{font-size:13.5px;font-weight:600;color:#2e3a48;margin-bottom:.25rem;display:block}
+    .seg-0{background:#1d3a70;color:#fff}.seg-1{background:#1d63e0;color:#fff}.seg-2{background:#0ea5e9;color:#fff}
+    .seg-3{background:#10b981;color:#fff}.seg-4{background:#f59e0b;color:#fff}.seg-5{background:#ef4444;color:#fff}
+    .seg-empty{background:#e5e7eb;color:#9ca3af}
+    .dot-0{background:#1d3a70}.dot-1{background:#1d63e0}.dot-2{background:#0ea5e9}.dot-3{background:#10b981}.dot-4{background:#f59e0b}.dot-5{background:#ef4444}
+
+    /* ---- Result grid ---- */
+    .wb-grid{border-collapse:collapse}
+    .wb-grid thead tr{background:linear-gradient(var(--wb-head-1),var(--wb-head-2))}
+    .wb-grid th{padding:.4rem .6rem;font-size:13.5px;font-weight:700;color:#1d2733;text-transform:none;letter-spacing:0;border-right:1px solid #cdd3da;border-bottom:1px solid var(--wb-line);text-align:left}
+    .wb-grid th:last-child{border-right:0}
+    .wb-grid td{padding:.35rem .6rem;border-right:1px solid var(--wb-line-soft);border-bottom:1px solid var(--wb-line-soft)}
+    .wb-grid td:last-child{border-right:0}
+    .wb-grid tbody tr:nth-child(even)>td{background:#f5f8fb}
+    .wb-grid tbody tr:hover>td{background:#e3eefa}
+    .wb-pager{background:linear-gradient(var(--wb-head-2),#eef1f4);border-top:1px solid var(--wb-line);font-family:"JetBrains Mono",monospace;font-size:13px}
+
+    /* ---- Column view (Miller columns) ---- */
+    .gc-wrap{display:flex;overflow-x:auto;align-items:flex-start;gap:0;background:#fff;border:1px solid var(--wb-line);border-radius:3px;min-height:420px;scroll-behavior:smooth}
+    .gc-col{width:240px;flex-shrink:0;border-right:1px solid var(--wb-line);display:flex;flex-direction:column;max-height:calc(100vh - 205px)}
+    .gc-head{background:linear-gradient(var(--wb-head-1),var(--wb-head-2));color:#12324f;font-size:14px;font-weight:700;padding:.35rem .6rem;line-height:1.25;border-bottom:1px solid var(--wb-line)}
+    .gc-head .opacity-70{color:var(--wb-muted);opacity:1;font-family:"JetBrains Mono",monospace}
+    .gc-body{overflow-y:auto;flex:1}
+    .gc-row{display:flex;align-items:center;gap:.35rem;padding:.28rem .45rem;font-size:14.5px;cursor:pointer;border-bottom:1px solid var(--wb-line-soft);background:#fff;border-left:3px solid transparent}
+    .gc-row:nth-child(even){background:#f5f8fb}
+    .gc-row:hover{background:#e3eefa}
+    .gc-row.gc-on{background:var(--wb-accent-soft)!important;border-left-color:var(--wb-accent);font-weight:600;color:#0f3d66}
+    .gc-new{background:#eefaf3!important;color:#0f7a4c}
+    .gc-ic{display:inline-flex;width:1.4rem;height:1.4rem;align-items:center;justify-content:center;border-radius:3px;flex-shrink:0}
+    .gc-ic:hover{background:#fff}
+    .gc-dot{width:.6rem;height:.6rem;border-radius:2px;background:var(--wb-accent);flex-shrink:0}
+    .gc-dot-empty{background:#cdd3da}
+    .gc-add{width:2.4rem;height:2.4rem;border-radius:9999px;background:#4ade80;color:#fff;font-size:1.6rem;font-weight:700;line-height:1;border:3px solid #fff;box-shadow:0 0 0 2px #16a34a,0 2px 6px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center}
+    .gc-add:hover{background:#22c55e}
+
+    /* ---- Login: Connect to Database ---- */
+    .wb-login-bg{background:linear-gradient(160deg,#c3ccd6 0%,#aab6c3 100%)}
+    .wb-dialog{background:#f3f5f7;border:1px solid #8a97a6;border-radius:4px;box-shadow:0 18px 50px rgba(15,30,50,.35);overflow:hidden}
+    .wb-dialog-title{display:flex;align-items:center;gap:.5rem;padding:.45rem .75rem;font-size:14px;font-weight:600;color:#fff;background:linear-gradient(var(--wb-chrome),var(--wb-chrome-2))}
+    .wb-frow{display:flex;align-items:center;gap:.75rem}
+    .wb-frow>label:first-child{width:84px;flex:0 0 84px;text-align:right;font-size:14px;color:var(--wb-muted);font-weight:600;margin:0}
+    .wb-logo{flex:0 0 auto;width:32px;height:32px;border-radius:4px;display:inline-grid;grid-template-columns:1fr 1fr;place-items:center;padding:3px;
+      font:700 9px/1 "JetBrains Mono",monospace;color:#fff;background:linear-gradient(135deg,var(--wb-orange),#d06d00);box-shadow:inset 0 -3px 0 rgba(0,0,0,.15)}
+    .wb-logo-sm{width:18px;height:18px;font-size:5.5px;padding:1px;border-radius:3px}
+
+    /* ---- App shell ---- */
+    .wb-titlebar{display:flex;align-items:center;gap:.75rem;padding:.4rem .8rem;background:linear-gradient(var(--wb-chrome),var(--wb-chrome-2));border-bottom:1px solid #142a44;color:#fff}
+    .wb-pill{display:inline-flex;align-items:center;gap:.4rem;font-size:13px;font-weight:600;color:#e6eef7;padding:.2rem .6rem;border:1px solid rgba(255,255,255,.22);border-radius:3px;background:rgba(0,0,0,.18);white-space:nowrap}
+    .wb-nav{background:#fff;border-right:1px solid var(--wb-line)}
+    .wb-nav-title{padding:.45rem .7rem;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#3d4957;background:linear-gradient(var(--wb-head-1),var(--wb-head-2));border-bottom:1px solid var(--wb-line)}
+    .wb-nav-group{margin-top:.6rem;padding:.25rem .7rem;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#56616e;border-bottom:1px solid #edf0f3}
+    .wb-nav-item{width:100%;display:flex;align-items:center;gap:.5rem;padding:.38rem .7rem .38rem .8rem;font-size:14.5px;color:#24303d;border-left:3px solid transparent;text-align:left}
+    .wb-nav-item:hover{background:#eef4fb}
+    .wb-nav-item.active{background:var(--wb-accent-soft);border-left-color:var(--wb-accent);color:#0f3d66;font-weight:600}
+    .wb-nav-item small{margin-left:auto;font-size:12.5px;color:#5f6b78;font-family:"JetBrains Mono",monospace}
+    .wb-nav-item svg{width:16px;height:16px;color:#5b6776}
+    .wb-nav-tbl{padding-left:2rem}
+    .wb-nav-tbl i{font-style:normal;color:#2f7cc0;font-size:14px}
+    .wb-nav-db{padding:.35rem .7rem .2rem .9rem;font-size:14.5px;font-weight:600}
+    .wb-nav-info{padding:.4rem .9rem;display:grid;gap:.3rem;font-size:13.5px}
+    .wb-nav-info>div{display:flex;justify-content:space-between;gap:.5rem}
+    .wb-nav-info span:first-child{color:#56616e}
+    .wb-nav-info b{font-weight:600;color:#2a3644;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .wb-tabs{display:flex;align-items:flex-end;gap:2px;padding:.35rem .5rem 0;background:#c9d1da;border-bottom:1px solid var(--wb-line);overflow-x:auto;scrollbar-width:none}
+    .wb-tabs::-webkit-scrollbar{display:none}
+    .wb-tab{flex:0 0 auto;display:inline-flex;align-items:center;gap:.4rem;padding:.36rem .85rem;font-size:14px;font-weight:600;color:#24303d;
+      background:linear-gradient(#e9edf1,#d9dfe5);border:1px solid #aeb8c3;border-bottom:0;border-radius:3px 3px 0 0;white-space:nowrap;position:relative;top:1px}
+    .wb-tab svg{width:14px;height:14px}
+    .wb-tab:hover{background:linear-gradient(#f6f8fa,#e5e9ee)}
+    .wb-tab.active{background:#fff;color:#0f3d66;border-color:var(--wb-line);box-shadow:inset 0 2px 0 var(--wb-accent)}
+    .wb-status{display:flex;align-items:center;gap:1rem;padding:.22rem .75rem;font-size:13px;color:#e9f0f7;background:var(--wb-chrome-2);border-top:1px solid #142a44;white-space:nowrap;overflow:hidden}
+    .wb-status b{color:#ffd08a;font-weight:600}
+    .wb-seg{display:inline-flex;border:1px solid #a9b3be;border-radius:3px;overflow:hidden;background:#fff}
+    .wb-seg button{padding:.32rem .8rem;font-size:14px;font-weight:600;color:#24303d;border-right:1px solid #c6cdd5}
+    .wb-seg button:last-child{border-right:0}
+    .wb-seg button.on{background:var(--wb-accent);color:#fff}
+
+    th{white-space:nowrap}
+    .text-gray-400{color:#6b7280!important}.text-gray-500{color:#4b5563!important}.text-gray-600{color:#374151!important}
+    body{line-height:1.5}
+    .grid>*{min-width:0} select.inp{text-overflow:ellipsis}
+    ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:#eef1f4}::-webkit-scrollbar-thumb{background:#b4bdc7;border-radius:2px;border:2px solid #eef1f4}
+  </style>
+</head>
+<body class="font-sans" x-data="app()" x-init="boot()">
+
+<!-- ============ LOGIN / LOADING / ERROR ============ -->
+<div x-show="!ready" class="fixed inset-0 flex items-center justify-center wb-login-bg z-50">
+  <div class="px-4 w-full flex justify-center">
+    <template x-if="needLogin">
+      <form class="wb-dialog w-[min(440px,94vw)] text-left" @submit.prevent="doLogin()">
+        <div class="wb-dialog-title"><span class="wb-logo wb-logo-sm"><span>C</span><span>O</span><span>D</span><span>E</span></span>Connect to Database</div>
+        <div class="flex items-center gap-3 px-4 py-3 bg-white border-b border-[#b9c2cc]">
+          <span class="wb-logo"><span>C</span><span>O</span><span>D</span><span>E</span></span>
+          <div><div class="font-bold text-[16.5px] leading-tight">Generate Code</div><div class="text-[13px] text-gray-500">Part Management System · เข้าสู่ระบบ</div></div>
+        </div>
+        <div class="p-4 space-y-2.5">
+          <div class="wb-frow"><label>Connection</label>
+            <div class="inp !bg-[#e9edf1] !text-[#44505e] font-mono !text-[13.5px] truncate" x-text="IN_GAS ? 'Apps Script · google.script.run' : 'Web App · ' + GAS_URL.replace('https://','').slice(0,38) + '…'"></div></div>
+          <div class="wb-frow"><label>อีเมล</label><input class="inp" type="email" x-model="lf.email" autocomplete="username" required placeholder="name@ruamsinthaigroup.com"></div>
+          <div class="wb-frow"><label>รหัสผ่าน</label><input class="inp" type="password" x-model="lf.password" autocomplete="current-password" required placeholder="••••••••"></div>
+          <p x-show="loginErr" class="text-xs font-semibold text-red-600 pl-[96px]" x-text="loginErr"></p>
+        </div>
+        <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#e6eaef] border-t border-[#b9c2cc]">
+          <span class="text-[13px] text-gray-500" x-text="IN_GAS ? 'Mode: Apps Script' : 'Mode: External (fetch)'"></span>
+          <button class="btn btn-primary !px-5" :disabled="loggingIn">
+            <span x-show="loggingIn" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>เข้าสู่ระบบ</button>
+        </div>
+      </form>
+    </template>
+    <template x-if="!fatal && !needLogin">
+      <div class="wb-dialog w-[min(360px,90vw)]">
+        <div class="wb-dialog-title"><span class="wb-logo wb-logo-sm"><span>C</span><span>O</span><span>D</span><span>E</span></span>Connecting…</div>
+        <div class="p-5 flex items-center gap-3 bg-white"><span class="w-6 h-6 border-[3px] border-[#d3e5f7] border-t-[#1f6fb2] rounded-full animate-spin shrink-0"></span>
+          <span class="text-gray-600">กำลังโหลดข้อมูลจาก Server…</span></div>
+      </div>
+    </template>
+    <template x-if="fatal && !needLogin">
+      <div class="wb-dialog w-[min(440px,92vw)]">
+        <div class="wb-dialog-title"><span class="wb-logo wb-logo-sm"><span>C</span><span>O</span><span>D</span><span>E</span></span>Connection Error</div>
+        <div class="p-5 bg-white flex gap-3"><span class="text-2xl">⛔</span><p class="font-semibold text-red-600" x-text="fatal"></p></div>
+        <div class="flex gap-2 justify-end px-4 py-2.5 bg-[#e6eaef] border-t border-[#b9c2cc]">
+          <button class="btn btn-ghost" x-show="hasToken()" @click="logout()">ออกจากระบบ</button>
+          <button class="btn btn-primary" @click="location.reload()">ลองใหม่</button></div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<div x-cloak x-show="ready" class="h-screen flex flex-col">
+  <!-- ============ TITLE BAR ============ -->
+  <header class="wb-titlebar">
+    <button class="lg:hidden w-8 h-8 inline-flex items-center justify-center rounded hover:bg-white/10" @click="sideOpen=true" aria-label="เมนู">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <span class="wb-logo"><span>C</span><span>O</span><span>D</span><span>E</span></span>
+    <div class="leading-tight min-w-0">
+      <div class="font-bold text-[15.5px] truncate">Generate Code</div>
+      <div class="text-[12.5px] text-slate-300 truncate hidden sm:block">Workbench · Part Management System</div>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <span x-show="busy" class="wb-pill"><span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>กำลังทำงาน…</span>
+      <span class="wb-pill hidden sm:inline-flex"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span x-text="IN_GAS ? 'Apps Script' : 'Web App (fetch)'"></span></span>
+    </div>
+  </header>
+
+  <div class="flex-1 flex min-h-0">
+    <!-- ============ NAVIGATOR ============ -->
+    <div x-show="sideOpen" @click="sideOpen=false" class="fixed inset-0 bg-black/30 z-30 lg:hidden"></div>
+    <aside :class="sideOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+           class="wb-nav fixed lg:static inset-y-0 left-0 z-40 w-60 shrink-0 flex flex-col overflow-y-auto transition-transform">
+      <div class="wb-nav-title">Navigator</div>
+      <div class="wb-nav-group">Management</div>
+      <template x-for="m in menus" :key="m.id">
+        <button x-show="can(m.perm)" @click="go(m.id)" class="wb-nav-item" :class="page===m.id ? 'active' : ''">
+          <span x-html="m.icon"></span><span x-text="m.label"></span>
+        </button>
+      </template>
+
+      <div class="wb-nav-group">Schemas</div>
+      <div class="wb-nav-db"><span class="text-[12px] text-gray-400">▾</span> 🛢 <span class="font-mono">master_db</span></div>
+      <button class="wb-nav-item wb-nav-tbl" :class="page==='report' ? 'active' : ''" @click="go('report')"><i>▦</i><span class="font-mono">Master_Parts</span><small x-text="(parts||[]).length.toLocaleString()"></small></button>
+      <button class="wb-nav-item wb-nav-tbl" :class="page==='structure' ? 'active' : ''" @click="go('structure')"><i>▦</i><span class="font-mono">Code_Structure</span><small x-text="nodes.length.toLocaleString()"></small></button>
+      <button x-show="can('admin')" class="wb-nav-item wb-nav-tbl" :class="page==='setting' ? 'active' : ''" @click="go('setting')"><i>▦</i><span class="font-mono">Users</span><small x-text="users.length || ''"></small></button>
+      <button x-show="can('admin')" class="wb-nav-item wb-nav-tbl" @click="go('setting')"><i>▦</i><span class="font-mono">Users_Log</span></button>
+
+      <div class="wb-nav-group">Information</div>
+      <div class="wb-nav-info">
+        <div><span>User</span><b x-text="me.name"></b></div>
+        <div><span>Email</span><b class="font-mono !text-[12.5px]" x-text="me.email || '-'"></b></div>
+        <div><span>Role</span><b x-text="me.role"></b></div>
+        <div><span>Mode</span><b x-text="IN_GAS ? 'Apps Script' : 'External'"></b></div>
+      </div>
+      <div class="mt-auto p-3 border-t border-[#edf0f3]">
+        <button x-show="hasToken()" @click="logout()" class="btn btn-ghost w-full !text-red-700">⏻ ออกจากระบบ</button>
+      </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="flex-1 min-w-0 flex flex-col">
+      <div class="wb-tabs" role="tablist">
+        <template x-for="m in menus" :key="'t'+m.id">
+          <button x-show="can(m.perm)" class="wb-tab" :class="page===m.id ? 'active' : ''" @click="go(m.id)" role="tab">
+            <span x-html="m.icon"></span><span x-text="m.label"></span></button>
+        </template>
+      </div>
+      <div class="flex-1 overflow-auto" x-ref="scroller">
+    <div class="p-3 lg:p-4 max-w-[1800px] mx-auto">
+
+<!-- ================================================================ 1) GENERATE -->
+<section x-show="page==='generate'">
+  <!-- view toggle -->
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <div class="wb-seg">
+      <button :class="genView==='cols'?'on':''" @click="setGenView('cols')">▥ แบบคอลัมน์</button>
+      <button :class="genView==='list'?'on':''" @click="setGenView('list')">☰ แบบ Dropdown</button>
+    </div>
+    <template x-if="genView==='cols'">
+      <div class="flex flex-1 flex-wrap items-center gap-2 min-w-[260px]">
+        <input class="inp font-mono uppercase max-w-xs !py-1.5" x-model="jump" @keydown.enter="jumpTo()" placeholder="ไปที่รหัส เช่น M0101008">
+        <button class="btn btn-ghost !py-1.5" @click="jumpTo()">ไป</button>
+        <button class="btn btn-ghost !py-1.5" @click="resetGen()">ล้างค่า</button>
+      </div>
+    </template>
+  </div>
+
+  <!-- ===== COLUMN VIEW ===== -->
+  <div x-show="genView==='cols'" class="flex flex-col xl:flex-row gap-4 items-start">
+    <div class="gc-wrap flex-1 min-w-0 w-full" x-ref="cols">
+      <!-- L1-L5 -->
+      <template x-for="i in colIdx()" :key="'c'+i">
+        <div class="gc-col">
+          <div class="gc-head">
+            <div class="text-[12px] opacity-70" x-text="'L'+(i+1)+' · '+LN[i]"></div>
+            <div class="truncate" x-text="i ? '>> '+labelOf(sel[i-1]) : 'ชื่อ'"></div>
+          </div>
+          <div class="gc-body">
+            <template x-for="o in opts(i)" :key="o.prefix">
+              <div class="gc-row group" :class="sel[i]===o.prefix ? 'gc-on' : ''" @click="colPick(i, o.prefix)" :title="o.prefix">
+                <span class="font-mono text-[13px] text-gray-500 shrink-0" x-text="seg(o)"></span>
+                <span class="flex-1 min-w-0 leading-tight" :class="o.label.startsWith('(')?'italic text-gray-400':''" x-text="':=> '+o.label"></span>
+                <button x-show="can('structure') && !o.virtual" class="gc-ic text-gray-500 hover:text-brand-700" title="แก้ไขหัวข้อ" @click.stop="openEditNode(o)" x-html="I.pencil"></button>
+                <span class="gc-dot" :class="(kids[o.prefix]||[]).length ? '' : 'gc-dot-empty'" :title="(kids[o.prefix]||[]).length+' รายการย่อย'"></span>
+              </div>
+            </template>
+            <p x-show="!opts(i).length" class="text-xs text-gray-400 text-center py-4">ยังไม่มีหัวข้อ</p>
+            <div class="flex justify-center py-4" x-show="can('structure') && (i===0 || canAddUnder(i))">
+              <button class="gc-add" title="เพิ่มหัวข้อใหม่ในระดับนี้" @click="openAdd(i+1, i ? sel[i-1] : '', true)">+</button>
+            </div>
+          </div>
+        </div>
+      </template>
+      <!-- L6 -->
+      <div class="gc-col" x-show="sel[4]">
+        <div class="gc-head">
+          <div class="text-[12px] opacity-70" x-text="'L6 · '+LN[5]"></div>
+          <div class="truncate" x-text="'>> '+labelOf(sel[4])"></div>
+        </div>
+        <div class="gc-body">
+          <template x-for="n in siblingsL6()" :key="n.prefix">
+            <div class="gc-row" :class="l6Pick===n.prefix ? 'gc-on' : ''" @click="l6Pick=n.prefix" :title="partName(n.prefix) || n.prefix">
+              <span class="font-mono text-[13px] text-gray-500 shrink-0" x-text="seg(n)"></span>
+              <span class="flex-1 min-w-0 leading-tight" :class="n.label.startsWith('(')?'italic text-gray-400':''" x-text="':=> '+n.label"></span>
+              <button x-show="can('structure')" class="gc-ic text-gray-500 hover:text-brand-700" title="แก้ไขหัวข้อ" @click.stop="openEditNode(n)" x-html="I.pencil"></button>
+              <span class="gc-dot"></span>
+            </div>
+          </template>
+          <div class="gc-row gc-new" :class="!l6Pick ? 'gc-on' : ''" @click="newL6()">
+            <span class="font-mono text-[13px] shrink-0" x-text="l6Zero ? '00' : (next?.seg || '..')"></span>
+            <span class="flex-1">+ สร้างรหัสใหม่</span>
+          </div>
+          <div class="flex justify-center py-4" x-show="can('generate')">
+            <button class="gc-add" title="สร้างรหัสใหม่ (L6)" @click="newL6()">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- summary + form -->
+    <div class="w-full xl:w-[300px] shrink-0 space-y-4 xl:sticky xl:top-0">
+      <div class="card overflow-hidden">
+        <div class="gc-head !rounded-none">สรุปรหัส</div>
+        <table class="w-full text-sm">
+          <template x-for="(r,k) in summary()" :key="k">
+            <tr class="border-b"><td class="px-3 py-1 w-10 font-semibold text-gray-500" x-text="'L'+(k+1)+':'"></td>
+              <td class="px-2 py-1"><span class="font-mono text-brand-700" x-text="r.seg"></span><span x-show="r.seg">&gt;&gt; </span><span x-text="r.label"></span></td></tr>
+          </template>
+          <tr class="bg-gray-50"><td class="px-3 py-2 font-bold" colspan="2">CODE : <span class="font-mono text-lg tracking-wider" :class="l6Pick?'text-amber-700':'text-emerald-700'" x-text="summaryCode()"></span>
+            <button x-show="l6Pick" class="ml-1 text-xs text-brand-600 hover:underline" @click="copy(l6Pick)">คัดลอก</button></td></tr>
+          <tr><td colspan="2" class="px-3 py-2 text-center text-sm">
+            <span x-show="l6Pick" class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">มี CODE แล้ว</span>
+            <span x-show="!l6Pick && sel[4]" class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">รหัสใหม่ (ยังไม่บันทึก)</span>
+            <span x-show="!sel[4]" class="text-gray-400">เลือกให้ครบ 5 ระดับ</span>
+          </td></tr>
+        </table>
+        <div x-show="l6Pick" class="px-3 pb-3 text-sm">
+          <div class="text-xs text-gray-500">ชื่อสินค้า</div>
+          <div x-text="partName(l6Pick) || '-'"></div>
+          <div class="text-xs text-gray-500 mt-1" x-show="partMap[l6Pick]?.spec" x-text="'สเปก: '+(partMap[l6Pick]?.spec||'')"></div>
+          <button x-show="can('update') && partMap[l6Pick]" class="btn btn-ghost !py-1 mt-2 text-xs" @click="openEdit(partMap[l6Pick])">แก้ไขข้อมูลอะไหล่</button>
+        </div>
+      </div>
+
+      <div class="card p-4 space-y-3" x-show="sel[4] && !l6Pick">
+        <div><label class="lbl">L6 วัสดุ/ผิวชุบ (ไม่บังคับ)</label>
+          <input class="inp" x-model="l6Label" x-ref="l6In" placeholder="เช่น Steel, Zinc, SUS304"></div>
+        <label class="flex items-center gap-2 text-sm" :class="next?.zeroUsed?'opacity-50':''">
+          <input type="checkbox" x-model="l6Zero" :disabled="next?.zeroUsed" class="accent-brand-600"> ใช้ 00 (ไม่ระบุ)</label>
+        <div><div class="flex justify-between items-end"><label class="lbl">ชื่อสินค้า (Name 2)</label>
+            <button x-show="!nameAuto" @click="nameAuto=true" class="text-xs text-brand-600 hover:underline mb-1">ใช้ชื่ออัตโนมัติ</button></div>
+          <textarea class="inp" rows="2" :value="nameAuto ? autoName() : name" @input="name=$event.target.value; nameAuto=false"></textarea></div>
+        <div><label class="lbl">ข้อมูลจำเพาะ</label><textarea class="inp" rows="2" x-model="spec"></textarea></div>
+        <div class="w-32"><label class="lbl">หน่วย</label><input class="inp" x-model="unit"></div>
+        <button class="btn btn-green w-full !py-2.5" :disabled="!genReady() || busy>0" @click="save()">บันทึกและสร้างรหัส</button>
+        <p x-show="!can('generate')" class="text-xs text-red-500">บัญชีของคุณมีสิทธิ์ดูอย่างเดียว</p>
+      </div>
+
+      <div x-show="result" class="card p-4 border-emerald-300 bg-emerald-50">
+        <div class="text-sm text-emerald-700 font-semibold">✓ สร้างรหัสสำเร็จ</div>
+        <div class="font-mono text-xl font-bold text-emerald-800" x-text="result?.code"></div>
+        <div class="text-sm text-gray-700" x-text="result?.name"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DROPDOWN VIEW ===== -->
+  <div x-show="genView==='list'" class="grid xl:grid-cols-5 gap-4">
+    <!-- dropdowns -->
+    <div class="xl:col-span-3 card p-4">
+      <div class="wb-head -mx-4 -mt-4 mb-4">☰ เลือกโครงสร้างรหัส (L1 – L6)</div>
+      <div class="flex flex-wrap items-end gap-3 mb-4">
+        <div class="flex-1 min-w-[220px]">
+          <label class="lbl">เริ่มจากรหัสที่มีอยู่ (ไม่บังคับ)</label>
+          <input class="inp font-mono uppercase" x-model="jump" @keydown.enter="jumpTo()" placeholder="เช่น M0101003 หรือ M010100300101">
+        </div>
+        <button class="btn btn-ghost" @click="jumpTo()">ใช้โครงนี้</button>
+        <button class="btn btn-ghost" @click="resetGen()">ล้างค่า</button>
+      </div>
+
+      <div class="space-y-3">
+        <template x-for="i in [0,1,2,3,4]" :key="i">
+          <div class="flex items-end gap-2">
+            <div class="flex items-center justify-center w-8 h-10 rounded-lg text-white text-xs font-bold shrink-0" :class="'dot-'+i" x-text="'L'+(i+1)"></div>
+            <div class="flex-1 min-w-0">
+              <label class="lbl"><span x-text="LN[i]"></span> <span class="text-gray-400 font-normal" x-text="'('+W[i]+' หลัก)'"></span></label>
+              <select class="inp" x-model="sel[i]" @change="pick(i)" :disabled="i>0 && !sel[i-1]">
+                <option value="" x-text="'— เลือก'+LN[i]+' —'"></option>
+                <template x-for="o in opts(i)" :key="o.prefix">
+                  <option :value="o.prefix" :selected="o.prefix===sel[i]" x-text="seg(o)+'  —  '+o.label"></option>
+                </template>
+              </select>
+            </div>
+            <button x-show="can('structure')" class="btn btn-ghost !px-3 h-10" :disabled="i>0 && !canAddUnder(i)"
+                    @click="openAdd(i+1, i? sel[i-1] : '', true)" title="เพิ่มหัวข้อใหม่ในระดับนี้">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </template>
+
+        <!-- L6 -->
+        <div class="flex items-start gap-2 pt-1">
+          <div class="flex items-center justify-center w-8 h-10 rounded-lg text-white text-xs font-bold shrink-0 dot-5 mt-5">L6</div>
+          <div class="flex-1">
+            <label class="lbl"><span x-text="LN[5]"></span> <span class="text-gray-400 font-normal">(2 หลัก · รันเลขอัตโนมัติ)</span></label>
+            <div class="grid sm:grid-cols-3 gap-2">
+              <input class="inp sm:col-span-2" x-model="l6Label" :disabled="!sel[4]" placeholder="ชื่อวัสดุ/ผิวชุบ เช่น Zinc, Stainless 304 (ไม่บังคับ)">
+              <label class="flex items-center gap-2 text-sm px-3 rounded-lg border border-gray-200 h-[42px]" :class="(!sel[4]||next?.zeroUsed)?'opacity-50':''">
+                <input type="checkbox" x-model="l6Zero" :disabled="!sel[4] || next?.zeroUsed" class="accent-brand-600"> ใช้ 00 (ไม่ระบุ)
+              </label>
+            </div>
+            <p class="text-xs text-gray-500 mt-1" x-show="sel[4]">
+              เลขถัดไปภายใต้ <span class="font-mono" x-text="sel[4]"></span> คือ
+              <b class="font-mono text-brand-700" x-text="next ? next.seg : '…'"></b>
+              <span x-show="siblingsL6().length" x-text="' · มีอยู่แล้ว '+siblingsL6().length+' รายการ'"></span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- existing L6 items under this L5 -->
+      <div x-show="sel[4] && siblingsL6().length" class="mt-5">
+        <div class="text-xs font-semibold text-gray-500 mb-2">รายการที่มีอยู่แล้วในกลุ่มนี้ (ตรวจสอบก่อนสร้างเพื่อไม่ให้ซ้ำ)</div>
+        <div class="max-h-44 overflow-auto rounded-lg border border-gray-200 divide-y text-sm">
+          <template x-for="n in siblingsL6()" :key="n.prefix">
+            <div class="px-3 py-1.5 flex gap-3"><span class="font-mono text-brand-700" x-text="n.prefix"></span><span class="text-gray-600 truncate" x-text="partName(n.prefix) || n.label"></span></div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- preview & save -->
+    <div class="xl:col-span-2 space-y-4">
+      <div class="card p-4">
+        <div class="wb-head -mx-4 -mt-4 mb-3">ตัวอย่างรหัส 13 หลัก</div>
+        <div class="flex flex-wrap gap-1.5 font-mono text-xl sm:text-2xl font-bold">
+          <template x-for="(p,k) in pieces()" :key="k">
+            <span class="px-2 py-1.5 rounded-lg tracking-wider" :class="p.ok ? 'seg-'+k : 'seg-empty'" x-text="p.txt"></span>
+          </template>
+        </div>
+        <div class="flex flex-wrap gap-x-3 gap-y-1 mt-3 text-[13px] text-gray-500">
+          <template x-for="(n,k) in LN" :key="k"><span class="flex items-center gap-1"><i class="w-2 h-2 rounded-full inline-block" :class="'dot-'+k"></i><span x-text="n"></span></span></template>
+        </div>
+
+        <div class="mt-6 space-y-4">
+          <div>
+            <div class="flex justify-between items-end"><label class="lbl">ชื่อสินค้า (Name 2)</label>
+              <button x-show="!nameAuto" @click="nameAuto=true" class="text-xs text-brand-600 hover:underline mb-1">ใช้ชื่ออัตโนมัติ</button></div>
+            <textarea class="inp" rows="2" :value="nameAuto ? autoName() : name" @input="name=$event.target.value; nameAuto=false" placeholder="ระบบจะต่อชื่อจากแต่ละระดับให้อัตโนมัติ"></textarea>
+          </div>
+          <div><label class="lbl">ข้อมูลจำเพาะ / สเปกเพิ่มเติม</label>
+            <textarea class="inp" rows="2" x-model="spec" placeholder="เช่น ยี่ห้อ, รุ่น, มาตรฐาน"></textarea></div>
+          <div class="w-40"><label class="lbl">หน่วย</label><input class="inp" x-model="unit"></div>
+          <button class="btn btn-green w-full !py-3 text-base" :disabled="!genReady() || busy>0" @click="save()">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            บันทึกและสร้างรหัส (Save &amp; Generate)
+          </button>
+          <p x-show="!can('generate')" class="text-xs text-red-500">บัญชีของคุณมีสิทธิ์ดูอย่างเดียว</p>
+        </div>
+      </div>
+
+      <div x-show="result" x-transition class="card p-5 border-emerald-300 bg-emerald-50">
+        <div class="text-sm text-emerald-700 font-semibold">✓ สร้างรหัสสำเร็จ</div>
+        <div class="flex items-center gap-3 mt-2">
+          <span class="font-mono text-2xl font-bold text-emerald-800" x-text="result?.code"></span>
+          <button class="btn btn-ghost !py-1 !px-2 text-xs" @click="copy(result.code)">คัดลอก</button>
+        </div>
+        <div class="text-sm text-gray-700 mt-1" x-text="result?.name"></div>
+      </div>
+
+      <div x-show="recent.length" class="card p-5">
+        <div class="text-xs font-semibold text-gray-500 mb-2">สร้างล่าสุดในรอบนี้</div>
+        <template x-for="r in recent" :key="r.code">
+          <div class="flex gap-3 text-sm py-1 border-b last:border-0"><span class="font-mono text-brand-700" x-text="r.code"></span><span class="truncate text-gray-600" x-text="r.name"></span></div>
+        </template>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 2) REPORT -->
+<section x-show="page==='report'">
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+    <template x-for="s in stats()" :key="s.k">
+      <div class="card px-3 py-2.5 border-t-[3px] !border-t-[#1f6fb2]"><div class="text-[13px] text-gray-500" x-text="s.k"></div><div class="text-xl font-bold font-mono mt-0.5" :class="s.c" x-text="s.v.toLocaleString()"></div></div>
+    </template>
+  </div>
+
+  <div class="grid lg:grid-cols-4 gap-4">
+    <div class="lg:col-span-3 card">
+      <div class="wb-head"><span>▦ Master_Parts</span><span class="sub">ค้นหา / กรอง / ส่งออก</span></div>
+      <div class="p-3 border-b border-[#dde2e8] flex flex-wrap gap-3 items-end">
+        <div class="flex-1 min-w-[200px]"><label class="lbl">ค้นหา (รหัส / ชื่อ / สเปก / ผู้สร้าง)</label>
+          <input class="inp" x-model.debounce.250ms="q" @input="pg=1" placeholder="พิมพ์เพื่อค้นหา…"></div>
+        <div><label class="lbl">กลุ่ม</label>
+          <select class="inp" x-model="grp" @change="pg=1"><option value="">ทั้งหมด</option>
+            <template x-for="g in kidsOf('')" :key="g.prefix"><option :value="g.prefix" x-text="g.prefix+' — '+g.label"></option></template></select></div>
+        <div><label class="lbl">จากวันที่</label><input type="date" class="inp" x-model="dFrom" @change="pg=1"></div>
+        <div><label class="lbl">ถึงวันที่</label><input type="date" class="inp" x-model="dTo" @change="pg=1"></div>
+        <div><label class="lbl">สถานะ</label>
+          <select class="inp" x-model="st" @change="pg=1"><option value="">ทั้งหมด</option><option>Active</option><option>Inactive</option></select></div>
+        <button class="btn btn-ghost" @click="q='';grp='';dFrom='';dTo='';st='';pg=1">ล้าง</button>
+      </div>
+      <div class="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-[#b9c2cc] bg-[#f3f5f7]">
+        <span class="text-sm text-gray-600">พบ <b x-text="filtered().length.toLocaleString()"></b> รายการ</span>
+        <div class="ml-auto flex gap-2">
+          <button class="btn btn-ghost !py-1.5" @click="exportCSV()">⬇ CSV</button>
+          <button class="btn btn-primary !py-1.5" @click="exportXLSX()">⬇ Excel</button>
+          <button class="btn btn-ghost !py-1.5" @click="loadParts(true)" title="โหลดใหม่">⟳</button>
+        </div>
+      </div>
+      <div class="overflow-auto">
+        <table class="wb-grid w-full text-[14.5px]">
+          <thead>
+            <tr>
+              <th class="w-10">#</th>
+              <template x-for="c in cols" :key="c.k">
+                <th class="cursor-pointer select-none hover:text-brand-700" @click="sortBy(c.k)">
+                  <span x-text="c.t"></span><span x-show="sortKey===c.k" x-text="sortDir>0?' ▲':' ▼'"></span></th>
+              </template>
+              <th class="w-10"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <tr x-show="!parts"><td colspan="9" class="text-center py-10 text-gray-400">กำลังโหลด…</td></tr>
+            <template x-for="(p,k) in pageRows()" :key="p.code">
+              <tr :class="p.status==='Inactive'?'opacity-50':''">
+                <td class="text-gray-400 font-mono text-[13px] text-right" x-text="(pg-1)*per+k+1"></td>
+                <td class="px-3 py-2 font-mono text-brand-700 whitespace-nowrap" x-text="p.code"></td>
+                <td class="px-3 py-2 min-w-[260px]" x-text="p.name"></td>
+                <td class="px-3 py-2 text-gray-600" x-text="p.category"></td>
+                <td class="px-3 py-2 text-gray-600 min-w-[140px]" x-text="p.spec"></td>
+                <td class="px-3 py-2" x-text="p.unit"></td>
+                <td class="px-3 py-2 whitespace-nowrap text-gray-600" x-text="p.createdAt ? p.createdAt.slice(0,16) : '–'"></td>
+                <td class="px-3 py-2 text-gray-600" x-text="p.createdBy"></td>
+                <td class="!py-0.5 text-center"><button x-show="can('update')" class="icon-btn" title="แก้ไข" @click="openEdit(p)" x-html="I.pencil"></button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div class="wb-pager px-3 py-2 flex items-center justify-between">
+        <span class="text-gray-500" x-text="'หน้า '+pg+' / '+pages()"></span>
+        <div class="flex gap-1">
+          <button class="btn btn-ghost !py-1" :disabled="pg<=1" @click="pg=1">«</button>
+          <button class="btn btn-ghost !py-1" :disabled="pg<=1" @click="pg--">‹</button>
+          <button class="btn btn-ghost !py-1" :disabled="pg>=pages()" @click="pg++">›</button>
+          <button class="btn btn-ghost !py-1" :disabled="pg>=pages()" @click="pg=pages()">»</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-4 h-fit">
+      <div class="wb-head -mx-4 -mt-4 mb-2">ประวัติการสร้างตามวันที่</div>
+      <div class="max-h-[560px] overflow-auto divide-y text-sm">
+        <template x-for="d in byDate()" :key="d.date">
+          <button class="w-full flex justify-between px-2 py-2 hover:bg-brand-50 rounded" :class="dFrom===d.date&&dTo===d.date?'bg-brand-50 font-semibold':''"
+                  @click="dFrom=d.date; dTo=d.date; pg=1">
+            <span x-text="d.date"></span><span class="text-xs bg-brand-100 text-brand-700 rounded-full px-2" x-text="d.n"></span>
+          </button>
+        </template>
+        <p x-show="!byDate().length" class="text-xs text-gray-400 py-4 text-center">ยังไม่มีรายการที่สร้างผ่านระบบ<br>(ข้อมูลที่ import มาไม่มีวันที่)</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 3) SETTING -->
+<section x-show="page==='setting'">
+  <template x-if="!can('admin')">
+    <div class="card p-4 max-w-lg mb-4">
+      <div class="font-semibold mb-2 text-[#12324f]">👤 บัญชีของฉัน</div>
+      <div class="text-sm space-y-1"><div>ชื่อ: <b x-text="me.name"></b></div><div>อีเมล: <span x-text="me.email"></span></div><div>สิทธิ์: <b x-text="me.role"></b></div></div>
+      <p class="text-xs text-gray-500 mt-4">การจัดการผู้ใช้งานทำได้เฉพาะผู้ดูแลระบบ (Admin)</p>
+    </div>
+  </template>
+  <div class="card p-4 max-w-lg mb-4" :class="can('admin') ? 'order-last' : ''">
+    <div class="font-semibold mb-3 text-[#12324f]">🔑 เปลี่ยนรหัสผ่านของฉัน <span class="text-xs font-normal text-gray-500">(ใช้ล็อกอินเมื่อเปิดจากภายนอก)</span></div>
+    <div class="grid sm:grid-cols-3 gap-3 items-end">
+      <div><label class="lbl">รหัสผ่านเดิม</label><input class="inp" type="password" x-model="pw.old"></div>
+      <div><label class="lbl">รหัสผ่านใหม่</label><input class="inp" type="password" x-model="pw.new1"></div>
+      <button class="btn btn-ghost" @click="changePw()">เปลี่ยนรหัสผ่าน</button>
+    </div>
+  </div>
+  <template x-if="can('admin')">
+    <div class="grid lg:grid-cols-5 gap-4">
+      <div class="lg:col-span-3 card">
+        <div class="wb-head"><span>▦ Users</span><span class="sub">ผู้ใช้งานและสิทธิ์</span></div>
+        <div class="p-3 grid sm:grid-cols-12 gap-3 items-end border-b border-[#b9c2cc] bg-[#f3f5f7]">
+          <div class="sm:col-span-4"><label class="lbl">อีเมล</label><input class="inp" x-model="uform.email" placeholder="name@ruamsinthaigroup.com"></div>
+          <div class="sm:col-span-3"><label class="lbl">ชื่อ</label><input class="inp" x-model="uform.name"></div>
+          <div class="sm:col-span-5"><label class="lbl">รหัสผ่าน (ว่าง = ไม่เปลี่ยน)</label><input class="inp" type="password" autocomplete="new-password" x-model="uform.password" placeholder="อย่างน้อย 6 ตัวอักษร"></div>
+          <div class="sm:col-span-2"><label class="lbl">สิทธิ์</label><select class="inp" x-model="uform.role"><template x-for="r in roles"><option x-text="r"></option></template></select></div>
+          <label class="sm:col-span-1 flex items-center gap-1 text-sm h-[42px]"><input type="checkbox" x-model="uform.active" class="accent-brand-600">ใช้งาน</label>
+          <button class="sm:col-span-2 btn btn-primary" @click="saveUser()">บันทึก</button>
+        </div>
+        <div class="overflow-auto"><table class="wb-grid w-full text-[14.5px]">
+          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th class="!text-center">สถานะ</th><th class="!text-center">รหัสผ่าน</th><th></th></tr></thead>
+          <tbody class="divide-y">
+            <template x-for="u in users" :key="u.email"><tr>
+              <td class="px-3 py-2" x-text="u.email"></td><td class="px-3 py-2" x-text="u.name"></td>
+              <td class="px-3 py-2"><span class="text-xs px-2 py-0.5 rounded-full" :class="{'bg-red-100 text-red-700':u.role==='Admin','bg-blue-100 text-blue-700':u.role==='Editor','bg-gray-100 text-gray-600':u.role==='Viewer'}" x-text="u.role"></span></td>
+              <td class="px-3 py-2 text-center"><span :class="u.active?'text-emerald-600':'text-gray-400'" x-text="u.active?'ใช้งาน':'ปิด'"></span></td>
+              <td class="px-3 py-2 text-center text-xs" :class="u.hasPassword?'text-emerald-600':'text-gray-400'" x-text="u.hasPassword?'ตั้งแล้ว':'ยังไม่ตั้ง'"></td>
+              <td class="!py-0.5 whitespace-nowrap text-right">
+                <button class="icon-btn" @click="uform={...u, password:''}" x-html="I.pencil"></button>
+                <button class="icon-btn hover:!text-red-600" @click="delUser(u.email)" x-html="I.trash"></button></td>
+            </tr></template>
+          </tbody></table></div>
+        <div class="p-4 text-xs text-gray-500 border-t space-y-1">
+          <div><b>Admin</b> ทำได้ทุกอย่าง · <b>Editor</b> สร้าง/แก้ไขรหัส และจัดการโครงสร้าง · <b>Viewer</b> ดูรายงานอย่างเดียว</div>
+          <div>ผู้ที่ไม่อยู่ในรายชื่อจะได้สิทธิ์ตาม <code>CFG.DEFAULT_ROLE</code> ใน Code.gs</div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 card">
+        <div class="wb-head"><span>▦ Users_Log</span><span class="sub">บันทึกการใช้งาน</span>
+          <button class="ml-auto btn btn-ghost !py-1 text-xs" @click="loadLogs()">⟳</button></div>
+        <div class="max-h-[600px] overflow-auto divide-y text-xs">
+          <template x-for="(l,k) in logs" :key="k"><div class="px-4 py-2">
+            <div class="flex gap-2"><span class="text-gray-400" x-text="l.ts"></span><b x-text="l.action"></b><span class="font-mono text-brand-700" x-text="l.code"></span></div>
+            <div class="text-gray-600"><span x-text="l.email"></span> · <span x-text="l.detail"></span></div>
+          </div></template>
+        </div>
+      </div>
+    </div>
+  </template>
+</section>
+
+<!-- ================================================================ 4) UPDATE CODE -->
+<section x-show="page==='update'">
+  <div class="grid lg:grid-cols-5 gap-4">
+    <div class="lg:col-span-2 card p-4">
+      <div class="wb-head -mx-4 -mt-4 mb-3">🔍 ค้นหารหัส</div>
+      <label class="lbl">ค้นหารหัสหรือชื่อสินค้า</label>
+      <input class="inp font-mono" x-model.debounce.200ms="uq" placeholder="เช่น M0101 หรือ สกรู">
+      <div class="mt-3 max-h-[560px] overflow-auto divide-y border border-[#b9c2cc] rounded-sm" x-show="uq.trim()">
+        <template x-for="p in suggest()" :key="p.code">
+          <button class="w-full text-left px-3 py-2 hover:bg-brand-50" :class="edit?.code===p.code?'bg-brand-50':''" @click="openEdit(p)">
+            <div class="font-mono text-brand-700 text-sm" x-text="p.code"></div><div class="text-xs text-gray-600 truncate" x-text="p.name"></div>
+          </button>
+        </template>
+        <p x-show="!suggest().length" class="text-sm text-gray-400 p-4 text-center">ไม่พบข้อมูล</p>
+      </div>
+    </div>
+    <div class="lg:col-span-3 card p-4">
+      <div class="wb-head -mx-4 -mt-4 mb-3">✎ แก้ไขข้อมูลอะไหล่ <span class="sub font-mono" x-text="edit ? edit.code : ''"></span></div>
+      <template x-if="!edit"><div class="text-center text-gray-400 py-20">เลือกรหัสจากรายการด้านซ้ายเพื่อแก้ไข</div></template>
+      <template x-if="edit">
+        <div class="space-y-4">
+          <div class="flex flex-wrap gap-1.5 font-mono text-2xl font-bold">
+            <template x-for="(p,k) in splitCode(edit.code)" :key="k"><span class="px-2 py-1 rounded-lg" :class="'seg-'+k" x-text="p"></span></template>
+          </div>
+          <div class="rounded-lg bg-gray-50 border p-3 text-sm space-y-1">
+            <template x-for="(p,k) in pathOf(edit.code)" :key="k">
+              <div class="flex gap-2"><i class="w-2 h-2 mt-1.5 rounded-full shrink-0" :class="'dot-'+k"></i><span class="text-gray-500 w-24 shrink-0" x-text="LN[k]"></span><span class="font-mono text-gray-500" x-text="p.seg"></span><span x-text="p.label"></span></div>
+            </template>
+          </div>
+          <div><label class="lbl">ชื่อสินค้า (Name 2)</label><textarea class="inp" rows="2" x-model="edit.name"></textarea></div>
+          <div><label class="lbl">ข้อมูลจำเพาะ (Specification)</label><textarea class="inp" rows="3" x-model="edit.spec"></textarea></div>
+          <div class="grid grid-cols-2 gap-4">
+            <div><label class="lbl">หน่วย</label><input class="inp" x-model="edit.unit"></div>
+            <div><label class="lbl">สถานะ</label><select class="inp" x-model="edit.status"><option>Active</option><option>Inactive</option></select></div>
+          </div>
+          <div class="text-xs text-gray-500">สร้าง: <span x-text="edit.createdAt||'–'"></span> โดย <span x-text="edit.createdBy||'–'"></span>
+            <span x-show="edit.updatedAt"> · แก้ไขล่าสุด: <span x-text="edit.updatedAt"></span> โดย <span x-text="edit.updatedBy"></span></span></div>
+          <div class="flex gap-2"><button class="btn btn-primary" :disabled="busy>0" @click="savePart()">บันทึกการแก้ไข</button>
+            <button class="btn btn-ghost" @click="edit=null">ยกเลิก</button></div>
+        </div>
+      </template>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 5) STRUCTURE -->
+<section x-show="page==='structure'">
+  <div class="card">
+    <div class="wb-head"><span>▦ Code_Structure</span><span class="sub">โครงสร้างรหัส 6 ระดับ</span></div>
+    <div class="p-3 border-b border-[#dde2e8] flex flex-wrap gap-3 items-center">
+      <input class="inp max-w-sm" x-model.debounce.250ms="sq" placeholder="ค้นหาหัวข้อ (ชื่อ หรือ รหัส)…">
+      <button class="btn btn-ghost" @click="open={}">ยุบทั้งหมด</button>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" x-model="showInactive" class="accent-brand-600">แสดงที่ปิดใช้งาน</label>
+      <button x-show="can('structure')" class="btn btn-primary ml-auto" @click="openAdd(1,'')">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>เพิ่มกลุ่มใหญ่ (L1)</button>
+    </div>
+    <div class="px-4 py-1.5 text-xs text-gray-500 border-b border-[#b9c2cc] bg-[#f3f5f7] flex flex-wrap gap-x-4 gap-y-1">
+      <template x-for="(n,k) in LN" :key="k"><span class="flex items-center gap-1"><i class="w-2 h-2 rounded-full" :class="'dot-'+k"></i><span x-text="'L'+(k+1)+' '+n+' ('+W[k]+')'"></span></span></template>
+    </div>
+    <div class="divide-y text-sm">
+      <template x-for="r in treeRows()" :key="r.n.prefix">
+        <div class="flex items-center gap-2 pr-3 py-1 hover:bg-[#e3eefa] group" :style="'padding-left:'+(12+r.d*24)+'px'" :class="r.n.status==='Inactive'?'opacity-50':''">
+          <button class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-brand-700 shrink-0"
+                  :class="kidsOf(r.n.prefix).length?'':'invisible'" @click="toggle(r.n.prefix)">
+            <svg class="w-4 h-4 transition" :class="open[r.n.prefix]?'rotate-90':''" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+          <span class="font-mono text-[13px] px-1.5 py-0.5 rounded-sm text-white shrink-0" :class="'dot-'+(r.n.level-1)" x-text="seg(r.n)"></span>
+          <div class="min-w-0 flex-1">
+            <span class="truncate" :class="r.n.label.startsWith('(')?'text-gray-400 italic':''" x-text="r.n.label"></span>
+            <span x-show="r.search" class="block text-[13px] font-mono text-gray-400" x-text="r.n.prefix+' · '+pathText(r.n.prefix)"></span>
+          </div>
+          <span class="text-xs text-gray-400 shrink-0" x-show="kidsOf(r.n.prefix).length" x-text="kidsOf(r.n.prefix).length"></span>
+          <div class="flex shrink-0 opacity-60 group-hover:opacity-100" x-show="can('structure')">
+            <button class="icon-btn" title="แก้ไข" @click="openEditNode(r.n)" x-html="I.pencil"></button>
+            <button class="icon-btn" title="เพิ่มหัวข้อย่อย" x-show="r.n.level<5" @click="openAdd(r.n.level+1, r.n.prefix)" x-html="I.plus"></button>
+            <span class="w-[1.9rem]" x-show="r.n.level>=5"></span>
+          </div>
+        </div>
+      </template>
+      <p x-show="!treeRows().length" class="p-8 text-center text-gray-400">ไม่พบหัวข้อ</p>
+    </div>
+  </div>
+  <p class="text-xs text-gray-500 mt-3">หมายเหตุ: ระดับ 6 (วัสดุ/ผิวชุบ) จะถูกสร้างอัตโนมัติพร้อมรหัสสินค้าในหน้า Generate Code · การปิดใช้งานหัวข้อจะซ่อนจาก Dropdown แต่ไม่ลบข้อมูลเดิม</p>
+</section>
+
+    </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ============ STATUS BAR ============ -->
+  <footer class="wb-status">
+    <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span x-text="IN_GAS ? 'Apps Script' : 'Web App'"></span></span>
+    <span class="font-mono">master_db › <b x-text="tbl()"></b></span>
+    <span class="hidden sm:inline font-mono" x-text="(parts||[]).length.toLocaleString()+' parts · '+nodes.length.toLocaleString()+' nodes'"></span>
+    <span class="flex-1"></span>
+    <span x-show="busy">⟳ กำลังทำงาน…</span>
+    <span class="hidden sm:inline font-mono" x-text="(me.email||'-')+' ['+(me.role||'-')+']'"></span>
+  </footer>
+</div>
+
+<!-- ============ NODE MODAL ============ -->
+<div x-cloak x-show="modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1f3958]/40" @keydown.escape.window="modal=false">
+  <div class="wb-dialog w-full max-w-md" @click.outside="modal=false" x-show="modal" x-transition>
+    <div class="wb-dialog-title"><span class="wb-logo wb-logo-sm"><span>C</span><span>O</span><span>D</span><span>E</span></span><span x-text="(mf.mode==='add'?'เพิ่มหัวข้อ ':'แก้ไขหัวข้อ ')+'ระดับ '+mf.level+' · '+LN[mf.level-1]"></span></div>
+    <div class="space-y-4 p-5 bg-white">
+        <div x-show="mf.parent" class="text-sm rounded-lg bg-gray-50 border p-3">
+          <div class="text-xs text-gray-500">อยู่ภายใต้</div>
+          <div><span class="font-mono text-brand-700" x-text="mf.parent"></span> · <span x-text="pathText(mf.parent)"></span></div>
+        </div>
+        <div x-show="mf.mode==='add'">
+          <label class="lbl" x-text="mf.level===1 ? 'ตัวอักษรกลุ่ม (A-Z)' : 'รหัส '+W[mf.level-1]+' หลัก (ว่าง = รันอัตโนมัติ)'"></label>
+          <input class="inp font-mono uppercase" x-model="mf.seg" :maxlength="W[mf.level-1]" :placeholder="mf.level===1 ? 'เช่น P' : 'แนะนำ '+suggestSeg(mf.level, mf.parent)">
+        </div>
+        <div x-show="mf.mode==='edit'" class="text-sm">รหัส: <span class="font-mono font-bold text-brand-700" x-text="mf.prefix"></span></div>
+        <div><label class="lbl">ชื่อหัวข้อ</label><input class="inp" x-model="mf.label" x-ref="nodeLabel" @keydown.enter="saveNode()"></div>
+        <div x-show="mf.mode==='edit'"><label class="lbl">สถานะ</label>
+          <select class="inp" x-model="mf.status"><option>Active</option><option>Inactive</option></select></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button class="btn btn-ghost" @click="modal=false">ยกเลิก</button>
+          <button class="btn btn-primary" :disabled="busy>0" @click="saveNode()">บันทึก</button>
+        </div>
+      </div>
+  </div>
+</div>
+
+<!-- ============ TOASTS ============ -->
+<div class="fixed bottom-9 right-4 z-[60] space-y-2 w-80 max-w-[calc(100vw-2rem)]">
+  <template x-for="t in toasts" :key="t.id">
+    <div x-transition class="rounded-sm px-4 py-2.5 shadow-lg text-[14.5px] text-white border-l-4" :class="t.err?'bg-red-700 border-red-300':'bg-[#1f3958] border-[#ffd08a]'" x-text="t.msg"></div>
+  </template>
+</div>
+
+<script>
+const I = {
+  pencil: '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15.2 5.2l3.6 3.6M4 20l4.5-1 10.3-10.3a2.5 2.5 0 00-3.5-3.5L5 15.5 4 20z"/></svg>',
+  plus: '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+  trash: '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M9 7V4h6v3"/></svg>',
+};
+const ICON = (d) => '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">'+d+'</svg>';
+
+// =====================================================================
+//  ตั้งค่า: URL ของ Web App (Deploy > Manage deployments > คัดลอก URL ที่ลงท้าย /exec)
+//  ใช้เมื่อเปิดไฟล์นี้นอก Google เช่น VS Code Live Server
+//  (ถ้าเปิดผ่าน URL ของ Apps Script โดยตรง ระบบจะใช้ google.script.run อัตโนมัติ)
+// =====================================================================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbymQpBtjTqsQhU5FlLAEHBiv1V-6HEWPzWFH6rgcZW6H3fFIN5AY0TnhvwBDYWvXJDG/exec';
+
+const IN_GAS = typeof google !== 'undefined' && !!(google.script && google.script.run);
+const TOKEN_KEY = 'gc_token';
+const store = {
+  get: () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return window.__tok || ''; } },
+  set: (v) => { try { v ? localStorage.setItem(TOKEN_KEY, v) : localStorage.removeItem(TOKEN_KEY); } catch (e) { window.__tok = v; } },
+};
+
+/** เรียกฟังก์ชันใน Code.gs ผ่าน apiCall (Apps Script) หรือ fetch (ภายนอก) */
+async function gs(fn, ...args) {
+  const req = { action: fn, args, token: store.get() };
+  let res;
+  if (IN_GAS) {
+    res = await new Promise((ok, no) => google.script.run.withSuccessHandler(ok).withFailureHandler(no).apiCall(req));
+  } else {
+    if (!GAS_URL || GAS_URL.includes('PASTE_YOUR')) throw new Error('กรุณาใส่ GAS_URL (URL ของ Web App ที่ลงท้าย /exec) ในไฟล์ index.html');
+    let r;
+    try {
+      r = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(req), redirect: 'follow' });
+    } catch (e) {
+      throw new Error('เชื่อมต่อ Apps Script ไม่ได้ (CORS/Network) — ตรวจว่า Deploy เป็น Web app, Who has access = Anyone และใช้ URL /exec');
+    }
+    const txt = await r.text();
+    try { res = JSON.parse(txt); }
+    catch (e) { throw new Error('Server ไม่ได้ตอบเป็น JSON (HTTP ' + r.status + ') — ตรวจ GAS_URL และกด Deploy เวอร์ชันใหม่หลังแก้โค้ด'); }
+  }
+  if (!res || !res.ok) { const e = new Error((res && res.error) || 'เกิดข้อผิดพลาด'); e.code = res && res.code; throw e; }
+  return res.data;
+}
+
+function app() {
+  return {
+    I, IN_GAS, GAS_URL, tok: store.get(), needLogin: false, lf: { email: '', password: '' }, loginErr: '', loggingIn: false, pw: { old: '', new1: '' },
+    ready: false, fatal: '', me: {}, roles: [], W: [], C: [], LN: [], page: 'generate', sideOpen: false, busy: 0, toasts: [],
+    menus: [
+      { id: 'generate', label: 'Generate Code', perm: 'view', icon: ICON('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/>') },
+      { id: 'report', label: 'Report / History', perm: 'view', icon: ICON('<path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/>') },
+      { id: 'setting', label: 'Setting', perm: 'view', icon: ICON('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>') },
+      { id: 'update', label: 'Update Code', perm: 'update', icon: ICON('<path d="M15.2 5.2l3.6 3.6M4 20l4.5-1 10.3-10.3a2.5 2.5 0 00-3.5-3.5L5 15.5 4 20z"/>') },
+      { id: 'structure', label: 'Structure', perm: 'view', icon: ICON('<rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-3h14v3"/>') },
+    ],
+    // structure index
+    nodes: [], byP: {}, kids: {},
+    // generate
+    genView: (() => { try { return localStorage.getItem('gc_view') || 'cols'; } catch (e) { return 'cols'; } })(), l6Pick: '',
+    sel: ['', '', '', '', ''], l6Label: '', l6Zero: false, next: null, nameAuto: true, name: '', spec: '', unit: 'pcs', jump: '', result: null, recent: [],
+    // report
+    parts: null, partMap: {}, q: '', grp: '', dFrom: '', dTo: '', st: '', sortKey: 'code', sortDir: 1, pg: 1, per: 50,
+    cols: [{ k: 'code', t: 'รหัสสินค้า' }, { k: 'name', t: 'ชื่อสินค้า (Name 2)' }, { k: 'category', t: 'หมวด' }, { k: 'spec', t: 'ข้อมูลจำเพาะ' }, { k: 'unit', t: 'หน่วย' }, { k: 'createdAt', t: 'วันที่สร้าง' }, { k: 'createdBy', t: 'ผู้สร้าง' }],
+    // update
+    uq: '', edit: null,
+    // structure
+    open: {}, sq: '', showInactive: false, modal: false, mf: { mode: 'add', level: 1, parent: '', prefix: '', seg: '', label: '', status: 'Active' },
+    // setting
+    users: [], logs: [], uform: { email: '', name: '', role: 'Editor', active: true, password: '' },
+
+    // ---------------------------------------------------------- core
+    async boot() {
+      try {
+        const d = await gs('getInit');
+        Object.assign(this, { me: d.me, roles: d.roles, W: d.width, C: d.cut, LN: d.levelNames, unit: d.defaultUnit });
+        this.setNodes(d.structure);
+        this.ready = true;
+        this.loadParts();
+      } catch (e) {
+        if (e.code === 'AUTH') { this.setTok(''); this.needLogin = true; }
+        else this.fatal = e.message || String(e);
+      }
+    },
+    hasToken() { return !!this.tok; },
+    setTok(v) { store.set(v); this.tok = v; },
+    async doLogin() {
+      this.loginErr = ''; this.loggingIn = true;
+      try {
+        const r = await gs('login', { email: this.lf.email.trim(), password: this.lf.password });
+        this.setTok(r.token); this.lf.password = ''; this.needLogin = false; this.fatal = '';
+        await this.boot();
+      } catch (e) { this.loginErr = e.message; }
+      finally { this.loggingIn = false; }
+    },
+    logout() { gs('logout').catch(() => {}); this.setTok(''); this.ready = false; this.fatal = ''; this.needLogin = true; this.parts = null; },
+    async changePw() {
+      if (this.pw.new1.length < 6) return this.toast('รหัสผ่านใหม่ต้องยาวอย่างน้อย 6 ตัวอักษร', true);
+      await this.call('changePassword', { oldPassword: this.pw.old, newPassword: this.pw.new1 });
+      this.pw = { old: '', new1: '' }; this.toast('เปลี่ยนรหัสผ่านแล้ว');
+    },
+    can(p) { return (this.me.perms || []).includes(p); },
+    toast(msg, err) { const id = Date.now() + Math.random(); this.toasts.push({ id, msg, err }); setTimeout(() => this.toasts = this.toasts.filter(t => t.id !== id), err ? 6000 : 3000); },
+    async call(fn, ...args) {
+      this.busy++;
+      try { return await gs(fn, ...args); }
+      catch (e) {
+        if (e.code === 'AUTH') { this.setTok(''); this.ready = false; this.needLogin = true; this.loginErr = 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่'; }
+        else this.toast(e.message || String(e), true);
+        throw e;
+      }
+      finally { this.busy--; }
+    },
+    tbl() { return { generate: 'Code_Structure', report: 'Master_Parts', update: 'Master_Parts', structure: 'Code_Structure', setting: 'Users' }[this.page] || '-'; },
+    go(id) {
+      this.page = id; this.sideOpen = false; if (this.$refs.scroller) this.$refs.scroller.scrollTop = 0;
+      if (id === 'setting' && this.can('admin')) { this.loadUsers(); this.loadLogs(); }
+      if ((id === 'report' || id === 'update') && !this.parts) this.loadParts();
+    },
+    copy(t) { navigator.clipboard?.writeText(t).then(() => this.toast('คัดลอก ' + t)).catch(() => {}); },
+
+    // ---------------------------------------------------------- structure index
+    setNodes(rows) { this.nodes = rows.map(r => ({ level: +r[0], prefix: r[1], parent: r[2], label: r[3], status: r[4] || 'Active' })); this.reindex(); },
+    reindex() {
+      const byP = {}, kids = {};
+      for (const n of this.nodes) { byP[n.prefix] = n; (kids[n.parent] = kids[n.parent] || []).push(n); }
+      for (const k in kids) kids[k].sort((a, b) => a.prefix < b.prefix ? -1 : 1);
+      this.byP = byP; this.kids = kids;
+    },
+    upsertNode(r) {
+      const n = { level: +r[0], prefix: r[1], parent: r[2], label: r[3], status: r[4] || 'Active' };
+      const i = this.nodes.findIndex(x => x.prefix === n.prefix);
+      if (i >= 0) this.nodes[i] = n; else this.nodes.push(n);
+      this.reindex();
+    },
+    kidsOf(p) { return (this.kids[p] || []).filter(n => this.showInactive || n.status !== 'Inactive'); },
+    seg(n) { return n.level === 1 ? n.prefix : n.prefix.slice(this.C[n.level - 2]); },
+    zeroSeg(level) { return '0'.repeat(this.W[level - 1]); },
+    labelOf(prefix) { const n = this.byP[prefix]; return n ? n.label : '(ไม่ระบุ)'; },
+    pathOf(code) {
+      const out = [];
+      for (let i = 0; i < 6; i++) {
+        if (code.length < this.C[i]) break;
+        const pre = code.slice(0, this.C[i]);
+        out.push({ seg: pre.slice(i ? this.C[i - 1] : 0), label: this.labelOf(pre) });
+      }
+      return out;
+    },
+    pathText(prefix) { return this.pathOf(prefix).map(p => p.label).filter(l => !l.startsWith('(')).join(' › '); },
+    splitCode(code) { return this.C.map((c, i) => code.slice(i ? this.C[i - 1] : 0, c)); },
+    suggestSeg(level, parent) {
+      if (level === 1) return '';
+      const a = this.C[level - 2], b = this.C[level - 1];
+      let max = 0;
+      for (const n of (this.kids[parent] || [])) max = Math.max(max, +n.prefix.slice(a, b) || 0);
+      for (const p of (this.parts || [])) if (p.code.startsWith(parent)) max = Math.max(max, +p.code.slice(a, b) || 0);
+      return String(max + 1).padStart(this.W[level - 1], '0');
+    },
+
+    // ---------------------------------------------------------- 1) generate
+    opts(i) {
+      const parent = i ? this.sel[i - 1] : '';
+      if (i && !parent) return [];
+      const list = (this.kids[parent] || []).filter(n => n.status !== 'Inactive');
+      if (i > 0) {
+        const z = parent + this.zeroSeg(i + 1);
+        if (!this.byP[z]) list.unshift({ level: i + 1, prefix: z, parent, label: '(ไม่ระบุ)', virtual: true });
+      }
+      return list;
+    },
+    // ----- column view
+    setGenView(v) { this.genView = v; try { localStorage.setItem('gc_view', v); } catch (e) {} },
+    colIdx() { const out = [0]; for (let i = 1; i < 5; i++) { if (this.sel[i - 1]) out.push(i); else break; } return out; },
+    colPick(i, prefix) {
+      this.sel[i] = prefix; this.l6Pick = ''; this.pick(i);
+      this.$nextTick(() => setTimeout(() => { const el = this.$refs.cols; if (el) el.scrollLeft = el.scrollWidth; }, 30));
+    },
+    newL6() { this.l6Pick = ''; this.$nextTick(() => this.$refs.l6In?.focus()); },
+    summary() {
+      const rows = this.sel.map((p, i) => p ? { seg: p.slice(i ? this.C[i - 1] : 0), label: this.labelOf(p) } : { seg: '', label: '' });
+      if (this.l6Pick) rows.push({ seg: this.l6Pick.slice(11), label: this.labelOf(this.l6Pick) });
+      else if (this.sel[4]) rows.push({ seg: this.l6Zero ? '00' : (this.next?.seg || '..'), label: this.l6Label.trim() || '(ใหม่)' });
+      else rows.push({ seg: '', label: '' });
+      return rows;
+    },
+    summaryCode() { return this.l6Pick || this.pieces().map(p => p.txt).join(''); },
+    canAddUnder(i) { return !!this.sel[i - 1] && !!this.byP[this.sel[i - 1]]; },
+    pick(i) {
+      for (let k = i + 1; k < 5; k++) this.sel[k] = '';
+      this.next = null; this.l6Zero = false; this.result = null;
+      if (i === 4 && this.sel[4]) this.loadNext(); else if (this.sel[i] && i < 4) this.$nextTick(() => {
+        const o = this.opts(i + 1); // ถ้ามีตัวเลือกเดียว (เช่น 00) เลือกให้เลย
+        if (o.length === 1) { this.sel[i + 1] = o[0].prefix; this.pick(i + 1); }
+      });
+    },
+    async loadNext() {
+      const l5 = this.sel[4];
+      if (!l5) return;
+      try { const r = await gs('previewNext', { l5 }); if (this.sel[4] === l5) this.next = r; }
+      catch (e) { this.next = { seg: this.suggestSeg(6, l5), code: l5 + this.suggestSeg(6, l5) }; }
+    },
+    siblingsL6() { return this.sel[4] ? (this.kids[this.sel[4]] || []) : []; },
+    partName(code) { return this.partMap[code]?.name; },
+    pieces() {
+      const out = this.sel.map((p, i) => ({ txt: p ? p.slice(i ? this.C[i - 1] : 0) : '·'.repeat(this.W[i]), ok: !!p }));
+      const s6 = this.sel[4] ? (this.l6Zero ? '00' : (this.next?.seg || '··')) : '··';
+      out.push({ txt: s6, ok: !!this.sel[4] && (this.l6Zero || !!this.next) });
+      return out;
+    },
+    autoName() {
+      const labels = this.sel.slice(1).filter(Boolean).map(p => this.labelOf(p)).concat([this.l6Label.trim()]);
+      return labels.filter(l => l && !l.startsWith('(')).join(' ');
+    },
+    finalName() { return (this.nameAuto ? this.autoName() : this.name).trim(); },
+    genReady() { return this.can('generate') && this.sel.every(Boolean) && !!this.finalName(); },
+    jumpTo() {
+      const s = this.jump.trim().toUpperCase();
+      if (!s) return;
+      this.resetGen();
+      for (let i = 0; i < 5; i++) {
+        if (s.length < this.C[i]) break;
+        const pre = s.slice(0, this.C[i]);
+        if (!this.byP[pre] && !/^0+$/.test(pre.slice(i ? this.C[i - 1] : 0))) { this.toast('ไม่พบหัวข้อ ' + pre, true); break; }
+        this.sel[i] = pre;
+      }
+      if (this.sel[4]) { this.loadNext(); if (s.length === 13 && this.byP[s]) this.l6Pick = s; }
+      this.$nextTick(() => { const el = this.$refs.cols; if (el) el.scrollLeft = el.scrollWidth; });
+    },
+    resetGen() { this.l6Pick = ''; this.sel = ['', '', '', '', ''];this.l6Label = ''; this.l6Zero = false; this.next = null; this.nameAuto = true; this.name = ''; this.spec = ''; this.result = null; },
+    async save() {
+      if (!this.genReady()) return;
+      const payload = { chain: [...this.sel], l6Label: this.l6Label.trim(), l6Zero: this.l6Zero, name: this.finalName(), spec: this.spec.trim(), unit: this.unit.trim() };
+      if (!confirm('ยืนยันสร้างรหัสสินค้า\n\n' + payload.name)) return;
+      const r = await this.call('generateCode', payload);
+      // อัปเดตข้อมูลฝั่งหน้าเว็บ
+      payload.chain.forEach((pre, i) => { if (!this.byP[pre]) this.upsertNode([i + 1, pre, i ? payload.chain[i - 1] : '', '(ไม่ระบุ)', 'Active']); });
+      this.upsertNode([6, r.code, payload.chain[4], payload.l6Label || '(ไม่ระบุ)', 'Active']);
+      if (this.parts) { this.parts.push(r); this.partMap[r.code] = r; }
+      this.result = r; this.recent.unshift(r); this.recent = this.recent.slice(0, 10);
+      this.toast('สร้างรหัส ' + r.code + ' แล้ว');
+      this.l6Label = ''; this.l6Zero = false; this.nameAuto = true; this.name = ''; this.spec = '';
+      this.loadNext();
+    },
+
+    // ---------------------------------------------------------- 2) report
+    async loadParts(force) {
+      if (this.parts && !force) return;
+      const rows = await this.call('getParts');
+      this.parts = rows; this.partMap = Object.fromEntries(rows.map(r => [r.code, r]));
+    },
+    filtered() {
+      if (!this.parts) return [];
+      const q = this.q.trim().toLowerCase();
+      let rows = this.parts.filter(p =>
+        (!this.grp || p.code.startsWith(this.grp)) &&
+        (!this.st || p.status === this.st) &&
+        (!this.dFrom || (p.createdAt && p.createdAt.slice(0, 10) >= this.dFrom)) &&
+        (!this.dTo || (p.createdAt && p.createdAt.slice(0, 10) <= this.dTo)) &&
+        (!q || (p.code + ' ' + p.name + ' ' + p.spec + ' ' + p.category + ' ' + p.createdBy).toLowerCase().includes(q)));
+      const k = this.sortKey, d = this.sortDir;
+      return rows.sort((a, b) => (a[k] || '') < (b[k] || '') ? -d : (a[k] || '') > (b[k] || '') ? d : 0);
+    },
+    sortBy(k) { if (this.sortKey === k) this.sortDir *= -1; else { this.sortKey = k; this.sortDir = k === 'createdAt' ? -1 : 1; } },
+    pages() { return Math.max(1, Math.ceil(this.filtered().length / this.per)); },
+    pageRows() { if (this.pg > this.pages()) this.pg = 1; return this.filtered().slice((this.pg - 1) * this.per, this.pg * this.per); },
+    stats() {
+      const p = this.parts || [], today = new Date().toLocaleDateString('sv-SE'), month = today.slice(0, 7);
+      const g = (l) => p.filter(x => x.code[0] === l).length;
+      return [
+        { k: 'รหัสทั้งหมด', v: p.length, c: 'text-brand-700' },
+        { k: 'สร้างวันนี้', v: p.filter(x => x.createdAt.startsWith(today)).length, c: 'text-emerald-600' },
+        { k: 'สร้างเดือนนี้', v: p.filter(x => x.createdAt.startsWith(month)).length, c: 'text-emerald-600' },
+        ...this.kidsOf('').slice(0, 3).map(n => ({ k: 'กลุ่ม ' + n.prefix, v: g(n.prefix), c: 'text-gray-800' })),
+      ];
+    },
+    byDate() {
+      const m = {};
+      for (const p of (this.parts || [])) if (p.createdAt) { const d = p.createdAt.slice(0, 10); m[d] = (m[d] || 0) + 1; }
+      return Object.entries(m).sort((a, b) => a[0] < b[0] ? 1 : -1).map(([date, n]) => ({ date, n }));
+    },
+    exportRows() {
+      return this.filtered().map(p => ({ 'รหัสสินค้า': p.code, 'ชื่อสินค้า': p.name, 'หมวด': p.category, 'ข้อมูลจำเพาะ': p.spec, 'หน่วย': p.unit,
+        'วันที่สร้าง': p.createdAt, 'ผู้สร้าง': p.createdBy, 'แก้ไขล่าสุด': p.updatedAt, 'ผู้แก้ไข': p.updatedBy, 'สถานะ': p.status }));
+    },
+    fileName(ext) { return 'GenerateCode_' + new Date().toLocaleDateString('sv-SE') + '.' + ext; },
+    exportCSV() {
+      const rows = this.exportRows(); if (!rows.length) return this.toast('ไม่มีข้อมูล', true);
+      const h = Object.keys(rows[0]), esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const csv = '﻿' + [h.map(esc).join(','), ...rows.map(r => h.map(k => esc(r[k])).join(','))].join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = this.fileName('csv'); a.click();
+    },
+    exportXLSX() {
+      const rows = this.exportRows(); if (!rows.length) return this.toast('ไม่มีข้อมูล', true);
+      if (!window.XLSX) return this.exportCSV();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [16, 60, 22, 30, 8, 18, 24, 18, 24, 10].map(w => ({ wch: w }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Master_Parts');
+      XLSX.writeFile(wb, this.fileName('xlsx'));
+    },
+
+    // ---------------------------------------------------------- 4) update
+    suggest() {
+      const q = this.uq.trim().toLowerCase(); if (!q || !this.parts) return [];
+      const out = [];
+      for (const p of this.parts) { if ((p.code + ' ' + p.name).toLowerCase().includes(q)) { out.push(p); if (out.length >= 50) break; } }
+      return out;
+    },
+    openEdit(p) { this.edit = { ...p }; this.page = 'update'; if (!this.uq) this.uq = p.code; },
+    async savePart() {
+      const e = this.edit;
+      const r = await this.call('updatePart', { code: e.code, name: e.name, spec: e.spec, unit: e.unit, status: e.status });
+      const i = this.parts.findIndex(p => p.code === r.code);
+      if (i >= 0) this.parts[i] = r; this.partMap[r.code] = r;
+      this.edit = { ...r };
+      this.toast('บันทึกการแก้ไข ' + r.code + ' แล้ว');
+    },
+
+    // ---------------------------------------------------------- 5) structure
+    toggle(p) { this.open[p] = !this.open[p]; },
+    treeRows() {
+      const q = this.sq.trim().toLowerCase();
+      if (q) {
+        const out = [];
+        for (const n of this.nodes) {
+          if (!this.showInactive && n.status === 'Inactive') continue;
+          if (n.prefix.toLowerCase().startsWith(q) || n.label.toLowerCase().includes(q)) { out.push({ n, d: 0, search: true }); if (out.length >= 300) break; }
+        }
+        return out;
+      }
+      const out = [], walk = (parent, d) => {
+        for (const n of this.kidsOf(parent)) { out.push({ n, d }); if (this.open[n.prefix]) walk(n.prefix, d + 1); }
+      };
+      walk('', 0);
+      return out;
+    },
+    openAdd(level, parent, fromGen) {
+      if (level > 1 && !this.byP[parent]) return this.toast('กรุณาเลือกหัวข้อแม่ที่มีอยู่ก่อน', true);
+      this.mf = { mode: 'add', level, parent, prefix: '', seg: '', label: '', status: 'Active', fromGen: !!fromGen }; this.modal = true;
+      this.$nextTick(() => this.$refs.nodeLabel?.focus());
+    },
+    openEditNode(n) { this.mf = { mode: 'edit', level: n.level, parent: n.parent, prefix: n.prefix, seg: '', label: n.label, status: n.status }; this.modal = true; },
+    async saveNode() {
+      const m = this.mf;
+      if (!m.label.trim()) return this.toast('กรุณากรอกชื่อหัวข้อ', true);
+      let r;
+      if (m.mode === 'add') r = await this.call('addNode', { level: m.level, parent: m.parent, label: m.label.trim(), segment: m.seg.trim() });
+      else r = await this.call('updateNode', { prefix: m.prefix, label: m.label.trim(), status: m.status });
+      this.upsertNode(r);
+      if (m.mode === 'add') {
+        if (m.parent) this.open[m.parent] = true;
+        if (m.fromGen) { const i = m.level - 1; this.sel[i] = r[1]; this.pick(i); }
+        this.toast('เพิ่ม ' + r[1] + ' · ' + r[3] + ' แล้ว');
+      } else this.toast('บันทึก ' + r[1] + ' แล้ว');
+      this.modal = false;
+    },
+
+    // ---------------------------------------------------------- 3) setting
+    async loadUsers() { this.users = await this.call('getUsers'); },
+    async loadLogs() { this.logs = await this.call('getLogs', 300); },
+    async saveUser() {
+      this.users = await this.call('saveUser', this.uform);
+      this.toast('บันทึกผู้ใช้ ' + this.uform.email + ' แล้ว');
+      this.uform = { email: '', name: '', role: 'Editor', active: true, password: '' };
+    },
+    async delUser(email) {
+      if (!confirm('ลบผู้ใช้ ' + email + ' ?')) return;
+      this.users = await this.call('deleteUser', email);
+    },
+  };
+}
+</script>
+</body>
+</html>
