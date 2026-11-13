@@ -754,9 +754,20 @@
       <div id="issDetail" class="text-xs bg-slate-50 border border-slate-200 rounded-xl p-4"></div>
 
       <div>
-        <label class="block text-xs font-semibold text-slate-600 mb-1" for="issPhoto">📷 แนบรูปหลักฐานการจ่ายของ <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">✍️ ลายเซ็นผู้จ่ายพัสดุ <span class="text-red-500">*</span> · <span id="issIssuerName" class="font-normal text-slate-500"></span></label>
+          <button type="button" onclick="sigPads.issuer.clear()" class="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer">🧽 ล้างลายเซ็น</button>
+        </div>
+        <div class="relative">
+          <canvas id="issuerSigPad" class="sig-pad w-full h-32 bg-white border-2 border-dashed border-slate-400 rounded-xl cursor-crosshair"></canvas>
+          <span id="issuerSigPadHint" style="pointer-events:none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-300">ผู้จ่ายของเซ็นชื่อในกรอบนี้ (ใช้นิ้วหรือเมาส์)</span>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1" for="issPhoto">📷 แนบรูปหลักฐานการจ่ายของ <span class="font-normal text-slate-400">(ไม่บังคับ)</span></label>
         <input type="file" id="issPhoto" accept="image/*" class="w-full text-xs p-1.5 border border-slate-300 rounded-xl bg-slate-50">
-        <p class="text-[11px] text-slate-400 mt-1">เช่น ถ่ายรูปของที่จัดเตรียม / ใบเบิกที่แนบไปกับของ (ไม่ต้องเซ็นชื่อ)</p>
+        <p class="text-[11px] text-slate-400 mt-1">เช่น ถ่ายรูปของที่จัดเตรียม / ใบเบิกที่แนบไปกับของ</p>
         <div id="issPhotoPreview" class="hidden mt-2 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
           <img src="" alt="" class="h-16 w-16 object-cover rounded-lg border cursor-pointer" onclick="openZoomModal(this.src)">
           <span class="text-xs text-emerald-600 font-medium">✓ แนบรูปเรียบร้อย (คลิกเพื่อซูม)</span>
@@ -1073,6 +1084,7 @@
       sigPads.requester = createSignaturePad("requesterSigPad");
       sigPads.approver = createSignaturePad("approverSigPad");
       sigPads.rcv = createSignaturePad("rcvSigPad");
+      sigPads.issuer = createSignaturePad("issuerSigPad");
       fillBranchSelect($("branch"), false);
       setupImageListeners();
 
@@ -2267,7 +2279,7 @@
               else if (r.status === "ISSUED" && !canIssue())
                 act += ' <div class="text-[10px] text-orange-600 font-semibold mt-1">รอ HR ฝากส่ง</div>';
               if (ISSUED_PLUS.includes(r.status) && !r.hasIssuerSig && canIssue())
-                act += B("issueRequest", "bg-amber-500 hover:bg-amber-600 text-slate-900", "📷 แนบรูปจ่าย", "ใบนี้จ่ายไปแล้วแต่ยังไม่มีรูปหลักฐานการจ่าย");
+                act += B("issueRequest", "bg-amber-500 hover:bg-amber-600 text-slate-900", "✍️ เซ็นจ่ายย้อนหลัง", "ใบนี้จ่ายไปแล้วแต่ยังไม่มีลายเซ็นผู้จ่าย");
             }
             if (canCancel(r))
               act += ` <button data-id="${id}" onclick="cancelRequest(this.dataset.id)" class="bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 py-1.5 px-3 rounded-lg font-bold cursor-pointer ml-1 mt-1" title="ยกเลิกใบเบิก${r.status === "PENDING" ? "" : " และคืนยอดเข้าคลัง"}">🚫 ยกเลิก</button>`;
@@ -2929,8 +2941,9 @@
           <div><p class="text-[10px] text-slate-400">ผู้ขอเบิก / สาขา</p><p class="font-bold text-slate-800">${esc(r.staffName)} · ${esc(r.branch)}</p></div>
           <div><p class="text-[10px] text-slate-400">อนุมัติโดย</p><p class="font-bold text-slate-800">${esc(r.approverName || "-")}</p></div>
         </div>
-        ${late ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — แนบรูปหลักฐานการจ่ายย้อนหลังได้</p>' : ""}`;
+        ${late ? '<p class="mt-2 text-amber-700 font-semibold">ใบนี้บันทึกจ่ายของไปแล้ว — เซ็นชื่อ / แนบรูปหลักฐานการจ่ายย้อนหลังได้</p>' : ""}`;
       toggleIssueModal(true);
+      requestAnimationFrame(() => sigPads.issuer.setup());   // ตั้งขนาด canvas หลัง modal แสดงผลแล้ว
     }
 
     function issMethod() { const el = document.querySelector('input[name="issMethod"]:checked'); return el ? el.value : "SHIP"; }
@@ -2943,20 +2956,23 @@
       const id = currentIssueId;
       const late = $("issDeliveryBox").classList.contains("hidden");
       const method = late ? "" : issMethod();
-      if (!issPhotoB64) { showToast($("issPhoto").files.length ? "⏳ กำลังโหลดรูป กรุณารอสักครู่" : "📷 กรุณาแนบรูปหลักฐานการจ่ายของ", "warn"); return; }
+      if (sigPads.issuer.isEmpty) { showToast("✍️ กรุณาเซ็นลายเซ็นผู้จ่ายพัสดุในกรอบก่อนบันทึก", "warn"); return; }
+      if ($("issPhoto").files.length && !issPhotoB64) { showToast("⏳ กำลังโหลดรูป กรุณารอสักครู่", "warn"); return; }
       const btns = [$("issSaveBtn"), $("issSavePrintBtn")], olds = btns.map(b => b.innerHTML);
       btns.forEach(b => b.disabled = true);
       (andPrint ? btns[1] : btns[0]).innerHTML = '<span class="loader mr-1"></span> กำลังบันทึก...';
       try {
         const res = await apiPost({
           action: "issueRequest", requestId: id,
+          issuerSig: sigPads.issuer.toDataURL(),
           issuerPhoto: issPhotoB64,
           deliveryMethod: method
         });
         if (res.status !== "success") throw new Error(res.message);
         delete reqDetailCache[id];
         toggleIssueModal(false);
-        showToast(late ? `📷 บันทึกรูปหลักฐานการจ่าย ${id} แล้ว`
+        sigPads.issuer.clear();
+        showToast(late ? `✍️ บันทึกลายเซ็น/หลักฐานการจ่าย ${id} แล้ว`
           : method === "PICKUP" ? `📦 จ่ายของ ${id} แล้ว — รอพนักงานที่มารับกด 📥 ยืนยันรับของในระบบ`
           : `📦 จ่ายของ ${id} แล้ว — อยู่ในแท็บ "รอฝากส่ง" กด 🚚 ฝากส่ง เมื่อมีคนผ่านเส้นทางสาขา`, "ok");
         loadRequests();
