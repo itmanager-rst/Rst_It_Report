@@ -8,6 +8,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="FixPoint">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <title>RST FixPoint - ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -813,6 +815,9 @@ function logout(expired) {
     store(LS_USER, null);
     currentUser = null;
     lastCounts = null;                 // รีเซ็ตการตรวจงานใหม่ของผู้ใช้เดิม
+    applyAppBadge(0);                  // ล้างจุดแจ้งเตือนที่ไอคอนแอป
+    allRangeDefaulted = false;         // ล็อกอินครั้งถัดไป ให้ตั้งช่วงวันที่ 30 วันอีกครั้ง
+    $('allFrom').value = ''; $('allTo').value = '';
     document.title = baseTitle;
     technicians = null;
     Object.keys(loaded).forEach(k => delete loaded[k]);
@@ -970,6 +975,15 @@ function notifyNewJobs(prev, r) {
     } catch (e) { /* ไม่รองรับ Notification (เช่น iOS ที่ยังไม่ได้เพิ่มลงหน้าจอโฮม) */ }
 }
 
+/** จุดแจ้งเตือนที่ไอคอนแอป (ใช้ได้เมื่อติดตั้งเป็นแอปแล้วและเบราว์เซอร์รองรับ) */
+function applyAppBadge(total) {
+    if (!('setAppBadge' in navigator)) return;
+    try {
+        const p = total > 0 ? navigator.setAppBadge(total) : navigator.clearAppBadge();
+        if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* ไม่รองรับ */ }
+}
+
 async function refreshBadges() {
     if (!currentUser || countsBusy) return;
     countsBusy = true;
@@ -982,6 +996,7 @@ async function refreshBadges() {
         if (hasRole('supervisor', 'admin')) setBadge('dispatch', r.dispatch);   // r27
         const total = BADGE_KEYS.filter(canSeeBadge).reduce((s, k) => s + (r[k] || 0), 0);
         document.title = total > 0 ? `(${total > 99 ? '99+' : total}) ${baseTitle}` : baseTitle;
+        applyAppBadge(total);                                // จุดแจ้งเตือนที่ไอคอนแอป (PWA)
         if (!prev) return;                                   // ครั้งแรกหลังเข้าสู่ระบบ — ไม่ต้องแจ้งเตือน
         if (!BADGE_KEYS.some(k => (r[k] || 0) !== (prev[k] || 0))) return;   // ไม่มีการเปลี่ยนแปลง
         notifyNewJobs(prev, r);
@@ -1348,7 +1363,20 @@ function renderTechKpi(d) {
         </tr>`).join('') : `<tr><td colspan="9">${emptyHtml('ยังไม่มีช่างที่ได้รับมอบหมายในช่วงเวลานี้')}</td></tr>`;
 }
 
+// หน้า All Tickets: ช่วงวันที่เริ่มต้น = 30 วันล่าสุด (ตั้งให้ครั้งแรกที่เปิดหน้า จนกว่าจะ Logout)
+const ALL_DEFAULT_DAYS = 30;
+let allRangeDefaulted = false;
+function applyDefaultAllRange_() {
+    if (allRangeDefaulted) return;
+    allRangeDefaulted = true;
+    const ymd = (ms) => new Date(ms).toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }); // รูปแบบ YYYY-MM-DD
+    const now = Date.now();
+    $('allTo').value = ymd(now);
+    $('allFrom').value = ymd(now - ALL_DEFAULT_DAYS * 864e5);
+}
+
 async function loadAll() {
+    applyDefaultAllRange_();
     $('allTable').innerHTML = `<tr><td colspan="9">${loadingHtml()}</td></tr>`;
     $('allCards').innerHTML = loadingHtml();
     try {
@@ -2344,6 +2372,10 @@ function showServerInfo() {
 }
 
 document.querySelectorAll('[data-srv]').forEach(el => el.addEventListener('click', showServerInfo));
+// PWA: ลงทะเบียน Service Worker (ต้องเปิดผ่าน https หรือ localhost)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 window.addEventListener('online', () => { pingServer(); refreshBadges(); });
 window.addEventListener('offline', () => setServer({ state: 'down', latency: null, error: 'อุปกรณ์ไม่ได้เชื่อมต่ออินเทอร์เน็ต', lastCheck: new Date() }));
 document.addEventListener('visibilitychange', refreshOnForeground);   // มือถือ: เปิดแอปกลับมาจากพื้นหลัง → ดึงงานใหม่ทันที
