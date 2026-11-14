@@ -320,6 +320,17 @@
                     <tbody id="skTable"></tbody>
                 </table>
             </div>
+            <h3 class="font-semibold pt-2">KPI ช่าง — ทุกคนที่ได้รับมอบหมายงาน</h3>
+            <div id="skTechSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+            <div class="bg-white rounded-xl shadow-sm p-4 overflow-x-auto">
+                <table class="w-full text-sm min-w-[860px]">
+                    <thead class="text-left text-xs text-slate-500 border-b"><tr>
+                        <th class="p-2">ช่าง</th><th class="p-2 text-right">ได้รับมอบหมาย</th><th class="p-2 text-right">รับงานแล้ว</th>
+                        <th class="p-2 text-right">เฉลี่ยเวลารับงาน (ชม.)</th><th class="p-2 text-right">ปิดงานแล้ว</th><th class="p-2 text-right">อัตราปิดงาน</th>
+                        <th class="p-2 text-right">เฉลี่ยเวลาซ่อมเสร็จ (ชม.)</th><th class="p-2 text-right">คะแนนผู้แจ้ง</th><th class="p-2 text-right">กำลังทำ / ค้าง ณ ปัจจุบัน</th></tr></thead>
+                    <tbody id="skTechTable"></tbody>
+                </table>
+            </div>
             <p class="text-xs text-slate-500">เกณฑ์ SLA: เลือกช่างให้เสร็จภายใน <span id="skSla">-</span> ชั่วโมง นับจากวันที่ผู้จัดการส่งต่อ · ค่าเฉลี่ยในการ์ดสรุปถ่วงน้ำหนักตามจำนวนงาน · "ค้าง" = งานรอเลือกช่าง (ณ ปัจจุบัน) · "กำลังดูแล" = งานที่ช่างรับไปแล้วยังไม่ปิด</p>
         </div>
 
@@ -555,7 +566,7 @@ const NAV = [
     { id: 'jobs',      label: 'งานช่าง',           roles: ['technician', 'admin'], badge: true },
     { id: 'all',       label: 'งานซ่อมทั้งหมด',     roles: ['manager', 'admin'] },
     { id: 'kpi',       label: 'KPI ซ่อมบำรุง',       roles: ['technician', 'manager', 'admin'] },
-    { id: 'supkpi',    label: 'KPI หัวหน้าช่าง',     roles: ['supervisor', 'manager', 'admin'] },   // r27
+    { id: 'supkpi',    label: 'KPI หัวหน้า & ช่าง',  roles: ['supervisor', 'manager', 'admin'] },   // r27
     { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'supervisor', 'manager', 'admin'] },
     { id: 'expenses',  label: 'ค่าใช้จ่าย',          roles: ['admin'] },
     { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
@@ -1264,10 +1275,14 @@ async function loadSupKpi() {
     if (p && p.to) filter.dateTo = ymd(p.to);
     if (isBoss && $('skPerson').value) filter.supervisor = $('skPerson').value;
     $('skTable').innerHTML = `<tr><td colspan="12">${loadingHtml()}</td></tr>`;
+    $('skTechTable').innerHTML = `<tr><td colspan="9">${loadingHtml()}</td></tr>`;
     try {
-        renderSupKpi(await api('supervisorKpi', { filter }));
+        const [sk, tk] = await Promise.all([api('supervisorKpi', { filter }), api('technicianKpi', { filter })]);
+        renderSupKpi(sk);
+        renderTechKpi(tk);
     } catch (e) {
         $('skTable').innerHTML = `<tr><td colspan="12">${emptyHtml(e.message)}</td></tr>`;
+        $('skTechTable').innerHTML = `<tr><td colspan="9">${emptyHtml(e.message)}</td></tr>`;
     }
 }
 
@@ -1303,6 +1318,34 @@ function renderSupKpi(d) {
             <td class="p-2 text-right">${r.reassigns}</td>
             <td class="p-2 text-right">${r.pendingNow} / ${r.openNow}</td>
         </tr>`).join('') : `<tr><td colspan="12">${emptyHtml('ไม่มีข้อมูลหัวหน้าช่างในช่วงเวลานี้')}</td></tr>`;
+}
+
+function renderTechKpi(d) {
+    const rows = d.technicians || [];
+    const tot = k => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    const wavg = (key, w) => {
+        const pts = rows.filter(r => r[key] !== null && r[key] !== undefined && r[w] > 0);
+        const ws = pts.reduce((a, r) => a + r[w], 0);
+        return ws ? Math.round(pts.reduce((a, r) => a + r[key] * r[w], 0) / ws * 10) / 10 : null;
+    };
+    const acc = wavg('avgAcceptHours', 'accepted');
+    $('skTechSummary').innerHTML =
+        kpi('ช่างที่ได้รับมอบหมาย', rows.length, `งานที่มอบหมายรวม ${tot('assigned')} รายการ`, '#8b5cf6') +
+        kpi('ปิดงานแล้ว', tot('completed'), `จากที่รับไปแล้ว ${tot('accepted')} งาน`, '#10b981') +
+        kpi('เฉลี่ยเวลารับงาน', fmtHrs(acc) + (acc !== null ? ' ชม.' : ''), 'นับจากวันที่ถูกมอบหมาย', '#0ea5e9') +
+        kpi('กำลังดูแลอยู่', tot('openNow'), `กำลังทำ ${tot('inProgressNow')} งาน`, '#6366f1');
+    $('skTechTable').innerHTML = rows.length ? rows.map(r => `
+        <tr class="border-t">
+            <td class="p-2"><div class="font-medium">${esc(r.fullName)}</div><div class="text-xs text-slate-500">${esc(r.branch)}${r.supervisors ? ' · หัวหน้า: ' + esc(r.supervisors) : ''}</div></td>
+            <td class="p-2 text-right">${r.assigned}</td>
+            <td class="p-2 text-right">${r.accepted}</td>
+            <td class="p-2 text-right">${fmtHrs(r.avgAcceptHours)}</td>
+            <td class="p-2 text-right">${r.completed}</td>
+            <td class="p-2 text-right">${fmtPct(r.completionRate)}</td>
+            <td class="p-2 text-right">${fmtHrs(r.avgResolveHours)}</td>
+            <td class="p-2 text-right">${r.avgRating !== null ? `★ ${r.avgRating} <span class="text-xs text-slate-400">(${r.ratingCount})</span>` : '-'}</td>
+            <td class="p-2 text-right">${r.inProgressNow} / ${r.openNow}</td>
+        </tr>`).join('') : `<tr><td colspan="9">${emptyHtml('ยังไม่มีช่างที่ได้รับมอบหมายในช่วงเวลานี้')}</td></tr>`;
 }
 
 async function loadAll() {
@@ -1736,7 +1779,8 @@ async function openTicket(id) {
         const supOwner = (t.Supervisor || '').toLowerCase() === currentUser.username.toLowerCase();
         if (hasRole('supervisor', 'admin') && (supOwner || hasRole('admin')) && ['Dispatched', 'Approved', 'In Progress'].includes(t.Status)) {
             const techs = (await getTechnicians()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
-            techOpts = techs.map(x => `<option value="${esc(x.username)}" ${x.username === t.Technician ? 'selected' : ''}>${esc(x.fullName)} (${esc(x.branch)})</option>`).join('');
+            const teamNames = (t.team || []).map(m => m.username.toLowerCase());
+            techOpts = techs.map(x => `<label class="flex items-center gap-2 text-sm py-1 cursor-pointer"><input type="checkbox" class="actTech w-4 h-4" value="${esc(x.username)}" ${teamNames.includes(x.username.toLowerCase()) ? 'checked' : ''}> ${esc(x.fullName)} <span class="text-xs text-slate-400">(${esc(x.branch)})</span></label>`).join('') || '<p class="text-sm text-rose-600">ไม่มีช่างในสาขานี้</p>';
         }
         const row = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div class="text-sm">${v}</div></div>`;
         openModal(`
@@ -1764,7 +1808,7 @@ async function openTicket(id) {
                 ${row('หมวดหมู่', esc(t.Category))}${row('วันที่แจ้ง', fmtDate(t.CreatedAt))}
                 ${t.ApprovedBy ? row(t.Status === 'Rejected' ? 'ไม่อนุมัติโดย' : 'อนุมัติโดย', esc(t.ApprovedBy) + ' · ' + fmtDate(t.ApprovedAt)) : ''}
                 ${t.SupervisorName ? row('หัวหน้าช่างผู้ดูแล', esc(t.SupervisorName) + (t.DispatchedAt ? ' · ' + fmtDate(t.DispatchedAt) : '')) : ''}
-                ${t.TechnicianName ? row('ช่างผู้รับผิดชอบ', esc(t.TechnicianName)) : ''}
+                ${t.TechnicianName ? row('ทีมช่างที่รับผิดชอบ', esc(t.TechnicianName)) : ''}
                 ${t.CompletedAt ? row('ปิดงานเมื่อ', fmtDate(t.CompletedAt)) : ''}
                 ${t.Cost !== undefined ? row('ค่าใช้จ่ายในการซ่อม', t.Cost === '' ? '-' : '฿' + Number(t.Cost).toLocaleString('th-TH', { minimumFractionDigits: 2 })) : ''}
             </div>
@@ -1795,7 +1839,8 @@ async function openTicket(id) {
 function actionPanel(t, techOpts, supOpts) {
     const me = currentUser.username;
     const blocks = [];
-    const isMine = (t.Technician || '').toLowerCase() === me.toLowerCase();
+    const team = t.team || [];
+    const isMine = team.some(m => m.username.toLowerCase() === me.toLowerCase());
     const isSupOwner = (t.Supervisor || '').toLowerCase() === me.toLowerCase();
 
     if (hasRole('manager', 'admin') && t.Status === 'Pending') {
@@ -1821,14 +1866,12 @@ function actionPanel(t, techOpts, supOpts) {
     if (techOpts && ['Dispatched', 'Approved', 'In Progress'].includes(t.Status) && (isSupOwner || hasRole('admin'))) {
         const first = t.Status === 'Dispatched';
         blocks.push(`
-            <h4 class="font-semibold text-sm">${first ? 'เลือกช่างที่จะปฏิบัติงาน (หัวหน้าช่าง)' : 'เปลี่ยนช่าง (หัวหน้าช่าง)'}</h4>
-            ${first ? '<p class="text-xs text-slate-500 -mt-2">เลือกช่างแล้ว งานจะไปอยู่ที่ช่างเพื่อกดรับงานต่อ</p>' : ''}
-            <div class="flex gap-2">
-                <select id="actAssign" class="inp"><option value="">-- เลือกช่าง --</option>${techOpts}</select>
-                <button class="btn bg-sky-800 hover:bg-sky-900 text-white whitespace-nowrap" onclick="doAction(this,'assignTechnician','${esc(t.TicketID)}')">${first ? 'มอบหมายช่าง' : 'เปลี่ยนช่าง'}</button>
-            </div>`);
+            <h4 class="font-semibold text-sm">${first ? 'มอบหมายช่าง (หัวหน้าช่าง) — เลือกได้หลายคน' : 'แก้ไขทีมช่าง (หัวหน้าช่าง)'}</h4>
+            <p class="text-xs text-slate-500 -mt-2">${first ? 'ติ๊กช่างที่จะปฏิบัติงาน · ช่างคนแรกในรายการเป็นผู้รับผิดชอบหลัก · ช่างทุกคนในทีมกดรับงานและอัปเดตได้' : 'ติ๊กเพิ่มหรือเอาออกจากทีม · ช่างที่ถูกเอาออกจะไม่เห็นงานนี้อีก'}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-48 overflow-y-auto border rounded-lg p-2">${techOpts}</div>
+            <button class="btn w-full bg-sky-800 hover:bg-sky-900 text-white" onclick="doAction(this,'assignTechnician','${esc(t.TicketID)}')">${first ? 'มอบหมายช่าง' : 'บันทึกทีมช่าง'}</button>`);
     }
-    if (hasRole('technician', 'admin') && t.Status === 'Approved' && (!t.Technician || isMine || hasRole('admin'))) {
+    if (hasRole('technician', 'admin') && t.Status === 'Approved' && (!team.length || isMine || hasRole('admin'))) {
         blocks.push(`
             <h4 class="font-semibold text-sm">รับงานซ่อม</h4>
             <textarea id="actNote" rows="2" class="inp" placeholder="หมายเหตุ เช่น จะเข้าไปดูหน้างานช่วงบ่าย (ไม่บังคับ)"></textarea>
@@ -1862,8 +1905,8 @@ async function doAction(btn, action, ticketId) {
         payload.signature = sigState.toDataURL();
     }
     if (action === 'assignTechnician') {
-        payload.technician = $('actAssign').value;
-        if (!payload.technician) { toast('กรุณาเลือกช่าง', 'err'); return; }
+        payload.technicians = [...document.querySelectorAll('.actTech:checked')].map(c => c.value);
+        if (!payload.technicians.length) { toast('กรุณาเลือกช่างอย่างน้อย 1 คน', 'err'); return; }
     }
     if (action === 'rejectTicket' && !payload.note.trim()) { toast('กรุณาระบุเหตุผลที่ไม่อนุมัติ', 'err'); $('actNote').focus(); return; }
     if (action === 'updateProgress' && !payload.note.trim()) { toast('กรุณาระบุความคืบหน้า', 'err'); $('actNote').focus(); return; }
