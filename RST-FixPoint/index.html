@@ -815,6 +815,7 @@ $('loginForm').addEventListener('submit', async (e) => {
         store(LS_USER, JSON.stringify(r.user));
         $('loginPass').value = '';
         await startApp(r.user, r.branches);
+        oneSignalRequestPermission_();   // r31: ขอสิทธิ์แจ้งเตือนหลังล็อกอินด้วยตนเอง (มี user gesture)
     } catch (err) {
         $('loginError').textContent = err.message;
         $('loginError').classList.remove('hidden');
@@ -835,7 +836,7 @@ function logout(expired) {
     if (token && !expired) api('logout').catch(() => {});
     store(LS_TOKEN, null);
     store(LS_USER, null);
-    oneSignalRun_(async (OneSignal) => { try { await OneSignal.logout(); } catch (e) { /* ignore */ } });   // r30
+    oneSignalRun_(async (OneSignal) => { try { await OneSignal.logout(); } catch (e) { /* ignore */ } });   // r30/r31: ตัดการผูกอุปกรณ์กับผู้ใช้เดิม
     currentUser = null;
     lastCounts = null;                 // รีเซ็ตการตรวจงานใหม่ของผู้ใช้เดิม
     applyAppBadge(0);                  // ล้างจุดแจ้งเตือนที่ไอคอนแอป
@@ -881,13 +882,28 @@ async function startApp(user, preBranches) {
     const first = hasRole('manager', 'admin') ? 'dashboard' : hasRole('supervisor') ? 'dispatch' : hasRole('technician') ? 'jobs' : 'new';
     switchPage(first);
     refreshBadges();
-    // r30: ผูกอุปกรณ์กับบัญชี (external_id = username ตัวพิมพ์เล็ก) + Tags + ขอสิทธิ์แจ้งเตือน
+    // r31: ผูกอุปกรณ์กับบัญชี (external_id = username ตัวพิมพ์เล็ก) + Tags — ทำทุกครั้งที่แอปพร้อมใช้งาน (รวมกรณี session ค้างไว้)
+    oneSignalBindUser_(user);
+}
+
+/* r31: ผูกตัวตน OneSignal กับผู้ใช้ปัจจุบัน (ไม่ขอสิทธิ์ที่นี่ — การขอสิทธิ์อยู่ใน oneSignalRequestPermission_) */
+function oneSignalBindUser_(user) {
     oneSignalRun_(async (OneSignal) => {
         try {
             await OneSignal.login(String(user.username).toLowerCase());
             await OneSignal.User.addTags({ role: String(user.role || ''), branch: String(user.branch || 'ALL') });
-            await OneSignal.Notifications.requestPermission();
-        } catch (e) { console.warn('OneSignal:', e); }
+        } catch (e) { console.warn('OneSignal login:', e); }
+    });
+}
+
+/* r31: ขอสิทธิ์แจ้งเตือน — เรียกเฉพาะตอนผู้ใช้กดล็อกอินเอง และยังไม่เคยตอบ (default) เพื่อไม่ให้ popup ขึ้นซ้ำ/ตอนเปิดแอปอัตโนมัติ */
+function oneSignalRequestPermission_() {
+    try {
+        if (!('Notification' in window) || Notification.permission !== 'default') return;
+    } catch (e) { return; }
+    oneSignalRun_(async (OneSignal) => {
+        try { await OneSignal.Notifications.requestPermission(); }
+        catch (e) { console.warn('OneSignal permission:', e); }
     });
 }
 
@@ -2870,10 +2886,18 @@ window.addEventListener('unhandledrejection', e => {
     if (!token || !cached) return;
     try {
         const r = await api('me');
-        store(LS_USER, JSON.stringify(r.user)); 
+        store(LS_USER, JSON.stringify(r.user));
         await startApp(r.user, r.branches);
     } catch (e) {
-        /* token หมดอายุ -> อยู่หน้า login */ 
+        // r31: AUTH (token หมดอายุ) → apiOnce เรียก logout(true) และลบ token ไปแล้ว → ค้างอยู่หน้า login
+        // ถ้า token ยังอยู่ แปลว่าเป็นข้อผิดพลาดชั่วคราว (เน็ตหลุด/Server ช้า) → เปิดแอปด้วยข้อมูลเดิม แล้วแจ้งเตือนเล็กน้อย
+        if (load(LS_TOKEN)) {
+            try {
+                const u = JSON.parse(cached);
+                await startApp(u, null);
+                toast('เชื่อมต่อ Server ไม่ได้ชั่วคราว — ใช้ข้อมูลเดิมก่อน', 'warn');
+            } catch (_) { /* ปล่อยให้ผู้ใช้ล็อกอินใหม่ */ }
+        }
     }
 })();
 </script>
