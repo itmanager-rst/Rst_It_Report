@@ -10,6 +10,21 @@
     <meta name="apple-mobile-web-app-title" content="FixPoint">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <!-- r30: OneSignal Web Push SDK v16 — แจ้งเตือนเข้ามือถือแบบ Real-time แม้ปิดแอปไปแล้ว -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+        const ONESIGNAL_APP_ID = "2287f782-fd2d-491e-aad0-c392fa94772d";   // OneSignal App ID
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        if (!ONESIGNAL_APP_ID.startsWith('YOUR_')) {
+            OneSignalDeferred.push(async function (OneSignal) {
+                await OneSignal.init({
+                    appId: ONESIGNAL_APP_ID,
+                    allowLocalhostAsSecureOrigin: true,   // เปิดทดสอบบน VS Code Live Server (localhost)
+                    notifyButton: { enable: false }
+                });
+            });
+        }
+    </script>
     <title>RST FixPoint - ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -808,11 +823,19 @@ $('loginForm').addEventListener('submit', async (e) => {
     }
 });
 
+/* r30: OneSignal — เรียกใช้ได้เมื่อตั้งค่า APP ID แล้วเท่านั้น */
+function oneSignalRun_(fn) {
+    if (typeof ONESIGNAL_APP_ID === 'undefined' || ONESIGNAL_APP_ID.startsWith('YOUR_')) return;
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(fn);
+}
+
 function logout(expired) {
     const token = load(LS_TOKEN);
     if (token && !expired) api('logout').catch(() => {});
     store(LS_TOKEN, null);
     store(LS_USER, null);
+    oneSignalRun_(async (OneSignal) => { try { await OneSignal.logout(); } catch (e) { /* ignore */ } });   // r30
     currentUser = null;
     lastCounts = null;                 // รีเซ็ตการตรวจงานใหม่ของผู้ใช้เดิม
     applyAppBadge(0);                  // ล้างจุดแจ้งเตือนที่ไอคอนแอป
@@ -858,6 +881,14 @@ async function startApp(user, preBranches) {
     const first = hasRole('manager', 'admin') ? 'dashboard' : hasRole('supervisor') ? 'dispatch' : hasRole('technician') ? 'jobs' : 'new';
     switchPage(first);
     refreshBadges();
+    // r30: ผูกอุปกรณ์กับบัญชี (external_id = username ตัวพิมพ์เล็ก) + Tags + ขอสิทธิ์แจ้งเตือน
+    oneSignalRun_(async (OneSignal) => {
+        try {
+            await OneSignal.login(String(user.username).toLowerCase());
+            await OneSignal.User.addTags({ role: String(user.role || ''), branch: String(user.branch || 'ALL') });
+            await OneSignal.Notifications.requestPermission();
+        } catch (e) { console.warn('OneSignal:', e); }
+    });
 }
 
 // ---------------- Navigation ----------------
@@ -2372,10 +2403,6 @@ function showServerInfo() {
 }
 
 document.querySelectorAll('[data-srv]').forEach(el => el.addEventListener('click', showServerInfo));
-// PWA: ลงทะเบียน Service Worker (ต้องเปิดผ่าน https หรือ localhost)
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
-}
 window.addEventListener('online', () => { pingServer(); refreshBadges(); });
 window.addEventListener('offline', () => setServer({ state: 'down', latency: null, error: 'อุปกรณ์ไม่ได้เชื่อมต่ออินเทอร์เน็ต', lastCheck: new Date() }));
 document.addEventListener('visibilitychange', refreshOnForeground);   // มือถือ: เปิดแอปกลับมาจากพื้นหลัง → ดึงงานใหม่ทันที

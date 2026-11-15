@@ -2,8 +2,10 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r29-2026-11-14-team-kpi
+ * CODE_VERSION: r30-2026-11-15-push
  *
+ *  - r30: [Web Push] แจ้งเตือนผ่าน OneSignal (REST API) ถึงมือถือแม้ปิดแอป — สร้างงานใหม่ → manager/admin สาขา,
+ *         อนุมัติ → หัวหน้าช่าง, มอบหมายช่าง → ช่างทุกคนในทีม, ปิดงาน → ผู้แจ้งซ่อม (ตั้งค่าด้วย setupOneSignalKeys)
  *  - r29: [ทีมช่าง] หัวหน้าช่างมอบหมายงานให้ช่างได้หลายคน (คอลัมน์ Team = JSON) • ช่างคนใดในทีมกดรับ/อัปเดต/ปิดงานได้
  *         • [KPI ช่าง] technicianKpi: KPI ของช่างทุกคนที่ได้รับมอบหมาย (ได้รับมอบหมาย / รับงาน / ปิดงาน / เวลา / คะแนน)
  *  - r28: [ลายเซ็นผู้แจ้ง] แบบฟอร์มแจ้งซ่อมต้องเซ็นลายเซ็นผู้แจ้ง บันทึกเป็น RequesterSignURL และพิมพ์ในช่อง "ผู้แจ้งซ่อม"
@@ -59,7 +61,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r29-2026-11-14-team-kpi';
+const CODE_VERSION = 'r30-2026-11-15-push';
 
 // r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
 const SUP_ASSIGN_SLA_HOURS = 4;
@@ -744,6 +746,76 @@ function removePhotoPatch_(t, fileIds) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// r30: Web Push แจ้งเตือนผ่าน OneSignal (REST API)
+//   ผู้ใช้ถูกผูกกับ OneSignal ด้วย external_id = username (ตัวพิมพ์เล็ก) ตอน login ที่หน้าเว็บ
+// ---------------------------------------------------------------------------
+const ONESIGNAL_PROP_APP_ID = 'ONESIGNAL_APP_ID';
+const ONESIGNAL_PROP_REST_KEY = 'ONESIGNAL_REST_KEY';
+const ONESIGNAL_PROP_APP_URL = 'APP_URL';
+
+/** ตั้งค่า OneSignal — รันฟังก์ชันนี้ "1 ครั้ง" จาก Apps Script editor หลังแก้ APP_ID / APP_URL
+ *  REST API Key ไม่ได้เก็บในโค้ด: ให้ตั้งเองที่ Project Settings > Script Properties
+ *  โดยเพิ่ม Property ชื่อ ONESIGNAL_REST_KEY = (ค่า REST API Key จาก OneSignal) */
+function setupOneSignalKeys() {
+  const APP_ID = '2287f782-fd2d-491e-aad0-c392fa94772d';  // OneSignal > Settings > Keys & IDs > OneSignal App ID
+  const APP_URL = 'https://your-domain.example/index.html'; // ลิงก์ที่เปิดเมื่อกดแจ้งเตือน (เว้นว่างได้)
+  PropertiesService.getScriptProperties().setProperties({
+    [ONESIGNAL_PROP_APP_ID]: APP_ID,
+    [ONESIGNAL_PROP_APP_URL]: APP_URL
+  });
+  Logger.log('✅ บันทึกค่า OneSignal ลง ScriptProperties แล้ว (ลบค่าคีย์ออกจากโค้ดได้เลย)');
+}
+
+/**
+ * ส่ง Push หาผู้ใช้ตาม username (external_id). ไม่ throw — ล้มเหลวก็ไม่กระทบการทำงานหลัก
+ * @param {string[]} usernames  ชื่อผู้ใช้ปลายทาง
+ * @param {string} title        หัวข้อแจ้งเตือน
+ * @param {string} message      เนื้อหาแจ้งเตือน
+ * @param {string} ticketId     รหัสงาน (ส่งไปกับ data)
+ */
+function sendPushToUsers_(usernames, title, message, ticketId) {
+  try {
+    const ids = [...new Set((usernames || []).map(x => String(x || '').trim().toLowerCase()).filter(Boolean))];
+    if (!ids.length) return;
+    const props = PropertiesService.getScriptProperties();
+    const appId = props.getProperty(ONESIGNAL_PROP_APP_ID);
+    const restKey = props.getProperty(ONESIGNAL_PROP_REST_KEY);
+    if (!appId || !restKey) return;                       // ยังไม่ได้ตั้งค่า OneSignal → ข้าม
+    const payload = {
+      app_id: appId,
+      target_channel: 'push',
+      include_aliases: { external_id: ids },
+      headings: { en: String(title) },
+      contents: { en: String(message) },
+      data: { ticketId: String(ticketId || '') },
+      url: props.getProperty(ONESIGNAL_PROP_APP_URL) || undefined
+    };
+    const res = UrlFetchApp.fetch('https://api.onesignal.com/notifications', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Key ' + restKey },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) Logger.log('OneSignal ' + res.getResponseCode() + ': ' + res.getContentText());
+  } catch (e) {
+    Logger.log('sendPushToUsers_ error: ' + e);
+  }
+}
+
+/** รัน fn แล้วกลืนข้อผิดพลาด (ใช้ครอบการแจ้งเตือนทุกจุด) */
+function notifySafe_(fn) {
+  try { fn(); } catch (e) { Logger.log('notify error: ' + e); }
+}
+
+/** username ของ manager/admin ที่ดูแลสาขานี้ (admin / สาขา ALL เห็นทุกสาขา) */
+function managersOfBranch_(branch) {
+  return readAll_(SHEETS.USERS)
+    .filter(x => MGR.indexOf(String(x.Role)) > -1 && isActive_(x.Active) && inScope_(x, branch))
+    .map(x => String(x.Username));
+}
+
 function createTicket_(u, req) {
   const d = req.ticket || {};
   ['title', 'location', 'category'].forEach(k => {
@@ -784,6 +856,8 @@ function createTicket_(u, req) {
     RequesterSignURL: reqSig.url
   }, patch));
   addLog_(id, 'สร้างรายการแจ้งซ่อม', u, '', ST.PENDING, d.title + (saved.urls.length > 1 ? ' (รูป ' + saved.urls.length + ' รูป)' : ''));
+  // r30: แจ้งเตือนผู้จัดการ/admin ของสาขานี้
+  notifySafe_(() => sendPushToUsers_(managersOfBranch_(branch), 'มีงานแจ้งซ่อมใหม่ ' + id, branch + ' • ' + d.title + ' (' + d.category + ')', id));
 
   return { ticketId: id, message: 'บันทึกข้อมูลแจ้งซ่อมเรียบร้อยแล้ว', warning: saved.warning };
 }
@@ -1118,7 +1192,10 @@ function approveTicket_(u, req) {
     Supervisor: sup.Username, SupervisorName: supName, DispatchedAt: now
   };
   const note = [req.note, 'ส่งต่อหัวหน้าช่าง: ' + supName].filter(String).join(' | ');
-  return transition_(u, t, ST.DISPATCHED, 'อนุมัติงานซ่อม', note, extra);
+  const res = transition_(u, t, ST.DISPATCHED, 'อนุมัติงานซ่อม', note, extra);
+  // r30: แจ้งหัวหน้าช่างที่ได้รับงานต่อ
+  notifySafe_(() => sendPushToUsers_([sup.Username], 'มีงานซ่อมรอคุณมอบหมายช่าง ' + t.TicketID, t.Title + ' • ' + t.Branch, t.TicketID));
+  return res;
 }
 
 function rejectTicket_(u, req) {
@@ -1185,11 +1262,16 @@ function assignTechnician_(u, req) {
   if (!String(t.TechAssignedAt || '')) extra.TechAssignedAt = now;   // ใช้วัด KPI ความเร็วในการเลือกช่าง (ครั้งแรก)
   const action = 'มอบหมายช่าง (หัวหน้าช่าง)';
 
+  // r30: แจ้งเตือนช่างทุกคนในทีม
+  const notifyTeam = () => notifySafe_(() => sendPushToUsers_(team.map(m => m.u), 'คุณได้รับมอบหมายงานซ่อม ' + t.TicketID, t.Title + ' • ' + t.Branch, t.TicketID));
   if (t.Status === ST.DISPATCHED) {
-    return transition_(u, t, ST.APPROVED, action, note, extra);      // ช่างยังไม่รับ → Approved รอช่างกดรับงาน
+    const res = transition_(u, t, ST.APPROVED, action, note, extra);      // ช่างยังไม่รับ → Approved รอช่างกดรับงาน
+    notifyTeam();
+    return res;
   }
   updateRow_(SHEETS.TICKETS, t._row, extra);
   addLog_(t.TicketID, action, u, t.Status, t.Status, note);
+  notifyTeam();
   return { ticketId: t.TicketID, message: 'บันทึกทีมช่าง: ' + names + ' แล้ว' };
 }
 
@@ -1241,6 +1323,8 @@ function completeTicket_(u, req) {
   if (req.cost !== undefined && req.cost !== '') extra.Cost = toCost_(req.cost);
   const res = transition_(u, t, ST.COMPLETED, 'ปิดงานซ่อม (เสร็จสิ้น)', req.note, extra);
   res.warning = saved.warning;
+  // r30: แจ้งผู้แจ้งซ่อมว่างานเสร็จแล้ว
+  notifySafe_(() => sendPushToUsers_([t.Username], 'งานซ่อมของคุณเสร็จสิ้นแล้ว ' + t.TicketID, t.Title + ' • ปิดงานโดย ' + (u.FullName || u.Username), t.TicketID));
   return res;
 }
 
