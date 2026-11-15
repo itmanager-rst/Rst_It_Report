@@ -32,7 +32,7 @@
  *         • รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร • ประวัติการจัดการผู้ใช้ (ชีต UserLogs) ให้ admin ดูได้
  *         [รูปหลายรูปต่องาน] แนบได้สูงสุด 6 รูปต่อประเภท (ก่อน/หลังซ่อม) • แสดงรูปในรายการงาน • Admin เพิ่ม/ลบรูปได้
  *         [ค่าใช้จ่าย] รายงานค่าใช้จ่ายรายการ (expenseReport) กรองตามช่วงวันที่/สาขา/สถานะ สรุปตามสาขา ช่าง หมวดหมู่ เดือน
- *  - Login / Session token (CacheService, อายุ 6 ชม.)
+ *  - Login / Session token (PropertiesService, อายุ 30 วันนับจากการใช้งานล่าสุด)
  *  - Role: employee / technician / supervisor / manager / admin
  *  - สาขา (Branches) — ผู้ใช้ผูกกับสาขา, manager/technician เห็นเฉพาะสาขาตัวเอง (ยกเว้น Branch = ALL)
  *  - Workflow: Pending -> Dispatched -> Approved -> In Progress -> Completed  (หรือ Rejected / Cancelled)
@@ -61,7 +61,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r30-2026-11-15-push';
+const CODE_VERSION = 'r31-2026-11-15-session';
 
 // r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
 const SUP_ASSIGN_SLA_HOURS = 4;
@@ -78,7 +78,10 @@ const FOLDER_ID = '17LfuEDEVzi5Q7TdWgVoKuHhZJ8L-DbPw';
 const ID_FOLDER_ID = '';
 
 const TZ = 'Asia/Bangkok';
-const SESSION_SECONDS = 21600; // 6 ชม. (สูงสุดของ CacheService)
+// r31: session เก็บใน PropertiesService (ไม่หายเมื่อ CacheService ถูกล้าง) อายุ 30 วันนับจากการใช้งานล่าสุด
+const SESSION_MS = 30 * 864e5;
+const SESSION_RENEW_MS = 5 * 864e5;   // ต่ออายุเมื่อผ่านไปแล้ว 5 วัน (ลดการเขียน Properties)
+const SESSION_PREFIX = 'sess2_';
 const PW_SALT = 'RST-FixPoint-v1';
 const PW_MIN_LENGTH = 8;            // r16: รหัสผ่านใหม่ขั้นต่ำ 8 ตัวอักษร
 const LOGIN_MAX_FAILS = 5;          // r16: ใส่รหัสผิดกี่ครั้งจึงล็อก
@@ -147,7 +150,7 @@ const ADMIN = ['admin'];
 
 const ROUTES = {
   me:              { roles: ALL_ROLES, fn: (u) => ({ user: publicUser_(u), branches: getBranches_(false) }) },
-  logout:          { roles: ALL_ROLES, fn: (u, r) => { CacheService.getScriptCache().remove('sess_' + r.token); return {}; } },
+  logout:          { roles: ALL_ROLES, fn: (u, r) => { sessionDel_(r.token); return {}; } },
   changePassword:  { roles: ALL_ROLES, fn: changePassword_, write: true },
   getBranches:     { roles: ALL_ROLES, fn: () => ({ branches: getBranches_(false) }) },
   counts:          { roles: ALL_ROLES, fn: counts_ },
@@ -500,19 +503,56 @@ function login_(req) {
   updateRow_(SHEETS.USERS, u._row, patch);
 
   const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
-  CacheService.getScriptCache().put('sess_' + token, norm_(u.Username), SESSION_SECONDS);
+  sessionPut_(token, norm_(u.Username));
 
   return { token: token, user: publicUser_(u), branches: getBranches_(false), codeVersion: CODE_VERSION };
 }
 
-function getSessionUser_(token) {
+function sessionPut_(token, username) {
+  PropertiesService.getScriptProperties().setProperty(SESSION_PREFIX + token,
+    JSON.stringify({ u: username, exp: Date.now() + SESSION_MS }));
+  sessionCleanup_();
+}
+
+/** r31: ลบ session ที่หมดอายุแล้ว (ทำตอน login) */
+function sessionCleanup_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const now = Date.now();
+  Object.keys(all).forEach(k => {
+    if (k.indexOf(SESSION_PREFIX) !== 0) return;
+    try { if (JSON.parse(all[k]).exp < now) props.deleteProperty(k); }
+    catch (e) { props.deleteProperty(k); }
+  });
+}
+
+/** r31: คืน username ของ session ที่ยังใช้ได้ และต่ออายุเมื่อเกิน SESSION_RENEW_MS */
+function sessionGet_(token) {
   if (!token) return null;
-  const cache = CacheService.getScriptCache();
-  const username = cache.get('sess_' + token);
+  const props = PropertiesService.getScriptProperties();
+  const key = SESSION_PREFIX + token;
+  const raw = props.getProperty(key);
+  if (!raw) return null;
+  let s = null;
+  try { s = JSON.parse(raw); } catch (e) { s = null; }
+  const now = Date.now();
+  if (!s || !s.u || s.exp < now) { props.deleteProperty(key); return null; }
+  if (s.exp - now < SESSION_MS - SESSION_RENEW_MS) {
+    s.exp = now + SESSION_MS;
+    props.setProperty(key, JSON.stringify(s));
+  }
+  return s.u;
+}
+
+function sessionDel_(token) {
+  if (token) PropertiesService.getScriptProperties().deleteProperty(SESSION_PREFIX + token);
+}
+
+function getSessionUser_(token) {
+  const username = sessionGet_(token);
   if (!username) return null;
   const u = findUser_(username);
   if (!u || !isActive_(u.Active)) return null;
-  cache.put('sess_' + token, username, SESSION_SECONDS); // ต่ออายุ session
   u.Role = String(u.Role);
   return u;
 }
@@ -759,7 +799,7 @@ const ONESIGNAL_PROP_APP_URL = 'APP_URL';
  *  โดยเพิ่ม Property ชื่อ ONESIGNAL_REST_KEY = (ค่า REST API Key จาก OneSignal) */
 function setupOneSignalKeys() {
   const APP_ID = '2287f782-fd2d-491e-aad0-c392fa94772d';  // OneSignal > Settings > Keys & IDs > OneSignal App ID
-  const APP_URL = 'https://your-domain.example/index.html'; // ลิงก์ที่เปิดเมื่อกดแจ้งเตือน (เว้นว่างได้)
+  const APP_URL = 'https://itmanager-rst.github.io/Rst_It_Report/RST-FixPoint/index.html';  // r31: ลิงก์จริงของเว็บ เช่น https://xxx/index.html (เว้นว่าง = ไม่แนบลิงก์ตอนกดแจ้งเตือน)
   PropertiesService.getScriptProperties().setProperties({
     [ONESIGNAL_PROP_APP_ID]: APP_ID,
     [ONESIGNAL_PROP_APP_URL]: APP_URL
@@ -789,7 +829,7 @@ function sendPushToUsers_(usernames, title, message, ticketId) {
       headings: { en: String(title) },
       contents: { en: String(message) },
       data: { ticketId: String(ticketId || '') },
-      url: props.getProperty(ONESIGNAL_PROP_APP_URL) || undefined
+      url: pushUrl_(props.getProperty(ONESIGNAL_PROP_APP_URL))
     };
     const res = UrlFetchApp.fetch('https://api.onesignal.com/notifications', {
       method: 'post',
@@ -802,6 +842,12 @@ function sendPushToUsers_(usernames, title, message, ticketId) {
   } catch (e) {
     Logger.log('sendPushToUsers_ error: ' + e);
   }
+}
+
+/** r31: ใช้ APP_URL เฉพาะที่เป็นลิงก์จริง (ข้ามค่าตัวอย่าง your-domain / ค่าว่าง) */
+function pushUrl_(v) {
+  const s = String(v || '').trim();
+  return (/^https:\/\//.test(s) && s.indexOf('your-domain') === -1) ? s : undefined;
 }
 
 /** รัน fn แล้วกลืนข้อผิดพลาด (ใช้ครอบการแจ้งเตือนทุกจุด) */
