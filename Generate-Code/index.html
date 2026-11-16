@@ -16,7 +16,7 @@
     } } };
   </script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <style>
     /* ═══════════════════════════════════════════════════════════════
        🐬 WORKBENCH THEME — หน้าตาแบบ MySQL Workbench
@@ -144,13 +144,13 @@
         </div>
         <div class="p-4 space-y-2.5">
           <div class="wb-frow"><label>Connection</label>
-            <div class="inp !bg-[#e9edf1] !text-[#44505e] font-mono !text-[13.5px] truncate" x-text="IN_GAS ? 'Apps Script · google.script.run' : 'Web App · ' + GAS_URL.replace('https://','').slice(0,38) + '…'"></div></div>
+            <div class="inp !bg-[#e9edf1] !text-[#44505e] font-mono !text-[13.5px] truncate" x-text="'Server'"></div></div>
           <div class="wb-frow"><label>อีเมล</label><input class="inp" type="email" x-model="lf.email" autocomplete="username" required placeholder="name@ruamsinthaigroup.com"></div>
           <div class="wb-frow"><label>รหัสผ่าน</label><input class="inp" type="password" x-model="lf.password" autocomplete="current-password" required placeholder="••••••••"></div>
           <p x-show="loginErr" class="text-xs font-semibold text-red-600 pl-[96px]" x-text="loginErr"></p>
         </div>
         <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#e6eaef] border-t border-[#b9c2cc]">
-          <span class="text-[13px] text-gray-500" x-text="IN_GAS ? 'Mode: Apps Script' : 'Mode: External (fetch)'"></span>
+          <span class="text-[13px] text-gray-500" x-text="'Mode: Server'"></span>
           <button class="btn btn-primary !px-5" :disabled="loggingIn">
             <span x-show="loggingIn" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>เข้าสู่ระบบ</button>
         </div>
@@ -188,7 +188,7 @@
     </div>
     <div class="ml-auto flex items-center gap-2">
       <span x-show="busy" class="wb-pill"><span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>กำลังทำงาน…</span>
-      <span class="wb-pill hidden sm:inline-flex"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span x-text="IN_GAS ? 'Apps Script' : 'Web App (fetch)'"></span></span>
+      <span class="wb-pill hidden sm:inline-flex"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span x-text="'Connected'"></span></span>
     </div>
   </header>
 
@@ -217,7 +217,7 @@
         <div><span>User</span><b x-text="me.name"></b></div>
         <div><span>Email</span><b class="font-mono !text-[12.5px]" x-text="me.email || '-'"></b></div>
         <div><span>Role</span><b x-text="me.role"></b></div>
-        <div><span>Mode</span><b x-text="IN_GAS ? 'Apps Script' : 'External'"></b></div>
+        <div><span>Mode</span><b x-text="'Online'"></b></div>
       </div>
       <div class="mt-auto p-3 border-t border-[#edf0f3]">
         <button x-show="hasToken()" @click="logout()" class="btn btn-ghost w-full !text-red-700">⏻ ออกจากระบบ</button>
@@ -705,7 +705,7 @@
 
   <!-- ============ STATUS BAR ============ -->
   <footer class="wb-status">
-    <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span x-text="IN_GAS ? 'Apps Script' : 'Web App'"></span></span>
+    <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span x-text="'Connected'"></span></span>
     <span class="font-mono">master_db › <b x-text="tbl()"></b></span>
     <span class="hidden sm:inline font-mono" x-text="(parts||[]).length.toLocaleString()+' parts · '+nodes.length.toLocaleString()+' nodes'"></span>
     <span class="flex-1"></span>
@@ -1025,25 +1025,53 @@ function app() {
       for (const p of (this.parts || [])) if (p.createdAt) { const d = p.createdAt.slice(0, 10); m[d] = (m[d] || 0) + 1; }
       return Object.entries(m).sort((a, b) => a[0] < b[0] ? 1 : -1).map(([date, n]) => ({ date, n }));
     },
-    exportRows() {
-      return this.filtered().map(p => ({ 'รหัสสินค้า': p.code, 'ชื่อสินค้า': p.name, 'หมวด': p.category, 'ข้อมูลจำเพาะ': p.spec, 'หน่วย': p.unit,
-        'วันที่สร้าง': p.createdAt, 'ผู้สร้าง': p.createdBy, 'แก้ไขล่าสุด': p.updatedAt, 'ผู้แก้ไข': p.updatedBy, 'สถานะ': p.status }));
-    },
-    fileName(ext) { return 'GenerateCode_' + new Date().toLocaleDateString('sv-SE') + '.' + ext; },
+    // หัวคอลัมน์และข้อมูลแบบเดียวกับรายงานระบบเดิม (Member-All) — ใช้ทั้ง CSV และ Excel
+    EXP_HEAD: ['รหัสสินค้า', 'ชื่อสินค้า', 'ประเภทข้อมูลจำเพาะ', 'ข้อมูลจำเพาะ', 'หน่วย', 'กลุ่มสินค้า 1', 'กลุ่มสินค้า 2', 'กลุ่มสินค้า 3',
+      'ประเภทสินค้า', 'เซ็ตสินค้า', 'จัดการจำนวน', 'ราคาซื้อ', 'สถานะภาษีมูลค่าเพิ่ม ราคาซื้อ', 'ราคาขาย', 'สถานะภาษีมูลค่าเพิ่ม ราคาขาย', 'กระบวนการ'],
+    expRow(p) { const v = [p.code, p.name, p.spec || '', p.category || '', p.unit || 'pcs']; while (v.length < 16) v.push(''); return v; },
+    fileName(ext) { return 'Member-All.' + ext; },
     exportCSV() {
-      const rows = this.exportRows(); if (!rows.length) return this.toast('ไม่มีข้อมูล', true);
-      const h = Object.keys(rows[0]), esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-      const csv = '﻿' + [h.map(esc).join(','), ...rows.map(r => h.map(k => esc(r[k])).join(','))].join('\r\n');
+      const rows = this.filtered(); if (!rows.length) return this.toast('ไม่มีข้อมูล', true);
+      const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const csv = '\ufeff' + [this.EXP_HEAD, ...rows.map(p => this.expRow(p))].map(r => r.map(esc).join(',')).join('\r\n');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = this.fileName('csv'); a.click();
     },
-    exportXLSX() {
-      const rows = this.exportRows(); if (!rows.length) return this.toast('ไม่มีข้อมูล', true);
-      if (!window.XLSX) return this.exportCSV();
-      const ws = XLSX.utils.json_to_sheet(rows);
-      ws['!cols'] = [16, 60, 22, 30, 8, 18, 24, 18, 24, 10].map(w => ({ wch: w }));
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Master_Parts');
-      XLSX.writeFile(wb, this.fileName('xlsx'));
+    loadExcelJS() {
+      if (window.ExcelJS) return Promise.resolve(true);
+      const urls = ['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js', 'https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js'];
+      return urls.reduce((pr, u) => pr.then(ok => ok || new Promise(res => {
+        const sc = document.createElement('script'); sc.src = u; sc.onload = () => res(!!window.ExcelJS); sc.onerror = () => res(false); document.head.appendChild(sc);
+      })), Promise.resolve(false));
+    },
+    async exportXLSX() {
+      const rows = this.filtered(); if (!rows.length) return this.toast('ไม่มีข้อมูล', true);
+      if (!(await this.loadExcelJS())) return this.toast('โหลดตัวสร้างไฟล์ Excel ไม่สำเร็จ ลองใหม่อีกครั้ง หรือใช้ปุ่ม CSV', true);
+      const H = this.EXP_HEAD;
+      // ความกว้างคอลัมน์: กว้างพอให้หัวข้อแสดงครบบรรทัดเดียว (นับเฉพาะตัวอักษรหลัก ไม่นับสระบน/ล่าง วรรณยุกต์)
+      const vis = t => String(t).replace(/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g, '').length;
+      const W = H.map((t, i) => Math.max(vis(t) * 1.25 + 3, [16, 40, 0, 0, 7][i] || 0));
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Member-All', { views: [{ showGridLines: false }] });
+      ws.columns = W.map(w => ({ width: w }));
+      const font = { name: 'Aptos Narrow', size: 10 }, thin = { style: 'thin' };
+      ws.mergeCells('A1:P1'); ws.getRow(1).height = 15;
+      const box = (c, i) => { c.font = font; c.border = i === 0 ? { left: thin, right: thin, bottom: thin } : { right: thin, bottom: thin }; };
+      const hr = ws.getRow(2); hr.height = 18;
+      H.forEach((t, i) => { const c = hr.getCell(i + 1); c.value = t; box(c, i);
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCCCCC' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }; });
+      rows.forEach((p, k) => {
+        const r = ws.getRow(k + 3); r.height = 15;
+        const v = this.expRow(p);
+        for (let i = 0; i < 16; i++) { const c = r.getCell(i + 1); c.value = v[i] === '' ? null : v[i]; box(c, i);
+          c.alignment = { horizontal: i === 1 ? 'left' : 'center' }; }
+        r.getCell(1).numFmt = '@';
+      });
+      const buf = await wb.xlsx.writeBuffer();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      a.download = this.fileName('xlsx'); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     },
 
     // ---------------------------------------------------------- 4) update
