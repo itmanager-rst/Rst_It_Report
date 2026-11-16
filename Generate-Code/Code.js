@@ -30,7 +30,7 @@ const WIDTH = [1, 2, 2, 3, 3, 2];          // จำนวนหลักขอ�
 const CUT   = [1, 3, 5, 8, 11, 13];        // ตำแหน่งสิ้นสุดของแต่ละระดับ
 const LEVEL_NAMES = ['กลุ่มใหญ่', 'หมวดหลัก', 'หมวดย่อย', 'ขนาด/รุ่น', 'สเปก', 'วัสดุ/ผิวชุบ'];
 const ROLES = {
-  Admin:  ['view', 'generate', 'update', 'structure', 'admin'],
+  Admin:  ['view', 'generate', 'update', 'structure', 'admin', 'delete'],
   Editor: ['view', 'generate', 'update', 'structure'],
   Viewer: ['view'],
 };
@@ -73,7 +73,8 @@ function apiCall(req) {
   const ROUTES = {
     login: login, logout: logout, changePassword: changePassword,
     getInit: getInit, getStructure: getStructure, getParts: getParts, getPart: getPart, previewNext: previewNext,
-    generateCode: generateCode, updatePart: updatePart, addNode: addNode, updateNode: updateNode,
+    generateCode: generateCode, updatePart: updatePart, deletePart: deletePart,
+    addNode: addNode, updateNode: updateNode, deleteNode: deleteNode,
     getUsers: getUsers, saveUser: saveUser, deleteUser: deleteUser, getLogs: getLogs,
   };
   API_USER_ = null; TOKEN_EMAIL_ = '';
@@ -334,6 +335,28 @@ function updateNode(p) {
   });
 }
 
+/**
+ * ลบหัวข้อ {prefix} — เฉพาะ Admin
+ * ป้องกันข้อมูลเสีย: ลบได้เมื่อ "ไม่มีหัวข้อย่อย" และ "ไม่มีรหัสสินค้าที่ใช้หัวข้อนี้"
+ * (ถ้ายังมีการใช้งานอยู่ ให้ใช้สถานะ Inactive แทน)
+ */
+function deleteNode(p) {
+  const m = need_('delete');
+  return withLock_(() => {
+    const prefix = str_((p && p.prefix) || p).toUpperCase();
+    const nodes = structRaw_();
+    const node = nodes.find(n => n.prefix === prefix);
+    if (!node) throw new Error('ไม่พบหัวข้อ ' + prefix);
+    const kids = nodes.filter(n => n.parent === prefix).length;
+    if (kids) throw new Error('ลบไม่ได้: ' + prefix + ' ยังมีหัวข้อย่อย ' + kids + ' รายการ (ลบหัวข้อย่อยก่อน หรือตั้งเป็น Inactive แทน)');
+    const used = partCodes_().filter(c => c.indexOf(prefix) === 0).length;
+    if (used) throw new Error('ลบไม่ได้: มีรหัสสินค้าใช้หัวข้อนี้อยู่ ' + used + ' รายการ (ตั้งเป็น Inactive แทน)');
+    sheet_(SH.STRUCT).deleteRow(node._row);
+    log_(m.email, 'DELETE_NODE', prefix, 'L' + node.level + ': ' + node.label);
+    return prefix;
+  });
+}
+
 // ============================ PARTS ============================
 function partObj_(r) {
   return {
@@ -444,6 +467,26 @@ function updatePart(p) {
     if (before.status !== (p.status === 'Inactive' ? 'Inactive' : 'Active')) diff.push('status → ' + p.status);
     log_(m.email, 'UPDATE', code, diff.join(' | ') || 'no change');
     return getPart(code);
+  });
+}
+
+/**
+ * ลบรหัสสินค้า {code} — เฉพาะ Admin
+ * ลบแถวออกจาก Master_Parts และลบหัวข้อระดับ 6 ที่คู่กันใน Code_Structure
+ * ข้อมูลเดิมทั้งแถวจะถูกเก็บไว้ใน Users_Log (Action = DELETE_PART) เผื่อต้องกู้คืน
+ */
+function deletePart(p) {
+  const m = need_('delete');
+  return withLock_(() => {
+    const code = str_((p && p.code) || p).toUpperCase();
+    const r = read_(SH.PARTS).find(x => str_(x.PartCode).toUpperCase() === code);
+    if (!r) throw new Error('ไม่พบรหัส ' + code);
+    const info = partObj_(r);
+    sheet_(SH.PARTS).deleteRow(r._row);
+    const node = structRaw_().find(n => n.level === 6 && n.prefix === code);
+    if (node) sheet_(SH.STRUCT).deleteRow(node._row);
+    log_(m.email, 'DELETE_PART', code, JSON.stringify(info));
+    return code;
   });
 }
 

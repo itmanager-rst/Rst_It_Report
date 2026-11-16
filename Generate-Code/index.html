@@ -46,6 +46,8 @@
     .btn-green{background:linear-gradient(#22a06b,#138a57);border-color:#0f7046;color:#fff}.btn-green:hover:not(:disabled){background:linear-gradient(#1d9362,#0f7a4c)}
     .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;border-radius:3px;color:#5b6776;border:1px solid transparent}
     .icon-btn:hover{background:linear-gradient(#fff,#e9edf1);border-color:#aab4bf;color:var(--wb-accent)}
+    .icon-btn.danger:hover{background:#fef2f2;border-color:#fca5a5;color:#dc2626}
+    .btn-red{background:#fff;border:1px solid #f1a1a1;color:#c62828}.btn-red:hover:not(:disabled){background:#fef2f2;border-color:#dc2626}
     .lbl{font-size:13.5px;font-weight:600;color:#2e3a48;margin-bottom:.25rem;display:block}
     .seg-0{background:#1d3a70;color:#fff}.seg-1{background:#1d63e0;color:#fff}.seg-2{background:#0ea5e9;color:#fff}
     .seg-3{background:#10b981;color:#fff}.seg-4{background:#f59e0b;color:#fff}.seg-5{background:#ef4444;color:#fff}
@@ -505,7 +507,7 @@
                 <th class="cursor-pointer select-none hover:text-brand-700" @click="sortBy(c.k)">
                   <span x-text="c.t"></span><span x-show="sortKey===c.k" x-text="sortDir>0?' ▲':' ▼'"></span></th>
               </template>
-              <th class="w-10"></th>
+              <th class="w-20 !text-center">จัดการ</th>
             </tr>
           </thead>
           <tbody class="divide-y">
@@ -520,7 +522,7 @@
                 <td class="px-3 py-2" x-text="p.unit"></td>
                 <td class="px-3 py-2 whitespace-nowrap text-gray-600" x-text="p.createdAt ? p.createdAt.slice(0,16) : '–'"></td>
                 <td class="px-3 py-2 text-gray-600" x-text="p.createdBy"></td>
-                <td class="!py-0.5 text-center"><button x-show="can('update')" class="icon-btn" title="แก้ไข" @click="openEdit(p)" x-html="I.pencil"></button></td>
+                <td class="!py-0.5 text-center whitespace-nowrap"><button x-show="can('update')" class="icon-btn" title="แก้ไข" @click="openEdit(p)" x-html="I.pencil"></button><button x-show="can('delete')" class="icon-btn danger" title="ลบ" @click="delPart(p)" x-html="I.trash"></button></td>
               </tr>
             </template>
           </tbody>
@@ -572,30 +574,33 @@
   <template x-if="can('admin')">
     <div class="grid lg:grid-cols-5 gap-4">
       <div class="lg:col-span-3 card">
-        <div class="wb-head"><span>▦ Users</span><span class="sub">ผู้ใช้งานและสิทธิ์</span></div>
+        <div class="wb-head"><span>▦ Users</span><span class="sub" x-text="uEditing ? 'กำลังแก้ไข: '+uform.email : 'ผู้ใช้งานและสิทธิ์ · เพิ่มผู้ใช้ใหม่'"></span></div>
         <div class="p-3 grid sm:grid-cols-12 gap-3 items-end border-b border-[#b9c2cc] bg-[#f3f5f7]">
-          <div class="sm:col-span-4"><label class="lbl">อีเมล</label><input class="inp" x-model="uform.email" placeholder="name@ruamsinthaigroup.com"></div>
+          <div class="sm:col-span-4"><label class="lbl">อีเมล</label><input class="inp" x-model="uform.email" :disabled="uEditing" placeholder="name@ruamsinthaigroup.com"></div>
           <div class="sm:col-span-3"><label class="lbl">ชื่อ</label><input class="inp" x-model="uform.name"></div>
           <div class="sm:col-span-5"><label class="lbl">รหัสผ่าน (ว่าง = ไม่เปลี่ยน)</label><input class="inp" type="password" autocomplete="new-password" x-model="uform.password" placeholder="อย่างน้อย 6 ตัวอักษร"></div>
-          <div class="sm:col-span-2"><label class="lbl">สิทธิ์</label><select class="inp" x-model="uform.role"><template x-for="r in roles"><option x-text="r"></option></template></select></div>
+          <div class="sm:col-span-2"><label class="lbl">สิทธิ์</label><select class="inp" x-model="uform.role"><template x-for="r in roles"><option x-text="r" :selected="r===uform.role"></option></template></select></div>
           <label class="sm:col-span-1 flex items-center gap-1 text-sm h-[42px]"><input type="checkbox" x-model="uform.active" class="accent-brand-600">ใช้งาน</label>
-          <button class="sm:col-span-2 btn btn-primary" @click="saveUser()">บันทึก</button>
+          <div class="sm:col-span-3 flex gap-1">
+            <button class="btn btn-primary flex-1" :disabled="busy>0" @click="saveUser()" x-text="uEditing ? '💾 บันทึกการแก้ไข' : '＋ เพิ่มผู้ใช้'"></button>
+            <button x-show="uEditing" class="btn btn-ghost !px-2" @click="resetUser()" title="ยกเลิก">✕</button>
+          </div>
         </div>
         <div class="overflow-auto"><table class="wb-grid w-full text-[14.5px]">
-          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th class="!text-center">สถานะ</th><th class="!text-center">รหัสผ่าน</th><th></th></tr></thead>
+          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th class="!text-center">สถานะ</th><th class="!text-center">รหัสผ่าน</th><th class="!text-center">จัดการ</th></tr></thead>
           <tbody class="divide-y">
-            <template x-for="u in users" :key="u.email"><tr>
+            <template x-for="u in users" :key="u.email"><tr :class="uEditing && uform.email===u.email ? 'bg-amber-50' : ''">
               <td class="px-3 py-2" x-text="u.email"></td><td class="px-3 py-2" x-text="u.name"></td>
               <td class="px-3 py-2"><span class="text-xs px-2 py-0.5 rounded-full" :class="{'bg-red-100 text-red-700':u.role==='Admin','bg-blue-100 text-blue-700':u.role==='Editor','bg-gray-100 text-gray-600':u.role==='Viewer'}" x-text="u.role"></span></td>
               <td class="px-3 py-2 text-center"><span :class="u.active?'text-emerald-600':'text-gray-400'" x-text="u.active?'ใช้งาน':'ปิด'"></span></td>
               <td class="px-3 py-2 text-center text-xs" :class="u.hasPassword?'text-emerald-600':'text-gray-400'" x-text="u.hasPassword?'ตั้งแล้ว':'ยังไม่ตั้ง'"></td>
               <td class="!py-0.5 whitespace-nowrap text-right">
-                <button class="icon-btn" @click="uform={...u, password:''}" x-html="I.pencil"></button>
-                <button class="icon-btn hover:!text-red-600" @click="delUser(u.email)" x-html="I.trash"></button></td>
+                <button class="icon-btn" title="แก้ไข" @click="uform={...u, password:''}; uEditing=true" x-html="I.pencil"></button>
+                <button class="icon-btn danger" title="ลบ" x-show="u.email!==me.email" @click="delUser(u.email)" x-html="I.trash"></button></td>
             </tr></template>
           </tbody></table></div>
         <div class="p-4 text-xs text-gray-500 border-t space-y-1">
-          <div><b>Admin</b> ทำได้ทุกอย่าง · <b>Editor</b> สร้าง/แก้ไขรหัส และจัดการโครงสร้าง · <b>Viewer</b> ดูรายงานอย่างเดียว</div>
+          <div><b>Admin</b> ทำได้ทุกอย่าง รวมถึง <u>ลบ</u> รหัสสินค้า / หัวข้อโครงสร้าง / ผู้ใช้ · <b>Editor</b> สร้าง/แก้ไขรหัส และเพิ่ม/แก้ไขโครงสร้าง (ลบไม่ได้) · <b>Viewer</b> ดูรายงานอย่างเดียว</div>
           <div>ผู้ที่ไม่อยู่ในรายชื่อจะได้สิทธิ์ตาม <code>CFG.DEFAULT_ROLE</code> ใน Code.gs</div>
         </div>
       </div>
@@ -650,8 +655,9 @@
           </div>
           <div class="text-xs text-gray-500">สร้าง: <span x-text="edit.createdAt||'–'"></span> โดย <span x-text="edit.createdBy||'–'"></span>
             <span x-show="edit.updatedAt"> · แก้ไขล่าสุด: <span x-text="edit.updatedAt"></span> โดย <span x-text="edit.updatedBy"></span></span></div>
-          <div class="flex gap-2"><button class="btn btn-primary" :disabled="busy>0" @click="savePart()">บันทึกการแก้ไข</button>
-            <button class="btn btn-ghost" @click="edit=null">ยกเลิก</button></div>
+          <div class="flex flex-wrap gap-2"><button class="btn btn-primary" :disabled="busy>0" @click="savePart()">บันทึกการแก้ไข</button>
+            <button class="btn btn-ghost" @click="edit=null">ยกเลิก</button>
+            <button x-show="can('delete')" class="btn btn-red ml-auto" :disabled="busy>0" @click="delPart(edit)"><span class="w-4 h-4" x-html="I.trash"></span>ลบรหัสนี้</button></div>
         </div>
       </template>
     </div>
@@ -688,14 +694,15 @@
           <div class="flex shrink-0 opacity-60 group-hover:opacity-100" x-show="can('structure')">
             <button class="icon-btn" title="แก้ไข" @click="openEditNode(r.n)" x-html="I.pencil"></button>
             <button class="icon-btn" title="เพิ่มหัวข้อย่อย" x-show="r.n.level<5" @click="openAdd(r.n.level+1, r.n.prefix)" x-html="I.plus"></button>
-            <span class="w-[1.9rem]" x-show="r.n.level>=5"></span>
+            <span class="w-[1.75rem]" x-show="r.n.level>=5"></span>
+            <button class="icon-btn danger" title="ลบหัวข้อ" x-show="can('delete')" @click="delNode(r.n)" x-html="I.trash"></button>
           </div>
         </div>
       </template>
       <p x-show="!treeRows().length" class="p-8 text-center text-gray-400">ไม่พบหัวข้อ</p>
     </div>
   </div>
-  <p class="text-xs text-gray-500 mt-3">หมายเหตุ: ระดับ 6 (วัสดุ/ผิวชุบ) จะถูกสร้างอัตโนมัติพร้อมรหัสสินค้าในหน้า Generate Code · การปิดใช้งานหัวข้อจะซ่อนจาก Dropdown แต่ไม่ลบข้อมูลเดิม</p>
+  <p class="text-xs text-gray-500 mt-3">หมายเหตุ: ระดับ 6 (วัสดุ/ผิวชุบ) จะถูกสร้างอัตโนมัติพร้อมรหัสสินค้าในหน้า Generate Code · การปิดใช้งาน (Inactive) จะซ่อนจาก Dropdown แต่ไม่ลบข้อมูล · การลบ (เฉพาะ Admin) ทำได้เมื่อหัวข้อไม่มีหัวข้อย่อยและไม่มีรหัสสินค้าใช้งานอยู่</p>
 </section>
 
     </div>
@@ -731,8 +738,9 @@
         <div><label class="lbl">ชื่อหัวข้อ</label><input class="inp" x-model="mf.label" x-ref="nodeLabel" @keydown.enter="saveNode()"></div>
         <div x-show="mf.mode==='edit'"><label class="lbl">สถานะ</label>
           <select class="inp" x-model="mf.status"><option>Active</option><option>Inactive</option></select></div>
-        <div class="flex justify-end gap-2 pt-2">
-          <button class="btn btn-ghost" @click="modal=false">ยกเลิก</button>
+        <div class="flex gap-2 pt-2">
+          <button x-show="mf.mode==='edit' && can('delete')" class="btn btn-red" :disabled="busy>0" @click="delNode(byP[mf.prefix])"><span class="w-4 h-4" x-html="I.trash"></span>ลบ</button>
+          <button class="btn btn-ghost ml-auto" @click="modal=false">ยกเลิก</button>
           <button class="btn btn-primary" :disabled="busy>0" @click="saveNode()">บันทึก</button>
         </div>
       </div>
@@ -814,7 +822,7 @@ function app() {
     // structure
     open: {}, sq: '', showInactive: false, modal: false, mf: { mode: 'add', level: 1, parent: '', prefix: '', seg: '', label: '', status: 'Active' },
     // setting
-    users: [], logs: [], uform: { email: '', name: '', role: 'Editor', active: true, password: '' },
+    users: [], logs: [], uform: { email: '', name: '', role: 'Editor', active: true, password: '' }, uEditing: false,
 
     // ---------------------------------------------------------- core
     async boot() {
@@ -867,6 +875,7 @@ function app() {
     copy(t) { navigator.clipboard?.writeText(t).then(() => this.toast('คัดลอก ' + t)).catch(() => {}); },
 
     // ---------------------------------------------------------- structure index
+    removeNode(prefix) { this.nodes = this.nodes.filter(x => x.prefix !== prefix); this.reindex(); },
     setNodes(rows) { this.nodes = rows.map(r => ({ level: +r[0], prefix: r[1], parent: r[2], label: r[3], status: r[4] || 'Active' })); this.reindex(); },
     reindex() {
       const byP = {}, kids = {};
@@ -1090,6 +1099,19 @@ function app() {
       this.edit = { ...r };
       this.toast('บันทึกการแก้ไข ' + r.code + ' แล้ว');
     },
+    async delPart(p) {
+      if (!p || !this.can('delete')) return;
+      if (!confirm('⚠ ลบรหัสสินค้า ' + p.code + ' ?\n' + p.name + '\n\nแถวนี้จะถูกลบออกจาก Master_Parts ถาวร (ข้อมูลเดิมเก็บไว้ใน Users_Log)\nถ้าแค่ต้องการเลิกใช้ แนะนำตั้งสถานะเป็น Inactive แทน')) return;
+      await this.call('deletePart', { code: p.code });
+      if (this.parts) this.parts = this.parts.filter(x => x.code !== p.code);
+      delete this.partMap[p.code];
+      this.removeNode(p.code);
+      if (this.recent) this.recent = this.recent.filter(x => x.code !== p.code);
+      if (this.edit?.code === p.code) this.edit = null;
+      if (this.result?.code === p.code) this.result = null;
+      if (this.sel[4] && p.code.startsWith(this.sel[4])) this.loadNext();
+      this.toast('ลบรหัส ' + p.code + ' แล้ว');
+    },
 
     // ---------------------------------------------------------- 5) structure
     toggle(p) { this.open[p] = !this.open[p]; },
@@ -1129,18 +1151,41 @@ function app() {
       } else this.toast('บันทึก ' + r[1] + ' แล้ว');
       this.modal = false;
     },
+    async delNode(n) {
+      if (!n || !this.can('delete')) return;
+      const k = (this.kids[n.prefix] || []).length;
+      if (k) return this.toast('ลบไม่ได้: ' + n.prefix + ' ยังมีหัวข้อย่อย ' + k + ' รายการ — ลบหัวข้อย่อยก่อน หรือตั้งเป็น Inactive แทน', true);
+      const used = (this.parts || []).filter(p => p.code.startsWith(n.prefix)).length;
+      if (used) return this.toast('ลบไม่ได้: มีรหัสสินค้าใช้หัวข้อนี้ ' + used + ' รายการ — ตั้งเป็น Inactive แทน', true);
+      if (!confirm('⚠ ลบหัวข้อ ' + n.prefix + ' · ' + n.label + ' ?\n\nหัวข้อนี้จะถูกลบออกจาก Code_Structure ถาวร')) return;
+      await this.call('deleteNode', { prefix: n.prefix });
+      this.removeNode(n.prefix);
+      const i = this.sel.indexOf(n.prefix);
+      if (i >= 0) { for (let j = i; j < 5; j++) this.sel[j] = ''; this.next = null; }
+      this.modal = false;
+      this.toast('ลบหัวข้อ ' + n.prefix + ' แล้ว');
+    },
 
     // ---------------------------------------------------------- 3) setting
     async loadUsers() { this.users = await this.call('getUsers'); },
     async loadLogs() { this.logs = await this.call('getLogs', 300); },
+    resetUser() { this.uform = { email: '', name: '', role: 'Editor', active: true, password: '' }; this.uEditing = false; },
     async saveUser() {
-      this.users = await this.call('saveUser', this.uform);
-      this.toast('บันทึกผู้ใช้ ' + this.uform.email + ' แล้ว');
-      this.uform = { email: '', name: '', role: 'Editor', active: true, password: '' };
+      const isNew = !this.uEditing;
+      const email = (this.uform.email || '').trim().toLowerCase();
+      if (!email) return this.toast('กรุณากรอกอีเมล', true);
+      if (isNew && this.users.some(u => u.email === email)) return this.toast('มีผู้ใช้ ' + email + ' อยู่แล้ว — กดไอคอนดินสอเพื่อแก้ไข', true);
+      this.users = await this.call('saveUser', { ...this.uform, email });
+      this.toast((isNew ? 'เพิ่ม' : 'บันทึก') + 'ผู้ใช้ ' + email + ' แล้ว');
+      this.resetUser();
+      this.loadLogs();
     },
     async delUser(email) {
-      if (!confirm('ลบผู้ใช้ ' + email + ' ?')) return;
+      if (!confirm('⚠ ลบผู้ใช้ ' + email + ' ?')) return;
       this.users = await this.call('deleteUser', email);
+      if (this.uform.email === email) this.resetUser();
+      this.toast('ลบผู้ใช้ ' + email + ' แล้ว');
+      this.loadLogs();
     },
   };
 }
