@@ -73,6 +73,121 @@
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800">
 
+<!-- ===================== SPLASH / LOADING STATUS (r32) ===================== -->
+<!-- ใช้ CSS ของตัวเอง ไม่พึ่ง Tailwind เพื่อให้แสดงผลได้ทันทีตั้งแต่เริ่มโหลด -->
+<style>
+    #splash { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 1rem;
+        background: radial-gradient(circle at 30% 20%, #075985 0%, #0c4a6e 45%, #082f49 100%); color: #fff; font-family: 'Prompt', system-ui, sans-serif;
+        transition: opacity .35s ease, visibility .35s ease; }
+    #splash.sp-hide { opacity: 0; visibility: hidden; pointer-events: none; }
+    #splash .sp-card { width: 100%; max-width: 360px; text-align: center; }
+    #splash .sp-logo { width: 72px; height: 72px; margin: 0 auto 1rem; border-radius: 20px; background: rgba(255,255,255,.12);
+        display: flex; align-items: center; justify-content: center; animation: spPulse 1.6s ease-in-out infinite; }
+    #splash h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: .03em; margin: 0; }
+    #splash .sp-sub { font-size: .8rem; color: #bae6fd; margin-top: .25rem; }
+    #splash .sp-bar { height: 6px; border-radius: 9999px; background: rgba(255,255,255,.15); overflow: hidden; margin: 1.5rem 0 .75rem; }
+    #splash .sp-fill { height: 100%; width: 5%; border-radius: 9999px; background: linear-gradient(90deg, #38bdf8, #7dd3fc); transition: width .4s ease; }
+    #splash .sp-msg { font-size: .9rem; min-height: 1.4em; display: flex; align-items: center; justify-content: center; gap: .5rem; }
+    #splash .sp-spin { width: 1rem; height: 1rem; border: 2px solid #7dd3fc; border-right-color: transparent; border-radius: 50%; animation: spSpin .7s linear infinite; flex-shrink: 0; }
+    #splash .sp-steps { list-style: none; padding: .75rem 1rem; margin: 1rem 0 0; text-align: left; font-size: .8rem; background: rgba(255,255,255,.07); border-radius: 12px; }
+    #splash .sp-steps li { display: flex; align-items: center; gap: .6rem; padding: .3rem 0; color: #7dd3fc; opacity: .55; transition: opacity .2s; }
+    #splash .sp-steps li .ic { width: 1.1rem; text-align: center; flex-shrink: 0; }
+    #splash .sp-steps li.run { opacity: 1; color: #fff; }
+    #splash .sp-steps li.ok { opacity: 1; color: #86efac; }
+    #splash .sp-steps li.err { opacity: 1; color: #fda4af; }
+    #splash .sp-hint { font-size: .75rem; color: #fde68a; margin-top: .85rem; min-height: 1em; }
+    #splash .sp-actions { display: none; gap: .5rem; justify-content: center; margin-top: .75rem; }
+    #splash .sp-actions.show { display: flex; }
+    #splash .sp-actions button { font: inherit; font-size: .8rem; padding: .45rem .9rem; border-radius: .5rem; border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
+    #splash .sp-actions button:hover { background: rgba(255,255,255,.2); }
+    @keyframes spSpin { to { transform: rotate(360deg); } }
+    @keyframes spPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+</style>
+<div id="splash" role="status" aria-live="polite">
+    <div class="sp-card">
+        <div class="sp-logo">
+            <svg width="38" height="38" fill="none" stroke="#e0f2fe" stroke-width="2" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+        </div>
+        <h1>RST FixPoint</h1>
+        <div class="sp-sub">ระบบแจ้งซ่อมอาคารสถานที่ และอุปกรณ์สำนักงาน</div>
+        <div class="sp-bar"><div id="spFill" class="sp-fill"></div></div>
+        <div class="sp-msg"><span id="spSpin" class="sp-spin"></span><span id="spMsg">กำลังโหลดแอป...</span></div>
+        <ul id="spSteps" class="sp-steps"></ul>
+        <div id="spHint" class="sp-hint"></div>
+        <div id="spActions" class="sp-actions">
+            <button type="button" onclick="location.reload()">โหลดใหม่</button>
+            <button type="button" id="spSkip">ไปหน้าเข้าสู่ระบบ</button>
+        </div>
+    </div>
+</div>
+<script>
+/* r32: Splash controller — Splash.start(steps) / Splash.step(id) / Splash.fail(id,msg) / Splash.hide() */
+window.Splash = (function () {
+    const el = id => document.getElementById(id);
+    let steps = [], t0 = Date.now(), hintTimer = null, hidden = false;
+    function render() {
+        el('spSteps').innerHTML = steps.map(s => {
+            const ic = s.st === 'ok' ? '✓' : s.st === 'err' ? '✕' : s.st === 'run' ? '●' : '○';
+            return `<li class="${s.st}"><span class="ic">${ic}</span><span>${s.label}</span></li>`;
+        }).join('');
+        const done = steps.filter(s => s.st === 'ok').length;
+        const run = steps.some(s => s.st === 'run') ? .5 : 0;
+        el('spFill').style.width = steps.length ? Math.max(5, Math.round((done + run) / steps.length * 100)) + '%' : '5%';
+    }
+    function watchSlow() {
+        clearInterval(hintTimer);
+        t0 = Date.now();
+        el('spHint').textContent = '';
+        el('spActions').classList.remove('show');
+        hintTimer = setInterval(() => {
+            const sec = Math.round((Date.now() - t0) / 1000);
+            if (sec >= 20) { el('spHint').textContent = `ใช้เวลานานผิดปกติ (${sec} วินาที) — ตรวจสอบอินเทอร์เน็ต หรือลองโหลดใหม่`; el('spActions').classList.add('show'); }
+            else if (sec >= 6) el('spHint').textContent = `Server กำลังตอบกลับ... (${sec} วินาที) ครั้งแรกของวันอาจช้ากว่าปกติ`;
+        }, 1000);
+    }
+    const api = {
+        get visible() { return !hidden; },
+        start(list, msg) {
+            hidden = false;
+            steps = list.map(([id, label]) => ({ id, label, st: '' }));
+            el('splash').classList.remove('sp-hide');
+            el('spSpin').style.display = '';
+            if (msg) el('spMsg').textContent = msg;
+            render(); watchSlow();
+        },
+        step(id, msg) {
+            if (hidden) return;
+            let found = false;
+            steps.forEach(s => { if (s.id === id) { s.st = 'run'; found = true; if (!msg) msg = s.label + '...'; } else if (!found && s.st !== 'err') s.st = 'ok'; });
+            if (msg) el('spMsg').textContent = msg;
+            render();
+        },
+        fail(id, msg) {
+            steps.forEach(s => { if (s.id === id) s.st = 'err'; });
+            el('spSpin').style.display = 'none';
+            el('spMsg').textContent = msg || 'เกิดข้อผิดพลาด';
+            el('spActions').classList.add('show');
+            render();
+        },
+        hide() {
+            if (hidden) return;
+            steps.forEach(s => { if (s.st !== 'err') s.st = 'ok'; });
+            el('spMsg').textContent = 'พร้อมใช้งาน';
+            render();
+            clearInterval(hintTimer);
+            hidden = true;
+            setTimeout(() => el('splash').classList.add('sp-hide'), 250);
+        }
+    };
+    el('spSkip').onclick = () => api.hide();
+    api.start([['page', 'โหลดหน้าแอป'], ['session', 'ตรวจสอบการเข้าสู่ระบบ'], ['data', 'โหลดข้อมูลสาขา'], ['menu', 'เตรียมเมนูและสิทธิ์'], ['open', 'เปิดหน้าแรก']], 'กำลังโหลดแอป...');
+    api.step('page');
+    // กันค้าง: ถ้าสคริปต์หลักพังจนไม่มีใครเรียก hide() ให้แสดงปุ่มทางออกหลัง 60 วินาที (API timeout 25s × retry 2 ครั้ง)
+    setTimeout(() => { if (!hidden) { const r = steps.find(s => s.st === 'run'); api.fail(r ? r.id : 'page', 'ใช้เวลานานเกินไป — กรุณาโหลดใหม่'); } }, 60000);
+    return api;
+})();
+</script>
+
 <!-- ===================== LOGIN ===================== -->
 <section id="loginView" class="min-h-screen flex items-center justify-center p-4">
     <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
@@ -814,9 +929,12 @@ $('loginForm').addEventListener('submit', async (e) => {
         store(LS_TOKEN, r.token);
         store(LS_USER, JSON.stringify(r.user));
         $('loginPass').value = '';
+        Splash.start([['session', 'ยืนยันตัวตน'], ['data', 'โหลดข้อมูลสาขา'], ['menu', 'เตรียมเมนูและสิทธิ์'], ['open', 'เปิดหน้าแรก']], 'กำลังเข้าสู่ระบบ...');
+        Splash.step('data');
         await startApp(r.user, r.branches);
         oneSignalRequestPermission_();   // r31: ขอสิทธิ์แจ้งเตือนหลังล็อกอินด้วยตนเอง (มี user gesture)
     } catch (err) {
+        Splash.hide();
         $('loginError').textContent = err.message;
         $('loginError').classList.remove('hidden');
     } finally {
@@ -869,19 +987,23 @@ async function startApp(user, preBranches) {
 
     renderNav();
     $('btnBulkDel').classList.toggle('hidden', !hasRole('admin'));
+    Splash.step('data');
     dbRange = 'mtd';
     document.querySelectorAll('#dbRangeBtns button').forEach(x => x.classList.toggle('db-range-active', x.dataset.range === 'mtd'));
     $('dbCustom').classList.add('hidden');
     try {
         branches = preBranches || (await api('getBranches')).branches || [];
     } catch (e) { toast(e.message, 'err'); }
+    Splash.step('menu');
     fillBranchSelects();
     fillStatusSelects();
     resetNewForm();
 
     const first = hasRole('manager', 'admin') ? 'dashboard' : hasRole('supervisor') ? 'dispatch' : hasRole('technician') ? 'jobs' : 'new';
+    Splash.step('open', 'กำลังเปิดหน้าแรก...');
     switchPage(first);
     refreshBadges();
+    Splash.hide();
     // r31: ผูกอุปกรณ์กับบัญชี (external_id = username ตัวพิมพ์เล็ก) + Tags — ทำทุกครั้งที่แอปพร้อมใช้งาน (รวมกรณี session ค้างไว้)
     oneSignalBindUser_(user);
 }
@@ -2883,9 +3005,11 @@ window.addEventListener('unhandledrejection', e => {
     pingServer();
     const token = load(LS_TOKEN);
     const cached = load(LS_USER);
-    if (!token || !cached) return;
+    if (!token || !cached) { Splash.hide(); return; }   // ยังไม่ล็อกอิน → ไปหน้า login ทันที
     try {
+        Splash.step('session', 'กำลังตรวจสอบการเข้าสู่ระบบ...');
         const r = await api('me');
+        Splash.step('data');
         store(LS_USER, JSON.stringify(r.user));
         await startApp(r.user, r.branches);
     } catch (e) {
@@ -2898,6 +3022,7 @@ window.addEventListener('unhandledrejection', e => {
                 toast('เชื่อมต่อ Server ไม่ได้ชั่วคราว — ใช้ข้อมูลเดิมก่อน', 'warn');
             } catch (_) { /* ปล่อยให้ผู้ใช้ล็อกอินใหม่ */ }
         }
+        Splash.hide();   // ทุกกรณีที่ไม่สำเร็จ → ปิด splash ให้เห็นหน้า login/ข้อความผิดพลาด
     }
 })();
 </script>
