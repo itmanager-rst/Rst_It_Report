@@ -105,6 +105,8 @@ const MAX_REQ_ITEMS = 30;                   // จำนวนรายการ
  *    ใช้ระหว่างที่ HQ_Office ปรับปรุงฐานข้อมูล — เสร็จแล้วเปลี่ยนเป็น [] เพื่อปิด (และแก้ MANUAL_ITEM_DEPTS ใน index.html ด้วย)
  */
 const MANUAL_ITEM_DEPTS = ['HQ'];
+/** เวอร์ชันโค้ดฝั่ง Server — index.html เทียบค่านี้ผ่าน ?action=ping ถ้าไม่ตรง = ยังไม่ได้ Deploy เวอร์ชันใหม่ */
+const SERVER_VERSION = '2026-11-17-issue-photo';
 const SHIP_VIA = ['ฝ่ายบริการ', 'ฝ่ายขาย', 'อื่น ๆ'];
 const USER_HEADERS = [
   'username', 'password', 'passwordHash', 'salt', 'fullName', 'role', 'branch',
@@ -116,7 +118,7 @@ function doGet(e) {
   const p = (e && e.parameter) || {};
   try {
     if (!p.action) return legacyGet_(e);                 // หน้าเว็บเดิม (ถ้ามี)
-    if (p.action === 'ping') return jsonOut_({ status: 'success', time: new Date().toISOString() });
+    if (p.action === 'ping') return jsonOut_({ status: 'success', version: SERVER_VERSION, time: new Date().toISOString() });
     if (p.action === 'diag') return jsonOut_(diag_());
 
     const user = auth_(p.token);
@@ -157,6 +159,7 @@ function diag_() {
   const ss = ss_();
   return {
     status: 'success',
+    serverVersion: SERVER_VERSION,
     codeJs_doGetLegacy: typeof doGetLegacy === 'function',
     codeJs_doPostLegacy: typeof doPostLegacy === 'function',
     spreadsheet: ss ? ss.getName() : 'ไม่พบ (ตั้ง SPREADSHEET_ID)',
@@ -185,7 +188,7 @@ function doPost(e) {
       case 'createRequest':  return jsonOut_(createRequest_(data, user));
       case 'approveRequest': requireRole_(user, APPROVER_ROLES); return jsonOut_(decideRequest_(data, true, user));
       case 'rejectRequest':  requireRole_(user, APPROVER_ROLES); return jsonOut_(decideRequest_(data, false, user));
-      case 'issueRequest':   requireRole_(user, ADMIN_ROLES); return jsonOut_(issueRequest_(data, user));
+      case 'issueRequest':   requireRole_(user, ADMIN_ROLES); return jsonOut_(hrIssueRequestV2_(data, user));
       case 'shipRequest':    requireRole_(user, ADMIN_ROLES); return jsonOut_(shipRequest_(data, user));
       case 'receiveRequest': return jsonOut_(receiveRequest_(data, user));   // ตรวจสิทธิ์ตามสาขาในฟังก์ชัน
       case 'cancelRequest':  return jsonOut_(cancelRequest_(data, user));    // ตรวจสิทธิ์ตามสถานะในฟังก์ชัน
@@ -641,7 +644,7 @@ function effStatus_(r) {
  *   deliveryMethod = 'PICKUP' → ISSUED (รอพนักงานที่มารับของกด 📥 ยืนยันรับของเอง)
  * ใบที่จ่ายไปแล้วแต่ยังไม่มีรูป/ลายเซ็นผู้จ่าย → แนบย้อนหลังได้ (ไม่เปลี่ยนสถานะ)
  */
-function issueRequest_(d, user) {
+function hrIssueRequestV2_(d, user) {
   if (!d.issuerPhoto && !d.issuerSig) return { status: 'error', message: 'กรุณาแนบรูปหลักฐานการจ่ายของ' };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);

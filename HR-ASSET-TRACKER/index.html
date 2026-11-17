@@ -1266,9 +1266,22 @@
       const t0 = performance.now();
       try {
         const res = await fetchWithTimeout(`${WEB_APP_URL}?action=ping&_=${Date.now()}`, {}, 12000);
-        await res.text();
+        const txt = await res.text();
         setConn(res.ok ? "ok" : "down", Math.round(performance.now() - t0));
+        let ver = "";
+        try { ver = JSON.parse(txt).version || ""; } catch (x) {}
+        if (res.ok) checkServerVersion(ver);
       } catch (e) { setConn("down"); }
+    }
+
+    /* ⚠️ ตรวจว่า Server (Apps Script) Deploy เวอร์ชันล่าสุดแล้วหรือยัง */
+    const EXPECTED_SERVER_VERSION = "2026-11-17-issue-photo";
+    let serverVersionWarned = false;
+    function checkServerVersion(ver) {
+      if (ver === EXPECTED_SERVER_VERSION || serverVersionWarned) return;
+      serverVersionWarned = true;
+      console.warn("Server version:", ver || "(เก่า/ไม่ระบุ)", "≠ ที่ต้องการ:", EXPECTED_SERVER_VERSION);
+      showToast("⚠️ Server ยังเป็นโค้ดเวอร์ชันเก่า — แอดมินต้องไปที่ Apps Script › Deploy › Manage deployments › ✏️ Edit › Version: New version › Deploy", "warn");
     }
 
     let lastPingMs = 0;
@@ -2977,7 +2990,12 @@
         loadRequests();
         if (andPrint) printRequisition(id);
       } catch (err) {
-        showToast("❌ บันทึกไม่สำเร็จ: " + err.message, "error");
+        if (/ลายเซ็นผู้จ่าย/.test(err.message || "")) {
+          // ข้อความนี้มาจาก Server เวอร์ชันเก่า (บังคับเซ็น) — โค้ดปัจจุบันรับรูปแทนลายเซ็นได้แล้ว
+          showToast("❌ Server ยังเป็นเวอร์ชันเก่าที่บังคับเซ็นชื่อ — ให้แอดมิน Deploy › Manage deployments › Edit › New version ก่อน (ระหว่างนี้เซ็นชื่อในกรอบด้านบนเพื่อบันทึกไปก่อนได้)", "error");
+        } else {
+          showToast("❌ บันทึกไม่สำเร็จ: " + err.message, "error");
+        }
       } finally {
         btns.forEach((b, i) => { b.disabled = false; b.innerHTML = olds[i]; });
       }
