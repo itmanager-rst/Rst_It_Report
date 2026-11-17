@@ -1,4 +1,4 @@
-// CODE_VERSION: r05-2026-11-10-coupon-overdue-batch
+// CODE_VERSION: r06-2026-11-17-bq-sheet-fallback
 // ==========================================
 // CONFIGURATION & HELPER FUNCTIONS
 // ==========================================
@@ -316,6 +316,82 @@ function runBigQueryParallel(sqlList) {
   });
 }
 
+// ==========================================
+// 🛟 สำรอง: ถ้า BigQuery อ่านตารางไม่ได้ (เช่น External Table ถูกลบ/ไม่พบ) ให้อ่านจาก Google Sheet ตรงๆ
+// ==========================================
+// Google Sheet เป็นฐานข้อมูลจริงอยู่แล้ว (ทุกการเขียนลง Sheet) BigQuery เป็นแค่ External Table ครอบ Sheet
+// จึงอ่านจาก Sheet แทนได้ทันที → หน้าเว็บไม่ล่มทั้งระบบเมื่อ BigQuery มีปัญหา
+function _sheetCellToBqLike_(v) {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    var hasTime = v.getHours() || v.getMinutes() || v.getSeconds();
+    return Utilities.formatDate(v, 'Asia/Bangkok', hasTime ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd');
+  }
+  if (v === '' || v === undefined) return null;
+  return v;
+}
+
+function readTableFromSheet_(tableName) {
+  var rows = sheetToObjects(getSheet(SHEET_TABS[tableName] || tableName));
+  return rows.map(function (r) {
+    var o = {};
+    for (var k in r) {
+      if (k !== '__row') o[k] = _sheetCellToBqLike_(r[k]);
+    }
+    return o;
+  });
+}
+
+/**
+ * อ่านหลายตาราง (SELECT *) — ลอง BigQuery แบบขนานก่อน ตารางไหนพังให้อ่านจาก Sheet แทน
+ * คืนค่า { rows: [[...], [...]], sources: ['bigquery'|'sheet', ...], errors: [...] }
+ */
+function loadTablesSafe_(tableNames) {
+  var jobs = tableNames.map(function (t) {
+    try {
+      return BigQuery.Jobs.insert({
+        configuration: { query: { query: 'SELECT * FROM `' + BQ_PROJECT_ID + '.' + BQ_DATASET_ID + '.' + t + '`', useLegacySql: false } }
+      }, BQ_PROJECT_ID);
+    } catch (e) {
+      return { __error: e };
+    }
+  });
+
+  var out = { rows: [], sources: [], errors: [] };
+  tableNames.forEach(function (t, i) {
+    var job = jobs[i];
+    try {
+      if (job.__error) throw job.__error;
+      var ref = job.jobReference;
+      var opts = { timeoutMs: 20000 };
+      if (ref.location) opts.location = ref.location;
+      var res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+      var sleep = 200;
+      while (!res.jobComplete) {
+        Utilities.sleep(sleep);
+        res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+        if (sleep < 1000) sleep += 200;
+      }
+      out.rows.push(bqRowsToObjects_(res, function (token) {
+        var o = { pageToken: token };
+        if (ref.location) o.location = ref.location;
+        return BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, o);
+      }));
+      out.sources.push('bigquery');
+    } catch (e) {
+      Logger.log('BigQuery อ่าน ' + t + ' ไม่ได้ → อ่านจาก Sheet แทน: ' + e);
+      out.errors.push(t + ': ' + e);
+      out.rows.push(readTableFromSheet_(t)); // ถ้า Sheet ก็พังด้วย จะ throw ออกไปตามปกติ
+      out.sources.push('sheet');
+    }
+  });
+  return out;
+}
+
+function loadTableSafe_(tableName) {
+  return loadTablesSafe_([tableName]).rows[0];
+}
+
 // ---- แคช (CacheService จำกัด 100KB ต่อ key → แบ่งเก็บเป็นหลายชิ้น) ----
 var DATA_CACHE_TTL_SEC = 300;     // ข้อมูลตาราง: 5 นาที (ถูกล้างทันทีเมื่อมีการบันทึก/แก้/ลบผ่านระบบ)
 var STATIC_CACHE_TTL_SEC = 21600; // รายชื่อรุ่น/อะไหล่ตามรุ่น: 6 ชม.
@@ -394,12 +470,9 @@ function getAllData(opts, isRawObject) {
       }
     }
 
-    var results = runBigQueryParallel([
-      `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``,
-      `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``
-    ]);
-    var serviceRows = results[0];
-    var logRows = results[1];
+    var loaded = loadTablesSafe_(['service_report', 'pm_log']);
+    var serviceRows = loaded.rows[0];
+    var logRows = loaded.rows[1];
 
     var dashboard = getDashboardData(true, serviceRows);
     var history = getReportList(true, logRows, serviceRows);
@@ -409,7 +482,9 @@ function getAllData(opts, isRawObject) {
       dashboard: dashboard,
       history: history,
       generatedAt: Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss"),
-      fromCache: false
+      fromCache: false,
+      dataSource: loaded.sources,          // ['bigquery','bigquery'] ปกติ / มี 'sheet' = ใช้ทางสำรอง
+      bqWarnings: loaded.errors
     };
 
     if (dashboard && dashboard.status === 'success' && Array.isArray(history)) {
@@ -687,8 +762,7 @@ function getDashboardData(isRawObject, prefetchedRows) {
   try {
     var rows = prefetchedRows;
     if (!rows) {
-      var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``;
-      rows = runBigQuery(sql);
+      rows = loadTableSafe_('service_report');
     }
 
     var alerts = [];
@@ -777,15 +851,14 @@ function getReportList(isRawObject, prefetchedRows, prefetchedServiceRows) {
   try {
     var rows = prefetchedRows;
     if (!rows) {
-      var sql = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
-      rows = runBigQuery(sql);
+      rows = loadTableSafe_('pm_log');
     }
     var result = [];
 
     // pm_log ไม่มีคอลัมน์เบอร์โทรศัพท์เก็บไว้ ต้องดึงมาจาก service_report แทน (จับคู่ด้วย machine_id)
     var phoneByMachineId = {};
     try {
-      var dashRows = prefetchedServiceRows || runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``);
+      var dashRows = prefetchedServiceRows || loadTableSafe_('service_report');
       dashRows.forEach(function (dr) {
         var mid = String(ciGet(dr, 'machine_id') || '').trim().toLowerCase();
         if (mid) phoneByMachineId[mid] = ciGet(dr, 'phone_number') || '';
@@ -908,13 +981,12 @@ function pickLatestLogRow(rows) {
 // ==========================================
 function getPMProgressMatrix(isRawObject) {
   try {
-    var sqlService = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.service_report\``;
     // pm_log ใช้คอลัมน์ PM_Target / Actual_Hours / Service_Date (ไม่ใช่ last_pm_round / current_Hours / contract_date)
     // ใช้ SELECT * + ciGet เพื่อไม่ผูกกับตัวพิมพ์เล็ก-ใหญ่ของชื่อคอลัมน์
-    var sqlLogs = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``;
-    
-    var services = runBigQuery(sqlService);
-    var logs = runBigQuery(sqlLogs);
+    // (BigQuery พร้อมกัน 2 ตาราง ถ้าตารางไหนพังจะอ่านจาก Sheet แทน)
+    var loadedM = loadTablesSafe_(['service_report', 'pm_log']);
+    var services = loadedM.rows[0];
+    var logs = loadedM.rows[1];
 
     // งาน PM ที่บันทึกแล้วอาจยังไม่จบ workflow หากยังค้างคูปองหรืออะไหล่
     function getWorkflowStatuses(partsStatus, yanmarCoupon, partsStore, partsBillNo) {
