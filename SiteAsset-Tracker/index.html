@@ -226,6 +226,37 @@ tbody tr:hover{background:#fbfcfd}
 .skel{background:linear-gradient(90deg,#eef1f5 25%,#f7f8fa 50%,#eef1f5 75%);background-size:200% 100%;animation:sk 1.2s infinite;border-radius:8px;color:transparent!important}
 @keyframes sk{to{background-position:-200% 0}}
 
+/* ───────── Loading progress ───────── */
+.topprog{position:fixed;top:0;left:0;right:0;height:3px;z-index:10001;pointer-events:none;opacity:0;transition:opacity .3s}
+.topprog.on{opacity:1}
+.topprog i{display:block;height:100%;width:0;background:linear-gradient(90deg,#f97316,#fbbf24,#10b981);box-shadow:0 0 10px rgba(249,115,22,.6);transition:width .35s ease}
+.loader-ov{position:fixed;inset:0;z-index:9990;background:rgba(244,245,248,.82);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;transition:opacity .4s}
+.loader-ov.hide{opacity:0;pointer-events:none}
+.loader{background:var(--ink);color:#fff;border-radius:22px;padding:28px;width:100%;max-width:400px;box-shadow:0 30px 70px -20px rgba(11,18,32,.55);position:relative;overflow:hidden}
+.loader::after{content:"";position:absolute;width:260px;height:260px;right:-90px;top:-120px;border-radius:50%;background:radial-gradient(circle,rgba(249,115,22,.35),transparent 70%)}
+.loader .lh{display:flex;align-items:center;gap:16px;position:relative;z-index:1}
+.lring{position:relative;width:84px;height:84px;flex:none}
+.lring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.lring circle.p{transition:stroke-dasharray .35s ease}
+.lring b{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:20px}
+.loader h4{font-size:17px;margin-bottom:2px}
+.loader .ld{font-size:12px;color:#94a3b8;font-family:var(--mono)}
+.lsteps{list-style:none;margin-top:20px;display:grid;gap:10px;position:relative;z-index:1}
+.lsteps li{display:flex;align-items:center;gap:10px;font-size:13px;color:#64748b;transition:color .2s}
+.lsteps li .dot{width:22px;height:22px;border-radius:50%;border:2px solid #334155;display:grid;place-items:center;font-size:11px;flex:none;transition:all .2s}
+.lsteps li .sx{margin-left:auto;font-family:var(--mono);font-size:11px;color:#94a3b8}
+.lsteps li.run{color:#fff}
+.lsteps li.run .dot{border-color:#f97316;border-top-color:transparent;animation:spin .8s linear infinite}
+.lsteps li.ok{color:#cbd5e1}
+.lsteps li.ok .dot{background:#10b981;border-color:#10b981;color:#fff}
+.lsteps li.err{color:#fca5a5}
+.lsteps li.err .dot{background:#ef4444;border-color:#ef4444;color:#fff}
+.lbar{height:6px;background:rgba(255,255,255,.1);border-radius:9px;margin-top:20px;overflow:hidden;position:relative;z-index:1}
+.lbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#f97316,#10b981);border-radius:9px;transition:width .35s ease}
+.lerr{display:none;margin-top:16px;position:relative;z-index:1}
+.lerr p{font-size:12px;color:#fca5a5;margin-bottom:10px;word-break:break-word}
+.lerr.show{display:block}
+
 /* ───────── Responsive ───────── */
 @media (max-width:980px){
   .hero,.grid-2,.grid-2b{grid-template-columns:1fr}
@@ -264,7 +295,7 @@ tbody tr:hover{background:#fbfcfd}
 /* ───────── Print ───────── */
 @media print{
   body{background:#fff;color:#000;font-size:12px}
-  .topbar,.no-print,.view:not(#view-list),.toolbar,.result-count,.col-action,.toasts,.modal-ov,.rthq-ov{display:none!important}
+  .topbar,.no-print,.topprog,.loader-ov,.view:not(#view-list),.toolbar,.result-count,.col-action,.toasts,.modal-ov,.rthq-ov{display:none!important}
   #view-list{display:block!important;animation:none}
   .wrap{padding:0;max-width:none}
   .card{box-shadow:none;border:0;padding:0}
@@ -463,6 +494,27 @@ tbody tr:hover{background:#fbfcfd}
 </div>
 
 <!-- Toasts / Confirm modal / Lightbox -->
+<div class="topprog" id="topProg"><i></i></div>
+<div class="loader-ov" id="loaderOv">
+  <div class="loader">
+    <div class="lh">
+      <div class="lring">
+        <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/>
+        <circle class="p" id="lRing" cx="18" cy="18" r="15.915" fill="none" stroke="#f97316" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 100"/></svg>
+        <b id="lPct">0%</b>
+      </div>
+      <div><h4 id="lTitle">กำลังเตรียมข้อมูลสินทรัพย์</h4><div class="ld" id="lDetail">เริ่มต้นระบบ...</div></div>
+    </div>
+    <ul class="lsteps" id="lSteps">
+      <li><span class="dot"></span>เชื่อมต่อ Server<span class="sx"></span></li>
+      <li><span class="dot"></span>ดาวน์โหลดข้อมูลสินทรัพย์และรูปภาพ<span class="sx"></span></li>
+      <li><span class="dot"></span>ประมวลผลและคำนวณสถิติ<span class="sx"></span></li>
+      <li><span class="dot"></span>สร้างกราฟและตาราง Dashboard<span class="sx"></span></li>
+    </ul>
+    <div class="lbar"><i id="lBar"></i></div>
+    <div class="lerr" id="lErr"><p id="lErrMsg"></p><button class="btn btn-accent" style="width:100%" onclick="loadAssets()">↻ ลองโหลดใหม่อีกครั้ง</button></div>
+  </div>
+</div>
 <div class="toasts" id="toasts"></div>
 <div class="modal-ov" id="cfmOv">
   <div class="modal">
@@ -548,27 +600,137 @@ function fillSelects() {
 }
 
 /* ───────── Data ───────── */
+/* ───────── Loading progress controller ───────── */
+const Loader = {
+  p: 0, target: 0, timer: null, full: false, t0: 0,
+  start(full) {
+    this.full = full; this.p = 0; this.target = 0; this.t0 = performance.now();
+    document.getElementById('topProg').classList.add('on');
+    const ov = document.getElementById('loaderOv');
+    document.getElementById('lErr').classList.remove('show');
+    document.getElementById('lTitle').textContent = 'กำลังเตรียมข้อมูลสินทรัพย์';
+    document.getElementById('lRing').setAttribute('stroke', '#f97316');
+    document.querySelectorAll('#lSteps li').forEach(li => { li.className = ''; li.querySelector('.dot').textContent = ''; li.querySelector('.sx').textContent = ''; });
+    if (full) { ov.style.display = 'flex'; ov.classList.remove('hide'); }
+    clearInterval(this.timer);
+    // ค่อย ๆ ไหลเข้าหาเป้าหมาย (ให้รู้สึกว่ามีความคืบหน้าแม้รอเซิร์ฟเวอร์)
+    this.timer = setInterval(() => {
+      if (this.p < this.target) this.p = Math.min(this.target, this.p + Math.max(.4, (this.target - this.p) * .12));
+      this.paint();
+    }, 80);
+  },
+  step(i, detail, target) {
+    const lis = document.querySelectorAll('#lSteps li');
+    lis.forEach((li, k) => {
+      if (k < i && li.className !== 'ok') { li.className = 'ok'; li.querySelector('.dot').textContent = '✓'; }
+      if (k === i) li.className = 'run';
+    });
+    if (detail) document.getElementById('lDetail').textContent = detail;
+    if (target != null) this.target = target;
+  },
+  info(i, txt) { const li = document.querySelectorAll('#lSteps li')[i]; if (li) li.querySelector('.sx').textContent = txt; },
+  detail(t) { document.getElementById('lDetail').textContent = t; },
+  set(target) { this.target = Math.max(this.target, target); },
+  paint() {
+    const v = Math.round(this.p);
+    document.querySelector('#topProg i').style.width = v + '%';
+    document.getElementById('lBar').style.width = v + '%';
+    document.getElementById('lRing').setAttribute('stroke-dasharray', `${v} 100`);
+    document.getElementById('lPct').textContent = v + '%';
+  },
+  async done() {
+    this.step(4, `เสร็จสิ้นใน ${((performance.now() - this.t0) / 1000).toFixed(1)} วินาที`, 100);
+    this.p = 100; this.paint(); clearInterval(this.timer);
+    document.getElementById('lTitle').textContent = 'พร้อมใช้งานแล้ว';
+    await new Promise(r => setTimeout(r, this.full ? 450 : 200));
+    document.getElementById('loaderOv').classList.add('hide');
+    setTimeout(() => {
+      document.getElementById('loaderOv').style.display = 'none';
+      document.getElementById('topProg').classList.remove('on');
+      document.querySelector('#topProg i').style.width = '0';
+    }, 400);
+  },
+  fail(msg) {
+    clearInterval(this.timer);
+    const run = document.querySelector('#lSteps li.run');
+    if (run) { run.className = 'err'; run.querySelector('.dot').textContent = '✕'; }
+    document.getElementById('lTitle').textContent = 'โหลดข้อมูลไม่สำเร็จ';
+    document.getElementById('lDetail').textContent = 'ตรวจสอบอินเทอร์เน็ต หรือ Web App URL แล้วลองใหม่';
+    document.getElementById('lRing').setAttribute('stroke', '#ef4444');
+    document.getElementById('lErrMsg').textContent = msg;
+    document.getElementById('lErr').classList.add('show');
+    document.getElementById('topProg').classList.remove('on');
+    if (!this.full) document.getElementById('loaderOv').style.display = 'none';
+  }
+};
+const kb = n => n >= 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+let _loadedOnce = false, _loading = false;
+
+/* ───────── Data ───────── */
 async function loadAssets(manual) {
+  if (_loading) return;
+  _loading = true;
   const rb = document.getElementById('refreshBtn');
   rb.classList.add('spin');
+  // ครั้งแรก (หรือเคยโหลดพลาด) → แสดงหน้าต่างความคืบหน้าเต็มจอ, ครั้งถัดไป → แถบบางด้านบน
+  Loader.start(!_loadedOnce);
   try {
+    Loader.step(0, 'กำลังเชื่อมต่อ Server...', 28);
     const response = await fetch(WEB_APP_URL + "?action=read");
-    const textData = await response.text();
+    if (!response.ok) throw new Error('เซิร์ฟเวอร์ตอบกลับ HTTP ' + response.status);
+    Loader.info(0, Math.round(performance.now() - Loader.t0) + ' ms');
+
+    // ดาวน์โหลดแบบสตรีม → นับไบต์ที่ได้รับจริง
+    Loader.step(1, 'กำลังรับข้อมูล...', 35);
+    const total = parseInt(response.headers.get('content-length') || '0', 10);
+    let textData = '';
+    if (response.body && response.body.getReader) {
+      const reader = response.body.getReader(), dec = new TextDecoder();
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        got += value.length;
+        textData += dec.decode(value, { stream: true });
+        if (total) Loader.set(35 + 45 * Math.min(1, got / total));
+        else Loader.set(Math.min(78, 35 + Math.log2(1 + got / 20480) * 6));
+        const txt = total ? `${kb(got)} / ${kb(total)}` : kb(got);
+        Loader.info(1, txt); Loader.detail('ดาวน์โหลดแล้ว ' + txt);
+      }
+      textData += dec.decode();
+    } else {
+      textData = await response.text();
+      Loader.info(1, kb(textData.length));
+    }
+    Loader.set(80);
+
+    Loader.step(2, 'กำลังแปลงข้อมูล...', 88);
+    await new Promise(r => setTimeout(r, 30)); // ให้ UI ได้วาดสถานะก่อน parse
     if (textData.startsWith("<!DOCTYPE") || /^\s*\{"status":"error"/.test(textData)) {
       throw new Error("หลังบ้านเกิดข้อผิดพลาด: " + textData.substring(0, 80));
     }
     const parsed = JSON.parse(textData);
     allAssetsData = Array.isArray(parsed) ? parsed : [];
+    Loader.info(2, fmt(allAssetsData.length) + ' รายการ');
+
+    Loader.step(3, 'กำลังวาดกราฟและตาราง...', 96);
+    await new Promise(r => setTimeout(r, 30));
     document.getElementById('lastSync').innerText = new Date().toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' });
     renderDashboard();
     renderTable();
+    Loader.info(3, '✓');
+    await Loader.done();
+    _loadedOnce = true;
     if (manual === true) toast('รีเฟรชข้อมูลล่าสุดแล้ว', 'info', 1800);
   } catch (error) {
     console.error(error);
-    document.querySelector("#assetTable tbody").innerHTML = `<tr><td colspan="7" class="c-full" style="text-align:center;color:#dc2626;font-weight:600;padding:24px">❌ โหลดข้อมูลไม่สำเร็จ (${esc(error.message || 'โปรดตรวจสอบสคริปต์หลังบ้าน')})</td></tr>`;
+    const m = error.message || 'โปรดตรวจสอบสคริปต์หลังบ้าน';
+    Loader.fail(m);
+    document.querySelector("#assetTable tbody").innerHTML = `<tr><td colspan="7" class="c-full" style="text-align:center;color:#dc2626;font-weight:600;padding:24px">❌ โหลดข้อมูลไม่สำเร็จ (${esc(m)})</td></tr>`;
     toast('โหลดข้อมูลไม่สำเร็จ', 'err');
   } finally {
     rb.classList.remove('spin');
+    _loading = false;
   }
 }
 
