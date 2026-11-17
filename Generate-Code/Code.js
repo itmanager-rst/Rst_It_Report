@@ -77,6 +77,8 @@ function apiCall(req) {
     addNode: addNode, updateNode: updateNode, deleteNode: deleteNode,
     getUsers: getUsers, saveUser: saveUser, deleteUser: deleteUser, getLogs: getLogs,
   };
+  // ระบบ Backup (ไฟล์ Backup.gs) เป็นส่วนเสริม — ไม่มีไฟล์นี้ก็ใช้งานได้ปกติ
+  if (typeof getBackup === 'function') { ROUTES.getBackup = getBackup; ROUTES.backupToDrive = backupToDrive; }
   API_USER_ = null; TOKEN_EMAIL_ = '';
   try {
     const apiKey = PropertiesService.getScriptProperties().getProperty('API_KEY');
@@ -556,6 +558,6 @@ function getInit() {
   if (!me.perms.length) throw err_('บัญชี ' + me.email + ' ยังไม่ได้รับสิทธิ์ใช้งาน กรุณาติดต่อผู้ดูแลระบบ', 'FORBIDDEN');
   return {
     me: me, app: CFG.APP_NAME, width: WIDTH, cut: CUT, levelNames: LEVEL_NAMES, defaultUnit: CFG.DEFAULT_UNIT,
-    roles: Object.keys(ROLES), structure: getStructure(),
+    roles: Object.keys(ROLES), structure: getStructure(), backup: typeof getBackup === 'function',
   };
 }
