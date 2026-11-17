@@ -230,8 +230,41 @@
   .ec-stat div { background: var(--line-2); border-radius: 8px; padding: 6px 12px; font-size: .8rem; }
   .ec-stat b { font-size: 1rem; }
 
-  .loading { position: fixed; inset: 0; background: rgba(245,246,248,.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
-  .loading.hide { display: none; }
+  /* ---------- (r10) หน้าสถานะระหว่างโหลดแอป ---------- */
+  .loading { position: fixed; inset: 0; background: rgba(245,246,248,.82); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px;
+    transition: opacity .25s ease, visibility .25s ease; }
+  .loading.boot { background: var(--bg); }
+  .loading.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+  .ld-card { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px 22px 16px;
+    box-shadow: 0 10px 30px rgba(17,24,39,.08); font-family: inherit; }
+  .ld-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .ld-logo { width: 42px; height: 42px; border-radius: 11px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: .82rem; letter-spacing: .5px; flex: none; position: relative; }
+  .ld-logo::after { content: ''; position: absolute; inset: -5px; border-radius: 14px; border: 2px solid transparent; border-top-color: var(--accent); animation: ldSpin 1s linear infinite; }
+  .ld-card.err .ld-logo::after { display: none; }
+  .ld-title { font-weight: 700; font-size: .98rem; color: var(--ink); line-height: 1.25; }
+  .ld-msg { font-size: .82rem; color: var(--ink-2); margin-top: 2px; }
+  .ld-bar { height: 6px; background: var(--line-2); border-radius: 999px; overflow: hidden; }
+  .ld-bar > div { height: 100%; width: 5%; background: var(--accent); border-radius: 999px; transition: width .4s ease; }
+  .ld-card.err .ld-bar > div { background: var(--danger); }
+  .ld-steps { list-style: none; padding: 0; margin: 14px 0 6px; }
+  .ld-steps li { display: flex; align-items: center; gap: 10px; font-size: .84rem; color: var(--ink-3); padding: 4px 0; }
+  .ld-steps li::before { content: ''; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); flex: none; box-sizing: border-box; }
+  .ld-steps li.active { color: var(--ink); font-weight: 600; }
+  .ld-steps li.active::before { border-color: var(--accent); border-right-color: transparent; animation: ldSpin .8s linear infinite; }
+  .ld-steps li.done { color: var(--ink-2); }
+  .ld-steps li.done::before { border: 0; background: var(--s-done) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.2l2.6 2.6L12 5.4' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat; }
+  .ld-steps li.fail { color: var(--danger); font-weight: 600; }
+  .ld-steps li.fail::before { border: 0; background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 5l6 6M11 5l-6 6' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center/10px no-repeat; }
+  .ld-foot { display: flex; justify-content: space-between; gap: 8px; font-size: .74rem; color: var(--ink-3); border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 6px; }
+  .ld-hint { font-size: .78rem; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
+  .ld-card.err .ld-hint { color: #991b1b; background: #fef2f2; border-color: #fecaca; word-break: break-word; }
+  .ld-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .ld-actions button { flex: 1; border: 0; border-radius: 8px; padding: 7px 10px; font-size: .84rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ld-retry { background: var(--accent); color: #fff; }
+  .ld-retry:hover { background: var(--accent-d); }
+  .ld-close { background: var(--line-2); color: var(--ink-2); }
+  .ld-x { display: none !important; }
+  @keyframes ldSpin { to { transform: rotate(360deg); } }
 
   /* ---------- Mobile ---------- */
   @media (max-width: 767.98px) {
@@ -334,6 +367,32 @@
 <style id="pageStyle">@page { size: A4 landscape; margin: 10mm; }</style>
 </head>
 <body>
+
+  <!-- ================= (r10) สถานะระหว่างโหลดแอป ================= -->
+  <div id="loading" class="loading boot" role="status" aria-live="polite">
+    <div class="ld-card" id="ldCard">
+      <div class="ld-head">
+        <div class="ld-logo">RST</div>
+        <div style="min-width:0">
+          <div class="ld-title">ติดตามสถานะงานซ่อม / PM</div>
+          <div class="ld-msg" id="ldMsg">กำลังเปิดแอป...</div>
+        </div>
+      </div>
+      <div class="ld-bar"><div id="ldBar"></div></div>
+      <ul class="ld-steps" id="ldSteps">
+        <li data-step="ui" class="active">เตรียมหน้าแอป</li>
+        <li data-step="conn">เชื่อมต่อเซิร์ฟเวอร์</li>
+        <li data-step="data">รับข้อมูลงานซ่อม / Ecount</li>
+        <li data-step="render">ประมวลผลและแสดง Dashboard</li>
+      </ul>
+      <div class="ld-hint ld-x" id="ldHint"></div>
+      <div class="ld-actions ld-x" id="ldActions">
+        <button type="button" class="ld-retry" id="ldRetry">↻ ลองใหม่</button>
+        <button type="button" class="ld-close ld-x" id="ldClose">ปิด (ดูข้อมูลเดิม)</button>
+      </div>
+      <div class="ld-foot"><span id="ldMode">-</span><span id="ldTime">0.0 วิ</span></div>
+    </div>
+  </div>
 
   <!-- ================= TOP BAR ================= -->
   <header class="topbar">
@@ -769,7 +828,6 @@
     </div>
   </div>
 
-  <div id="loading" class="loading"><div class="spinner-border text-secondary" role="status"></div><div class="mt-2 small text-secondary">กำลังโหลดข้อมูล...</div></div>
 
   <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:2100">
     <div id="appToast" class="toast text-bg-danger border-0" role="alert">
@@ -845,6 +903,8 @@
   var modal = function (id) { return bootstrap.Modal.getOrCreateInstance($(id)); };
 
   document.addEventListener('DOMContentLoaded', function () {
+    $('ldRetry').addEventListener('click', function () { loadData(false); });
+    $('ldClose').addEventListener('click', function () { showLoading(false); });
     bindEvents();
     loadData(false);
     setInterval(function () { if (!document.querySelector('.modal.show')) loadData(true); }, REFRESH_MS);
@@ -1010,7 +1070,7 @@
     if (!hasGas()) {
       if (API_URL) {
         return fetch(API_URL + (API_URL.indexOf('?') === -1 ? '?' : '&') + 'action=data&t=' + Date.now())
-          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); ldStep('data', 'เชื่อมต่อแล้ว · กำลังดาวน์โหลดข้อมูล...'); return r.text(); })
           .then(onData)
           .catch(function (err) { onError({ message: 'เรียก API ไม่สำเร็จ (' + err.message + ') — ตรวจ API_URL และ Who has access = Anyone' }); });
       }
@@ -1020,8 +1080,16 @@
     google.script.run.withSuccessHandler(onData).withFailureHandler(onError).getRepairJobsData();
   }
 
+  /** รับข้อมูลจากเซิร์ฟเวอร์ — ถ้าหน้าโหลดแสดงอยู่ ให้อัปเดตขั้นตอนก่อน แล้วค่อยประมวลผล (ให้เบราว์เซอร์วาดสถานะทัน) */
   function onData(json) {
-    showLoading(false);
+    if (!LD.on) return applyData(json);
+    ldStep('render', 'ได้รับข้อมูลแล้ว · กำลังประมวลผล...');
+    setTimeout(function () {
+      try { applyData(json); } catch (e) { onError({ message: 'แสดงผลไม่สำเร็จ: ' + e.message }); }
+    }, 40);
+  }
+
+  function applyData(json) {
     var data;
     try { data = typeof json === 'string' ? JSON.parse(json) : json; }
     catch (e) { return onError({ message: 'รูปแบบข้อมูลไม่ถูกต้อง' }); }
@@ -1054,10 +1122,12 @@
     $('lastUpdated').textContent = data.generatedAt;
     $('todayLabel').textContent = ST.company.nameTh + ' · ' + fmtDate(data.today, true);
     renderAll();
+    ldStep('done', 'พร้อมใช้งาน · ' + data.jobs.length + ' งาน');
+    setTimeout(function () { showLoading(false); $('loading').classList.remove('boot'); }, 250);
   }
 
   function onError(err) {
-    showLoading(false);
+    ldFail(err && err.message ? err.message : String(err));
     setConn('err', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', (err && err.message ? err.message : String(err)) + '\n' + connMode() +
       (ST.data ? '\nกำลังแสดงข้อมูลล่าสุด ณ ' + ST.data.generatedAt : ''));
     toast('⚠️ ' + (err && err.message ? err.message : err), 'err');
@@ -1069,12 +1139,62 @@
     $('appToastBody').textContent = msg;
     bootstrap.Toast.getOrCreateInstance(el, { delay: type === 'err' ? 7000 : 3500 }).show();
   }
-  function showLoading(on) { $('loading').classList.toggle('hide', !on); }
+  // ------------------------------------------------------------------ (r10) หน้าสถานะระหว่างโหลด
+  var LD = { on: true, t0: Date.now(), timer: null, order: ['ui', 'conn', 'data', 'render'],
+    pct: { ui: 12, conn: 35, data: 70, render: 90, done: 100 } };
+
+  function showLoading(on) {
+    LD.on = !!on;
+    $('loading').classList.toggle('hide', !on);
+    clearInterval(LD.timer);
+    if (!on) return;
+    LD.t0 = Date.now();
+    $('ldCard').classList.remove('err');
+    ['ldHint', 'ldActions', 'ldClose'].forEach(function (id) { $(id).classList.add('ld-x'); });
+    $('ldMode').textContent = hasGas() ? 'Apps Script' : (API_URL ? 'API' : 'ไม่ได้ตั้งค่า API');
+    ldStep('conn', 'กำลังเชื่อมต่อเซิร์ฟเวอร์...');
+    LD.timer = setInterval(ldTick, 100);
+  }
+
+  /** ไปขั้นตอน step (ขั้นก่อนหน้า = เสร็จ) : ui | conn | data | render | done */
+  function ldStep(step, msg) {
+    var idx = step === 'done' ? LD.order.length : LD.order.indexOf(step);
+    document.querySelectorAll('#ldSteps li').forEach(function (li, i) {
+      li.className = i < idx ? 'done' : (i === idx ? 'active' : '');
+    });
+    $('ldBar').style.width = (LD.pct[step] || 5) + '%';
+    if (msg) $('ldMsg').textContent = msg;
+  }
+
+  function ldTick() {
+    var s = (Date.now() - LD.t0) / 1000, hint = '';
+    $('ldTime').textContent = s.toFixed(1) + ' วิ';
+    if (s > 20) hint = '⏳ ใช้เวลานานกว่าปกติ — ตรวจสอบอินเทอร์เน็ต หรือกด "ลองใหม่"';
+    else if (s > 6) hint = 'เซิร์ฟเวอร์ Google Apps Script กำลังเริ่มทำงาน (เปิดครั้งแรกอาจใช้ 10–20 วินาที)';
+    $('ldHint').textContent = hint;
+    $('ldHint').classList.toggle('ld-x', !hint);
+    $('ldActions').classList.toggle('ld-x', s <= 20);
+    $('ldClose').classList.toggle('ld-x', !(s > 20 && ST.data));
+  }
+
+  /** โหลดไม่สำเร็จ : ถ้ายังไม่มีข้อมูลเลย ให้ค้างหน้าสถานะพร้อมปุ่มลองใหม่ (ไม่ปล่อยหน้าว่าง) */
+  function ldFail(msg) {
+    clearInterval(LD.timer);
+    if (!LD.on) return;
+    if (ST.data) return showLoading(false); // มีข้อมูลเดิมอยู่แล้ว → ปิดหน้าโหลด แสดงข้อมูลเดิม + toast
+    var cur = document.querySelector('#ldSteps li.active');
+    if (cur) cur.className = 'fail';
+    $('ldCard').classList.add('err');
+    $('ldMsg').textContent = 'โหลดข้อมูลไม่สำเร็จ';
+    $('ldHint').textContent = msg;
+    ['ldHint', 'ldActions'].forEach(function (id) { $(id).classList.remove('ld-x'); });
+    $('ldClose').classList.add('ld-x');
+  }
 
   function renderBrand() {
     var c = ST.company;
     $('brandLogo').innerHTML = c.logoUrl ? '<img src="' + esc(c.logoUrl) + '" alt="logo">' : 'RST';
-    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที · หน้าเว็บ r09 · Backend ' + (ST.data.codeVersion || 'เวอร์ชันเก่า (ยังไม่ได้ Deploy ใหม่)');
+    $('footerLabel').textContent = '© ' + c.nameTh + ' · ข้อมูลจาก Google Sheets · รีเฟรชอัตโนมัติทุก 5 นาที · หน้าเว็บ r10 · Backend ' + (ST.data.codeVersion || 'เวอร์ชันเก่า (ยังไม่ได้ Deploy ใหม่)');
   }
 
   function keyOf(j) { return j.ticketId ? 't:' + j.ticketId : 'r:' + j.row; }
