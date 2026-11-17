@@ -27,6 +27,25 @@
       --wb-accent:#1f6fb2; --wb-accent-soft:#d3e5f7; --wb-orange:#e8890c;
     }
     [x-cloak]{display:none!important}
+    /* ---- Boot / Loading status ---- */
+    .bt-wrap{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#c3ccd6 0%,#aab6c3 100%);font-family:"IBM Plex Sans Thai",system-ui,sans-serif}
+    .bt-box{width:min(420px,92vw);background:#fff;border:1px solid #8a97a6;border-radius:4px;box-shadow:0 18px 50px rgba(15,30,50,.35);overflow:hidden}
+    .bt-title{display:flex;align-items:center;gap:.5rem;padding:.45rem .75rem;font-size:14px;font-weight:600;color:#fff;background:linear-gradient(#2b4a6f,#1f3958)}
+    .bt-body{padding:1rem 1.1rem .9rem}
+    .bt-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.55rem}
+    .bt-step{display:flex;align-items:center;gap:.6rem;font-size:14.5px;color:#9aa4af}
+    .bt-step.on{color:#1d2733;font-weight:600}.bt-step.ok{color:#3e4a58}.bt-step.err{color:#dc2626;font-weight:600}
+    .bt-ico{flex:0 0 18px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;border:2px solid #cfd6de;color:#fff}
+    .bt-step.on .bt-ico{border-color:#d3e5f7;border-top-color:#1f6fb2;animation:bt-spin .8s linear infinite}
+    .bt-step.ok .bt-ico{background:#16a34a;border-color:#16a34a}
+    .bt-step.err .bt-ico{background:#dc2626;border-color:#dc2626}
+    .bt-bar{height:6px;background:#e6eaef;border-radius:3px;overflow:hidden;margin-top:1rem}
+    .bt-bar>i{display:block;height:100%;background:linear-gradient(90deg,#1f6fb2,#2f7cf6);border-radius:3px;transition:width .4s ease}
+    .bt-bar.ind>i{width:35%!important;animation:bt-ind 1.2s ease-in-out infinite}
+    .bt-foot{display:flex;justify-content:space-between;gap:.75rem;margin-top:.5rem;font-size:12.5px;color:#6b7684}
+    .bt-hint{margin-top:.75rem;padding:.5rem .65rem;font-size:13px;color:#7a4a00;background:#fff6e5;border:1px solid #f3d39b;border-radius:3px}
+    @keyframes bt-spin{to{transform:rotate(360deg)}}
+    @keyframes bt-ind{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
     html,body{height:100%}
     body{-webkit-font-smoothing:antialiased;background:var(--wb-bg);color:var(--wb-text);font-size:15px}
 
@@ -134,6 +153,23 @@
 </head>
 <body class="font-sans" x-data="app()" x-init="boot()">
 
+<!-- ============ PRE-BOOT SPLASH (แสดงทันที ก่อน Alpine โหลดเสร็จ) ============ -->
+<div id="preboot" class="bt-wrap" x-init="$el.remove()">
+  <div class="bt-box">
+    <div class="bt-title">Generate Code · Starting…</div>
+    <div class="bt-body">
+      <ul class="bt-steps">
+        <li class="bt-step on"><span class="bt-ico"></span>โหลดหน้าเว็บและไลบรารี</li>
+        <li class="bt-step"><span class="bt-ico"></span>เชื่อมต่อ Server &amp; ตรวจสอบสิทธิ์</li>
+        <li class="bt-step"><span class="bt-ico"></span>สร้างโครงสร้างรหัส (Code_Structure)</li>
+        <li class="bt-step"><span class="bt-ico"></span>เปิดหน้าทำงาน</li>
+      </ul>
+      <div class="bt-bar ind"><i></i></div>
+      <div class="bt-foot"><span>กำลังเริ่มต้นระบบ…</span><span>0%</span></div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ LOGIN / LOADING / ERROR ============ -->
 <div x-show="!ready" class="fixed inset-0 flex items-center justify-center wb-login-bg z-50">
   <div class="px-4 w-full flex justify-center">
@@ -159,10 +195,22 @@
       </form>
     </template>
     <template x-if="!fatal && !needLogin">
-      <div class="wb-dialog w-[min(360px,90vw)]">
-        <div class="wb-dialog-title"><span class="wb-logo wb-logo-sm"><span>C</span><span>O</span><span>D</span><span>E</span></span>Connecting…</div>
-        <div class="p-5 flex items-center gap-3 bg-white"><span class="w-6 h-6 border-[3px] border-[#d3e5f7] border-t-[#1f6fb2] rounded-full animate-spin shrink-0"></span>
-          <span class="text-gray-600">กำลังโหลดข้อมูลจาก Server…</span></div>
+      <div class="bt-box">
+        <div class="bt-title"><span class="wb-logo wb-logo-sm"><span>C</span><span>O</span><span>D</span><span>E</span></span>Connecting…</div>
+        <div class="bt-body">
+          <ul class="bt-steps">
+            <template x-for="(t,i) in bootSteps" :key="i">
+              <li class="bt-step" :class="i < bootStep ? 'ok' : (i === bootStep ? 'on' : '')">
+                <span class="bt-ico" x-text="i < bootStep ? '✓' : ''"></span><span x-text="t"></span>
+              </li>
+            </template>
+          </ul>
+          <div class="bt-bar" :class="bootStep === 1 && 'ind'"><i :style="'width:' + bootPct() + '%'"></i></div>
+          <div class="bt-foot"><span x-text="bootSteps[bootStep] ? bootSteps[bootStep] + '…' : 'พร้อมใช้งาน'"></span>
+            <span class="font-mono" x-text="bootPct() + '% · ' + bootSec + 's'"></span></div>
+          <div class="bt-hint" x-show="bootStep === 1 && bootSec >= 6" x-transition>
+            ⏳ Server กำลังเริ่มทำงาน (Apps Script cold start) อาจใช้เวลา 10–20 วินาทีในการเปิดครั้งแรก กรุณารอสักครู่…</div>
+        </div>
       </div>
     </template>
     <template x-if="fatal && !needLogin">
@@ -716,7 +764,8 @@
     <span class="font-mono">master_db › <b x-text="tbl()"></b></span>
     <span class="hidden sm:inline font-mono" x-text="(parts||[]).length.toLocaleString()+' parts · '+nodes.length.toLocaleString()+' nodes'"></span>
     <span class="flex-1"></span>
-    <span x-show="busy">⟳ กำลังทำงาน…</span>
+    <span x-show="partsLoading" class="flex items-center gap-1.5"><span class="w-3 h-3 border-2 border-white/30 border-t-[#ffd08a] rounded-full animate-spin"></span>กำลังโหลด Master_Parts…</span>
+    <span x-show="busy && !partsLoading">⟳ กำลังทำงาน…</span>
     <span class="hidden sm:inline font-mono" x-text="(me.email||'-')+' ['+(me.role||'-')+']'"></span>
   </footer>
 </div>
@@ -801,6 +850,8 @@ async function gs(fn, ...args) {
 function app() {
   return {
     I, IN_GAS, GAS_URL, tok: store.get(), needLogin: false, lf: { email: '', password: '' }, loginErr: '', loggingIn: false, pw: { old: '', new1: '' },
+    bootSteps: ['โหลดหน้าเว็บและไลบรารี', 'เชื่อมต่อ Server & ตรวจสอบสิทธิ์', 'สร้างโครงสร้างรหัส (Code_Structure)', 'เปิดหน้าทำงาน'],
+    bootStep: 0, bootSec: 0, bootTimer: null, partsLoading: false,
     ready: false, fatal: '', me: {}, roles: [], W: [], C: [], LN: [], page: 'generate', sideOpen: false, busy: 0, toasts: [],
     menus: [
       { id: 'generate', label: 'Generate Code', perm: 'view', icon: ICON('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/>') },
@@ -826,17 +877,25 @@ function app() {
 
     // ---------------------------------------------------------- core
     async boot() {
+      const tick = () => new Promise(r => setTimeout(r, 120));   // ให้ UI ได้วาดสถานะแต่ละขั้น
+      const t0 = Date.now(); this.bootSec = 0; clearInterval(this.bootTimer);
+      this.bootTimer = setInterval(() => this.bootSec = Math.floor((Date.now() - t0) / 1000), 500);
       try {
+        this.bootStep = 1;                                             // เชื่อมต่อ Server
         const d = await gs('getInit');
+        this.bootStep = 2; await tick();                               // สร้างโครงสร้างรหัส
         Object.assign(this, { me: d.me, roles: d.roles, W: d.width, C: d.cut, LN: d.levelNames, unit: d.defaultUnit });
         this.setNodes(d.structure);
+        this.bootStep = 3; await tick();                               // เปิดหน้าทำงาน
+        this.bootStep = 4; await tick();
         this.ready = true;
-        this.loadParts();
+        this.loadParts().catch(() => {});
       } catch (e) {
         if (e.code === 'AUTH') { this.setTok(''); this.needLogin = true; }
         else this.fatal = e.message || String(e);
-      }
+      } finally { clearInterval(this.bootTimer); }
     },
+    bootPct() { return Math.round(Math.min(this.bootStep, this.bootSteps.length) / this.bootSteps.length * 100); },
     hasToken() { return !!this.tok; },
     setTok(v) { store.set(v); this.tok = v; },
     async doLogin() {
@@ -1000,8 +1059,10 @@ function app() {
 
     // ---------------------------------------------------------- 2) report
     async loadParts(force) {
-      if (this.parts && !force) return;
-      const rows = await this.call('getParts');
+      if ((this.parts && !force) || this.partsLoading) return;
+      this.partsLoading = true;
+      let rows;
+      try { rows = await this.call('getParts'); } finally { this.partsLoading = false; }
       this.parts = rows; this.partMap = Object.fromEntries(rows.map(r => [r.code, r]));
     },
     filtered() {
