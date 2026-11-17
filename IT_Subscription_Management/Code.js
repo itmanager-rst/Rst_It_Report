@@ -1,23 +1,18 @@
 /**
  * Apps Script ที่ผูกกับชีต IT_Billing_Master_Log
- * หน้าที่: ให้ index.html อ่านและบันทึกข้อมูลลงชีตผ่าน Web App
+ * หน้าที่:
+ * 1) เปิด Web App URL โดยตรง -> แสดงหน้าเว็บ Dashboard (index.html)
+ * 2) เรียกผ่าน API (?token=...) -> อ่านและบันทึกข้อมูลลงชีตในรูปแบบ JSON
  * แท็บ: M365_Logs, GSuite_Logs, Bluehost_Logs (บริการ/วันต่ออายุ), Bluehost_Payments (ประวัติการชำระเงิน),
  *       Bluehost_Dedupe_Log (บันทึกแถวที่ถูกลบจากการรวมรายการซ้ำ — กู้คืนได้),
  *       BQ_IT_Expenses (ค่าใช้จ่ายแผนก IT ดึงจาก BigQuery: multi_company_inventory)
  *
- * วิธีติดตั้ง:
- * 1) เปิดชีต IT_Billing_Master_Log > Extensions > Apps Script
- * 2) วางโค้ดนี้แทนของเดิม (TOKEN ต้องตรงกับ API_TOKEN ใน index.html)
- * 3) Services (+) > เพิ่ม "BigQuery API" (Advanced Service ชื่อ BigQuery) > Add
- * 4) แก้ BQ_TABLE ด้านล่างให้เป็น dataset.table ที่เก็บ PO จริง
- * 5) (ครั้งแรก) Run ฟังก์ชัน setupSheets เพื่อสร้างแท็บและหัวตาราง
- * 6) Run ฟังก์ชัน createBigQuerySyncTrigger (ตั้งให้ดึงข้อมูล BigQuery ทุกวันเวลา 06:00 อัตโนมัติ)
- *    หรือกดเมนู "IT Dashboard > ดึงข้อมูล BigQuery (IT) ทันที" ในชีต
- * 7) (ล้างข้อมูลซ้ำที่มีอยู่แล้ว) Run ฟังก์ชัน dedupeBluehostSheet หรือใช้เมนู "IT Dashboard" ในชีต
- * 8) Deploy > Manage deployments > Edit (ไอคอนดินสอ) > Version: New version > Deploy
+ * วิธีติดตั้งเพิ่มเติมสำหรับแสดงหน้าเว็บ:
+ * 1) ในหน้า Apps Script กดเครื่องหมาย (+) ข้าง Files > เลือก HTML > ตั้งชื่อไฟล์ว่า "index"
+ * 2) นำโค้ดจากไฟล์ index.html มาวางทับทั้งหมดแล้วกด Save
+ * 3) Deploy > Manage deployments > Edit (ไอคอนดินสอ) > Version: New version > Deploy
  *    - Execute as: Me
  *    - Who has access: Anyone
- *    (ใช้ deployment เดิม URL จะไม่เปลี่ยน ไม่ต้องแก้ API_URL ใน index.html)
  */
 
 const TOKEN = "Qm7vT2xLp9WzRk4HsD1axcsdewsLpOjkGFDXvzgabxcs";
@@ -54,13 +49,21 @@ const HEADERS = {
 };
 
 /* =========================================================
-   Web App API
+   Web App UI & API
    ========================================================= */
 
-/** GET ?token=... -> ส่งข้อมูลทุกแท็บเป็น JSON */
+/** GET:
+ *  - หากไม่มี parameter ?token=... -> แสดงหน้าเว็บ Dashboard (index.html)
+ *  - หากมี ?token=... -> ทำงานเป็น API ส่งข้อมูล JSON ตามเดิม */
 function doGet(e) {
-  if (!authorized(e && e.parameter && e.parameter.token)) return out({ error: "unauthorized" });
-  const action = (e.parameter && e.parameter.action) || "";
+  if (!e || !e.parameter || !e.parameter.token) {
+    return HtmlService.createHtmlOutputFromFile("index")
+      .setTitle("IT Subscription Expense Dashboard")
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  if (!authorized(e.parameter.token)) return out({ error: "unauthorized" });
+  const action = e.parameter.action || "";
   if (action === "bqsync") return out(runBqSyncForWeb_());   // ดึง BigQuery → Sheet จากปุ่มในเว็บ
   if (action === "status") return out(getStatus_());          // สถานะการเชื่อมต่อ Sheet / BigQuery
   const res = {};
@@ -141,7 +144,6 @@ function bqRunQuery_() {
 }
 
 /** ดึงข้อมูลจาก BigQuery แล้วเขียนลงแท็บ BQ_IT_Expenses (ใช้กับ Trigger และเมนู) */
-// ใช้กับ trigger ตามเวลา และเมนูในชีต: ถ้าล้มเหลวจะ throw เพื่อให้เห็นใน Executions
 function syncBigQueryItExpenses() {
   const info = runBqSyncForWeb_();
   if (!info.ok) throw new Error(info.error);
