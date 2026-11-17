@@ -98,6 +98,8 @@ function err_(msg, code) { const e = new Error(msg); e.code = code; return e; }
 // ============================ SETUP ============================
 /** รันครั้งแรกจาก Editor: สร้างชีทที่ขาด + เพิ่มผู้รันเป็น Admin + ตั้งรหัสผ่านชั่วคราว (ดูใน Execution log) */
 function setup() {
+  // ตั้ง Time zone ของไฟล์ชีทให้เป็นเวลาไทย (ข้อมูลเดิมไม่เปลี่ยน เพราะชีทเก็บเป็นเวลาตามที่แสดง)
+  if (ss_().getSpreadsheetTimeZone() !== CFG.TZ) ss_().setSpreadsheetTimeZone(CFG.TZ);
   Object.keys(HEAD).forEach(name => {
     const sh = sheet_(name);
     sh.getRange(1, 1, 1, HEAD[name].length).setValues([HEAD[name]]).setFontWeight('bold').setBackground('#1F4E78').setFontColor('#ffffff');
@@ -202,8 +204,19 @@ function read_(name) {
   });
 }
 
+/**
+ * แก้บั๊กวันที่เพี้ยน: now_() เขียนเวลาเป็นข้อความ "yyyy-MM-dd HH:mm:ss" (เวลาไทย) ลงชีท
+ * แต่ Google Sheets แปลงข้อความนั้นเป็นวันที่ตาม Time zone ของไฟล์ชีท (เช่น America/Los_Angeles)
+ * ตอนอ่านกลับจึงถูกแปลงเป็นเวลาไทยซ้ำอีกรอบ → เวลาเลื่อน (+15 ชม. กลายเป็นวันรุ่งขึ้น)
+ * วิธีแก้: จัดรูปแบบวันที่ด้วย Time zone ของไฟล์ชีทเอง = ได้ค่าตรงกับที่เห็นในชีทเสมอ
+ */
+let SS_TZ_ = '';
+function ssTz_() {
+  if (!SS_TZ_) { try { SS_TZ_ = ss_().getSpreadsheetTimeZone() || CFG.TZ; } catch (e) { SS_TZ_ = CFG.TZ; } }
+  return SS_TZ_;
+}
 function fmt_(d) {
-  if (d instanceof Date) return Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+  if (d instanceof Date) return Utilities.formatDate(d, ssTz_(), 'yyyy-MM-dd HH:mm:ss');
   return d == null ? '' : String(d);
 }
 function now_() { return Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss'); }
