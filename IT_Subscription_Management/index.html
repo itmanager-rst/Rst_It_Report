@@ -238,7 +238,30 @@
     .fgrid input, .fgrid select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 14px; color: var(--text-1); background: #fff; width: 100%; }
     .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+    /* ===== Loading overlay (แสดงระหว่างโหลดหน้า app) ===== */
+    #appLoader { position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; transition: opacity .35s ease, visibility .35s; }
+    #appLoader.done { opacity: 0; visibility: hidden; pointer-events: none; }
+    .ld-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px; width: min(400px, 100%); box-shadow: 0 1px 2px rgba(15,23,42,.05), 0 4px 14px rgba(15,23,42,.04); }
+    .ld-title { font-weight: 700; font-size: 15px; color: var(--text-1); text-align: center; }
+    @keyframes ld-spin { to { transform: rotate(360deg); } }
+    .ld-list { list-style: none; margin-top: 18px; display: grid; gap: 12px; }
+    .ld-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-3); transition: color .2s ease; }
+    .ld-list .ic { width: 20px; height: 20px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1; border: 2px solid #cbd5e1; color: #fff; }
+    .ld-list .lb { flex: 1; }
+    .ld-list .dt { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+    .ld-list li.active { color: var(--text-1); font-weight: 600; }
+    .ld-list li.active .ic { border-color: var(--accent); border-top-color: transparent; animation: ld-spin .9s linear infinite; }
+    .ld-list li.done { color: var(--text-1); }
+    .ld-list li.done .ic { background: #10b981; border-color: #10b981; }
+    .ld-list li.done .ic::after { content: "✓"; }
+    .ld-list li.error { color: var(--up); }
+    .ld-list li.error .ic { background: #ef4444; border-color: #ef4444; }
+    .ld-list li.error .ic::after { content: "✕"; }
+    .ld-msg { font-size: 13px; color: var(--text-2); margin-top: 16px; min-height: 18px; line-height: 1.5; text-align: center; }
+    @media (prefers-reduced-motion: reduce) { .ld-list li.active .ic { animation-duration: 3s; } }
+
     @media print {
+      #appLoader { display: none !important; }
       body { background: #fff; padding: 0; }
       .pagenav { display: none !important; }
       .no-print, details.panel { display: none !important; }
@@ -247,6 +270,24 @@
   </style>
 </head>
 <body>
+<div id="appLoader" role="status" aria-live="polite">
+  <div class="ld-card">
+    <div class="ld-title">IT Subscription Expense Dashboard</div>
+    <ul class="ld-list" id="ldList" aria-label="ความคืบหน้าการโหลด">
+      <li data-step="chart" class="pending"><span class="ic"></span><span class="lb">โหลดไลบรารีกราฟ (Chart.js)</span><span class="dt"></span></li>
+      <li data-step="xlsx" class="pending"><span class="ic"></span><span class="lb">โหลดไลบรารีอ่านไฟล์ Excel (SheetJS)</span><span class="dt"></span></li>
+      <li data-step="ui" class="pending"><span class="ic"></span><span class="lb">เตรียมส่วนติดต่อผู้ใช้</span><span class="dt"></span></li>
+      <li data-step="api" class="pending"><span class="ic"></span><span class="lb">เชื่อมต่อ Google Sheet (Apps Script)</span><span class="dt"></span></li>
+      <li data-step="data" class="pending"><span class="ic"></span><span class="lb">ดึงข้อมูล M365 · Google Workspace · Bluehost</span><span class="dt"></span></li>
+      <li data-step="render" class="pending"><span class="ic"></span><span class="lb">แสดงผลแดชบอร์ด</span><span class="dt"></span></li>
+    </ul>
+    <div class="ld-msg" id="loaderMsg">กำลังเริ่มต้นระบบ…</div>
+  </div>
+</div>
+<script>
+  /* กันหน้าค้าง: ถ้าโหลดนานเกิน 25 วินาที ให้ซ่อน overlay อัตโนมัติ (ผลการเชื่อมต่อจะแสดงที่แถบสถานะ) */
+  setTimeout(function () { var o = document.getElementById("appLoader"); if (o) o.classList.add("done"); }, 25000);
+</script>
 <div class="container">
   <header>
     <div>
@@ -2715,12 +2756,54 @@ document.getElementById("rateInput").addEventListener("change", e => {
   if (v > 0) { rate = { value: v, source: "กำหนดเอง", date: new Date().toISOString().slice(0, 10) }; saveRate(); showRate(); render(); }
 });
 
+/* ---------- Loading overlay ---------- */
+function setLoader(msg, isErr = false) {
+  const m = document.getElementById("loaderMsg");
+  if (m) { m.textContent = msg; m.style.color = isErr ? "var(--up)" : ""; }
+}
+function hideLoader() {
+  const o = document.getElementById("appLoader");
+  if (o) o.classList.add("done");
+}
+/* สถานะแต่ละขั้นในรายการ checklist: pending | active | done | error */
+function setStep(key, state, detail = "") {
+  const li = document.querySelector(`#ldList li[data-step="${key}"]`);
+  if (!li) return;
+  li.className = state;
+  li.querySelector(".dt").textContent = detail;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  setLoader("กำลังเตรียมหน้าจอ…");
+  setStep("chart", "active");
+  const chartOk = typeof Chart !== "undefined";
+  setStep("chart", chartOk ? "done" : "error", chartOk ? "" : "ไม่สำเร็จ");
+  if (!chartOk) setLoader("⚠️ โหลดไลบรารีกราฟไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต)", true);
+  setStep("xlsx", "active");
+  const xlsxOk = typeof XLSX !== "undefined";
+  setStep("xlsx", xlsxOk ? "done" : "error", xlsxOk ? "" : "ไม่สำเร็จ");
+  setStep("ui", "active");
   loadRate();
   setupUpload();
   setupBluehost();
   setupPages();
-  loadFromSheet();
+  setStep("ui", "done");
+  setStep("api", "active");
+  setLoader("กำลังเชื่อมต่อ Google Sheet และดึงข้อมูล…");
+  setStep("data", "active");
+  // ซ่อน overlay เมื่อดึงข้อมูลเสร็จ (สำเร็จหรือไม่ก็ตาม) เพื่อให้ผู้ใช้เห็นหน้าและแถบสถานะการเชื่อมต่อ
+  loadFromSheet().then(ok => {
+    if (ok) {
+      const n = state.m365.length + state.gsuite.length + state.bluehost.length + state.bhpay.length;
+      setStep("api", "done");
+      setStep("data", "done", `${n} รายการ`);
+      setStep("render", "done");
+    } else {
+      setStep("api", "error", "ไม่สำเร็จ");
+      setStep("data", "error");
+      setStep("render", "error");
+    }
+  }).finally(() => setTimeout(hideLoader, 300));
   startRealtime();
   // อัปเดตอัตราอัตโนมัติถ้ายังไม่เคยดึง หรือข้อมูลเก่ากว่า 1 วัน
   const today = new Date().toISOString().slice(0, 10);
