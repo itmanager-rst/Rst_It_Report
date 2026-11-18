@@ -1731,13 +1731,22 @@ body.app-svc .btn-danger:hover { filter: brightness(.92); }
 
           <div class="table-container">
             <div class="row g-2 mb-3 align-items-center">
-              <div class="col-lg-4">
+              <div class="col-lg-5">
                 <div class="input-group input-group-sm">
                   <input type="text" id="mjSearch" class="form-control" placeholder="ค้นหา เลขใบงาน / หมายเลขรถ / รุ่น / ลูกค้า / ช่าง" oninput="maintShowCount = MJ_PAGE; renderMaintJobs()">
                   <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
                 </div>
+                <div class="input-group input-group-sm mt-1" title="กรองตามวันที่จ่ายงาน">
+                  <span class="input-group-text"><i class="fa-regular fa-calendar"></i></span>
+                  <select id="mjYear" class="form-select" onchange="maintShowCount = MJ_PAGE; renderMaintJobs()"><option value="">ทุกปี</option></select>
+                  <select id="mjMonth" class="form-select" onchange="maintShowCount = MJ_PAGE; renderMaintJobs()">
+                    <option value="">ทุกเดือน</option><option value="0">มกราคม</option><option value="1">กุมภาพันธ์</option><option value="2">มีนาคม</option><option value="3">เมษายน</option><option value="4">พฤษภาคม</option><option value="5">มิถุนายน</option><option value="6">กรกฎาคม</option><option value="7">สิงหาคม</option><option value="8">กันยายน</option><option value="9">ตุลาคม</option><option value="10">พฤศจิกายน</option><option value="11">ธันวาคม</option>
+                  </select>
+                  <button class="btn btn-outline-secondary" type="button" title="เดือนนี้" onclick="setMaintPeriod('this')">เดือนนี้</button>
+                  <button class="btn btn-outline-secondary" type="button" title="ล้างช่วงเวลา" onclick="setMaintPeriod('')"><i class="fa-solid fa-xmark"></i></button>
+                </div>
               </div>
-              <div class="col-lg-8 d-flex flex-wrap gap-1 justify-content-lg-end m-scroll-x" id="mjFilterBar">
+              <div class="col-lg-7 d-flex flex-wrap gap-1 justify-content-lg-end m-scroll-x" id="mjFilterBar">
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="open" onclick="setMaintFilter('open')">งานที่ยังไม่ปิด</button>
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="pending" onclick="setMaintFilter('pending')">รอจ่ายงาน</button>
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="assigned" onclick="setMaintFilter('assigned')">รอรับงาน</button>
@@ -5907,16 +5916,47 @@ function mjSearchQuery() {
   const el = document.getElementById('mjSearch');
   return el && el.value ? el.value.trim().toLowerCase() : '';
 }
+// 📅 ตัวกรองปี / เดือน (อิงวันที่จ่ายงาน; ถ้าไม่มีใช้วันที่สร้าง/แจ้ง)
+function mjJobDate(j) { return mjParse(j.assigned_at) || mjParse(j.created_at) || mjParse(j.report_date); }
+function mjPeriod() {
+  const y = document.getElementById('mjYear'), m = document.getElementById('mjMonth');
+  return { y: y && y.value !== '' ? +y.value : null, m: m && m.value !== '' ? +m.value : null };
+}
+function mjMatchPeriod(j, p) {
+  if (p.y === null && p.m === null) return true;
+  const d = mjJobDate(j); if (!d) return false;
+  return (p.y === null || d.getFullYear() === p.y) && (p.m === null || d.getMonth() === p.m);
+}
+function mjBuildYearOptions() {
+  const el = document.getElementById('mjYear'); if (!el) return;
+  const now = new Date().getFullYear();
+  const years = new Set([now]);
+  rawMaintJobs.forEach(j => { const d = mjJobDate(j); if (d) years.add(d.getFullYear()); });
+  const list = [...years].sort((a, b) => b - a);
+  const key = list.join(',');
+  if (el.dataset.key === key) return;
+  const cur = el.value;
+  el.innerHTML = '<option value="">ทุกปี</option>' + list.map(y => `<option value="${y}">${y + 543} (${y})</option>`).join('');
+  el.value = list.includes(+cur) ? cur : '';
+  el.dataset.key = key;
+}
+function setMaintPeriod(mode) {
+  const y = document.getElementById('mjYear'), m = document.getElementById('mjMonth');
+  if (!y || !m) return;
+  if (mode === 'this') { const d = new Date(); mjBuildYearOptions(); y.value = String(d.getFullYear()); m.value = String(d.getMonth()); }
+  else { y.value = ''; m.value = ''; }
+  maintShowCount = MJ_PAGE; renderMaintJobs();
+}
 function getFilteredMaintJobs() {
-  const q = mjSearchQuery();
-  return rawMaintJobs.filter(j => mjMatchFilter(j, maintFilter) && mjMatchSearch(j, q));
+  const q = mjSearchQuery(), p = mjPeriod();
+  return rawMaintJobs.filter(j => mjMatchFilter(j, maintFilter) && mjMatchSearch(j, q) && mjMatchPeriod(j, p));
 }
 
-// 🔢 ตัวเลขจำนวนงานบนปุ่มตัวกรอง (นับตามคำค้นที่พิมพ์อยู่ด้วย)
+// 🔢 ตัวเลขจำนวนงานบนปุ่มตัวกรอง (นับตามคำค้นและปี/เดือนที่เลือกด้วย)
 const MJ_FILTER_ALERT = { pending: 'bg-danger', overdue: 'bg-danger', declined: 'bg-danger', open: 'bg-warning text-dark', assigned: 'bg-warning text-dark' };
 function updateMaintFilterCounts() {
-  const q = mjSearchQuery();
-  const list = q ? rawMaintJobs.filter(j => mjMatchSearch(j, q)) : rawMaintJobs;
+  const q = mjSearchQuery(), p = mjPeriod();
+  const list = rawMaintJobs.filter(j => mjMatchSearch(j, q) && mjMatchPeriod(j, p));
   document.querySelectorAll('#mjFilterBar .mj-filter').forEach(btn => {
     const f = btn.dataset.f;
     const n = list.reduce((a, j) => a + (mjMatchFilter(j, f) ? 1 : 0), 0);
@@ -5954,6 +5994,7 @@ function renderMaintJobs() {
   if (!el) return;
   if (!maintLoaded) return;
   document.querySelectorAll('#mjFilterBar .mj-filter').forEach(b => b.classList.toggle('active', b.dataset.f === maintFilter));
+  mjBuildYearOptions();
   updateMaintFilterCounts();
   const list = getFilteredMaintJobs();
   if (!list.length) {
