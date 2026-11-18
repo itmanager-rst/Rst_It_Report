@@ -624,6 +624,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .mj-preview img { width: 26vw; height: 26vw; max-width: 100px; max-height: 100px; }
   .mj-photo-drop { padding: 22px 12px; }
   #mjdFooter { flex-wrap: wrap; gap: 6px; }
+  #mjPrintBar .btn { min-height: 38px; }
   #mjdFooter .btn { flex: 1 1 auto; }
 
   /* ป้องกันเนื้อหาทะลุจอ */
@@ -1603,6 +1604,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="all" onclick="setMaintFilter('all')">ทั้งหมด</button>
               </div>
             </div>
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-2 p-2 rounded border bg-light" id="mjPrintBar">
+              <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="mjSelectAll" onchange="toggleAllMaintSelect(this.checked)">
+                <label class="form-check-label small" for="mjSelectAll">เลือกทั้งหมดที่แสดง</label>
+              </div>
+              <span class="small text-muted me-auto" id="mjSelectedInfo">ยังไม่ได้เลือกงาน</span>
+              <button class="btn btn-sm btn-outline-secondary" onclick="clearMaintSelect()">ล้าง</button>
+              <button class="btn btn-sm btn-dark" onclick="openMaintPrintModal()"><i class="fa-solid fa-print me-1"></i> พิมพ์ / PDF</button>
+            </div>
             <div class="row g-3" id="mjList"><div class="col-12 text-center text-muted py-4">กดแท็บนี้เพื่อโหลดข้อมูล</div></div>
           </div>
 
@@ -1755,6 +1765,43 @@ html, body { max-width: 100%; overflow-x: hidden; }
         <div class="modal-footer py-2">
           <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
           <button class="btn btn-sm btn-danger" id="mjfSaveBtn" onclick="submitMaintAssign()"><i class="fa-solid fa-paper-plane me-1"></i> จ่ายงาน</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🖨️ MODAL พิมพ์ใบงานซ่อม -->
+  <div class="modal fade" id="maintPrintModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header bg-dark text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-print me-1"></i> พิมพ์ใบงานซ่อม</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="small mb-2">งานที่เลือก <b id="mjpCount">0</b> งาน (1 งาน = 1 หน้า A4)</div>
+          <div class="border rounded p-2 mb-3 small" style="max-height:160px;overflow:auto" id="mjpList"></div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="mjpPhotos" checked>
+            <label class="form-check-label small" for="mjpPhotos">แนบรูปก่อนซ่อม / หลังซ่อม (สูงสุดอย่างละ 6 รูป)</label>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="mjpSign" checked>
+            <label class="form-check-label small" for="mjpSign">มีช่องลงชื่อ (ผู้จ่ายงาน / ช่าง / ลูกค้า)</label>
+          </div>
+          <div class="small fw-bold mb-1">รูปแบบ</div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="mjpMode" id="mjpModePdf" value="pdf" checked>
+            <label class="form-check-label small" for="mjpModePdf"><b>ดาวน์โหลดไฟล์ PDF</b> — ได้ไฟล์ .pdf ทันที (เหมาะกับมือถือ / ส่งต่อทางไลน์)</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="mjpMode" id="mjpModePrint" value="print">
+            <label class="form-check-label small" for="mjpModePrint"><b>พิมพ์</b> — เปิดหน้าต่างพิมพ์ (เลือกเครื่องพิมพ์ หรือ "บันทึกเป็น PDF")</label>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button class="btn btn-sm btn-dark" id="mjpGoBtn" onclick="runMaintPrint()"><i class="fa-solid fa-file-pdf me-1"></i> สร้าง</button>
         </div>
       </div>
     </div>
@@ -5697,6 +5744,7 @@ function renderMaintJobs() {
     el.innerHTML = `<div class="col-12 text-center text-muted py-4"><i class="fa-solid fa-circle-check text-success me-1"></i>${rawMaintJobs.length ? 'ไม่มีงานตามตัวกรองนี้' : (maintIsAdmin ? 'ยังไม่มีงานซ่อม กด "จ่ายงานใหม่" เพื่อเริ่ม' : 'ยังไม่มีงานที่มอบหมายให้คุณ')}</div>`;
     return;
   }
+  setTimeout(updateMaintSelectInfo, 0);
   el.innerHTML = list.map(j => {
     const st = MJ_STATUS[j.status] || { label: j.status, color: '#6c757d', step: 0 };
     const steps = [1, 2, 3, 4].map(n => `<span class="${st.step >= n ? 'on' : ''}"></span>`).join('');
@@ -5704,7 +5752,7 @@ function renderMaintJobs() {
     const prio = j.priority && j.priority !== 'ปกติ' ? `<span class="mj-prio-${mjText(j.priority)} ms-1">${mjText(j.priority)}</span>` : '';
     const extra = j.status === 'declined' && j.decline_reason ? `<div class="mj-meta text-danger"><i class="fa-solid fa-comment-slash me-1"></i>${mjText(j.decline_reason)}</div>` : '';
     return `<div class="col-12 col-md-6 col-xl-4"><div class="mj-card" style="--mc:${st.color}">
-      <div class="d-flex justify-content-between align-items-start"><span class="mj-id">${mjText(j.job_id)}</span><span><span class="mj-badge">${st.label}</span>${overdue}</span></div>
+      <div class="d-flex justify-content-between align-items-start"><label class="mj-id d-flex align-items-center gap-2 mb-0" style="cursor:pointer"><input type="checkbox" class="form-check-input m-0 mj-sel" ${maintSelected.has(j.job_id) ? 'checked' : ''} onchange="toggleMaintSelect('${mjAttr(j.job_id)}', this.checked)">${mjText(j.job_id)}</label><span><span class="mj-badge">${st.label}</span>${overdue}</span></div>
       <div class="mj-machine"><i class="fa-solid fa-tractor me-1 text-muted"></i>${mjText(j.machine_id)} <small class="text-muted fw-normal">· ${mjText(j.model) || '-'}</small>${prio}</div>
       <div class="mj-steps" title="รับงาน → รับแล้ว → ซ่อม → ปิดงาน">${steps}</div>
       <div class="mj-meta"><i class="fa-solid fa-wrench me-1 text-muted"></i>${mjText(j.job_type) || '-'}${j.problem ? ' — ' + mjText(j.problem.length > 80 ? j.problem.slice(0, 80) + '…' : j.problem) : ''}</div>
@@ -6072,7 +6120,9 @@ function showMaintDetail(jobId) {
         ${j.photo_folder_id && maintIsAdmin ? `<a class="small d-inline-block mt-2" target="_blank" href="https://drive.google.com/drive/folders/${mjText(j.photo_folder_id)}"><i class="fa-brands fa-google-drive me-1"></i>เปิดโฟลเดอร์รูปใน Drive</a>` : ''}
       </div>
     </div>`;
-  document.getElementById('mjdFooter').innerHTML = mjActionButtons(j, true) + '<button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>';
+  document.getElementById('mjdFooter').innerHTML = mjActionButtons(j, true)
+    + `<button class="btn btn-sm btn-dark" onclick="printSingleMaintJob('${mjAttr(j.job_id)}')"><i class="fa-solid fa-print me-1"></i>พิมพ์ / PDF</button>`
+    + '<button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('maintDetailModal')).show();
   hydrateMaintThumbs(body);
 }
@@ -6228,6 +6278,215 @@ function openMaintTabForTechnician() {
   if (['admin', 'manager', 'office', 'supervisor'].includes(r)) return;
   const btn = document.getElementById('navMaintBtn');
   if (btn && window.bootstrap) { bootstrap.Tab.getOrCreateInstance(btn).show(); loadMaintenanceJobs(); }
+}
+
+
+// ==========================================
+// 🖨️ พิมพ์ใบงานซ่อม (เลือกได้หลายงาน → 1 งาน/หน้า A4)
+// ==========================================
+const maintSelected = new Set();
+let maintPrintIds = [];
+
+function toggleMaintSelect(id, on) { if (on) maintSelected.add(id); else maintSelected.delete(id); updateMaintSelectInfo(); }
+function clearMaintSelect() { maintSelected.clear(); document.querySelectorAll('#mjList .mj-sel').forEach(c => c.checked = false); updateMaintSelectInfo(); }
+function toggleAllMaintSelect(on) {
+  getFilteredMaintJobs().forEach(j => on ? maintSelected.add(j.job_id) : maintSelected.delete(j.job_id));
+  document.querySelectorAll('#mjList .mj-sel').forEach(c => c.checked = on);
+  updateMaintSelectInfo();
+}
+function updateMaintSelectInfo() {
+  // ตัดงานที่ถูกลบไปแล้วออก
+  const ids = new Set(rawMaintJobs.map(j => j.job_id));
+  [...maintSelected].forEach(id => { if (!ids.has(id)) maintSelected.delete(id); });
+  const info = document.getElementById('mjSelectedInfo');
+  if (info) info.textContent = maintSelected.size ? `เลือก ${maintSelected.size} งาน` : 'ยังไม่ได้เลือกงาน';
+  const all = document.getElementById('mjSelectAll');
+  if (all) { const shown = getFilteredMaintJobs(); all.checked = shown.length > 0 && shown.every(j => maintSelected.has(j.job_id)); }
+}
+
+function openMaintPrintModal(ids) {
+  maintPrintIds = ids || rawMaintJobs.filter(j => maintSelected.has(j.job_id)).map(j => j.job_id);
+  if (!maintPrintIds.length) return alert('กรุณาติ๊กเลือกงานที่ต้องการพิมพ์ก่อน');
+  document.getElementById('mjpCount').textContent = maintPrintIds.length;
+  document.getElementById('mjpList').innerHTML = maintPrintIds.map(id => {
+    const j = rawMaintJobs.find(x => x.job_id === id) || {};
+    return `<div>• <b>${mjText(id)}</b> — ${mjText(j.machine_id)} · ${mjText(j.model)} · ${(MJ_STATUS[j.status] || {}).label || ''}</div>`;
+  }).join('');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('maintPrintModal')).show();
+}
+
+function printSingleMaintJob(jobId) {
+  const dm = document.getElementById('maintDetailModal');
+  if (dm) bootstrap.Modal.getOrCreateInstance(dm).hide();
+  setTimeout(() => openMaintPrintModal([jobId]), 300);
+}
+
+// ดึงรูปเป็น data URI (ผ่าน Apps Script) — ใช้ได้ทั้งพิมพ์และ PDF ไม่ติดปัญหา Drive บล็อก/canvas
+async function mjFetchImages(urls, onProgress) {
+  const out = {}; let done = 0; const queue = urls.slice();
+  async function worker() {
+    while (queue.length) {
+      const u = queue.shift(); const id = extractDriveFileId(u);
+      try {
+        if (id && maintImgCache[id]) out[u] = maintImgCache[id];
+        else if (id) {
+          const r = await postJson({ action: 'getReceiptImage', fileId: id });
+          if (r && r.status === 'success' && r.dataUri) { maintImgCache[id] = r.dataUri; out[u] = r.dataUri; }
+        } else if (String(u).startsWith('data:')) out[u] = u;
+      } catch (e) { /* รูปนี้โหลดไม่ได้ ข้ามไป */ }
+      done++; if (onProgress) onProgress(done, urls.length);
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  return out;
+}
+
+const MJ_PRINT_CSS = `
+  .mjp-page{width:794px;min-height:1123px;padding:36px 40px;box-sizing:border-box;background:#fff;color:#111;font-family:'Prompt','Sarabun','Tahoma',sans-serif;font-size:12.5px;line-height:1.45;position:relative}
+  .mjp-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #dc3545;padding-bottom:8px;margin-bottom:12px}
+  .mjp-logo{display:inline-block;background:#dc3545;color:#fff;font-weight:700;padding:2px 10px;border-radius:4px;margin-right:8px;font-size:16px}
+  .mjp-title{font-size:18px;font-weight:700}
+  .mjp-sub{color:#666;font-size:11px}
+  .mjp-jobid{text-align:right}
+  .mjp-jobid b{font-size:16px}
+  .mjp-badge{display:inline-block;padding:2px 10px;border-radius:999px;color:#fff;font-size:11px;font-weight:600;margin-top:4px}
+  .mjp-sec{font-weight:700;font-size:13px;margin:12px 0 6px;padding:3px 8px;background:#f1f3f5;border-left:4px solid #dc3545}
+  table.mjp-t{width:100%;border-collapse:collapse}
+  table.mjp-t td{border:1px solid #ccc;padding:5px 7px;vertical-align:top}
+  table.mjp-t td.k{background:#fafafa;color:#555;width:17%;white-space:nowrap}
+  .mjp-box{border:1px solid #ccc;padding:6px 8px;min-height:34px;white-space:pre-wrap}
+  .mjp-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .mjp-photos img{width:100%;height:150px;object-fit:cover;border:1px solid #ccc;border-radius:3px}
+  .mjp-photos .none{color:#999;font-size:11px}
+  .mjp-sign{display:flex;gap:16px;margin-top:22px}
+  .mjp-sign div{flex:1;text-align:center;font-size:11.5px}
+  .mjp-sign .line{border-bottom:1px dotted #555;height:38px;margin-bottom:4px}
+  .mjp-foot{position:absolute;bottom:18px;left:40px;right:40px;display:flex;justify-content:space-between;color:#999;font-size:10px}
+`;
+
+function buildMaintJobSheet(j, imgs, opt, pageNo, pageTotal) {
+  const st = MJ_STATUS[j.status] || { label: j.status, color: '#6c757d' };
+  const t = v => mjText(v) || '-';
+  const d = v => v ? mjDate(v) : '-';
+  const dur = mjRepairHours(j);
+  const photos = (list) => {
+    if (!opt.photos) return '';
+    const arr = (list || []).slice(0, 6).map(u => imgs[u]).filter(Boolean);
+    return arr.length ? `<div class="mjp-photos">${arr.map(src => `<img src="${src}">`).join('')}</div>` : '<div class="mjp-photos"><span class="none">ไม่มีรูป</span></div>';
+  };
+  return `<div class="mjp-page">
+    <div class="mjp-head">
+      <div><span class="mjp-logo">Rst</span><span class="mjp-title">ใบงานซ่อมบำรุง</span><div class="mjp-sub">Maintenance Job Sheet · ระบบฐานข้อมูลรถขุด</div></div>
+      <div class="mjp-jobid"><div class="mjp-sub">เลขที่ใบงาน</div><b>${t(j.job_id)}</b><br><span class="mjp-badge" style="background:${st.color}">${st.label}</span></div>
+    </div>
+    <div class="mjp-sec">ข้อมูลรถและลูกค้า</div>
+    <table class="mjp-t">
+      <tr><td class="k">หมายเลขรถ</td><td><b>${t(j.machine_id)}</b></td><td class="k">รุ่นรถ</td><td>${t(j.model)}</td></tr>
+      <tr><td class="k">ลูกค้า</td><td>${t(j.customer)}</td><td class="k">เบอร์โทร</td><td>${t(j.phone)}</td></tr>
+      <tr><td class="k">สถานที่</td><td colspan="3">${t(j.location)}</td></tr>
+    </table>
+    <div class="mjp-sec">รายละเอียดงาน</div>
+    <table class="mjp-t">
+      <tr><td class="k">ประเภทงาน</td><td>${t(j.job_type)}</td><td class="k">ความเร่งด่วน</td><td>${t(j.priority)}</td></tr>
+      <tr><td class="k">ผู้จ่ายงาน</td><td>${t(j.assigned_by)}</td><td class="k">ช่างผู้รับผิดชอบ</td><td><b>${t(j.assigned_to)}</b></td></tr>
+      <tr><td class="k">วันที่จ่ายงาน</td><td>${d(j.assigned_at)}</td><td class="k">กำหนดเสร็จ</td><td>${d(j.due_date)}</td></tr>
+      <tr><td class="k">รับงาน</td><td>${d(j.accepted_at)}</td><td class="k">เริ่มซ่อม</td><td>${d(j.started_at)}</td></tr>
+      <tr><td class="k">ปิดงาน</td><td>${d(j.closed_at)}</td><td class="k">ระยะเวลาซ่อม</td><td>${dur != null ? mjFmtDuration(dur) : '-'}${j.labor_hours ? ' (ชม.ทำงาน ' + t(j.labor_hours) + ')' : ''}</td></tr>
+    </table>
+    <div class="mjp-sec">อาการ / ปัญหาที่แจ้ง</div><div class="mjp-box">${t(j.problem)}</div>
+    <div class="mjp-sec">ผลการซ่อม</div>
+    <table class="mjp-t">
+      <tr><td class="k">สาเหตุที่พบ</td><td>${t(j.cause)}</td></tr>
+      <tr><td class="k">รายละเอียดการซ่อม</td><td style="white-space:pre-wrap">${t(j.work_detail)}</td></tr>
+      <tr><td class="k">อะไหล่ที่ใช้</td><td>${t(j.parts_used)}</td></tr>
+      <tr><td class="k">หมายเหตุ</td><td>${t(j.remark)}${j.status === 'cancelled' && j.cancel_reason ? ' · ยกเลิก: ' + t(j.cancel_reason) : ''}</td></tr>
+    </table>
+    ${opt.photos ? `<div class="mjp-sec">รูปก่อนซ่อม</div>${photos(j.before_photos)}<div class="mjp-sec">รูปหลังซ่อม</div>${photos(j.after_photos)}` : ''}
+    ${opt.sign ? `<div class="mjp-sign">
+      <div><div class="line"></div>ผู้จ่ายงาน<br>( ${t(j.assigned_by)} )<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ช่างผู้ซ่อม<br>( ${t(j.assigned_to)} )<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ลูกค้า / ผู้รับมอบงาน<br>( .................................... )<br>วันที่ ......../......../........</div>
+    </div>` : ''}
+    <div class="mjp-foot"><span>พิมพ์โดย ${mjText(currentUser || '-')} · ${new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span><span>หน้า ${pageNo}/${pageTotal}</span></div>
+  </div>`;
+}
+
+async function runMaintPrint() {
+  const jobs = maintPrintIds.map(id => rawMaintJobs.find(j => j.job_id === id)).filter(Boolean);
+  if (!jobs.length) return;
+  const opt = { photos: document.getElementById('mjpPhotos').checked, sign: document.getElementById('mjpSign').checked };
+  const mode = document.getElementById('mjpModePrint').checked ? 'print' : 'pdf';
+  if (mode === 'pdf' && (typeof html2canvas === 'undefined' || !window.jspdf)) {
+    return alert('ไม่สามารถโหลดไลบรารีสร้าง PDF ได้ กรุณาเลือกแบบ "พิมพ์" แล้วเลือก "บันทึกเป็น PDF" แทน');
+  }
+  // เปิดหน้าต่างพิมพ์ทันทีตอนกด (ถ้ารอโหลดรูปก่อน เบราว์เซอร์มือถือจะบล็อก popup)
+  let win = null;
+  if (mode === 'print') {
+    win = window.open('', '_blank');
+    if (!win) return alert('เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณาอนุญาต popup หรือเลือกแบบ "ดาวน์โหลดไฟล์ PDF"');
+    win.document.write('<p style="font-family:sans-serif;padding:20px">กำลังเตรียมใบงาน...</p>');
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('maintPrintModal')).hide();
+  const btn = document.getElementById('mjpGoBtn'); btn.disabled = true;
+  try {
+    let imgs = {};
+    if (opt.photos) {
+      const urls = [...new Set(jobs.flatMap(j => (j.before_photos || []).slice(0, 6).concat((j.after_photos || []).slice(0, 6))))];
+      if (urls.length) {
+        showOperation(`กำลังโหลดรูป 0/${urls.length}...`);
+        imgs = await mjFetchImages(urls, (n, tot) => { const m = document.querySelector('#operationOverlay .op-msg, #operationMessage'); if (m) m.textContent = `กำลังโหลดรูป ${n}/${tot}...`; });
+      }
+    }
+    const pages = jobs.map((j, i) => buildMaintJobSheet(j, imgs, opt, i + 1, jobs.length));
+    const fileBase = jobs.length === 1 ? jobs[0].job_id + '_' + (jobs[0].machine_id || '') : 'Maintenance_Jobs_' + new Date().toISOString().slice(0, 10);
+
+    if (mode === 'print') {
+      hideOperation();
+      win.document.open();
+      win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${mjText(fileBase)}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>${MJ_PRINT_CSS}
+          body{margin:0;background:#e9ecef}
+          .mjp-page{margin:12px auto;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+          @page{size:A4;margin:0}
+          @media print{body{background:#fff}.mjp-page{margin:0;box-shadow:none;width:210mm;min-height:297mm;page-break-after:always;break-after:page}.mjp-page:last-child{page-break-after:auto;break-after:auto}}
+        </style></head><bo` + `dy>${pages.join('')}
+        <scr` + `ipt>window.onload=function(){setTimeout(function(){window.print();},400);};</scr` + `ipt></bo` + `dy></html>`);
+      win.document.close();
+      return;
+    }
+
+    // PDF: วาดทีละหน้า แล้วรวมเป็นไฟล์เดียว
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-99999px;top:0;background:#fff;';
+    holder.innerHTML = `<style>${MJ_PRINT_CSS}</style>`;
+    document.body.appendChild(holder);
+    try {
+      for (let i = 0; i < pages.length; i++) {
+        const m = document.querySelector('#operationOverlay .op-msg, #operationMessage');
+        if (i === 0) showOperation(`กำลังสร้าง PDF หน้า 1/${pages.length}...`); else if (m) m.textContent = `กำลังสร้าง PDF หน้า ${i + 1}/${pages.length}...`;
+        const wrap = document.createElement('div'); wrap.innerHTML = pages[i]; holder.appendChild(wrap);
+        await Promise.all([...wrap.querySelectorAll('img')].map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
+        const canvas = await html2canvas(wrap.firstElementChild, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+        holder.removeChild(wrap);
+        let w = pw, h = canvas.height * pw / canvas.width;
+        if (h > ph) { w = w * ph / h; h = ph; } // ยาวเกินหน้า → ย่อให้พอดี 1 หน้า
+        if (i > 0) pdf.addPage();
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', (pw - w) / 2, 0, w, h);
+      }
+    } finally { if (document.body.contains(holder)) document.body.removeChild(holder); }
+    pdf.save(fileBase.replace(/[\\/:*?"<>|]/g, '_') + '.pdf');
+  } catch (err) {
+    console.error(err);
+    if (win) win.close();
+    alert('สร้างใบงานไม่สำเร็จ: ' + (err && err.message ? err.message : err));
+  } finally {
+    btn.disabled = false; hideOperation();
+  }
 }
 </script>
 </body>
