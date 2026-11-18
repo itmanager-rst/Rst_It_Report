@@ -1738,8 +1738,8 @@ body.app-svc .btn-danger:hover { filter: brightness(.92); }
                 </div>
                 <div class="input-group input-group-sm mt-1" title="กรองตามวันที่จ่ายงาน">
                   <span class="input-group-text"><i class="fa-regular fa-calendar"></i></span>
-                  <select id="mjYear" class="form-select" onchange="maintShowCount = MJ_PAGE; renderMaintJobs()"><option value="">ทุกปี</option></select>
-                  <select id="mjMonth" class="form-select" onchange="maintShowCount = MJ_PAGE; renderMaintJobs()">
+                  <select id="mjYear" class="form-select" onchange="onMaintPeriodChange()"><option value="">ทุกปี</option></select>
+                  <select id="mjMonth" class="form-select" onchange="onMaintPeriodChange()">
                     <option value="">ทุกเดือน</option><option value="0">มกราคม</option><option value="1">กุมภาพันธ์</option><option value="2">มีนาคม</option><option value="3">เมษายน</option><option value="4">พฤษภาคม</option><option value="5">มิถุนายน</option><option value="6">กรกฎาคม</option><option value="7">สิงหาคม</option><option value="8">กันยายน</option><option value="9">ตุลาคม</option><option value="10">พฤศจิกายน</option><option value="11">ธันวาคม</option>
                   </select>
                   <button class="btn btn-outline-secondary" type="button" title="เดือนนี้" onclick="setMaintPeriod('this')">เดือนนี้</button>
@@ -5945,7 +5945,17 @@ function setMaintPeriod(mode) {
   if (!y || !m) return;
   if (mode === 'this') { const d = new Date(); mjBuildYearOptions(); y.value = String(d.getFullYear()); m.value = String(d.getMonth()); }
   else { y.value = ''; m.value = ''; }
-  maintShowCount = MJ_PAGE; renderMaintJobs();
+  onMaintPeriodChange();
+}
+// เลือกปี/เดือนแล้ว ถ้าสถานะที่กดอยู่ไม่มีงานในช่วงนั้น (เช่น ปี 2568 ปิดงานหมดแล้ว แต่กำลังดู "งานที่ยังไม่ปิด") → สลับไป "ทั้งหมด" ให้อัตโนมัติ
+function onMaintPeriodChange() {
+  maintShowCount = MJ_PAGE;
+  const p = mjPeriod(), q = mjSearchQuery();
+  if ((p.y !== null || p.m !== null) && maintFilter !== 'all') {
+    const inPeriod = rawMaintJobs.filter(j => mjMatchSearch(j, q) && mjMatchPeriod(j, p));
+    if (inPeriod.length && !inPeriod.some(j => mjMatchFilter(j, maintFilter))) maintFilter = 'all';
+  }
+  renderMaintJobs();
 }
 function getFilteredMaintJobs() {
   const q = mjSearchQuery(), p = mjPeriod();
@@ -5998,7 +6008,7 @@ function renderMaintJobs() {
   updateMaintFilterCounts();
   const list = getFilteredMaintJobs();
   if (!list.length) {
-    el.innerHTML = `<div class="col-12 text-center text-muted py-4"><i class="fa-solid fa-circle-check text-success me-1"></i>${rawMaintJobs.length ? 'ไม่มีงานตามตัวกรองนี้' : (maintIsAdmin ? 'ยังไม่มีงานซ่อม กด "จ่ายงานใหม่" เพื่อเริ่ม' : 'ยังไม่มีงานที่มอบหมายให้คุณ')}</div>`;
+    el.innerHTML = `<div class="col-12 text-center text-muted py-4"><i class="fa-solid fa-circle-check text-success me-1"></i>${rawMaintJobs.length ? ('ไม่มีงานตามตัวกรองนี้' + (maintFilter !== 'all' ? ' <a href="#" onclick="event.preventDefault();setMaintFilter(\'all\')">ดูทุกสถานะ</a>' : '')) : (maintIsAdmin ? 'ยังไม่มีงานซ่อม กด "จ่ายงานใหม่" เพื่อเริ่ม' : 'ยังไม่มีงานที่มอบหมายให้คุณ')}</div>`;
     return;
   }
   setTimeout(updateMaintSelectInfo, 0);
