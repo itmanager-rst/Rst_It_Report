@@ -655,7 +655,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       <form id="loginForm" onsubmit="handleLoginSubmit(event)">
         <div class="mb-3 text-start">
           <label class="form-label form-label-sm">ชื่อผู้ใช้งาน (User)</label>
-          <input type="text" id="loginUser" class="form-control" required placeholder="ระบุชื่อผู้ใช้" autocomplete="username">
+          <input type="text" id="loginUser" class="form-control" required placeholder="ระบุชื่อผู้ใช้ (พิมพ์ไทยหรืออังกฤษได้)" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
         </div>
         <div class="mb-4 text-start">
           <label class="form-label form-label-sm">รหัสผ่าน (Password)</label>
@@ -1570,8 +1570,19 @@ html, body { max-width: 100%; overflow-x: hidden; }
             </div>
           </div>
 
+          <div class="alert alert-light border d-none d-flex flex-wrap align-items-center gap-2 py-2 px-3 mb-3 small" id="svSyncBar">
+            <i class="fa-solid fa-file-import text-success"></i>
+            <span><b>ข้อมูลจากชีตแจ้งซ่อม</b> <a href="#" target="_blank" id="svSheetLink">Data_งานแจ้งซ่อม_Service_RST</a></span>
+            <span class="text-muted me-auto" id="svSyncInfo">ยังไม่เคยซิงค์</span>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="svAutoSync" onchange="toggleServiceRstAutoSync(this.checked)">
+              <label class="form-check-label" for="svAutoSync">ซิงค์อัตโนมัติทุก 1 ชม.</label>
+            </div>
+            <button class="btn btn-sm btn-success" id="svSyncBtn" onclick="runServiceRstSync()"><i class="fa-solid fa-rotate me-1"></i> ซิงค์ตอนนี้</button>
+          </div>
+
           <div class="row g-3 mb-3 mj-kpi-row">
-            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#fd7e14" onclick="setMaintFilter('assigned')"><div class="ov-kpi-label"><i class="fa-solid fa-inbox"></i>รอช่างรับงาน</div><div class="ov-kpi-val" style="color:#fd7e14" id="mjKAssigned">-</div><div class="ov-kpi-sub">&nbsp;</div></div></div>
+            <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#fd7e14" onclick="setMaintFilter('waiting')"><div class="ov-kpi-label"><i class="fa-solid fa-inbox"></i>รอจ่าย / รอรับงาน</div><div class="ov-kpi-val" style="color:#fd7e14" id="mjKAssigned">-</div><div class="ov-kpi-sub" id="mjKAssignedSub">&nbsp;</div></div></div>
             <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#0dcaf0" onclick="setMaintFilter('accepted')"><div class="ov-kpi-label"><i class="fa-solid fa-hand"></i>รับงานแล้ว</div><div class="ov-kpi-val" style="color:#0aa2c0" id="mjKAccepted">-</div><div class="ov-kpi-sub">รอเข้าซ่อม</div></div></div>
             <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#0d6efd" onclick="setMaintFilter('in_progress')"><div class="ov-kpi-label"><i class="fa-solid fa-gears"></i>กำลังซ่อม</div><div class="ov-kpi-val text-primary" id="mjKProgress">-</div><div class="ov-kpi-sub">&nbsp;</div></div></div>
             <div class="col-6 col-md-4 col-xl-2"><div class="ov-kpi" style="--kc:#198754" onclick="setMaintFilter('completed')"><div class="ov-kpi-label"><i class="fa-solid fa-circle-check"></i>ปิดงานเดือนนี้</div><div class="ov-kpi-val text-success" id="mjKDoneMonth">-</div><div class="ov-kpi-sub" id="mjKDoneAll">&nbsp;</div></div></div>
@@ -1583,18 +1594,21 @@ html, body { max-width: 100%; overflow-x: hidden; }
             <div class="col-lg-4"><div class="ov-card"><h6><i class="fa-solid fa-chart-pie text-danger me-1"></i>สถานะงานซ่อม</h6><div id="mjStatusChart"><div class="ov-empty">กำลังโหลด...</div></div></div></div>
             <div class="col-lg-4"><div class="ov-card"><h6><i class="fa-solid fa-user-gear text-danger me-1"></i>งานต่อช่าง (ค้าง / ปิดแล้ว)</h6><div id="mjTechChart"><div class="ov-empty">กำลังโหลด...</div></div></div></div>
             <div class="col-lg-4"><div class="ov-card"><h6><i class="fa-solid fa-tractor text-danger me-1"></i>รุ่นที่เข้าซ่อมบ่อย</h6><div id="mjModelChart"><div class="ov-empty">กำลังโหลด...</div></div></div></div>
+            <div class="col-lg-8"><div class="ov-card"><h6><i class="fa-solid fa-layer-group text-danger me-1"></i>หมวดหลักการซ่อม</h6><div id="mjCatChart"><div class="ov-empty">กำลังโหลด...</div></div></div></div>
+            <div class="col-lg-4"><div class="ov-card"><h6><i class="fa-solid fa-star text-danger me-1"></i>ความพึงพอใจลูกค้า (เต็ม 3)</h6><div id="mjRatingBox"><div class="ov-empty">กำลังโหลด...</div></div></div></div>
           </div>
 
           <div class="table-container">
             <div class="row g-2 mb-3 align-items-center">
               <div class="col-lg-4">
                 <div class="input-group input-group-sm">
-                  <input type="text" id="mjSearch" class="form-control" placeholder="ค้นหา เลขใบงาน / หมายเลขรถ / รุ่น / ลูกค้า / ช่าง" oninput="renderMaintJobs()">
+                  <input type="text" id="mjSearch" class="form-control" placeholder="ค้นหา เลขใบงาน / หมายเลขรถ / รุ่น / ลูกค้า / ช่าง" oninput="maintShowCount = MJ_PAGE; renderMaintJobs()">
                   <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
                 </div>
               </div>
               <div class="col-lg-8 d-flex flex-wrap gap-1 justify-content-lg-end m-scroll-x" id="mjFilterBar">
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="open" onclick="setMaintFilter('open')">งานที่ยังไม่ปิด</button>
+                <button class="btn btn-sm btn-outline-dark mj-filter" data-f="pending" onclick="setMaintFilter('pending')">รอจ่ายงาน</button>
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="assigned" onclick="setMaintFilter('assigned')">รอรับงาน</button>
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="accepted" onclick="setMaintFilter('accepted')">รับงานแล้ว</button>
                 <button class="btn btn-sm btn-outline-dark mj-filter" data-f="in_progress" onclick="setMaintFilter('in_progress')">กำลังซ่อม</button>
@@ -1626,6 +1640,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
             <h5 class="fw-bold mb-0"><i class="fa-solid fa-users-gear text-danger me-2"></i>จัดการสมาชิก</h5>
             <div class="d-flex gap-2 flex-wrap">
               <button class="btn btn-sm btn-danger" onclick="openUserModal()"><i class="fa-solid fa-user-plus me-1"></i> เพิ่มสมาชิก</button>
+              <button class="btn btn-sm btn-success" onclick="openTechImportModal()"><i class="fa-solid fa-users-viewfinder me-1"></i> นำเข้าชื่อช่างจากชีตแจ้งซ่อม</button>
               <button class="btn btn-sm btn-outline-secondary" onclick="loadUsers(true)"><i class="fa-solid fa-rotate me-1"></i> รีเฟรช</button>
             </div>
           </div>
@@ -1728,10 +1743,14 @@ html, body { max-width: 100%; overflow-x: hidden; }
               <textarea class="form-control form-control-sm" id="mjfProblem" rows="3"></textarea>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-bold">มอบหมายให้ช่าง <span class="text-danger">*</span></label>
-              <select class="form-select form-select-sm" id="mjfTech"><option value="">-- เลือกช่าง --</option></select>
+              <label class="form-label small fw-bold">มอบหมายให้ช่าง (เลือกได้หลายคน = ทีม) <span class="text-danger">*</span></label>
+              <input type="text" class="form-control form-control-sm mb-1" id="mjfTechSearch" placeholder="ค้นหาชื่อช่าง..." oninput="renderMaintTechList()" autocomplete="off">
+              <div class="border rounded p-2" id="mjfTechList" style="max-height:170px;overflow:auto"><span class="text-muted small">กำลังโหลด...</span></div>
+              <div class="small text-muted mt-1" id="mjfTechInfo">ยังไม่ได้เลือกช่าง</div>
             </div>
             <div class="col-md-6">
+              <label class="form-label small fw-bold">หัวหน้าทีม</label>
+              <select class="form-select form-select-sm mb-2" id="mjfLead" onchange="onMaintLeadChange()"><option value="">-- เลือกช่างก่อน --</option></select>
               <label class="form-label small fw-bold">หมายเหตุถึงช่าง</label>
               <input type="text" class="form-control form-control-sm" id="mjfRemark">
             </div>
@@ -1803,6 +1822,20 @@ html, body { max-width: 100%; overflow-x: hidden; }
           <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
           <button class="btn btn-sm btn-dark" id="mjpGoBtn" onclick="runMaintPrint()"><i class="fa-solid fa-file-pdf me-1"></i> สร้าง</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 👷 MODAL นำเข้าชื่อช่างจากชีตแจ้งซ่อม -->
+  <div class="modal fade" id="techImportModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-users-viewfinder me-1"></i> นำเข้าชื่อช่างจากชีตแจ้งซ่อม</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="tiBody"><div class="text-muted small">กำลังโหลดรายชื่อ...</div></div>
+        <div class="modal-footer py-2" id="tiFooter"></div>
       </div>
     </div>
   </div>
@@ -3177,7 +3210,7 @@ function logout() {
   rawDashboardData = [];
   rawHistoryData = [];
   rawMatrixData = [];
-  if (typeof rawMaintJobs !== 'undefined') { rawMaintJobs = []; maintLoaded = false; maintIsAdmin = false; maintTechs = null; }
+  if (typeof rawMaintJobs !== 'undefined') { rawMaintJobs = []; maintLoaded = false; maintIsAdmin = false; maintTechs = null; renderMaintAll._svInfo = false; }
   if (typeof rawUsers !== 'undefined') { rawUsers = []; usersLoaded = false; }
   document.body.classList.remove('role-readonly');
   const roBanner = document.getElementById('readonlyBanner'); if (roBanner) roBanner.classList.add('d-none');
@@ -5541,6 +5574,7 @@ function exportToExcel(tableId, filename) {
 // admin จ่ายงาน → ช่างรับงาน → เข้าซ่อม (รูปก่อนซ่อม) → ปิดงาน (รูปหลังซ่อม) → Dashboard
 // ==========================================
 const MJ_STATUS = {
+  pending:     { label: 'รอจ่ายงาน',    color: '#d63384', step: 0 },
   assigned:    { label: 'รอช่างรับงาน', color: '#fd7e14', step: 1 },
   accepted:    { label: 'รับงานแล้ว',   color: '#0aa2c0', step: 2 },
   in_progress: { label: 'กำลังซ่อม',    color: '#0d6efd', step: 3 },
@@ -5609,6 +5643,7 @@ function loadMaintenanceJobs(force = false) {
 }
 
 function renderMaintAll() {
+  if (!renderMaintAll._svInfo) { renderMaintAll._svInfo = true; loadServiceRstSyncInfo(); }
   document.querySelectorAll('.mj-admin').forEach(el => el.classList.toggle('d-none', !maintIsAdmin));
   const t = document.getElementById('mjTitle');
   if (t) t.textContent = maintIsAdmin ? 'งานซ่อมบำรุง (ทั้งหมด)' : 'งานซ่อมของฉัน';
@@ -5619,7 +5654,7 @@ function renderMaintAll() {
 }
 
 function mjCounts(list) {
-  const c = { assigned: 0, accepted: 0, in_progress: 0, completed: 0, declined: 0, cancelled: 0, overdue: 0, doneMonth: 0 };
+  const c = { pending: 0, assigned: 0, accepted: 0, in_progress: 0, completed: 0, declined: 0, cancelled: 0, overdue: 0, doneMonth: 0 };
   const now = new Date();
   const hrs = [];
   list.forEach(j => {
@@ -5632,21 +5667,21 @@ function mjCounts(list) {
     }
   });
   c.avgHours = hrs.length ? hrs.reduce((a, b) => a + b, 0) / hrs.length : null;
-  c.open = c.assigned + c.accepted + c.in_progress + c.declined;
+  c.open = c.pending + c.assigned + c.accepted + c.in_progress + c.declined;
   return c;
 }
 
 function renderMaintKpis() {
   const c = mjCounts(rawMaintJobs);
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
-  set('mjKAssigned', c.assigned); set('mjKAccepted', c.accepted); set('mjKProgress', c.in_progress);
+  set('mjKAssigned', c.pending + c.assigned); set('mjKAssignedSub', 'รอจ่าย ' + c.pending + ' · รอรับ ' + c.assigned); set('mjKAccepted', c.accepted); set('mjKProgress', c.in_progress);
   set('mjKDoneMonth', c.doneMonth); set('mjKDoneAll', 'ปิดแล้วทั้งหมด ' + c.completed + ' งาน');
   set('mjKAvg', mjFmtDuration(c.avgHours)); set('mjKOverdue', c.overdue);
   set('mjKDeclined', c.declined ? ('ช่างปฏิเสธ ' + c.declined + ' งาน') : '&nbsp;');
   const badge = document.getElementById('mjNavBadge');
   if (badge) {
     // admin: งานที่ต้องจัดการ (ถูกปฏิเสธ + เลยกำหนด) / ช่าง: งานที่ต้องทำ
-    const n = maintIsAdmin ? (c.declined + c.overdue) : (c.assigned + c.accepted + c.in_progress);
+    const n = maintIsAdmin ? (c.pending + c.declined + c.overdue) : (c.assigned + c.accepted + c.in_progress);
     badge.textContent = n; badge.classList.toggle('d-none', !n);
   }
 }
@@ -5677,9 +5712,10 @@ function renderMaintCharts() {
     const m = {};
     list.forEach(j => {
       if (j.status === 'cancelled') return;
-      const k = j.assigned_to || 'ไม่ระบุ';
-      m[k] = m[k] || { open: 0, done: 0 };
-      if (j.status === 'completed') m[k].done++; else m[k].open++;
+      (mjTeam(j).length ? mjTeam(j) : ['ไม่ระบุ']).forEach(k => {
+        m[k] = m[k] || { open: 0, done: 0 };
+        if (j.status === 'completed') m[k].done++; else m[k].open++;
+      });
     });
     const rows = Object.entries(m).sort((a, b) => (b[1].open + b[1].done) - (a[1].open + a[1].done)).slice(0, 10);
     if (!rows.length) techEl.innerHTML = '<div class="ov-empty">ยังไม่มีข้อมูล</div>';
@@ -5687,6 +5723,25 @@ function renderMaintCharts() {
       const max = Math.max(1, ...rows.map(r => r[1].open + r[1].done));
       techEl.innerHTML = rows.map(([name, v]) => `<div class="ov-hbar-row" style="cursor:pointer" onclick="document.getElementById('mjSearch').value='${mjAttr(name)}';setMaintFilter('all')"><div class="ov-hbar-label" title="${mjText(name)}">${mjText(name)}</div><div class="ov-hbar-track"><div style="width:${v.open / max * 100}%;background:#fd7e14" title="ค้าง ${v.open}"></div><div style="width:${v.done / max * 100}%;background:#198754" title="ปิดแล้ว ${v.done}"></div></div><div class="ov-hbar-num">${v.open}/${v.done}</div></div>`).join('');
     }
+  }
+  const catEl = document.getElementById('mjCatChart');
+  if (catEl) {
+    const m = {};
+    list.forEach(j => {
+      if (j.status === 'cancelled') return;
+      const cats = String(j.category || '').split(/,\s*(?=\d+\.)/).map(x => x.trim()).filter(Boolean);
+      (cats.length ? cats : ['ไม่ระบุหมวด']).forEach(k => { m[k] = (m[k] || 0) + 1; });
+    });
+    const none = m['ไม่ระบุหมวด'] || 0; delete m['ไม่ระบุหมวด'];
+    catEl.innerHTML = mjHBars(Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 10), '#dc3545').replace(/ov-hbar-label"/g, 'ov-hbar-label" style="width:210px"')
+      + (none ? `<div class="small text-muted mt-2">ไม่ระบุหมวด ${none.toLocaleString()} งาน (ส่วนใหญ่เป็นข้อมูลเก่าที่ยังไม่มีคอลัมน์หมวด) · 1 งานนับได้หลายหมวด</div>` : '');
+  }
+  const rateEl = document.getElementById('mjRatingBox');
+  if (rateEl) {
+    const avg = k => { const v = list.map(j => parseFloat(j[k])).filter(x => !isNaN(x)); return v.length ? { n: v.length, a: v.reduce((x, y) => x + y, 0) / v.length } : null; };
+    const s1 = avg('rating_service'), s2 = avg('rating_recommend');
+    const line = (lbl, r) => `<div class="d-flex justify-content-between align-items-center border-bottom py-2"><span>${lbl}</span><span>${r ? `<b class="fs-5">${r.a.toFixed(2)}</b> <small class="text-muted">/ 3 · ${r.n.toLocaleString()} ครั้ง</small>` : '<span class="text-muted">-</span>'}</span></div>`;
+    rateEl.innerHTML = line('การบริการ', s1) + line('จะแนะนำต่อ', s2);
   }
   const modelEl = document.getElementById('mjModelChart');
   if (modelEl) {
@@ -5696,8 +5751,10 @@ function renderMaintCharts() {
   }
 }
 
+const MJ_PAGE = 60;
+let maintShowCount = MJ_PAGE;
 function setMaintFilter(f) {
-  maintFilter = f;
+  maintFilter = f; maintShowCount = MJ_PAGE;
   document.querySelectorAll('#mjFilterBar .mj-filter').forEach(b => b.classList.toggle('active', b.dataset.f === f));
   renderMaintJobs();
 }
@@ -5705,11 +5762,12 @@ function setMaintFilter(f) {
 function getFilteredMaintJobs() {
   const q = (document.getElementById('mjSearch') || {}).value ? document.getElementById('mjSearch').value.trim().toLowerCase() : '';
   return rawMaintJobs.filter(j => {
-    if (maintFilter === 'open' && !['assigned', 'accepted', 'in_progress', 'declined'].includes(j.status)) return false;
+    if (maintFilter === 'open' && !['pending', 'assigned', 'accepted', 'in_progress', 'declined'].includes(j.status)) return false;
+    if (maintFilter === 'waiting' && !['pending', 'assigned'].includes(j.status)) return false;
     if (maintFilter === 'overdue' && !mjIsOverdue(j)) return false;
-    if (!['open', 'overdue', 'all'].includes(maintFilter) && j.status !== maintFilter) return false;
+    if (!['open', 'overdue', 'all', 'waiting'].includes(maintFilter) && j.status !== maintFilter) return false;
     if (q) {
-      const hay = [j.job_id, j.machine_id, j.model, j.customer, j.assigned_to, j.problem, j.location].join(' ').toLowerCase();
+      const hay = [j.job_id, j.machine_id, j.customer_id, j.model, j.customer, j.phone, j.assigned_to, j.problem, j.location, j.category, j.remark].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -5718,16 +5776,18 @@ function getFilteredMaintJobs() {
 
 function mjActionButtons(j, inModal) {
   const id = mjAttr(j.job_id);
-  const mine = String(j.assigned_to || '').toLowerCase() === String(currentUser || '').toLowerCase();
+  const mine = mjInTeam(j, currentUser);
   const can = mine || maintIsAdmin;
   const b = [];
   if (!inModal) b.push(`<button class="btn btn-sm btn-outline-dark" onclick="showMaintDetail('${id}')"><i class="fa-solid fa-eye me-1"></i>ดู</button>`);
   if (can && j.status === 'assigned') b.push(`<button class="btn btn-sm btn-warning" onclick="maintQuickStep('${id}','accept')"><i class="fa-solid fa-hand me-1"></i>รับงาน</button>`);
   if (can && (j.status === 'accepted' || j.status === 'assigned')) b.push(`<button class="btn btn-sm btn-primary" onclick="openMaintStepModal('${id}','start')"><i class="fa-solid fa-camera me-1"></i>เข้าซ่อม</button>`);
   if (can && j.status === 'in_progress') b.push(`<button class="btn btn-sm btn-success" onclick="openMaintStepModal('${id}','close')"><i class="fa-solid fa-flag-checkered me-1"></i>ปิดงาน</button>`);
-  if (mine && (j.status === 'assigned' || j.status === 'accepted')) b.push(`<button class="btn btn-sm btn-outline-danger" onclick="maintQuickStep('${id}','decline')">ปฏิเสธ</button>`);
+  if (mine && (j.status === 'assigned' || j.status === 'accepted')) b.push(`<button class="btn btn-sm btn-outline-danger" onclick="maintQuickStep('${id}','decline')">${mjTeam(j).length > 1 ? 'ออกจากทีม' : 'ปฏิเสธ'}</button>`);
   if (maintIsAdmin) {
-    b.push(`<button class="btn btn-sm btn-outline-secondary" title="แก้ไข" onclick="openMaintAssignModal('${id}')"><i class="fa-solid fa-pen"></i> แก้ไข</button>`);
+    b.push(j.status === 'pending'
+      ? `<button class="btn btn-sm btn-danger" title="เลือกช่างและจ่ายงาน" onclick="openMaintAssignModal('${id}')"><i class="fa-solid fa-user-plus"></i> จ่ายงาน</button>`
+      : `<button class="btn btn-sm btn-outline-secondary" title="แก้ไข" onclick="openMaintAssignModal('${id}')"><i class="fa-solid fa-pen"></i> แก้ไข</button>`);
     if (!['completed', 'cancelled'].includes(j.status)) b.push(`<button class="btn btn-sm btn-outline-warning" title="ยกเลิกงาน" onclick="maintQuickStep('${id}','cancel')"><i class="fa-solid fa-ban"></i></button>`);
     b.push(`<button class="btn btn-sm btn-outline-danger" title="ลบใบงาน" onclick="deleteMaintJob('${id}')"><i class="fa-solid fa-trash"></i> ลบ</button>`);
   }
@@ -5745,23 +5805,26 @@ function renderMaintJobs() {
     return;
   }
   setTimeout(updateMaintSelectInfo, 0);
-  el.innerHTML = list.map(j => {
+  const total = list.length;
+  const more = total > maintShowCount ? `<div class="col-12 text-center"><div class="small text-muted mb-2">แสดง ${maintShowCount.toLocaleString()} จาก ${total.toLocaleString()} งาน</div><button class="btn btn-sm btn-outline-dark" onclick="maintShowCount += ${MJ_PAGE}*2; renderMaintJobs()">แสดงเพิ่ม</button> <button class="btn btn-sm btn-link" onclick="maintShowCount = ${total}; renderMaintJobs()">แสดงทั้งหมด</button></div>` : '';
+  el.innerHTML = list.slice(0, maintShowCount).map(j => {
     const st = MJ_STATUS[j.status] || { label: j.status, color: '#6c757d', step: 0 };
     const steps = [1, 2, 3, 4].map(n => `<span class="${st.step >= n ? 'on' : ''}"></span>`).join('');
     const overdue = mjIsOverdue(j) ? '<span class="badge bg-danger ms-1">เลยกำหนด</span>' : '';
     const prio = j.priority && j.priority !== 'ปกติ' ? `<span class="mj-prio-${mjText(j.priority)} ms-1">${mjText(j.priority)}</span>` : '';
-    const extra = j.status === 'declined' && j.decline_reason ? `<div class="mj-meta text-danger"><i class="fa-solid fa-comment-slash me-1"></i>${mjText(j.decline_reason)}</div>` : '';
+    const extra = (j.status === 'declined' && j.decline_reason ? `<div class="mj-meta text-danger"><i class="fa-solid fa-comment-slash me-1"></i>${mjText(j.decline_reason)}</div>` : '')
+      + (j.source && j.remark && !['completed', 'cancelled'].includes(j.status) ? `<div class="mj-meta text-secondary"><i class="fa-solid fa-note-sticky me-1"></i>${mjText(j.remark)}</div>` : '');
     return `<div class="col-12 col-md-6 col-xl-4"><div class="mj-card" style="--mc:${st.color}">
       <div class="d-flex justify-content-between align-items-start"><label class="mj-id d-flex align-items-center gap-2 mb-0" style="cursor:pointer"><input type="checkbox" class="form-check-input m-0 mj-sel" ${maintSelected.has(j.job_id) ? 'checked' : ''} onchange="toggleMaintSelect('${mjAttr(j.job_id)}', this.checked)">${mjText(j.job_id)}</label><span><span class="mj-badge">${st.label}</span>${overdue}</span></div>
-      <div class="mj-machine"><i class="fa-solid fa-tractor me-1 text-muted"></i>${mjText(j.machine_id)} <small class="text-muted fw-normal">· ${mjText(j.model) || '-'}</small>${prio}</div>
+      <div class="mj-machine"><i class="fa-solid fa-tractor me-1 text-muted"></i>${mjText(j.machine_id)} <small class="text-muted fw-normal">· ${mjText(j.model) || '-'}</small>${prio}${j.source ? ' <span class="badge bg-light text-secondary border fw-normal" style="font-size:.65rem" title="นำเข้าจากชีตแจ้งซ่อม Service_RST">ชีตแจ้งซ่อม</span>' : ''}</div>
       <div class="mj-steps" title="รับงาน → รับแล้ว → ซ่อม → ปิดงาน">${steps}</div>
       <div class="mj-meta"><i class="fa-solid fa-wrench me-1 text-muted"></i>${mjText(j.job_type) || '-'}${j.problem ? ' — ' + mjText(j.problem.length > 80 ? j.problem.slice(0, 80) + '…' : j.problem) : ''}</div>
       <div class="mj-meta"><i class="fa-solid fa-user me-1 text-muted"></i>${mjText(j.customer) || '-'}${j.location ? ' · <i class="fa-solid fa-location-dot mx-1 text-muted"></i>' + mjText(j.location) : ''}</div>
-      <div class="mj-meta"><i class="fa-solid fa-user-gear me-1 text-muted"></i>ช่าง: <strong>${mjText(j.assigned_to)}</strong> · จ่ายงาน ${mjDate(j.assigned_at)}${j.due_date ? ' · กำหนดเสร็จ ' + mjDate(j.due_date) : ''}</div>
+      <div class="mj-meta"><i class="fa-solid fa-user-gear me-1 text-muted"></i>${mjTeam(j).length > 1 ? 'ทีม' : 'ช่าง'}: ${mjTeamHtml(j)} · จ่ายงาน ${mjDate(j.assigned_at)}${j.due_date ? ' · กำหนดเสร็จ ' + mjDate(j.due_date) : ''}</div>
       ${extra}
       <div class="mj-actions">${mjActionButtons(j, false)}</div>
     </div></div>`;
-  }).join('');
+  }).join('') + more;
 }
 
 // ---------- Dashboard ภาพรวม ----------
@@ -5771,7 +5834,7 @@ function renderMaintOverview() {
   if (sumEl) {
     const item = (f, color, icon, label, n) => `<div class="col-6"><div class="p-2 rounded border h-100" style="cursor:pointer;border-left:4px solid ${color}!important" onclick="goToMaint('${f}')"><div class="small text-muted"><i class="fa-solid ${icon} me-1"></i>${label}</div><div class="fs-4 fw-bold" style="color:${color}">${n}</div></div></div>`;
     sumEl.innerHTML = `<div class="row g-2">
-      ${item('assigned', '#fd7e14', 'fa-inbox', 'รอช่างรับงาน', c.assigned)}
+      ${item('waiting', '#fd7e14', 'fa-inbox', 'รอจ่าย / รอรับงาน', c.pending + c.assigned)}
       ${item('in_progress', '#0d6efd', 'fa-gears', 'กำลังซ่อม', c.in_progress + c.accepted)}
       ${item('completed', '#198754', 'fa-circle-check', 'ปิดงานเดือนนี้', c.doneMonth)}
       ${item('overdue', '#dc3545', 'fa-triangle-exclamation', 'เลยกำหนด / ถูกปฏิเสธ', c.overdue + c.declined)}
@@ -5806,8 +5869,7 @@ async function ensureMaintLookups() {
   if (!maintModels) {
     try { const r = await postJson({ action: 'getModels' }); maintModels = (r && r.data) || []; } catch (e) { maintModels = []; }
   }
-  const sel = document.getElementById('mjfTech');
-  if (sel) sel.innerHTML = '<option value="">-- เลือกช่าง --</option>' + maintTechs.map(t => `<option value="${mjText(t.username)}">${mjText(t.username)}${t.role ? ' (' + mjText(t.role) + ')' : ''}</option>`).join('');
+  renderMaintTechList();
   const ml = document.getElementById('mjModelList');
   if (ml) ml.innerHTML = maintModels.map(m => `<option value="${mjText(m)}"></option>`).join('');
   const mc = document.getElementById('mjMachineList');
@@ -5851,7 +5913,11 @@ async function openMaintAssignModal(jobId) {
   set('mjfJobId', j ? j.job_id : ''); set('mjfMachine', j && j.machine_id); set('mjfModel', j && j.model);
   set('mjfCustomer', j && j.customer); set('mjfPhone', j && j.phone); set('mjfLocation', j && j.location);
   set('mjfProblem', j && j.problem); set('mjfRemark', j && j.remark); set('mjfDue', j && String(j.due_date || '').slice(0, 10));
-  document.getElementById('mjfType').value = (j && j.job_type) || 'ซ่อมทั่วไป';
+  const typeSel = document.getElementById('mjfType');
+  typeSel.querySelectorAll('option[data-extra]').forEach(o => o.remove());
+  const jt = (j && j.job_type) || 'ซ่อมทั่วไป';
+  if (![...typeSel.options].some(o => o.value === jt)) typeSel.insertAdjacentHTML('beforeend', `<option data-extra="1">${mjText(jt)}</option>`);
+  typeSel.value = jt;
   document.getElementById('mjfPriority').value = (j && j.priority) || 'ปกติ';
   document.getElementById('mjAssignTitle').textContent = j ? ('แก้ไข / จ่ายงานใหม่ ' + j.job_id) : 'จ่ายงานซ่อมบำรุง';
   document.getElementById('mjfMachineHint').textContent = 'เลือกจากรายการเครื่องในระบบ จะเติมรุ่น/ลูกค้าให้อัตโนมัติ';
@@ -5868,13 +5934,76 @@ async function openMaintAssignModal(jobId) {
   }
   document.getElementById('mjfSaveBtn').innerHTML = j ? '<i class="fa-solid fa-floppy-disk me-1"></i> บันทึกการแก้ไข' : '<i class="fa-solid fa-paper-plane me-1"></i> จ่ายงาน';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('maintAssignModal')).show();
-  if (j && j.machine_id) onMaintMachinePicked();
+  // งานที่นำเข้าจากชีตแจ้งซ่อม (รถไถ/รถเกี่ยว ใช้รหัสลูกค้าแทนเลขรถ) → ไม่เสนอเพิ่มเข้าฐานข้อมูลรถขุด
+  if (j && j.machine_id && !j.source) onMaintMachinePicked();
+  maintTeamSel = j ? mjTeam(j).slice() : [];
+  document.getElementById('mjfTechSearch').value = '';
+  renderMaintTechList();
   await ensureMaintLookups();
-  const sel = document.getElementById('mjfTech');
-  if (j && j.assigned_to && sel && ![...sel.options].some(o => o.value === j.assigned_to)) {
-    sel.insertAdjacentHTML('beforeend', `<option value="${mjText(j.assigned_to)}">${mjText(j.assigned_to)}</option>`);
+}
+
+// ---------- เลือกทีมช่าง (คนแรก = หัวหน้าทีม) ----------
+let maintTeamSel = [];
+function mjTeam(j) {
+  if (j && Array.isArray(j.team) && j.team.length) return j.team;
+  return String((j && j.assigned_to) || '').split(/[,\n]+/).map(x => x.trim()).filter(Boolean);
+}
+// คีย์เทียบชื่อผู้ใช้ (ต้องตรงกับ userKey_ ใน code.js) — รองรับชื่อภาษาไทย
+function userKey(s) {
+  let t = String(s == null ? '' : s);
+  try { t = t.normalize('NFC'); } catch (e) {}
+  return t.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\u0E4D\u0E32/g, '\u0E33')
+    .replace(/([\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])\1+/g, '$1').trim().toLowerCase();
+}
+function sameUser(a, b) { const x = userKey(a); return !!x && x === userKey(b); }
+function mjInTeam(j, user) {
+  return !!userKey(user) && mjTeam(j).some(n => sameUser(n, user));
+}
+function mjTeamHtml(j) {
+  const t = mjTeam(j);
+  if (!t.length) return '-';
+  return t.map((n, i) => `<strong>${mjText(n)}</strong>${i === 0 && t.length > 1 ? ' <span class="badge bg-dark" style="font-size:.65rem">หัวหน้า</span>' : ''}`).join(', ');
+}
+function mjTeamText(j) {
+  const t = mjTeam(j);
+  return t.length > 1 ? t[0] + ' (หัวหน้า), ' + t.slice(1).join(', ') : (t[0] || '-');
+}
+function renderMaintTechList() {
+  const box = document.getElementById('mjfTechList'); if (!box) return;
+  const q = (document.getElementById('mjfTechSearch').value || '').trim().toLowerCase();
+  const techs = (maintTechs || []).slice();
+  // ช่างที่อยู่ในทีมเดิมแต่ไม่อยู่ในรายชื่อ (เช่น role เปลี่ยน) ให้ยังแสดง
+  maintTeamSel.forEach(n => { if (!techs.some(t => sameUser(t.username, n))) techs.push({ username: n, role: '' }); });
+  const list = techs.filter(t => !q || t.username.toLowerCase().includes(q));
+  box.innerHTML = list.length ? list.map(t => {
+    const on = maintTeamSel.some(n => sameUser(n, t.username));
+    const open = (rawMaintJobs || []).filter(j => ['assigned', 'accepted', 'in_progress'].includes(j.status) && mjInTeam(j, t.username)).length;
+    return `<div class="form-check"><input class="form-check-input" type="checkbox" id="mjt_${mjText(t.username)}" ${on ? 'checked' : ''} onchange="toggleMaintTech('${mjAttr(t.username)}', this.checked)">
+      <label class="form-check-label small" for="mjt_${mjText(t.username)}">${mjText(t.username)}${t.role ? ' <span class="text-muted">(' + mjText(t.role) + ')</span>' : ''}${open ? ` <span class="badge bg-warning text-dark" title="งานค้าง">${open} งานค้าง</span>` : ''}</label></div>`;
+  }).join('') : '<span class="text-muted small">' + (maintTechs ? 'ไม่พบช่าง' : 'กำลังโหลด...') + '</span>';
+  renderMaintLeadSelect();
+}
+function toggleMaintTech(name, on) {
+  maintTeamSel = maintTeamSel.filter(n => !sameUser(n, name));
+  if (on) maintTeamSel.push(name);
+  renderMaintLeadSelect();
+}
+function renderMaintLeadSelect() {
+  const sel = document.getElementById('mjfLead'); const info = document.getElementById('mjfTechInfo');
+  if (sel) {
+    sel.innerHTML = maintTeamSel.length ? maintTeamSel.map(n => `<option value="${mjText(n)}">${mjText(n)}</option>`).join('') : '<option value="">-- เลือกช่างก่อน --</option>';
+    sel.value = maintTeamSel[0] || '';
+    sel.disabled = maintTeamSel.length < 2;
   }
-  if (sel) sel.value = j ? j.assigned_to : '';
+  if (info) info.innerHTML = !maintTeamSel.length ? 'ยังไม่ได้เลือกช่าง'
+    : maintTeamSel.length === 1 ? 'งานเดี่ยว: <b>' + mjText(maintTeamSel[0]) + '</b>'
+    : `ทีม ${maintTeamSel.length} คน: ` + maintTeamSel.map(mjText).join(', ');
+}
+function onMaintLeadChange() {
+  const lead = document.getElementById('mjfLead').value;
+  if (!lead) return;
+  maintTeamSel = [lead].concat(maintTeamSel.filter(n => n !== lead));
+  renderMaintLeadSelect();
 }
 
 async function submitMaintAssign() {
@@ -5883,7 +6012,7 @@ async function submitMaintAssign() {
     action: 'saveMaintenanceJob', actor: currentUser, job_id: g('mjfJobId'),
     machine_id: g('mjfMachine'), model: g('mjfModel'), customer: g('mjfCustomer'), phone: g('mjfPhone'),
     location: g('mjfLocation'), job_type: g('mjfType'), priority: g('mjfPriority'), due_date: g('mjfDue'),
-    problem: g('mjfProblem'), assigned_to: g('mjfTech'), remark: g('mjfRemark')
+    problem: g('mjfProblem'), assigned_to: maintTeamSel.join(','), remark: g('mjfRemark')
   };
   if (payload.job_id) {
     payload.status_override = g('mjfStatus');
@@ -5897,7 +6026,7 @@ async function submitMaintAssign() {
   }
   if (!payload.machine_id) return alert('กรุณาระบุหมายเลขรถ');
   if (!payload.model) return alert('กรุณาระบุรุ่นรถ');
-  if (!payload.assigned_to) return alert('กรุณาเลือกช่าง');
+  if (!payload.assigned_to) return alert('กรุณาเลือกช่างอย่างน้อย 1 คน');
   const btn = document.getElementById('mjfSaveBtn'); btn.disabled = true;
   showOperation('กำลังจ่ายงาน...');
   try {
@@ -5918,7 +6047,11 @@ async function maintQuickStep(jobId, step) {
   const j = rawMaintJobs.find(x => x.job_id === jobId); if (!j) return;
   let reason = '';
   if (step === 'accept' && !confirm(`ยืนยันรับงาน ${jobId}\nรถ ${j.machine_id} (${j.model}) ?`)) return;
-  if (step === 'decline') { reason = prompt('เหตุผลที่ปฏิเสธงาน (admin จะเห็นและจ่ายงานใหม่)'); if (!reason) return; }
+  if (step === 'decline') {
+    const others = mjTeam(j).filter(n => !sameUser(n, currentUser));
+    reason = prompt(others.length ? `ออกจากทีมงานนี้ (งานจะยังอยู่กับ ${others.join(', ')})\nระบุเหตุผล:` : 'เหตุผลที่ปฏิเสธงาน (admin จะเห็นและจ่ายงานใหม่)');
+    if (!reason) return;
+  }
   if (step === 'cancel') { reason = prompt(`ยกเลิกงาน ${jobId}\nระบุเหตุผล:`); if (reason === null) return; }
   showOperation('กำลังบันทึก...');
   try {
@@ -6091,7 +6224,7 @@ function showMaintDetail(jobId) {
   const st = MJ_STATUS[j.status] || { label: j.status, color: '#6c757d' };
   const row = (k, v) => `<tr><th class="text-muted fw-normal" style="width:140px">${k}</th><td>${v || '-'}</td></tr>`;
   const tl = [
-    ['จ่ายงาน', j.assigned_at, 'โดย ' + (j.assigned_by || '-') + ' → ' + (j.assigned_to || '-')],
+    ['จ่ายงาน', j.assigned_at, 'โดย ' + (j.assigned_by || '-') + ' → ' + mjTeamText(j)],
     ['ช่างรับงาน', j.accepted_at, ''],
     ['เข้าซ่อม', j.started_at, j.before_photos.length ? 'รูปก่อนซ่อม ' + j.before_photos.length + ' รูป' : ''],
     ['ปิดงาน', j.closed_at, j.closed_by ? 'โดย ' + j.closed_by + (mjRepairHours(j) != null ? ' · ใช้เวลา ' + mjFmtDuration(mjRepairHours(j)) : '') : '']
@@ -6105,10 +6238,13 @@ function showMaintDetail(jobId) {
       <div class="col-lg-7">
         <span class="mj-badge mb-2" style="--mc:${st.color}">${st.label}</span>${mjIsOverdue(j) ? ' <span class="badge bg-danger">เลยกำหนด</span>' : ''}
         <table class="table table-sm mb-0 small">
-          ${row('หมายเลขรถ', '<strong>' + mjText(j.machine_id) + '</strong>')}${row('รุ่น', mjText(j.model))}
+          ${row(j.source ? 'รหัสลูกค้า / รถ' : 'หมายเลขรถ', '<strong>' + mjText(j.machine_id) + '</strong>')}${row('รุ่น', mjText(j.model))}
+          ${j.category ? row('หมวดหลักการซ่อม', mjText(j.category)) : ''}
+          ${j.rating_service || j.rating_recommend ? row('ประเมิน (เต็ม 3)', 'บริการ ' + (mjText(j.rating_service) || '-') + ' · แนะนำ ' + (mjText(j.rating_recommend) || '-')) : ''}
+          ${j.source ? row('ที่มา', 'นำเข้าจากชีตแจ้งซ่อม Service_RST' + (j.source_status ? ' (หัวข้อ: ' + mjText(j.source_status) + ')' : '')) : ''}
           ${row('ลูกค้า', mjText(j.customer))}${row('เบอร์โทร', mjText(j.phone))}${row('สถานที่', mjText(j.location))}
           ${row('ประเภทงาน', mjText(j.job_type))}${row('ความเร่งด่วน', mjText(j.priority))}${row('กำหนดเสร็จ', j.due_date ? mjDate(j.due_date) : '')}
-          ${row('อาการที่แจ้ง', mjText(j.problem))}${row('ช่างผู้รับผิดชอบ', mjText(j.assigned_to))}
+          ${row('อาการที่แจ้ง', mjText(j.problem))}${row(mjTeam(j).length > 1 ? 'ทีมช่าง' : 'ช่างผู้รับผิดชอบ', mjTeamHtml(j))}${j.decline_reason && j.status !== 'declined' ? row('ประวัติปฏิเสธ/ออกจากทีม', mjText(j.decline_reason)) : ''}
           ${row('สาเหตุที่พบ', mjText(j.cause))}${row('รายละเอียดการซ่อม', mjText(j.work_detail))}
           ${row('อะไหล่ที่ใช้', mjText(j.parts_used))}${row('ชั่วโมงทำงาน', j.labor_hours ? mjText(j.labor_hours) + ' ชม.' : '')}${row('หมายเหตุ', mjText(j.remark))}
         </table>
@@ -6129,7 +6265,7 @@ function showMaintDetail(jobId) {
 
 function exportMaintToExcel() {
   const tb = document.getElementById('tbMaintExport'); if (!tb) return;
-  const cols = [['job_id', 'เลขใบงาน'], ['status_label', 'สถานะ'], ['machine_id', 'หมายเลขรถ'], ['model', 'รุ่น'], ['customer', 'ลูกค้า'], ['phone', 'เบอร์โทร'], ['location', 'สถานที่'], ['job_type', 'ประเภทงาน'], ['priority', 'ความเร่งด่วน'], ['problem', 'อาการ'], ['assigned_to', 'ช่าง'], ['assigned_by', 'ผู้จ่ายงาน'], ['assigned_at', 'วันที่จ่ายงาน'], ['due_date', 'กำหนดเสร็จ'], ['accepted_at', 'รับงาน'], ['started_at', 'เข้าซ่อม'], ['closed_at', 'ปิดงาน'], ['cause', 'สาเหตุ'], ['work_detail', 'รายละเอียดการซ่อม'], ['parts_used', 'อะไหล่'], ['labor_hours', 'ชม.ทำงาน'], ['remark', 'หมายเหตุ']];
+  const cols = [['job_id', 'เลขใบงาน'], ['status_label', 'สถานะ'], ['machine_id', 'หมายเลขรถ / รหัสลูกค้า'], ['model', 'รุ่น'], ['category', 'หมวดหลักการซ่อม'], ['customer', 'ลูกค้า'], ['phone', 'เบอร์โทร'], ['location', 'สถานที่'], ['job_type', 'ประเภทงาน'], ['priority', 'ความเร่งด่วน'], ['problem', 'อาการ'], ['assigned_to', 'ช่าง / ทีม (คนแรก = หัวหน้า)'], ['assigned_by', 'ผู้จ่ายงาน'], ['assigned_at', 'วันที่จ่ายงาน'], ['due_date', 'กำหนดเสร็จ'], ['accepted_at', 'รับงาน'], ['started_at', 'เข้าซ่อม'], ['closed_at', 'ปิดงาน'], ['cause', 'สาเหตุ'], ['work_detail', 'รายละเอียดการซ่อม'], ['parts_used', 'อะไหล่'], ['labor_hours', 'ชม.ทำงาน'], ['rating_service', 'ประเมินบริการ'], ['rating_recommend', 'ประเมินแนะนำ'], ['remark', 'หมายเหตุ'], ['source', 'ที่มา']];
   const list = getFilteredMaintJobs();
   tb.innerHTML = '<thead><tr>' + cols.map(c => `<th>${c[1]}</th>`).join('') + '</tr></thead><tbody>' +
     list.map(j => '<tr>' + cols.map(c => `<td>${mjText(c[0] === 'status_label' ? (MJ_STATUS[j.status] || {}).label || j.status : j[c[0]])}</td>`).join('') + '</tr>').join('') + '</tbody>';
@@ -6176,14 +6312,14 @@ function renderUsers() {
   const q = (document.getElementById('usrSearch').value || '').trim().toLowerCase();
   const list = rawUsers.filter(u => !q || [u.username, u.role].concat(Object.values(u.extra || {})).join(' ').toLowerCase().includes(q));
   const openBy = {};
-  (rawMaintJobs || []).forEach(j => { if (['assigned', 'accepted', 'in_progress'].includes(j.status)) { const k = String(j.assigned_to || '').toLowerCase(); openBy[k] = (openBy[k] || 0) + 1; } });
+  (rawMaintJobs || []).forEach(j => { if (['assigned', 'accepted', 'in_progress'].includes(j.status)) mjTeam(j).forEach(n => { const k = userKey(n); openBy[k] = (openBy[k] || 0) + 1; }); });
   const cols = 4 + usersExtraCols.length;
   const roleCount = {}; rawUsers.forEach(u => { const r = u.role || 'ไม่ระบุ'; roleCount[r] = (roleCount[r] || 0) + 1; });
   document.getElementById('usrSummary').innerHTML = 'ทั้งหมด <b>' + rawUsers.length + '</b> คน · ' + Object.entries(roleCount).map(([r, n]) => mjText(r) + ' ' + n).join(' · ');
   if (!list.length) { body.innerHTML = `<tr><td colspan="${cols}" class="text-center text-muted py-4">ไม่พบสมาชิก</td></tr>`; return; }
   body.innerHTML = list.map(u => {
-    const me = u.username.toLowerCase() === String(currentUser || '').toLowerCase();
-    const open = openBy[u.username.toLowerCase()] || 0;
+    const me = sameUser(u.username, currentUser);
+    const open = openBy[userKey(u.username)] || 0;
     const n = mjAttr(u.username);
     return `<tr><td><strong>${mjText(u.username)}</strong>${me ? ' <span class="badge bg-light text-dark border">คุณ</span>' : ''}${u.hasPassword ? '' : ' <span class="badge bg-warning text-dark">ไม่มีรหัสผ่าน</span>'}</td>
       <td>${roleBadge(u.role)}</td>${usersExtraCols.map(c => `<td>${mjText((u.extra || {})[c]) || '-'}</td>`).join('')}
@@ -6388,7 +6524,8 @@ function buildMaintJobSheet(j, imgs, opt, pageNo, pageTotal) {
     <div class="mjp-sec">รายละเอียดงาน</div>
     <table class="mjp-t">
       <tr><td class="k">ประเภทงาน</td><td>${t(j.job_type)}</td><td class="k">ความเร่งด่วน</td><td>${t(j.priority)}</td></tr>
-      <tr><td class="k">ผู้จ่ายงาน</td><td>${t(j.assigned_by)}</td><td class="k">ช่างผู้รับผิดชอบ</td><td><b>${t(j.assigned_to)}</b></td></tr>
+      ${j.rating_service || j.rating_recommend ? `<tr><td class="k">ประเมินบริการ</td><td>${t(j.rating_service)} / 3</td><td class="k">ประเมินแนะนำ</td><td>${t(j.rating_recommend)} / 3</td></tr>` : ''}
+      <tr><td class="k">ผู้จ่ายงาน</td><td>${t(j.assigned_by)}</td><td class="k">${mjTeam(j).length > 1 ? 'ทีมช่าง' : 'ช่างผู้รับผิดชอบ'}</td><td><b>${mjText(mjTeamText(j))}</b></td></tr>
       <tr><td class="k">วันที่จ่ายงาน</td><td>${d(j.assigned_at)}</td><td class="k">กำหนดเสร็จ</td><td>${d(j.due_date)}</td></tr>
       <tr><td class="k">รับงาน</td><td>${d(j.accepted_at)}</td><td class="k">เริ่มซ่อม</td><td>${d(j.started_at)}</td></tr>
       <tr><td class="k">ปิดงาน</td><td>${d(j.closed_at)}</td><td class="k">ระยะเวลาซ่อม</td><td>${dur != null ? mjFmtDuration(dur) : '-'}${j.labor_hours ? ' (ชม.ทำงาน ' + t(j.labor_hours) + ')' : ''}</td></tr>
@@ -6404,7 +6541,7 @@ function buildMaintJobSheet(j, imgs, opt, pageNo, pageTotal) {
     ${opt.photos ? `<div class="mjp-sec">รูปก่อนซ่อม</div>${photos(j.before_photos)}<div class="mjp-sec">รูปหลังซ่อม</div>${photos(j.after_photos)}` : ''}
     ${opt.sign ? `<div class="mjp-sign">
       <div><div class="line"></div>ผู้จ่ายงาน<br>( ${t(j.assigned_by)} )<br>วันที่ ......../......../........</div>
-      <div><div class="line"></div>ช่างผู้ซ่อม<br>( ${t(j.assigned_to)} )<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>${mjTeam(j).length > 1 ? 'หัวหน้าทีมช่าง' : 'ช่างผู้ซ่อม'}<br>( ${mjText(mjTeam(j)[0] || '-')} )<br>วันที่ ......../......../........</div>
       <div><div class="line"></div>ลูกค้า / ผู้รับมอบงาน<br>( .................................... )<br>วันที่ ......../......../........</div>
     </div>` : ''}
     <div class="mjp-foot"><span>พิมพ์โดย ${mjText(currentUser || '-')} · ${new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span><span>หน้า ${pageNo}/${pageTotal}</span></div>
@@ -6487,6 +6624,97 @@ async function runMaintPrint() {
   } finally {
     btn.disabled = false; hideOperation();
   }
+}
+
+
+// ==========================================
+// 📥 ซิงค์ข้อมูลจากชีตแจ้งซ่อม Service_RST (admin)
+// ==========================================
+function svShowSyncInfo(res) {
+  const info = document.getElementById('svSyncInfo'), auto = document.getElementById('svAutoSync'), link = document.getElementById('svSheetLink');
+  if (link && res.sheetUrl) link.href = res.sheetUrl;
+  if (auto && typeof res.autoSync === 'boolean') auto.checked = res.autoSync;
+  const l = res.last || res.result;
+  if (info) info.textContent = l ? `ซิงค์ล่าสุด ${mjDate(l.at)} · ในชีต ${Number(l.sourceRows).toLocaleString()} รายการ · เพิ่ม ${l.added} · อัปเดต ${l.updated}` : 'ยังไม่เคยซิงค์ — กด "ซิงค์ตอนนี้" เพื่อนำเข้าข้อมูลครั้งแรก';
+}
+function loadServiceRstSyncInfo() {
+  const bar = document.getElementById('svSyncBar');
+  const show = isAdmin();
+  if (bar) bar.classList.toggle('d-none', !show);
+  if (!show) return;
+  postJson({ action: 'getServiceRstSyncInfo' }).then(res => { if (res && res.status === 'success') svShowSyncInfo(res); }).catch(() => {});
+}
+async function runServiceRstSync() {
+  const btn = document.getElementById('svSyncBtn'); btn.disabled = true;
+  showOperation('กำลังซิงค์ข้อมูลจากชีตแจ้งซ่อม... (ครั้งแรกอาจใช้เวลา 10-60 วินาที)');
+  try {
+    const res = await postJson({ action: 'syncServiceRst' });
+    if (!res || res.status !== 'success') throw new Error((res && res.message) || 'ซิงค์ไม่สำเร็จ');
+    svShowSyncInfo(res);
+    await loadMaintenanceJobs(true);
+    alert(res.message);
+  } catch (err) { alert('ซิงค์ไม่สำเร็จ: ' + err.message); } finally { btn.disabled = false; hideOperation(); }
+}
+async function toggleServiceRstAutoSync(on) {
+  try {
+    const res = await postJson({ action: 'setServiceRstAutoSync', enabled: on });
+    if (!res || res.status !== 'success') throw new Error((res && res.message) || 'ตั้งค่าไม่สำเร็จ');
+    alert(res.message);
+  } catch (err) {
+    document.getElementById('svAutoSync').checked = !on;
+    alert(err.message + '\n(ถ้าขึ้นเรื่องสิทธิ์ ให้เปิด Apps Script แล้วรันฟังก์ชัน syncServiceRstJob 1 ครั้งเพื่อกดอนุญาต)');
+  }
+}
+
+
+// ==========================================
+// 👷 นำเข้าชื่อช่างจากชีตแจ้งซ่อม → สร้างบัญชี technician (admin)
+// ==========================================
+async function openTechImportModal() {
+  const body = document.getElementById('tiBody'), foot = document.getElementById('tiFooter');
+  body.innerHTML = '<div class="text-muted small"><i class="fa-solid fa-spinner fa-spin me-1"></i>กำลังอ่านรายชื่อช่างจากชีต...</div>';
+  foot.innerHTML = '<button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('techImportModal')).show();
+  try {
+    const res = await postJson({ action: 'importServiceTechnicians', dryRun: true });
+    if (!res || res.status !== 'success') throw new Error((res && res.message) || 'อ่านรายชื่อไม่สำเร็จ');
+    const plan = res.plan || [];
+    const fresh = plan.filter(x => !x.exists);
+    body.innerHTML = `<div class="small mb-2">พบชื่อช่าง <b>${plan.length}</b> คน · มีบัญชีแล้ว ${plan.length - fresh.length} คน · เลือกคนที่จะสร้างบัญชี (สิทธิ์ <b>technician</b>, รหัสผ่านเริ่มต้นสุ่ม 6 หลัก)</div>
+      <table class="table table-sm align-middle mb-2"><thead class="table-light"><tr><th></th><th>ชื่อผู้ใช้ (ใช้ล็อกอิน)</th><th class="text-end">งานในชีต</th><th>สถานะ</th></tr></thead><tbody>
+      ${plan.map(x => `<tr><td>${x.exists ? '' : `<input type="checkbox" class="form-check-input ti-sel" value="${mjText(x.username)}" ${x.jobs > 0 ? 'checked' : ''}>`}</td>
+        <td><b>${mjText(x.username)}</b></td><td class="text-end">${Number(x.jobs).toLocaleString()}</td>
+        <td>${x.exists ? '<span class="badge bg-secondary">มีบัญชีแล้ว</span>' : (x.jobs > 0 ? '<span class="badge bg-success">ใหม่</span>' : '<span class="badge bg-light text-dark border">ใหม่ (ไม่มีงานในชีต)</span>')}</td></tr>`).join('')}
+      </tbody></table>
+      <div class="small text-muted">ชื่อที่ไม่มีงานในชีตเลย (อาจเป็นช่างที่ลาออกแล้ว) จะไม่ถูกติ๊กไว้ให้</div>`;
+    foot.innerHTML = '<button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>'
+      + (fresh.length ? '<button class="btn btn-sm btn-success" id="tiGo" onclick="runTechImport()"><i class="fa-solid fa-user-plus me-1"></i> สร้างบัญชีที่เลือก</button>' : '');
+  } catch (err) {
+    body.innerHTML = `<div class="text-danger small">${mjText(err.message)}</div>`;
+  }
+}
+
+async function runTechImport() {
+  const names = [...document.querySelectorAll('#tiBody .ti-sel:checked')].map(c => c.value);
+  if (!names.length) return alert('กรุณาเลือกอย่างน้อย 1 คน');
+  if (!confirm(`สร้างบัญชีช่าง ${names.length} คน?\n${names.join(', ')}`)) return;
+  const btn = document.getElementById('tiGo'); if (btn) btn.disabled = true;
+  showOperation('กำลังสร้างบัญชีช่าง...');
+  try {
+    const res = await postJson({ action: 'importServiceTechnicians', names });
+    if (!res || res.status !== 'success') throw new Error((res && res.message) || 'สร้างบัญชีไม่สำเร็จ');
+    const list = res.created || [];
+    const text = list.map(x => `ชื่อผู้ใช้: ${x.username}  รหัสผ่าน: ${x.password}`).join('\n');
+    document.getElementById('tiBody').innerHTML = list.length ? `
+      <div class="alert alert-warning small py-2"><i class="fa-solid fa-triangle-exclamation me-1"></i>จดหรือคัดลอกรหัสผ่านเริ่มต้นนี้ส่งให้ช่างแต่ละคน (ดูซ้ำได้ที่ชีต users หรือเปลี่ยนใหม่ในเมนูสมาชิก)</div>
+      <table class="table table-sm mb-2"><thead class="table-light"><tr><th>ชื่อผู้ใช้</th><th>รหัสผ่านเริ่มต้น</th><th class="text-end">งานในชีต</th></tr></thead><tbody>
+      ${list.map(x => `<tr><td><b>${mjText(x.username)}</b></td><td><code class="fs-6">${mjText(x.password)}</code></td><td class="text-end">${Number(x.jobs).toLocaleString()}</td></tr>`).join('')}</tbody></table>
+      <textarea class="form-control form-control-sm" id="tiCopyText" rows="${Math.min(list.length, 8)}" readonly>${mjText(text)}</textarea>` : `<div class="small">${mjText(res.message)}</div>`;
+    document.getElementById('tiFooter').innerHTML = (list.length ? '<button class="btn btn-sm btn-outline-dark" onclick="const t=document.getElementById(\'tiCopyText\');t.select();navigator.clipboard?navigator.clipboard.writeText(t.value):document.execCommand(\'copy\');this.textContent=\'คัดลอกแล้ว\'"><i class="fa-solid fa-copy me-1"></i> คัดลอกทั้งหมด</button>' : '')
+      + '<button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>';
+    maintTechs = null;
+    loadUsers(true);
+  } catch (err) { alert(err.message); if (btn) btn.disabled = false; } finally { hideOperation(); }
 }
 </script>
 </body>
