@@ -549,6 +549,8 @@ body {
 .mj-timeline li:last-child:after{display:none}
 .mj-filter.active{color:#fff!important}
 .mj-filter.btn-outline-dark.active{background:#212529}
+.mj-filter .mj-cnt{font-size:.68rem;vertical-align:1px;min-width:1.6em}
+.mj-filter.active .mj-cnt.bg-secondary{background:rgba(255,255,255,.25)!important;color:#fff!important}
 .mj-thumb-wrap{position:relative;display:inline-block}
 .mj-thumb-wrap .mj-del{position:absolute;top:-6px;right:-6px;border:0;border-radius:50%;width:22px;height:22px;line-height:20px;padding:0;background:#dc3545;color:#fff;font-size:.75rem}
 .mj-photo-drop{border:2px dashed #ced4da;border-radius:10px;padding:14px;text-align:center;cursor:pointer;color:#6c757d}
@@ -5759,18 +5761,40 @@ function setMaintFilter(f) {
   renderMaintJobs();
 }
 
+function mjMatchFilter(j, f) {
+  if (f === 'all') return true;
+  if (f === 'open') return ['pending', 'assigned', 'accepted', 'in_progress', 'declined'].includes(j.status);
+  if (f === 'waiting') return ['pending', 'assigned'].includes(j.status);
+  if (f === 'overdue') return mjIsOverdue(j);
+  return j.status === f;
+}
+function mjMatchSearch(j, q) {
+  if (!q) return true;
+  return [j.job_id, j.machine_id, j.customer_id, j.model, j.customer, j.phone, j.assigned_to, j.problem, j.location, j.category, j.remark].join(' ').toLowerCase().includes(q);
+}
+function mjSearchQuery() {
+  const el = document.getElementById('mjSearch');
+  return el && el.value ? el.value.trim().toLowerCase() : '';
+}
 function getFilteredMaintJobs() {
-  const q = (document.getElementById('mjSearch') || {}).value ? document.getElementById('mjSearch').value.trim().toLowerCase() : '';
-  return rawMaintJobs.filter(j => {
-    if (maintFilter === 'open' && !['pending', 'assigned', 'accepted', 'in_progress', 'declined'].includes(j.status)) return false;
-    if (maintFilter === 'waiting' && !['pending', 'assigned'].includes(j.status)) return false;
-    if (maintFilter === 'overdue' && !mjIsOverdue(j)) return false;
-    if (!['open', 'overdue', 'all', 'waiting'].includes(maintFilter) && j.status !== maintFilter) return false;
-    if (q) {
-      const hay = [j.job_id, j.machine_id, j.customer_id, j.model, j.customer, j.phone, j.assigned_to, j.problem, j.location, j.category, j.remark].join(' ').toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
+  const q = mjSearchQuery();
+  return rawMaintJobs.filter(j => mjMatchFilter(j, maintFilter) && mjMatchSearch(j, q));
+}
+
+// 🔢 ตัวเลขจำนวนงานบนปุ่มตัวกรอง (นับตามคำค้นที่พิมพ์อยู่ด้วย)
+const MJ_FILTER_ALERT = { pending: 'bg-danger', overdue: 'bg-danger', declined: 'bg-danger', open: 'bg-warning text-dark', assigned: 'bg-warning text-dark' };
+function updateMaintFilterCounts() {
+  const q = mjSearchQuery();
+  const list = q ? rawMaintJobs.filter(j => mjMatchSearch(j, q)) : rawMaintJobs;
+  document.querySelectorAll('#mjFilterBar .mj-filter').forEach(btn => {
+    const f = btn.dataset.f;
+    const n = list.reduce((a, j) => a + (mjMatchFilter(j, f) ? 1 : 0), 0);
+    let b = btn.querySelector('.mj-cnt');
+    if (!b) { b = document.createElement('span'); btn.appendChild(b); }
+    const alertCls = n > 0 && MJ_FILTER_ALERT[f] ? MJ_FILTER_ALERT[f] : 'bg-secondary bg-opacity-25 text-dark';
+    b.className = 'mj-cnt badge rounded-pill ms-1 ' + alertCls;
+    b.textContent = n.toLocaleString();
+    btn.title = btn.firstChild.textContent.trim() + ': ' + n.toLocaleString() + ' งาน';
   });
 }
 
@@ -5799,6 +5823,7 @@ function renderMaintJobs() {
   if (!el) return;
   if (!maintLoaded) return;
   document.querySelectorAll('#mjFilterBar .mj-filter').forEach(b => b.classList.toggle('active', b.dataset.f === maintFilter));
+  updateMaintFilterCounts();
   const list = getFilteredMaintJobs();
   if (!list.length) {
     el.innerHTML = `<div class="col-12 text-center text-muted py-4"><i class="fa-solid fa-circle-check text-success me-1"></i>${rawMaintJobs.length ? 'ไม่มีงานตามตัวกรองนี้' : (maintIsAdmin ? 'ยังไม่มีงานซ่อม กด "จ่ายงานใหม่" เพื่อเริ่ม' : 'ยังไม่มีงานที่มอบหมายให้คุณ')}</div>`;
