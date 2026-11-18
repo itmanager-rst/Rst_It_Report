@@ -556,6 +556,11 @@ body {
 </style>
 
 <style>
+/* ===== 🔒 สิทธิ์ช่าง: ซ่อนส่วนที่ใช้แก้ไขข้อมูล (ฝั่งเซิร์ฟเวอร์บล็อกซ้ำอีกชั้น) ===== */
+.role-readonly #formSection,
+.role-readonly .col-action,
+.role-readonly .cp-admin,
+.role-readonly #btnEditThisRound { display: none !important; }
 /* ===== 📱 Mobile ===== */
 html, body { max-width: 100%; overflow-x: hidden; }
 .brand-short { display: none; }
@@ -878,6 +883,9 @@ html, body { max-width: 100%; overflow-x: hidden; }
         </div>
       </div>
 
+      <div class="alert alert-info py-2 px-3 mb-3 small d-none" id="readonlyBanner">
+        <i class="fa-solid fa-eye me-1"></i><b>โหมดดูอย่างเดียว (สิทธิ์ช่าง)</b> — ดูข้อมูลได้ทุกหน้า แต่บันทึก/แก้ไขได้เฉพาะ <a href="#" onclick="event.preventDefault();goToMaint('open')">งานซ่อมของตัวเอง</a>
+      </div>
       <div class="tab-content">
 
         <!-- แท็บ 0: ภาพรวม (Overview Dashboard) -->
@@ -1627,7 +1635,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
                 <tbody id="usrBody"><tr><td colspan="4" class="text-center text-muted py-4">กดแท็บนี้เพื่อโหลดข้อมูล</td></tr></tbody>
               </table>
             </div>
-            <div class="small text-muted mt-2"><i class="fa-solid fa-circle-info me-1"></i>สิทธิ์ <b>admin / manager / office / supervisor</b> = จ่ายงานซ่อมและเห็นงานทั้งหมด · สิทธิ์อื่น (เช่น <b>technician</b>) = ช่าง เห็นเฉพาะงานของตัวเอง · เฉพาะ <b>admin</b> จัดการสมาชิกได้</div>
+            <div class="small text-muted mt-2"><i class="fa-solid fa-circle-info me-1"></i>สิทธิ์ <b>admin / manager / office / supervisor</b> = จ่ายงานซ่อมและเห็นงานทั้งหมด · <b>technician</b> = ช่าง ดูข้อมูลได้ทุกหน้าแต่แก้ไม่ได้ ทำได้เฉพาะงานซ่อมของตัวเอง · เฉพาะ <b>admin</b> จัดการสมาชิกได้</div>
           </div>
         </div>
       </div>
@@ -2357,6 +2365,12 @@ const CONN_SLOW_MS = 4000;
 const connState = { state: 'checking', latency: null, lastCheck: null, lastOk: null, error: '', wasOffline: false, checking: null };
 
 function _rawPostJson(payload) {
+  // 🔒 แนบชื่อผู้ใช้ที่ล็อกอินไปกับทุกคำขอ ให้ฝั่ง Apps Script ตรวจสิทธิ์ได้
+  try {
+    if (payload && typeof payload === 'object' && !payload.actor && typeof currentUser !== 'undefined' && currentUser) {
+      payload = Object.assign({}, payload, { actor: currentUser });
+    }
+  } catch (e) { /* currentUser ยังไม่ถูกประกาศ (ก่อนล็อกอิน) */ }
   if (window.google && google.script && google.script.run) {
     return new Promise((resolve, reject) => {
       google.script.run
@@ -2601,6 +2615,18 @@ function parseDateForSort(dateStr) {
 
 function isAdmin() {
   return currentRole && currentRole.toLowerCase() === 'admin';
+}
+
+// 🔒 ช่าง = ดูได้ทุกหน้า แต่แก้ไขได้เฉพาะงานซ่อมของตัวเอง (ต้องตรงกับ READONLY_ROLES ใน code.js)
+const READONLY_ROLES = ['technician', 'tech', 'mechanic', 'ช่าง'];
+function isReadOnlyRole() {
+  return READONLY_ROLES.includes(String(currentRole || '').trim().toLowerCase());
+}
+function applyRolePermissions() {
+  const ro = isReadOnlyRole();
+  document.body.classList.toggle('role-readonly', ro);
+  const banner = document.getElementById('readonlyBanner');
+  if (banner) banner.classList.toggle('d-none', !ro);
 }
 
 function updateActionColumnsVisibility() {
@@ -3076,6 +3102,7 @@ async function handleLogin(e) {
       setAuthenticatedUI(true);
       
       updateActionColumnsVisibility();
+      applyRolePermissions();
       const navUsers = document.getElementById('navUsersBtn');
       if (navUsers) navUsers.classList.toggle('d-none', String(currentRole).toLowerCase() !== 'admin');
       // 🚀 แสดงหน้าจอสถานะการโหลดจนกว่าข้อมูลชุดแรกจะพร้อม
@@ -3105,6 +3132,8 @@ function logout() {
   rawMatrixData = [];
   if (typeof rawMaintJobs !== 'undefined') { rawMaintJobs = []; maintLoaded = false; maintIsAdmin = false; maintTechs = null; }
   if (typeof rawUsers !== 'undefined') { rawUsers = []; usersLoaded = false; }
+  document.body.classList.remove('role-readonly');
+  const roBanner = document.getElementById('readonlyBanner'); if (roBanner) roBanner.classList.add('d-none');
   const navUsersBtn = document.getElementById('navUsersBtn');
   if (navUsersBtn) navUsersBtn.classList.add('d-none');
   // กลับไปแท็บภาพรวม (กันผู้ใช้คนถัดไปค้างอยู่ที่แท็บสมาชิก)
@@ -3457,6 +3486,7 @@ function editDashboardItem(machineId) {
 }
 
 async function handleSaveTicket(e) {
+  if (isReadOnlyRole()) { if (e && e.preventDefault) e.preventDefault(); alert('สิทธิ์ช่างดูข้อมูลได้อย่างเดียว แก้ไขได้เฉพาะงานซ่อมของตัวเอง'); return; }
   if (e) e.preventDefault();
   
   const machineId = document.getElementById("inpMachineId").value.trim();
@@ -6065,7 +6095,7 @@ let usersLoaded = false;
 let usersExtraCols = [];
 let usersRoleOptions = ['admin', 'manager', 'office', 'supervisor', 'technician', 'user'];
 let usersMaintAdminRoles = ['admin', 'manager', 'office', 'supervisor'];
-const USER_ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'ผู้จัดการ', office: 'ธุรการ', supervisor: 'หัวหน้าช่าง', technician: 'ช่าง', user: 'ผู้ใช้ทั่วไป' };
+const USER_ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'ผู้จัดการ', office: 'ธุรการ', supervisor: 'หัวหน้าช่าง', technician: 'ช่าง (ดูอย่างเดียว + งานซ่อมของตัวเอง)', user: 'ผู้ใช้ทั่วไป' };
 
 function loadUsers(force = false) {
   if (usersLoaded && !force) { renderUsers(); return Promise.resolve(rawUsers); }
