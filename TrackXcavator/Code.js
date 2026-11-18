@@ -1,0 +1,2994 @@
+// CODE_VERSION: r09-2026-11-18-members-admin-crud
+// ==========================================
+// CONFIGURATION & HELPER FUNCTIONS
+// ==========================================
+const BQ_PROJECT_ID = 'trackxcavator';
+const BQ_DATASET_ID = 'ExcavatorsDB';
+
+// ==========================================
+// GOOGLE SHEET (ฐานข้อมูลจริงสำหรับการเขียน/แก้/ลบ)
+// ==========================================
+// 👉 ใส่ Spreadsheet ID ของ Google Sheet ที่จะใช้เป็นฐานข้อมูล (เอาจาก URL ของ Sheet)
+// ตัวอย่าง URL: https://docs.google.com/spreadsheets/d/1AbCdEfGhIjK.../edit
+//                                                    ↑ ตรงนี้คือ SHEET_ID
+const SHEET_ID = '1NmRPToToQEo4b2ikARQilMId_3ZjaQcT0XXHfq98ueM';
+
+// ชื่อแท็บ (sheet tab) ในไฟล์ ต้องตรงกับชื่อตาราง BigQuery ที่จะสร้างเป็น External Table
+const SHEET_TABS = {
+  users: 'users',
+  service_report: 'service_report',
+  pm_log: 'pm_log',
+  modelpart: 'modelpart'
+};
+
+// ==========================================
+// รูปใบเสร็จ/ใบรับอะไหล่ (เก็บเป็นไฟล์ใน Google Drive แทน Base64 ในเซลล์)
+// ==========================================
+// Sheets จำกัด 1 เซลล์ไม่เกิน 50,000 ตัวอักษร แต่รูป Base64 ยาวเป็นแสนตัวอักษร
+// จึงต้องอัปโหลดรูปขึ้น Drive แล้วเก็บแค่ "ลิงก์" (สั้น) ไว้ในเซลล์แทน
+const RECEIPT_DRIVE_FOLDER_NAME = 'PM_Receipts_TrackXcavator';
+
+/**
+ * หา/สร้างโฟลเดอร์ปลายทางสำหรับเก็บรูปใบเสร็จ (แคชไว้ไม่ต้องค้นหาซ้ำทุกครั้ง)
+ */
+function getOrCreateReceiptFolder() {
+  var props = PropertiesService.getScriptProperties();
+  var cachedId = props.getProperty('RECEIPT_FOLDER_ID');
+  if (cachedId) {
+    try { return DriveApp.getFolderById(cachedId); } catch (e) { /* โฟลเดอร์เดิมหาย ให้สร้างใหม่ */ }
+  }
+  var folders = DriveApp.getFoldersByName(RECEIPT_DRIVE_FOLDER_NAME);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(RECEIPT_DRIVE_FOLDER_NAME);
+  props.setProperty('RECEIPT_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/**
+ * แปลงรูป Base64 (Data URI เช่น "data:image/jpeg;base64,....") ให้เป็นไฟล์ใน Drive
+ * แล้วคืนค่าเป็นลิงก์รูปที่ใช้แสดงผลตรงๆ ผ่าน <img src="..."> ได้ (uc?export=view)
+ */
+function saveReceiptImageToDrive(dataUri, fileNameHint) {
+  var match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUri);
+  if (!match) return dataUri; // ไม่ใช่ base64 image ก็คืนค่าเดิม (เผื่อเป็น URL อยู่แล้ว)
+
+  var mimeType = match[1];
+  var base64Data = match[2];
+  var ext = mimeType.split('/')[1] || 'jpg';
+  var safeName = String(fileNameHint || 'receipt').replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
+  var fileName = safeName + '_' + new Date().getTime() + '.' + ext;
+
+  var bytes = Utilities.base64Decode(base64Data);
+  var blob = Utilities.newBlob(bytes, mimeType, fileName);
+
+  var folder = getOrCreateReceiptFolder();
+  var file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  return 'https://drive.google.com/uc?export=view&id=' + file.getId();
+}
+
+/**
+ * ใช้ตอนจะบันทึกฟิลด์ receipt_image: ถ้าเป็น Base64 ให้แปลงเป็นลิงก์ Drive อัตโนมัติ
+ * ถ้าเป็นค่าว่างหรือเป็นลิงก์อยู่แล้ว ก็คืนค่าเดิม
+ */
+function resolveReceiptImage(value, fileNameHint) {
+  if (!value) return value;
+  var str = String(value).trim();
+  if (str.indexOf('data:image') === 0) {
+    try {
+      return saveReceiptImageToDrive(str, fileNameHint);
+    } catch (e) {
+      Logger.log('อัปโหลดรูปขึ้น Drive ไม่สำเร็จ (' + fileNameHint + '): ' + e.toString());
+      return value; // ถ้าอัปโหลดไม่สำเร็จ ให้คงค่าเดิมไว้ก่อน (กันข้อมูลหาย)
+    }
+  }
+  return value;
+}
+
+/**
+ * ดึงค่าฟิลด์จาก object แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ของชื่อคีย์
+ * ใช้ได้ทั้งกับแถวที่มาจาก BigQuery (runBigQuery) และแถวจาก Google Sheet (sheetToObjects)
+ * เพราะชื่อคอลัมน์จริงในชีตอาจเป็น "Machine_ID" แต่โค้ดเรียกด้วย "machine_id"
+ */
+function ciGet(row, fieldName) {
+  if (!row) return undefined;
+  var target = String(fieldName).toLowerCase();
+  for (var key in row) {
+    if (key !== '__row' && key.toLowerCase() === target) {
+      return row[key];
+    }
+  }
+  return undefined;
+}
+
+/**
+ * เปิด Sheet tab ตามชื่อที่กำหนด
+ */
+function getSheet(tabName) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sh = ss.getSheetByName(tabName);
+  if (!sh) throw new Error('ไม่พบแท็บชื่อ "' + tabName + '" ใน Google Sheet (SHEET_ID: ' + SHEET_ID + ')');
+  return sh;
+}
+
+/**
+ * แปลงข้อมูลทั้งชีตเป็น Array of Objects โดยอ้างอิง Header แถวแรก
+ * แต่ละ object จะมี __row เก็บเลขแถวจริงไว้ใช้ update/delete
+ */
+function sheetToObjects(sheet) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length === 0) return [];
+  var headers = data[0];
+  var rows = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var c = 0; c < headers.length; c++) {
+      if (headers[c]) obj[headers[c]] = data[i][c];
+    }
+    obj.__row = i + 1; // แถวจริงใน Sheet (แถวที่ 1 คือ Header)
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/**
+ * กรองแถวที่ตรงเงื่อนไขจาก Sheet
+ */
+function findRows(sheet, matchFn) {
+  return sheetToObjects(sheet).filter(matchFn);
+}
+
+/**
+ * อัปเดตค่าบางคอลัมน์ในแถวที่ระบุ (rowNumber = เลขแถวจริงใน Sheet, นับรวม Header)
+ * จับคู่ชื่อคอลัมน์แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ (เช่น key "machine_id" จะจับคู่กับ Header "Machine_ID" ได้)
+ */
+function updateRowByObject(sheet, rowNumber, updates) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var updatesLower = {};
+  Object.keys(updates).forEach(function (k) { updatesLower[k.toLowerCase()] = k; });
+
+  // ⚡ รวมการเขียนเป็นช่วง (เดิม setValue ทีละเซลล์ ~15-20 ครั้งต่อแถว ทำให้บันทึกช้า)
+  var cols = [];
+  headers.forEach(function (h, idx) {
+    if (!h) return;
+    var matchKey = updatesLower[String(h).toLowerCase()];
+    if (matchKey !== undefined && updates[matchKey] !== undefined) {
+      cols.push({ col: idx + 1, value: updates[matchKey] });
+    }
+  });
+  if (cols.length === 0) return;
+
+  // เขียนเป็นช่วงคอลัมน์ที่ติดกัน (ไม่แตะเซลล์ที่ไม่ได้แก้ → ไม่กระทบสูตร/เลข 0 นำหน้า)
+  var start = 0;
+  for (var i = 1; i <= cols.length; i++) {
+    if (i === cols.length || cols[i].col !== cols[i - 1].col + 1) {
+      var run = cols.slice(start, i);
+      sheet.getRange(rowNumber, run[0].col, 1, run.length)
+        .setValues([run.map(function (c) { return c.value; })]);
+      start = i;
+    }
+  }
+}
+
+/**
+ * เพิ่มแถวใหม่ต่อท้าย Sheet ตามลำดับ Header ที่มีอยู่
+ * จับคู่ชื่อคอลัมน์แบบไม่สนตัวพิมพ์เล็ก-ใหญ่เช่นเดียวกับ updateRowByObject
+ */
+function appendRowByObject(sheet, obj) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var objLower = {};
+  Object.keys(obj).forEach(function (k) { objLower[k.toLowerCase()] = k; });
+
+  var newRow = headers.map(function (h) {
+    if (!h) return '';
+    var matchKey = objLower[String(h).toLowerCase()];
+    return (matchKey !== undefined && obj[matchKey] !== undefined) ? obj[matchKey] : '';
+  });
+  sheet.appendRow(newRow);
+}
+
+/**
+ * ลบหลายแถวพร้อมกัน (ลบจากแถวล่างขึ้นบนเพื่อไม่ให้เลขแถวเพี้ยนระหว่างลบ)
+ */
+function deleteRows(sheet, rowNumbers) {
+  var sorted = rowNumbers.slice().sort(function (a, b) { return b - a; });
+  sorted.forEach(function (r) { sheet.deleteRow(r); });
+}
+
+/**
+ * ฟังก์ชันกลางสำหรับส่ง SQL Query ไปยัง BigQuery
+ * แก้ไขป้องกันปัญหา TypeError: is not an iterable or ArrayLike
+ */
+function runBigQuery(sqlQuery) {
+  const request = {
+    query: sqlQuery,
+    useLegacySql: false
+  };
+
+  try {
+    let queryResults = BigQuery.Jobs.query(request, BQ_PROJECT_ID);
+    const jobId = queryResults.jobReference.jobId;
+
+    let sleepTime = 200;
+    while (!queryResults.jobComplete) {
+      Utilities.sleep(sleepTime);
+      queryResults = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, jobId);
+      if (sleepTime < 1000) sleepTime += 200; // Exponential backoff
+    }
+
+    // ตรวจสอบเช็กความปลอดภัย หากเป็นคำสั่ง INSERT/UPDATE/DELETE หรือไม่มีข้อมูลตอบกลับ
+    if (!queryResults || !queryResults.rows || !queryResults.schema || !queryResults.schema.fields) {
+      return [];
+    }
+
+    const rows = queryResults.rows;
+    const fields = queryResults.schema.fields;
+
+    // ดึงรายชื่อ Header แบบปลอดภัย
+    const headers = [];
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i] && fields[i].name) {
+        headers.push(fields[i].name);
+      }
+    }
+
+    // แปลงผลลัพธ์เป็น Array of Objects
+    const result = [];
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      var item = {};
+      if (row && row.f && Array.isArray(row.f)) {
+        for (var c = 0; c < row.f.length; c++) {
+          var cell = row.f[c];
+          var headerName = headers[c];
+          if (headerName) {
+            item[headerName] = (cell && cell.v !== null && cell.v !== undefined) ? cell.v : null;
+          }
+        }
+      }
+      result.push(item);
+    }
+
+    return result;
+
+  } catch (error) {
+    Logger.log('BigQuery Error: ' + error.toString());
+    throw new Error('BigQuery Exec Error: ' + error.message);
+  }
+}
+
+// ==========================================
+// ⚡ โหลดเร็ว: รัน BigQuery หลาย query พร้อมกัน + แคชผลลัพธ์
+// ==========================================
+// แปลงผล getQueryResults/query เป็น Array of Objects (รองรับหลายหน้า pageToken)
+function bqRowsToObjects_(queryResults, fetchPage) {
+  var result = [];
+  var page = queryResults;
+  while (page) {
+    if (!page.rows || !page.schema || !page.schema.fields) break;
+    var fields = page.schema.fields;
+    for (var r = 0; r < page.rows.length; r++) {
+      var row = page.rows[r];
+      var item = {};
+      if (row && row.f) {
+        for (var c = 0; c < row.f.length; c++) {
+          var name = fields[c] && fields[c].name;
+          if (name) {
+            var cell = row.f[c];
+            item[name] = (cell && cell.v !== null && cell.v !== undefined) ? cell.v : null;
+          }
+        }
+      }
+      result.push(item);
+    }
+    page = (page.pageToken && fetchPage) ? fetchPage(page.pageToken) : null;
+  }
+  return result;
+}
+
+/**
+ * ส่งหลาย query ให้ BigQuery พร้อมกัน แล้วรอผลทีเดียว
+ * (เดิมรันทีละ query ต่อกัน → เวลารวม = บวกกันทุก query / ตอนนี้ ≈ query ที่ช้าที่สุดตัวเดียว)
+ */
+function runBigQueryParallel(sqlList) {
+  var jobs = sqlList.map(function (sql) {
+    return BigQuery.Jobs.insert({
+      configuration: { query: { query: sql, useLegacySql: false } }
+    }, BQ_PROJECT_ID);
+  });
+
+  return jobs.map(function (job) {
+    var ref = job.jobReference;
+    var opts = { timeoutMs: 20000 };
+    if (ref.location) opts.location = ref.location;
+    var res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+    var sleep = 200;
+    while (!res.jobComplete) {
+      Utilities.sleep(sleep);
+      res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+      if (sleep < 1000) sleep += 200;
+    }
+    return bqRowsToObjects_(res, function (token) {
+      var o = { pageToken: token };
+      if (ref.location) o.location = ref.location;
+      return BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, o);
+    });
+  });
+}
+
+// ==========================================
+// 🛟 สำรอง: ถ้า BigQuery อ่านตารางไม่ได้ (เช่น External Table ถูกลบ/ไม่พบ) ให้อ่านจาก Google Sheet ตรงๆ
+// ==========================================
+// Google Sheet เป็นฐานข้อมูลจริงอยู่แล้ว (ทุกการเขียนลง Sheet) BigQuery เป็นแค่ External Table ครอบ Sheet
+// จึงอ่านจาก Sheet แทนได้ทันที → หน้าเว็บไม่ล่มทั้งระบบเมื่อ BigQuery มีปัญหา
+function _sheetCellToBqLike_(v) {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    var hasTime = v.getHours() || v.getMinutes() || v.getSeconds();
+    return Utilities.formatDate(v, 'Asia/Bangkok', hasTime ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd');
+  }
+  if (v === '' || v === undefined) return null;
+  return v;
+}
+
+function readTableFromSheet_(tableName) {
+  var rows = sheetToObjects(getSheet(SHEET_TABS[tableName] || tableName));
+  return rows.map(function (r) {
+    var o = {};
+    for (var k in r) {
+      if (k !== '__row') o[k] = _sheetCellToBqLike_(r[k]);
+    }
+    return o;
+  });
+}
+
+/**
+ * อ่านหลายตาราง (SELECT *) — ลอง BigQuery แบบขนานก่อน ตารางไหนพังให้อ่านจาก Sheet แทน
+ * คืนค่า { rows: [[...], [...]], sources: ['bigquery'|'sheet', ...], errors: [...] }
+ */
+function loadTablesSafe_(tableNames) {
+  var jobs = tableNames.map(function (t) {
+    try {
+      return BigQuery.Jobs.insert({
+        configuration: { query: { query: 'SELECT * FROM `' + BQ_PROJECT_ID + '.' + BQ_DATASET_ID + '.' + t + '`', useLegacySql: false } }
+      }, BQ_PROJECT_ID);
+    } catch (e) {
+      return { __error: e };
+    }
+  });
+
+  var out = { rows: [], sources: [], errors: [] };
+  tableNames.forEach(function (t, i) {
+    var job = jobs[i];
+    try {
+      if (job.__error) throw job.__error;
+      var ref = job.jobReference;
+      var opts = { timeoutMs: 20000 };
+      if (ref.location) opts.location = ref.location;
+      var res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+      var sleep = 200;
+      while (!res.jobComplete) {
+        Utilities.sleep(sleep);
+        res = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, opts);
+        if (sleep < 1000) sleep += 200;
+      }
+      out.rows.push(bqRowsToObjects_(res, function (token) {
+        var o = { pageToken: token };
+        if (ref.location) o.location = ref.location;
+        return BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, ref.jobId, o);
+      }));
+      out.sources.push('bigquery');
+    } catch (e) {
+      Logger.log('BigQuery อ่าน ' + t + ' ไม่ได้ → อ่านจาก Sheet แทน: ' + e);
+      out.errors.push(t + ': ' + e);
+      out.rows.push(readTableFromSheet_(t)); // ถ้า Sheet ก็พังด้วย จะ throw ออกไปตามปกติ
+      out.sources.push('sheet');
+    }
+  });
+  return out;
+}
+
+function loadTableSafe_(tableName) {
+  return loadTablesSafe_([tableName]).rows[0];
+}
+
+// ---- แคช (CacheService จำกัด 100KB ต่อ key → แบ่งเก็บเป็นหลายชิ้น) ----
+var DATA_CACHE_TTL_SEC = 300;     // ข้อมูลตาราง: 5 นาที (ถูกล้างทันทีเมื่อมีการบันทึก/แก้/ลบผ่านระบบ)
+var STATIC_CACHE_TTL_SEC = 21600; // รายชื่อรุ่น/อะไหล่ตามรุ่น: 6 ชม.
+var CACHE_CHUNK_CHARS = 25000;    // ภาษาไทย 1 ตัว = 3 ไบต์ → 25,000 ตัวอักษร < 100KB
+
+function cachePutJSON_(key, obj, ttl) {
+  try {
+    var str = JSON.stringify(obj);
+    var n = Math.ceil(str.length / CACHE_CHUNK_CHARS);
+    if (n > 200) return; // ใหญ่เกินไป ไม่แคช
+    var map = {};
+    for (var i = 0; i < n; i++) map[key + '_' + i] = str.substr(i * CACHE_CHUNK_CHARS, CACHE_CHUNK_CHARS);
+    map[key + '_n'] = String(n);
+    CacheService.getScriptCache().putAll(map, ttl);
+  } catch (e) {
+    Logger.log('cachePutJSON_ error: ' + e);
+  }
+}
+
+function cacheGetJSON_(key) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = Number(cache.get(key + '_n'));
+    if (!n) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+    var parts = cache.getAll(keys);
+    var str = '';
+    for (var j = 0; j < n; j++) {
+      var part = parts[keys[j]];
+      if (part === undefined || part === null) return null; // บางชิ้นหมดอายุ → ถือว่าไม่มีแคช
+      str += part;
+    }
+    return JSON.parse(str);
+  } catch (e) {
+    return null;
+  }
+}
+
+// "รุ่น" ของข้อมูล: เปลี่ยนทุกครั้งที่มีการเขียนข้อมูล → แคชเก่าใช้ไม่ได้ทันที
+function getDataGen_() {
+  var cache = CacheService.getScriptCache();
+  var gen = cache.get('data_gen');
+  if (!gen) {
+    gen = String(new Date().getTime());
+    cache.put('data_gen', gen, 21600);
+  }
+  return gen;
+}
+
+function invalidateDataCache() {
+  CacheService.getScriptCache().put('data_gen', String(new Date().getTime()) + '_' + Math.floor(Math.random() * 1000), 21600);
+}
+
+var WRITE_ACTIONS = ['insertTicket', 'claimCoupon', 'updatePartsStatus', 'updatePendingPartsByRound',
+  'updatePmLog', 'approveMachine', 'deleteDashboard', 'deleteReport', 'fixPmLogSwaps',
+  'markCouponsSent', 'recordCouponRefund'];
+
+/**
+ * ⚡ ดึงข้อมูลทั้งหมดที่หน้าเว็บใช้ในครั้งเดียว (ตารางสถานะ + ประวัติ PM)
+ * - 1 request แทน 2 request
+ * - BigQuery 2 query รันพร้อมกัน (เดิม 3 query: service_report ถูกดึงซ้ำ 2 รอบ)
+ * - มีแคช 5 นาที ผู้ใช้คนถัดไป/การสลับแท็บ/เปิดหน้าใหม่ แทบไม่ต้องรอ
+ */
+function getAllData(opts, isRawObject) {
+  try {
+    var noCache = opts && (opts.noCache === true || opts.noCache === 'true');
+    var gen = getDataGen_();
+    var cacheKey = 'alldata_' + gen;
+
+    if (!noCache) {
+      var cached = cacheGetJSON_(cacheKey);
+      if (cached) {
+        cached.fromCache = true;
+        return responseJSON(cached, isRawObject);
+      }
+    }
+
+    var loaded = loadTablesSafe_(['service_report', 'pm_log']);
+    var serviceRows = loaded.rows[0];
+    var logRows = loaded.rows[1];
+
+    var dashboard = getDashboardData(true, serviceRows);
+    var history = getReportList(true, logRows, serviceRows);
+
+    var out = {
+      status: 'success',
+      dashboard: dashboard,
+      history: history,
+      generatedAt: Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss"),
+      fromCache: false,
+      dataSource: loaded.sources,          // ['bigquery','bigquery'] ปกติ / มี 'sheet' = ใช้ทางสำรอง
+      bqWarnings: loaded.errors
+    };
+
+    if (dashboard && dashboard.status === 'success' && Array.isArray(history)) {
+      cachePutJSON_(cacheKey, out, DATA_CACHE_TTL_SEC);
+    }
+    return responseJSON(out, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.toString() }, isRawObject);
+  }
+}
+
+/**
+ * Helper Function ส่งคืนค่า JSON หรือ Object แบบ Dynamic
+ * รองรับทั้งการเรียกผ่าน Web App Fetch (CORS HTTP) และ google.script.run
+ */
+function responseJSON(data, isRawObject) {
+  if (isRawObject) {
+    return data;
+  }
+  var out = ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+  try {
+    out.setHeader && out.setHeader('Access-Control-Allow-Origin', '*');
+    out.setHeader && out.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    out.setHeader && out.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  } catch (e) {
+    // setHeader may not be available in some runtimes; ignore if so
+  }
+  return out;
+}
+
+// Basic handler for preflight OPTIONS requests (may be invoked by the runtime)
+function doOptions(e) {
+  var out = ContentService.createTextOutput('').setMimeType(ContentService.MimeType.JSON);
+  try {
+    out.setHeader && out.setHeader('Access-Control-Allow-Origin', '*');
+    out.setHeader && out.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    out.setHeader && out.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  } catch (err) {
+    // ignore
+  }
+  return out;
+}
+
+/**
+ * Helper ฟังก์ชันสำหรับ Safe Escape SQL String
+ */
+function escapeSql(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
+}
+
+function tableHasColumn(tableName, columnName) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'schema_' + tableName + '_' + columnName;
+  var cached = cache.get(cacheKey);
+  if (cached !== null) return cached === '1';
+
+  var sql = `SELECT COUNT(1) AS total
+             FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.INFORMATION_SCHEMA.COLUMNS\`
+             WHERE table_name = '${escapeSql(tableName)}'
+               AND column_name = '${escapeSql(columnName)}'`;
+  var rows = runBigQuery(sql);
+  var exists = rows.length > 0 && Number(rows[0].total) > 0;
+  cache.put(cacheKey, exists ? '1' : '0', 21600);
+  return exists;
+}
+
+// ==========================================
+// WEB APP ENTRY POINTS (doGet / doPost)
+// ==========================================
+
+function doGet(e) {
+  try {
+    var action = e ? e.parameter.action : "";
+
+    if (action === "getReceiptImage") {
+      return getReceiptImageData(e.parameter.fileId);
+    }
+
+    if (action === "getAllData") {
+      return getAllData(e.parameter);
+    } else if (action === "checkStatus") {
+      return responseJSON({ status: "success", codeVersion: "r09-2026-11-18-members-admin-crud" });
+    } else if (action === "getDashboard") {
+      return getDashboardData();
+    } else if (action === "getReportList") {
+      return getReportList();
+    } else if (action === "getPMProgressMatrix") {
+      return getPMProgressMatrix();
+    } else if (action === "getModelParts") {
+      return getModelParts(e.parameter.model);
+    } else if (action === "getModels") {
+      return getModels();
+    } else if (action === "detectPmLogSwaps") {
+      return detectPmLogSwaps();
+    } else if (action === "getCouponRefundList") {
+      return getCouponRefundList();
+    }
+    
+    // หากไม่มี action ระบุมา ให้แสดงผลหน้า index.html ของ Web App
+    return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle('ระบบฐานข้อมูลรถขุด - ติดตามสถานะและบันทึกใบงาน PM')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() });
+  }
+}
+
+function doPost(e) {
+  try {
+    var data = {};
+    if (e && e.postData && e.postData.contents) {
+      data = JSON.parse(e.postData.contents);
+    } else if (e && e.parameter) {
+      data = e.parameter;
+    }
+
+    var action = data.action;
+    var result = routePost_(action, data);
+    if (WRITE_ACTIONS.indexOf(action) !== -1) {
+      try { invalidateDataCache(); } catch (cacheErr) { /* ไม่ให้ล้มเพราะแคช */ }
+    }
+    return result;
+
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() });
+  }
+}
+
+function routePost_(action, data) {
+    if (action === "getAllData") {
+      return getAllData(data);
+    } else if (action === "verifyLogin" || action === "login") {
+      return verifyLogin(data.username, data.password);
+    } else if (action === "getDashboard") {
+      return getDashboardData();
+    } else if (action === "getReportList") {
+      return getReportList();
+    } else if (action === "getPMProgressMatrix") {
+      return getPMProgressMatrix();
+    } else if (action === "getModelParts") {
+      return getModelParts(data.model);
+    } else if (action === "getModels") {
+      return getModels();
+    } else if (action === "getReceiptImage") {
+      return getReceiptImageData(data.fileId);
+    } else if (action === "insertTicket") {
+      return insertOrUpdateTicket(data);
+    } else if (action === "claimCoupon") {
+      return claimCoupon(data);
+    } else if (action === "updatePartsStatus") {
+      return updatePartsStatus(data);
+    } else if (action === "updatePendingPartsByRound") {
+      return updatePendingPartsByRound(data);
+    } else if (action === "updatePmLog") {
+      return updatePmLog(data);
+    } else if (action === "approveMachine") {
+      return approveMachine(data.machineId);
+    } else if (action === "deleteDashboard") {
+      return deleteDashboard(data.machineId);
+    } else if (action === "deleteReport") {
+      return deleteReport(data.ticketId, false, data.machineId, data.pmRound);
+    } else if (action === "detectPmLogSwaps") {
+      return detectPmLogSwaps();
+    } else if (action === "fixPmLogSwaps") {
+      return fixPmLogSwaps(data);
+    } else if (action === "getCouponRefundList") {
+      return getCouponRefundList();
+    } else if (action === "markCouponsSent") {
+      return markCouponsSent(data);
+    } else if (action === "recordCouponRefund") {
+      return recordCouponRefund(data);
+    } else if (action === "getMaintenanceJobs") {
+      return getMaintenanceJobs(data);
+    } else if (action === "getUsers") {
+      return getUsers(data);
+    } else if (action === "saveUser") {
+      return saveUser(data);
+    } else if (action === "deleteUser") {
+      return deleteUser(data);
+    } else if (action === "deleteMaintenanceJob") {
+      return deleteMaintenanceJob(data);
+    } else if (action === "checkMachineExists") {
+      return checkMachineExists(data.machine_id);
+    } else if (action === "getTechnicians") {
+      return getTechnicians();
+    } else if (action === "saveMaintenanceJob") {
+      return saveMaintenanceJob(data);
+    } else if (action === "updateMaintenanceJob") {
+      return updateMaintenanceJob(data);
+    } else if (action === "ping") {
+      return responseJSON({ status: "success", pong: true });
+    }
+
+    return responseJSON({ status: "error", message: "Unknown action" });
+}
+
+/**
+ * Entry point สำหรับหน้า HTML ที่รันอยู่ใน Apps Script โดยตรง
+ * คืนค่าเป็น object ธรรมดาเพื่อให้ google.script.run รับผลลัพธ์ได้
+ * และหลีกเลี่ยงปัญหา CORS/redirect ของ fetch ตอนบันทึกข้อมูล
+ */
+function apiRequest(data) {
+  var output = doPost({
+    postData: { contents: JSON.stringify(data || {}) },
+    parameter: data || {}
+  });
+
+  if (!output) {
+    return { status: 'error', message: 'Invalid response from server' };
+  }
+
+  // หากอยู่ในรูปแบบ TextOutput (จากการเรียกผ่าน Web App) ให้แปลงกลับเป็น JSON Object
+  if (typeof output.getContent === 'function') {
+    try {
+      return JSON.parse(output.getContent());
+    } catch (err) {
+      return { status: 'error', message: 'Invalid JSON response: ' + err.toString() };
+    }
+  }
+
+  // หากถูกส่งคืนเป็น JS Object โดยตรง
+  return output;
+}
+
+// ==========================================
+// 1. ตรวจสอบ Login (ครอบ Backtick คำสงวน user/password)
+// ==========================================
+function verifyLogin(username, password, isRawObject) {
+  try {
+    var inputUser = String(username || '').trim();
+    var inputPass = String(password || '').trim();
+
+    // ฟังก์ชันช่วยดึงค่าฟิลด์แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ของชื่อคอลัมน์
+    // (เผื่อ Header ในชีตเป็น "User"/"Password"/"Role" แทนที่จะเป็นตัวเล็กล้วน)
+    function getField(row, fieldName) {
+      var target = fieldName.toLowerCase();
+      for (var key in row) {
+        if (key !== '__row' && key.toLowerCase() === target) {
+          return row[key];
+        }
+      }
+      return undefined;
+    }
+
+    // อ่านจาก Google Sheet โดยตรง (ไม่ผ่าน BigQuery) เพื่อเลี่ยงปัญหา BigQuery เดา Type ผิด
+    // (เช่น รหัสผ่านตัวเลขล้วนโดนตีความเป็น NUMBER แล้วตัดเลข 0 ข้างหน้าทิ้ง)
+    var sheet = getSheet(SHEET_TABS.users);
+    var rows = findRows(sheet, function (r) {
+      var sheetUser = String(getField(r, 'user') || '').trim();
+      var sheetPass = String(getField(r, 'password') || '').trim();
+      return sheetUser.toLowerCase() === inputUser.toLowerCase() && sheetPass === inputPass;
+    });
+
+    if (rows.length > 0) {
+      var foundUser = rows[0];
+      var userRole = getField(foundUser, 'role') || "admin";
+      var userVal = getField(foundUser, 'user') || inputUser;
+
+      return responseJSON({
+        status: "success",
+        success: true,
+        user: {
+          username: userVal,
+          user: userVal,
+          role: userRole
+        },
+        username: userVal,
+        role: userRole
+      }, isRawObject);
+    } else {
+      return responseJSON({
+        status: "error",
+        success: false,
+        message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
+      }, isRawObject);
+    }
+  } catch (e) {
+    return responseJSON({
+      status: "error",
+      success: false,
+      message: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ: ' + e.toString()
+    }, isRawObject);
+  }
+}
+
+// ==========================================
+// 2. ดึงข้อมูล ตารางสถานะเครื่องจักร (Service_Report)
+// ==========================================
+function getDashboardData(isRawObject, prefetchedRows) {
+  try {
+    var rows = prefetchedRows;
+    if (!rows) {
+      rows = loadTableSafe_('service_report');
+    }
+
+    var alerts = [];
+    var pmAlertCount = 0;
+    var incompleteInvoiceCount = 0;
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var machineId = String(ciGet(row, 'machine_id') || "").trim();
+
+      // ข้ามแถวว่างเปล่า (แถวว่างส่วนเกินที่ติดมาจาก Google Sheet ไม่ใช่ข้อมูลเครื่องจักรจริง)
+      if (!machineId) continue;
+
+      var hrs = Number(ciGet(row, 'current_hours')) || 0;
+      var lastPm = Number(ciGet(row, 'last_pm_round')) || 0;
+      var nextPm = Number(ciGet(row, 'next_pm_round')) || 0;
+      var pStatus = String(ciGet(row, 'parts_status') || "ส่งครบแล้ว").trim();
+
+      if (nextPm > 0 && (nextPm - hrs <= 50)) {
+        pmAlertCount++;
+      }
+
+      if (pStatus === "ส่งบางส่วน" || pStatus === "ค้างส่งอะไหล่") {
+        incompleteInvoiceCount++;
+      }
+
+      alerts.push({
+        machineId: machineId,
+        machine_id: machineId,
+        model: ciGet(row, 'model') || "",
+        customer: ciGet(row, 'customer') || "",
+        customerName: ciGet(row, 'customer') || "",
+        customerId: ciGet(row, 'customer_id') || "",
+        customer_id: ciGet(row, 'customer_id') || "",
+        phone: ciGet(row, 'phone_number') || "",
+        phone_number: ciGet(row, 'phone_number') || "",
+        contractDate: ciGet(row, 'contract_date') || "",
+        contract_date: ciGet(row, 'contract_date') || "",
+        currentHours: hrs,
+        current_Hours: hrs,
+        lastPm: lastPm,
+        last_pm_round: lastPm,
+        nextPm: nextPm,
+        next_pm_round: nextPm,
+        status: ciGet(row, 'status') || "Approved",
+        updatedBy: ciGet(row, 'updated_by') || "",
+        updated_by: ciGet(row, 'updated_by') || "",
+        partsStore: ciGet(row, 'parts_store') || "",
+        parts_store: ciGet(row, 'parts_store') || "",
+        supplierId: ciGet(row, 'supplier_id') || "-",
+        supplier_id: ciGet(row, 'supplier_id') || "-",
+        partsBillNo: ciGet(row, 'parts_bill_no') || "",
+        parts_bill_no: ciGet(row, 'parts_bill_no') || "",
+        partsStatus: pStatus,
+        parts_status: pStatus,
+        receiptImage: ciGet(row, 'receipt_image') || "",
+        receipt_image: ciGet(row, 'receipt_image') || "",
+        yanmarCoupon: Number(ciGet(row, 'yanmar_coupon')) || 0,
+        yanmar_coupon: Number(ciGet(row, 'yanmar_coupon')) || 0,
+        remark: ciGet(row, 'remark') || "",
+        updatedAt: ciGet(row, "updated_at") || ""
+      });
+    }
+
+    return responseJSON({
+      status: "success",
+      pmAlerts: alerts,
+      pmAlertCount: pmAlertCount,
+      incompleteInvoiceCount: incompleteInvoiceCount
+    }, isRawObject);
+  } catch (e) {
+    return responseJSON({ 
+      status: "error", 
+      pmAlerts: [], 
+      pmAlertCount: 0, 
+      incompleteInvoiceCount: 0, 
+      message: e.toString() 
+    }, isRawObject);
+  }
+}
+
+// ==========================================
+// 3. ดึงข้อมูล ประวัติทำ PM (PM_Log) - พร้อมระบบตรวจสอบความถูกต้อง
+// ==========================================
+function getReportList(isRawObject, prefetchedRows, prefetchedServiceRows) {
+  try {
+    var rows = prefetchedRows;
+    if (!rows) {
+      rows = loadTableSafe_('pm_log');
+    }
+    var result = [];
+
+    // pm_log ไม่มีคอลัมน์เบอร์โทรศัพท์เก็บไว้ ต้องดึงมาจาก service_report แทน (จับคู่ด้วย machine_id)
+    var phoneByMachineId = {};
+    try {
+      var dashRows = prefetchedServiceRows || loadTableSafe_('service_report');
+      dashRows.forEach(function (dr) {
+        var mid = String(ciGet(dr, 'machine_id') || '').trim().toLowerCase();
+        if (mid) phoneByMachineId[mid] = ciGet(dr, 'phone_number') || '';
+      });
+    } catch (e) {
+      // ถ้าดึง service_report ไม่สำเร็จ ก็ปล่อยเบอร์โทรว่างไว้ ไม่ต้องหยุดการทำงาน
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+
+      var mId = ciGet(row, 'machine_id') || "";
+      // ข้ามแถวว่างเปล่า (แถวว่างส่วนเกินที่ติดมาจาก Google Sheet ไม่ใช่ข้อมูลจริง)
+      if (!String(mId).trim()) continue;
+
+      var tId = ciGet(row, 'ticket_id') || ciGet(row, 'no') || ("TK-" + (i + 1));
+      var mdl = ciGet(row, 'model') || "";
+
+      var rawCustomer = String(ciGet(row, 'customer') || "").trim();
+      var rawCustomerId = String(ciGet(row, 'customer_id') || "").trim();
+      var rawPhone = String(ciGet(row, 'phone_number') || "").trim();
+      if (!rawPhone) {
+        rawPhone = String(phoneByMachineId[String(mId).trim().toLowerCase()] || '').trim();
+      }
+
+      var finalCustomerName = rawCustomer;
+      var finalCustomerId = rawCustomerId;
+      var finalPhone = rawPhone;
+
+      // เช็กสลับคอลัมน์: ถ้า customer เก็บชื่อรุ่นรถ แล้ว customer_id เก็บชื่อลูกค้า
+      if (rawCustomer.indexOf("รถขุด") !== -1 || rawCustomer.indexOf("OLD-") !== -1) {
+        finalCustomerName = rawCustomerId;
+        finalCustomerId = rawPhone;
+        finalPhone = "-";
+      }
+
+      // ดึงค่าวันที่และรอบ PM (pm_log ใช้ชื่อคอลัมน์ Service_Date / PM_Target / Actual_Hours จริง)
+      var rawDate = String(ciGet(row, 'service_date') || "").trim();
+      var rawPmRound = String(ciGet(row, 'pm_target') || "").trim();
+
+      // ตรวจสอบข้อมูลสลับช่องกันแบบอัตโนมัติ (เผื่อข้อมูลเก่าค้าง)
+      var serviceDateVal = rawDate;
+      var pmRoundVal = Number(rawPmRound) || 0;
+
+      if (_looksLikeDate(rawPmRound)) {
+        serviceDateVal = rawPmRound;
+        pmRoundVal = Number(rawDate) || 0;
+      }
+
+      // กรองวันที่เริ่มต้น Default 2000-01-01 หรือค่าว่างให้เป็น '-'
+      if (!serviceDateVal || serviceDateVal === "" || serviceDateVal.indexOf("2000-01-01") === 0) {
+        serviceDateVal = "-";
+      }
+
+      result.push({
+        no: ciGet(row, 'no') || (i + 1),
+        ticketId: tId,
+        ticket_id: tId,
+        machineId: mId,
+        machine_id: mId,
+        model: mdl,
+        customerName: finalCustomerName,
+        customer: finalCustomerName,
+        customerId: finalCustomerId,
+        customer_id: finalCustomerId,
+        phone: finalPhone,
+        phone_number: finalPhone,
+        pmRound: pmRoundVal,
+        last_pm_round: pmRoundVal,
+        actualHours: Number(ciGet(row, 'actual_hours')) || 0,
+        current_Hours: Number(ciGet(row, 'actual_hours')) || 0,
+        serviceDate: serviceDateVal,
+        contract_date: serviceDateVal,
+        cost: Number(ciGet(row, 'cost')) || 0,
+        invoiceNo: ciGet(row, 'invoice_no') || ciGet(row, 'parts_bill_no') || "-",
+        supplierId: ciGet(row, 'supplier_id') || "-",
+        partsStore: ciGet(row, 'parts_store') || "-",
+        parts_store: ciGet(row, 'parts_store') || "-",
+        partsBillNo: ciGet(row, 'parts_bill_no') || "NA",
+        parts_bill_no: ciGet(row, 'parts_bill_no') || "NA",
+        partsStatus: ciGet(row, 'parts_status') || "ส่งครบแล้ว",
+        parts_status: ciGet(row, 'parts_status') || "ส่งครบแล้ว",
+        receiptImage: ciGet(row, 'receipt_image') || "",
+        receipt_image: ciGet(row, 'receipt_image') || "",
+        yanmarCoupon: Number(ciGet(row, 'yanmar_coupon')) || 0,
+        yanmar_coupon: Number(ciGet(row, 'yanmar_coupon')) || 0,
+        couponNo: ciGet(row, 'coupon_no') || "",
+        remark: ciGet(row, 'remark') || "",
+        updatedAt: ciGet(row, "updated_at") || ""
+      });
+    }
+
+    return responseJSON(result, isRawObject);
+  } catch (e) {
+    return responseJSON([], isRawObject);
+  }
+}
+
+// ==========================================
+// กติกากลางของ pm_log (log ซ้ำได้): เวลาจะใช้ข้อมูล "รายรอบ" ให้ใช้แถวล่าสุดแถวเดียว
+// ==========================================
+function pmLogTime(val) {
+  if (!val) return 0;
+  if (val instanceof Date) return val.getTime();
+  var t = new Date(String(val).trim().replace(' ', 'T')).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+// เลือกแถวล่าสุดจากผล findRows: updated_at ใหม่สุดก่อน ถ้าเท่ากัน/ไม่มี ใช้แถวล่างสุดใน Sheet
+function pickLatestLogRow(rows) {
+  if (!rows || rows.length === 0) return null;
+  return rows.slice().sort(function (a, b) {
+    var d = pmLogTime(ciGet(b, 'updated_at')) - pmLogTime(ciGet(a, 'updated_at'));
+    return d !== 0 ? d : (b.__row - a.__row);
+  })[0];
+}
+
+// ==========================================
+// 3.1 ดึงข้อมูล PM Progress Matrix (ปรับปรุง Logic ดึงประวัติย้อนหลัง)
+// ==========================================
+function getPMProgressMatrix(isRawObject) {
+  try {
+    // pm_log ใช้คอลัมน์ PM_Target / Actual_Hours / Service_Date (ไม่ใช่ last_pm_round / current_Hours / contract_date)
+    // ใช้ SELECT * + ciGet เพื่อไม่ผูกกับตัวพิมพ์เล็ก-ใหญ่ของชื่อคอลัมน์
+    // (BigQuery พร้อมกัน 2 ตาราง ถ้าตารางไหนพังจะอ่านจาก Sheet แทน)
+    var loadedM = loadTablesSafe_(['service_report', 'pm_log']);
+    var services = loadedM.rows[0];
+    var logs = loadedM.rows[1];
+
+    // งาน PM ที่บันทึกแล้วอาจยังไม่จบ workflow หากยังค้างคูปองหรืออะไหล่
+    function getWorkflowStatuses(partsStatus, yanmarCoupon, partsStore, partsBillNo) {
+      var statuses = [];
+      var normalizedPartsStatus = String(partsStatus || "").trim();
+      var couponAmount = Number(String(yanmarCoupon || 0).replace(/,/g, "")) || 0;
+      var normalizedPartsStore = String(partsStore || "").trim();
+      var normalizedPartsBillNo = String(partsBillNo || "").trim().toUpperCase();
+      var hasPendingParts = normalizedPartsStatus === "ส่งบางส่วน" || normalizedPartsStatus === "ค้างส่งอะไหล่";
+      var hasPartsList = normalizedPartsStore !== "" && normalizedPartsStore !== "-";
+      var hasPartsBill = normalizedPartsBillNo !== "" && normalizedPartsBillNo !== "-" && normalizedPartsBillNo !== "NA";
+      var hasCouponEntitlement = normalizedPartsStatus !== "ไม่ได้เบิกอะไหล่" &&
+        (hasPendingParts || hasPartsList || hasPartsBill);
+
+      if (hasPendingParts) {
+        statuses.push("ค้างอะไหล่");
+      }
+      // ข้อมูลเก่าที่ไม่มีรายการ/บิล/สถานะค้างยังยืนยันสิทธิ์คูปองไม่ได้
+      if (couponAmount <= 0 && hasCouponEntitlement) {
+        statuses.push("ค้างคูปอง");
+      }
+
+      return statuses.length > 0 ? statuses : ["เสร็จสิ้น"];
+    }
+
+    // Map ข้อมูลรอบ PM Log เข้ากับตัวเครื่อง
+    // pm_log เป็น log → เครื่อง+รอบเดียวกันมีหลายแถวได้ ใช้ "แถวล่าสุด" (updated_at ใหม่สุด, เท่ากันใช้แถวที่มาทีหลัง)
+    var pmRoundsMap = {};
+    var pmRoundsTime = {};
+    if (Array.isArray(logs)) {
+      logs.forEach(function(l, idx) {
+        var mId = String(ciGet(l, 'machine_id') || "").trim().toLowerCase();
+        var round = Number(ciGet(l, 'pm_target')) || 0;
+        if (!mId || round <= 0) return;
+        var t = pmLogTime(ciGet(l, 'updated_at'));
+        var key = mId + '|' + round;
+        if (pmRoundsTime[key] !== undefined && t < pmRoundsTime[key]) return;
+        pmRoundsTime[key] = t;
+        if (!pmRoundsMap[mId]) pmRoundsMap[mId] = {};
+        pmRoundsMap[mId][round] = {
+          completed: true,
+          actualHours: Number(ciGet(l, 'actual_hours')) || 0,
+          date: ciGet(l, 'service_date') || "",
+          statuses: getWorkflowStatuses(ciGet(l, 'parts_status'), ciGet(l, 'yanmar_coupon'), ciGet(l, 'parts_store'), ciGet(l, 'parts_bill_no'))
+        };
+      });
+    }
+
+    var matrixData = Array.isArray(services) ? services.filter(function(s) {
+      return String(ciGet(s, 'machine_id') || "").trim() !== "";
+    }).map(function(s) {
+      var mId = String(ciGet(s, 'machine_id') || "").trim();
+      var mIdKey = mId.toLowerCase();
+      var hrs = Number(ciGet(s, 'current_hours')) || 0;
+      var lastPm = Number(ciGet(s, 'last_pm_round')) || 0;
+      var roundsHistory = pmRoundsMap[mIdKey] || {};
+
+      // รอบ PM มาตรฐาน
+      var pmCheckpoints = [50, 250, 500, 750, 1000, 1250, 1500, 1750, 2000];
+      var matrix = {};
+
+      pmCheckpoints.forEach(function(cp) {
+        // Priority 1: เช็กประวัติที่มีใน pm_log ก่อนเป็นอันดับแรก (ป้องกันการข้ามรอบ)
+        if (roundsHistory[cp]) {
+          matrix[cp] = roundsHistory[cp].statuses.slice();
+          // รอบล่าสุด: ถ้า service_report ยังค้างอะไหล่ ให้ถือว่ายังค้าง (ไม่ขึ้นเสร็จสิ้นทั้งที่ยังค้างบางส่วน)
+          var dashPartsStatus = String(ciGet(s, 'parts_status') || "").trim();
+          if (cp === lastPm && (dashPartsStatus === "ส่งบางส่วน" || dashPartsStatus === "ค้างส่งอะไหล่")
+              && matrix[cp].indexOf("ค้างอะไหล่") === -1) {
+            matrix[cp] = matrix[cp].filter(function (x) { return x !== "เสร็จสิ้น"; });
+            matrix[cp].unshift("ค้างอะไหล่");
+          }
+        } 
+        // Priority 2: ถ้าตรงกับรอบล่าสุดใน service_report
+        else if (cp === lastPm && lastPm > 0) {
+          matrix[cp] = getWorkflowStatuses(ciGet(s, 'parts_status'), ciGet(s, 'yanmar_coupon'), ciGet(s, 'parts_store'), ciGet(s, 'parts_bill_no'));
+        } 
+        // Priority 3: ถ้าชั่วโมงถึงรอบแล้วแต่ยังไม่มี Log ให้ขึ้น 'เข้าบริการ'
+        else if (hrs >= cp) {
+          matrix[cp] = ["เข้าบริการ"];
+        } 
+        // Priority 4: ยังไม่ถึงรอบ
+        else {
+          matrix[cp] = ["รอดำเนินการ"];
+        }
+      });
+
+      return {
+        machine_id: mId,
+        machineId: mId,
+        model: ciGet(s, 'model') || "",
+        customer: ciGet(s, 'customer') || "",
+        current_Hours: hrs,
+        currentHours: hrs,
+        last_pm_round: lastPm,
+        lastPm: lastPm,
+        matrix: matrix,
+        pm50: matrix[50],
+        pm250: matrix[250],
+        pm500: matrix[500],
+        pm750: matrix[750],
+        pm1000: matrix[1000]
+      };
+    }) : [];
+
+    return responseJSON({ status: "success", data: matrixData }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: "error", data: [], message: e.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 3.2 ดึงรายการอะไหล่ตามรุ่นรถ (สำหรับหน้าฟอร์มบันทึกใบงาน PM)
+// ==========================================
+function getModelParts(model, isRawObject) {
+  try {
+    var safeModel = escapeSql(model);
+    if (!safeModel.trim()) return responseJSON({ status: "success", data: [] }, isRawObject);
+
+    var partsCacheKey = 'mparts_' + Utilities.base64EncodeWebSafe(
+      Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(model).trim().toLowerCase(), Utilities.Charset.UTF_8));
+    var cachedParts = cacheGetJSON_(partsCacheKey);
+    if (cachedParts) return responseJSON(cachedParts, isRawObject);
+
+    var sql = `SELECT DISTINCT partno, maintenanceparts
+               FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.modelpart\`
+              WHERE LOWER(TRIM(model)) = LOWER(TRIM('${safeModel}'))
+                OR LOWER(TRIM('${safeModel}')) LIKE CONCAT(LOWER(TRIM(model)), '%')
+                OR (LOWER(TRIM(model)) LIKE CONCAT(LOWER(TRIM('${safeModel}')), '%')
+                   AND (NULLIF(TRIM(partno), '') IS NOT NULL
+                     OR NULLIF(TRIM(maintenanceparts), '') IS NOT NULL))
+               ORDER BY maintenanceparts, partno`;
+    var rows = runBigQuery(sql).map(function (row) {
+      return {
+        partNo: String(ciGet(row, 'partno') || '').trim(),
+        maintenancePart: String(ciGet(row, 'maintenanceparts') || '').trim()
+      };
+    }).filter(function (row) {
+      return row.partNo || row.maintenancePart;
+    });
+
+    var partsOut = { status: "success", data: rows };
+    if (rows.length) cachePutJSON_(partsCacheKey, partsOut, STATIC_CACHE_TTL_SEC);
+    return responseJSON(partsOut, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: "error", data: [], message: e.toString() }, isRawObject);
+  }
+}
+
+/**
+ * ส่งรูปใบเสร็จกลับเป็น Base64 (data URI) ผ่านช่องทาง RPC ปกติ (ไม่ใช่หน้าเว็บแยก)
+ * เพราะ doGet คืนไฟล์ Blob ตรงๆ ไม่ได้ (Apps Script ไม่รองรับ) และ Google บล็อกการฝังลิงก์ Drive ตรงๆ ใน <img>
+ */
+function getReceiptImageData(fileId, isRawObject) {
+  try {
+    if (!fileId) return responseJSON({ status: "error", message: "ไม่พบรหัสไฟล์รูป" }, isRawObject);
+    var blob = DriveApp.getFileById(fileId).getBlob();
+    var base64 = Utilities.base64Encode(blob.getBytes());
+    var mimeType = blob.getContentType() || 'image/jpeg';
+    return responseJSON({ status: "success", dataUri: 'data:' + mimeType + ';base64,' + base64 }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: "error", message: e.toString() }, isRawObject);
+  }
+}
+
+function getModels(isRawObject) {
+  try {
+    var cachedModels = cacheGetJSON_('models_v1');
+    if (cachedModels) return responseJSON({ status: "success", data: cachedModels }, isRawObject);
+    var sql = `SELECT DISTINCT TRIM(model) AS model
+               FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.modelpart\`
+               WHERE NULLIF(TRIM(model), '') IS NOT NULL
+               ORDER BY model`;
+    var models = runBigQuery(sql).map(function (row) {
+      return String(ciGet(row, 'model') || '').trim();
+    }).filter(Boolean);
+
+    if (models.length) cachePutJSON_('models_v1', models, STATIC_CACHE_TTL_SEC);
+    return responseJSON({ status: "success", data: models }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: "error", data: [], message: e.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 4. บันทึก / อัปเดต ข้อมูลใบงาน (pm_log & service_report)
+// ==========================================
+function insertOrUpdateTicket(p, isRawObject) {
+  try {
+    var ticketId = p.ticketId ? String(p.ticketId) : "TK-" + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd-HHmmss");
+
+    // --- SAFEGUARD: ป้องกันการสลับค่าระหว่าง วันที่ กับ รอบ PM ---
+    var rawDate = String(p.serviceDate || p.contractDate || p.contract_date || '').trim();
+    var rawPmRound = String(p.pmRound || p.last_pm_round || '0').trim();
+
+    var strDate = rawDate;
+    var pmRound = Number(rawPmRound) || 0;
+
+    if (_looksLikeDate(rawPmRound)) {
+      strDate = rawPmRound;
+      pmRound = Number(rawDate) || 0;
+    }
+
+    var actualHours = Number(p.actualHours) || 0;
+    var nextPm = pmRound > 0 ? (pmRound + 250) : 50;
+
+    var machineId = p.machineId || p.machine_id || '';
+    var originalMachineId = p.originalMachineId || p.original_machine_id || machineId;
+    var model = p.model || '';
+    var customerName = p.customerName || p.customer || '';
+    var customerId = p.customerId || p.customer_id || '';
+    var phone = p.phone || p.phone_number || '';
+
+    var partsStore = p.partsStore || p.parts_store || '-';
+    var supplierId = p.supplierId || p.supplier_id || '-';
+    var partsBillNo = p.partsBillNo || p.parts_bill_no || 'NA';
+    var partsStatus = p.partsStatus || p.parts_status || 'ส่งครบแล้ว';
+    var receiptImage = resolveReceiptImage(p.receiptImage || p.receipt_image || '', ticketId);
+    var remark = p.remark || '';
+    var updatedBy = p.updatedBy || p.updated_by || '';
+    var yanmarCoupon = Number(p.yanmarCoupon) || 0;
+    var couponNo = normalizeCouponNo(p.couponNo || p.coupon_no);
+    var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+    // กันเลขคูปองซ้ำ (1 เลข = 1 งาน PM) — เช็กก่อนเขียนอะไรลงชีต
+    if (couponNo) {
+      ensureCouponColumns();
+      var couponOwner = findCouponOwner(sheetToObjects(getSheet(SHEET_TABS.pm_log)), couponNo, machineId, pmRound);
+      if (couponOwner) return responseJSON({ status: "error", message: couponDupMessage(couponNo, couponOwner) }, isRawObject);
+    }
+
+    // 1. เพิ่มแถวใหม่ใน pm_log (ประวัติ PM ทุกครั้ง เพิ่มแถวใหม่เสมอ ไม่ทับของเดิม)
+    // หมายเหตุ: pm_log ใช้ชื่อคอลัมน์จริงคือ Ticket_ID / PM_Target / Actual_Hours / Service_Date
+    // (ไม่ใช่ contract_date / last_pm_round / current_Hours แบบ service_report)
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    appendRowByObject(logSheet, {
+      ticket_id: ticketId,
+      machine_id: machineId,
+      model: model,
+      customer: customerName,
+      customer_id: customerId,
+      pm_target: pmRound,
+      actual_hours: actualHours,
+      service_date: strDate,
+      invoice_no: partsBillNo,
+      parts_store: partsStore,
+      supplier_id: supplierId,
+      parts_bill_no: partsBillNo,
+      parts_status: partsStatus,
+      receipt_image: receiptImage,
+      yanmar_coupon: yanmarCoupon,
+      coupon_no: couponNo,
+      remark: remark,
+      updated_at: nowStr
+    });
+
+    // 2. Upsert ลง service_report: หาแถวเดิมด้วย machine_id (ไม่สนตัวพิมพ์เล็ก-ใหญ่ของค่าและชื่อคอลัมน์)
+    var dashSheet = getSheet(SHEET_TABS.service_report);
+    var matched = findRows(dashSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === String(originalMachineId).trim().toLowerCase();
+    });
+
+    var dashObj = {
+      machine_id: machineId,
+      model: model,
+      customer: customerName,
+      customer_id: customerId,
+      phone_number: phone,
+      contract_date: strDate,
+      current_Hours: actualHours,
+      last_pm_round: pmRound,
+      next_pm_round: nextPm,
+      status: 'Approved',
+      updated_by: updatedBy,
+      parts_store: partsStore,
+      supplier_id: supplierId,
+      parts_bill_no: partsBillNo,
+      parts_status: partsStatus,
+      yanmar_coupon: yanmarCoupon,
+      remark: remark,
+      updated_at: nowStr
+    };
+    // receipt_image: อัปเดตเฉพาะตอนมีค่าใหม่ส่งมา (ถ้าไม่ส่งมา ไม่แตะของเดิม)
+    if (receiptImage) dashObj.receipt_image = receiptImage;
+    dashObj.coupon_no = couponNo;
+
+    if (matched.length > 0) {
+      updateRowByObject(dashSheet, matched[0].__row, dashObj);
+    } else {
+      dashObj.no = '';
+      if (!dashObj.receipt_image) dashObj.receipt_image = '';
+      appendRowByObject(dashSheet, dashObj);
+    }
+
+    return responseJSON({ status: "success", ticketId: ticketId }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// หาแถวใน pm_log ที่ตรงกับ "ใบงานเดียว" อย่างเข้มงวด
+// ==========================================
+// เดิมใช้เงื่อนไข no === id || ticket_id === id || machine_id === id
+// ทำให้แก้/ลบใบงานเดียวแล้วไปโดนแถวอื่นด้วย (ticket_id ซ้ำ, ค่าว่างตรงกัน, เลข no ชนกับ ticket_id ฯลฯ)
+// ตอนนี้: ห้ามจับค่าว่าง, จับ ticket_id ก่อน (ถ้าไม่มีค่อยใช้ no), แล้วกรองด้วย machine_id / pm_target
+// pm_log เป็น log จึงมีแถวซ้ำ (เครื่อง+รอบเดียวกัน) ได้ตามปกติ
+// ถ้ายังเหลือมากกว่า 1 แถว → เลือก "แถวล่าสุด" (แถวล่างสุดใน Sheet) เพียงแถวเดียว ไม่เขียนทับหลายแถว
+function findPmLogTarget(logSheet, ticketId, machineId, pmRound) {
+  var id = String(ticketId || '').trim();
+  var mId = String(machineId || '').trim().toLowerCase();
+  var round = (pmRound === undefined || pmRound === null || pmRound === '') ? null : (Number(pmRound) || 0);
+
+  function sameMachine(r) { return !mId || String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === mId; }
+  function sameRound(r) { return round === null || (Number(ciGet(r, 'pm_target')) || 0) === round; }
+
+  var rows = [];
+  if (id) {
+    rows = findRows(logSheet, function (r) { return String(ciGet(r, 'ticket_id') || '').trim() === id; });
+    if (rows.length === 0) {
+      rows = findRows(logSheet, function (r) {
+        return !String(ciGet(r, 'ticket_id') || '').trim() && String(ciGet(r, 'no') || '').trim() === id;
+      });
+    }
+  }
+  // ไม่มีเลขใบงาน (หรือหาไม่เจอ) → ใช้ machine_id + รอบ PM ต้องมีครบทั้งคู่
+  if (rows.length === 0 && mId && round !== null) {
+    rows = findRows(logSheet, function (r) { return sameMachine(r) && sameRound(r); });
+  }
+
+  if (rows.length > 1) rows = rows.filter(sameMachine);
+  if (rows.length > 1) rows = rows.filter(sameRound);
+
+  if (rows.length === 0) throw new Error('ไม่พบใบงาน ' + (id || '-') + ' ใน pm_log');
+  return pickLatestLogRow(rows);
+}
+
+// ==========================================
+// 4.1 อัปเดตข้อมูล PM รอบย้อนหลัง (แก้ไขใบงานเดิม)
+// ==========================================
+function updatePmLog(p, isRawObject) {
+  try {
+    var ticketId = String(p.ticketId || p.ticket_id || '');
+    var machineId = p.machineId || p.machine_id || '';
+
+    var strDate = p.serviceDate || p.contractDate || p.contract_date || '';
+    var pmRound = Number(p.pmRound || p.last_pm_round) || 0;
+    var actualHours = Number(p.actualHours || p.current_Hours) || 0;
+    var nextPm = pmRound > 0 ? (pmRound + 250) : 50;
+
+    var model = p.model || '';
+    var customerName = p.customerName || p.customer || '';
+    var customerId = p.customerId || p.customer_id || '';
+    var phone = p.phone || p.phone_number || '';
+
+    var partsStore = p.partsStore || p.parts_store || '-';
+    var partsBillNo = p.partsBillNo || p.parts_bill_no || 'NA';
+    var partsStatus = p.partsStatus || p.parts_status || 'ส่งครบแล้ว';
+    var receiptImage = resolveReceiptImage(p.receiptImage || p.receipt_image || '', ticketId);
+    var remark = p.remark || '';
+    var updatedBy = p.updatedBy || p.updated_by || '';
+    var couponAmt = Number(p.yanmarCoupon || p.yanmar_coupon) || 0;
+    var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+    // update สำหรับ pm_log (ใช้ชื่อคอลัมน์จริง: Ticket_ID / PM_Target / Actual_Hours / Service_Date)
+    var logUpdate = {
+      machine_id: machineId, model: model, customer: customerName, customer_id: customerId,
+      service_date: strDate, actual_hours: actualHours, pm_target: pmRound,
+      parts_store: partsStore, parts_bill_no: partsBillNo, parts_status: partsStatus,
+      receipt_image: receiptImage, yanmar_coupon: couponAmt, remark: remark, updated_at: nowStr
+    };
+    // update สำหรับ service_report (ใช้ชื่อคอลัมน์จริง: Contract_Date / Last_PM_Round / Current_Hours)
+    var dashUpdate = {
+      machine_id: machineId, model: model, customer: customerName, customer_id: customerId,
+      phone_number: phone, contract_date: strDate, current_Hours: actualHours,
+      last_pm_round: pmRound, next_pm_round: nextPm, updated_by: updatedBy,
+      parts_store: partsStore, parts_bill_no: partsBillNo, parts_status: partsStatus,
+      receipt_image: receiptImage, yanmar_coupon: couponAmt, remark: remark, updated_at: nowStr
+    };
+
+    // 1. อัปเดตข้อมูลใบงานเดิมใน pm_log (no หรือ ticket_id ตรงกับที่ระบุ)
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    var origMachineId = p.originalMachineId || p.original_machine_id || machineId;
+    var origPmRound = (p.originalPmRound !== undefined && p.originalPmRound !== '') ? p.originalPmRound : pmRound;
+    var targetRow = findPmLogTarget(logSheet, ticketId, origMachineId, origPmRound);
+
+    // หมายเลขคูปอง: แก้เฉพาะเมื่อกรอกมา (ช่องว่าง = ไม่แตะเลขเดิม)
+    var editCouponNo = normalizeCouponNo(p.couponNo || p.coupon_no);
+    if (editCouponNo) {
+      ensureCouponColumns();
+      var editOwner = findCouponOwner(sheetToObjects(logSheet), editCouponNo, machineId, pmRound, targetRow.__row);
+      if (editOwner) return responseJSON({ status: "error", message: couponDupMessage(editCouponNo, editOwner) }, isRawObject);
+      logUpdate.coupon_no = editCouponNo;
+      dashUpdate.coupon_no = editCouponNo;
+    }
+    updateRowByObject(logSheet, targetRow.__row, logUpdate);
+
+    // 2. sync ไป service_report เฉพาะแถวที่ machine_id ตรงกัน และ last_pm_round เดิม <= รอบที่แก้
+    var dashSheet = getSheet(SHEET_TABS.service_report);
+    var dashRows = findRows(dashSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === String(machineId).trim().toLowerCase()
+        && (Number(ciGet(r, 'last_pm_round')) || 0) <= pmRound;
+    });
+    dashRows.forEach(function (r) { updateRowByObject(dashSheet, r.__row, dashUpdate); });
+
+    return responseJSON({ status: "success", ticketId: ticketId }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 5. บันทึกยืนยันรับคูปองย้อนหลัง
+// ==========================================
+function claimCoupon(p, isRawObject) {
+  try {
+    var ticketId = String(p.ticketId || '');
+    var amount = Number(p.yanmarCoupon) || 4000;
+    var couponRemark = p.couponRemark || '';
+
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    // ปุ่มจากตารางสถานะอาจส่ง machine_id มาแทน ticket_id → ใช้คู่กับรอบ PM เพื่อหาแถวเดียว
+    var claimMachineId = p.machineId || '';
+    var claimRound = (p.pmRound !== undefined && p.pmRound !== '') ? p.pmRound : null;
+    var targetRow;
+    try {
+      targetRow = findPmLogTarget(logSheet, ticketId, claimMachineId, claimRound);
+    } catch (notFound) {
+      if (claimRound === null) throw notFound;
+      targetRow = findPmLogTarget(logSheet, '', ticketId, claimRound);
+    }
+    var logRows = [targetRow];
+    var roundOfClaim = Number(ciGet(targetRow, 'pm_target')) || 0;
+
+    var machineId = String(ciGet(targetRow, 'machine_id') || '');
+
+    // หมายเลขคูปอง (กันซ้ำกับงาน PM อื่น)
+    var couponNo = normalizeCouponNo(p.couponNo || p.coupon_no);
+    if (couponNo) {
+      ensureCouponColumns();
+      var owner = findCouponOwner(sheetToObjects(logSheet), couponNo, machineId, roundOfClaim, targetRow.__row);
+      if (owner) return responseJSON({ status: "error", message: couponDupMessage(couponNo, owner) }, isRawObject);
+    }
+
+    logRows.forEach(function (r) {
+      var newRemark = couponRemark ? (String(ciGet(r, 'remark') || '') + ' | เลขรับคูปอง: ' + couponRemark) : ciGet(r, 'remark');
+      var upd = { yanmar_coupon: amount, remark: newRemark };
+      if (couponNo) upd.coupon_no = couponNo;
+      updateRowByObject(logSheet, r.__row, upd);
+    });
+
+    if (machineId) {
+      var dashSheet = getSheet(SHEET_TABS.service_report);
+      var dashRows = findRows(dashSheet, function (r) {
+        return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.trim().toLowerCase()
+          && (Number(ciGet(r, 'last_pm_round')) || 0) === roundOfClaim;
+      });
+      dashRows.forEach(function (r) {
+        var newRemark = couponRemark ? (String(ciGet(r, 'remark') || '') + ' | เลขรับคูปอง: ' + couponRemark) : ciGet(r, 'remark');
+        var dupd = { yanmar_coupon: amount, remark: newRemark };
+        if (couponNo) dupd.coupon_no = couponNo;
+        updateRowByObject(dashSheet, r.__row, dupd);
+      });
+    }
+
+    return responseJSON({ status: "success", couponNo: couponNo }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 5.1 💰 หมายเลขคูปอง + ติดตามเงินคืนจาก Yanmar (ตรวจทีละใบตามหมายเลขคูปอง)
+// ==========================================
+// คอลัมน์ใหม่ใน pm_log (สร้างอัตโนมัติด้วย ensureCouponColumns / setupCouponRefundColumns):
+//   coupon_no        หมายเลขคูปอง (1 เลข = 1 งาน PM ห้ามซ้ำข้ามเครื่อง/รอบ)
+//   coupon_sent_date วันที่ส่งคูปองให้ Yanmar
+//   refund_amount    เงินที่ Yanmar โอนคืนสำหรับคูปองใบนี้ (ว่าง = ยังไม่ได้รับ)
+//   refund_date      วันที่ได้รับเงิน
+//   refund_ref       เลขอ้างอิงการโอน / เอกสาร Yanmar
+//   refund_remark    หมายเหตุการรับเงิน
+// ข้อมูลส่วนนี้อ่านจาก Google Sheet โดยตรง (ไม่ผ่าน BigQuery) เพราะ External Table
+// ใน BigQuery จะไม่เห็นคอลัมน์ใหม่จนกว่าจะแก้ schema ของตาราง
+var COUPON_VALUE = 4000;
+var COUPON_REFUND_COLUMNS = ['coupon_no', 'coupon_sent_date', 'refund_amount', 'refund_date', 'refund_ref', 'refund_remark', 'coupon_batch_no'];
+// ส่งคูปองให้ Yanmar แล้วเกินกี่วันยังไม่ได้เงินคืน → ถือว่า "ค้างนาน" (แสดงเตือนในแอป)
+var COUPON_OVERDUE_DAYS = 60;
+// รูปแบบเลขรอบส่งอัตโนมัติ: YB-ปีเดือน-ลำดับ เช่น YB-2611-01
+var COUPON_BATCH_PREFIX = 'YB';
+
+/**
+ * 🔧 รันครั้งเดียวใน Apps Script Editor (หรือปล่อยให้ระบบเรียกเองตอนบันทึกคูปองครั้งแรก)
+ * เพิ่มคอลัมน์ที่ยังไม่มีต่อท้าย Header ของ pm_log และ coupon_no ใน service_report
+ * ไม่แตะข้อมูลเดิม รันซ้ำได้ปลอดภัย
+ */
+function setupCouponRefundColumns() {
+  var plan = [
+    { tab: SHEET_TABS.pm_log, cols: COUPON_REFUND_COLUMNS },
+    { tab: SHEET_TABS.service_report, cols: ['coupon_no'] }
+  ];
+  plan.forEach(function (p) {
+    var sh = getSheet(p.tab);
+    var lastCol = Math.max(sh.getLastColumn(), 1);
+    var headersLower = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    var missing = p.cols.filter(function (c) { return headersLower.indexOf(c) === -1; });
+    if (missing.length === 0) { Logger.log(p.tab + ': มีคอลัมน์ครบแล้ว'); return; }
+
+    var startCol = sh.getLastColumn() + 1;
+    var needMax = startCol + missing.length - 1;
+    if (sh.getMaxColumns() < needMax) sh.insertColumnsAfter(sh.getMaxColumns(), needMax - sh.getMaxColumns());
+    sh.getRange(1, startCol, 1, missing.length).setValues([missing]);
+
+    // เลขคูปองเก็บเป็นข้อความ กันเลข 0 นำหน้าหาย
+    var idx = missing.indexOf('coupon_no');
+    if (idx !== -1 && sh.getMaxRows() > 1) {
+      sh.getRange(2, startCol + idx, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+    }
+    Logger.log(p.tab + ': เพิ่มคอลัมน์ ' + missing.join(', '));
+  });
+}
+
+/** เรียกก่อนเขียนข้อมูลคูปอง: ถ้ายังไม่มีคอลัมน์ใหม่ ให้สร้างให้อัตโนมัติ (เช็กซ้ำทุก 6 ชม.) */
+function ensureCouponColumns() {
+  var cache = CacheService.getScriptCache();
+  if (cache.get('coupon_cols_ok_v2') === '1') return;
+  setupCouponRefundColumns();
+  cache.put('coupon_cols_ok_v2', '1', 21600);
+}
+
+function normalizeBatchNo(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).trim().replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * ออกเลขรอบส่งถัดไปของเดือนที่ส่ง เช่น YB-2611-01, YB-2611-02 ...
+ * sentDate: 'yyyy-MM-dd' (ใช้ปี/เดือนของวันที่ส่ง)
+ */
+function nextCouponBatchNo_(rows, sentDate) {
+  var d = new Date(String(sentDate) + 'T00:00:00');
+  if (isNaN(d.getTime())) d = new Date();
+  var prefix = COUPON_BATCH_PREFIX + '-' + Utilities.formatDate(d, 'Asia/Bangkok', 'yyMM') + '-';
+  var maxSeq = 0;
+  rows.forEach(function (r) {
+    var b = normalizeBatchNo(ciGet(r, 'coupon_batch_no'));
+    if (b.indexOf(prefix) !== 0) return;
+    var n = parseInt(b.substring(prefix.length), 10);
+    if (!isNaN(n) && n > maxSeq) maxSeq = n;
+  });
+  var seq = String(maxSeq + 1);
+  return prefix + (seq.length < 2 ? '0' + seq : seq);
+}
+
+function normalizeCouponNo(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * หาแถวที่ใช้เลขคูปองนี้อยู่แล้ว "กับงาน PM อื่น"
+ * pm_log เป็น log → เครื่อง+รอบเดียวกันมีหลายแถวได้ จึงไม่นับแถวของเครื่อง+รอบเดียวกันว่าซ้ำ
+ */
+function findCouponOwner(rows, couponNo, machineId, pmRound, excludeRow) {
+  var target = normalizeCouponNo(couponNo);
+  if (!target) return null;
+  var mId = String(machineId || '').trim().toLowerCase();
+  var round = Number(pmRound) || 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (excludeRow && r.__row === excludeRow) continue;
+    if (normalizeCouponNo(ciGet(r, 'coupon_no')) !== target) continue;
+    var sameJob = mId && String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === mId &&
+      (Number(ciGet(r, 'pm_target')) || 0) === round;
+    if (!sameJob) return r;
+  }
+  return null;
+}
+
+function couponDupMessage(couponNo, owner) {
+  return 'หมายเลขคูปอง ' + normalizeCouponNo(couponNo) + ' ถูกใช้แล้วกับใบงาน ' +
+    (ciGet(owner, 'ticket_id') || ciGet(owner, 'no') || '-') +
+    ' (เครื่อง ' + (ciGet(owner, 'machine_id') || '-') + ' รอบ ' + (ciGet(owner, 'pm_target') || '-') + ' ชม.)';
+}
+
+function _fmtSheetDate(v) {
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, 'Asia/Bangkok', 'yyyy-MM-dd');
+  return v === null || v === undefined ? '' : String(v).trim();
+}
+
+function _toNumberOrNull(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  var n = Number(String(v).replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * สถานะเงินคืนของคูปอง 1 ใบ
+ * key: no_coupon_no | not_sent | waiting | full | over | partial | unpaid
+ */
+function computeRefundStatus(r) {
+  var coupon = _toNumberOrNull(ciGet(r, 'yanmar_coupon'));
+  var expected = coupon && coupon > 0 ? coupon : COUPON_VALUE;
+  var refund = _toNumberOrNull(ciGet(r, 'refund_amount'));
+  var couponNo = normalizeCouponNo(ciGet(r, 'coupon_no'));
+  var sentDate = _fmtSheetDate(ciGet(r, 'coupon_sent_date'));
+
+  var key, label;
+  if (refund !== null) {
+    if (refund <= 0) { key = 'unpaid'; label = 'Yanmar ไม่จ่ายเงินคืน / ถูกปฏิเสธ'; }
+    else if (refund < expected) { key = 'partial'; label = 'เงินคืนไม่ครบ'; }
+    else if (refund > expected) { key = 'over'; label = 'เงินคืนเกิน'; }
+    else { key = 'full'; label = 'เงินคืนครบ'; }
+  } else if (sentDate) {
+    key = 'waiting'; label = 'รอ Yanmar โอนเงิน';
+  } else if (!couponNo) {
+    key = 'no_coupon_no'; label = 'ยังไม่กรอกเลขคูปอง';
+  } else {
+    key = 'not_sent'; label = 'ยังไม่ส่งคูปองให้ Yanmar';
+  }
+
+  var waitingDays = null;
+  if (key === 'waiting') {
+    var d = new Date(sentDate);
+    if (!isNaN(d.getTime())) waitingDays = Math.max(0, Math.floor((new Date().getTime() - d.getTime()) / 86400000));
+  }
+  return {
+    expected: expected, refund: refund, diff: refund === null ? null : refund - expected,
+    key: key, label: label, sentDate: sentDate, refundDate: _fmtSheetDate(ciGet(r, 'refund_date')),
+    waitingDays: waitingDays,
+    overdue: key === 'waiting' && waitingDays !== null && waitingDays > COUPON_OVERDUE_DAYS
+  };
+}
+
+/**
+ * เลือก "แถวตัวแทน" ของงาน PM แต่ละงาน (เครื่อง+รอบ) สำหรับเรื่องคูปอง
+ * ใช้แถวล่าสุดที่มีเลขคูปอง ถ้าไม่มีแถวไหนมีเลข ใช้แถวล่าสุด
+ */
+function pickCouponRowsPerJob_(rows) {
+  var groups = {};
+  rows.forEach(function (r) {
+    var mId = String(ciGet(r, 'machine_id') || '').trim().toLowerCase();
+    if (!mId) return;
+    var key = mId + '|' + (Number(ciGet(r, 'pm_target')) || 0);
+    (groups[key] = groups[key] || []).push(r);
+  });
+  var out = [];
+  Object.keys(groups).forEach(function (k) {
+    var g = groups[k];
+    var withNo = g.filter(function (r) { return normalizeCouponNo(ciGet(r, 'coupon_no')); });
+    out.push(pickLatestLogRow(withNo.length ? withNo : g));
+  });
+  return out;
+}
+
+/** หาแถวที่จะเขียนข้อมูลเงินคืน ด้วยหมายเลขคูปอง (แถวล่าสุดที่มีเลขนี้) */
+function findRowByCouponNo_(rows, couponNo) {
+  var target = normalizeCouponNo(couponNo);
+  if (!target) return null;
+  return pickLatestLogRow(rows.filter(function (r) { return normalizeCouponNo(ciGet(r, 'coupon_no')) === target; }));
+}
+
+/**
+ * มีสิทธิ์คูปองหรือไม่ — ต้องตรงกับ hasCouponEntitlement() ฝั่งหน้าเว็บ
+ * (เบิกอะไหล่ และมีสถานะค้าง/รายการอะไหล่/เลขบิล)
+ */
+function hasCouponEntitlement_(r) {
+  var partsStatus = String(ciGet(r, 'parts_status') || '').trim();
+  var partsStore = String(ciGet(r, 'parts_store') || '').trim();
+  var partsBillNo = String(ciGet(r, 'parts_bill_no') || '').trim().toUpperCase();
+  var hasPendingParts = partsStatus === 'ส่งบางส่วน' || partsStatus === 'ค้างส่งอะไหล่';
+  var hasPartsList = partsStore !== '' && partsStore !== '-';
+  var hasPartsBill = partsBillNo !== '' && partsBillNo !== '-' && partsBillNo !== 'NA';
+  return partsStatus !== 'ไม่ได้เบิกอะไหล่' && (hasPendingParts || hasPartsList || hasPartsBill);
+}
+
+/**
+ * รายการคูปองทั้งหมด + สรุปยอดเงินคืน (อ่านจาก Sheet pm_log โดยตรง)
+ * - งานที่ได้รับคูปองแล้ว (yanmar_coupon > 0) หรือมีเลขคูปอง → นับเป็นคูปองที่ต้องตามเงินคืน
+ * - งานที่มีสิทธิ์แต่ยังไม่ได้รับคูปอง (yanmar_coupon = 0, PM รอบ > 0) → สถานะ pending_coupon
+ *   นับแยก เพื่อให้ยอด "สิทธิ์ทั้งหมด" ตรงกับการ์ดยอดรวมสิทธิ์คูปองในหน้าตารางสถานะเครื่องจักร
+ */
+function getCouponRefundList(isRawObject) {
+  try {
+    var rows = pickCouponRowsPerJob_(sheetToObjects(getSheet(SHEET_TABS.pm_log)));
+    var countByNo = {};
+    rows.forEach(function (r) {
+      var cn = normalizeCouponNo(ciGet(r, 'coupon_no'));
+      if (cn) countByNo[cn] = (countByNo[cn] || 0) + 1;
+    });
+
+    var s = {
+      totalCoupons: 0, expectedTotal: 0, notSentCount: 0, noCouponNoCount: 0,
+      waitingCount: 0, waitingAmount: 0, receivedCount: 0, receivedTotal: 0,
+      fullCount: 0, partialCount: 0, unpaidCount: 0, overCount: 0, shortfallTotal: 0, duplicateCount: 0,
+      pendingCouponCount: 0, pendingCouponAmount: 0, entitledCount: 0, entitledTotal: 0,
+      overdueCount: 0, overdueAmount: 0, overdueDays: COUPON_OVERDUE_DAYS, oldestWaitingDays: 0
+    };
+    var batches = {};
+    var list = [];
+
+    rows.forEach(function (r) {
+      var coupon = _toNumberOrNull(ciGet(r, 'yanmar_coupon')) || 0;
+      var cn = normalizeCouponNo(ciGet(r, 'coupon_no'));
+      var pmRound = Number(ciGet(r, 'pm_target')) || 0;
+      var st;
+      if (coupon <= 0 && !cn) {
+        // ยังไม่ได้รับคูปอง แต่มีสิทธิ์ → แสดงเป็น "ค้างส่งคูปอง" (ยังตามเงินคืนไม่ได้)
+        if (pmRound <= 0 || !hasCouponEntitlement_(r)) return;
+        st = {
+          expected: COUPON_VALUE, refund: null, diff: null, key: 'pending_coupon',
+          label: 'ค้างส่งคูปอง (ยังไม่ได้รับคูปอง)', sentDate: '', refundDate: '', waitingDays: null, overdue: false
+        };
+        s.pendingCouponCount++;
+        s.pendingCouponAmount += st.expected;
+        s.entitledCount++;
+        s.entitledTotal += st.expected;
+        list.push(buildCouponListItem_(r, cn, coupon, st, false));
+        return;
+      }
+
+      st = computeRefundStatus(r);
+      var dup = !!(cn && countByNo[cn] > 1);
+      s.entitledCount++;
+      s.entitledTotal += st.expected;
+      s.totalCoupons++;
+      s.expectedTotal += st.expected;
+      if (dup) s.duplicateCount++;
+      if (st.key === 'not_sent') s.notSentCount++;
+      if (st.key === 'no_coupon_no') s.noCouponNoCount++;
+      if (st.key === 'waiting') {
+        s.waitingCount++; s.waitingAmount += st.expected;
+        if (st.waitingDays !== null && st.waitingDays > s.oldestWaitingDays) s.oldestWaitingDays = st.waitingDays;
+      }
+      if (st.overdue) { s.overdueCount++; s.overdueAmount += st.expected; }
+
+      // สรุปตามรอบส่ง (ใบที่ส่งก่อนมีระบบเลขรอบ จัดเป็น "ไม่มีเลขรอบ")
+      if (st.sentDate) {
+        var bNo = normalizeBatchNo(ciGet(r, 'coupon_batch_no')) || '(ไม่มีเลขรอบ)';
+        var b = batches[bNo] || (batches[bNo] = {
+          batchNo: bNo, sentDate: st.sentDate, count: 0, expected: 0, received: 0,
+          waitingCount: 0, fullCount: 0, problemCount: 0, overdueCount: 0, maxWaitingDays: 0
+        });
+        if (st.sentDate < b.sentDate) b.sentDate = st.sentDate;
+        b.count++;
+        b.expected += st.expected;
+        if (st.refund !== null) b.received += Math.max(st.refund, 0);
+        if (st.key === 'waiting') {
+          b.waitingCount++;
+          if (st.waitingDays !== null && st.waitingDays > b.maxWaitingDays) b.maxWaitingDays = st.waitingDays;
+        }
+        if (st.key === 'full' || st.key === 'over') b.fullCount++;
+        if (st.key === 'partial' || st.key === 'unpaid') b.problemCount++;
+        if (st.overdue) b.overdueCount++;
+      }
+      if (st.refund !== null) { s.receivedCount++; s.receivedTotal += Math.max(st.refund, 0); }
+      if (st.key === 'full') s.fullCount++;
+      if (st.key === 'over') s.overCount++;
+      if (st.key === 'partial') s.partialCount++;
+      if (st.key === 'unpaid') s.unpaidCount++;
+      if (st.key === 'partial' || st.key === 'unpaid') s.shortfallTotal += st.expected - Math.max(st.refund || 0, 0);
+
+      list.push(buildCouponListItem_(r, cn, coupon, st, dup));
+    });
+    s.outstandingTotal = s.expectedTotal - s.receivedTotal;
+    var batchList = Object.keys(batches).map(function (k) { return batches[k]; })
+      .sort(function (a, b) { return String(b.sentDate).localeCompare(String(a.sentDate)) || String(b.batchNo).localeCompare(String(a.batchNo)); });
+
+    return responseJSON({ status: 'success', summary: s, data: list, batches: batchList }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString(), summary: {}, data: [] }, isRawObject);
+  }
+}
+
+function buildCouponListItem_(r, cn, coupon, st, dup) {
+  return {
+        ticketId: String(ciGet(r, 'ticket_id') || ciGet(r, 'no') || ''),
+        machineId: String(ciGet(r, 'machine_id') || ''),
+        model: String(ciGet(r, 'model') || ''),
+        customer: String(ciGet(r, 'customer') || ''),
+        pmRound: Number(ciGet(r, 'pm_target')) || 0,
+        serviceDate: _fmtSheetDate(ciGet(r, 'service_date')),
+        couponNo: cn,
+        couponAmount: coupon,
+        expected: st.expected,
+        couponSentDate: st.sentDate,
+        refundAmount: st.refund,
+        refundDate: st.refundDate,
+        refundRef: String(ciGet(r, 'refund_ref') || ''),
+        refundRemark: String(ciGet(r, 'refund_remark') || ''),
+        diff: st.diff,
+        statusKey: st.key,
+        statusLabel: st.label,
+        waitingDays: st.waitingDays,
+        overdue: !!st.overdue,
+        batchNo: normalizeBatchNo(ciGet(r, 'coupon_batch_no')),
+        duplicate: dup
+  };
+}
+
+/**
+ * บันทึกว่าส่งคูปองให้ Yanmar แล้ว (หลายใบพร้อมกัน จับคู่ด้วยหมายเลขคูปอง)
+ * payload: { couponNos: [...], sentDate: 'yyyy-MM-dd', clear: false }
+ */
+function markCouponsSent(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    ensureCouponColumns();
+    var nos = (p.couponNos || []).map(normalizeCouponNo).filter(String);
+    if (nos.length === 0) return responseJSON({ status: 'error', message: 'ไม่ได้เลือกคูปองที่มีหมายเลข' }, isRawObject);
+    var clear = p.clear === true || p.clear === 'true';
+    var sentDate = String(p.sentDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'));
+
+    var sheet = getSheet(SHEET_TABS.pm_log);
+    var rows = sheetToObjects(sheet);
+    // เลขรอบส่ง: ใช้ที่ผู้ใช้ระบุ ถ้าว่างให้ระบบออกเลขถัดไปของเดือนที่ส่ง
+    var batchNo = clear ? '' : (normalizeBatchNo(p.batchNo) || nextCouponBatchNo_(rows, sentDate));
+    var updated = [], notFound = [];
+    nos.forEach(function (cn) {
+      var row = findRowByCouponNo_(rows, cn);
+      if (!row) { notFound.push(cn); return; }
+      updateRowByObject(sheet, row.__row, { coupon_sent_date: clear ? '' : sentDate, coupon_batch_no: batchNo });
+      updated.push(cn);
+    });
+    return responseJSON({ status: 'success', updated: updated, notFound: notFound, batchNo: batchNo }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+/**
+ * บันทึกเงินคืนจาก Yanmar ทีละใบ หรือนำเข้าหลายใบจากใบแจ้งโอน (จับคู่ด้วยหมายเลขคูปอง)
+ * payload: { items: [{ couponNo, refundAmount }], refundDate, refundRef, refundRemark }
+ * ผลลัพธ์บอกว่าใบไหนได้ครบ / ไม่ครบ / เกิน / ไม่พบเลขคูปองในระบบ
+ */
+function recordCouponRefund(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    ensureCouponColumns();
+    var items = Array.isArray(p.items) ? p.items : [{ couponNo: p.couponNo, refundAmount: p.refundAmount }];
+    var refundDate = String(p.refundDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'));
+    var refundRef = String(p.refundRef || '');
+    var refundRemark = String(p.refundRemark || '');
+
+    var sheet = getSheet(SHEET_TABS.pm_log);
+    var rows = sheetToObjects(sheet);
+    var results = { matched: [], notFound: [], duplicateInput: [] };
+    var seen = {};
+
+    items.forEach(function (it) {
+      var cn = normalizeCouponNo(it.couponNo);
+      if (!cn) return;
+      var amount = _toNumberOrNull(it.refundAmount);
+      if (amount === null) { results.notFound.push({ couponNo: cn, reason: 'จำนวนเงินไม่ถูกต้อง' }); return; }
+      if (seen[cn]) { results.duplicateInput.push({ couponNo: cn, refundAmount: amount }); return; }
+      seen[cn] = true;
+
+      var row = findRowByCouponNo_(rows, cn);
+      if (!row) { results.notFound.push({ couponNo: cn, refundAmount: amount, reason: 'ไม่พบหมายเลขคูปองนี้ในระบบ' }); return; }
+
+      var upd = { refund_amount: amount, refund_date: refundDate };
+      if (refundRef) upd.refund_ref = refundRef;
+      if (refundRemark) upd.refund_remark = refundRemark;
+      // ได้เงินแล้วย่อมต้องส่งไปแล้ว: ถ้ายังไม่เคยบันทึกวันส่ง ให้ใส่วันเดียวกัน
+      if (!_fmtSheetDate(ciGet(row, 'coupon_sent_date'))) upd.coupon_sent_date = refundDate;
+      updateRowByObject(sheet, row.__row, upd);
+
+      var merged = {};
+      for (var k in row) merged[k] = row[k];
+      for (var k2 in upd) {
+        // เขียนทับด้วยชื่อคีย์เดิมของแถว (Header อาจเป็นตัวใหญ่)
+        var existing = null;
+        for (var ek in merged) { if (ek.toLowerCase() === k2) { existing = ek; break; } }
+        merged[existing || k2] = upd[k2];
+      }
+      var st = computeRefundStatus(merged);
+      results.matched.push({
+        couponNo: cn, ticketId: String(ciGet(row, 'ticket_id') || ciGet(row, 'no') || ''),
+        machineId: String(ciGet(row, 'machine_id') || ''), expected: st.expected,
+        refundAmount: amount, diff: st.diff, statusKey: st.key, statusLabel: st.label
+      });
+    });
+
+    var paid = results.matched.reduce(function (a, m) { return a + m.refundAmount; }, 0);
+    var expected = results.matched.reduce(function (a, m) { return a + m.expected; }, 0);
+    return responseJSON({ status: 'success', results: results, totals: { paid: paid, expected: expected, diff: paid - expected } }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// ==========================================
+// 6. อัปเดตสถานะอะไหล่ค้างส่ง (ทั่วไป)
+// ==========================================
+function updatePartsStatus(p, isRawObject) {
+  try {
+    var targetMachineId = String(p.machineId || p.machine_id || '');
+    var partsRemark = String(p.partsRemark || '').trim();
+    var partsStore = p.partsStore || p.parts_store || '';
+    var partsStatus = p.partsStatus || p.parts_status || '';
+    var updatedBy = p.updatedBy || p.updated_by || '';
+    var deliveredParts = String(p.deliveredParts || '').trim();
+    var partsDocNo = String(p.partsDocNo || '').trim().toUpperCase();
+    var nowDate = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
+    var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+    // ข้อความบันทึกการส่งอะไหล่ เช่น
+    // [ส่งอะไหล่ครบแล้ว 26/09/2026] รายการ: กรองน้ำมันเครื่อง, กรองโซล่า | DTT: DTT01234 | หมายเหตุ: ...
+    var logParts = [];
+    if (deliveredParts) logParts.push('รายการ: ' + deliveredParts);
+    if (partsDocNo) logParts.push('DTT: ' + partsDocNo);
+    if (partsRemark) logParts.push('หมายเหตุ: ' + partsRemark);
+    var label = partsStatus === 'ส่งครบแล้ว' ? 'ส่งอะไหล่ครบแล้ว' : 'ส่งอะไหล่บางส่วน';
+    var deliveryLog = logParts.length ? ('[' + label + ' ' + nowDate + '] ' + logParts.join(' | ')) : '';
+
+    function appendRemark(existing) {
+      var ex = String(existing || '').trim();
+      if (!deliveryLog) return existing;
+      return (ex && ex !== '-') ? (ex + ' | ' + deliveryLog) : deliveryLog;
+    }
+
+    var dashSheet = getSheet(SHEET_TABS.service_report);
+    var rows = findRows(dashSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === targetMachineId.trim().toLowerCase();
+    });
+
+    var roundsUpdated = {};
+    rows.forEach(function (r) {
+      updateRowByObject(dashSheet, r.__row, {
+        parts_store: partsStore, parts_status: partsStatus, updated_by: updatedBy,
+        remark: appendRemark(ciGet(r, 'remark')), updated_at: nowStr
+      });
+      roundsUpdated[Number(ciGet(r, 'last_pm_round')) || 0] = true;
+    });
+
+    // บันทึกลง pm_log ของรอบ PM ล่าสุดด้วย เพื่อให้ประวัติรายรอบ + Matrix แสดงสถานะตรงกัน
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    var logRows = findRows(logSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === targetMachineId.trim().toLowerCase()
+        && roundsUpdated[Number(ciGet(r, 'pm_target')) || 0] === true;
+    });
+    // ถ้ามีหลายแถวของเครื่อง+รอบเดียวกัน (ข้อมูลซ้ำ) เขียนเฉพาะแถวล่าสุดแถวเดียว
+    logRows = logRows.length ? [pickLatestLogRow(logRows)] : [];
+    logRows.forEach(function (r) {
+      updateRowByObject(logSheet, r.__row, {
+        parts_store: partsStore, parts_status: partsStatus,
+        remark: appendRemark(ciGet(r, 'remark')), updated_at: nowStr
+      });
+    });
+
+    return responseJSON({ status: "success", deliveryLog: deliveryLog }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 6.1 บันทึกรับอะไหล่ค้างส่ง เฉพาะรอบ PM ย้อนหลัง (เพิ่มเติมสำหรับ Matrix)
+// ==========================================
+function updatePendingPartsByRound(p, isRawObject) {
+  try {
+    var machineId = String(p.machineId || p.machine_id || '');
+    var pmRound = Number(p.pmRound || p.last_pm_round) || 0;
+    var partsStatus = p.partsStatus || 'ส่งครบแล้ว';
+    var partsStore = p.partsStore || '-';
+    var partsBillNo = p.partsBillNo || '-';
+    var remark = p.remark || '';
+    var updatedBy = p.updatedBy || 'System';
+    // ต้องเขียน updated_at ด้วย ไม่งั้นถ้า pm_log มีแถวซ้ำของรอบเดียวกัน หน้าเว็บอาจเลือกแถวอื่นเป็น "ล่าสุด"
+    // แล้วสถานะอะไหล่ในหน้า Matrix ไม่ตรงกับที่เพิ่งบันทึก
+    var nowStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+    function buildRemark(existing) {
+      return remark ? (String(existing || '') + ' | [รับอะไหล่รอบ ' + pmRound + ' ชม.]: ' + remark) : existing;
+    }
+
+    // 1. อัปเดตข้อมูลอะไหล่เฉพาะรอบ PM ใน pm_log (pm_log ใช้คอลัมน์ PM_Target แทน Last_PM_Round)
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    var logRows = findRows(logSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.trim().toLowerCase()
+        && (Number(ciGet(r, 'pm_target')) || 0) === pmRound;
+    });
+    // pm_log ซ้ำได้ → อัปเดตเฉพาะ log ล่าสุดของรอบนี้แถวเดียว
+    logRows = logRows.length ? [pickLatestLogRow(logRows)] : [];
+    logRows.forEach(function (r) {
+      updateRowByObject(logSheet, r.__row, {
+        parts_status: partsStatus, parts_store: partsStore, parts_bill_no: partsBillNo,
+        remark: buildRemark(ciGet(r, 'remark')), updated_at: nowStr
+      });
+    });
+
+    // 2. ถ้ารอบที่แก้เป็นรอบล่าสุดของ service_report ให้ซิงก์สถานะไปด้วย
+    var dashSheet = getSheet(SHEET_TABS.service_report);
+    var dashRows = findRows(dashSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.trim().toLowerCase();
+    });
+    dashRows.forEach(function (r) {
+      if ((Number(ciGet(r, 'last_pm_round')) || 0) === pmRound) {
+        updateRowByObject(dashSheet, r.__row, {
+          parts_status: partsStatus, parts_store: partsStore, parts_bill_no: partsBillNo,
+          updated_by: updatedBy, remark: buildRemark(ciGet(r, 'remark')), updated_at: nowStr
+        });
+      }
+    });
+
+    return responseJSON({ status: "success", machineId: machineId, pmRound: pmRound }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 7. อนุมัติสถานะเครื่องจักร (Approve)
+// ==========================================
+function approveMachine(machineId, isRawObject) {
+  try {
+    var target = String(machineId || '');
+    var dashSheet = getSheet(SHEET_TABS.service_report);
+    var rows = findRows(dashSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === target.trim().toLowerCase();
+    });
+    rows.forEach(function (r) { updateRowByObject(dashSheet, r.__row, { status: 'Approved' }); });
+    return responseJSON({ status: "success" }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 8. ลบข้อมูลใน Service_Report
+// ==========================================
+function deleteDashboard(machineId, isRawObject) {
+  try {
+    var target = String(machineId || '');
+    var dashSheet = getSheet(SHEET_TABS.service_report);
+    var rows = findRows(dashSheet, function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === target.trim().toLowerCase();
+    });
+    deleteRows(dashSheet, rows.map(function (r) { return r.__row; }));
+    return responseJSON({ status: "success" }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// 9. ลบข้อมูลใน PM_Log
+// ==========================================
+function deleteReport(ticketId, isRawObject, machineId, pmRound) {
+  try {
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    var row = findPmLogTarget(logSheet, ticketId, machineId, pmRound);
+    deleteRows(logSheet, [row.__row]);
+    return responseJSON({ status: "success" }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() }, isRawObject);
+  }
+}
+
+// ==========================================
+// Utilities to detect and fix swapped fields in pm_log
+// ==========================================
+function _looksLikeDate(val) {
+  if (!val) return false;
+  val = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return true;
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(val)) return true;
+  if (/\d{4}/.test(val) && /[-\/]/.test(val)) return true;
+  return false;
+}
+
+function _looksLikePhone(val) {
+  if (!val) return false;
+  var s = String(val).trim();
+  var digits = s.replace(/[^0-9]/g, '');
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+function detectPmLogSwaps(isRawObject) {
+  try {
+    var rows = runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\``);
+    var candidates = [];
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var ticket = ciGet(r, 'ticket_id') || ciGet(r, 'no') || (i + 1);
+      var customer = String(ciGet(r, 'customer') || '').trim();
+      var phone = String(ciGet(r, 'phone_number') || '').trim();
+      var serviceDate = String(ciGet(r, 'service_date') || '').trim();
+
+      var custIsDate = _looksLikeDate(customer);
+      var custIsPhone = _looksLikePhone(customer);
+      var phoneIsDate = _looksLikeDate(phone);
+      var phoneIsPhone = _looksLikePhone(phone);
+      var dateIsDate = _looksLikeDate(serviceDate);
+      var dateIsPhone = _looksLikePhone(serviceDate);
+
+      var needs = {};
+
+      if (phoneIsDate && dateIsPhone) {
+        needs.action = 'swap_phone_date';
+        needs.suggested = { phone: serviceDate, contract_date: phone };
+      }
+
+      if (custIsPhone && !phoneIsPhone) {
+        needs.action = needs.action || 'swap_customer_phone';
+        needs.suggested = needs.suggested || {};
+        needs.suggested.customer = phone || '';
+        needs.suggested.phone = customer || '';
+      }
+
+      if (custIsDate && !dateIsDate) {
+        needs.action = needs.action || 'swap_customer_date';
+        needs.suggested = needs.suggested || {};
+        needs.suggested.customer = serviceDate || '';
+        needs.suggested.contract_date = customer || '';
+      }
+
+      if (Object.keys(needs).length > 0) {
+        candidates.push({ ticketId: ticket, original: { customer: customer, phone: phone, contract_date: serviceDate }, issue: needs });
+      }
+    }
+
+    return responseJSON({ status: 'success', candidates: candidates }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
+  }
+}
+
+function fixPmLogSwaps(payload, isRawObject) {
+  try {
+    var fixes = [];
+    if (!payload) return responseJSON({ status: 'error', message: 'Missing payload' }, isRawObject);
+
+    if (payload.fixes && Array.isArray(payload.fixes)) {
+      fixes = payload.fixes;
+    } else if (payload.tickets && Array.isArray(payload.tickets)) {
+      var detected = detectPmLogSwaps(true);
+      var map = {};
+      (detected.candidates || []).forEach(function(c){ map[String(c.ticketId)] = c; });
+      payload.tickets.forEach(function(t){ if (map[t]) fixes.push({ ticketId: t, set: map[t].issue.suggested }); });
+    } else if (payload.ticketId) {
+      var detObj = detectPmLogSwaps(true);
+      var found = (detObj.candidates || []).find(function(c){ return String(c.ticketId) === String(payload.ticketId); });
+      if (found) fixes.push({ ticketId: payload.ticketId, set: found.issue.suggested });
+    } else {
+      return responseJSON({ status: 'error', message: 'Invalid payload format' }, isRawObject);
+    }
+
+    var logSheet = getSheet(SHEET_TABS.pm_log);
+    var applied = [];
+    fixes.forEach(function(f) {
+      var t = String(f.ticketId);
+      var update = {};
+      if (f.set.customer !== undefined) update.customer = f.set.customer;
+      if (f.set.phone !== undefined) update.phone_number = f.set.phone;
+      if (f.set.contract_date !== undefined) update.service_date = f.set.contract_date;
+      if (Object.keys(update).length === 0) return;
+
+      try {
+        var rows = findRows(logSheet, function (r) {
+          return String(ciGet(r, 'no') || '') === t || String(ciGet(r, 'ticket_id') || '') === t || String(ciGet(r, 'machine_id') || '') === t;
+        });
+        rows.forEach(function (r) { updateRowByObject(logSheet, r.__row, update); });
+        applied.push({ ticketId: f.ticketId, applied: f.set });
+      } catch (e) {
+        applied.push({ ticketId: f.ticketId, error: e.toString() });
+      }
+    });
+
+    return responseJSON({ status: 'success', applied: applied }, isRawObject);
+  } catch (err) {
+    return responseJSON({ status: 'error', message: err.toString() }, isRawObject);
+  }
+}
+// ==========================================
+// 🔧 MIGRATION: ดึงข้อมูลปัจจุบันจาก BigQuery (Native Table) มาลง Google Sheet
+// ==========================================
+// วิธีใช้:
+// 1. ใส่ SHEET_ID ด้านบนให้เรียบร้อยก่อน
+// 2. สร้างแท็บเปล่าชื่อ users, service_report, pm_log ใน Sheet นั้น (ยังไม่ต้องใส่ Header)
+// 3. เปิดไฟล์นี้ใน Apps Script Editor แล้วเลือกรัน migrateNativeDataToSheet() ครั้งเดียว
+// 4. เช็กว่าข้อมูลมาครบใน Sheet แล้วค่อยไปตั้ง External Table ใน BigQuery Console
+// 5. ลบฟังก์ชันนี้ทิ้งได้ (หรือปล่อยไว้ก็ได้ ไม่กระทบระบบ เพราะไม่ได้ถูกเรียกจาก doGet/doPost)
+function migrateNativeDataToSheet() {
+  var tables = ['users', 'service_report', 'pm_log', 'modelpart'];
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+
+  tables.forEach(function (tableName) {
+    var rows = runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.${tableName}\``);
+    var sheet = ss.getSheetByName(tableName) || ss.insertSheet(tableName);
+    sheet.clearContents();
+
+    if (rows.length === 0) {
+      Logger.log('ตาราง ' + tableName + ' ไม่มีข้อมูล ข้ามไป');
+      return;
+    }
+
+    // รวม Header จากทุกแถว (เผื่อบาง field ไม่ครบทุกแถว)
+    var headerSet = {};
+    rows.forEach(function (r) { Object.keys(r).forEach(function (k) { headerSet[k] = true; }); });
+    var headers = Object.keys(headerSet);
+
+    var values = [headers];
+    rows.forEach(function (r, idx) {
+      var identifier = r.no || r.ticket_id || r.machine_id || (tableName + '_' + (idx + 1));
+      values.push(headers.map(function (h) {
+        var v = (r[h] === null || r[h] === undefined) ? '' : r[h];
+        // receipt_image ถ้าเป็น Base64 (ยาวเกิน 50,000 ตัวอักษรแน่นอน) ให้แปลงเป็นลิงก์ Drive ก่อน
+        if (h === 'receipt_image') {
+          v = resolveReceiptImage(v, identifier);
+        }
+        return v;
+      }));
+    });
+
+    sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+    Logger.log('ย้าย ' + tableName + ' เสร็จแล้ว: ' + rows.length + ' แถว');
+  });
+
+  Logger.log('Migration เสร็จสมบูรณ์ — ตรวจสอบข้อมูลใน Sheet ก่อนไปตั้ง External Table');
+}
+
+// ==========================================
+// 🔍 DIAGNOSTIC: หาว่าคอลัมน์/แถวไหนมีข้อความยาวเกิน 50,000 ตัวอักษร
+// ==========================================
+// รันฟังก์ชันนี้ก่อน migrateNativeDataToSheet() ถ้าเจอ error เรื่อง 50000 ตัวอักษร
+// อ่านจาก BigQuery อย่างเดียว ไม่เขียนอะไรลง Sheet จึงปลอดภัย รันซ้ำได้เรื่อยๆ
+function findOversizedCells() {
+  var tables = ['users', 'service_report', 'pm_log', 'modelpart'];
+  var LIMIT = 50000;
+  var found = [];
+
+  tables.forEach(function (tableName) {
+    var rows = runBigQuery(`SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.${tableName}\``);
+    rows.forEach(function (r, idx) {
+      Object.keys(r).forEach(function (col) {
+        var val = r[col];
+        if (val !== null && val !== undefined) {
+          var len = String(val).length;
+          if (len > LIMIT) {
+            found.push({
+              table: tableName,
+              rowIndex: idx + 1,
+              identifier: r.no || r.ticket_id || r.machine_id || ('row#' + (idx + 1)),
+              column: col,
+              length: len
+            });
+          }
+        }
+      });
+    });
+  });
+
+  if (found.length === 0) {
+    Logger.log('ไม่พบเซลล์ที่ยาวเกิน 50,000 ตัวอักษร');
+  } else {
+    Logger.log('พบ ' + found.length + ' เซลล์ที่ยาวเกินกำหนด:');
+    found.forEach(function (f) {
+      Logger.log(f.table + ' | แถวที่อ้างอิง: ' + f.identifier + ' | คอลัมน์: ' + f.column + ' | ความยาว: ' + f.length + ' ตัวอักษร');
+    });
+  }
+  return found;
+}
+
+
+// ตั้งค่าตัวแปรประจำโปรเจกต์
+
+
+/**
+ * ฟังก์ชันสำหรับทดสอบการดึงข้อมูลจากตาราง pm_log ใน BigQuery
+ */
+function testFetchBigQueryData() {
+  const query = `SELECT * FROM \`${BQ_PROJECT_ID}.${BQ_DATASET_ID}.pm_log\` LIMIT 10`;
+  
+  const request = {
+    query: query,
+    useLegacySql: false
+  };
+  
+  try {
+    const queryResults = BigQuery.Jobs.query(request, BQ_PROJECT_ID);
+    const jobId = queryResults.jobReference.jobId;
+    
+    // รอผลลัพธ์คิวรีประมวลผล
+    let rows = queryResults.rows;
+    while (!queryResults.jobComplete) {
+      Utilities.sleep(1000);
+      queryResults = BigQuery.Jobs.getQueryResults(BQ_PROJECT_ID, jobId);
+      rows = queryResults.rows;
+    }
+    
+    Logger.log('ดึงข้อมูลสำเร็จ! จำนวนแถวที่พบ: ' + (rows ? rows.length : 0));
+    if (rows && rows.length > 0) {
+      Logger.log('ตัวอย่างข้อมูลแถวแรก: ' + JSON.stringify(rows[0]));
+    } else {
+      Logger.log('ตารางยังไม่มีข้อมูล');
+    }
+  } catch (error) {
+    Logger.log('เกิดข้อผิดพลาดในการดึงข้อมูล: ' + error.toString());
+  }
+}
+
+
+
+
+
+function syncSheetToBigQuery() {
+  const tables = ['users', 'modelpart', 'pm_log', 'service_report'];
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  tables.forEach(tableName => {
+    const sheet = ss.getSheetByName(tableName);
+    if (!sheet) {
+      Logger.log(`ไม่พบแผ่นงานชื่อ ${tableName}`);
+      return;
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log(`แผ่นงาน ${tableName} ไม่มีข้อมูล`);
+      return;
+    }
+
+    // ดึง Schema จริงจาก BigQuery
+    let bqFieldsMap = {};
+    try {
+      const tableInfo = BigQuery.Tables.get(BQ_PROJECT_ID, BQ_DATASET_ID, tableName);
+      tableInfo.schema.fields.forEach(f => {
+        // ใช้ key แบบ lowercase เพื่อเปรียบเทียบ แต่เก็บชื่อจริงใน BQ ไว้
+        bqFieldsMap[f.name.toLowerCase()] = f.name;
+      });
+    } catch (e) {
+      Logger.log(`ไม่สามารถดึง Schema ของ ${tableName}: ` + e.toString());
+      return;
+    }
+
+    const rawHeaders = data[0];
+    const rows = data.slice(1);
+    
+    const jsonRows = rows.map(row => {
+      let rowObj = {};
+      rawHeaders.forEach((header, index) => {
+        if (!header) return;
+        
+        const cleanHeader = String(header).trim().toLowerCase();
+        const bqFieldName = bqFieldsMap[cleanHeader];
+        
+        if (bqFieldName) {
+          let val = row[index];
+          
+          if (val instanceof Date) {
+            val = isNaN(val.getTime()) ? null : val.toISOString();
+          } else if (val === '' || val === undefined) {
+            val = null;
+          } else if (typeof val === 'string') {
+            val = val.trim();
+          }
+          
+          rowObj[bqFieldName] = val;
+        }
+      });
+      
+      // เติม created_at สำหรับ BigQuery Partitioning
+      if (bqFieldsMap['created_at']) {
+        rowObj[bqFieldsMap['created_at']] = new Date().toISOString();
+      }
+      
+      return rowObj;
+    });
+
+    const insertRequest = { rows: jsonRows.map(row => ({ json: row })) };
+
+    try {
+      const response = BigQuery.Tabledata.insertAll(insertRequest, BQ_PROJECT_ID, BQ_DATASET_ID, tableName);
+      if (response.insertErrors && response.insertErrors.length > 0) {
+        Logger.log(`Error ตาราง ${tableName}: ` + JSON.stringify(response.insertErrors));
+      } else {
+        Logger.log(`นำเข้าข้อมูล ${tableName} สำเร็จ ${jsonRows.length} แถว`);
+      }
+    } catch (err) {
+      Logger.log(`Error ตาราง ${tableName}: ` + err.toString());
+    }
+  });
+}
+
+// ==========================================================================
+// 🔧 ระบบงานซ่อมบำรุง (Maintenance Job)
+// Flow: admin จ่ายงาน → ช่างกดรับงาน → เข้าซ่อม (ถ่ายรูปก่อนซ่อม) → ปิดงาน (ถ่ายรูปหลังซ่อม) → แสดงบน Dashboard
+// ข้อมูลเก็บใน Google Sheet แท็บ "maintenance_job" (สร้างให้อัตโนมัติถ้ายังไม่มี)
+// รูปเก็บใน Drive: TrackXcavator/Maintenance_Photos/<job_id>_<machine_id>/
+// ==========================================================================
+var MAINT_SHEET_TAB = 'maintenance_job';
+var MAINT_PHOTO_FOLDER_ID = '1yGy5ujnL-LQioAw6Qy3a_fPJDjvmsz87';      // โฟลเดอร์ Maintenance_Photos
+var MAINT_PROJECT_FOLDER_ID = '1tcvvwnDS9v3-gsTQvBHMmFNAUqz7yRvQ';    // โฟลเดอร์โปรเจก TrackXcavator (สำรอง)
+var MAINT_ADMIN_ROLES = ['admin', 'manager', 'office', 'supervisor'];  // role ที่จ่ายงาน/แก้/ยกเลิกงานได้
+var MAINT_MAX_PHOTOS = 10;
+var MAINT_COLUMNS = [
+  'job_id', 'status', 'machine_id', 'model', 'customer', 'phone', 'location',
+  'job_type', 'problem', 'priority', 'due_date',
+  'assigned_to', 'assigned_by', 'assigned_at',
+  'accepted_at', 'started_at', 'before_photos',
+  'cause', 'work_detail', 'parts_used', 'labor_hours', 'after_photos',
+  'closed_at', 'closed_by', 'remark', 'cancel_reason', 'decline_reason',
+  'photo_folder_id', 'updated_at', 'updated_by'
+];
+var MAINT_STATUS_LABEL = {
+  assigned: 'รอช่างรับงาน', accepted: 'รับงานแล้ว', in_progress: 'กำลังซ่อม',
+  completed: 'ปิดงานแล้ว', declined: 'ช่างปฏิเสธงาน', cancelled: 'ยกเลิก'
+};
+
+function maintNow_() {
+  return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+}
+
+/** เปิด/สร้างแท็บ maintenance_job พร้อม Header (เพิ่มคอลัมน์ที่ขาดให้อัตโนมัติ) */
+function getMaintSheet_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sh = ss.getSheetByName(MAINT_SHEET_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(MAINT_SHEET_TAB);
+    sh.getRange(1, 1, 1, MAINT_COLUMNS.length).setValues([MAINT_COLUMNS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    // บังคับเป็นข้อความ กันเลขรถ/เบอร์โทรเลข 0 นำหน้าหาย
+    sh.getRange('A:AD').setNumberFormat('@');
+    return sh;
+  }
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  var missing = MAINT_COLUMNS.filter(function (c) { return headers.indexOf(c) === -1; });
+  if (missing.length) {
+    sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+  }
+  return sh;
+}
+
+/** ตั้งค่าครั้งแรก: รันฟังก์ชันนี้ 1 ครั้งใน Apps Script Editor เพื่อสร้างแท็บ + ขอสิทธิ์ Drive */
+function setupMaintenanceModule() {
+  getMaintSheet_();
+  var f = getMaintPhotoRoot_();
+  Logger.log('พร้อมใช้งาน: แท็บ ' + MAINT_SHEET_TAB + ' / โฟลเดอร์รูป ' + f.getName() + ' (' + f.getId() + ')');
+}
+
+/** หา role ของผู้ใช้จากชีต users (ไม่สนตัวพิมพ์) */
+function getUserRole_(username) {
+  var u = String(username || '').trim().toLowerCase();
+  if (!u) return '';
+  var rows = sheetToObjects(getSheet(SHEET_TABS.users));
+  for (var i = 0; i < rows.length; i++) {
+    if (String(ciGet(rows[i], 'user') || '').trim().toLowerCase() === u) {
+      return String(ciGet(rows[i], 'role') || 'admin').trim().toLowerCase();
+    }
+  }
+  return '';
+}
+
+function isMaintAdminRole_(role) {
+  return MAINT_ADMIN_ROLES.indexOf(String(role || '').toLowerCase()) !== -1;
+}
+
+function maintRowToObj_(r) {
+  var o = {};
+  MAINT_COLUMNS.forEach(function (c) {
+    var v = ciGet(r, c);
+    if (v instanceof Date) v = Utilities.formatDate(v, 'Asia/Bangkok', (v.getHours() || v.getMinutes()) ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd');
+    o[c] = (v === undefined || v === null) ? '' : String(v);
+  });
+  o.before_photos = o.before_photos ? o.before_photos.split(/[\n,]+/).filter(Boolean) : [];
+  o.after_photos = o.after_photos ? o.after_photos.split(/[\n,]+/).filter(Boolean) : [];
+  o.status_label = MAINT_STATUS_LABEL[o.status] || o.status;
+  o.__row = r.__row;
+  return o;
+}
+
+function findMaintJob_(sheet, jobId) {
+  var id = String(jobId || '').trim();
+  if (!id) return null;
+  var rows = sheetToObjects(sheet);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(ciGet(rows[i], 'job_id') || '').trim() === id) return maintRowToObj_(rows[i]);
+  }
+  return null;
+}
+
+function nextMaintJobId_(sheet) {
+  var prefix = 'MJ-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyMM') + '-';
+  var max = 0;
+  sheetToObjects(sheet).forEach(function (r) {
+    var id = String(ciGet(r, 'job_id') || '');
+    if (id.indexOf(prefix) === 0) {
+      var n = parseInt(id.substr(prefix.length), 10);
+      if (n > max) max = n;
+    }
+  });
+  return prefix + ('000' + (max + 1)).slice(-4);
+}
+
+// ---------- รูปภาพ ----------
+function getMaintPhotoRoot_() {
+  try { return DriveApp.getFolderById(MAINT_PHOTO_FOLDER_ID); } catch (e) { /* ถูกลบ/ไม่มีสิทธิ์ → สร้างใหม่ใต้โฟลเดอร์โปรเจก */ }
+  var props = PropertiesService.getScriptProperties();
+  var cached = props.getProperty('MAINT_PHOTO_FOLDER_ID');
+  if (cached) { try { return DriveApp.getFolderById(cached); } catch (e2) {} }
+  var parent = DriveApp.getFolderById(MAINT_PROJECT_FOLDER_ID);
+  var it = parent.getFoldersByName('Maintenance_Photos');
+  var f = it.hasNext() ? it.next() : parent.createFolder('Maintenance_Photos');
+  props.setProperty('MAINT_PHOTO_FOLDER_ID', f.getId());
+  return f;
+}
+
+function getMaintJobFolder_(job) {
+  if (job.photo_folder_id) {
+    try { return DriveApp.getFolderById(job.photo_folder_id); } catch (e) {}
+  }
+  var root = getMaintPhotoRoot_();
+  var name = (job.job_id + '_' + (job.machine_id || 'NA')).replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
+  var it = root.getFoldersByName(name);
+  return it.hasNext() ? it.next() : root.createFolder(name);
+}
+
+/** บันทึกรูป Base64 หลายรูปลงโฟลเดอร์ของงาน คืนค่าเป็น array ของลิงก์ */
+function saveMaintPhotos_(folder, photos, prefix) {
+  var urls = [];
+  (photos || []).slice(0, MAINT_MAX_PHOTOS).forEach(function (dataUri, i) {
+    var m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(String(dataUri || ''));
+    if (!m) return;
+    var ext = (m[1].split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    var name = prefix + '_' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd_HHmmss') + '_' + (i + 1) + '.' + ext;
+    var file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], name));
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { /* บางโดเมนห้ามแชร์สาธารณะ → ยังดูผ่าน getReceiptImage ได้ */ }
+    urls.push('https://drive.google.com/thumbnail?sz=w1600&id=' + file.getId());
+  });
+  return urls;
+}
+
+// ---------- API ----------
+function getMaintenanceJobs(p, isRawObject) {
+  try {
+    var actor = String((p && (p.actor || p.updatedBy)) || '').trim();
+    var role = getUserRole_(actor);
+    var sh = getMaintSheet_();
+    var jobs = sheetToObjects(sh).map(maintRowToObj_).filter(function (j) { return j.job_id; });
+    var isAdminUser = isMaintAdminRole_(role);
+    // ช่างเห็นเฉพาะงานของตัวเอง (ถ้า p.all = true และเป็น admin จะเห็นทั้งหมด)
+    if (!isAdminUser) {
+      jobs = jobs.filter(function (j) { return j.assigned_to.toLowerCase() === actor.toLowerCase(); });
+    }
+    jobs.forEach(function (j) { delete j.__row; });
+    jobs.sort(function (a, b) { return String(b.assigned_at).localeCompare(String(a.assigned_at)); });
+    return responseJSON({ status: 'success', data: jobs, role: role, isMaintAdmin: isAdminUser, generatedAt: maintNow_() }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', data: [], message: e.toString() }, isRawObject);
+  }
+}
+
+/** รายชื่อช่าง (ไม่ส่งรหัสผ่านออกไป) */
+function getTechnicians(isRawObject) {
+  try {
+    var rows = sheetToObjects(getSheet(SHEET_TABS.users));
+    var list = rows.map(function (r) {
+      return { username: String(ciGet(r, 'user') || '').trim(), role: String(ciGet(r, 'role') || '').trim() };
+    }).filter(function (u) { return u.username; });
+    var techs = list.filter(function (u) { return !isMaintAdminRole_(u.role); });
+    return responseJSON({ status: 'success', data: techs.length ? techs : list, all: list }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', data: [], message: e.toString() }, isRawObject);
+  }
+}
+
+/**
+ * ถ้าหมายเลขรถยังไม่มีใน service_report → เพิ่มเป็นเครื่องใหม่ในฐานข้อมูลเดิม
+ * (ใช้คอลัมน์ชุดเดียวกับ insertOrUpdateTicket เพื่อให้ตารางสถานะ/PM Matrix/Dashboard เห็นทันที)
+ * คืนค่า 'exists' | 'created' | 'skipped'
+ */
+function registerMachineIfMissing_(p, actor) {
+  var machineId = String(p.machine_id || '').trim();
+  if (!machineId) return 'skipped';
+  var dashSheet = getSheet(SHEET_TABS.service_report);
+  var found = findRows(dashSheet, function (r) {
+    return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === machineId.toLowerCase();
+  });
+  if (found.length) return 'exists';
+  if (p.register_machine === false || p.register_machine === 'false') return 'skipped';
+
+  var nowStr = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd HH:mm:ss');
+  var hrs = Number(p.current_hours) || 0;
+  appendRowByObject(dashSheet, {
+    no: '',
+    machine_id: machineId,
+    model: String(p.model || '').trim(),
+    customer: String(p.customer || '').trim(),
+    customer_id: String(p.customer_id || '').trim(),
+    phone_number: String(p.phone || '').trim(),
+    contract_date: String(p.contract_date || '').trim(),
+    current_Hours: hrs,
+    last_pm_round: 0,
+    next_pm_round: 50,
+    status: 'Approved',
+    updated_by: actor,
+    parts_store: '-',
+    supplier_id: '-',
+    parts_bill_no: 'NA',
+    parts_status: 'ไม่ได้เบิกอะไหล่',
+    yanmar_coupon: 0,
+    receipt_image: '',
+    remark: 'เพิ่มจากเมนูงานซ่อมบำรุง',
+    updated_at: nowStr
+  });
+  try { invalidateDataCache(); } catch (e) {}
+  return 'created';
+}
+
+/** admin สร้าง/แก้ไขงาน (ถ้ามี jobId = แก้ไข / จ่ายงานใหม่หลังช่างปฏิเสธ) */
+function saveMaintenanceJob(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var actor = String(p.actor || '').trim();
+    if (!isMaintAdminRole_(getUserRole_(actor))) {
+      return responseJSON({ status: 'error', message: 'เฉพาะผู้ดูแล (admin) เท่านั้นที่จ่ายงานได้' }, isRawObject);
+    }
+    var machineId = String(p.machine_id || '').trim();
+    var assignedTo = String(p.assigned_to || '').trim();
+    if (!machineId) return responseJSON({ status: 'error', message: 'กรุณาระบุหมายเลขรถ' }, isRawObject);
+    if (!String(p.model || '').trim()) return responseJSON({ status: 'error', message: 'กรุณาระบุรุ่นรถ' }, isRawObject);
+    if (!assignedTo) return responseJSON({ status: 'error', message: 'กรุณาเลือกช่างที่รับผิดชอบ' }, isRawObject);
+
+    var sh = getMaintSheet_();
+    var now = maintNow_();
+    var fields = {
+      machine_id: machineId, model: String(p.model || '').trim(), customer: String(p.customer || '').trim(),
+      phone: String(p.phone || '').trim(), location: String(p.location || '').trim(),
+      job_type: String(p.job_type || 'ซ่อมทั่วไป').trim(), problem: String(p.problem || '').trim(),
+      priority: String(p.priority || 'ปกติ').trim(), due_date: String(p.due_date || '').trim(),
+      assigned_to: assignedTo, remark: String(p.remark || '').trim(),
+      updated_at: now, updated_by: actor
+    };
+
+    if (p.job_id) {
+      var job = findMaintJob_(sh, p.job_id);
+      if (!job) return responseJSON({ status: 'error', message: 'ไม่พบใบงาน ' + p.job_id }, isRawObject);
+      // เปลี่ยนช่าง (ยังไม่เริ่มซ่อม) หรือจ่ายงานใหม่หลังถูกปฏิเสธ → กลับไปสถานะรอรับงาน
+      var techChanged = job.assigned_to.toLowerCase() !== assignedTo.toLowerCase();
+      if (job.status === 'declined' || (techChanged && ['assigned', 'accepted'].indexOf(job.status) !== -1)) {
+        fields.status = 'assigned'; fields.assigned_by = actor; fields.assigned_at = now;
+        fields.accepted_at = ''; fields.decline_reason = '';
+      }
+      // admin แก้ผลการซ่อมได้ (งานที่เริ่มซ่อม/ปิดแล้ว)
+      ['cause', 'work_detail', 'parts_used', 'labor_hours'].forEach(function (k) {
+        if (p[k] !== undefined) fields[k] = String(p[k] || '').trim();
+      });
+      // admin เปลี่ยนสถานะเองได้ (เช่น เปิดงานที่ปิด/ยกเลิกไปแล้วกลับมาใหม่)
+      var st = String(p.status_override || '').trim();
+      if (st && MAINT_STATUS_LABEL[st] && st !== job.status) {
+        fields.status = st;
+        if (st === 'completed' && !job.closed_at) { fields.closed_at = now; fields.closed_by = actor; }
+        if (st !== 'completed' && st !== 'cancelled') { fields.closed_at = ''; fields.closed_by = ''; fields.cancel_reason = ''; }
+        if (st === 'assigned') { fields.accepted_at = ''; fields.started_at = ''; }
+      }
+      updateRowByObject(sh, job.__row, fields);
+      var reg2 = registerMachineIfMissing_(p, actor);
+      return responseJSON({ status: 'success', message: 'บันทึกการแก้ไขใบงาน ' + job.job_id + ' แล้ว' + (reg2 === 'created' ? '\nและเพิ่มรถ ' + machineId + ' เข้าฐานข้อมูลเครื่องจักรแล้ว' : ''), job_id: job.job_id, machineRegistered: reg2 === 'created' }, isRawObject);
+    }
+
+    var jobId = nextMaintJobId_(sh);
+    fields.job_id = jobId; fields.status = 'assigned'; fields.assigned_by = actor; fields.assigned_at = now;
+    appendRowByObject(sh, fields);
+    var reg = registerMachineIfMissing_(p, actor);
+    var msg = 'จ่ายงาน ' + jobId + ' ให้ ' + assignedTo + ' แล้ว';
+    if (reg === 'created') msg += '\nและเพิ่มรถ ' + machineId + ' เข้าฐานข้อมูลเครื่องจักรแล้ว';
+    return responseJSON({ status: 'success', message: msg, job_id: jobId, machineRegistered: reg === 'created' }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
+
+/**
+ * ช่าง/admin เปลี่ยนสถานะงาน
+ * step: accept | decline | start (ต้องมีรูปก่อนซ่อม) | close (ต้องมีรูปหลังซ่อม) | cancel (admin) | addPhotos
+ */
+function updateMaintenanceJob(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(25000);
+    var actor = String(p.actor || '').trim();
+    var role = getUserRole_(actor);
+    if (!role) return responseJSON({ status: 'error', message: 'ไม่พบผู้ใช้ ' + actor + ' กรุณาเข้าสู่ระบบใหม่' }, isRawObject);
+    var isAdminUser = isMaintAdminRole_(role);
+
+    var sh = getMaintSheet_();
+    var job = findMaintJob_(sh, p.job_id);
+    if (!job) return responseJSON({ status: 'error', message: 'ไม่พบใบงาน ' + p.job_id }, isRawObject);
+    var isOwner = job.assigned_to.toLowerCase() === actor.toLowerCase();
+    if (!isOwner && !isAdminUser) return responseJSON({ status: 'error', message: 'งานนี้ไม่ได้มอบหมายให้คุณ' }, isRawObject);
+
+    var now = maintNow_();
+    var step = String(p.step || '');
+    var up = { updated_at: now, updated_by: actor };
+    var msg = '';
+
+    function needStatus(list) {
+      if (list.indexOf(job.status) === -1) {
+        throw new Error('สถานะปัจจุบันคือ "' + (MAINT_STATUS_LABEL[job.status] || job.status) + '" ทำขั้นตอนนี้ไม่ได้');
+      }
+    }
+    function savePhotos(phase) {
+      var photos = Array.isArray(p.photos) ? p.photos : [];
+      if (!photos.length) return [];
+      var folder = getMaintJobFolder_(job);
+      if (!job.photo_folder_id) up.photo_folder_id = folder.getId();
+      return saveMaintPhotos_(folder, photos, phase);
+    }
+
+    if (step === 'accept') {
+      needStatus(['assigned']);
+      up.status = 'accepted'; up.accepted_at = now;
+      msg = 'รับงาน ' + job.job_id + ' แล้ว';
+    } else if (step === 'decline') {
+      needStatus(['assigned', 'accepted']);
+      if (!String(p.reason || '').trim()) throw new Error('กรุณาระบุเหตุผลที่ปฏิเสธงาน');
+      up.status = 'declined'; up.decline_reason = String(p.reason).trim();
+      msg = 'ส่งงานคืนให้ admin แล้ว';
+    } else if (step === 'start') {
+      needStatus(['accepted', 'assigned']);
+      var before = job.before_photos.concat(savePhotos('before'));
+      if (!before.length) throw new Error('กรุณาถ่ายรูปก่อนซ่อมอย่างน้อย 1 รูป');
+      up.before_photos = before.join(',');
+      up.status = 'in_progress'; up.started_at = now;
+      if (!job.accepted_at) up.accepted_at = now;
+      msg = 'เริ่มซ่อมแล้ว (รูปก่อนซ่อม ' + before.length + ' รูป)';
+    } else if (step === 'close') {
+      needStatus(['in_progress']);
+      var after = job.after_photos.concat(savePhotos('after'));
+      if (!after.length) throw new Error('กรุณาถ่ายรูปหลังซ่อมอย่างน้อย 1 รูป');
+      if (!String(p.work_detail || '').trim()) throw new Error('กรุณากรอกรายละเอียดการซ่อม');
+      up.after_photos = after.join(',');
+      up.cause = String(p.cause || '').trim();
+      up.work_detail = String(p.work_detail || '').trim();
+      up.parts_used = String(p.parts_used || '').trim();
+      up.labor_hours = String(p.labor_hours || '').trim();
+      if (p.remark !== undefined) up.remark = String(p.remark || '').trim();
+      up.status = 'completed'; up.closed_at = now; up.closed_by = actor;
+      msg = 'ปิดงาน ' + job.job_id + ' เรียบร้อย';
+    } else if (step === 'addPhotos') {
+      if (!isAdminUser) needStatus(['in_progress', 'completed', 'accepted']);
+      var phase = p.phase === 'after' ? 'after' : 'before';
+      var added = savePhotos(phase);
+      if (!added.length) throw new Error('ไม่มีรูปที่จะเพิ่ม');
+      up[phase + '_photos'] = job[phase + '_photos'].concat(added).join(',');
+      msg = 'เพิ่มรูป ' + added.length + ' รูปแล้ว';
+    } else if (step === 'removePhoto') {
+      if (!isAdminUser) throw new Error('เฉพาะ admin เท่านั้นที่ลบรูปได้');
+      var ph = p.phase === 'after' ? 'after' : 'before';
+      var url = String(p.url || '');
+      var left = job[ph + '_photos'].filter(function (u) { return u !== url; });
+      if (left.length === job[ph + '_photos'].length) throw new Error('ไม่พบรูปนี้ในใบงาน');
+      var fid = (/[?&]id=([a-zA-Z0-9_-]+)/.exec(url) || [])[1];
+      if (fid) { try { DriveApp.getFileById(fid).setTrashed(true); } catch (e) { /* ไฟล์หายไปแล้ว */ } }
+      up[ph + '_photos'] = left.join(',');
+      msg = 'ลบรูปแล้ว';
+    } else if (step === 'cancel') {
+      if (!isAdminUser) throw new Error('เฉพาะ admin เท่านั้นที่ยกเลิกงานได้');
+      needStatus(['assigned', 'accepted', 'in_progress', 'declined']);
+      up.status = 'cancelled'; up.cancel_reason = String(p.reason || '').trim();
+      msg = 'ยกเลิกงาน ' + job.job_id + ' แล้ว';
+    } else {
+      throw new Error('ไม่รู้จักขั้นตอน: ' + step);
+    }
+
+    updateRowByObject(sh, job.__row, up);
+    return responseJSON({ status: 'success', message: msg, job_id: job.job_id }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.message || e.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
+
+/** ตรวจว่าหมายเลขรถมีในฐานข้อมูล (service_report) แล้วหรือยัง — อ่านจาก Sheet ตรง จึงเห็นรถที่เพิ่งเพิ่มทันที */
+function checkMachineExists(machineId, isRawObject) {
+  try {
+    var id = String(machineId || '').trim().toLowerCase();
+    if (!id) return responseJSON({ status: 'success', exists: false }, isRawObject);
+    var rows = findRows(getSheet(SHEET_TABS.service_report), function (r) {
+      return String(ciGet(r, 'machine_id') || '').trim().toLowerCase() === id;
+    });
+    if (!rows.length) return responseJSON({ status: 'success', exists: false }, isRawObject);
+    var r = rows[0];
+    return responseJSON({ status: 'success', exists: true, machine: {
+      machineId: String(ciGet(r, 'machine_id') || ''), model: String(ciGet(r, 'model') || ''),
+      customer: String(ciGet(r, 'customer') || ''), phone: String(ciGet(r, 'phone_number') || ''),
+      currentHours: Number(ciGet(r, 'current_hours')) || 0
+    } }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.toString() }, isRawObject);
+  }
+}
+
+
+/** admin ลบใบงานซ่อม (ลบแถวในชีต + ย้ายโฟลเดอร์รูปไปถังขยะ Drive ถ้าเลือก — กู้คืนได้ใน 30 วัน) */
+function deleteMaintenanceJob(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var actor = String(p.actor || '').trim();
+    if (!isMaintAdminRole_(getUserRole_(actor))) return responseJSON({ status: 'error', message: 'เฉพาะ admin เท่านั้นที่ลบใบงานได้' }, isRawObject);
+    var sh = getMaintSheet_();
+    var job = findMaintJob_(sh, p.job_id);
+    if (!job) return responseJSON({ status: 'error', message: 'ไม่พบใบงาน ' + p.job_id }, isRawObject);
+    if (p.deletePhotos !== false && p.deletePhotos !== 'false' && job.photo_folder_id) {
+      try { DriveApp.getFolderById(job.photo_folder_id).setTrashed(true); } catch (e) { Logger.log('trash folder: ' + e); }
+    }
+    sh.deleteRow(job.__row);
+    return responseJSON({ status: 'success', message: 'ลบใบงาน ' + job.job_id + ' แล้ว' }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
+
+// ==========================================================================
+// 👥 ระบบสมาชิก (จัดการผู้ใช้ในแท็บ users) — เฉพาะ role admin
+// คอลัมน์หลัก: user, password, role (คอลัมน์อื่นในชีตจะแก้ไขได้แบบข้อความทั่วไป)
+// ==========================================================================
+var USER_ADMIN_ROLE = 'admin';
+var USER_ROLE_OPTIONS = ['admin', 'manager', 'office', 'supervisor', 'technician', 'user'];
+
+function requireUserAdmin_(actor) {
+  if (getUserRole_(actor) !== USER_ADMIN_ROLE) throw new Error('เฉพาะ admin เท่านั้นที่จัดการสมาชิกได้');
+}
+
+function getUsersSheetInfo_() {
+  var sh = getSheet(SHEET_TABS.users);
+  var headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(function (h) { return String(h).trim(); });
+  var find = function (name) { for (var i = 0; i < headers.length; i++) if (headers[i].toLowerCase() === name) return headers[i]; return null; };
+  var keys = { user: find('user'), password: find('password'), role: find('role') };
+  if (!keys.user || !keys.password) throw new Error('แท็บ users ต้องมีคอลัมน์ user และ password');
+  if (!keys.role) { // ยังไม่มีคอลัมน์ role → เพิ่มให้
+    sh.getRange(1, headers.length + 1).setValue('role');
+    headers.push('role'); keys.role = 'role';
+  }
+  var extra = headers.filter(function (h) { return h && [keys.user, keys.password, keys.role].indexOf(h) === -1; });
+  return { sheet: sh, headers: headers, keys: keys, extra: extra };
+}
+
+function getUsers(p, isRawObject) {
+  try {
+    requireUserAdmin_(p.actor);
+    var info = getUsersSheetInfo_();
+    var rows = sheetToObjects(info.sheet).filter(function (r) { return String(r[info.keys.user] || '').trim(); });
+    var users = rows.map(function (r) {
+      var o = { username: String(r[info.keys.user]).trim(), role: String(r[info.keys.role] || '').trim(), hasPassword: String(r[info.keys.password] || '') !== '', extra: {} };
+      info.extra.forEach(function (h) {
+        var v = r[h];
+        if (v instanceof Date) v = Utilities.formatDate(v, 'Asia/Bangkok', 'yyyy-MM-dd');
+        o.extra[h] = v === undefined || v === null ? '' : String(v);
+      });
+      return o;
+    });
+    var roles = USER_ROLE_OPTIONS.slice();
+    users.forEach(function (u) { if (u.role && roles.indexOf(u.role.toLowerCase()) === -1) roles.push(u.role); });
+    return responseJSON({ status: 'success', data: users, extraColumns: info.extra, roles: roles, maintAdminRoles: MAINT_ADMIN_ROLES }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', data: [], message: e.message || e.toString() }, isRawObject);
+  }
+}
+
+/** เพิ่ม/แก้ไขสมาชิก: originalUsername ว่าง = เพิ่มใหม่ / password ว่างตอนแก้ไข = ใช้รหัสเดิม */
+function saveUser(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var actor = String(p.actor || '').trim();
+    requireUserAdmin_(actor);
+    var info = getUsersSheetInfo_();
+    var username = String(p.username || '').trim();
+    var original = String(p.originalUsername || '').trim();
+    var password = String(p.password == null ? '' : p.password).trim();
+    var role = String(p.role || '').trim().toLowerCase() || 'technician';
+    if (!username) throw new Error('กรุณากรอกชื่อผู้ใช้');
+    if (/[\s,]/.test(username)) throw new Error('ชื่อผู้ใช้ห้ามมีช่องว่างหรือเครื่องหมายจุลภาค');
+    if (password && password.length < 4) throw new Error('รหัสผ่านต้องยาวอย่างน้อย 4 ตัวอักษร');
+
+    var rows = sheetToObjects(info.sheet);
+    var findRow = function (name) {
+      for (var i = 0; i < rows.length; i++) if (String(rows[i][info.keys.user] || '').trim().toLowerCase() === name.toLowerCase()) return rows[i];
+      return null;
+    };
+    var dup = findRow(username);
+    var target = original ? findRow(original) : null;
+    if (original && !target) throw new Error('ไม่พบผู้ใช้ ' + original);
+    if (dup && dup !== target) throw new Error('ชื่อผู้ใช้ "' + username + '" มีอยู่แล้ว');
+
+    var obj = {};
+    obj[info.keys.user] = username;
+    obj[info.keys.role] = role;
+    if (password) obj[info.keys.password] = password;
+    var extra = p.extra || {};
+    info.extra.forEach(function (h) { if (extra[h] !== undefined) obj[h] = String(extra[h]); });
+
+    if (!target) {
+      if (!password) throw new Error('กรุณาตั้งรหัสผ่านสำหรับผู้ใช้ใหม่');
+      // บังคับเป็นข้อความ กันรหัสผ่านตัวเลขที่ขึ้นต้นด้วย 0 หาย
+      var newRow = info.sheet.getLastRow() + 1;
+      info.sheet.getRange(newRow, 1, 1, info.headers.length).setNumberFormat('@');
+      info.sheet.getRange(newRow, 1, 1, info.headers.length).setValues([info.headers.map(function (h) { return obj[h] !== undefined ? obj[h] : ''; })]);
+      return responseJSON({ status: 'success', message: 'เพิ่มสมาชิก ' + username + ' แล้ว' }, isRawObject);
+    }
+
+    // กันไม่ให้ admin คนสุดท้ายถูกลดสิทธิ์
+    var oldRole = String(target[info.keys.role] || '').trim().toLowerCase();
+    if (oldRole === USER_ADMIN_ROLE && role !== USER_ADMIN_ROLE && countAdmins_(rows, info) <= 1) {
+      throw new Error('ต้องมี admin อย่างน้อย 1 คน — เปลี่ยนสิทธิ์ admin คนสุดท้ายไม่ได้');
+    }
+    if (password) info.sheet.getRange(target.__row, info.headers.indexOf(info.keys.password) + 1).setNumberFormat('@');
+    updateRowByObject(info.sheet, target.__row, obj);
+
+    // เปลี่ยนชื่อผู้ใช้ → อัปเดตชื่อในใบงานซ่อมให้ตามไปด้วย
+    var renamed = original && original.toLowerCase() !== username.toLowerCase();
+    if (renamed) renameUserInMaintJobs_(original, username);
+    return responseJSON({ status: 'success', message: 'บันทึกข้อมูล ' + username + ' แล้ว' + (renamed ? ' (อัปเดตชื่อในใบงานซ่อมแล้ว)' : ''), renamedSelf: renamed && original.toLowerCase() === actor.toLowerCase(), newUsername: username }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.message || e.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
+
+function countAdmins_(rows, info) {
+  return rows.filter(function (r) {
+    return String(r[info.keys.user] || '').trim() && String(r[info.keys.role] || '').trim().toLowerCase() === USER_ADMIN_ROLE;
+  }).length;
+}
+
+function renameUserInMaintJobs_(oldName, newName) {
+  var sh = getMaintSheet_();
+  sheetToObjects(sh).forEach(function (r) {
+    var up = {};
+    ['assigned_to', 'assigned_by', 'closed_by', 'updated_by'].forEach(function (k) {
+      if (String(ciGet(r, k) || '').trim().toLowerCase() === oldName.toLowerCase()) up[k] = newName;
+    });
+    if (Object.keys(up).length) updateRowByObject(sh, r.__row, up);
+  });
+}
+
+function deleteUser(p, isRawObject) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var actor = String(p.actor || '').trim();
+    requireUserAdmin_(actor);
+    var username = String(p.username || '').trim();
+    if (!username) throw new Error('ไม่ระบุผู้ใช้');
+    if (username.toLowerCase() === actor.toLowerCase()) throw new Error('ลบบัญชีของตัวเองไม่ได้');
+    var info = getUsersSheetInfo_();
+    var rows = sheetToObjects(info.sheet);
+    var target = rows.filter(function (r) { return String(r[info.keys.user] || '').trim().toLowerCase() === username.toLowerCase(); })[0];
+    if (!target) throw new Error('ไม่พบผู้ใช้ ' + username);
+    if (String(target[info.keys.role] || '').trim().toLowerCase() === USER_ADMIN_ROLE && countAdmins_(rows, info) <= 1) {
+      throw new Error('ลบ admin คนสุดท้ายไม่ได้');
+    }
+    // แจ้งเตือนถ้ายังมีงานซ่อมค้างอยู่กับคนนี้
+    var openJobs = sheetToObjects(getMaintSheet_()).filter(function (r) {
+      return String(ciGet(r, 'assigned_to') || '').trim().toLowerCase() === username.toLowerCase()
+        && ['assigned', 'accepted', 'in_progress'].indexOf(String(ciGet(r, 'status') || '')) !== -1;
+    }).length;
+    if (openJobs && !(p.force === true || p.force === 'true')) {
+      return responseJSON({ status: 'confirm', openJobs: openJobs, message: username + ' ยังมีงานซ่อมค้าง ' + openJobs + ' งาน ต้องการลบต่อหรือไม่? (ใบงานจะยังอยู่ ให้จ่ายงานใหม่ภายหลัง)' }, isRawObject);
+    }
+    info.sheet.deleteRow(target.__row);
+    return responseJSON({ status: 'success', message: 'ลบสมาชิก ' + username + ' แล้ว' }, isRawObject);
+  } catch (e) {
+    return responseJSON({ status: 'error', message: e.message || e.toString() }, isRawObject);
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
