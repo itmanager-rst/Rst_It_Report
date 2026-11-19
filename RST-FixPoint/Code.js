@@ -2,7 +2,11 @@
  * RST FixPoint — ระบบแจ้งซ่อมอาคารและอุปกรณ์สำนักงาน | รวมสินไทยกรุ๊ป
  * Backend: Google Apps Script + Google Sheets
  *
- * CODE_VERSION: r30-2026-11-15-push
+ * CODE_VERSION: r32-2026-11-19-assign
+ *
+ *  - r32: [การมอบหมายงาน] ผู้จัดการ → หัวหน้าช่าง → ช่าง: ช่างแต่ละคนในทีมบันทึก "มอบหมายโดย" (ชื่อหัวหน้าช่าง)
+ *         • หัวหน้าช่างมอบหมายช่างต่างสาขาได้ (ติดธง ต่างสาขา) • ช่างต่างสาขาในทีมเข้าดูและรับงานได้
+ *         • assignmentBoard: สรุปหัวหน้าช่าง → งานที่กำลังทำ → ช่างที่ต้องไปหน้างาน (หน้า "การมอบหมาย & ลงพื้นที่")
  *
  *  - r30: [Web Push] แจ้งเตือนผ่าน OneSignal (REST API) ถึงมือถือแม้ปิดแอป — สร้างงานใหม่ → manager/admin สาขา,
  *         อนุมัติ → หัวหน้าช่าง, มอบหมายช่าง → ช่างทุกคนในทีม, ปิดงาน → ผู้แจ้งซ่อม (ตั้งค่าด้วย setupOneSignalKeys)
@@ -61,7 +65,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r31-2026-11-15-session';
+const CODE_VERSION = 'r32-2026-11-19-assign';
 
 // r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
 const SUP_ASSIGN_SLA_HOURS = 4;
@@ -169,6 +173,7 @@ const ROUTES = {
   approveTicket:   { roles: MGR, fn: approveTicket_, write: true },        // r27: อนุมัติ + ส่งต่อหัวหน้าช่าง
   rejectTicket:    { roles: MGR, fn: rejectTicket_, write: true },
   assignTechnician:{ roles: SUP, fn: assignTechnician_, write: true },    // r27/r29: หัวหน้าช่างเลือกช่าง (ได้หลายคน)
+  assignmentBoard: { roles: ['supervisor', 'manager', 'admin'], fn: assignmentBoard_ },   // r32: สรุปการมอบหมาย (หัวหน้า → ช่าง) + ช่างต่างสาขา
   listTechnicians: { roles: MGR.concat(['supervisor']), fn: (u) => ({ technicians: listTechnicians_(u) }) },
   listSupervisors: { roles: MGR, fn: (u) => ({ supervisors: listSupervisors_(u) }) },   // r27
   supervisorKpi:   { roles: ['supervisor', 'manager', 'admin'], fn: supervisorKpi_ },   // r27: KPI หัวหน้าช่าง
@@ -677,7 +682,7 @@ function canSee_(u, t) {
   if (u.Role === 'admin') return true;
   if (norm_(t.Username) === norm_(u.Username)) return true;
   if (u.Role === 'supervisor') return supOwns_(u, t);   // r27: หัวหน้าช่างเห็นเฉพาะงานที่ถูกส่งต่อมาให้ตน
-  if (!inScope_(u, t.Branch)) return false;
+  if (!inScope_(u, t.Branch) && !(u.Role === 'technician' && isMember_(t, u.Username))) return false;   // r32: ช่างต่างสาขาที่อยู่ในทีมเห็นงานนี้ได้
   if (u.Role === 'manager') return true;
   if (u.Role === 'technician') return [ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1;
   return false;
@@ -923,7 +928,7 @@ function listTickets_(u, req) {
   if (scope === 'supervised') list = list.filter(t => supOwns_(u, t) && [ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1); // r27
   if (scope === 'jobs') {
     const mine = t => u.Role === 'admin' || isMember_(t, u.Username);   // r29: สมาชิกทีม
-    list = list.filter(t => inScope_(u, t.Branch) && (
+    list = list.filter(t => (inScope_(u, t.Branch) || mine(t)) && (   // r32: ช่างต่างสาขาในทีม
       (t.Status === ST.APPROVED && (!teamOf_(t).length || mine(t))) ||
       ((t.Status === ST.IN_PROGRESS || t.Status === ST.COMPLETED) && mine(t))));
   }
@@ -1135,7 +1140,7 @@ function ticketView_(u, t) {
   const owner = norm_(t.Username) === norm_(u.Username);
   out.requesterPhotoUrl = profilePhotoOf_(t.Username); // r13: ทุกบทบาทเห็นรูปโปรไฟล์ผู้แจ้ง
   out.photos = photosOf_(t);                            // r16: รูปทั้งหมดของงาน (ใช้แสดงในรายการ)
-  out.team = teamOf_(t).map(m => ({ username: String(m.u), name: String(m.n || m.u) }));   // r29: ทีมช่าง
+  out.team = teamOf_(t).map(m => ({ username: String(m.u), name: String(m.n || m.u), by: m.by, byName: m.byName, branch: m.br, cross: !!m.x, at: m.at }));   // r29: ทีมช่าง • r32: มอบหมายโดย / สาขาช่าง / ต่างสาขา
   delete out.ExtraPhotos;
   delete out.Team;                                      // r29: ส่งเฉพาะ out.team (ป้องกัน JSON ดิบ)
 
@@ -1268,7 +1273,12 @@ function teamOf_(t) {
   if (!arr.length && String(t.Technician || '')) {
     arr = [{ u: String(t.Technician), n: String(t.TechnicianName || t.Technician), at: isoOf_(t.TechAssignedAt) }];
   }
-  return arr;
+  // r32: ช่างทุกคนมี "มอบหมายโดย" (หัวหน้าช่าง) — ข้อมูลเก่าที่ยังไม่มีค่านี้ ใช้หัวหน้าช่างผู้ดูแลงานแทน
+  return arr.map(m => ({
+    u: String(m.u), n: String(m.n || m.u), at: m.at || '',
+    by: String(m.by || t.Supervisor || ''), byName: String(m.byName || t.SupervisorName || m.by || t.Supervisor || ''),
+    br: String(m.br || ''), x: !!m.x
+  }));
 }
 
 /** r29: งานนี้มอบหมายให้ username นี้อยู่ในทีมหรือไม่ */
@@ -1291,25 +1301,37 @@ function assignTechnician_(u, req) {
 
   const prev = teamOf_(t);
   const now = new Date();
+  const headName = u.FullName || u.Username;   // r32: หัวหน้าช่างที่มอบหมายในครั้งนี้ (ชื่อนี้จะติดกับช่างที่เพิ่มใหม่)
+  // r32: ช่างต่างสาขาเลือกได้ — ช่างที่สาขาไม่ตรงกับงานจะถูกติดธง cross เพื่อให้หัวหน้าช่างรู้ว่าต้องเดินทางไปหน้างานต่างสาขา
   const team = list.map(x => {
     const tech = findUser_(x);
     if (!tech || tech.Role !== 'technician' || !isActive_(tech.Active)) throw new Error('ไม่พบช่าง ' + x);
-    if (!inScope_(tech, t.Branch)) throw new Error('ช่าง ' + tech.Username + ' ไม่ได้อยู่ในสาขาของรายการนี้');
     const old = prev.find(m => norm_(m.u) === norm_(tech.Username));
-    return { u: String(tech.Username), n: String(tech.FullName || tech.Username), at: old ? old.at : now.toISOString() };
+    const br = String(tech.Branch || '');
+    const cross = !!br && br.toUpperCase() !== 'ALL' && br !== String(t.Branch);
+    return {
+      u: String(tech.Username), n: String(tech.FullName || tech.Username), at: old ? old.at : now.toISOString(),
+      // ช่างเดิมในทีมคงผู้มอบหมายเดิมไว้ (ไม่เขียนทับ) — ช่างที่เพิ่มใหม่จะติดชื่อหัวหน้าช่างที่มอบหมายในครั้งนี้
+      by: old && old.by ? old.by : String(u.Username), byName: old && old.byName ? old.byName : headName,
+      br: br, x: cross
+    };
   });
 
   const names = team.map(m => m.n).join(', ');
   const added = team.filter(m => !prev.some(p => norm_(p.u) === norm_(m.u))).map(m => m.n);
   const removed = prev.filter(p => !team.some(m => norm_(m.u) === norm_(p.u))).map(m => m.n);
-  const note = names + (added.length ? ' | เพิ่ม: ' + added.join(', ') : '') + (removed.length ? ' | เอาออก: ' + removed.join(', ') : '');
+  const crossAdded = team.filter(m => m.x && added.indexOf(m.n) > -1).map(m => m.n + ' (' + m.br + ')');
+  const note = names
+    + (added.length ? ' | เพิ่ม: ' + added.join(', ') + ' · มอบหมายโดย ' + headName : '')
+    + (crossAdded.length ? ' | ต่างสาขา: ' + crossAdded.join(', ') : '')
+    + (removed.length ? ' | เอาออก: ' + removed.join(', ') : '');
 
   const extra = { Technician: team[0].u, TechnicianName: names, Team: JSON.stringify(team), UpdatedAt: now };
   if (!String(t.TechAssignedAt || '')) extra.TechAssignedAt = now;   // ใช้วัด KPI ความเร็วในการเลือกช่าง (ครั้งแรก)
   const action = 'มอบหมายช่าง (หัวหน้าช่าง)';
 
   // r30: แจ้งเตือนช่างทุกคนในทีม
-  const notifyTeam = () => notifySafe_(() => sendPushToUsers_(team.map(m => m.u), 'คุณได้รับมอบหมายงานซ่อม ' + t.TicketID, t.Title + ' • ' + t.Branch, t.TicketID));
+  const notifyTeam = () => notifySafe_(() => sendPushToUsers_(team.map(m => m.u), 'คุณได้รับมอบหมายงานซ่อม ' + t.TicketID, t.Title + ' • ' + t.Branch + ' • มอบหมายโดย ' + headName, t.TicketID));
   if (t.Status === ST.DISPATCHED) {
     const res = transition_(u, t, ST.APPROVED, action, note, extra);      // ช่างยังไม่รับ → Approved รอช่างกดรับงาน
     notifyTeam();
@@ -1324,7 +1346,7 @@ function assignTechnician_(u, req) {
 /** r29: ช่างคนใดในทีมก็กดรับงานได้ (ถ้างานไม่มีทีม ผู้รับงานเป็นผู้รับผิดชอบ) */
 function acceptTicket_(u, req) {
   const t = getTicketRow_(req.ticketId);
-  if (!inScope_(u, t.Branch)) throw new Error('รายการนี้ไม่อยู่ในสาขาที่คุณดูแล');
+  if (!inScope_(u, t.Branch) && !isMember_(t, u.Username)) throw new Error('รายการนี้ไม่อยู่ในสาขาที่คุณดูแล');   // r32: ช่างต่างสาขาในทีมรับงานได้
   requireStatus_(t, [ST.APPROVED]);
   const team = teamOf_(t);
   if (team.length && !isMember_(t, u.Username) && u.Role !== 'admin') {
@@ -1536,10 +1558,53 @@ function deleteTickets_(u, req) {
 }
 
 function listTechnicians_(u) {
+  // r32: หัวหน้าช่างเลือกช่างได้ทุกสาขา (ช่างต่างสาขาจะถูกติดป้าย "ต่างสาขา" ในหน้าจอ)
   return readAll_(SHEETS.USERS)
     .filter(x => x.Role === 'technician' && isActive_(x.Active))
-    .filter(x => isAllBranch_(u) || String(x.Branch) === String(u.Branch) || String(x.Branch).toUpperCase() === 'ALL')
     .map(x => ({ username: String(x.Username), fullName: String(x.FullName || x.Username), branch: String(x.Branch) }));
+}
+
+/**
+ * r32: สรุปการมอบหมายงาน — หัวหน้าช่างแต่ละคน → งานที่กำลังดำเนินการ → ช่างที่ไปหน้างาน (พร้อมสาขาและธงต่างสาขา)
+ *   • supervisor เห็นเฉพาะงานของตน • manager เห็นตามสาขาที่ดูแล • admin เห็นทั้งหมด
+ *   • เฉพาะงานที่ยังไม่ปิด (Dispatched / Approved / In Progress)
+ */
+function assignmentBoard_(u, req) {
+  const ACTIVE = [ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS];
+  const users = readAll_(SHEETS.USERS);
+  const userOf = (username) => users.find(v => norm_(v.Username) === norm_(username)) || {};
+  const heads = {};
+  readAll_(SHEETS.TICKETS)
+    .filter(t => ACTIVE.indexOf(String(t.Status)) > -1 && String(t.Supervisor || ''))
+    .filter(t => u.Role === 'admin' || (u.Role === 'supervisor' ? supOwns_(u, t) : inScope_(u, t.Branch)))
+    .forEach(t => {
+      const key = norm_(t.Supervisor);
+      if (!heads[key]) {
+        const hu = userOf(t.Supervisor);
+        heads[key] = { username: String(t.Supervisor), fullName: String(hu.FullName || t.SupervisorName || t.Supervisor), branch: String(hu.Branch || ''), tickets: [], crossMembers: 0 };
+      }
+      const h = heads[key];
+      const members = teamOf_(t).map(m => ({
+        username: String(m.u), name: String(m.n || m.u), branch: String(m.br || ''),
+        cross: !!m.x, by: String(m.by || ''), byName: String(m.byName || '')
+      }));
+      const crossBranches = [...new Set(members.filter(m => m.cross).map(m => m.branch))];
+      h.crossMembers += members.filter(m => m.cross).length;
+      h.tickets.push({
+        ticketId: String(t.TicketID), title: String(t.Title || ''), branch: String(t.Branch || ''), location: String(t.Location || ''),
+        status: String(t.Status), dispatchedAt: isoOf_(t.DispatchedAt), crossBranches: crossBranches, members: members
+      });
+    });
+  const list = Object.keys(heads).map(k => {
+    const h = heads[k];
+    h.tickets.sort((a, b) => String(b.dispatchedAt).localeCompare(String(a.dispatchedAt)));
+    return h;
+  }).sort((a, b) => a.fullName.localeCompare(b.fullName, 'th'));
+  return {
+    heads: list,
+    totalTickets: list.reduce((s, h) => s + h.tickets.length, 0),
+    crossMembers: list.reduce((s, h) => s + h.crossMembers, 0)
+  };
 }
 
 /** r27: รายชื่อหัวหน้าช่าง (ผู้ดูแลช่าง) ที่ผู้จัดการเลือกส่งต่องานได้ */

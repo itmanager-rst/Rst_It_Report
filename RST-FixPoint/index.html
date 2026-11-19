@@ -469,6 +469,18 @@ window.Splash = (function () {
         </div>
 
         <!-- Technician jobs -->
+        <!-- r32: การมอบหมายช่าง & ลงพื้นที่ — หัวหน้าช่างเห็นช่างที่ตนมอบหมาย • ผู้จัดการเห็นทุกหัวหน้า -->
+        <div id="page-assign" class="page hidden space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold mr-auto">การมอบหมายช่าง & ลงพื้นที่</h2>
+                <div id="assignChips" class="flex flex-wrap gap-1"></div>
+                <button class="btn bg-white border hover:bg-slate-50" onclick="loadAssign()">รีเฟรช</button>
+            </div>
+            <p class="text-xs text-slate-500">งานที่กำลังดำเนินการ แยกตามหัวหน้าช่างที่มอบหมาย — ช่างที่ติดป้าย "ต่างสาขา" อยู่คนละสาขากับหน้างาน ให้หัวหน้าช่างเดินทางไปหน้างานพร้อมช่างกลุ่มนี้</p>
+            <div id="assignSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+            <div id="assignList" class="grid gap-3"></div>
+        </div>
+
         <div id="page-jobs" class="page hidden space-y-4">
             <div class="flex flex-wrap items-center gap-2">
                 <h2 class="text-lg font-semibold mr-auto">งานช่างซ่อมบำรุง</h2>
@@ -701,6 +713,7 @@ const NAV = [
     { id: 'all',       label: 'งานซ่อมทั้งหมด',     roles: ['manager', 'admin'] },
     { id: 'kpi',       label: 'KPI ซ่อมบำรุง',       roles: ['technician', 'manager', 'admin'] },
     { id: 'supkpi',    label: 'KPI หัวหน้า & ช่าง',  roles: ['supervisor', 'manager', 'admin'] },   // r27
+    { id: 'assign', label: 'การมอบหมาย & ลงพื้นที่', roles: ['supervisor', 'manager', 'admin'] },   // r32
     { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'supervisor', 'manager', 'admin'] },
     { id: 'expenses',  label: 'ค่าใช้จ่าย',          roles: ['admin'] },
     { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
@@ -1055,9 +1068,10 @@ const NAV_ICON = {
     kpi: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     dispatch: '<circle cx="9" cy="7" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
     supkpi: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+    assign: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',   // r32
     more:'<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
 };
-const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', dispatch: 'มอบหมาย', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', kpi: 'KPI', supkpi: 'KPI หัวหน้า', more: 'เพิ่มเติม' };
+const MOBILE_SHORT = { dashboard: 'ภาพรวม', new: 'แจ้งซ่อม', mine: 'งานของฉัน', approvals: 'อนุมัติ', dispatch: 'มอบหมาย', jobs: 'งานช่าง', all: 'ทั้งหมด', admin: 'ผู้ใช้', profile: 'โปรไฟล์', expenses: 'ค่าใช้จ่าย', kpi: 'KPI', supkpi: 'KPI หัวหน้า', assign: 'ลงพื้นที่', more: 'เพิ่มเติม' };
 const MOBILE_PRIORITY = ['dashboard', 'approvals', 'dispatch', 'jobs', 'new', 'mine', 'all', 'kpi', 'supkpi', 'profile', 'admin'];
 let moreItems = [];
 
@@ -1101,7 +1115,7 @@ function switchPage(name) {
     if (name === 'new') ensureReqSignPad();
     if (!loaded[name]) {
         loaded[name] = true;
-        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses, kpi: () => loadKpiPage(false), supkpi: loadSupKpi }[name] || (() => {}))();
+        ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, admin: loadAdmin, profile: loadProfile, expenses: loadExpenses, kpi: () => loadKpiPage(false), supkpi: loadSupKpi, assign: loadAssign }[name] || (() => {}))();
     }
 }
 
@@ -1128,8 +1142,8 @@ function canSeeBadge(k) { return hasRole(...BADGE_ROLES[k]); }
 function reloadVisiblePage() {
     const el = document.querySelector('.page:not(.hidden)');
     const visible = el ? el.id.replace('page-', '') : '';
-    const loaders = { dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, expenses: loadExpenses, supkpi: loadSupKpi };
-    ['mine', 'approvals', 'dispatch', 'jobs', 'all', 'dashboard', 'expenses', 'supkpi'].forEach(k => { if (k !== visible) loaded[k] = false; });
+    const loaders = { dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, expenses: loadExpenses, supkpi: loadSupKpi, assign: loadAssign };
+    ['mine', 'approvals', 'dispatch', 'jobs', 'all', 'dashboard', 'expenses', 'supkpi', 'assign'].forEach(k => { if (k !== visible) loaded[k] = false; });
     if (loaders[visible]) { loaded[visible] = true; loaders[visible](); }
 }
 
@@ -1420,6 +1434,74 @@ function renderJobs() {
         jobFilter, v => { jobFilter = v; renderJobs(); });
     const list = jobsData.filter(t => t.Status === jobFilter);
     $('jobList').innerHTML = list.length ? list.map(ticketCard).join('') : emptyHtml('ไม่มีรายการ');
+}
+
+// ---------------- r32: ทีมช่างที่มอบหมาย (แสดงในรายละเอียดงาน) ----------------
+function teamHtml(t) {
+    const team = t.team || [];
+    if (!team.length) return '';
+    return `<div class="mt-3 bg-sky-50 border border-sky-100 rounded-lg p-3">
+        <div class="text-xs text-slate-500 mb-1">ทีมช่างที่มอบหมาย · ผู้มอบหมายของแต่ละคน</div>
+        <ul class="space-y-1">${team.map(m => `<li class="text-sm flex flex-wrap items-center gap-x-2">
+            <span>👷 ${esc(m.name)}</span>
+            <span class="text-xs text-slate-500">(${esc(m.branch || '-')})</span>
+            ${m.cross ? '<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">ต่างสาขา</span>' : ''}
+            <span class="text-xs text-slate-500">· มอบหมายโดย ${esc(m.byName || m.by || '-')}</span></li>`).join('')}</ul>
+    </div>`;
+}
+
+// ---------------- r32: การมอบหมายช่าง & ลงพื้นที่ ----------------
+let assignScope = 'all';   // all | cross (เฉพาะงานที่มีช่างต่างสาขา)
+let assignData = null;
+
+async function loadAssign() {
+    $('assignList').innerHTML = loadingHtml();
+    try {
+        assignData = await api('assignmentBoard');
+        renderAssign();
+    } catch (e) { $('assignList').innerHTML = emptyHtml(e.message); }
+}
+
+function renderAssign() {
+    const d = assignData || { heads: [], totalTickets: 0, crossMembers: 0 };
+    const crossTickets = d.heads.reduce((s, h) => s + h.tickets.filter(t => t.crossBranches.length).length, 0);
+    renderChips('assignChips', [['all', 'ทั้งหมด', d.totalTickets], ['cross', 'เฉพาะงานต่างสาขา', crossTickets]], assignScope,
+        v => { assignScope = v; renderAssign(); });
+    $('assignSummary').innerHTML = [
+        ['หัวหน้าช่างที่มอบหมาย', d.heads.length, 'text-sky-800'],
+        ['งานที่กำลังดำเนินการ', d.totalTickets, 'text-slate-800'],
+        ['ช่างต่างสาขา (คน·งาน)', d.crossMembers, 'text-amber-700'],
+        ['งานที่ต้องไปต่างสาขา', crossTickets, 'text-amber-700']
+    ].map(([k, v, c]) => `<div class="bg-white rounded-xl shadow-sm p-3"><div class="text-xs text-slate-500">${k}</div><div class="text-2xl font-semibold ${c}">${v}</div></div>`).join('');
+    const heads = d.heads
+        .map(h => ({ ...h, tickets: assignScope === 'cross' ? h.tickets.filter(t => t.crossBranches.length) : h.tickets }))
+        .filter(h => h.tickets.length);
+    $('assignList').innerHTML = heads.length
+        ? heads.map(assignHeadCard).join('')
+        : emptyHtml(assignScope === 'cross' ? 'ไม่มีงานที่ต้องไปต่างสาขา' : 'ยังไม่มีงานที่กำลังมอบหมาย');
+}
+
+function assignHeadCard(h) {
+    return `<section class="bg-white rounded-xl shadow-sm p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="font-semibold">🧑‍💼 หัวหน้าช่าง ${esc(h.fullName)}</span>
+            <span class="text-xs text-slate-500">${esc(h.branch || '-')} · ${h.tickets.length} งาน${h.crossMembers ? ' · ช่างต่างสาขา ' + h.crossMembers + ' คน' : ''}</span>
+        </div>
+        <div class="grid gap-2">${h.tickets.map(t => assignTicketRow(t, h.fullName)).join('')}</div>
+    </section>`;
+}
+
+function assignTicketRow(t, headName) {
+    const cross = t.crossBranches.length;
+    return `<button class="text-left border rounded-lg p-3 hover:bg-slate-50 w-full" onclick="openTicket('${esc(t.ticketId)}')">
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-xs text-slate-500">${esc(t.ticketId)}</span>${statusBadge(t.status)}
+            ${cross ? `<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">🚗 ต่างสาขา: ${esc(t.crossBranches.join(', '))}</span>` : ''}
+        </div>
+        <div class="font-medium text-sm mt-1">${esc(t.title)}</div>
+        <div class="text-xs text-slate-500">📍 ${esc(t.branch)}${t.location ? ' · ' + esc(t.location) : ''}${t.dispatchedAt ? ' · ส่งต่อ ' + fmtDate(t.dispatchedAt) : ''}</div>
+        <div class="flex flex-wrap gap-1 mt-2">${t.members.map(m => `<span class="text-xs px-2 py-1 rounded-lg border ${m.cross ? 'border-amber-300 bg-amber-50' : 'bg-slate-50'}">👷 ${esc(m.name)} <span class="text-slate-500">(${esc(m.branch || '-')})</span>${m.cross ? ' <b class="text-amber-700">ต่างสาขา</b>' : ''}${m.byName && m.byName !== headName ? ` <span class="text-slate-500">· โดย ${esc(m.byName)}</span>` : ''}</span>`).join('') || '<span class="text-xs text-slate-400">ยังไม่มีช่าง</span>'}</div>
+    </button>`;
 }
 
 // ---------------- r27: หัวหน้าช่าง — รอมอบหมายช่าง ----------------
@@ -1977,9 +2059,11 @@ async function openTicket(id) {
         // r27: หัวหน้าช่างที่ได้รับงาน → เลือก/เปลี่ยนช่าง
         const supOwner = (t.Supervisor || '').toLowerCase() === currentUser.username.toLowerCase();
         if (hasRole('supervisor', 'admin') && (supOwner || hasRole('admin')) && ['Dispatched', 'Approved', 'In Progress'].includes(t.Status)) {
-            const techs = (await getTechnicians()).filter(x => x.branch === t.Branch || x.branch.toUpperCase() === 'ALL');
+            const allTechs = await getTechnicians();   // r32: ทุกสาขา — ช่างสาขาเดียวกันขึ้นก่อน ช่างต่างสาขาติดป้าย
             const teamNames = (t.team || []).map(m => m.username.toLowerCase());
-            techOpts = techs.map(x => `<label class="flex items-center gap-2 text-sm py-1 cursor-pointer"><input type="checkbox" class="actTech w-4 h-4" value="${esc(x.username)}" ${teamNames.includes(x.username.toLowerCase()) ? 'checked' : ''}> ${esc(x.fullName)} <span class="text-xs text-slate-400">(${esc(x.branch)})</span></label>`).join('') || '<p class="text-sm text-rose-600">ไม่มีช่างในสาขานี้</p>';
+            const isLocal = x => x.branch === t.Branch || String(x.branch).toUpperCase() === 'ALL';
+            const techRow = x => `<label class="flex items-center gap-2 text-sm py-1 cursor-pointer"><input type="checkbox" class="actTech w-4 h-4" value="${esc(x.username)}" ${teamNames.includes(x.username.toLowerCase()) ? 'checked' : ''}> ${esc(x.fullName)} <span class="text-xs text-slate-400">(${esc(x.branch)})</span>${isLocal(x) ? '' : ' <span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">ต่างสาขา</span>'}</label>`;
+            techOpts = allTechs.length ? [...allTechs.filter(isLocal), ...allTechs.filter(x => !isLocal(x))].map(techRow).join('') : '<p class="text-sm text-rose-600">ไม่มีช่างในระบบ</p>';
         }
         const row = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div class="text-sm">${v}</div></div>`;
         openModal(`
@@ -2011,6 +2095,7 @@ async function openTicket(id) {
                 ${t.CompletedAt ? row('ปิดงานเมื่อ', fmtDate(t.CompletedAt)) : ''}
                 ${t.Cost !== undefined ? row('ค่าใช้จ่ายในการซ่อม', t.Cost === '' ? '-' : '฿' + Number(t.Cost).toLocaleString('th-TH', { minimumFractionDigits: 2 })) : ''}
             </div>
+            ${teamHtml(t)}
             ${t.Description ? `<div class="mt-3"><div class="text-xs text-slate-500">รายละเอียด</div><p class="text-sm whitespace-pre-line">${esc(t.Description)}</p></div>` : ''}
             ${t.RequesterSignURL ? `<div class="mt-3"><div class="text-xs text-slate-500 mb-1">ลายเซ็นผู้แจ้งซ่อม${t.CreatedAt ? ' · ' + fmtDate(t.CreatedAt) : ''}</div>${gimg(t.RequesterSignURL, 'h-24 w-60 object-contain bg-white rounded-lg border')}</div>` : ''}
             ${t.ApproverSignURL ? `<div class="mt-3"><div class="text-xs text-slate-500 mb-1">ลายเซ็นผู้อนุมัติ${t.ApprovedAt ? ' · ' + fmtDate(t.ApprovedAt) : ''}</div>${gimg(t.ApproverSignURL, 'h-24 w-60 object-contain bg-white rounded-lg border')}</div>` : ''}
@@ -2066,7 +2151,7 @@ function actionPanel(t, techOpts, supOpts) {
         const first = t.Status === 'Dispatched';
         blocks.push(`
             <h4 class="font-semibold text-sm">${first ? 'มอบหมายช่าง (หัวหน้าช่าง) — เลือกได้หลายคน' : 'แก้ไขทีมช่าง (หัวหน้าช่าง)'}</h4>
-            <p class="text-xs text-slate-500 -mt-2">${first ? 'ติ๊กช่างที่จะปฏิบัติงาน · ช่างคนแรกในรายการเป็นผู้รับผิดชอบหลัก · ช่างทุกคนในทีมกดรับงานและอัปเดตได้' : 'ติ๊กเพิ่มหรือเอาออกจากทีม · ช่างที่ถูกเอาออกจะไม่เห็นงานนี้อีก'}</p>
+            <p class="text-xs text-slate-500 -mt-2">${first ? 'ติ๊กช่างที่จะปฏิบัติงาน (ช่างต่างสาขาเลือกได้ ระบบจะติดป้าย) · ช่างคนแรกเป็นผู้รับผิดชอบหลัก · ระบบบันทึกว่าคุณเป็นผู้มอบหมายให้ช่างแต่ละคน' : 'ติ๊กเพิ่มหรือเอาออกจากทีม · ช่างที่ถูกเอาออกจะไม่เห็นงานนี้อีก'}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-48 overflow-y-auto border rounded-lg p-2">${techOpts}</div>
             <button class="btn w-full bg-sky-800 hover:bg-sky-900 text-white" onclick="doAction(this,'assignTechnician','${esc(t.TicketID)}')">${first ? 'มอบหมายช่าง' : 'บันทึกทีมช่าง'}</button>`);
     }
@@ -2133,10 +2218,10 @@ async function doAction(btn, action, ticketId) {
 
 // โหลดรายการในหน้าที่เปิดอยู่ใหม่ และให้หน้าอื่นโหลดใหม่เมื่อเปิด
 function refreshAfterChange() {
-    ['mine', 'approvals', 'dispatch', 'jobs', 'all', 'dashboard', 'expenses', 'supkpi'].forEach(k => loaded[k] = false);
+    ['mine', 'approvals', 'dispatch', 'jobs', 'all', 'dashboard', 'expenses', 'supkpi', 'assign'].forEach(k => loaded[k] = false);
     const visible = document.querySelector('.page:not(.hidden)').id.replace('page-', '');
     loaded[visible] = true;
-    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, expenses: loadExpenses, supkpi: loadSupKpi }[visible] || (() => {}))();
+    ({ dashboard: loadDashboard, mine: loadMine, approvals: loadApprovals, dispatch: loadDispatch, jobs: loadJobs, all: loadAll, expenses: loadExpenses, supkpi: loadSupKpi, assign: loadAssign }[visible] || (() => {}))();
     refreshBadges();
 }
 
