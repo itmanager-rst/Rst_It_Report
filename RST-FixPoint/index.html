@@ -39,6 +39,8 @@
         .lbl { display: block; font-size: .875rem; font-weight: 500; color: #334155; margin-bottom: .25rem; }
         .btn { padding: .55rem 1rem; border-radius: .5rem; font-weight: 500; font-size: .875rem; transition: .15s; }
         .btn:disabled { opacity: .5; cursor: not-allowed; }
+        /* r33: ทุกปุ่มรับการแตะทันที (ไม่หน่วง/ไม่ซูมสองครั้ง) — กันปุ่มในหน้ารายละเอียดงาน 'กดไม่ติด' บนมือถือ */
+        button, [role=button], a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         .spinner { width: 1.1rem; height: 1.1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .dot { width: .6rem; height: .6rem; border-radius: 9999px; display: inline-block; flex-shrink: 0; }
@@ -646,8 +648,8 @@ window.Splash = (function () {
 
 <!-- Modal -->
 <div id="modal" class="hidden fixed inset-0 z-40 bg-slate-900/50 flex items-end md:items-center justify-center md:p-4">
-    <div id="modalPanel" class="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] md:max-h-[90vh] overflow-y-auto relative" style="padding-bottom: env(safe-area-inset-bottom)">
-        <div class="sticky top-0 z-10 flex items-center justify-end bg-white/95 backdrop-blur px-3 pt-2 h-10">
+    <div id="modalPanel" class="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] md:max-h-[90vh] overflow-y-auto overscroll-contain relative" style="-webkit-overflow-scrolling: touch; padding-bottom: env(safe-area-inset-bottom)">
+        <div class="sticky top-0 z-10 flex items-center justify-end bg-white px-3 pt-2 h-10">
             <div class="md:hidden absolute left-1/2 -translate-x-1/2 top-2 w-10 h-1.5 rounded-full bg-slate-300"></div>
             <button onclick="closeModal()" class="p-1 text-slate-400 hover:text-slate-700" aria-label="ปิด">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -2093,6 +2095,8 @@ function actionPanel(t, techOpts, supOpts) {
 }
 
 async function doAction(btn, action, ticketId) {
+    if (btn && btn.disabled) return;   // r33: กันกดซ้ำ/แตะรัวระหว่างรอ Server
+    console.info('[FixPoint] action', action, ticketId);
     const payload = { ticketId, note: ($('actNote') || {}).value || '' };
     if ((action === 'updateProgress' || action === 'completeTicket') && $('actCost') && $('actCost').value !== '') payload.cost = $('actCost').value;
     if (action === 'approveTicket') {
