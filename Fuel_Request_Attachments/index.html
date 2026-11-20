@@ -1,0 +1,2568 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RST-FUEL | ระบบบันทึกขอเติมน้ำมันสาขา & สถิติการเดินรถ</title>
+  <meta name="author" content="tana.pittayatanadol" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        fontFamily: { sans: ['"Noto Sans Thai"', 'system-ui', 'sans-serif'] },
+        colors: { brand: { 50:'#fff1f1',100:'#ffe1e1',500:'#e60012',600:'#c8000f',700:'#9e000c' }, ink: { 800:'#262626', 900:'#171717' } }
+      } }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+/* RST-FUEL — Dev: tana.pittayatanadol
+   Theme: แดง–ดำ–ขาว (โทนตัวแทนจำหน่ายรถแทรกเตอร์) */
+:root {
+  --brand: #e60012;
+  --brand-dark: #c8000f;
+  --brand-deep: #9e000c;
+  --brand-soft: #fff1f1;
+  --ink: #171717;
+  --ink-2: #262626;
+  --muted: #64748b;
+  --line: #e7e5e4;
+}
+
+/* ให้ .hidden ชนะคลาส component ที่กำหนด display เอง */
+.tab-btn.hidden, .field.hidden, .card.hidden, .kpi.hidden, .toolbar.hidden, .btn-primary.hidden, .btn-ghost.hidden, .status.hidden, .user-drop.hidden { display: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+.app-bg {
+  background:
+    radial-gradient(1200px 400px at 100% -10%, rgba(230,0,18,.06), transparent 60%),
+    #f6f5f4;
+}
+
+/* Header */
+.app-header { background: linear-gradient(180deg, #1c1c1c 0%, #111 100%); box-shadow: 0 2px 12px rgba(0,0,0,.25); border-bottom: 4px solid var(--brand); }
+.logo-chip { width: 2.75rem; height: 2.75rem; border-radius: .9rem; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #ff2a36 0%, var(--brand) 45%, var(--brand-deep) 100%); box-shadow: 0 4px 14px rgba(230,0,18,.45); }
+
+/* Tabs */
+.tab-btn {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .7rem 1rem; font-size: .9rem; font-weight: 500; color: #a3a3a3;
+  border-bottom: 3px solid transparent; white-space: nowrap; transition: color .15s, border-color .15s, background .15s;
+  border-radius: .5rem .5rem 0 0;
+}
+.tab-btn:hover { color: #fff; background: rgba(255,255,255,.05); }
+.tab-btn.active { color: #fff; border-color: var(--brand); background: rgba(230,0,18,.14); }
+
+/* Hero */
+.hero {
+  position: relative; overflow: hidden; color: #fff; border-radius: 1.1rem; padding: 1.4rem 1.5rem;
+  background: linear-gradient(120deg, var(--brand-deep) 0%, var(--brand) 55%, #ff3b45 100%);
+  box-shadow: 0 10px 30px -10px rgba(230,0,18,.55);
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.hero::after { content: ""; position: absolute; inset: auto -40px -60px auto; width: 220px; height: 220px; border-radius: 50%; background: rgba(255,255,255,.08); }
+.hero-art { width: 120px; height: 80px; color: rgba(255,255,255,.85); flex: none; position: relative; z-index: 1; }
+@media (max-width: 480px) { .hero-art { display: none; } }
+
+/* Cards & fields */
+.card { background: #fff; border: 1px solid var(--line); border-radius: 1rem; padding: 1.25rem; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+.card-title { font-weight: 700; font-size: 1rem; margin-bottom: 1rem; color: var(--ink); display: flex; align-items: center; gap: .55rem; }
+.card-title::before { content: ""; width: 4px; height: 1.1rem; border-radius: 4px; background: var(--brand); flex: none; }
+.field { display: flex; flex-direction: column; gap: .375rem; }
+.label { font-size: .85rem; font-weight: 500; color: #3f3f46; }
+.label.req::after { content: " *"; color: var(--brand); }
+.input {
+  width: 100%; border: 1px solid #d4d4d8; border-radius: .625rem; padding: .625rem .75rem;
+  font-size: 16px; background: #fff; color: var(--ink); transition: border-color .15s, box-shadow .15s;
+}
+.input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(230,0,18,.15); }
+.input.invalid { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(230,0,18,.12); }
+.err-msg { font-size: .75rem; color: var(--brand-dark); }
+.chk { width: 1.05rem; height: 1.05rem; accent-color: var(--brand); cursor: pointer; }
+
+/* Buttons */
+.btn-primary, .btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  border-radius: .625rem; padding: .65rem 1.25rem; font-weight: 600; font-size: .9rem; transition: background .15s, opacity .15s, box-shadow .15s;
+}
+.btn-primary { background: linear-gradient(180deg, #ff1a2a, var(--brand) 60%, var(--brand-dark)); color: #fff; min-width: 12rem; box-shadow: 0 4px 12px -2px rgba(230,0,18,.45); }
+.btn-primary:hover { background: var(--brand-dark); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+.btn-ghost { border: 1px solid #d4d4d8; color: #27272a; background: #fff; }
+.btn-ghost:hover { background: #fafafa; border-color: #a1a1aa; }
+.btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
+.link-btn { color: var(--brand-dark); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn:hover { color: var(--brand-deep); }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; padding: .3rem .55rem; border-radius: .5rem;
+  font-size: .75rem; font-weight: 500; border: 1px solid var(--line); color: #27272a; background: #fff; white-space: nowrap;
+}
+.icon-btn:hover { background: var(--brand-soft); border-color: #fecaca; color: var(--brand-dark); }
+.spinner { width: 1rem; height: 1rem; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Destinations */
+.dest-row { display: flex; gap: .5rem; align-items: center; }
+.dest-row .badge { flex: none; width: 2rem; height: 2rem; border-radius: 999px; background: var(--ink-2); color: #fff; display: grid; place-items: center; font-size: .8rem; font-weight: 600; }
+.dest-row .remove { flex: none; width: 2.25rem; height: 2.25rem; border-radius: .5rem; color: #a1a1aa; font-size: 1.25rem; }
+.dest-row .remove:hover { background: var(--brand-soft); color: var(--brand-dark); }
+#addDestBtn { border-style: dashed; border-color: var(--brand); color: var(--brand-dark); }
+#addDestBtn:hover:not(:disabled) { background: var(--brand-soft); }
+
+/* Upload */
+.upload { display: flex; flex-direction: column; gap: .375rem; }
+.dropzone {
+  position: relative; display: grid; place-items: center; min-height: 9rem; border: 2px dashed #d4d4d8; border-radius: .875rem;
+  background: #fafafa; cursor: pointer; overflow: hidden; transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone.drag { border-color: var(--brand); background: var(--brand-soft); }
+.dropzone .preview { width: 100%; height: 11rem; object-fit: contain; background: #00000008; }
+.dz-text { font-size: .85rem; color: var(--muted); padding: 1rem; text-align: center; }
+.clear-file { align-self: flex-start; font-size: .75rem; color: var(--brand-dark); }
+
+/* KPI */
+.kpi { position: relative; background: #fff; border: 1px solid var(--line); border-radius: 1rem; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .2rem; min-width: 0; overflow: hidden; }
+.kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--ink-2); }
+.kpi-red { background: linear-gradient(135deg, var(--brand-deep), var(--brand)); border-color: transparent; color: #fff; box-shadow: 0 10px 24px -12px rgba(230,0,18,.7); }
+.kpi-red::before { display: none; }
+.kpi-red .kpi-label, .kpi-red .kpi-sub { color: rgba(255,255,255,.8); }
+.kpi-red .kpi-value { color: #fff; }
+.kpi-icon { position: absolute; right: .8rem; top: .7rem; font-size: 1.35rem; opacity: .85; }
+.kpi-label { font-size: .78rem; color: var(--muted); padding-right: 1.8rem; }
+.kpi-value { font-size: 1.75rem; font-weight: 700; color: var(--ink); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kpi-value.kpi-text { font-size: 1.1rem; padding-top: .35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-sub { font-size: .75rem; color: #a1a1aa; }
+
+/* Segmented control */
+.seg { display: inline-flex; background: #f4f4f5; border-radius: .6rem; padding: .2rem; }
+.seg button { font-size: .75rem; padding: .3rem .6rem; border-radius: .45rem; color: var(--muted); white-space: nowrap; }
+.seg button.active { background: var(--ink-2); color: #fff; }
+
+.chart-box { position: relative; height: 280px; }
+
+/* Toolbar */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem 1rem; border-radius: .9rem;
+  background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--brand); }
+
+/* Table */
+.thead { background: var(--ink-2); color: #e5e5e5; }
+.th { padding: .75rem 1rem; font-weight: 500; font-size: .78rem; white-space: nowrap; }
+.td { padding: .7rem 1rem; vertical-align: top; }
+tbody tr:hover { background: #fafafa; }
+tbody tr.selected, .card.selected { background: var(--brand-soft); }
+.card.selected { border-color: #fca5a5; }
+.pill { display: inline-block; font-size: .7rem; padding: .1rem .5rem; border-radius: 999px; background: #fff7e6; color: #8a5a00; border: 1px solid #fde3a7; }
+.ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; color: var(--brand-dark); font-weight: 600; }
+
+/* Status & approval */
+.status { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; font-weight: 600; padding: .12rem .55rem; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.st-wait { background: #fff7e6; color: #8a5a00; border-color: #fde3a7; }
+.st-ok { background: #e8f7ee; color: #116b34; border-color: #b6e3c6; }
+.st-no { background: #fdecec; color: #a3141c; border-color: #f5c2c4; }
+.tab-badge { min-width: 1.25rem; height: 1.25rem; padding: 0 .35rem; border-radius: 999px; background: var(--brand); color: #fff; font-size: .7rem; font-weight: 700; display: inline-grid; place-items: center; }
+.tab-badge.hidden { display: none; }
+.appr-card { border-left: 4px solid #f59e0b; }
+.appr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1rem; margin-top: .9rem; font-size: .875rem; }
+.appr-grid dt { font-size: .72rem; color: var(--muted); }
+.appr-grid dd { font-weight: 500; }
+.btn-reject { color: #a3141c; border-color: #f5c2c4; }
+.btn-reject:hover { background: #fdecec; }
+.btn-danger { display: inline-flex; align-items: center; gap: .5rem; border-radius: .625rem; padding: .65rem 1.25rem; font-weight: 600; font-size: .9rem; background: #262626; color: #fff; }
+.btn-danger:hover { background: #000; }
+.btn-danger:disabled { opacity: .5; }
+.sig-pad { width: 100%; height: 170px; border: 2px dashed #d4d4d8; border-radius: .75rem; touch-action: none; cursor: crosshair;
+  background: #fff linear-gradient(transparent calc(100% - 42px), #e5e5e5 calc(100% - 42px), #e5e5e5 calc(100% - 41px), transparent calc(100% - 41px)); }
+.sig-view img { max-height: 70px; background: #fff; border: 1px solid var(--line); border-radius: .5rem; padding: .25rem; }
+
+/* Auth */
+body.logged-out .app-only { display: none !important; }
+.login-screen.hidden, body:not(.logged-out) .login-screen { display: none; }
+.login-screen { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem;
+  background: radial-gradient(800px 400px at 0% 0%, rgba(230,0,18,.35), transparent 60%), radial-gradient(600px 400px at 100% 100%, rgba(230,0,18,.2), transparent 60%), #111; }
+.login-card { width: 100%; max-width: 420px; background: #fff; border-radius: 1.25rem; overflow: hidden; box-shadow: 0 30px 60px -20px rgba(0,0,0,.6); }
+.login-brand { background: linear-gradient(160deg, #1c1c1c, #0d0d0d); padding: 2rem 1.5rem 1.5rem; text-align: center; border-bottom: 4px solid var(--brand); display: flex; flex-direction: column; align-items: center; }
+.user-chip { display: flex; align-items: center; gap: .55rem; padding: .3rem .6rem .3rem .3rem; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); }
+.user-chip:hover { background: rgba(255,255,255,.12); }
+.user-avatar { width: 2rem; height: 2rem; border-radius: 999px; display: grid; place-items: center; font-weight: 700; font-size: .85rem; color: #fff; background: linear-gradient(135deg, #ff2a36, var(--brand-deep)); }
+.user-drop { position: absolute; right: 0; top: calc(100% + .5rem); width: 15rem; background: #fff; border-radius: .9rem; box-shadow: 0 20px 40px -10px rgba(0,0,0,.35); overflow: hidden; z-index: 40; }
+.user-drop button { display: block; width: 100%; text-align: left; padding: .7rem 1rem; font-size: .875rem; }
+.user-drop button:hover { background: #fafafa; }
+.role-pill { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12rem .55rem; border-radius: 999px; white-space: nowrap; }
+.role-admin-pill { background: #171717; color: #fff; }
+.role-approver-pill { background: var(--brand-soft); color: var(--brand-deep); border: 1px solid #fecaca; }
+.role-branch-pill { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+.branch-checks { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .4rem .75rem; max-height: 13rem; overflow: auto; padding: .6rem .75rem; border: 1px solid #d4d4d8; border-radius: .625rem; }
+.branch-checks label { display: flex; align-items: center; gap: .45rem; font-size: .875rem; }
+.branch-checks.disabled { opacity: .5; pointer-events: none; }
+.mini-stat { background: #fff; border: 1px solid var(--line); border-radius: .9rem; padding: .7rem .9rem; }
+.mini-stat b { font-size: 1.35rem; display: block; }
+.mini-stat span { font-size: .75rem; color: var(--muted); }
+.btn-icon { padding: .35rem .6rem; border-radius: .5rem; font-size: .78rem; font-weight: 500; border: 1px solid var(--line); background: #fff; }
+.btn-icon:hover { background: #fafafa; }
+.btn-icon.danger { color: #a3141c; border-color: #f5c2c4; }
+.btn-icon.danger:hover { background: #fdecec; }
+
+/* r06: fuel chips, tank levels, flow steps, stepper */
+.fuel-chips, .tank-levels { display: flex; flex-wrap: wrap; gap: .5rem; }
+.fuel-chips label, .tank-levels label { cursor: pointer; }
+.fuel-chips input, .tank-levels input { position: absolute; opacity: 0; pointer-events: none; }
+.fuel-chips label > span, .tank-levels label > span { display: inline-flex; align-items: center; gap: .4rem; padding: .55rem 1rem; border: 1.5px solid #d4d4d8; border-radius: .7rem; font-weight: 500; font-size: .9rem; background: #fff; transition: all .15s; }
+.fuel-chips input:checked + span, .tank-levels input:checked + span { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-deep); box-shadow: 0 0 0 3px rgba(230,0,18,.12); }
+.fuel-chips input:focus-visible + span, .tank-levels input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+.fuel-chips.invalid label > span { border-color: var(--brand); }
+.tank-levels label > span { flex-direction: column; padding: .5rem .7rem; min-width: 4.4rem; font-size: .8rem; }
+.tank-bar { width: 2.6rem; height: .55rem; border-radius: 999px; background: #e5e5e5; overflow: hidden; }
+.tank-bar i { display: block; height: 100%; background: #16a34a; }
+.tank-bar i.low { background: var(--brand); }
+.flow-steps { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .8rem; padding: 0; list-style: none; counter-reset: s; }
+.flow-steps li { counter-increment: s; font-size: .72rem; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); padding: .2rem .6rem; border-radius: 999px; }
+.flow-steps li::before { content: counter(s) ". "; font-weight: 700; }
+.stepper { display: grid; grid-template-columns: repeat(4, 1fr); gap: .25rem; margin: .9rem 0 .2rem; }
+.stepper div { text-align: center; font-size: .68rem; color: #a1a1aa; position: relative; padding-top: 1.35rem; }
+.stepper div::before { content: ""; position: absolute; top: .3rem; left: 0; right: 0; height: 4px; border-radius: 4px; background: #e5e5e5; }
+.stepper div.done { color: #116b34; } .stepper div.done::before { background: #16a34a; }
+.stepper div.now { color: var(--brand-deep); font-weight: 600; } .stepper div.now::before { background: #f59e0b; }
+.stepper div.fail { color: #a3141c; } .stepper div.fail::before { background: var(--brand); }
+.st-l2 { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
+.st-fill { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+.appr-card.stage2 { border-left-color: #6366f1; }
+.big-liters { font-size: 1.6rem; font-weight: 700; color: var(--brand-deep); line-height: 1; }
+.role-reviewer-pill { background: #fff7e6; color: #8a5a00; border: 1px solid #fde3a7; }
+
+/* Footer */
+.app-footer { background: #111; border-top: 3px solid var(--brand); }
+
+/* Toast */
+#toast > div { padding: .75rem 1rem; border-radius: .75rem; color: #fff; font-size: .9rem; box-shadow: 0 10px 25px rgba(0,0,0,.15); max-width: 90vw; }
+
+/* ═════════ Print ═════════ */
+#printArea { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  body { background: #fff !important; }
+  .no-print, #toast { display: none !important; }
+  #printArea { display: block !important; color: #000; font-size: 10.5pt; }
+  .pr-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid var(--brand); padding-bottom: 6px; margin-bottom: 8px; }
+  .pr-head h1 { font-size: 15pt; font-weight: 700; margin: 0; }
+  .pr-head .meta { font-size: 9pt; color: #444; text-align: right; }
+  .pr-filter { font-size: 9pt; color: #333; margin-bottom: 6px; }
+  .pr-table { width: 100%; border-collapse: collapse; }
+  .pr-table th, .pr-table td { border: 1px solid #999; padding: 4px 5px; vertical-align: top; }
+  .pr-table th { background: #262626 !important; color: #fff !important; font-weight: 600; font-size: 9pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-table tr { page-break-inside: avoid; }
+  .pr-table .num { text-align: right; white-space: nowrap; }
+  .pr-table tfoot td { font-weight: 700; background: #f3f3f3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-sign { display: flex; justify-content: space-around; margin-top: 28px; font-size: 10pt; page-break-inside: avoid; }
+  .pr-sign > div { text-align: center; width: 30%; }
+  .pr-sign .line { border-bottom: 1px dotted #000; height: 28px; margin-bottom: 4px; }
+  .pr-appr { font-size: 8.5pt; min-width: 110px; }
+  .pr-appr img { max-height: 34px; max-width: 120px; display: block; margin: 2px 0; }
+  .slip { font-size: 10.5pt; }
+  .slip h2 { font-size: 11pt; font-weight: 700; background: #262626 !important; color: #fff !important; padding: 3px 8px; margin: 10px 0 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slip table.kv { width: 100%; border-collapse: collapse; }
+  .slip table.kv td { border: 1px solid #bbb; padding: 4px 6px; vertical-align: top; }
+  .slip table.kv td.k { width: 22%; color: #444; background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slip .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+  .slip .sigs > div { border: 1px solid #bbb; border-radius: 6px; padding: 6px; text-align: center; min-height: 110px; }
+  .slip .sigs img { max-height: 55px; max-width: 100%; display: block; margin: 4px auto; }
+  .slip .stamp { display: inline-block; border: 2px solid #116b34; color: #116b34; padding: 2px 10px; border-radius: 6px; font-weight: 700; }
+  .slip .stamp.no { border-color: #a3141c; color: #a3141c; }
+  .bill-total td { font-weight: 700; background: #f3f3f3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-foot { margin-top: 10px; font-size: 8pt; color: #777; display: flex; justify-content: space-between; }
+}
+
+</style>
+</head>
+<body class="app-bg text-slate-800 font-sans min-h-screen flex flex-col logged-out">
+
+  <!-- ───────── Login ───────── -->
+  <div id="loginScreen" class="login-screen hidden">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo-chip !w-14 !h-14" aria-hidden="true">
+          <svg viewBox="0 0 32 32" class="w-9 h-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 18V10h9l3 6h6v4"/><path d="M9 10V6h5"/><path d="M15 10v6h3"/>
+            <circle cx="10" cy="22" r="5"/><circle cx="10" cy="22" r="1.5" fill="currentColor"/>
+            <circle cx="24" cy="23" r="3"/><path d="M15 22h6"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-white mt-4">RST<span class="text-brand-500">-</span>FUEL</h1>
+        <p class="text-sm text-neutral-400">ระบบบันทึกขอเติมน้ำมันสาขา & สถิติการเดินรถ</p>
+      </div>
+      <form id="loginForm" class="p-6 sm:p-8 grid gap-4">
+        <h2 class="font-bold text-lg">เข้าสู่ระบบ</h2>
+        <label class="field">
+          <span class="label">ชื่อผู้ใช้ (Username)</span>
+          <input type="text" id="loginUser" class="input" autocomplete="username" autocapitalize="off" spellcheck="false" required />
+        </label>
+        <label class="field">
+          <span class="label">รหัสผ่าน</span>
+          <div class="relative">
+            <input type="password" id="loginPass" class="input pr-16" autocomplete="current-password" required />
+            <button type="button" id="togglePass" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-500 px-2 py-1">แสดง</button>
+          </div>
+        </label>
+        <button type="submit" id="loginBtn" class="btn-primary w-full">เข้าสู่ระบบ</button>
+        <p id="loginHint" class="text-xs text-neutral-400 text-center">ลืมรหัสผ่าน? ติดต่อผู้ดูแลระบบเพื่อตั้งรหัสใหม่</p>
+      </form>
+      <div class="text-center text-[11px] text-neutral-400 pb-4">Dev: tana.pittayatanadol</div>
+    </div>
+  </div>
+
+
+  <!-- ───────── Header ───────── -->
+  <header class="app-header sticky top-0 z-30 no-print app-only">
+    <div class="max-w-6xl mx-auto px-4 pt-3 pb-1 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="logo-chip shrink-0" aria-hidden="true">
+          <!-- ไอคอนรถแทรกเตอร์ (วาดเอง) -->
+          <svg viewBox="0 0 32 32" class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 18V10h9l3 6h6v4"/><path d="M9 10V6h5"/><path d="M15 10v6h3"/>
+            <circle cx="10" cy="22" r="5"/><circle cx="10" cy="22" r="1.5" fill="currentColor"/>
+            <circle cx="24" cy="23" r="3"/><path d="M15 22h6"/>
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <h1 class="font-bold text-lg sm:text-xl leading-tight text-white tracking-wide">RST<span class="text-brand-500">-</span>FUEL</h1>
+          <p class="text-xs text-neutral-400 truncate">ระบบบันทึกขอเติมน้ำมันสาขา & สถิติการเดินรถ</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="hidden lg:inline text-xs text-neutral-500">Dev: tana.pittayatanadol</span>
+        <div id="userMenu" class="relative hidden">
+          <button type="button" id="userBtn" class="user-chip" aria-haspopup="true">
+            <span id="userAvatar" class="user-avatar">A</span>
+            <span class="hidden sm:flex flex-col items-start leading-tight">
+              <span id="userName" class="text-sm text-white font-medium"></span>
+              <span id="userRole" class="text-[11px] text-neutral-400"></span>
+            </span>
+            <svg class="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div id="userDrop" class="user-drop hidden">
+            <div class="px-4 py-3 border-b border-neutral-100">
+              <div id="dropName" class="font-semibold text-sm"></div>
+              <div id="dropInfo" class="text-xs text-neutral-500"></div>
+            </div>
+            <button type="button" id="btnChangePw">เปลี่ยนรหัสผ่าน</button>
+            <button type="button" id="btnLogout" class="text-brand-600">ออกจากระบบ</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <nav class="max-w-6xl mx-auto px-2 sm:px-4">
+      <div class="flex gap-1 overflow-x-auto no-scrollbar" role="tablist">
+        <button class="tab-btn active" data-tab="form" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          แบบฟอร์มขอเติมน้ำมัน</button>
+        <button class="tab-btn role-track" data-tab="track" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2a4 4 0 014-4h8m0 0l-3-3m3 3l-3 3M3 5h6m-6 4h4m-4 4h3"/></svg>
+          ติดตาม/บันทึกเติม <span id="trackBadge" class="tab-badge hidden">0</span></button>
+        <button class="tab-btn role-approve" data-tab="approve" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.768 9.232a2.5 2.5 0 00-3.536-3.536L4.464 16.464 4 20z"/></svg>
+          รออนุมัติ <span id="pendingBadge" class="tab-badge hidden">0</span></button>
+        <button class="tab-btn" data-tab="dashboard" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
+          Dashboard สถิติ</button>
+        <button class="tab-btn" data-tab="history" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          ประวัติรายการ</button>
+        <button class="tab-btn role-admin" data-tab="members" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H2v-2a4 4 0 015-3.87m6-4.13a4 4 0 11-8 0 4 4 0 018 0zm6 2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          สมาชิก</button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Banner เตือนกรณียังไม่ตั้งค่า Web App URL -->
+  <div id="configWarning" class="hidden max-w-6xl mx-auto w-full px-4 mt-4 no-print app-only">
+    <div class="rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm px-4 py-3">
+      โหมด Demo (ยังไม่ได้ตั้งค่า <code class="font-mono">WEB_APP_URL</code>) — ข้อมูลตัวอย่าง ไม่บันทึกจริง · ผู้ใช้ทดสอบ: <b>branch1</b> (สาขา), <b>reviewer</b> (ขั้นที่ 1), <b>approver</b> (สูงสุด), <b>admin</b> รหัส <b>1234</b>
+    </div>
+  </div>
+
+  <main class="flex-1 max-w-6xl mx-auto w-full px-4 py-6 no-print app-only">
+
+    <!-- ═════════════ TAB 1 : FORM ═════════════ -->
+    <section id="tab-form" class="tab-panel">
+      <div class="hero mb-5">
+        <div>
+          <p class="text-xs uppercase tracking-widest text-brand-100/80">Fuel Request</p>
+          <h2 class="text-xl sm:text-2xl font-bold">แบบฟอร์มขอเติมน้ำมัน</h2>
+          <p class="text-sm text-white/80 mt-1">กรอกข้อมูลให้ครบช่องที่มี <span class="font-semibold">*</span> แล้วกดส่ง ระบบจะออกรหัสอ้างอิงให้ทันที</p>
+          <ol class="flow-steps">
+            <li>ส่งคำขอ</li><li>อนุมัติขั้นที่ 1</li><li>อนุมัติสูงสุด</li><li>เข้าเติม</li><li>บันทึกบิล</li>
+          </ol>
+        </div>
+        <svg class="hero-art" viewBox="0 0 120 80" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 50V28h30l10 20h22v12"/><path d="M30 28V16h16"/><path d="M50 28v20h10"/>
+          <circle cx="34" cy="60" r="15"/><circle cx="34" cy="60" r="4"/><circle cx="82" cy="64" r="9"/><path d="M50 62h23"/>
+        </svg>
+      </div>
+      <form id="fuelForm" class="space-y-5" novalidate>
+
+        <div class="card">
+          <h2 class="card-title">ข้อมูลการขอเติม</h2>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <label class="field">
+              <span class="label req">วันที่เข้าเติม</span>
+              <input type="date" name="requestDate" id="requestDate" class="input" required />
+            </label>
+            <label class="field">
+              <span class="label req">สาขา</span>
+              <select name="branch" id="branch" class="input" required>
+                <option value="">— เลือกสาขา —</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="label req">ชื่อผู้ขับ</span>
+              <input type="text" name="driverName" class="input" placeholder="ชื่อ-นามสกุล ผู้ขับ" autocomplete="name" required />
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">ข้อมูลรถ</h2>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <label class="field">
+              <span class="label req">ทะเบียนรถ</span>
+              <select name="licensePlate" id="licensePlate" class="input" required>
+                <option value="">— เลือกทะเบียนรถ —</option>
+              </select>
+            </label>
+            <label class="field hidden" id="plateOtherWrap">
+              <span class="label req">ทะเบียนรถอื่นๆ</span>
+              <input type="text" name="licensePlateOther" id="licensePlateOther" class="input" placeholder="เช่น 1กข-1234 อุบลราชธานี" />
+            </label>
+            <div class="field">
+              <span class="label req">ประเภทน้ำมัน</span>
+              <div id="fuelChips" class="fuel-chips" role="radiogroup" aria-label="ประเภทน้ำมัน"></div>
+            </div>
+            <label class="field">
+              <span class="label req">เลขไมล์ก่อนเติม</span>
+              <input type="number" name="mileageBefore" class="input" inputmode="numeric" min="0" step="1" placeholder="เช่น 125430" required />
+            </label>
+            <label class="field">
+              <span class="label">กรณีนำแกลลอนไปเติม <span class="text-slate-400 font-normal">(ระบุว่านำไปใช้ทำอะไร)</span></span>
+              <input type="text" name="gallonPurpose" list="gallonList" class="input" placeholder="เว้นว่างถ้าเติมเข้ารถโดยตรง" />
+              <datalist id="gallonList">
+                <option value="เครื่องตัดหญ้า"></option>
+                <option value="เครื่องปั่นไฟ"></option>
+                <option value="งานภาคสนาม"></option>
+              </datalist>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">เส้นทางการเดินรถ</h2>
+          <div class="grid gap-4">
+            <label class="field">
+              <span class="label req">ต้นทาง</span>
+              <input type="text" name="origin" id="origin" class="input" placeholder="เช่น สาขาเดชอุดม" />
+            </label>
+            <div id="destList" class="grid gap-3"></div>
+            <div class="flex flex-wrap items-center gap-3">
+              <button type="button" id="addDestBtn" class="btn-ghost">+ เพิ่มจุดหมายปลายทาง</button>
+              <span id="destCounter" class="text-xs text-slate-400"></span>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4">
+              <label class="field">
+                <span class="label req">ระยะทางรวมทั้งหมด (ไป-กลับ / กม.)</span>
+                <input type="number" name="totalDistanceKm" class="input" inputmode="decimal" min="0" step="0.1" placeholder="เช่น 86.5" />
+              </label>
+              <label class="field">
+                <span class="label">วัตถุประสงค์การเดินทาง <span class="text-slate-400 font-normal">(ถ้ามี)</span></span>
+                <input type="text" name="mainDestination" class="input" placeholder="เช่น ส่งสินค้า / ซ่อมรถลูกค้า" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">รูปเข็มไมล์ & ลงชื่อผู้ขอ</h2>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div class="upload" data-key="mileage">
+              <span class="label req">แนบรูปเข็มไมล์ (ก่อนเติม)</span>
+              <label class="dropzone">
+                <input type="file" accept="image/*" capture="environment" class="sr-only" />
+                <img class="preview hidden" alt="ตัวอย่างรูปเข็มไมล์" />
+                <span class="dz-text">📷 แตะเพื่อถ่าย/เลือกรูป</span>
+              </label>
+              <button type="button" class="clear-file hidden">ลบรูป</button>
+            </div>
+            <div class="grid gap-3 content-start">
+              <label class="field">
+                <span class="label req">ชื่อผู้ขอ (ผู้ลงข้อมูล)</span>
+                <input type="text" name="recorderName" id="recorderName" class="input" placeholder="ชื่อ-นามสกุล ผู้ขอ" required />
+              </label>
+              <div class="field">
+                <div class="flex items-center justify-between">
+                  <span class="label req">ลายเซ็นผู้ขอ</span>
+                  <span class="flex gap-3 text-xs">
+                    <button type="button" id="reqSigLast" class="link-btn hidden">ใช้ลายเซ็นล่าสุด</button>
+                    <button type="button" id="reqSigClear" class="link-btn">ล้าง</button>
+                  </span>
+                </div>
+                <canvas id="reqSigPad" class="sig-pad !h-[140px]" aria-label="พื้นที่เซ็นชื่อผู้ขอ"></canvas>
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 mt-3">รูปบิลน้ำมันแนบภายหลังตอน "บันทึกผลการเติม" (หลังได้รับอนุมัติ) · รูปถูกย่อขนาดอัตโนมัติและเก็บใน Google Drive</p>
+        </div>
+
+        <div class="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+          <button type="reset" class="btn-ghost">ล้างฟอร์ม</button>
+          <button type="submit" id="submitBtn" class="btn-primary">
+            <span class="btn-label">ส่งคำขอเติมน้ำมัน</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ═════════════ TAB : TRACK (สาขา) ═════════════ -->
+    <section id="tab-track" class="tab-panel hidden">
+      <div class="toolbar mb-4">
+        <div>
+          <h2 class="font-bold text-lg">ติดตามคำขอ & บันทึกผลการเติม</h2>
+          <p class="text-xs text-slate-500">เมื่อได้รับอนุมัติสูงสุดแล้ว เข้าเติมน้ำมันได้ จากนั้นกด "บันทึกผลการเติม" พร้อมแนบบิล</p>
+        </div>
+        <div class="flex flex-wrap gap-2 sm:ml-auto">
+          <div class="seg" id="trackSeg">
+            <button class="active" data-f="active">กำลังดำเนินการ</button>
+            <button data-f="ok">รอเติม</button>
+            <button data-f="done">เสร็จสิ้น</button>
+            <button data-f="all">ทั้งหมด</button>
+          </div>
+          <button type="button" class="btn-ghost refresh-btn">รีเฟรช</button>
+        </div>
+      </div>
+      <div id="trackList" class="grid lg:grid-cols-2 gap-4"></div>
+      <div id="trackEmpty" class="hidden card text-center py-12 text-slate-500">ไม่มีรายการ</div>
+    </section>
+
+    <!-- ═════════════ TAB : APPROVE ═════════════ -->
+    <section id="tab-approve" class="tab-panel hidden">
+      <!-- รายการรออนุมัติ -->
+      <div id="approveMain">
+        <div class="toolbar mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-neutral-900 text-white grid place-items-center font-bold" aria-hidden="true">✍</div>
+            <div>
+              <div class="text-sm text-slate-500">ผู้อนุมัติ</div>
+              <div class="font-semibold"><span id="apprWho"></span> <span id="apprScope" class="text-xs text-slate-400 font-normal"></span></div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 sm:ml-auto text-sm">
+            <div class="seg" id="stageSeg">
+              <button data-stage="1" class="active">ขั้นที่ 1 <b id="cntL1">0</b></button>
+              <button data-stage="2">ขั้นสุดท้าย <b id="cntL2">0</b></button>
+            </div>
+            <span class="hidden sm:inline">รอดำเนินการ <b id="pendingCount" class="text-brand-600 text-lg">0</b> รายการ</span>
+            <button type="button" class="btn-ghost refresh-btn">รีเฟรช</button>
+          </div>
+        </div>
+        <div id="pendingList" class="grid lg:grid-cols-2 gap-4"></div>
+        <div id="pendingEmpty" class="hidden card text-center py-12">
+          <div class="text-4xl mb-2">🎉</div>
+          <p class="font-semibold">ไม่มีรายการรออนุมัติ</p>
+          <p class="text-sm text-slate-500">คำขอใหม่จะแสดงที่นี่ และระบบจะส่งอีเมลแจ้งเตือน</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ TAB : MEMBERS (admin) ═════════════ -->
+    <section id="tab-members" class="tab-panel hidden">
+      <div class="toolbar mb-4">
+        <div>
+          <h2 class="font-bold text-lg">จัดการสมาชิก</h2>
+          <p class="text-xs text-slate-500">เพิ่ม แก้ไข ลบ ผู้ใช้งานของแต่ละสาขา · ข้อมูลเก็บในชีต <b>Users</b></p>
+        </div>
+        <div class="flex flex-wrap gap-2 sm:ml-auto w-full sm:w-auto">
+          <input type="search" id="mSearch" class="input !py-2 sm:w-56" placeholder="ค้นหาชื่อ, username, สาขา..." />
+          <select id="mRole" class="input !py-2 !w-auto">
+            <option value="">ทุกบทบาท</option>
+            <option value="admin">ผู้ดูแลระบบ</option>
+            <option value="reviewer">ผู้อนุมัติขั้นที่ 1</option>
+            <option value="approver">ผู้อนุมัติสูงสุด</option>
+            <option value="branch">ผู้ใช้สาขา</option>
+          </select>
+          <button type="button" id="mAdd" class="btn-primary !min-w-0">+ เพิ่มสมาชิก</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4" id="mStats"></div>
+      <div class="card !p-0 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="thead text-left">
+              <tr>
+                <th class="th">ผู้ใช้</th>
+                <th class="th">บทบาท</th>
+                <th class="th">สาขา</th>
+                <th class="th">อีเมล</th>
+                <th class="th">สถานะ</th>
+                <th class="th">เข้าระบบล่าสุด</th>
+                <th class="th text-right">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="mTable" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="mEmpty" class="hidden text-center text-slate-400 py-10">ไม่พบสมาชิก</div>
+      </div>
+    </section>
+
+    <!-- ═════════════ TAB 2 : DASHBOARD ═════════════ -->
+    <section id="tab-dashboard" class="tab-panel hidden">
+      <div class="flex flex-wrap items-end gap-3 mb-5">
+        <label class="field">
+          <span class="label">ปี (พ.ศ.)</span>
+          <select id="dashYear" class="input year-select"><option value="">ทุกปี</option></select>
+        </label>
+        <label class="field">
+          <span class="label">เดือน</span>
+          <select id="dashMonth" class="input month-select"><option value="">ทุกเดือน</option></select>
+        </label>
+        <label class="field">
+          <span class="label">สาขา</span>
+          <select id="dashBranch" class="input"><option value="">ทุกสาขา</option></select>
+        </label>
+        <button type="button" class="btn-ghost refresh-btn ml-auto">รีเฟรชข้อมูล</button>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 mb-5">
+        <div class="kpi kpi-red"><span class="kpi-icon">฿</span><span class="kpi-label">ยอดเงินค่าน้ำมันรวม</span><span class="kpi-value" id="kpiAmount">–</span><span class="kpi-sub">บาท (รายการที่เติมแล้ว)</span></div>
+        <div class="kpi"><span class="kpi-icon">⛽</span><span class="kpi-label">ลิตรที่เติมรวม</span><span class="kpi-value" id="kpiLiters">–</span><span class="kpi-sub" id="kpiLitersSub">ลิตร</span></div>
+        <div class="kpi"><span class="kpi-icon">📝</span><span class="kpi-label">จำนวนคำขอ</span><span class="kpi-value" id="kpiTotal">–</span><span class="kpi-sub" id="kpiTotalSub">ครั้ง</span></div>
+        <div class="kpi"><span class="kpi-icon">🛣️</span><span class="kpi-label">ระยะทางรวม</span><span class="kpi-value" id="kpiKm">–</span><span class="kpi-sub">กิโลเมตร</span></div>
+        <div class="kpi"><span class="kpi-icon">🏢</span><span class="kpi-label">สาขาที่ใช้เงินสูงสุด</span><span class="kpi-value kpi-text" id="kpiTopBranch">–</span><span class="kpi-sub" id="kpiTopBranchSub">&nbsp;</span></div>
+        <div class="kpi"><span class="kpi-icon">🛢️</span><span class="kpi-label">เบิกใส่แกลลอน</span><span class="kpi-value" id="kpiGallon">–</span><span class="kpi-sub">ครั้ง</span></div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 class="card-title !mb-0">สรุปยอดค่าน้ำมัน</h3>
+          <div class="flex flex-wrap gap-2">
+            <div class="seg" id="sumSeg">
+              <button class="active" data-g="branch">แยกสาขา</button>
+              <button data-g="month">แยกเดือน</button>
+              <button data-g="vehicle">แยกทะเบียนรถ</button>
+              <button data-g="fuel">แยกประเภทน้ำมัน</button>
+            </div>
+            <button type="button" class="btn-ghost !py-1.5 open-bill">🧾 พิมพ์ใบวางบิลประจำเดือน</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="thead text-left"><tr>
+              <th class="th" id="sumHead">สาขา</th><th class="th text-right">คำขอ</th><th class="th text-right">เติมแล้ว</th>
+              <th class="th text-right">ลิตร</th><th class="th text-right">ยอดเงิน (บาท)</th><th class="th text-right">เฉลี่ย บาท/ลิตร</th><th class="th text-right">ระยะทาง (กม.)</th>
+            </tr></thead>
+            <tbody id="sumBody" class="divide-y divide-slate-100"></tbody>
+            <tfoot id="sumFoot" class="font-semibold bg-neutral-50"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="card">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <h3 class="card-title !mb-0">เปรียบเทียบตามสาขา</h3>
+            <div class="seg" data-chart="branch">
+              <button class="active" data-metric="amount">บาท</button>
+              <button data-metric="liters">ลิตร</button>
+              <button data-metric="count">ครั้ง</button>
+              <button data-metric="km">กม.</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="chartBranch"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <h3 class="card-title !mb-0">เปรียบเทียบตามทะเบียนรถ <span class="text-xs text-slate-400 font-normal">(10 อันดับ)</span></h3>
+            <div class="seg" data-chart="vehicle">
+              <button class="active" data-metric="amount">บาท</button>
+              <button data-metric="liters">ลิตร</button>
+              <button data-metric="count">ครั้ง</button>
+              <button data-metric="km">กม.</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="chartVehicle"></canvas></div>
+        </div>
+        <div class="card lg:col-span-2">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <h3 class="card-title !mb-0">แนวโน้มรายเดือน</h3>
+            <div class="seg" data-chart="month">
+              <button class="active" data-metric="amount">บาท</button>
+              <button data-metric="liters">ลิตร</button>
+              <button data-metric="count">ครั้ง</button>
+              <button data-metric="km">กม.</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="chartMonth"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ TAB 3 : HISTORY ═════════════ -->
+    <section id="tab-history" class="tab-panel hidden">
+      <div class="card !p-4 mb-4">
+        <div class="grid grid-cols-2 lg:grid-cols-7 gap-3 items-end">
+          <label class="field col-span-2">
+            <span class="label">ค้นหา</span>
+            <input type="search" id="hSearch" class="input" placeholder="รหัสอ้างอิง, ชื่อผู้ขับ, ทะเบียน, ปลายทาง..." />
+          </label>
+          <label class="field col-span-2 lg:col-span-1">
+            <span class="label">สาขา</span>
+            <select id="hBranch" class="input"><option value="">ทุกสาขา</option></select>
+          </label>
+          <label class="field">
+            <span class="label">ปี (พ.ศ.)</span>
+            <select id="hYear" class="input year-select"><option value="">ทุกปี</option></select>
+          </label>
+          <label class="field">
+            <span class="label">เดือน</span>
+            <select id="hMonth" class="input month-select"><option value="">ทุกเดือน</option></select>
+          </label>
+          <label class="field">
+            <span class="label">สถานะ</span>
+            <select id="hStatus" class="input">
+              <option value="">ทุกสถานะ</option>
+              <option value="รออนุมัติขั้นที่ 1">รออนุมัติขั้นที่ 1</option>
+              <option value="รออนุมัติขั้นสุดท้าย">รออนุมัติขั้นสุดท้าย</option>
+              <option value="อนุมัติแล้ว รอเติม">อนุมัติแล้ว รอเติม</option>
+              <option value="เติมแล้ว">เติมแล้ว</option>
+              <option value="ไม่อนุมัติ">ไม่อนุมัติ</option>
+            </select>
+          </label>
+          <div class="field">
+            <span class="label">&nbsp;</span>
+            <button type="button" id="hClear" class="btn-ghost w-full">ล้างตัวกรอง</button>
+          </div>
+        </div>
+        <details class="mt-3 text-sm" id="hAdvanced">
+          <summary class="cursor-pointer text-slate-500 select-none">ตัวกรองเพิ่มเติม (ช่วงวันที่ / แกลลอน)</summary>
+          <div class="grid sm:grid-cols-3 gap-3 mt-3 items-end">
+            <label class="field"><span class="label">ตั้งแต่วันที่</span><input type="date" id="hFrom" class="input" /></label>
+            <label class="field"><span class="label">ถึงวันที่</span><input type="date" id="hTo" class="input" /></label>
+            <label class="inline-flex items-center gap-2 pb-3"><input type="checkbox" id="hGallon" class="chk" /> เฉพาะรายการเติมแกลลอน</label>
+          </div>
+        </details>
+      </div>
+
+      <!-- Selection / print toolbar -->
+      <div class="toolbar mb-4">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+          <span id="hCount" class="text-slate-600 font-medium"></span>
+          <span class="text-slate-300 hidden sm:inline">|</span>
+          <span>เลือกแล้ว <b id="selCount" class="text-brand-600">0</b> รายการ</span>
+          <button type="button" id="selAllFiltered" class="link-btn">เลือกทั้งหมดที่กรอง</button>
+          <button type="button" id="selClear" class="link-btn">ล้างการเลือก</button>
+        </div>
+        <div class="flex flex-wrap gap-2 sm:ml-auto">
+          <button type="button" id="printBtn" class="btn-primary !min-w-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v7H6z"/></svg>
+            พิมพ์รายการที่เลือก
+          </button>
+          <button type="button" class="btn-ghost open-bill">🧾 ใบวางบิลประจำเดือน</button>
+          <button type="button" id="exportCsv" class="btn-ghost">ส่งออก CSV</button>
+          <button type="button" class="btn-ghost refresh-btn">รีเฟรช</button>
+        </div>
+      </div>
+
+      <!-- Desktop table -->
+      <div class="card !p-0 overflow-hidden hidden md:block">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="thead text-left">
+              <tr>
+                <th class="th w-10"><input type="checkbox" id="chkPage" class="chk" title="เลือกทั้งหน้า" aria-label="เลือกทั้งหน้า" /></th>
+                <th class="th">รหัสอ้างอิง</th>
+                <th class="th">วันที่</th>
+                <th class="th">สาขา</th>
+                <th class="th">ผู้ขับ</th>
+                <th class="th">ทะเบียน</th>
+                <th class="th text-right">เลขไมล์</th>
+                <th class="th">เส้นทาง</th>
+                <th class="th text-right">กม.</th>
+                <th class="th text-right">ลิตร / บาท</th>
+                <th class="th text-center">หลักฐาน</th>
+              </tr>
+            </thead>
+            <tbody id="hTable" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Mobile cards -->
+      <div id="hCards" class="md:hidden grid gap-3"></div>
+
+      <div id="hEmpty" class="hidden text-center text-slate-400 py-12">ไม่พบรายการที่ตรงกับเงื่อนไข</div>
+      <div class="flex justify-center items-center gap-3 mt-4" id="hPager"></div>
+    </section>
+  </main>
+
+  <!-- พื้นที่สำหรับพิมพ์ (แสดงเฉพาะตอนสั่งพิมพ์) -->
+  <div id="printArea" aria-hidden="true"></div>
+
+  <footer class="app-footer no-print app-only">
+    <div class="max-w-6xl mx-auto px-4 py-4 text-xs text-neutral-400 flex flex-wrap justify-between gap-2">
+      <span>RST-FUEL © <span id="year"></span> Ruamsinthaigroup</span>
+      <span>Dev: tana.pittayatanadol</span>
+    </div>
+  </footer>
+
+  <!-- Detail modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden no-print">
+    <div class="absolute inset-0 bg-slate-900/50" data-close></div>
+    <div id="modalPanel" class="relative max-w-lg mx-auto mt-10 sm:mt-20 bg-white rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto m-4">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white">
+        <h3 class="font-semibold" id="modalTitle">รายละเอียด</h3>
+        <button class="text-slate-400 hover:text-slate-700 text-2xl leading-none" data-close aria-label="ปิด">&times;</button>
+      </div>
+      <div id="modalBody" class="px-5 py-4 text-sm"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 hidden"></div>
+
+  <script>
+/**
+ * RST-FUEL Frontend — Dev: tana.pittayatanadol
+ * ─────────────────────────────────────────────────────────────
+ * ① วาง Web App URL ที่ได้จากการ Deploy Google Apps Script ตรงนี้
+ *    (Deploy > New deployment > Web app > คัดลอก URL ที่ลงท้ายด้วย /exec)
+ *    ถ้าเว้นว่าง ระบบจะทำงานแบบ Demo ด้วยข้อมูลตัวอย่าง
+ */
+const CONFIG = {
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbyCnQvpxJijuadTsUp0JgGSmCZqjEQgr0BbUTeM-cCs6W96Gws-vzZ4A19fSRxi3_Zz/exec', // เช่น 'https://script.google.com/macros/s/AKfycb..../exec'
+
+  // ค่าเริ่มต้น (ระบบจะใช้รายการจากชีต "Config" แทนหากมี — แก้ไขที่ชีตได้เลยไม่ต้องแก้โค้ด)
+  BRANCHES: ['สำนักงานใหญ่อุบลราชธานี', 'เดชอุดม', 'ขุขันธ์', 'เบญจลักษ์', 'ศรีสะเกษ', 'ตระการพืชผล', 'ศรีเมืองใหม่', 'กุฉินารายณ์', 'อำนาจเจริญ'],
+  PLATES: ['ผธ9412อบ', 'ผน1056อบ', 'ผบ4158อบ', 'ผบ122อบ', 'ผค7701อบ', 'ผพ2961อบ', 'ผบ5053อบ', 'ผบ2961อบ', 'ผบ2960อบ', 'ผน3524อบ', 'บว5797อบ', 'ผธ8867อบ', 'บธ5829อบ', '81-4331 (รถหกล้อ)', '82-7430 (รถหกล้อ)', '83-9399 (รถหกล้อ)', '84-3992 (รถหกล้อ)'],
+  OTHER_PLATE: 'อื่นๆ',
+  FUEL_TYPES: ['ดีเซล', 'แก๊สโซฮอล์'],             // ระบบจะใช้รายการจากชีต Config (คอลัมน์ FuelTypes) แทนหากมี
+  TANK_LEVELS: ['ขีดแดง', '1/4', '1/2', '3/4', 'เต็มถัง'],
+
+  MAX_DEST: 8,
+  IMAGE_MAX_PX: 1600,      // ย่อรูปด้านยาวสุดไม่เกินกี่ px ก่อนอัปโหลด
+  IMAGE_QUALITY: 0.8,
+  MAX_UPLOAD_MB: 8,
+  PAGE_SIZE: 20,
+  CHART_COLOR: '#e60012',
+  CHART_COLOR_HOVER: '#9e000c',
+  COMPANY_NAME: 'Ruamsinthaigroup' // แสดงบนหัวรายงานที่พิมพ์
+};
+
+/* ═════════════════════ Utilities ═════════════════════ */
+const $  = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nf  = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 1 });
+const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const thDate = (iso) => { if (!iso) return '-'; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }); };
+const thMonth = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }); };
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
+};
+// เมื่อเปิดจาก URL ของ Apps Script Web App โดยตรง จะเรียก backend ผ่าน google.script.run (ไม่ต้องตั้ง WEB_APP_URL)
+const gasRun = () => (window.google && google.script && google.script.run) ? google.script.run : null;
+const gasCall = (fn, ...args) => new Promise((res, rej) => gasRun().withSuccessHandler(res).withFailureHandler((e) => rej(new Error(e && e.message ? e.message : e)))[fn](...args));
+const isDemo = () => !CONFIG.WEB_APP_URL && !gasRun();
+
+function toast(msg, type = 'success', ms = 3500) {
+  const t = $('#toast');
+  const color = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-slate-800' }[type] || 'bg-slate-800';
+  t.innerHTML = `<div class="${color}">${esc(msg)}</div>`;
+  t.classList.remove('hidden');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.add('hidden'), ms);
+}
+
+function openModal(title, html, wide = false) {
+  $('#modalPanel').classList.toggle('max-w-2xl', wide);
+  $('#modalPanel').classList.toggle('max-w-lg', !wide);
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = html;
+  $('#modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal() { $('#modal').classList.add('hidden'); document.body.style.overflow = ''; }
+
+/* ═════════════════════ Auth ═════════════════════ */
+const auth = {
+  get token() { return store.get('rst_token') || ''; },
+  get user() { try { return JSON.parse(store.get('rst_user') || 'null'); } catch { return null; } },
+  set(token, user) { store.set('rst_token', token); store.set('rst_user', JSON.stringify(user)); },
+  clear() { try { localStorage.removeItem('rst_token'); localStorage.removeItem('rst_user'); } catch { /* ignore */ } }
+};
+const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', reviewer: 'ผู้อนุมัติขั้นที่ 1', approver: 'ผู้อนุมัติสูงสุด', branch: 'ผู้ใช้สาขา' };
+const isRole = (...roles) => !!auth.user && roles.includes(auth.user.role);
+/** สาขาที่ผู้ใช้ปัจจุบันเห็นได้ (null = ทุกสาขา) */
+function myBranches() {
+  const u = auth.user;
+  if (!u || u.role === 'admin') return null;
+  if ((u.role === 'approver' || u.role === 'reviewer') && !u.branches.length) return null;
+  return u.branches;
+}
+
+/* ═════════════════════ API ═════════════════════ */
+const api = {
+  /** ทุกคำสั่งส่งผ่าน POST พร้อม token (Content-Type: text/plain เพื่อเลี่ยง CORS preflight) */
+  async post(body) {
+    body = { ...body, token: auth.token };
+    let json;
+    if (gasRun()) json = await gasCall('apiPost', body);
+    else if (isDemo()) {
+      try { json = { ok: true, data: await demo.post(body) }; }
+      catch (e) { json = { ok: false, error: e.message, code: e.code }; }
+    } else {
+      const res = await fetch(CONFIG.WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+      json = await res.json();
+    }
+    if (!json.ok) {
+      if (json.code === 'AUTH' && body.action !== 'login') onAuthLost(json.error);
+      const err = new Error(json.error || 'เกิดข้อผิดพลาด'); err.code = json.code; throw err;
+    }
+    return json.data;
+  },
+  get(action, params = {}) { return this.post({ action, ...params }); }
+};
+
+/* ═════════════════════ Demo (ใช้เมื่อยังไม่ตั้ง WEB_APP_URL) ═════════════════════ */
+const demo = {
+  records: null,
+  signatures: {},
+  sessions: {},
+  users: [
+    { username: 'admin', fullName: 'ผู้ดูแลระบบ', role: 'admin', branches: [], email: 'admin@example.com', active: true, password: '1234', mustChangePassword: false, createdAt: '2026-11-01 09:00', lastLogin: '' },
+    { username: 'reviewer', fullName: 'มายด์ (Demo)', role: 'reviewer', branches: [], email: 'mind@example.com', active: true, password: '1234', mustChangePassword: false, createdAt: '2026-11-01 09:00', lastLogin: '' },
+    { username: 'approver', fullName: 'หนุ่ย (Demo)', role: 'approver', branches: [], email: 'nui@example.com', active: true, password: '1234', mustChangePassword: false, createdAt: '2026-11-01 09:00', lastLogin: '' },
+    { username: 'branch1', fullName: 'ธุรการ เดชอุดม', role: 'branch', branches: ['เดชอุดม'], email: '', active: true, password: '1234', mustChangePassword: false, createdAt: '2026-11-01 09:00', lastLogin: '' }
+  ],
+  seed() {
+    if (this.records) return;
+    const drivers = ['สมชาย ใจดี', 'วิชัย มีสุข', 'ประเสริฐ ทองดี', 'อนันต์ ศรีสุข', 'สุริยา แก้วมณี'];
+    const dests = ['ลูกค้า อ.เมือง', 'อ.วารินชำราบ', 'สำนักงานใหญ่', 'หน้างานซ่อม', 'อ.ตาลสุม'];
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 70; i++) {
+      const d = new Date(now); d.setDate(d.getDate() - Math.floor(i * 2.6));
+      const iso = d.toISOString().slice(0, 10);
+      const branch = i < 3 ? 'เดชอุดม' : CONFIG.BRANCHES[(i * 7) % CONFIG.BRANCHES.length];
+      const plate = i % 11 === 0 ? CONFIG.OTHER_PLATE : CONFIG.PLATES[i % CONFIG.PLATES.length];
+      const other = plate === CONFIG.OTHER_PLATE ? 'กข-1111 อบ' : '';
+      const fuel = /หกล้อ/.test(plate) || i % 3 ? 'ดีเซล' : 'แก๊สโซฮอล์';
+      const st = i < 2 ? 'รออนุมัติขั้นที่ 1' : i < 4 ? 'รออนุมัติขั้นสุดท้าย' : i < 6 ? 'อนุมัติแล้ว รอเติม' : (i % 13 === 5 ? 'ไม่อนุมัติ' : 'เติมแล้ว');
+      const reviewed = !['รออนุมัติขั้นที่ 1'].includes(st);
+      const approved = ['อนุมัติแล้ว รอเติม', 'เติมแล้ว'].includes(st) || (st === 'ไม่อนุมัติ');
+      const appLit = 20 + ((i * 13) % 50);
+      const lit = Math.round(appLit * (0.8 + (i % 5) * 0.04) * 100) / 100;
+      const ppl = fuel === 'ดีเซล' ? 31.94 : 35.58;
+      const fd = new Date(d); fd.setDate(fd.getDate() + 1);
+      out.push({
+        timestamp: `${iso} 08:${String(10 + (i % 50)).padStart(2, '0')}`,
+        refId: `FUEL-${iso.replace(/-/g, '')}-${String((i % 3) + 1).padStart(4, '0')}`,
+        requestDate: iso, branch, driverName: drivers[i % drivers.length], recorderName: 'ธุรการสาขา',
+        mileageBefore: 120000 + i * 173, licensePlate: plate, licensePlateOther: other,
+        gallonPurpose: i % 9 === 0 ? ['เครื่องตัดหญ้า', 'เครื่องปั่นไฟ', 'งานภาคสนาม'][i % 3] : '',
+        mainDestination: i % 2 ? 'ส่งสินค้า' : '', fuelType: fuel, origin: 'สาขา' + branch,
+        destinations: i % 2 ? [dests[i % 5], dests[(i + 1) % 5]] : [dests[i % 5]],
+        totalDistanceKm: 20 + ((i * 37) % 160), mileagePhotoUrl: '', receiptPhotoUrl: '',
+        vehicle: other || plate, status: st, createdBy: 'branch1', hasRequesterSignature: false,
+        reviewerName: reviewed ? 'มายด์ (Demo)' : '', reviewedAt: reviewed ? `${iso} 09:30` : '', approvedLiters: reviewed && st !== 'ไม่อนุมัติ' ? appLit : 0,
+        tankLevel: reviewed && st !== 'ไม่อนุมัติ' ? ['ขีดแดง', '1/4', '1/2', '3/4'][i % 4] : '', reviewNote: '', hasReviewerSignature: false,
+        approverName: approved ? 'หนุ่ย (Demo)' : '', approvedAt: approved ? `${iso} 10:30` : '',
+        approvalNote: st === 'ไม่อนุมัติ' ? 'ระยะทางไม่สอดคล้องกับเลขไมล์' : '', hasSignature: false,
+        filledDate: st === 'เติมแล้ว' ? fd.toISOString().slice(0, 10) : '', filledLiters: st === 'เติมแล้ว' ? lit : 0,
+        filledAmount: st === 'เติมแล้ว' ? Math.round(lit * ppl * 100) / 100 : 0, pricePerLiter: st === 'เติมแล้ว' ? ppl : 0
+      });
+    }
+    this.records = out;
+  },
+  fail(msg, code) { const e = new Error(msg); e.code = code; throw e; },
+  pub(u) { return { username: u.username, fullName: u.fullName, role: u.role, roleLabel: ROLE_LABEL[u.role], branches: u.branches, email: u.email, mustChangePassword: u.mustChangePassword }; },
+  list() { return this.users.map(({ password, ...u }) => ({ ...u })); },
+  scope(u) { return u.role === 'admin' || (['approver', 'reviewer'].includes(u.role) && !u.branches.length) ? null : u.branches; },
+  now() { return new Date().toLocaleString('sv').slice(0, 16); },
+  async post(b) {
+    this.seed();
+    await new Promise((r) => setTimeout(r, 250));
+    if (b.action === 'login') {
+      const u = this.users.find((x) => x.username === String(b.username || '').toLowerCase());
+      if (!u || !u.active || u.password !== b.password) this.fail('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (Demo: branch1 / reviewer / approver / admin รหัส 1234)');
+      const token = 'demo-' + Math.random().toString(36).slice(2);
+      this.sessions[token] = u.username; u.lastLogin = this.now();
+      return { token, user: this.pub(u) };
+    }
+    const me = this.users.find((x) => x.username === this.sessions[b.token]);
+    if (!me) this.fail('กรุณาเข้าสู่ระบบ', 'AUTH');
+    const sc = this.scope(me), can = (br) => !sc || sc.includes(br);
+    const need = (...roles) => { if (!roles.includes(me.role)) this.fail('คุณไม่มีสิทธิ์ใช้งานส่วนนี้'); };
+    const find = (st) => { const r = this.records.find((x) => x.refId === b.refId); if (!r) this.fail('ไม่พบรายการ'); if (r.status !== st) this.fail(`รายการนี้อยู่ในสถานะ "${r.status}" แล้ว`); if (!can(r.branch)) this.fail('คุณไม่มีสิทธิ์ในสาขานี้'); return r; };
+    switch (b.action) {
+      case 'logout': delete this.sessions[b.token]; return { done: true };
+      case 'all': return { config: { branches: CONFIG.BRANCHES, plates: CONFIG.PLATES, fuelTypes: CONFIG.FUEL_TYPES, tankLevels: CONFIG.TANK_LEVELS }, records: this.records.filter((r) => can(r.branch)).map((r) => ({ ...r })), me: this.pub(me) };
+      case 'signature': return this.signatures[`${b.refId}|${b.kind || 'approver'}`] || '';
+      case 'changePassword':
+        if (b.oldPassword !== me.password) this.fail('รหัสผ่านเดิมไม่ถูกต้อง');
+        if (String(b.newPassword || '').length < 6) this.fail('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+        me.password = b.newPassword; me.mustChangePassword = false; return { done: true };
+      case 'create': {
+        const p = b.payload;
+        if (!can(p.branch)) this.fail('คุณไม่มีสิทธิ์ส่งคำขอของสาขา ' + p.branch);
+        if (!b.files?.mileage) this.fail('กรุณาแนบรูปเข็มไมล์');
+        if (!b.signature) this.fail('กรุณาลงชื่อผู้ขอ');
+        const refId = `DEMO-${p.requestDate.replace(/-/g, '')}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
+        this.signatures[`${refId}|requester`] = b.signature;
+        this.records.unshift({ ...p, refId, timestamp: this.now(), totalDistanceKm: Number(p.totalDistanceKm) || 0,
+          mileageBefore: Number(p.mileageBefore), destinations: p.destinations.filter(Boolean), mileagePhotoUrl: '', receiptPhotoUrl: '',
+          vehicle: p.licensePlate === CONFIG.OTHER_PLATE ? p.licensePlateOther : p.licensePlate, status: 'รออนุมัติขั้นที่ 1', createdBy: me.username,
+          hasRequesterSignature: true, reviewerName: '', reviewedAt: '', approvedLiters: 0, tankLevel: '', reviewNote: '', hasReviewerSignature: false,
+          approverName: '', approvedAt: '', approvalNote: '', hasSignature: false, filledDate: '', filledLiters: 0, filledAmount: 0, pricePerLiter: 0 });
+        return { refId, status: 'รออนุมัติขั้นที่ 1' };
+      }
+      case 'review': {
+        need('admin', 'reviewer');
+        const r = find('รออนุมัติขั้นที่ 1'), ok = b.decision === 'approve';
+        if (ok && !(b.liters > 0)) this.fail('กรุณาระบุจำนวนลิตร');
+        if (b.signature) this.signatures[`${r.refId}|reviewer`] = b.signature;
+        Object.assign(r, { status: ok ? 'รออนุมัติขั้นสุดท้าย' : 'ไม่อนุมัติ', reviewerName: me.fullName, reviewedAt: this.now(), reviewNote: b.note || '',
+          approvedLiters: ok ? Number(b.liters) : 0, tankLevel: ok ? b.tankLevel : '', hasReviewerSignature: !!b.signature });
+        return { ...r };
+      }
+      case 'decide': {
+        need('admin', 'approver');
+        const r = find('รออนุมัติขั้นสุดท้าย'), ok = b.decision === 'approve';
+        if (b.signature) this.signatures[`${r.refId}|approver`] = b.signature;
+        Object.assign(r, { status: ok ? 'อนุมัติแล้ว รอเติม' : 'ไม่อนุมัติ', approverName: me.fullName, approvedAt: this.now(), approvalNote: b.note || '', hasSignature: !!b.signature });
+        return { ...r };
+      }
+      case 'fill': {
+        need('admin', 'branch');
+        const r = find('อนุมัติแล้ว รอเติม');
+        if (r.approvedLiters && b.liters > r.approvedLiters + 0.5) this.fail(`เติมเกินจำนวนที่อนุมัติ (${r.approvedLiters} ลิตร)`);
+        if (!b.receipt) this.fail('กรุณาแนบรูปบิลน้ำมัน');
+        Object.assign(r, { status: 'เติมแล้ว', filledDate: b.filledDate, filledLiters: Number(b.liters), filledAmount: Number(b.amount),
+          pricePerLiter: Math.round(b.amount / b.liters * 100) / 100, filledBy: me.username });
+        return { ...r };
+      }
+      case 'listUsers': need('admin'); return this.list();
+      case 'saveUser': {
+        need('admin');
+        const u = b.user, name = String(u.username || '').trim().toLowerCase();
+        if (!/^[a-z0-9._-]{3,30}$/.test(name)) this.fail('ชื่อผู้ใช้ต้องเป็น a-z, 0-9, . _ - ยาว 3–30 ตัว');
+        if (!u.fullName) this.fail('กรุณากรอกชื่อ-นามสกุล');
+        if (u.role === 'branch' && !u.branches.length) this.fail('ผู้ใช้สาขาต้องเลือกอย่างน้อย 1 สาขา');
+        const ex = this.users.find((x) => x.username === name);
+        if (u.isNew) {
+          if (ex) this.fail(`มีชื่อผู้ใช้ "${name}" อยู่แล้ว`);
+          if (String(u.password || '').length < 6) this.fail('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+          this.users.push({ username: name, fullName: u.fullName, role: u.role, branches: u.branches, email: u.email, active: u.active, password: u.password, mustChangePassword: true, createdAt: this.now(), lastLogin: '' });
+        } else {
+          if (name === me.username && (u.role !== 'admin' || !u.active)) this.fail('ไม่สามารถลดสิทธิ์หรือปิดบัญชีของตัวเองได้');
+          Object.assign(ex, { fullName: u.fullName, role: u.role, branches: u.branches, email: u.email, active: u.active });
+          if (u.password) { ex.password = u.password; ex.mustChangePassword = true; }
+        }
+        return this.list();
+      }
+      case 'deleteUser':
+        need('admin');
+        if (b.username === me.username) this.fail('ไม่สามารถลบบัญชีของตัวเองได้');
+        this.users = this.users.filter((x) => x.username !== b.username); return this.list();
+      default: this.fail('Unknown action');
+    }
+  }
+};
+
+/* ═════════════════════ State ═════════════════════ */
+const state = {
+  records: [],
+  loaded: false,
+  loading: null,
+  files: { mileage: null, receipt: null },
+  metric: { branch: 'amount', vehicle: 'amount', month: 'amount' },
+  sumGroup: 'branch',   // ตารางสรุปยอด: branch | month | vehicle | fuel
+  stage: 1,             // แท็บอนุมัติ: 1 = ขั้นที่ 1, 2 = ขั้นสุดท้าย
+  trackFilter: 'active',
+  loadSeq: 0,
+  cfg: {},
+  charts: {},
+  page: 1,
+  selected: new Set(), // refId ของรายการที่ติ๊กเลือกเพื่อพิมพ์
+  sigCache: {},         // refId → dataURL ลายเซ็น
+  branches: [],         // รายชื่อสาขาทั้งหมดจาก Config
+  users: []             // รายชื่อสมาชิก (เฉพาะ admin)
+};
+
+async function loadData(force = false) {
+  if (state.loading && !force) return state.loading;
+  if (state.loaded && !force) return;
+  const seq = ++state.loadSeq;            // กันผลลัพธ์เก่า (เช่น โหลดค้างตอนเปลี่ยนผู้ใช้) มาทับ
+  const p = (async () => {
+    try {
+      const data = await api.get('all');
+      if (seq !== state.loadSeq) return;
+      if (data.me) { auth.set(auth.token, data.me); applyUser(); }
+      applyConfig(data.config);
+      state.records = data.records || [];
+      state.loaded = true;
+      fillPeriodSelects();
+      updatePendingBadge();
+    } catch (err) {
+      console.error(err);
+      if (err.code !== 'AUTH' && seq === state.loadSeq) toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error', 5000);
+    } finally {
+      if (state.loading === p) state.loading = null;
+    }
+  })();
+  state.loading = p;
+  return p;
+}
+
+/* ═════════════════════ Tabs ═════════════════════ */
+function showTab(name) {
+  const btn = $(`.tab-btn[data-tab="${name}"]`);
+  if (!btn || btn.classList.contains('hidden')) name = 'form';
+  $$('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  $$('.tab-panel').forEach((p) => p.classList.toggle('hidden', p.id !== `tab-${name}`));
+  try { if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`); } catch { /* iframe sandbox */ }
+  if (name === 'dashboard') loadData().then(renderDashboard);
+  if (name === 'history') loadData().then(renderHistory);
+  if (name === 'approve') loadData().then(renderApprove);
+  if (name === 'members') loadUsers();
+  if (name === 'track') loadData().then(renderTrack);
+  if (name === 'form' && state.reqPad && state.reqPad.empty) setTimeout(() => state.reqPad.fit(), 0);
+}
+
+/* ═════════════════════ Selects / Config ═════════════════════ */
+function fillSelect(sel, items, keepFirst = true) {
+  const current = sel.value;
+  const first = keepFirst ? sel.options[0].outerHTML : '';
+  sel.innerHTML = first + items.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (items.includes(current)) sel.value = current;
+}
+
+function applyConfig(cfg) {
+  const branches = cfg?.branches?.length ? cfg.branches : CONFIG.BRANCHES;
+  const plates = cfg?.plates?.length ? cfg.plates : CONFIG.PLATES;
+  state.branches = branches;
+  if (cfg) state.cfg = cfg;
+  renderFuelChips(cfg?.fuelTypes?.length ? cfg.fuelTypes : CONFIG.FUEL_TYPES);
+  const mine = myBranches();
+  const visible = mine ? branches.filter((b) => mine.includes(b)) : branches;
+  fillSelect($('#branch'), visible);
+  fillSelect($('#licensePlate'), [...plates, CONFIG.OTHER_PLATE]);
+  fillSelect($('#dashBranch'), visible);
+  fillSelect($('#hBranch'), visible);
+  // ผู้ใช้ที่มีสาขาเดียว: เลือกให้อัตโนมัติและล็อกไว้
+  $('#branch').disabled = visible.length === 1;
+  if (visible.length === 1) $('#branch').value = visible[0];
+  const lastBranch = store.get('rst_branch');
+  if (lastBranch && visible.includes(lastBranch) && !$('#branch').value) $('#branch').value = lastBranch;
+}
+
+/* ═════════════════════ FORM ═════════════════════ */
+function renderFuelChips(types) {
+  const box = $('#fuelChips');
+  const cur = box.querySelector('input:checked')?.value || store.get('rst_fuel');
+  box.innerHTML = types.map((t) => `<label><input type="radio" name="fuelType" value="${esc(t)}" ${t === cur ? 'checked' : ''} /><span>${t.includes('ดีเซล') ? '🟡' : '🟢'} ${esc(t)}</span></label>`).join('');
+}
+
+function addDestination(value = '') {
+  const list = $('#destList');
+  const n = list.children.length;
+  if (n >= CONFIG.MAX_DEST) return;
+  const row = document.createElement('div');
+  row.className = 'dest-row';
+  row.innerHTML = `<span class="badge"></span>
+    <input type="text" class="input dest-input" placeholder="" value="${esc(value)}" />
+    <button type="button" class="remove" aria-label="ลบปลายทาง">&times;</button>`;
+  list.appendChild(row);
+  renumberDest();
+  if (n > 0) row.querySelector('input').focus();
+}
+
+function renumberDest() {
+  const rows = $$('#destList .dest-row');
+  rows.forEach((r, i) => {
+    r.querySelector('.badge').textContent = i + 1;
+    r.querySelector('input').placeholder = `ปลายทาง ${i + 1}`;
+    r.querySelector('.remove').classList.toggle('invisible', rows.length === 1);
+  });
+  $('#addDestBtn').disabled = rows.length >= CONFIG.MAX_DEST;
+  $('#destCounter').textContent = `${rows.length}/${CONFIG.MAX_DEST} ปลายทาง`;
+}
+
+function resetDestinations() { $('#destList').innerHTML = ''; addDestination(); }
+
+function togglePlateOther() {
+  const isOther = $('#licensePlate').value === CONFIG.OTHER_PLATE;
+  $('#plateOtherWrap').classList.toggle('hidden', !isOther);
+  $('#licensePlateOther').required = isOther;
+  if (isOther) $('#licensePlateOther').focus();
+  else { $('#licensePlateOther').value = ''; clearError($('#licensePlateOther')); }
+}
+
+/* ---- Upload ---- */
+function readAsDataURL(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+}
+
+async function compressImage(file) {
+  if (!file.type.startsWith('image/')) return readAsDataURL(file); // PDF ส่งตรง
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const scale = Math.min(1, CONFIG.IMAGE_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
+  } catch {
+    return readAsDataURL(file); // เช่น HEIC ที่เบราว์เซอร์อ่านไม่ได้ ส่งไฟล์เดิม
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function initUploads(root = document) {
+  $$('.upload', root).forEach((box) => {
+    const key = box.dataset.key;
+    const input = box.querySelector('input[type=file]');
+    const zone = box.querySelector('.dropzone');
+    const preview = box.querySelector('.preview');
+    const text = box.querySelector('.dz-text');
+    const clear = box.querySelector('.clear-file');
+
+    const setFile = async (file) => {
+      if (!file) return;
+      if (file.size > 25 * 1024 * 1024) { toast('ไฟล์ใหญ่เกินไป', 'error'); return; }
+      text.textContent = 'กำลังเตรียมรูป...';
+      const dataUrl = await compressImage(file);
+      const [meta, b64] = dataUrl.split(',');
+      const mimeType = meta.match(/data:(.*?);/)[1];
+      if (b64.length * 0.75 > CONFIG.MAX_UPLOAD_MB * 1024 * 1024) { toast(`ไฟล์ใหญ่เกิน ${CONFIG.MAX_UPLOAD_MB} MB`, 'error'); text.textContent = 'แตะเพื่อถ่าย/เลือกรูป'; return; }
+      const ext = mimeType === 'image/jpeg' ? '.jpg' : (file.name.match(/\.[a-z0-9]+$/i) || [''])[0];
+      state.files[key] = { name: `${key}${ext}`, mimeType, data: b64 };
+      if (mimeType.startsWith('image/')) { preview.src = dataUrl; preview.classList.remove('hidden'); text.classList.add('hidden'); }
+      else { preview.classList.add('hidden'); text.classList.remove('hidden'); text.textContent = `📄 ${file.name}`; }
+      clear.classList.remove('hidden');
+    };
+    const clearFile = () => {
+      state.files[key] = null; input.value = '';
+      preview.classList.add('hidden'); preview.removeAttribute('src');
+      text.classList.remove('hidden'); text.textContent = 'แตะเพื่อถ่าย/เลือกรูป';
+      clear.classList.add('hidden');
+    };
+    box._clear = clearFile;
+
+    input.addEventListener('change', () => setFile(input.files[0]));
+    clear.addEventListener('click', clearFile);
+    ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove('drag'); }));
+    zone.addEventListener('drop', (e) => setFile(e.dataTransfer.files[0]));
+  });
+}
+
+/* ---- Validation ---- */
+function setError(input, msg) {
+  input.classList.add('invalid');
+  let m = input.parentElement.querySelector('.err-msg');
+  if (!m) { m = document.createElement('span'); m.className = 'err-msg'; input.parentElement.appendChild(m); }
+  m.textContent = msg;
+}
+function clearError(input) {
+  input.classList.remove('invalid');
+  input.parentElement.querySelector('.err-msg')?.remove();
+}
+
+function validateForm(form) {
+  let firstBad = null;
+  const check = (el, ok, msg) => { if (!ok) { setError(el, msg); firstBad ||= el; } else clearError(el); };
+  const f = form.elements;
+  check(f.requestDate, !!f.requestDate.value, 'กรุณาเลือกวันที่');
+  check(f.branch, !!f.branch.value, 'กรุณาเลือกสาขา');
+  check(f.driverName, f.driverName.value.trim().length > 0, 'กรุณากรอกชื่อผู้ขับ');
+  check(f.recorderName, f.recorderName.value.trim().length > 0, 'กรุณากรอกชื่อผู้ลงข้อมูล');
+  check(f.licensePlate, !!f.licensePlate.value, 'กรุณาเลือกทะเบียนรถ');
+  if (f.licensePlate.value === CONFIG.OTHER_PLATE) check(f.licensePlateOther, f.licensePlateOther.value.trim().length > 0, 'กรุณากรอกทะเบียนรถ');
+  const mil = f.mileageBefore.value;
+  check(f.mileageBefore, mil !== '' && Number(mil) >= 0, 'กรุณากรอกเลขไมล์ให้ถูกต้อง');
+  const km = f.totalDistanceKm.value;
+  check(f.totalDistanceKm, km !== '' && Number(km) >= 0, 'กรุณาระบุระยะทางรวม');
+  check(f.origin, f.origin.value.trim().length > 0, 'กรุณาระบุต้นทาง');
+  const firstDest = $('.dest-input');
+  check(firstDest, $$('.dest-input').some((i) => i.value.trim()), 'กรุณาระบุปลายทางอย่างน้อย 1 จุด');
+  const fuelOk = !!$('#fuelChips input:checked');
+  $('#fuelChips').classList.toggle('invalid', !fuelOk);
+  if (!fuelOk && !firstBad) firstBad = $('#fuelChips input');
+  if (!firstBad && !state.files.mileage) { toast('กรุณาแนบรูปเข็มไมล์', 'error'); $('.upload[data-key="mileage"]').scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
+  if (!firstBad && state.reqPad.empty) { toast('กรุณาเซ็นชื่อผู้ขอ', 'error'); $('#reqSigPad').scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
+  if (firstBad) { toast(fuelOk ? 'กรุณากรอกข้อมูลที่จำเป็นให้ครบ' : 'กรุณากรอกข้อมูลให้ครบ และเลือกประเภทน้ำมัน', 'error'); firstBad.focus(); firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  return !firstBad;
+}
+
+async function onSubmit(e) {
+  e.preventDefault();
+  const form = e.target;
+  if (!validateForm(form)) return;
+
+  const f = form.elements;
+  const payload = {
+    requestDate: f.requestDate.value,
+    branch: f.branch.value,
+    driverName: f.driverName.value.trim(),
+    recorderName: f.recorderName.value.trim(),
+    mileageBefore: f.mileageBefore.value,
+    licensePlate: f.licensePlate.value,
+    licensePlateOther: f.licensePlateOther.value.trim(),
+    gallonPurpose: f.gallonPurpose.value.trim(),
+    mainDestination: f.mainDestination.value.trim(),
+    fuelType: $('#fuelChips input:checked')?.value || '',
+    origin: f.origin.value.trim(),
+    destinations: $$('.dest-input').map((i) => i.value.trim()),
+    totalDistanceKm: f.totalDistanceKm.value
+  };
+
+  const btn = $('#submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span><span>กำลังส่งข้อมูล...</span>';
+  try {
+    const files = {};
+    if (state.files.mileage) files.mileage = state.files.mileage;
+    const signature = state.reqPad.toDataURL();
+    const res = await api.post({ action: 'create', payload, files, signature });
+    store.set('rst_reqsig_' + auth.user.username, signature);
+    store.set('rst_fuel', payload.fuelType);
+
+    store.set('rst_branch', payload.branch);
+    store.set('rst_recorder_' + (auth.user?.username || ''), payload.recorderName);
+    state.loaded = false; // ให้โหลดใหม่เมื่อเปิดแท็บอื่น
+    loadData(true).then(updatePendingBadge);
+
+    openModal('บันทึกสำเร็จ', `
+      <div class="text-center py-2">
+        <div class="mx-auto w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 grid place-items-center text-3xl mb-3">✓</div>
+        <p class="text-slate-600">ส่งคำขอเติมน้ำมันเรียบร้อยแล้ว</p>
+        <p class="text-sm text-slate-500 mt-1">สถานะ: <b>รออนุมัติขั้นที่ 1</b> · ระบบแจ้งผู้อนุมัติทางอีเมลแล้ว</p>
+        <p class="text-xs text-slate-400 mt-3">รหัสอ้างอิง</p>
+        <p class="ref !text-lg font-semibold select-all">${esc(res.refId)}</p>
+        ${isDemo() ? '<p class="text-xs text-amber-600 mt-3">(โหมด Demo — ยังไม่ได้บันทึกลง Google Sheets)</p>' : ''}
+        <button class="btn-primary mt-5" data-close>ตกลง</button>
+      </div>`);
+    resetForm(form);
+  } catch (err) {
+    console.error(err);
+    toast('ส่งข้อมูลไม่สำเร็จ: ' + err.message, 'error', 6000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-label">ส่งคำขอเติมน้ำมัน</span>';
+  }
+}
+
+function syncReqSigLast() { $('#reqSigLast').classList.toggle('hidden', !store.get('rst_reqsig_' + (auth.user?.username || ''))); }
+
+function resetForm(form) {
+  form.reset();
+  setTimeout(() => {
+    $$('.input.invalid', form).forEach(clearError);
+    $('#requestDate').value = todayISO();
+    $('#recorderName').value = store.get('rst_recorder_' + (auth.user?.username || '')) || auth.user?.fullName || '';
+    const lb = store.get('rst_branch'); if (lb && [...$('#branch').options].some((o) => o.value === lb)) $('#branch').value = lb;
+    if ($('#branch').disabled && $('#branch').options[1]) $('#branch').value = $('#branch').options[1].value;
+    togglePlateOther();
+    resetDestinations();
+    $$('.upload', form).forEach((b) => b._clear());
+    state.reqPad?.clear();
+    syncReqSigLast();
+  });
+}
+
+/* ═════════════════════ STATUS (flow) ═════════════════════ */
+const ST = { L1: 'รออนุมัติขั้นที่ 1', L2: 'รออนุมัติขั้นสุดท้าย', OK: 'อนุมัติแล้ว รอเติม', DONE: 'เติมแล้ว', NO: 'ไม่อนุมัติ' };
+const LEGACY_ST = { 'รออนุมัติ': ST.L1, 'อนุมัติ': ST.OK };
+const statusOf = (r) => LEGACY_ST[r.status] || r.status || ST.L1;
+const STATUS_STYLE = {
+  [ST.L1]: ['st-wait', '⏳'], [ST.L2]: ['st-l2', '⏳'], [ST.OK]: ['st-ok', '✓'], [ST.DONE]: ['st-fill', '⛽'], [ST.NO]: ['st-no', '✕']
+};
+function statusPill(r) {
+  const s = statusOf(r);
+  const [cls, icon] = STATUS_STYLE[s] || ['st-wait', '•'];
+  return `<span class="status ${cls}">${icon} ${esc(s)}</span>`;
+}
+/** วันที่ใช้สรุปยอดเงิน: วันที่เติมจริง (ถ้ามี) ไม่งั้นวันที่ขอ */
+const recDate = (r) => r.filledDate || r.requestDate || '';
+const baht = (n) => new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+const liters = (n) => new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 }).format(Number(n) || 0);
+
+/* ═════════════════════ DASHBOARD ═════════════════════ */
+const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+/** กรองตาม ปี (ค.ศ. 'YYYY') / เดือน ('01'–'12') / สาขา — ค่าว่าง = ไม่กรอง; dateFn เลือกวันที่ที่ใช้กรอง */
+function filterByPeriod(records, year, month, branch, dateFn = (r) => r.requestDate) {
+  return records.filter((r) => {
+    const d = dateFn(r) || '';
+    if (year && d.slice(0, 4) !== year) return false;
+    if (month && d.slice(5, 7) !== month) return false;
+    if (branch && r.branch !== branch) return false;
+    return true;
+  });
+}
+
+function periodLabel(year, month) {
+  if (!year && !month) return 'ทุกช่วงเวลา';
+  const m = month ? TH_MONTHS[Number(month) - 1] : 'ทุกเดือน';
+  const y = year ? `พ.ศ. ${Number(year) + 543}` : 'ทุกปี';
+  return `${m} ${y}`;
+}
+
+/** เติมตัวเลือก ปี (จากข้อมูลจริง + ปีปัจจุบัน) และ เดือน ให้ทุก select ที่เกี่ยวข้อง */
+function fillPeriodSelects() {
+  const years = new Set([String(new Date().getFullYear())]);
+  state.records.forEach((r) => { if (r.requestDate) years.add(r.requestDate.slice(0, 4)); if (r.filledDate) years.add(r.filledDate.slice(0, 4)); });
+  const yearOpts = [...years].sort().reverse();
+  $$('.year-select').forEach((sel) => {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">ทุกปี</option>' + yearOpts.map((y) => `<option value="${y}">${Number(y) + 543}</option>`).join('');
+    sel.value = yearOpts.includes(cur) ? cur : '';
+  });
+  $$('.month-select').forEach((sel) => {
+    if (sel.options.length > 1) return;
+    sel.innerHTML = '<option value="">ทุกเดือน</option>' + TH_MONTHS.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}">${m}</option>`).join('');
+  });
+}
+
+function aggregate(records, keyFn) {
+  const map = new Map();
+  records.forEach((r) => {
+    const k = keyFn(r) || '(ไม่ระบุ)';
+    const o = map.get(k) || { count: 0, filled: 0, km: 0, liters: 0, amount: 0 };
+    o.count++; o.km += Number(r.totalDistanceKm) || 0;
+    if (statusOf(r) === ST.DONE) { o.filled++; o.liters += Number(r.filledLiters) || 0; o.amount += Number(r.filledAmount) || 0; }
+    map.set(k, o);
+  });
+  return map;
+}
+
+const dashRecords = () => filterByPeriod(state.records, $('#dashYear').value, $('#dashMonth').value, $('#dashBranch').value, recDate)
+  .filter((r) => statusOf(r) !== ST.NO);
+
+function renderDashboard() {
+  const recs = dashRecords();
+  const done = recs.filter((r) => statusOf(r) === ST.DONE);
+  const sum = (arr, k) => arr.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+  const totalAmount = sum(done, 'filledAmount'), totalLiters = sum(done, 'filledLiters');
+  const byBranch = aggregate(recs, (r) => r.branch);
+  const top = [...byBranch.entries()].sort((a, b) => b[1].amount - a[1].amount)[0];
+
+  $('#kpiAmount').textContent = baht(totalAmount);
+  $('#kpiLiters').textContent = liters(totalLiters);
+  $('#kpiLitersSub').textContent = totalLiters ? `ลิตร · เฉลี่ย ${baht(totalAmount / totalLiters)} บ./ลิตร` : 'ลิตร';
+  $('#kpiTotal').textContent = nf.format(recs.length);
+  const pend = recs.filter((r) => [ST.L1, ST.L2].includes(statusOf(r))).length;
+  const wait = recs.filter((r) => statusOf(r) === ST.OK).length;
+  $('#kpiTotalSub').textContent = `รออนุมัติ ${nf.format(pend)} · รอเติม ${nf.format(wait)}`;
+  $('#kpiKm').textContent = nf.format(sum(recs, 'totalDistanceKm'));
+  $('#kpiTopBranch').textContent = top && top[1].amount ? top[0] : '–';
+  $('#kpiTopBranch').title = top ? top[0] : '';
+  $('#kpiTopBranchSub').textContent = top && top[1].amount ? `${baht(top[1].amount)} บาท` : ' ';
+  $('#kpiGallon').textContent = nf.format(recs.filter((r) => r.gallonPurpose).length);
+
+  // กราฟ: ลำดับสาขาตาม config เพื่อไม่ให้สลับไปมา
+  const branchOrder = state.branches.length ? state.branches : CONFIG.BRANCHES;
+  const branchLabels = [...new Set([...branchOrder, ...byBranch.keys()])].filter((b) => byBranch.has(b) || (!$('#dashBranch').value && (!myBranches() || myBranches().includes(b))));
+  drawBar('chartBranch', 'branch', branchLabels, branchLabels.map((b) => byBranch.get(b) || { count: 0, km: 0, liters: 0, amount: 0 }), false);
+
+  const byVehicle = [...aggregate(recs, (r) => r.vehicle).entries()]
+    .sort((a, b) => b[1][state.metric.vehicle] - a[1][state.metric.vehicle]).slice(0, 10);
+  drawBar('chartVehicle', 'vehicle', byVehicle.map((x) => x[0]), byVehicle.map((x) => x[1]), true);
+
+  const byMonth = [...aggregate(recs, (r) => recDate(r).slice(0, 7)).entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
+  drawLine('chartMonth', byMonth.map((x) => thMonth(x[0])), byMonth.map((x) => x[1]));
+
+  renderSummary(recs);
+}
+
+/** ตารางสรุปยอด แยกสาขา / เดือน / ทะเบียนรถ / ประเภทน้ำมัน */
+function renderSummary(recs) {
+  const g = state.sumGroup;
+  const keyFn = { branch: (r) => r.branch, month: (r) => recDate(r).slice(0, 7), vehicle: (r) => r.vehicle, fuel: (r) => r.fuelType || '(ไม่ระบุ)' }[g];
+  $('#sumHead').textContent = { branch: 'สาขา', month: 'เดือน', vehicle: 'ทะเบียนรถ', fuel: 'ประเภทน้ำมัน' }[g];
+  let rows = [...aggregate(recs, keyFn).entries()];
+  rows.sort(g === 'month' ? (a, b) => b[0].localeCompare(a[0]) : (a, b) => b[1].amount - a[1].amount || b[1].count - a[1].count);
+  const label = (k) => (g === 'month' && /^\d{4}-\d{2}$/.test(k) ? `${TH_MONTHS[Number(k.slice(5)) - 1]} ${Number(k.slice(0, 4)) + 543}` : k);
+  const tr = (k, o, cls = '') => `<tr class="${cls}">
+    <td class="td">${esc(k)}</td><td class="td text-right tabular-nums">${nf.format(o.count)}</td><td class="td text-right tabular-nums">${nf.format(o.filled)}</td>
+    <td class="td text-right tabular-nums">${liters(o.liters)}</td><td class="td text-right tabular-nums font-semibold">${baht(o.amount)}</td>
+    <td class="td text-right tabular-nums">${o.liters ? baht(o.amount / o.liters) : '-'}</td><td class="td text-right tabular-nums">${nf.format(o.km)}</td></tr>`;
+  $('#sumBody').innerHTML = rows.length ? rows.map(([k, o]) => tr(label(k), o)).join('') : '<tr><td class="td text-slate-400" colspan="7">ไม่มีข้อมูลในช่วงที่เลือก</td></tr>';
+  const t = rows.reduce((a, [, o]) => { Object.keys(a).forEach((k) => { a[k] += o[k]; }); return a; }, { count: 0, filled: 0, km: 0, liters: 0, amount: 0 });
+  $('#sumFoot').innerHTML = tr('รวมทั้งหมด', t);
+}
+
+const METRIC = {
+  amount: { label: 'ยอดเงิน (บาท)', unit: 'บาท', pick: (v) => Math.round(v.amount * 100) / 100 },
+  liters: { label: 'ลิตร', unit: 'ลิตร', pick: (v) => Math.round(v.liters * 100) / 100 },
+  count: { label: 'จำนวนครั้ง', unit: 'ครั้ง', pick: (v) => v.count },
+  km: { label: 'ระยะทาง (กม.)', unit: 'กม.', pick: (v) => Math.round(v.km * 10) / 10 }
+};
+const baseOpts = () => ({
+  responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+  plugins: {
+    legend: { display: false },
+    tooltip: { backgroundColor: '#0f172a', padding: 10, titleFont: { family: 'Noto Sans Thai' }, bodyFont: { family: 'Noto Sans Thai' },
+      callbacks: { label: (c) => ` ${nf.format(c.parsed[c.chart.options.indexAxis === 'y' ? 'x' : 'y'])} ${METRIC[c.chart._metric].unit}` } }
+  },
+  scales: {
+    x: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'Noto Sans Thai', size: 11 } }, border: { color: '#e2e8f0' } },
+    y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { family: 'Noto Sans Thai', size: 11 } }, border: { display: false }, beginAtZero: true }
+  }
+});
+
+function drawBar(id, key, labels, values, horizontal) {
+  const metric = state.metric[key];
+  const data = values.map(METRIC[metric].pick);
+  state.charts[id]?.destroy();
+  const opts = baseOpts();
+  if (metric === 'count') opts.scales.y.ticks.precision = 0;
+  if (horizontal) {
+    opts.indexAxis = 'y';
+    [opts.scales.x, opts.scales.y] = [{ ...opts.scales.y }, { ...opts.scales.x }];
+  }
+  const chart = new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: METRIC[metric].label, data, backgroundColor: CONFIG.CHART_COLOR, hoverBackgroundColor: CONFIG.CHART_COLOR_HOVER, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 36 }] },
+    options: opts
+  });
+  chart._metric = metric;
+  state.charts[id] = chart;
+}
+
+function drawLine(id, labels, values) {
+  const metric = state.metric.month;
+  const data = values.map(METRIC[metric].pick);
+  state.charts[id]?.destroy();
+  const opts = baseOpts();
+  opts.interaction = { mode: 'index', intersect: false };
+  if (metric === 'count') opts.scales.y.ticks.precision = 0;
+  const chart = new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels, datasets: [{ label: METRIC[metric].label, data, borderColor: CONFIG.CHART_COLOR, backgroundColor: 'rgba(230,0,18,.08)', fill: true, borderWidth: 2, tension: .3, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: '#fff', pointBorderWidth: 2 }] },
+    options: opts
+  });
+  chart._metric = metric;
+  state.charts[id] = chart;
+}
+
+/* ═════════════════════ APPROVAL (2 ขั้น) ═════════════════════ */
+const canReview = () => isRole('admin', 'reviewer');
+const canFinal = () => isRole('admin', 'approver');
+const canFill = () => isRole('admin', 'branch');
+const inScope = (r) => { const s = myBranches(); return !s || s.includes(r.branch); };
+
+function stageRecords(stage) {
+  const st = stage === 1 ? ST.L1 : ST.L2;
+  return state.records.filter((r) => statusOf(r) === st && inScope(r)).sort((a, b) => a.requestDate.localeCompare(b.requestDate));
+}
+
+function updatePendingBadge() {
+  let n = 0;
+  if (canReview()) n += stageRecords(1).length;
+  if (canFinal()) n += stageRecords(2).length;
+  const b = $('#pendingBadge');
+  b.textContent = n > 99 ? '99+' : n; b.classList.toggle('hidden', n === 0);
+  const w = state.records.filter((r) => statusOf(r) === ST.OK && inScope(r)).length;
+  const tb = $('#trackBadge');
+  tb.textContent = w; tb.classList.toggle('hidden', !canFill() || w === 0);
+}
+
+function tankBar(level) {
+  const pct = { 'ขีดแดง': 6, '1/4': 25, '1/2': 50, '3/4': 75, 'เต็มถัง': 100 }[level] || 0;
+  return `<span class="tank-bar" title="${esc(level)}"><i class="${pct < 20 ? 'low' : ''}" style="width:${pct}%"></i></span>`;
+}
+
+function routeText(r) { return [r.origin, ...(r.destinations || [])].filter(Boolean).map(esc).join(' → ') || esc(r.mainDestination || '-'); }
+
+function renderApprove() {
+  if (!isRole('admin', 'reviewer', 'approver')) return;
+  $('#apprWho').textContent = auth.user.fullName;
+  const scope = myBranches();
+  $('#apprScope').textContent = `${ROLE_LABEL[auth.user.role]} · ${scope ? 'สาขา: ' + scope.join(', ') : 'ทุกสาขา'}`;
+  // ขั้นที่แสดงได้ตามบทบาท
+  const stages = [canReview() && 1, canFinal() && 2].filter(Boolean);
+  if (!stages.includes(state.stage)) state.stage = stages[0];
+  $$('#stageSeg button').forEach((b) => {
+    const st = Number(b.dataset.stage);
+    b.classList.toggle('hidden', !stages.includes(st));
+    b.classList.toggle('active', st === state.stage);
+  });
+  $('#cntL1').textContent = stageRecords(1).length;
+  $('#cntL2').textContent = stageRecords(2).length;
+  const list = stageRecords(state.stage);
+  $('#pendingCount').textContent = nf.format(list.length);
+  $('#pendingEmpty').classList.toggle('hidden', list.length > 0);
+  const s2 = state.stage === 2;
+  $('#pendingList').innerHTML = list.map((r) => `
+    <article class="card appr-card ${s2 ? 'stage2' : ''}" data-ref="${esc(r.refId)}">
+      <div class="flex flex-wrap justify-between items-start gap-2">
+        <div>
+          <span class="ref">${esc(r.refId)}</span>
+          <div class="text-lg font-semibold mt-1">${esc(r.vehicle)} <span class="pill">${esc(r.fuelType || '-')}</span> ${r.gallonPurpose ? `<span class="pill">แกลลอน: ${esc(r.gallonPurpose)}</span>` : ''}</div>
+          <div class="text-sm text-slate-500">${esc(r.branch)} · เข้าเติม ${thDate(r.requestDate)}</div>
+        </div>
+        ${statusPill(r)}
+      </div>
+      <dl class="appr-grid">
+        <div><dt>ผู้ขอ</dt><dd>${esc(r.recorderName)}</dd></div>
+        <div><dt>ผู้ขับ</dt><dd>${esc(r.driverName)}</dd></div>
+        <div><dt>เลขไมล์ก่อนเติม</dt><dd>${nf.format(r.mileageBefore)}</dd></div>
+        <div><dt>ระยะทางรวม</dt><dd>${r.totalDistanceKm ? nf.format(r.totalDistanceKm) + ' กม.' : '-'}</dd></div>
+        <div class="col-span-2"><dt>เส้นทาง</dt><dd>${routeText(r)}</dd></div>
+        ${s2 ? `<div class="col-span-2 rounded-lg bg-indigo-50 border border-indigo-100 p-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div><dt>อนุมัติให้เติม</dt><dd class="big-liters">${liters(r.approvedLiters)} <span class="text-sm font-normal">ลิตร</span></dd></div>
+          <div><dt>น้ำมันในถัง</dt><dd class="flex items-center gap-2">${tankBar(r.tankLevel)} ${esc(r.tankLevel || '-')}</dd></div>
+          <div><dt>ขั้นที่ 1 โดย</dt><dd>${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span></dd></div>
+          ${r.reviewNote ? `<div class="w-full"><dt>หมายเหตุ</dt><dd>${esc(r.reviewNote)}</dd></div>` : ''}
+        </div>` : ''}
+      </dl>
+      <div class="flex flex-wrap items-center gap-2 mt-4">
+        <span class="flex gap-1">${photoBtns(r)}</span>
+        <button type="button" class="icon-btn" data-act="detail">รายละเอียด</button>
+        <span class="flex-1"></span>
+        <button type="button" class="btn-ghost btn-reject" data-act="reject">✕ ไม่อนุมัติ</button>
+        <button type="button" class="btn-primary !min-w-0" data-act="approve">${s2 ? '✓ เซ็นอนุมัติ' : '✓ อนุมัติ + ระบุลิตร'}</button>
+      </div>
+    </article>`).join('');
+}
+
+/* ---- Signature pad ---- */
+function initSignaturePad(canvas) {
+  const ctx = canvas.getContext('2d');
+  const pad = { empty: true };
+  pad.fit = () => {
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    canvas.width = w * ratio; canvas.height = h * ratio;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0b1f5c';
+    pad.empty = true; pad.sized = true;
+  };
+  pad.fit();
+  let drawing = false, last = null;
+  const pos = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  canvas.addEventListener('pointerdown', (e) => { if (!pad.sized) pad.fit(); drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill(); pad.empty = false; });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const p = pos(e);
+    ctx.beginPath(); ctx.moveTo(last.x, last.y);
+    const mx = (last.x + p.x) / 2, my = (last.y + p.y) / 2;
+    ctx.quadraticCurveTo(last.x, last.y, mx, my); ctx.lineTo(p.x, p.y); ctx.stroke();
+    last = p; pad.empty = false;
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => canvas.addEventListener(ev, () => { drawing = false; }));
+  pad.clear = () => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.restore(); pad.empty = true; };
+  pad.load = (dataUrl) => new Promise((res) => { if (!pad.sized) pad.fit(); const img = new Image(); img.onload = () => { pad.clear(); ctx.drawImage(img, 0, 0, canvas.clientWidth, canvas.clientHeight); pad.empty = false; res(); }; img.src = dataUrl; });
+  pad.toDataURL = () => {
+    const out = document.createElement('canvas');
+    const scale = Math.min(1, 600 / canvas.width);
+    out.width = canvas.width * scale; out.height = canvas.height * scale;
+    out.getContext('2d').drawImage(canvas, 0, 0, out.width, out.height);
+    return out.toDataURL('image/png');
+  };
+  return pad;
+}
+
+const sigBlock = (savedSig, required, who) => `
+  <div class="field">
+    <div class="flex items-center justify-between">
+      <span class="label ${required ? 'req' : ''}">ลายเซ็น${required ? '' : ' (ถ้ามี)'}</span>
+      <span class="flex gap-3 text-xs">
+        ${savedSig ? '<button type="button" id="sigUseLast" class="link-btn">ใช้ลายเซ็นล่าสุด</button>' : ''}
+        <button type="button" id="sigClear" class="link-btn">ล้าง</button>
+      </span>
+    </div>
+    <canvas id="sigPad" class="sig-pad" aria-label="พื้นที่เซ็นชื่อ"></canvas>
+    <span class="text-xs text-neutral-400">เซ็นด้วยนิ้วหรือเมาส์ในกรอบ · ${esc(who)}</span>
+  </div>`;
+
+/** stage 1 = อนุมัติขั้นที่ 1 (ระบุลิตร + ระดับน้ำมัน), stage 2 = อนุมัติสูงสุด (เซ็น) */
+function openDecision(refId, decision, stage) {
+  const r = state.records.find((x) => x.refId === refId);
+  if (!r) return;
+  const approve = decision === 'approve';
+  const sigKey = `rst_sig_${auth.user.username}`;
+  const savedSig = store.get(sigKey);
+  const title = approve ? (stage === 1 ? 'อนุมัติขั้นที่ 1 — ระบุจำนวนลิตร' : 'อนุมัติขั้นสุดท้าย — เซ็นอนุมัติ') : 'ไม่อนุมัติคำขอ';
+  const levels = state.cfg.tankLevels || CONFIG.TANK_LEVELS;
+  openModal(title, `
+    <div class="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-sm mb-4">
+      <div class="flex justify-between gap-2"><span class="ref">${esc(r.refId)}</span><span>เข้าเติม ${thDate(r.requestDate)}</span></div>
+      <div class="font-semibold mt-1">${esc(r.vehicle)} · ${esc(r.fuelType || '-')} · ${esc(r.branch)}</div>
+      <div class="text-neutral-500">ผู้ขอ ${esc(r.recorderName)} · ไมล์ ${nf.format(r.mileageBefore)} · ${r.totalDistanceKm ? nf.format(r.totalDistanceKm) + ' กม.' : '-'}</div>
+      ${stage === 2 ? `<div class="mt-2 flex flex-wrap gap-x-5 gap-y-1"><span>อนุมัติให้เติม <b class="text-brand-700">${liters(r.approvedLiters)} ลิตร</b></span><span class="inline-flex items-center gap-1">ในถัง ${tankBar(r.tankLevel)} <b>${esc(r.tankLevel)}</b></span><span class="text-neutral-500">โดย ${esc(r.reviewerName)}</span></div>` : ''}
+    </div>
+    ${approve && stage === 1 ? `
+    <div class="grid gap-4 mb-4">
+      <label class="field"><span class="label req">จำนวนลิตรที่อนุมัติให้เติม</span>
+        <div class="flex items-center gap-2"><input type="number" id="decLiters" class="input !text-xl font-bold !w-40" inputmode="decimal" min="1" step="0.5" placeholder="0" /><span>ลิตร</span></div></label>
+      <div class="field"><span class="label req">น้ำมันในถังตอนนี้เหลือ</span>
+        <div class="tank-levels" id="decTank">${levels.map((l) => `<label><input type="radio" name="tank" value="${esc(l)}" /><span>${tankBar(l)}${esc(l)}</span></label>`).join('')}</div></div>
+    </div>` : ''}
+    <label class="field mb-4">
+      <span class="label ${approve ? '' : 'req'}">${approve ? 'หมายเหตุ (ถ้ามี)' : 'เหตุผลที่ไม่อนุมัติ'}</span>
+      <textarea id="decNote" rows="2" class="input" placeholder="${approve ? 'เช่น อนุมัติตามระยะทางจริง' : 'เช่น เลขไมล์ไม่ตรงกับรูป'}"></textarea>
+    </label>
+    ${sigBlock(savedSig, approve, auth.user.fullName)}
+    <div class="flex gap-3 justify-end mt-5">
+      <button type="button" class="btn-ghost" data-close>ยกเลิก</button>
+      <button type="button" id="decSubmit" class="${approve ? 'btn-primary' : 'btn-danger'}">${approve ? '✓ ยืนยันอนุมัติ' : '✕ ยืนยันไม่อนุมัติ'}</button>
+    </div>`);
+  const pad = initSignaturePad($('#sigPad'));
+  $('#sigClear').addEventListener('click', () => pad.clear());
+  $('#sigUseLast')?.addEventListener('click', () => pad.load(savedSig));
+  $('#decSubmit').addEventListener('click', async (e) => {
+    const note = $('#decNote').value.trim();
+    if (!approve && !note) { setError($('#decNote'), 'กรุณาระบุเหตุผล'); $('#decNote').focus(); return; }
+    let lit = 0, tank = '';
+    if (approve && stage === 1) {
+      lit = Number($('#decLiters').value);
+      tank = $('#decTank input:checked')?.value || '';
+      if (!(lit > 0)) { setError($('#decLiters'), 'กรุณาระบุจำนวนลิตร'); $('#decLiters').focus(); return; }
+      if (!tank) { toast('กรุณาเลือกระดับน้ำมันในถัง', 'error'); return; }
+    }
+    if (approve && pad.empty) { toast('กรุณาเซ็นชื่อในกรอบก่อนอนุมัติ', 'error'); return; }
+    const signature = pad.empty ? '' : pad.toDataURL();
+    const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...';
+    try {
+      const body = { action: stage === 1 ? 'review' : 'decide', refId, decision, note, signature };
+      if (stage === 1) Object.assign(body, { liters: lit, tankLevel: tank });
+      const res = await api.post(body);
+      if (signature) { store.set(sigKey, signature); state.sigCache[`${refId}|${stage === 1 ? 'reviewer' : 'approver'}`] = signature; }
+      Object.assign(r, res);
+      closeModal();
+      toast(`${res.status} · ${refId}`, approve ? 'success' : 'info');
+      updatePendingBadge();
+      renderApprove();
+    } catch (err) {
+      toast(err.message, 'error', 6000);
+      btn.disabled = false; btn.textContent = approve ? '✓ ยืนยันอนุมัติ' : '✕ ยืนยันไม่อนุมัติ';
+    }
+  });
+}
+
+/** kind: requester | reviewer | approver */
+async function getSignature(refId, kind = 'approver') {
+  const key = `${refId}|${kind}`;
+  if (state.sigCache[key] !== undefined) return state.sigCache[key];
+  try { state.sigCache[key] = await api.get('signature', { refId, kind }); } catch { return ''; }
+  return state.sigCache[key];
+}
+
+async function loadSignatures(r) {
+  const [requester, reviewer, approver] = await Promise.all([
+    r.hasRequesterSignature ? getSignature(r.refId, 'requester') : '',
+    r.hasReviewerSignature ? getSignature(r.refId, 'reviewer') : '',
+    r.hasSignature ? getSignature(r.refId, 'approver') : ''
+  ]);
+  return { requester, reviewer, approver };
+}
+
+/* ═════════════════════ TRACK & FILL (สาขา) ═════════════════════ */
+function stepper(r) {
+  const s = statusOf(r);
+  const order = [ST.L1, ST.L2, ST.OK, ST.DONE];
+  const idx = order.indexOf(s);
+  const rejectedAt = s === ST.NO ? (r.reviewerName && !r.approvedLiters ? 0 : 1) : -1;
+  const labels = ['อนุมัติขั้นที่ 1', 'อนุมัติสูงสุด', 'เข้าเติม', 'บันทึกบิล'];
+  return `<div class="stepper">${labels.map((l, i) => {
+    let cls = '';
+    if (rejectedAt >= 0) cls = i < rejectedAt ? 'done' : i === rejectedAt ? 'fail' : '';
+    else cls = s === ST.DONE || i < idx ? 'done' : i === idx ? 'now' : '';
+    return `<div class="${cls}">${l}</div>`;
+  }).join('')}</div>`;
+}
+
+function renderTrack() {
+  const f = state.trackFilter;
+  const want = { active: [ST.L1, ST.L2, ST.OK], ok: [ST.OK], done: [ST.DONE, ST.NO], all: null }[f];
+  const list = state.records.filter((r) => inScope(r) && (!want || want.includes(statusOf(r))))
+    .sort((a, b) => (statusOf(a) === ST.OK ? -1 : 0) - (statusOf(b) === ST.OK ? -1 : 0) || b.requestDate.localeCompare(a.requestDate))
+    .slice(0, 60);
+  $('#trackEmpty').classList.toggle('hidden', list.length > 0);
+  $('#trackList').innerHTML = list.map((r) => {
+    const s = statusOf(r);
+    return `<article class="card ${s === ST.OK ? 'appr-card !border-l-emerald-500' : ''}" data-ref="${esc(r.refId)}">
+      <div class="flex flex-wrap justify-between items-start gap-2">
+        <div><span class="ref">${esc(r.refId)}</span>
+          <div class="font-semibold mt-1">${esc(r.vehicle)} <span class="pill">${esc(r.fuelType || '-')}</span></div>
+          <div class="text-sm text-slate-500">${esc(r.branch)} · เข้าเติม ${thDate(r.requestDate)}</div></div>
+        ${statusPill(r)}
+      </div>
+      ${stepper(r)}
+      <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm mt-2">
+        ${r.approvedLiters ? `<span>อนุมัติ <b class="text-brand-700">${liters(r.approvedLiters)} ลิตร</b></span>` : ''}
+        ${s === ST.DONE ? `<span>เติมจริง <b>${liters(r.filledLiters)} ลิตร</b> · <b>${baht(r.filledAmount)} บาท</b></span>` : ''}
+        ${s === ST.NO ? `<span class="text-red-700">เหตุผล: ${esc(r.approvalNote || r.reviewNote || '-')}</span>` : ''}
+      </div>
+      <div class="flex flex-wrap gap-2 mt-3 justify-end">
+        <button type="button" class="icon-btn" data-act="detail">รายละเอียด</button>
+        ${[ST.OK, ST.DONE].includes(s) ? '<button type="button" class="icon-btn" data-act="slip">🖨 ใบอนุมัติ</button>' : ''}
+        ${s === ST.OK && canFill() ? '<button type="button" class="btn-primary !min-w-0 !py-2" data-act="fill">⛽ บันทึกผลการเติม</button>' : ''}
+      </div>
+    </article>`;
+  }).join('');
+  $$('#trackSeg button').forEach((b) => b.classList.toggle('active', b.dataset.f === f));
+}
+
+function openFill(refId) {
+  const r = state.records.find((x) => x.refId === refId); if (!r) return;
+  openModal('บันทึกผลการเติมน้ำมัน', `
+    <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm mb-4">
+      <div class="flex justify-between"><span class="ref">${esc(r.refId)}</span>${statusPill(r)}</div>
+      <div class="font-semibold mt-1">${esc(r.vehicle)} · ${esc(r.fuelType)} · ${esc(r.branch)}</div>
+      <div>อนุมัติให้เติมไม่เกิน <b class="text-brand-700">${liters(r.approvedLiters)} ลิตร</b> · อนุมัติโดย ${esc(r.approverName)}</div>
+    </div>
+    <form id="fillForm" class="grid gap-4" novalidate>
+      <div class="grid sm:grid-cols-3 gap-4">
+        <label class="field"><span class="label req">วันที่เติม</span><input type="date" name="filledDate" class="input" value="${todayISO()}" /></label>
+        <label class="field"><span class="label req">จำนวนลิตรที่เติม</span><input type="number" name="liters" class="input" inputmode="decimal" step="0.01" min="0" max="${r.approvedLiters || ''}" placeholder="0.00" /></label>
+        <label class="field"><span class="label req">ยอดเงิน (บาท)</span><input type="number" name="amount" class="input" inputmode="decimal" step="0.01" min="0" placeholder="0.00" /></label>
+      </div>
+      <div class="text-sm text-slate-500">ราคาเฉลี่ย: <b id="fillPpl">-</b> บาท/ลิตร</div>
+      <div class="upload" data-key="fillReceipt">
+        <span class="label req">แนบรูปบิลน้ำมัน</span>
+        <label class="dropzone"><input type="file" accept="image/*,application/pdf" capture="environment" class="sr-only" />
+          <img class="preview hidden" alt="ตัวอย่างบิล" /><span class="dz-text">📷 แตะเพื่อถ่าย/เลือกรูปบิล</span></label>
+        <button type="button" class="clear-file hidden">ลบรูป</button>
+      </div>
+      <div class="flex justify-end gap-3">
+        <button type="button" class="btn-ghost" data-close>ยกเลิก</button>
+        <button type="submit" class="btn-primary !min-w-0">บันทึกผลการเติม</button>
+      </div>
+    </form>`);
+  const f = $('#fillForm');
+  state.files.fillReceipt = null;
+  initUploads($('#fillForm'));
+  const ppl = () => { const l = Number(f.liters.value), a = Number(f.amount.value); $('#fillPpl').textContent = l > 0 && a > 0 ? baht(a / l) : '-'; };
+  f.liters.addEventListener('input', ppl); f.amount.addEventListener('input', ppl);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const l = Number(f.liters.value), a = Number(f.amount.value);
+    if (!f.filledDate.value) { setError(f.filledDate, 'กรุณาระบุวันที่'); return; }
+    if (!(l > 0)) { setError(f.liters, 'กรุณาระบุลิตร'); return; }
+    if (r.approvedLiters && l > r.approvedLiters + 0.5) { setError(f.liters, `เกินที่อนุมัติ (${liters(r.approvedLiters)} ลิตร)`); return; }
+    if (!(a > 0)) { setError(f.amount, 'กรุณาระบุยอดเงิน'); return; }
+    if (!state.files.fillReceipt) { toast('กรุณาแนบรูปบิลน้ำมัน', 'error'); return; }
+    const btn = e.submitter; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...';
+    try {
+      const res = await api.post({ action: 'fill', refId, filledDate: f.filledDate.value, liters: l, amount: a, receipt: state.files.fillReceipt });
+      Object.assign(r, res);
+      closeModal(); toast(`บันทึกการเติมแล้ว · ${refId}`);
+      updatePendingBadge(); renderTrack();
+    } catch (err) { toast(err.message, 'error', 6000); btn.disabled = false; btn.textContent = 'บันทึกผลการเติม'; }
+  });
+}
+
+/** ใบอนุมัติเติมน้ำมัน (1 รายการ) — พิมพ์หรือบันทึกเป็น PDF แทนกระดาษ */
+async function printSlip(refId) {
+  const r = state.records.find((x) => x.refId === refId); if (!r) return;
+  toast('กำลังเตรียมใบอนุมัติ...', 'info', 1500);
+  const sig = await loadSignatures(r);
+  const s = statusOf(r);
+  const kv = (k, v) => `<tr><td class="k">${k}</td><td>${v || '-'}</td></tr>`;
+  const sigBox = (title, img, name, when, extra = '') => `<div><div style="font-size:9pt;color:#555">${title}</div>${img ? `<img src="${img}" alt="">` : '<div style="height:55px"></div>'}<div>( ${esc(name || '............................')} )</div><div style="font-size:8.5pt;color:#555">${esc(when || '')}</div>${extra}</div>`;
+  $('#printArea').innerHTML = `<div class="slip">
+    <div class="pr-head"><div><div style="font-size:9pt;color:#c8000f;font-weight:700">${esc(CONFIG.COMPANY_NAME)}</div><h1>ใบขออนุมัติเติมน้ำมันเชื้อเพลิง</h1></div>
+      <div class="meta">เลขที่ <b>${esc(r.refId)}</b><br>สถานะ: <span class="stamp ${s === ST.NO ? 'no' : ''}">${esc(s)}</span></div></div>
+    <h2>ข้อมูลคำขอ</h2>
+    <table class="kv">
+      ${kv('วันที่เข้าเติม', thDate(r.requestDate))}${kv('สาขา', esc(r.branch))}
+      ${kv('ทะเบียนรถ', esc(r.vehicle))}${kv('ประเภทน้ำมัน', esc(r.fuelType))}
+      ${kv('เลขไมล์ก่อนเติม', nf.format(r.mileageBefore))}${kv('ผู้ขับ', esc(r.driverName))}
+      ${kv('ต้นทาง → ปลายทาง', routeText(r))}${kv('ระยะทางรวม', r.totalDistanceKm ? nf.format(r.totalDistanceKm) + ' กม.' : '')}
+      ${r.mainDestination ? kv('วัตถุประสงค์', esc(r.mainDestination)) : ''}${r.gallonPurpose ? kv('เติมใส่แกลลอน', esc(r.gallonPurpose)) : ''}
+    </table>
+    <h2>ผลการพิจารณา</h2>
+    <table class="kv">
+      ${kv('จำนวนลิตรที่อนุมัติ', r.approvedLiters ? `<b>${liters(r.approvedLiters)} ลิตร</b>` : '')}${kv('น้ำมันในถังก่อนเติม', esc(r.tankLevel))}
+      ${r.reviewNote ? kv('หมายเหตุขั้นที่ 1', esc(r.reviewNote)) : ''}${r.approvalNote ? kv('หมายเหตุผู้อนุมัติ', esc(r.approvalNote)) : ''}
+    </table>
+    <div class="sigs">
+      ${sigBox('ผู้ขอเติม', sig.requester, r.recorderName, r.timestamp)}
+      ${sigBox('ผู้อนุมัติขั้นที่ 1', sig.reviewer, r.reviewerName, r.reviewedAt)}
+      ${sigBox('ผู้อนุมัติสูงสุด', sig.approver, r.approverName, r.approvedAt)}
+    </div>
+    ${s === ST.DONE ? `<h2>ผลการเติมน้ำมัน</h2><table class="kv">
+      ${kv('วันที่เติม', thDate(r.filledDate))}${kv('จำนวนลิตร', liters(r.filledLiters) + ' ลิตร')}
+      ${kv('ยอดเงิน', `<b>${baht(r.filledAmount)} บาท</b> (${esc(bahtText(r.filledAmount))})`)}${kv('ราคาเฉลี่ย', baht(r.pricePerLiter) + ' บาท/ลิตร')}
+    </table>` : ''}
+    <div class="pr-foot"><span>RST-FUEL · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</span><span>Dev: tana.pittayatanadol</span></div>
+  </div>`;
+  setPrintPage('portrait');
+  await waitImages();
+  window.print();
+  setTimeout(() => setPrintPage('landscape'), 500);
+}
+
+function setPrintPage(orient) {
+  let el = $('#printPageStyle');
+  if (!el) { el = document.createElement('style'); el.id = 'printPageStyle'; document.head.appendChild(el); }
+  el.textContent = orient === 'portrait' ? '@media print { @page { size: A4 portrait; margin: 12mm; } }' : '';
+}
+const waitImages = () => Promise.all($$('#printArea img').map((im) => (im.complete ? 0 : new Promise((r) => { im.onload = im.onerror = r; }))));
+
+/** แปลงจำนวนเงินเป็นคำอ่านภาษาไทย เช่น 1250.50 → หนึ่งพันสองร้อยห้าสิบบาทห้าสิบสตางค์ */
+function bahtText(num) {
+  num = Math.round((Number(num) || 0) * 100) / 100;
+  const digits = ['ศูนย์', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
+  const pos = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน'];
+  const read = (n) => {
+    if (n === 0) return '';
+    if (n >= 1e6) return read(Math.floor(n / 1e6)) + 'ล้าน' + read(n % 1e6);
+    const s = String(n); let out = '';
+    for (let i = 0; i < s.length; i++) {
+      const d = Number(s[i]), p = s.length - i - 1;
+      if (d === 0) continue;
+      if (p === 1 && d === 1) out += 'สิบ';
+      else if (p === 1 && d === 2) out += 'ยี่สิบ';
+      else if (p === 0 && d === 1 && s.length > 1) out += 'เอ็ด';
+      else out += digits[d] + pos[p];
+    }
+    return out;
+  };
+  const b = Math.floor(num), st = Math.round((num - b) * 100);
+  if (!b && !st) return 'ศูนย์บาทถ้วน';
+  return (b ? read(b) + 'บาท' : '') + (st ? read(st) + 'สตางค์' : 'ถ้วน');
+}
+
+/* ═════════════════════ ใบวางบิลประจำเดือน ═════════════════════ */
+function openBillDialog() {
+  const now = new Date();
+  const ym = { y: String(now.getFullYear()), m: String(now.getMonth() + 1).padStart(2, '0') };
+  const mine = myBranches();
+  const branches = (state.branches.length ? state.branches : CONFIG.BRANCHES).filter((b) => !mine || mine.includes(b));
+  openModal('พิมพ์ใบวางบิลประจำเดือน', `
+    <form id="billForm" class="grid gap-4" novalidate>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="field"><span class="label">ปี (พ.ศ.)</span><select name="y" class="input">${[...new Set([ym.y, ...state.records.map((r) => recDate(r).slice(0, 4)).filter(Boolean)])].sort().reverse().map((y) => `<option value="${y}">${Number(y) + 543}</option>`).join('')}</select></label>
+        <label class="field"><span class="label">เดือน</span><select name="m" class="input">${TH_MONTHS.map((t, i) => `<option value="${String(i + 1).padStart(2, '0')}">${t}</option>`).join('')}</select></label>
+      </div>
+      <label class="field"><span class="label">สาขา</span><select name="b" class="input">${mine && mine.length === 1 ? '' : '<option value="">ทุกสาขา (สรุปแยกสาขา)</option>'}${branches.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}</select></label>
+      <p class="text-xs text-slate-500">รวมเฉพาะรายการสถานะ "เติมแล้ว" ตามวันที่เติมจริงในเดือนที่เลือก</p>
+      <div class="flex justify-end gap-3"><button type="button" class="btn-ghost" data-close>ยกเลิก</button><button type="submit" class="btn-primary !min-w-0">🖨 พิมพ์ใบวางบิล</button></div>
+    </form>`);
+  const f = $('#billForm'); f.m.value = ym.m;
+  f.addEventListener('submit', (e) => { e.preventDefault(); const v = { y: f.y.value, m: f.m.value, b: f.b.value }; closeModal(); printBill(v.y, v.m, v.b); });
+}
+
+function printBill(y, m, branch) {
+  const rows = filterByPeriod(state.records, y, m, branch, (r) => r.filledDate).filter((r) => statusOf(r) === ST.DONE)
+    .sort((a, b) => a.branch.localeCompare(b.branch, 'th') || a.filledDate.localeCompare(b.filledDate));
+  if (!rows.length) { toast(`ไม่มีรายการเติมแล้วใน ${periodLabel(y, m)}${branch ? ' · ' + branch : ''}`, 'info', 4000); return; }
+  const tot = (arr) => arr.reduce((a, r) => ({ l: a.l + r.filledLiters, a: a.a + r.filledAmount, km: a.km + (Number(r.totalDistanceKm) || 0) }), { l: 0, a: 0, km: 0 });
+  const T = tot(rows);
+  const byBranch = [...new Set(rows.map((r) => r.branch))];
+  const byFuel = [...new Set(rows.map((r) => r.fuelType || '(ไม่ระบุ)'))];
+  let i = 0;
+  const body = byBranch.map((b) => {
+    const rs = rows.filter((r) => r.branch === b), t = tot(rs);
+    return rs.map((r) => `<tr><td class="num">${++i}</td><td>${thDate(r.filledDate)}</td><td style="white-space:nowrap">${esc(r.refId)}</td><td>${esc(r.branch)}</td>
+      <td style="white-space:nowrap">${esc(r.vehicle)}</td><td>${esc(r.fuelType)}</td><td class="num">${nf.format(r.mileageBefore)}</td><td class="num">${nf.format(r.totalDistanceKm || 0)}</td>
+      <td class="num">${liters(r.filledLiters)}</td><td class="num">${baht(r.pricePerLiter)}</td><td class="num">${baht(r.filledAmount)}</td><td>${esc(r.approverName)}</td></tr>`).join('') +
+      (byBranch.length > 1 ? `<tr class="bill-total"><td colspan="7" style="text-align:right">รวม ${esc(b)}</td><td class="num">${nf.format(t.km)}</td><td class="num">${liters(t.l)}</td><td></td><td class="num">${baht(t.a)}</td><td></td></tr>` : '');
+  }).join('');
+  const fuelRows = byFuel.map((fu) => { const t = tot(rows.filter((r) => (r.fuelType || '(ไม่ระบุ)') === fu)); return `<tr><td>${esc(fu)}</td><td class="num">${liters(t.l)}</td><td class="num">${baht(t.a)}</td></tr>`; }).join('');
+  $('#printArea').innerHTML = `
+    <div class="pr-head"><div><div style="font-size:9pt;color:#c8000f;font-weight:700">${esc(CONFIG.COMPANY_NAME)}</div>
+      <h1>ใบสรุปค่าน้ำมันเชื้อเพลิง (วางบิล) ประจำเดือน${esc(periodLabel(y, m).replace('พ.ศ. ', ' '))}</h1></div>
+      <div class="meta">${branch ? 'สาขา: <b>' + esc(branch) + '</b>' : 'ทุกสาขา'}<br>จำนวน ${nf.format(rows.length)} รายการ · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }))}</div></div>
+    <table class="pr-table">
+      <thead><tr><th>#</th><th>วันที่เติม</th><th>เลขที่คำขอ</th><th>สาขา</th><th>ทะเบียนรถ</th><th>ประเภท</th><th>ไมล์ก่อนเติม</th><th>ระยะทาง (กม.)</th><th>ลิตร</th><th>บาท/ลิตร</th><th>จำนวนเงิน (บาท)</th><th>ผู้อนุมัติ</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td colspan="7" style="text-align:right">รวมทั้งสิ้น</td><td class="num">${nf.format(T.km)}</td><td class="num">${liters(T.l)}</td><td class="num">${T.l ? baht(T.a / T.l) : '-'}</td><td class="num">${baht(T.a)}</td><td></td></tr></tfoot>
+    </table>
+    <div style="display:flex;gap:16px;margin-top:8px;align-items:flex-start">
+      <table class="pr-table" style="width:auto"><thead><tr><th>ประเภทน้ำมัน</th><th>ลิตร</th><th>จำนวนเงิน</th></tr></thead><tbody>${fuelRows}</tbody></table>
+      <div style="flex:1;border:1px solid #999;padding:6px 10px;font-size:10.5pt">จำนวนเงินรวม <b>${baht(T.a)} บาท</b><br>(ตัวอักษร) <b>${esc(bahtText(T.a))}</b></div>
+    </div>
+    <div class="pr-sign">
+      <div><div class="line"></div>ผู้จัดทำ / ผู้วางบิล<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ผู้ตรวจสอบ (ผู้อนุมัติขั้นที่ 1)<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ผู้อนุมัติสูงสุด<br>วันที่ ......../......../........</div>
+    </div>
+    <div class="pr-foot"><span>RST-FUEL</span><span>Dev: tana.pittayatanadol</span></div>`;
+  window.print();
+}
+
+/* ═════════════════════ LOGIN / USER ═════════════════════ */
+function showLogin(msg) {
+  document.body.classList.add('logged-out');
+  $('#loginScreen').classList.remove('hidden');
+  if (msg) toast(msg, 'info', 4000);
+  setTimeout(() => $('#loginUser').focus(), 50);
+}
+
+let authLostShown = false;
+function onAuthLost(msg) {
+  auth.clear();
+  state.loaded = false; state.records = []; state.loadSeq++; state.loading = null;
+  closeModal();
+  if (!authLostShown) { authLostShown = true; showLogin(msg || 'กรุณาเข้าสู่ระบบใหม่'); setTimeout(() => { authLostShown = false; }, 3000); }
+}
+
+async function onLogin(e) {
+  e.preventDefault();
+  const username = $('#loginUser').value.trim(), password = $('#loginPass').value;
+  if (!username || !password) { toast('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', 'error'); return; }
+  const btn = $('#loginBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังตรวจสอบ...';
+  try {
+    const res = await api.post({ action: 'login', username, password });
+    auth.set(res.token, res.user);
+    $('#loginPass').value = '';
+    enterApp();
+    toast(`ยินดีต้อนรับ ${res.user.fullName}`, 'success', 2500);
+    if (res.user.mustChangePassword) openChangePassword(true);
+  } catch (err) {
+    toast(err.message, 'error', 5000);
+  } finally {
+    btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ';
+  }
+}
+
+async function logout() {
+  try { await api.post({ action: 'logout' }); } catch { /* ignore */ }
+  auth.clear();
+  state.loaded = false; state.records = []; state.selected.clear(); state.sigCache = {}; state.loadSeq++; state.loading = null;
+  $('#userDrop').classList.add('hidden');
+  showLogin('ออกจากระบบแล้ว');
+}
+
+/** ปรับหน้าจอตามบทบาทผู้ใช้ */
+function applyUser() {
+  const u = auth.user; if (!u) return;
+  $('#userMenu').classList.remove('hidden');
+  $('#userAvatar').textContent = (u.fullName || u.username).trim().charAt(0).toUpperCase();
+  $('#userName').textContent = u.fullName;
+  $('#userRole').textContent = ROLE_LABEL[u.role] + (u.branches.length ? ` · ${u.branches.join(', ')}` : '');
+  $('#dropName').textContent = `${u.fullName} (${u.username})`;
+  $('#dropInfo').textContent = `${ROLE_LABEL[u.role]} · ${u.branches.length ? u.branches.join(', ') : 'ทุกสาขา'}`;
+  $$('.role-approve').forEach((el) => el.classList.toggle('hidden', !isRole('admin', 'reviewer', 'approver')));
+  $$('.role-track').forEach((el) => el.classList.toggle('hidden', !isRole('admin', 'branch')));
+  syncReqSigLast();
+  $$('.role-admin').forEach((el) => el.classList.toggle('hidden', !isRole('admin')));
+  if (!$('#recorderName').value) $('#recorderName').value = u.fullName;
+}
+
+function enterApp() {
+  document.body.classList.remove('logged-out');
+  $('#loginScreen').classList.add('hidden');
+  applyUser();
+  applyConfig({ branches: state.branches.length ? state.branches : CONFIG.BRANCHES, plates: null });
+  $('#recorderName').value = store.get('rst_recorder_' + auth.user.username) || auth.user.fullName;
+  loadData(true).then(() => {
+    const active = $('.tab-btn.active')?.dataset.tab;
+    if (active) showTab(active);
+  });
+  const initial = location.hash.replace('#', '');
+  // ลิงก์จากอีเมล (#approve / #track) เปิดแท็บนั้น ไม่งั้นเปิดแท็บหลักตามบทบาท
+  const roleHome = isRole('reviewer', 'approver') ? 'approve' : 'form';
+  showTab(['approve', 'track'].includes(initial) ? initial : roleHome);
+}
+
+function openChangePassword(forced = false) {
+  $('#userDrop').classList.add('hidden');
+  openModal(forced ? 'กรุณาตั้งรหัสผ่านใหม่' : 'เปลี่ยนรหัสผ่าน', `
+    ${forced ? '<p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">บัญชีนี้ใช้รหัสผ่านชั่วคราว กรุณาตั้งรหัสผ่านใหม่ก่อนใช้งาน</p>' : ''}
+    <form id="pwForm" class="grid gap-4" ${forced ? 'data-forced' : ''}>
+      <label class="field"><span class="label req">รหัสผ่านเดิม</span><input type="password" id="pwOld" class="input" autocomplete="current-password" /></label>
+      <label class="field"><span class="label req">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)</span><input type="password" id="pwNew" class="input" autocomplete="new-password" /></label>
+      <label class="field"><span class="label req">ยืนยันรหัสผ่านใหม่</span><input type="password" id="pwNew2" class="input" autocomplete="new-password" /></label>
+      <div class="flex justify-end gap-3">
+        ${forced ? '' : '<button type="button" class="btn-ghost" data-close>ยกเลิก</button>'}
+        <button type="submit" class="btn-primary !min-w-0">บันทึกรหัสผ่าน</button>
+      </div>
+    </form>`);
+  $('#pwForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const o = $('#pwOld').value, n = $('#pwNew').value, n2 = $('#pwNew2').value;
+    if (n.length < 6) { setError($('#pwNew'), 'อย่างน้อย 6 ตัวอักษร'); return; }
+    if (n !== n2) { setError($('#pwNew2'), 'รหัสผ่านไม่ตรงกัน'); return; }
+    const btn = e.submitter; btn.disabled = true;
+    try {
+      await api.post({ action: 'changePassword', oldPassword: o, newPassword: n });
+      auth.set(auth.token, { ...auth.user, mustChangePassword: false });
+      closeModal(); toast('เปลี่ยนรหัสผ่านเรียบร้อย');
+    } catch (err) { toast(err.message, 'error', 5000); btn.disabled = false; }
+  });
+}
+
+/* ═════════════════════ MEMBERS (admin) ═════════════════════ */
+function rolePill(role) { return `<span class="role-pill role-${role}-pill">${esc(ROLE_LABEL[role] || role)}</span>`; }
+
+async function loadUsers() {
+  if (!isRole('admin')) return;
+  $('#mTable').innerHTML = '<tr><td class="td text-slate-400" colspan="7">กำลังโหลด...</td></tr>';
+  try { state.users = await api.post({ action: 'listUsers' }); renderMembers(); }
+  catch (err) { toast(err.message, 'error'); }
+}
+
+function renderMembers() {
+  const q = $('#mSearch').value.trim().toLowerCase(), role = $('#mRole').value;
+  const list = state.users.filter((u) => (!role || u.role === role) &&
+    (!q || [u.username, u.fullName, u.email, ...u.branches].join(' ').toLowerCase().includes(q)));
+  const count = (r) => state.users.filter((u) => u.role === r).length;
+  $('#mStats').innerHTML = [
+    ['สมาชิกทั้งหมด', state.users.length], ['ผู้ดูแลระบบ', count('admin')], ['ผู้อนุมัติขั้นที่ 1', count('reviewer')], ['ผู้อนุมัติสูงสุด', count('approver')], ['ผู้ใช้สาขา', count('branch')]
+  ].map(([k, v]) => `<div class="mini-stat"><b>${nf.format(v)}</b><span>${k}</span></div>`).join('');
+  $('#mEmpty').classList.toggle('hidden', list.length > 0);
+  $('#mTable').innerHTML = list.map((u) => `
+    <tr class="${u.active ? '' : 'opacity-50'}">
+      <td class="td"><div class="flex items-center gap-3">
+        <span class="user-avatar !w-8 !h-8 !text-xs shrink-0">${esc((u.fullName || u.username).charAt(0).toUpperCase())}</span>
+        <div><div class="font-medium">${esc(u.fullName)}${u.username === auth.user.username ? ' <span class="text-xs text-slate-400">(คุณ)</span>' : ''}</div>
+        <div class="text-xs text-slate-500 font-mono">${esc(u.username)}</div></div></div></td>
+      <td class="td">${rolePill(u.role)}</td>
+      <td class="td text-xs">${u.branches.length ? u.branches.map(esc).join(', ') : '<span class="text-slate-400">ทุกสาขา</span>'}</td>
+      <td class="td text-xs">${esc(u.email || '-')}</td>
+      <td class="td">${u.active ? '<span class="status st-ok">ใช้งาน</span>' : '<span class="status st-no">ปิดใช้งาน</span>'}${u.mustChangePassword ? '<div class="text-[11px] text-amber-600 mt-1">รอเปลี่ยนรหัส</div>' : ''}</td>
+      <td class="td text-xs whitespace-nowrap">${esc(u.lastLogin || '-')}</td>
+      <td class="td text-right whitespace-nowrap">
+        <button type="button" class="btn-icon" data-medit="${esc(u.username)}">แก้ไข</button>
+        ${u.username === auth.user.username ? '' : `<button type="button" class="btn-icon danger" data-mdel="${esc(u.username)}">ลบ</button>`}
+      </td>
+    </tr>`).join('');
+}
+
+function openMemberForm(username) {
+  const u = username ? state.users.find((x) => x.username === username) : null;
+  const isNew = !u;
+  const data = u || { username: '', fullName: '', role: 'branch', branches: [], email: '', active: true };
+  openModal(isNew ? 'เพิ่มสมาชิก' : `แก้ไขสมาชิก: ${data.username}`, `
+    <form id="memberForm" class="grid gap-4" autocomplete="off" novalidate>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <label class="field"><span class="label req">ชื่อผู้ใช้ (Username)</span>
+          <input type="text" name="username" class="input font-mono" value="${esc(data.username)}" ${isNew ? '' : 'readonly'} placeholder="เช่น dechudom01" autocapitalize="off" spellcheck="false" />
+          <span class="text-[11px] text-slate-400">a-z, 0-9, . _ - (3–30 ตัว)${isNew ? '' : ' · แก้ไขไม่ได้'}</span></label>
+        <label class="field"><span class="label req">ชื่อ-นามสกุล</span><input type="text" name="fullName" class="input" value="${esc(data.fullName)}" /></label>
+        <label class="field"><span class="label req">บทบาท</span>
+          <select name="role" class="input">
+            <option value="branch">ผู้ใช้สาขา — ส่งคำขอ/ดูข้อมูลสาขาตัวเอง</option>
+            <option value="reviewer">ผู้อนุมัติขั้นที่ 1 — ตรวจสอบ ระบุลิตร/ระดับน้ำมัน</option>
+            <option value="approver">ผู้อนุมัติสูงสุด — เซ็นอนุมัติขั้นสุดท้าย</option>
+            <option value="admin">ผู้ดูแลระบบ — ทุกสิทธิ์ + จัดการสมาชิก</option>
+          </select></label>
+        <label class="field"><span class="label">อีเมล <span class="text-slate-400 font-normal">(รับแจ้งเตือนคำขอใหม่)</span></span><input type="email" name="email" class="input" value="${esc(data.email)}" /></label>
+      </div>
+      <div class="field">
+        <span class="label" id="brLabel">สาขา</span>
+        <div class="branch-checks" id="brChecks">
+          ${state.branches.map((b) => `<label><input type="checkbox" class="chk" value="${esc(b)}" ${data.branches.includes(b) ? 'checked' : ''}/> ${esc(b)}</label>`).join('')}
+        </div>
+        <span class="text-[11px] text-slate-400" id="brHint"></span>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4 items-end">
+        <label class="field"><span class="label ${isNew ? 'req' : ''}">${isNew ? 'รหัสผ่านเริ่มต้น' : 'ตั้งรหัสผ่านใหม่'}</span>
+          <input type="text" name="password" class="input font-mono" autocomplete="new-password" placeholder="${isNew ? 'อย่างน้อย 6 ตัว' : 'เว้นว่าง = ไม่เปลี่ยน'}" />
+          <span class="text-[11px] text-slate-400">ผู้ใช้จะถูกบังคับให้เปลี่ยนรหัสเมื่อเข้าระบบครั้งแรก</span></label>
+        <label class="inline-flex items-center gap-2 pb-6"><input type="checkbox" name="active" class="chk" ${data.active ? 'checked' : ''} /> เปิดใช้งานบัญชี</label>
+      </div>
+      <div class="flex justify-end gap-3">
+        <button type="button" class="btn-ghost" data-close>ยกเลิก</button>
+        <button type="submit" class="btn-primary !min-w-0">${isNew ? '+ เพิ่มสมาชิก' : 'บันทึกการแก้ไข'}</button>
+      </div>
+    </form>`, true);
+  const f = $('#memberForm');
+  f.role.value = data.role;
+  const syncRole = () => {
+    const r = f.role.value;
+    $('#brChecks').classList.toggle('disabled', r === 'admin');
+    $('#brLabel').classList.toggle('req', r === 'branch');
+    $('#brHint').textContent = r === 'admin' ? 'ผู้ดูแลระบบเห็นทุกสาขาเสมอ' : (r === 'approver' || r === 'reviewer') ? 'ไม่เลือก = อนุมัติได้ทุกสาขา' : 'ต้องเลือกอย่างน้อย 1 สาขา';
+  };
+  f.role.addEventListener('change', syncRole); syncRole();
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const role = f.role.value;
+    const user = {
+      isNew, username: f.username.value.trim().toLowerCase(), fullName: f.fullName.value.trim(), role,
+      branches: role === 'admin' ? [] : $$('#brChecks input:checked').map((c) => c.value),
+      email: f.email.value.trim(), active: f.active.checked, password: f.password.value.trim()
+    };
+    if (!user.username) { setError(f.username, 'กรุณากรอกชื่อผู้ใช้'); return; }
+    if (!user.fullName) { setError(f.fullName, 'กรุณากรอกชื่อ'); return; }
+    if (role === 'branch' && !user.branches.length) { toast('ผู้ใช้สาขาต้องเลือกอย่างน้อย 1 สาขา', 'error'); return; }
+    if (isNew && user.password.length < 6) { setError(f.password, 'อย่างน้อย 6 ตัวอักษร'); return; }
+    const btn = e.submitter; btn.disabled = true;
+    try {
+      state.users = await api.post({ action: 'saveUser', user });
+      closeModal(); renderMembers();
+      toast(isNew ? `เพิ่ม ${user.username} แล้ว` : `บันทึก ${user.username} แล้ว`);
+    } catch (err) { toast(err.message, 'error', 5000); btn.disabled = false; }
+  });
+}
+
+function confirmDeleteMember(username) {
+  const u = state.users.find((x) => x.username === username); if (!u) return;
+  openModal('ลบสมาชิก', `
+    <p>ต้องการลบ <b>${esc(u.fullName)}</b> (<span class="font-mono">${esc(u.username)}</span>) ใช่ไหม?</p>
+    <p class="text-sm text-slate-500 mt-2">ประวัติคำขอที่เคยส่งจะยังอยู่ หากต้องการเพียงระงับการใช้งาน แนะนำให้ "แก้ไข" แล้วปิดการใช้งานแทน</p>
+    <div class="flex justify-end gap-3 mt-5">
+      <button type="button" class="btn-ghost" data-close>ยกเลิก</button>
+      <button type="button" id="mDelOk" class="btn-danger">ลบสมาชิก</button>
+    </div>`);
+  $('#mDelOk').addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try { state.users = await api.post({ action: 'deleteUser', username }); closeModal(); renderMembers(); toast(`ลบ ${username} แล้ว`, 'info'); }
+    catch (err) { toast(err.message, 'error', 5000); e.currentTarget.disabled = false; }
+  });
+}
+
+/* ═════════════════════ HISTORY ═════════════════════ */
+function historyFiltered() {
+  const q = $('#hSearch').value.trim().toLowerCase();
+  const b = $('#hBranch').value, from = $('#hFrom').value, to = $('#hTo').value, gallon = $('#hGallon').checked;
+  const year = $('#hYear').value, month = $('#hMonth').value, status = $('#hStatus').value;
+  return state.records.filter((r) => {
+    if (status && statusOf(r) !== status) return false;
+    if (year && r.requestDate.slice(0, 4) !== year) return false;
+    if (month && r.requestDate.slice(5, 7) !== month) return false;
+    if (b && r.branch !== b) return false;
+    if (from && r.requestDate < from) return false;
+    if (to && r.requestDate > to) return false;
+    if (gallon && !r.gallonPurpose) return false;
+    if (q) {
+      const hay = [r.refId, r.driverName, r.recorderName, r.vehicle, r.branch, r.mainDestination, r.gallonPurpose, ...(r.destinations || [])].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function photoBtns(r, small = true) {
+  const cls = small ? 'icon-btn' : 'btn-ghost';
+  const out = [];
+  if (r.mileagePhotoUrl) out.push(`<a class="${cls}" href="${esc(r.mileagePhotoUrl)}" target="_blank" rel="noopener">รูปเข็มไมล์</a>`);
+  if (r.receiptPhotoUrl) out.push(`<a class="${cls}" href="${esc(r.receiptPhotoUrl)}" target="_blank" rel="noopener">บิล</a>`);
+  return out.length ? out.join(' ') : '<span class="text-slate-300 text-xs">ไม่มี</span>';
+}
+
+function renderHistory() {
+  const rows = historyFiltered();
+  const pages = Math.max(1, Math.ceil(rows.length / CONFIG.PAGE_SIZE));
+  state.page = Math.min(state.page, pages);
+  const slice = rows.slice((state.page - 1) * CONFIG.PAGE_SIZE, state.page * CONFIG.PAGE_SIZE);
+  state.visible = slice;
+
+  $('#hCount').textContent = `พบ ${nf.format(rows.length)} รายการ`;
+  $('#hEmpty').classList.toggle('hidden', rows.length > 0);
+
+  $('#hTable').innerHTML = slice.map((r, i) => `
+    <tr class="cursor-pointer ${state.selected.has(r.refId) ? 'selected' : ''}" data-idx="${i}">
+      <td class="td" data-stop><input type="checkbox" class="chk row-chk" data-ref="${esc(r.refId)}" ${state.selected.has(r.refId) ? 'checked' : ''} aria-label="เลือก ${esc(r.refId)}" /></td>
+      <td class="td whitespace-nowrap"><span class="ref">${esc(r.refId)}</span><div class="mt-1">${statusPill(r)}</div></td>
+      <td class="td whitespace-nowrap">${thDate(r.requestDate)}</td>
+      <td class="td whitespace-nowrap">${esc(r.branch)}</td>
+      <td class="td">${esc(r.driverName)}</td>
+      <td class="td whitespace-nowrap">${esc(r.vehicle)}<div class="text-xs text-slate-400">${esc(r.fuelType || '')}</div>${r.gallonPurpose ? ` <span class="pill" title="${esc(r.gallonPurpose)}">แกลลอน</span>` : ''}</td>
+      <td class="td text-right tabular-nums">${nf.format(r.mileageBefore)}</td>
+      <td class="td max-w-[14rem] truncate" title="${routeText(r).replace(/"/g, '')}">${routeText(r)}</td>
+      <td class="td text-right tabular-nums">${r.totalDistanceKm ? nf.format(r.totalDistanceKm) : '-'}</td>
+      <td class="td text-right tabular-nums whitespace-nowrap">${statusOf(r) === ST.DONE ? `${liters(r.filledLiters)} ล.<div class="text-xs font-semibold">${baht(r.filledAmount)} ฿</div>` : r.approvedLiters ? `<span class="text-slate-400">อนุมัติ ${liters(r.approvedLiters)} ล.</span>` : '-'}</td>
+      <td class="td text-center whitespace-nowrap" data-stop>${photoBtns(r)}</td>
+    </tr>`).join('');
+
+  $('#hCards').innerHTML = slice.map((r, i) => `
+    <div class="card !p-4 cursor-pointer ${state.selected.has(r.refId) ? 'selected' : ''}" data-idx="${i}">
+      <div class="flex justify-between items-start gap-2">
+        <label class="inline-flex items-center gap-2" data-stop><input type="checkbox" class="chk row-chk" data-ref="${esc(r.refId)}" ${state.selected.has(r.refId) ? 'checked' : ''} /><span class="ref">${esc(r.refId)}</span></label>
+        <span class="text-xs text-slate-500">${thDate(r.requestDate)}</span>
+      </div>
+      <div class="mt-2 font-medium flex flex-wrap items-center gap-2">${esc(r.vehicle)} ${r.gallonPurpose ? '<span class="pill">แกลลอน</span>' : ''} ${statusPill(r)}</div>
+      <div class="text-sm text-slate-500">${esc(r.branch)} · ${esc(r.driverName)}</div>
+      <div class="text-sm text-slate-500 truncate">${routeText(r)}</div>
+      <div class="flex justify-between items-center mt-3">
+        <span class="text-sm tabular-nums">${r.totalDistanceKm ? nf.format(r.totalDistanceKm) + ' กม.' : ''}${statusOf(r) === ST.DONE ? ` · <b>${liters(r.filledLiters)} ล. / ${baht(r.filledAmount)} ฿</b>` : ''}</span>
+        <span class="flex gap-1" data-stop>${photoBtns(r)}</span>
+      </div>
+    </div>`).join('');
+
+  $('#hPager').innerHTML = pages > 1 ? `
+    <button class="btn-ghost" data-page="${state.page - 1}" ${state.page === 1 ? 'disabled' : ''}>‹ ก่อนหน้า</button>
+    <span class="text-sm text-slate-500">หน้า ${state.page} / ${pages}</span>
+    <button class="btn-ghost" data-page="${state.page + 1}" ${state.page === pages ? 'disabled' : ''}>ถัดไป ›</button>` : '';
+  updateSelectionUI();
+}
+
+/* ---- เลือกรายการ (checkbox) ---- */
+function updateSelectionUI() {
+  $('#selCount').textContent = nf.format(state.selected.size);
+  $('#printBtn').disabled = state.selected.size === 0;
+  const page = state.visible || [];
+  const n = page.filter((r) => state.selected.has(r.refId)).length;
+  const chk = $('#chkPage');
+  chk.checked = page.length > 0 && n === page.length;
+  chk.indeterminate = n > 0 && n < page.length;
+}
+
+function toggleSelect(ref, on) {
+  if (on) state.selected.add(ref); else state.selected.delete(ref);
+  $$(`.row-chk[data-ref="${CSS.escape(ref)}"]`).forEach((c) => {
+    c.checked = on;
+    c.closest('tr, .card')?.classList.toggle('selected', on);
+  });
+  updateSelectionUI();
+}
+
+/* ---- พิมพ์รายการที่เลือก ---- */
+async function printSelected() {
+  const rows = state.records.filter((r) => state.selected.has(r.refId))
+    .sort((a, b) => a.requestDate.localeCompare(b.requestDate) || a.refId.localeCompare(b.refId));
+  if (!rows.length) { toast('กรุณาติ๊กเลือกรายการที่ต้องการพิมพ์ก่อน', 'info'); return; }
+
+  const needSig = rows.filter((r) => r.hasSignature);
+  if (needSig.length) {
+    const btn = $('#printBtn'); btn.disabled = true;
+    toast('กำลังเตรียมลายเซ็นสำหรับพิมพ์...', 'info', 2000);
+    await Promise.all(needSig.map((r) => getSignature(r.refId, 'approver')));
+    btn.disabled = false;
+  }
+  const totalKm = rows.reduce((s, r) => s + (Number(r.totalDistanceKm) || 0), 0);
+  const filters = [periodLabel($('#hYear').value, $('#hMonth').value)];
+  if ($('#hBranch').value) filters.push(`สาขา: ${$('#hBranch').value}`);
+  const now = new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+
+  $('#printArea').innerHTML = `
+    <div class="pr-head">
+      <div>
+        <div style="font-size:9pt;color:#c8000f;font-weight:700;letter-spacing:.05em">${esc(CONFIG.COMPANY_NAME)}</div>
+        <h1>รายงานการขอเติมน้ำมันและการเดินรถ</h1>
+      </div>
+      <div class="meta">พิมพ์เมื่อ ${esc(now)}<br>จำนวน ${nf.format(rows.length)} รายการ</div>
+    </div>
+    <div class="pr-filter">ช่วงข้อมูล: ${esc(filters.join(' · '))}</div>
+    <table class="pr-table">
+      <thead><tr>
+        <th>#</th><th>รหัสอ้างอิง</th><th>วันที่เข้าเติม</th><th>สาขา</th><th>ผู้ขอ / ผู้ขับ</th><th>ทะเบียนรถ</th><th>ประเภท</th>
+        <th>เลขไมล์ก่อนเติม</th><th>ต้นทาง → ปลายทาง</th><th>ระยะทาง (กม.)</th><th>ลิตร</th><th>จำนวนเงิน (บาท)</th><th>สถานะ / ผู้อนุมัติ</th>
+      </tr></thead>
+      <tbody>${rows.map((r, i) => `<tr>
+        <td class="num">${i + 1}</td>
+        <td style="white-space:nowrap">${esc(r.refId)}</td>
+        <td style="white-space:nowrap">${thDate(r.requestDate)}</td>
+        <td>${esc(r.branch)}</td>
+        <td>${esc(r.recorderName)}<br><span style="color:#555;font-size:8.5pt">${esc(r.driverName)}</span></td>
+        <td style="white-space:nowrap">${esc(r.vehicle)}</td>
+        <td>${esc(r.fuelType || '-')}</td>
+        <td class="num">${nf.format(r.mileageBefore)}</td>
+        <td>${routeText(r)}${r.gallonPurpose ? `<br><span style="color:#555;font-size:8.5pt">แกลลอน: ${esc(r.gallonPurpose)}</span>` : ''}</td>
+        <td class="num">${r.totalDistanceKm ? nf.format(r.totalDistanceKm) : '-'}</td>
+        <td class="num">${statusOf(r) === ST.DONE ? liters(r.filledLiters) : r.approvedLiters ? '(' + liters(r.approvedLiters) + ')' : '-'}</td>
+        <td class="num">${statusOf(r) === ST.DONE ? baht(r.filledAmount) : '-'}</td>
+        <td class="pr-appr"><b>${esc(statusOf(r))}</b>${state.sigCache[r.refId + '|approver'] ? `<br><img src="${state.sigCache[r.refId + '|approver']}" alt="">` : ''}${r.approverName ? `<br>${esc(r.approverName)}<br><span style="font-size:8pt;color:#555">${esc(r.approvedAt)}</span>` : ''}${r.approvalNote ? `<br><span style="font-size:8pt;color:#555">${esc(r.approvalNote)}</span>` : ''}</td>
+      </tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="9" style="text-align:right">รวม</td><td class="num">${nf.format(totalKm)}</td>
+        <td class="num">${liters(rows.reduce((a, r) => a + (statusOf(r) === ST.DONE ? r.filledLiters : 0), 0))}</td>
+        <td class="num">${baht(rows.reduce((a, r) => a + (statusOf(r) === ST.DONE ? r.filledAmount : 0), 0))}</td><td></td></tr></tfoot>
+    </table>
+    <div class="pr-sign">
+      <div><div class="line"></div>ผู้จัดทำรายงาน<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ผู้ตรวจสอบ<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ผู้อนุมัติ<br>วันที่ ......../......../........</div>
+    </div>
+    <div class="pr-foot"><span>RST-FUEL</span><span>Dev: tana.pittayatanadol</span></div>`;
+  const imgs = $$('#printArea img');
+  await Promise.all(imgs.map((im) => (im.complete ? 0 : new Promise((r) => { im.onload = im.onerror = r; }))));
+  window.print();
+}
+
+function showDetail(r) {
+  const row = (k, v) => `<div class="grid grid-cols-3 gap-2 py-2 border-b border-slate-100"><dt class="text-slate-500">${k}</dt><dd class="col-span-2 break-words">${v || '-'}</dd></div>`;
+  const sigCell = (id) => `<div id="${id}" class="sig-view"><span class="text-xs text-slate-400">กำลังโหลดลายเซ็น...</span></div>`;
+  const s = statusOf(r);
+  openModal(r.refId, `<div class="mb-3">${statusPill(r)}</div>${stepper(r)}<dl class="mt-3">
+    ${row('วันที่เข้าเติม', thDate(r.requestDate))}
+    ${row('สาขา', esc(r.branch))}
+    ${row('ทะเบียนรถ / ประเภท', `${esc(r.vehicle)} · ${esc(r.fuelType || '-')}`)}
+    ${row('เลขไมล์ก่อนเติม', nf.format(r.mileageBefore))}
+    ${row('ผู้ขับ', esc(r.driverName))}
+    ${row('เส้นทาง', routeText(r))}
+    ${row('ระยะทางรวม', r.totalDistanceKm ? nf.format(r.totalDistanceKm) + ' กม.' : '')}
+    ${r.mainDestination ? row('วัตถุประสงค์', esc(r.mainDestination)) : ''}
+    ${r.gallonPurpose ? row('เติมแกลลอน (ใช้กับ)', esc(r.gallonPurpose)) : ''}
+    ${row('ผู้ขอ', `${esc(r.recorderName)}<br><span class="text-xs text-slate-400">${esc(r.timestamp)}</span>${r.hasRequesterSignature ? sigCell('sigReq') : ''}`)}
+    ${r.reviewerName ? row('อนุมัติขั้นที่ 1', `${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span>
+      ${r.approvedLiters ? `<br>ให้เติม <b>${liters(r.approvedLiters)} ลิตร</b> · ในถัง <b>${esc(r.tankLevel)}</b>` : ''}${r.reviewNote ? `<br><span class="text-sm">หมายเหตุ: ${esc(r.reviewNote)}</span>` : ''}${r.hasReviewerSignature ? sigCell('sigRev') : ''}`) : ''}
+    ${r.approverName ? row('อนุมัติสูงสุด', `${esc(r.approverName)} <span class="text-xs text-slate-400">${esc(r.approvedAt)}</span>${r.approvalNote ? `<br><span class="text-sm">หมายเหตุ: ${esc(r.approvalNote)}</span>` : ''}${r.hasSignature ? sigCell('sigApp') : ''}`) : ''}
+    ${s === ST.DONE ? row('ผลการเติม', `${thDate(r.filledDate)} · <b>${liters(r.filledLiters)} ลิตร</b> · <b>${baht(r.filledAmount)} บาท</b> (${baht(r.pricePerLiter)} บ./ลิตร)`) : ''}
+  </dl>
+  <div class="flex flex-wrap gap-2 mt-4">${photoBtns(r, false)}
+    ${[ST.OK, ST.DONE].includes(s) ? `<button type="button" class="btn-ghost" id="dSlip">🖨 ใบอนุมัติ</button>` : ''}
+    ${s === ST.OK && canFill() && inScope(r) ? `<button type="button" class="btn-primary !min-w-0" id="dFill">⛽ บันทึกผลการเติม</button>` : ''}
+  </div>`);
+  $('#dSlip')?.addEventListener('click', () => { closeModal(); printSlip(r.refId); });
+  $('#dFill')?.addEventListener('click', () => openFill(r.refId));
+  loadSignatures(r).then((sig) => {
+    [['sigReq', sig.requester], ['sigRev', sig.reviewer], ['sigApp', sig.approver]].forEach(([id, src]) => {
+      const el = document.getElementById(id); if (el) el.innerHTML = src ? `<img src="${src}" alt="ลายเซ็น">` : '<span class="text-xs text-slate-400">โหลดไม่สำเร็จ</span>';
+    });
+  });
+}
+
+function exportCsv() {
+  const rows = historyFiltered();
+  const head = ['รหัสอ้างอิง', 'วันที่เข้าเติม', 'สาขา', 'ผู้ขับ', 'ผู้ขอ', 'เลขไมล์ก่อนเติม', 'ทะเบียนรถ', 'ประเภทน้ำมัน', 'เติมแกลลอน (ใช้กับ)', 'วัตถุประสงค์', 'ต้นทาง',
+    ...Array.from({ length: 8 }, (_, i) => `ปลายทาง ${i + 1}`), 'ระยะทางรวม (กม.)', 'รูปเข็มไมล์', 'รูปบิล', 'เวลาบันทึก', 'สถานะ',
+    'ผู้อนุมัติขั้นที่ 1', 'เวลาอนุมัติขั้นที่ 1', 'ลิตรที่อนุมัติ', 'ระดับน้ำมันในถัง', 'หมายเหตุขั้นที่ 1',
+    'ผู้อนุมัติสูงสุด', 'เวลาอนุมัติสูงสุด', 'หมายเหตุอนุมัติ', 'วันที่เติม', 'ลิตรที่เติม', 'ยอดเงิน (บาท)', 'บาท/ลิตร'];
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = rows.map((r) => [r.refId, r.requestDate, r.branch, r.driverName, r.recorderName, r.mileageBefore, r.vehicle, r.fuelType, r.gallonPurpose, r.mainDestination, r.origin,
+    ...Array.from({ length: 8 }, (_, i) => (r.destinations || [])[i] || ''), r.totalDistanceKm, r.mileagePhotoUrl, r.receiptPhotoUrl, r.timestamp, statusOf(r),
+    r.reviewerName, r.reviewedAt, r.approvedLiters || '', r.tankLevel, r.reviewNote, r.approverName, r.approvedAt, r.approvalNote,
+    r.filledDate, r.filledLiters || '', r.filledAmount || '', r.pricePerLiter || ''].map(q).join(','));
+  const blob = new Blob(['﻿' + [head.map(q).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `rst-fuel_${todayISO()}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ═════════════════════ Init ═════════════════════ */
+function init() {
+  if (window.Chart) { Chart.defaults.font.family = '"Noto Sans Thai", system-ui, sans-serif'; Chart.defaults.color = '#64748b'; }
+  $('#year').textContent = new Date().getFullYear();
+  if (isDemo()) $('#configWarning').classList.remove('hidden');
+
+  applyConfig(null);
+  fillPeriodSelects();
+  $('#requestDate').value = todayISO();
+  resetDestinations();
+  initUploads();
+
+  // Tabs
+  $$('.tab-btn').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+  // Form
+  const form = $('#fuelForm');
+  form.addEventListener('submit', onSubmit);
+  form.addEventListener('reset', (e) => { e.preventDefault(); resetForm(form); });
+  form.addEventListener('input', (e) => { if (e.target.classList.contains('invalid')) clearError(e.target); });
+  $('#licensePlate').addEventListener('change', togglePlateOther);
+  $('#addDestBtn').addEventListener('click', () => addDestination());
+  $('#destList').addEventListener('click', (e) => {
+    if (e.target.closest('.remove')) { e.target.closest('.dest-row').remove(); renumberDest(); }
+  });
+
+  // Dashboard
+  ['#dashYear', '#dashMonth', '#dashBranch'].forEach((s) => $(s).addEventListener('change', renderDashboard));
+  $$('.seg[data-chart]').forEach((seg) => seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    $$('button', seg).forEach((b) => b.classList.toggle('active', b === btn));
+    state.metric[seg.dataset.chart] = btn.dataset.metric;
+    renderDashboard();
+  }));
+
+  // History
+  let t;
+  $('#hSearch').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { state.page = 1; renderHistory(); }, 150); });
+  ['#hBranch', '#hYear', '#hMonth', '#hStatus', '#hFrom', '#hTo', '#hGallon'].forEach((s) => $(s).addEventListener('change', () => { state.page = 1; renderHistory(); }));
+  $('#hPager').addEventListener('click', (e) => { const p = e.target.closest('[data-page]'); if (p && !p.disabled) { state.page = Number(p.dataset.page); renderHistory(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+  const openRow = (e) => { if (e.target.closest('[data-stop]')) return; const el = e.target.closest('[data-idx]'); if (el) showDetail(state.visible[Number(el.dataset.idx)]); };
+  $('#hTable').addEventListener('click', openRow);
+  $('#hCards').addEventListener('click', openRow);
+  $('#exportCsv').addEventListener('click', exportCsv);
+
+  // Checkbox เลือกรายการ + พิมพ์
+  const onRowChk = (e) => { const c = e.target.closest('.row-chk'); if (c) toggleSelect(c.dataset.ref, c.checked); };
+  $('#hTable').addEventListener('change', onRowChk);
+  $('#hCards').addEventListener('change', onRowChk);
+  $('#chkPage').addEventListener('change', (e) => { (state.visible || []).forEach((r) => toggleSelect(r.refId, e.target.checked)); });
+  $('#selAllFiltered').addEventListener('click', () => { historyFiltered().forEach((r) => state.selected.add(r.refId)); renderHistory(); toast(`เลือก ${nf.format(state.selected.size)} รายการ`, 'info', 1500); });
+  $('#selClear').addEventListener('click', () => { state.selected.clear(); renderHistory(); });
+  $('#printBtn').addEventListener('click', printSelected);
+  $('#hClear').addEventListener('click', () => {
+    ['#hSearch', '#hBranch', '#hYear', '#hMonth', '#hStatus', '#hFrom', '#hTo'].forEach((s) => { $(s).value = ''; });
+    $('#hGallon').checked = false; state.page = 1; renderHistory();
+  });
+
+  // Login / user menu
+  $('#loginForm').addEventListener('submit', onLogin);
+  $('#togglePass').addEventListener('click', (e) => { const p = $('#loginPass'); p.type = p.type === 'password' ? 'text' : 'password'; e.currentTarget.textContent = p.type === 'password' ? 'แสดง' : 'ซ่อน'; });
+  $('#userBtn').addEventListener('click', (e) => { e.stopPropagation(); $('#userDrop').classList.toggle('hidden'); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#userMenu')) $('#userDrop').classList.add('hidden'); });
+  $('#btnLogout').addEventListener('click', logout);
+  $('#btnChangePw').addEventListener('click', () => openChangePassword(false));
+
+  // Members
+  $('#mAdd').addEventListener('click', () => openMemberForm(null));
+  $('#mSearch').addEventListener('input', renderMembers);
+  $('#mRole').addEventListener('change', renderMembers);
+  $('#mTable').addEventListener('click', (e) => {
+    const ed = e.target.closest('[data-medit]'); if (ed) openMemberForm(ed.dataset.medit);
+    const del = e.target.closest('[data-mdel]'); if (del) confirmDeleteMember(del.dataset.mdel);
+  });
+
+  // Approval
+  $('#pendingList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const ref = b.closest('[data-ref]').dataset.ref;
+    if (b.dataset.act === 'detail') showDetail(state.records.find((r) => r.refId === ref));
+    else openDecision(ref, b.dataset.act, state.stage);
+  });
+  $('#stageSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-stage]'); if (b) { state.stage = Number(b.dataset.stage); renderApprove(); } });
+
+  // Track & fill
+  $('#trackSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) { state.trackFilter = b.dataset.f; renderTrack(); } });
+  $('#trackList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const ref = b.closest('[data-ref]').dataset.ref;
+    if (b.dataset.act === 'fill') openFill(ref);
+    else if (b.dataset.act === 'slip') printSlip(ref);
+    else showDetail(state.records.find((r) => r.refId === ref));
+  });
+
+  // Dashboard summary + monthly bill
+  $('#sumSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-g]'); if (!b) return; state.sumGroup = b.dataset.g; $$('#sumSeg button').forEach((x) => x.classList.toggle('active', x === b)); renderSummary(dashRecords()); });
+  $$('.open-bill').forEach((b) => b.addEventListener('click', () => loadData().then(openBillDialog)));
+
+  // Requester signature (form)
+  state.reqPad = initSignaturePad($('#reqSigPad'));
+  $('#reqSigClear').addEventListener('click', () => state.reqPad.clear());
+  $('#reqSigLast').addEventListener('click', () => state.reqPad.load(store.get('rst_reqsig_' + auth.user.username)));
+  window.addEventListener('resize', () => { if (state.reqPad.empty) state.reqPad.fit(); });
+
+  // Refresh
+  $$('.refresh-btn').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    await loadData(true);
+    b.disabled = false;
+    const active = $('.tab-btn.active').dataset.tab;
+    if (active === 'dashboard') renderDashboard();
+    if (active === 'history') renderHistory();
+    if (active === 'approve') renderApprove();
+    if (active === 'members') await loadUsers();
+    if (active === 'track') renderTrack();
+    toast('อัปเดตข้อมูลแล้ว', 'info', 1500);
+  }));
+
+  // Modal
+  $('#modalBody').addEventListener('input', (e) => { if (e.target.classList?.contains('invalid')) clearError(e.target); });
+  $('#modal').addEventListener('click', (e) => { if (e.target.closest('[data-close]') && !(e.target.classList.contains('bg-slate-900/50') && $('#pwForm[data-forced]'))) closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#pwForm[data-forced]')) closeModal(); });
+
+  // ต้องเข้าสู่ระบบก่อนใช้งาน
+  if (auth.token && auth.user) enterApp();
+  else showLogin();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>
