@@ -182,7 +182,7 @@ const ROUTES = {
 
   acceptTicket:    { roles: TECH, fn: acceptTicket_, write: true },
   updateProgress:  { roles: TECH, fn: updateProgress_, write: true },
-  completeTicket:  { roles: TECH, fn: completeTicket_, write: true },
+  completeTicket:  { roles: TECH.concat(['supervisor']), fn: completeTicket_, write: true },   // r34: หัวหน้าช่างปิดงานแทนทีมได้
 
   updateTicket:    { roles: ADMIN, fn: updateTicket_, write: true },   // r10: แก้ไขรายการ (admin เท่านั้น)
   deleteTickets:   { roles: ADMIN, fn: deleteTickets_, write: true },  // r10: ลบรายการ (admin เท่านั้น)
@@ -1385,7 +1385,8 @@ function updateProgress_(u, req) {
 function completeTicket_(u, req) {
   const t = getTicketRow_(req.ticketId);
   requireStatus_(t, [ST.IN_PROGRESS]);
-  if (u.Role !== 'admin' && !isMember_(t, u.Username)) throw new Error('งานนี้ไม่ได้มอบหมายให้คุณ');
+  // r34: สมาชิกทีม • admin • หัวหน้าช่างที่งานนี้ถูกส่งต่อให้ (supOwns_) ปิดงานได้
+  if (u.Role !== 'admin' && !isMember_(t, u.Username) && !supOwns_(u, t)) throw new Error('งานนี้ไม่ได้มอบหมายให้คุณ');
   // r16: รองรับรูปหลังซ่อมหลายรูป (req.images) — req.image ยังใช้ได้เพื่อความเข้ากันได้
   const imgs = Array.isArray(req.images) ? req.images : (req.image ? [req.image] : []);
   if (imgs.length > 5) throw new Error('แนบรูปได้ไม่เกิน 5 รูปต่อครั้ง');

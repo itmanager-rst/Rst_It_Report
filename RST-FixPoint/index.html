@@ -2168,15 +2168,19 @@ function actionPanel(t, techOpts, supOpts) {
             <textarea id="actNote" rows="2" class="inp" placeholder="หมายเหตุ เช่น จะเข้าไปดูหน้างานช่วงบ่าย (ไม่บังคับ)"></textarea>
             <button class="btn w-full bg-indigo-600 hover:bg-indigo-700 text-white" onclick="doAction(this,'acceptTicket','${esc(t.TicketID)}')">🔧 รับงาน / เริ่มดำเนินการ</button>`);
     }
-    if (hasRole('technician', 'admin') && t.Status === 'In Progress' && (isMine || hasRole('admin'))) {
+    // r34: หัวหน้าช่างที่รับงานนี้ปิดงานแทนทีมได้ (ไม่มีสิทธิ์อัปเดตความคืบหน้า)
+    const canTech = hasRole('technician', 'admin') && (isMine || hasRole('admin'));
+    const canSupClose = hasRole('supervisor') && isSupOwner;
+    if ((canTech || canSupClose) && t.Status === 'In Progress') {
         blocks.push(`
-            <h4 class="font-semibold text-sm">อัปเดตงานซ่อม</h4>
+            <h4 class="font-semibold text-sm">${canTech ? 'อัปเดตงานซ่อม' : 'ปิดงานซ่อม (หัวหน้าช่าง)'}</h4>
+            ${canTech ? '' : '<p class="text-xs text-slate-500 -mt-2">ปิดงานแทนทีมช่าง ระบบจะบันทึกชื่อคุณเป็นผู้ปิดงาน</p>'}
             <textarea id="actNote" rows="2" class="inp" placeholder="รายละเอียดการซ่อม / ความคืบหน้า / อะไหล่ที่ใช้"></textarea>
             <div><label class="lbl">ค่าใช้จ่ายในการซ่อม (บาท)</label><input type="number" id="actCost" min="0" step="0.01" class="inp" value="${t.Cost !== undefined && t.Cost !== '' ? esc(t.Cost) : ''}" placeholder="ไม่บังคับ"></div>
             <div><label class="lbl">รูปหลังซ่อม (แนบเมื่อปิดงาน ไม่บังคับ · แนบได้หลายรูป)</label>
                 ${pickerHtml('act', Math.max(0, 6 - photosOfKind(t, 'after')))}</div>
             <div class="flex gap-2">
-                <button class="btn flex-1 bg-white border hover:bg-slate-50" onclick="doAction(this,'updateProgress','${esc(t.TicketID)}')">บันทึกความคืบหน้า</button>
+                ${canTech ? `<button class="btn flex-1 bg-white border hover:bg-slate-50" onclick="doAction(this,'updateProgress','${esc(t.TicketID)}')">บันทึกความคืบหน้า</button>` : ''}
                 <button class="btn flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onclick="doAction(this,'completeTicket','${esc(t.TicketID)}')">✓ ปิดงาน (เสร็จสิ้น)</button>
             </div>`);
     }
