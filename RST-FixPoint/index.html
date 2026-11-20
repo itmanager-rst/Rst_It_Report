@@ -247,7 +247,7 @@ window.Splash = (function () {
             </div>
         </div>
         <nav class="bg-sky-800/60 hidden md:block">
-            <div id="navBar" class="max-w-6xl mx-auto px-2 py-2 flex gap-1 overflow-x-auto no-scrollbar"></div>
+            <div id="navBar" class="max-w-6xl mx-auto px-2 py-2 flex flex-wrap gap-1"></div>
         </nav>
     </header>
 
@@ -628,14 +628,14 @@ window.Splash = (function () {
                     </table>
                 </div>
             </div>
-            <div class="bg-white rounded-xl shadow-sm p-4">
+            <div id="userLogCard" class="bg-white rounded-xl shadow-sm p-4">
                 <div class="flex items-center mb-3">
                     <h2 class="text-lg font-semibold mr-auto">ประวัติการจัดการผู้ใช้ <span class="text-xs font-normal text-slate-500">(ล่าสุด 100 รายการ · ไม่บันทึกรหัสผ่าน)</span></h2>
                     <button class="btn bg-white border hover:bg-slate-50" onclick="loadUserLogs()">รีเฟรช</button>
                 </div>
                 <div id="userLogBox"></div>
             </div>
-            <div class="bg-white rounded-xl shadow-sm p-4">
+            <div id="branchCard" class="bg-white rounded-xl shadow-sm p-4">
                 <h2 class="text-lg font-semibold mb-3">สาขา</h2>
                 <form id="branchForm" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-4">
                     <div><label class="lbl">รหัสสาขา</label><input id="bCode" class="inp" placeholder="เช่น BR03" required></div>
@@ -716,7 +716,7 @@ const NAV = [
     { id: 'assign', label: 'การมอบหมาย & ลงพื้นที่', roles: ['supervisor', 'manager', 'admin'] },   // r32
     { id: 'profile', label: 'โปรไฟล์', roles: ['employee', 'technician', 'supervisor', 'manager', 'admin'] },
     { id: 'expenses',  label: 'ค่าใช้จ่าย',          roles: ['admin'] },
-    { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['admin'] }
+    { id: 'admin',     label: 'ผู้ใช้ & สาขา',       roles: ['manager', 'admin'] }
 ];
 
 let currentUser = null;
@@ -2888,8 +2888,11 @@ async function loadAdmin() {
         const [u, b] = await Promise.all([api('listUsers'), api('getAllBranches')]);
         usersData = u.users;
         renderUsers();
-        renderBranches(b.branches);
-        loadUserLogs();
+        const isAdm = hasRole('admin');   // r34: ผู้จัดการดูได้เฉพาะรายชื่อผู้ใช้ ไม่เห็นส่วนสาขา/ประวัติ
+        $('branchCard').classList.toggle('hidden', !isAdm);
+        $('userLogCard').classList.toggle('hidden', !isAdm);
+        if (isAdm) { renderBranches(b.branches); loadUserLogs(); }
+        else { branches = b.branches.filter(x => x.active); fillBranchSelects(); }
     } catch (e) { $('userTable').innerHTML = `<tr><td colspan="8" class="p-4 text-rose-600">${esc(e.message)}</td></tr>`; }
 }
 
@@ -2938,7 +2941,7 @@ function renderUsers() {
             <td class="p-3">${esc(u.department)}</td>
             <td class="p-3">${u.active ? '<span class="text-emerald-700">ใช้งาน</span>' : `<span class="text-slate-600">ปิดบัญชี</span>${u.deactivatedAt ? `<div class="text-[11px] text-slate-400">เมื่อ ${fmtDate(u.deactivatedAt, false)}</div>` : ''}${purgeNote(u)}`}</td>
             <td class="p-3 text-xs">${fmtDate(u.lastLogin)}</td>
-            <td class="p-3 whitespace-nowrap space-x-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button>${u.username !== currentUser.username
+            <td class="p-3 whitespace-nowrap space-x-3"><button class="text-sky-700 hover:underline" onclick="openUserForm(${i})">แก้ไข</button>${hasRole('admin') && u.username !== currentUser.username
                 ? (u.active
                     ? `<button class="text-rose-600 hover:underline" onclick="openDeactivateDialog('${esc(u.username)}')">ปิดบัญชี</button>`
                     : `<button class="text-emerald-700 hover:underline" onclick="reactivateUser(this, '${esc(u.username)}')">เปิดใช้งาน</button>`) : ''}</td>
@@ -3028,13 +3031,17 @@ function openDeactivateDialog(username) {
 
 function openUserForm(i) {
     const u = i !== undefined ? usersData[i] : null;
-    const bOpts = `<option value="ALL">ทุกสาขา (ALL)</option>` + branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
+    const isAdm = hasRole('admin');
+    const allBr = isAdm || isAllBranch();   // r34: ผู้จัดการสาขาเลือกได้เฉพาะสาขาตน
+    const bList = allBr ? branches : branches.filter(b => b.name === currentUser.branch);
+    const bOpts = (allBr ? `<option value="ALL">ทุกสาขา (ALL)</option>` : '') + bList.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
+    const roleKeys = Object.keys(ROLE_TH).filter(r => isAdm || r !== 'admin');
     openModal(`
         <h3 class="text-lg font-semibold mb-4">${u ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้ใหม่'}</h3>
         <form id="userForm" class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div><label class="lbl">Username *</label><input id="uUsername" class="inp ${u ? 'bg-slate-100' : ''}" required ${u ? 'readonly' : ''} value="${esc(u ? u.username : '')}" placeholder="a-z, 0-9"></div>
             <div><label class="lbl">ชื่อ-นามสกุล *</label><input id="uFullName" class="inp" required value="${esc(u ? u.fullName : '')}"></div>
-            <div><label class="lbl">บทบาท *</label><select id="uRole" class="inp">${Object.keys(ROLE_TH).map(r => `<option value="${r}">${ROLE_TH[r]}</option>`).join('')}</select></div>
+            <div><label class="lbl">บทบาท *</label><select id="uRole" class="inp">${roleKeys.map(r => `<option value="${r}">${ROLE_TH[r]}</option>`).join('')}</select></div>
             <div><label class="lbl">สาขา *</label><select id="uBranch" class="inp">${bOpts}</select></div>
             <div><label class="lbl">แผนก</label><input id="uDepartment" class="inp" value="${esc(u ? u.department : '')}"></div>
             <div><label class="lbl">อีเมล</label><input id="uEmail" type="email" class="inp" value="${esc(u ? u.email : '')}"></div>
@@ -3046,8 +3053,8 @@ function openUserForm(i) {
             </div>
         </form>
         ${u ? photoBoxShell('uPhoto') : ''}
-        ${u && u.username !== currentUser.username && u.active ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="openDeactivateDialog('${esc(u.username)}')">⛔ ปิดบัญชีผู้ใช้นี้</button></div>` : ''}
-        ${u && u.username !== currentUser.username && !u.active ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50" onclick="reactivateUser(this, '${esc(u.username)}')">✅ เปิดใช้งานบัญชีนี้อีกครั้ง</button></div>` : ''}`);
+        ${isAdm && u && u.username !== currentUser.username && u.active ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="openDeactivateDialog('${esc(u.username)}')">⛔ ปิดบัญชีผู้ใช้นี้</button></div>` : ''}
+        ${isAdm && u && u.username !== currentUser.username && !u.active ? `<div class="mt-5 border-t pt-4"><button class="btn w-full bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50" onclick="reactivateUser(this, '${esc(u.username)}')">✅ เปิดใช้งานบัญชีนี้อีกครั้ง</button></div>` : ''}`);
     if (u) loadPhotoPanel(u.username, 'uPhoto');
     if (u) { $('uRole').value = u.role; $('uBranch').value = u.branch.toUpperCase() === 'ALL' ? 'ALL' : u.branch; }
     $('userForm').addEventListener('submit', async (e) => {
@@ -3063,7 +3070,11 @@ function openUserForm(i) {
             toast(r.message);
             technicians = null;
             closeModal();
-            loadAdmin();
+            await loadAdmin();
+            // r33: เพิ่มผู้ใช้ใหม่แล้ว แต่ไม่พบในตาราง → แจ้งให้ตรวจชีตที่บันทึกลง
+            if (!u && !usersData.some(x => x.username === r.username)) {
+                toast(`⚠️ บันทึก ${r.username} แล้ว แต่ยังไม่พบในตาราง — ตรวจชีต "${r.sheetName || 'Users'}" ใน "${r.spreadsheetName || 'Spreadsheet'}"`, 'warn');
+            }
         } catch (err) { toast(err.message, 'err'); setBusy(btn, false); }
     });
 }

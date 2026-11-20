@@ -65,7 +65,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r33-2026-11-20-team-members';
+const CODE_VERSION = 'r34-2026-11-20-manager-users';
 
 // r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
 const SUP_ASSIGN_SLA_HOURS = 4;
@@ -187,9 +187,9 @@ const ROUTES = {
   updateTicket:    { roles: ADMIN, fn: updateTicket_, write: true },   // r10: แก้ไขรายการ (admin เท่านั้น)
   deleteTickets:   { roles: ADMIN, fn: deleteTickets_, write: true },  // r10: ลบรายการ (admin เท่านั้น)
 
-  listUsers:       { roles: ADMIN, fn: () => ({ users: readAll_(SHEETS.USERS).map(publicUser_) }) },
-  saveUser:        { roles: ADMIN, fn: saveUser_, write: true },
-  getAllBranches:  { roles: ADMIN, fn: () => ({ branches: getBranches_(true) }) },
+  listUsers:       { roles: MGR, fn: (u) => ({ users: listUsersFor_(u) }) },   // r34: ผู้จัดการเห็นผู้ใช้ในสาขาตน
+  saveUser:        { roles: MGR, fn: saveUser_, write: true },                   // r34: ผู้จัดการเพิ่ม/แก้ไขผู้ใช้ในสาขาตนได้
+  getAllBranches:  { roles: MGR, fn: () => ({ branches: getBranches_(true) }) },
   saveBranch:      { roles: ADMIN, fn: saveBranch_, write: true },
   deactivateUser:  { roles: ADMIN, fn: deactivateUser_, write: true }, // r16: ปิดบัญชี (แทนการลบ)
   reactivateUser:  { roles: ADMIN, fn: reactivateUser_, write: true }, // r16: เปิดใช้งานบัญชีอีกครั้ง
@@ -1922,12 +1922,30 @@ function dashboard_(u, req) {
 // Admin: Users & Branches
 // ---------------------------------------------------------------------------
 
+/** r34: รายชื่อผู้ใช้ — admin เห็นทั้งหมด • ผู้จัดการเห็นเฉพาะสาขาตน (และตัวเอง) */
+function listUsersFor_(u) {
+  return readAll_(SHEETS.USERS)
+    .filter(x => u.Role === 'admin' || inScope_(u, x.Branch) || norm_(x.Username) === norm_(u.Username))
+    .map(publicUser_);
+}
+
 function saveUser_(u, req) {
   const d = req.user || {};
   const username = norm_(d.username);
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error('Username ต้องเป็น a-z, 0-9, . _ - ความยาว 3-30 ตัว');
   if (ROLES.indexOf(d.role) === -1) throw new Error('บทบาทไม่ถูกต้อง');
   if (!String(d.fullName || '').trim()) throw new Error('กรุณากรอกชื่อ-นามสกุล');
+
+  // r34: กฎของผู้จัดการ — ห้ามตั้ง/แก้ admin, ต้องอยู่ในสาขาของตน, ห้ามเปลี่ยนบทบาท/ปิดบัญชีตัวเอง
+  const isMgr = u.Role !== 'admin';
+  const selfEdit = norm_(d.username) === norm_(u.Username);
+  if (isMgr) {
+    if (d.role === 'admin') throw new Error('ผู้จัดการไม่สามารถกำหนดบทบาท ผู้ดูแลระบบ (admin) ได้');
+    if (!isAllBranch_(u) && String(d.branch || '') !== String(u.Branch)) {
+      throw new Error('เพิ่มหรือแก้ไขได้เฉพาะผู้ใช้ในสาขา ' + u.Branch);
+    }
+    if (selfEdit && d.active === false) throw new Error('ไม่สามารถปิดบัญชีของตัวเองได้');
+  }
 
   const existing = findUser_(username);
   const rec = {
@@ -1942,7 +1960,12 @@ function saveUser_(u, req) {
   const actor = u.Username;
 
   if (existing) {
-    if (norm_(existing.Username) === norm_(u.Username) && (rec.Role !== 'admin' || rec.Active === 'FALSE')) {
+    if (isMgr) {
+      if (String(existing.Role) === 'admin') throw new Error('ผู้จัดการไม่สามารถแก้ไขผู้ดูแลระบบ (admin) ได้');
+      if (!selfEdit && !inScope_(u, existing.Branch)) throw new Error('ไม่มีสิทธิ์แก้ไขผู้ใช้ของสาขาอื่น');
+      if (selfEdit && rec.Role !== String(existing.Role)) throw new Error('ไม่สามารถเปลี่ยนบทบาทของตัวเองได้');
+    }
+    if (u.Role === 'admin' && norm_(existing.Username) === norm_(u.Username) && (rec.Role !== 'admin' || rec.Active === 'FALSE')) {
       throw new Error('ไม่สามารถลดสิทธิ์หรือปิดบัญชีของตัวเองได้');
     }
     if (d.password && String(d.password).length < PW_MIN_LENGTH) throw new Error('รหัสผ่านต้องมีอย่างน้อย ' + PW_MIN_LENGTH + ' ตัวอักษร');
@@ -1981,7 +2004,8 @@ function saveUser_(u, req) {
   rec.LockedUntil = '';
   appendObj_(SHEETS.USERS, rec);
   addUserLog_(actor, 'เพิ่มผู้ใช้', username, 'บทบาท: ' + rec.Role + ' | สาขา: ' + rec.Branch);
-  return { message: 'เพิ่มผู้ใช้ ' + username + ' แล้ว' };
+  // r33: ส่งชื่อ Spreadsheet/ชีตที่บันทึกลงไปกลับมา เพื่อให้เช็คได้ว่าข้อมูลไปอยู่ที่ไหน
+  return { message: 'เพิ่มผู้ใช้ ' + username + ' แล้ว', username: username, sheetName: SHEETS.USERS.name, spreadsheetName: ss_().getName() };
 }
 
 /** r16: กฎก่อนปิดบัญชี — ห้ามปิด admin คนสุดท้าย และห้ามปิดช่างที่มีงาน Approved / In Progress ค้างอยู่ (r29: นับรวมสมาชิกทีม) */
