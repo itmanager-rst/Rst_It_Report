@@ -2034,8 +2034,9 @@ function stepper(status) {
         </div>${i < steps.length - 1 ? `<div class="flex-1 h-0.5 mb-5 ${i < idx ? 'bg-sky-700' : 'bg-slate-200'}"></div>` : ''}`).join('')}</div>`;
 }
 
+// r33: ดึงรายชื่อช่างใหม่ทุกครั้ง (เดิมแคชไว้ → ช่างที่เพิ่งเพิ่มไม่ขึ้นให้หัวหน้าช่างเลือก)
 async function getTechnicians() {
-    if (!technicians) technicians = (await api('listTechnicians')).technicians;
+    technicians = (await api('listTechnicians')).technicians;
     return technicians;
 }
 
@@ -2061,9 +2062,14 @@ async function openTicket(id) {
         if (hasRole('supervisor', 'admin') && (supOwner || hasRole('admin')) && ['Dispatched', 'Approved', 'In Progress'].includes(t.Status)) {
             const allTechs = await getTechnicians();   // r32: ทุกสาขา — ช่างสาขาเดียวกันขึ้นก่อน ช่างต่างสาขาติดป้าย
             const teamNames = (t.team || []).map(m => m.username.toLowerCase());
+            // r33: สมาชิกทีมเดิมที่ไม่อยู่ในรายชื่อช่างที่ใช้งานอยู่ (ปิดบัญชี/เปลี่ยนบทบาท) ต้องยังแสดงและติ๊กไว้ มิฉะนั้นจะถูกลบออกจากทีมเมื่อบันทึก
+            const listedNames = allTechs.map(x => x.username.toLowerCase());
+            const orphans = (t.team || []).filter(m => !listedNames.includes(m.username.toLowerCase()))
+                .map(m => ({ username: m.username, fullName: m.name || m.username, branch: m.branch || t.Branch, orphan: true }));
+            const pool = [...allTechs, ...orphans];
             const isLocal = x => x.branch === t.Branch || String(x.branch).toUpperCase() === 'ALL';
-            const techRow = x => `<label class="flex items-center gap-2 text-sm py-1 cursor-pointer"><input type="checkbox" class="actTech w-4 h-4" value="${esc(x.username)}" ${teamNames.includes(x.username.toLowerCase()) ? 'checked' : ''}> ${esc(x.fullName)} <span class="text-xs text-slate-400">(${esc(x.branch)})</span>${isLocal(x) ? '' : ' <span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">ต่างสาขา</span>'}</label>`;
-            techOpts = allTechs.length ? [...allTechs.filter(isLocal), ...allTechs.filter(x => !isLocal(x))].map(techRow).join('') : '<p class="text-sm text-rose-600">ไม่มีช่างในระบบ</p>';
+            const techRow = x => `<label class="flex items-center gap-2 text-sm py-1 cursor-pointer"><input type="checkbox" class="actTech w-4 h-4" value="${esc(x.username)}" ${teamNames.includes(x.username.toLowerCase()) ? 'checked' : ''}> ${esc(x.fullName)} <span class="text-xs text-slate-400">(${esc(x.branch)})</span>${x.orphan ? ' <span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">ไม่อยู่ในรายชื่อช่างที่ใช้งาน</span>' : ''}${isLocal(x) ? '' : ' <span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">ต่างสาขา</span>'}</label>`;
+            techOpts = pool.length ? [...pool.filter(isLocal), ...pool.filter(x => !isLocal(x))].map(techRow).join('') : '<p class="text-sm text-rose-600">ไม่มีช่างในระบบ</p>';
         }
         const row = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div class="text-sm">${v}</div></div>`;
         openModal(`

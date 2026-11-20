@@ -65,7 +65,7 @@
  *    (อย่ากด New deployment เพราะ URL จะเปลี่ยน)
  */
 
-const CODE_VERSION = 'r32-2026-11-19-assign';
+const CODE_VERSION = 'r33-2026-11-20-team-members';
 
 // r27: เกณฑ์เวลา (ชม.) ที่หัวหน้าช่างควรเลือกช่างให้เสร็จ นับจากวันที่ผู้จัดการส่งต่อมา — ใช้คำนวณ % ตาม SLA ใน KPI หัวหน้าช่าง
 const SUP_ASSIGN_SLA_HOURS = 4;
@@ -1305,8 +1305,13 @@ function assignTechnician_(u, req) {
   // r32: ช่างต่างสาขาเลือกได้ — ช่างที่สาขาไม่ตรงกับงานจะถูกติดธง cross เพื่อให้หัวหน้าช่างรู้ว่าต้องเดินทางไปหน้างานต่างสาขา
   const team = list.map(x => {
     const tech = findUser_(x);
+    const was = prev.find(m => norm_(m.u) === norm_(x));
+    // r33: สมาชิกเดิมของทีมที่บัญชีถูกปิด/เปลี่ยนบทบาทแล้ว ให้คงอยู่ในทีมต่อไป (ไม่ทำให้ถูกลบเงียบ ๆ และไม่ error)
+    if (was && (!tech || tech.Role !== 'technician' || !isActive_(tech.Active))) {
+      return { u: was.u, n: was.n, at: was.at, by: was.by, byName: was.byName, br: was.br, x: !!was.x };
+    }
     if (!tech || tech.Role !== 'technician' || !isActive_(tech.Active)) throw new Error('ไม่พบช่าง ' + x);
-    const old = prev.find(m => norm_(m.u) === norm_(tech.Username));
+    const old = was;
     const br = String(tech.Branch || '');
     const cross = !!br && br.toUpperCase() !== 'ALL' && br !== String(t.Branch);
     return {
