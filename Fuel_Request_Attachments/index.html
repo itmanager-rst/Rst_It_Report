@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RST-FUEL | ระบบบันทึกขอเติมน้ำมันสาขา & สถิติการเดินรถ</title>
   <meta name="author" content="tana.pittayatanadol" />
+  <meta name="description" content="ระบบขออนุมัติเติมน้ำมันสาขา Ruamsinthaigroup — เข้าสู่ระบบด้วยบัญชีพนักงาน" />
+  <meta property="og:title" content="RST-FUEL | ระบบขออนุมัติเติมน้ำมันสาขา" />
+  <meta property="og:description" content="ส่งคำขอเติมน้ำมัน · อนุมัติ 2 ขั้น · ติดตามสถานะ — เข้าสู่ระบบด้วยบัญชีพนักงาน" />
+  <meta property="og:type" content="website" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -382,7 +386,7 @@ body.logged-out .app-only { display: none !important; }
   <!-- Banner เตือนกรณียังไม่ตั้งค่า Web App URL -->
   <div id="configWarning" class="hidden max-w-6xl mx-auto w-full px-4 mt-4 no-print app-only">
     <div class="rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm px-4 py-3">
-      โหมด Demo (ยังไม่ได้ตั้งค่า <code class="font-mono">WEB_APP_URL</code>) — ข้อมูลตัวอย่าง ไม่บันทึกจริง · ผู้ใช้ทดสอบ: <b>branch1</b> (สาขา), <b>reviewer</b> (ขั้นที่ 1), <b>approver</b> (สูงสุด), <b>admin</b> รหัส <b>1234</b>
+      ยังไม่ได้เชื่อมต่อระบบ — กรุณาติดต่อผู้ดูแลระบบ
     </div>
   </div>
 
@@ -856,7 +860,8 @@ const CONFIG = {
   PAGE_SIZE: 20,
   CHART_COLOR: '#e60012',
   CHART_COLOR_HOVER: '#9e000c',
-  COMPANY_NAME: 'Ruamsinthaigroup' // แสดงบนหัวรายงานที่พิมพ์
+  COMPANY_NAME: 'Ruamsinthaigroup', // แสดงบนหัวรายงานที่พิมพ์
+  ALLOW_DEMO: false // true = เปิดโหมด Demo เมื่อไม่มี WEB_APP_URL (ใช้ตอนพัฒนาเท่านั้น)
 };
 
 /* ═════════════════════ Utilities ═════════════════════ */
@@ -874,7 +879,8 @@ const store = {
 // เมื่อเปิดจาก URL ของ Apps Script Web App โดยตรง จะเรียก backend ผ่าน google.script.run (ไม่ต้องตั้ง WEB_APP_URL)
 const gasRun = () => (window.google && google.script && google.script.run) ? google.script.run : null;
 const gasCall = (fn, ...args) => new Promise((res, rej) => gasRun().withSuccessHandler(res).withFailureHandler((e) => rej(new Error(e && e.message ? e.message : e)))[fn](...args));
-const isDemo = () => !CONFIG.WEB_APP_URL && !gasRun();
+const isDemo = () => CONFIG.ALLOW_DEMO && !CONFIG.WEB_APP_URL && !gasRun();
+const notConfigured = () => !CONFIG.WEB_APP_URL && !gasRun() && !CONFIG.ALLOW_DEMO;
 
 function toast(msg, type = 'success', ms = 3500) {
   const t = $('#toast');
@@ -922,6 +928,8 @@ const api = {
     else if (isDemo()) {
       try { json = { ok: true, data: await demo.post(body) }; }
       catch (e) { json = { ok: false, error: e.message, code: e.code }; }
+    } else if (notConfigured()) {
+      json = { ok: false, error: 'ยังไม่ได้เชื่อมต่อระบบ กรุณาติดต่อผู้ดูแลระบบ' };
     } else {
       const res = await fetch(CONFIG.WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
       json = await res.json();
@@ -2437,7 +2445,7 @@ function exportCsv() {
 function init() {
   if (window.Chart) { Chart.defaults.font.family = '"Noto Sans Thai", system-ui, sans-serif'; Chart.defaults.color = '#64748b'; }
   $('#year').textContent = new Date().getFullYear();
-  if (isDemo()) $('#configWarning').classList.remove('hidden');
+  if (notConfigured()) $('#configWarning').classList.remove('hidden');
 
   applyConfig(null);
   fillPeriodSelects();
