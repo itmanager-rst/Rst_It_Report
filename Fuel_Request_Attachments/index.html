@@ -2,7 +2,12 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="RST-FUEL" />
   <title>RST-FUEL | ระบบบันทึกขอเติมน้ำมันสาขา & สถิติการเดินรถ</title>
   <meta name="author" content="tana.pittayatanadol" />
   <meta name="description" content="ระบบขออนุมัติเติมน้ำมันสาขา Ruamsinthaigroup — เข้าสู่ระบบด้วยบัญชีพนักงาน" />
@@ -20,7 +25,7 @@
       } }
     };
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
 /* RST-FUEL — Dev: tana.pittayatanadol
    Theme: แดง–ดำ–ขาว (โทนตัวแทนจำหน่ายรถแทรกเตอร์) */
@@ -243,6 +248,109 @@ body.logged-out .app-only { display: none !important; }
 /* Toast */
 #toast > div { padding: .75rem 1rem; border-radius: .75rem; color: #fff; font-size: .9rem; box-shadow: 0 10px 25px rgba(0,0,0,.15); max-width: 90vw; }
 
+/* ═════════ Boot screen: สถานะการโหลดแอป (r09) ═════════ */
+body.booting { overflow: hidden; }
+.boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 1.5rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px)); padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  color: #fff; transition: opacity .35s ease, visibility .35s;
+  background: radial-gradient(800px 420px at 0% 0%, rgba(230,0,18,.38), transparent 60%),
+              radial-gradient(640px 420px at 100% 100%, rgba(230,0,18,.22), transparent 60%), #111; }
+.boot[hidden] { display: none; }
+.boot.boot-out { opacity: 0; visibility: hidden; }
+.boot-inner { width: 100%; max-width: 26rem; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.boot-logo { width: 4.75rem; height: 4.75rem; border-radius: 1.25rem; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #ff2a36 0%, var(--brand) 45%, var(--brand-deep) 100%); box-shadow: 0 10px 30px -6px rgba(230,0,18,.6); }
+.boot-logo svg { width: 2.8rem; height: 2.8rem; }
+.boot-title { margin-top: 1.1rem; font-size: 1.9rem; font-weight: 700; letter-spacing: .04em; line-height: 1.1; }
+.boot-title span { color: var(--brand); }
+.boot-sub { margin-top: .4rem; font-size: .88rem; color: #a3a3a3; }
+.boot-bar { width: 100%; height: .4rem; margin-top: 1.6rem; border-radius: 999px; background: rgba(255,255,255,.1); overflow: hidden; }
+.boot-bar i { display: block; height: 100%; width: 10%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-deep), var(--brand), #ff4d57);
+  transition: width .45s ease; }
+.boot-now { display: flex; align-items: center; justify-content: center; gap: .55rem; margin-top: .9rem; font-weight: 500; font-size: .95rem; min-height: 1.5rem; }
+.boot-now[hidden] { display: none; }
+.boot-spin { width: 1.05rem; height: 1.05rem; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); border-top-color: var(--brand);
+  animation: spin .8s linear infinite; }
+.boot-steps { width: 100%; margin-top: 1.1rem; padding: .9rem 1.15rem; list-style: none; text-align: left; border-radius: .9rem;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); display: grid; gap: .55rem; font-size: .9rem; }
+.boot-steps li { display: flex; align-items: center; gap: .7rem; color: #737373; transition: color .2s; }
+.boot-steps li::before { content: "○"; width: 1rem; flex: none; text-align: center; font-size: .8rem; }
+.boot-steps li.now { color: #fff; font-weight: 600; }
+.boot-steps li.now::before { content: "●"; color: var(--brand); }
+.boot-steps li.done { color: #86efac; }
+.boot-steps li.done::before { content: "✓"; font-weight: 700; font-size: .9rem; }
+.boot-steps li.fail { color: #fca5a5; font-weight: 600; }
+.boot-steps li.fail::before { content: "✕"; font-weight: 700; }
+.boot-err { width: 100%; margin-top: 1rem; display: grid; gap: .75rem; }
+.boot-err[hidden] { display: none; }
+.boot-err p { font-size: .88rem; color: #fca5a5; }
+.boot-err .boot-actions { display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; }
+.boot-err .btn-ghost { background: transparent; color: #e5e5e5; border-color: rgba(255,255,255,.25); }
+.boot-err .btn-ghost:hover { background: rgba(255,255,255,.08); }
+@media (prefers-reduced-motion: reduce) { .boot, .boot-bar i { transition: none; } .boot-spin { animation-duration: 2s; } }
+
+/* ═════════ Mobile (r09) ═════════ */
+.tab-short { display: none; }
+@media (max-width: 767px) {
+  /* แถบเมนูย้ายไปด้านล่างจอ กดด้วยนิ้วโป้งได้ */
+  .app-header nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; max-width: none; padding: 0;
+    background: #111; border-top: 3px solid var(--brand); box-shadow: 0 -6px 18px rgba(0,0,0,.25);
+    padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .app-header nav [role=tablist] { gap: 0; overflow: visible; }
+  .app-header .tab-btn { flex: 1 1 0; min-width: 0; flex-direction: column; gap: .2rem; position: relative;
+    padding: .5rem .15rem .55rem; font-size: .68rem; border-radius: 0; border-bottom: 0; border-top: 3px solid transparent; margin-top: -3px; }
+  .app-header .tab-btn.active { border-top-color: var(--brand); background: rgba(230,0,18,.16); }
+  .app-header .tab-btn svg { width: 1.35rem; height: 1.35rem; }
+  .app-header .tab-btn .tab-label { display: none; }
+  .app-header .tab-btn .tab-short { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .app-header .tab-badge { position: absolute; top: .25rem; left: calc(50% + .35rem); height: 1.05rem; min-width: 1.05rem; font-size: .62rem; padding: 0 .25rem; }
+  body:not(.logged-out) { padding-bottom: calc(4.1rem + env(safe-area-inset-bottom, 0px)); }
+  .app-header { padding-top: env(safe-area-inset-top, 0px); }
+  .app-header > div:first-child { padding-top: .55rem; padding-bottom: .55rem; }
+  .app-header p.truncate { display: none; }
+  .logo-chip { width: 2.3rem; height: 2.3rem; border-radius: .75rem; }
+  #toast { bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); width: max-content; max-width: 92vw; }
+
+  /* เนื้อหา */
+  main { padding-left: .75rem !important; padding-right: .75rem !important; padding-top: 1rem !important; }
+  .card { padding: 1rem; }
+  .hero { padding: 1.1rem 1.15rem; }
+  .btn-primary { min-width: 0; }
+  .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .seg::-webkit-scrollbar { display: none; }
+  div:has(> .seg) { min-width: 0; max-width: 100%; }
+  .justify-between:has(> .seg), .justify-between:has(> div > .seg) { flex-wrap: wrap; }
+  .seg button { padding: .4rem .65rem; }
+  .toolbar { padding: .75rem; }
+  .chart-box { height: 240px; }
+  .kpi-value { font-size: 1.45rem; }
+  .grid > .card, .grid > div, #trackList > * { min-width: 0; }
+  .icon-btn, .btn-icon { padding: .45rem .7rem; }       /* ปุ่มเล็กให้นิ้วกดง่ายขึ้น */
+  .appr-card .btn-reject, .appr-card [data-act=approve] { flex: 1 1 40%; }
+  .branch-checks { grid-template-columns: 1fr; }
+  .stepper div { font-size: .6rem; }
+
+  /* หน้าต่าง popup → แผ่นเลื่อนขึ้นจากด้านล่าง */
+  #modalPanel { position: absolute; left: 0; right: 0; bottom: 0; margin: 0 !important; max-width: none !important;
+    border-radius: 1.1rem 1.1rem 0 0; max-height: 92vh; max-height: 92dvh; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .sig-pad { height: 190px; }
+
+  /* ตารางสมาชิก → การ์ด */
+  #tab-members table thead { display: none; }
+  #mTable, #mTable tr { display: block; }
+  #mTable tr { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .35rem .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--line); }
+  #mTable td { display: block; padding: 0; }
+  #mTable td:nth-child(1) { grid-column: 1; }
+  #mTable td:nth-child(2) { grid-column: 2; text-align: right; }
+  #mTable td:nth-child(3), #mTable td:nth-child(4), #mTable td:nth-child(6) { grid-column: 1 / -1; font-size: .78rem; color: #52525b; }
+  #mTable td:nth-child(3)::before { content: "สาขา: "; color: var(--muted); }
+  #mTable td:nth-child(4)::before { content: "อีเมล: "; color: var(--muted); }
+  #mTable td:nth-child(6)::before { content: "เข้าระบบล่าสุด: "; color: var(--muted); }
+  #mTable td:nth-child(5) { grid-column: 1; }
+  #mTable td:nth-child(7) { grid-column: 2; align-self: end; }
+  #mTable td[colspan] { grid-column: 1 / -1; }
+}
+
 /* ═════════ Print ═════════ */
 #printArea { display: none; }
 @media print {
@@ -281,7 +389,38 @@ body.logged-out .app-only { display: none !important; }
 
 </style>
 </head>
-<body class="app-bg text-slate-800 font-sans min-h-screen flex flex-col logged-out">
+<body class="app-bg text-slate-800 font-sans min-h-screen flex flex-col logged-out booting">
+
+  <!-- ───────── Boot: สถานะการโหลดแอป ───────── -->
+  <div id="boot" class="boot no-print" role="status" aria-live="polite">
+    <div class="boot-inner">
+      <div class="boot-logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 18V10h9l3 6h6v4"/><path d="M9 10V6h5"/><path d="M15 10v6h3"/>
+          <circle cx="10" cy="22" r="5"/><circle cx="10" cy="22" r="1.5" fill="currentColor"/>
+          <circle cx="24" cy="23" r="3"/><path d="M15 22h6"/>
+        </svg>
+      </div>
+      <div class="boot-title">RST<span>-</span>FUEL</div>
+      <p class="boot-sub">ระบบขออนุมัติเติมน้ำมันสาขา &amp; สถิติการเดินรถ</p>
+      <div class="boot-bar"><i id="bootBar"></i></div>
+      <div id="bootNow" class="boot-now"><span class="boot-spin" aria-hidden="true"></span><span id="bootMsg">กำลังโหลดหน้าแอป...</span></div>
+      <ol id="bootSteps" class="boot-steps">
+        <li class="now">โหลดหน้าแอป</li>
+        <li>ตรวจสอบการเข้าสู่ระบบ</li>
+        <li>โหลดข้อมูลคำขอและสาขา</li>
+        <li>เตรียมเมนูและสิทธิ์</li>
+        <li>เปิดหน้าแรก</li>
+      </ol>
+      <div id="bootErr" class="boot-err" hidden>
+        <p id="bootErrMsg"></p>
+        <div class="boot-actions">
+          <button type="button" id="bootRetry" class="btn-primary !min-w-0">ลองใหม่</button>
+          <button type="button" id="bootLogout" class="btn-ghost">ออกจากระบบ</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ───────── Login ───────── -->
   <div id="loginScreen" class="login-screen hidden">
@@ -363,22 +502,22 @@ body.logged-out .app-only { display: none !important; }
       <div class="flex gap-1 overflow-x-auto no-scrollbar" role="tablist">
         <button class="tab-btn active" data-tab="form" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-          แบบฟอร์มขอเติมน้ำมัน</button>
+          <span class="tab-label">แบบฟอร์มขอเติมน้ำมัน</span><span class="tab-short">ขอเติม</span></button>
         <button class="tab-btn role-track" data-tab="track" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2a4 4 0 014-4h8m0 0l-3-3m3 3l-3 3M3 5h6m-6 4h4m-4 4h3"/></svg>
-          ติดตาม/บันทึกเติม <span id="trackBadge" class="tab-badge hidden">0</span></button>
+          <span class="tab-label">ติดตาม/บันทึกเติม</span><span class="tab-short">ติดตาม</span> <span id="trackBadge" class="tab-badge hidden">0</span></button>
         <button class="tab-btn role-approve" data-tab="approve" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.768 9.232a2.5 2.5 0 00-3.536-3.536L4.464 16.464 4 20z"/></svg>
-          รออนุมัติ <span id="pendingBadge" class="tab-badge hidden">0</span></button>
+          <span class="tab-label">รออนุมัติ</span><span class="tab-short">อนุมัติ</span> <span id="pendingBadge" class="tab-badge hidden">0</span></button>
         <button class="tab-btn" data-tab="dashboard" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
-          Dashboard สถิติ</button>
+          <span class="tab-label">Dashboard สถิติ</span><span class="tab-short">สถิติ</span></button>
         <button class="tab-btn" data-tab="history" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          ประวัติรายการ</button>
+          <span class="tab-label">ประวัติรายการ</span><span class="tab-short">ประวัติ</span></button>
         <button class="tab-btn role-members" data-tab="members" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H2v-2a4 4 0 015-3.87m6-4.13a4 4 0 11-8 0 4 4 0 018 0zm6 2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          สมาชิก</button>
+          <span class="tab-label">สมาชิก</span><span class="tab-short">สมาชิก</span></button>
       </div>
     </nav>
   </header>
@@ -918,6 +1057,49 @@ function myBranches() {
   return u.branches;
 }
 
+/* ═════════════════════ Boot (สถานะการโหลดแอป) ═════════════════════ */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BOOT_MSG = ['กำลังโหลดหน้าแอป...', 'กำลังตรวจสอบการเข้าสู่ระบบ...', 'กำลังโหลดข้อมูลคำขอและสาขา...', 'กำลังเตรียมเมนูและสิทธิ์...', 'กำลังเปิดหน้าแรก...'];
+const boot = {
+  active: true, cur: 0,
+  show(from = 0) {
+    const el = $('#boot');
+    el.hidden = false; el.classList.remove('boot-out');
+    this.active = true; document.body.classList.add('booting');
+    $('#bootErr').hidden = true; $('#bootNow').hidden = false;
+    this.render(from);
+  },
+  render(i) {
+    this.cur = i;
+    $$('#bootSteps li').forEach((li, k) => { li.className = k < i ? 'done' : k === i ? 'now' : ''; });
+    $('#bootMsg').textContent = BOOT_MSG[i] || '';
+    $('#bootBar').style.width = Math.round(((i + 0.5) / BOOT_MSG.length) * 100) + '%';
+  },
+  /** ไปขั้นถัดไป (ไม่ย้อนกลับ) */
+  step(i) { if (this.active && i > this.cur) this.render(i); },
+  async finish() {
+    $$('#bootSteps li').forEach((li) => { li.className = 'done'; });
+    $('#bootBar').style.width = '100%';
+    $('#bootMsg').textContent = 'พร้อมใช้งาน';
+    await sleep(300);
+    this.hide();
+  },
+  hide() {
+    if (!this.active) return;
+    this.active = false;
+    const el = $('#boot');
+    el.classList.add('boot-out');
+    document.body.classList.remove('booting');
+    setTimeout(() => { if (!boot.active) el.hidden = true; }, 400);
+  },
+  fail(msg) {
+    const li = $$('#bootSteps li')[this.cur]; if (li) li.className = 'fail';
+    $('#bootNow').hidden = true;
+    $('#bootErrMsg').textContent = msg;
+    $('#bootErr').hidden = false;
+  }
+};
+
 /* ═════════════════════ API ═════════════════════ */
 const api = {
   /** ทุกคำสั่งส่งผ่าน POST พร้อม token (Content-Type: text/plain เพื่อเลี่ยง CORS preflight) */
@@ -1016,6 +1198,7 @@ const demo = {
     const find = (st) => { const r = this.records.find((x) => x.refId === b.refId); if (!r) this.fail('ไม่พบรายการ'); if (r.status !== st) this.fail(`รายการนี้อยู่ในสถานะ "${r.status}" แล้ว`); if (!can(r.branch)) this.fail('คุณไม่มีสิทธิ์ในสาขานี้'); return r; };
     switch (b.action) {
       case 'logout': delete this.sessions[b.token]; return { done: true };
+      case 'me': return this.pub(me);
       case 'all': return { config: { branches: CONFIG.BRANCHES, plates: CONFIG.PLATES, fuelTypes: CONFIG.FUEL_TYPES, tankLevels: CONFIG.TANK_LEVELS }, records: this.records.filter((r) => can(r.branch)).map((r) => ({ ...r })), me: this.pub(me) };
       case 'signature': return this.signatures[`${b.refId}|${b.kind || 'approver'}`] || '';
       case 'changePassword':
@@ -1115,6 +1298,7 @@ async function loadData(force = false) {
   const seq = ++state.loadSeq;            // กันผลลัพธ์เก่า (เช่น โหลดค้างตอนเปลี่ยนผู้ใช้) มาทับ
   const p = (async () => {
     try {
+      state.loadError = null;
       const data = await api.get('all');
       if (seq !== state.loadSeq) return;
       if (data.me) { auth.set(auth.token, data.me); applyUser(); }
@@ -1125,7 +1309,8 @@ async function loadData(force = false) {
       updatePendingBadge();
     } catch (err) {
       console.error(err);
-      if (err.code !== 'AUTH' && seq === state.loadSeq) toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error', 5000);
+      if (seq === state.loadSeq) state.loadError = err;
+      if (err.code !== 'AUTH' && seq === state.loadSeq && !boot.active) toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error', 5000);
     } finally {
       if (state.loading === p) state.loading = null;
     }
@@ -2038,9 +2223,11 @@ async function onLogin(e) {
     const res = await api.post({ action: 'login', username, password });
     auth.set(res.token, res.user);
     $('#loginPass').value = '';
-    enterApp();
-    toast(`ยินดีต้อนรับ ${res.user.fullName}`, 'success', 2500);
-    if (res.user.mustChangePassword) openChangePassword(true);
+    const ok = await enterApp({ fromLogin: true });
+    if (ok) {
+      toast(`ยินดีต้อนรับ ${res.user.fullName}`, 'success', 2500);
+      if (res.user.mustChangePassword) openChangePassword(true);
+    }
   } catch (err) {
     toast(err.message, 'error', 5000);
   } finally {
@@ -2073,20 +2260,39 @@ function applyUser() {
   if (!$('#recorderName').value) $('#recorderName').value = u.fullName;
 }
 
-function enterApp() {
+/** เข้าแอป พร้อมแสดงสถานะการโหลดทีละขั้น (fromLogin = เพิ่งล็อกอิน ข้ามขั้นตรวจสอบ) */
+async function enterApp(opts = {}) {
+  boot.show(opts.fromLogin ? 2 : 1);
   document.body.classList.remove('logged-out');
   $('#loginScreen').classList.add('hidden');
   applyUser();
   applyConfig({ branches: state.branches.length ? state.branches : CONFIG.BRANCHES, plates: null });
   $('#recorderName').value = store.get('rst_recorder_' + auth.user.username) || auth.user.fullName;
-  loadData(true).then(() => {
-    const active = $('.tab-btn.active')?.dataset.tab;
-    if (active) showTab(active);
-  });
+
+  // ขั้น 2 ตรวจ session และขั้น 3 โหลดข้อมูล ทำพร้อมกัน (ไม่เพิ่มเวลารอ)
+  const meP = opts.fromLogin ? Promise.resolve() : api.post({ action: 'me' }).then((me) => { auth.set(auth.token, me); boot.step(2); });
+  const dataP = loadData(true);
+  try { await meP; }
+  catch (err) { if (err.code === 'AUTH') { boot.hide(); return false; } }   // session หมดอายุ → หน้าเข้าสู่ระบบ
+  await dataP;
+  if (!auth.token) { boot.hide(); return false; }
+  if (!state.loaded) {
+    boot.step(2);
+    boot.fail('โหลดข้อมูลไม่สำเร็จ: ' + (state.loadError?.message || 'กรุณาตรวจสอบอินเทอร์เน็ต'));
+    return false;
+  }
+
+  boot.step(3);
+  applyUser();
+  updatePendingBadge();
+
+  boot.step(4);
   const initial = location.hash.replace('#', '');
   // ลิงก์จากอีเมล (#approve / #track) เปิดแท็บนั้น ไม่งั้นเปิดแท็บหลักตามบทบาท
   const roleHome = isRole('reviewer', 'approver') ? 'approve' : 'form';
   showTab(['approve', 'track'].includes(initial) ? initial : roleHome);
+  await boot.finish();
+  return true;
 }
 
 function openChangePassword(forced = false) {
@@ -2577,9 +2783,14 @@ function init() {
   $('#modal').addEventListener('click', (e) => { if (e.target.closest('[data-close]') && !(e.target.classList.contains('bg-slate-900/50') && $('#pwForm[data-forced]'))) closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#pwForm[data-forced]')) closeModal(); });
 
+  // Boot: ปุ่มเมื่อโหลดไม่สำเร็จ
+  $('#bootRetry').addEventListener('click', () => enterApp());
+  $('#bootLogout').addEventListener('click', async () => { await logout(); boot.hide(); });
+
   // ต้องเข้าสู่ระบบก่อนใช้งาน
+  boot.render(1);
   if (auth.token && auth.user) enterApp();
-  else showLogin();
+  else { boot.hide(); showLogin(); }
 }
 
 document.addEventListener('DOMContentLoaded', init);
