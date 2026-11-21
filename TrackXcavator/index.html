@@ -1819,8 +1819,8 @@ body.app-svc .btn-danger:hover { filter: brightness(.92); }
           <input type="hidden" id="mjfJobId">
           <div class="row g-2">
             <div class="col-md-6">
-              <label class="form-label small fw-bold">หมายเลขรถ <span class="text-danger">*</span></label>
-              <input type="text" class="form-control form-control-sm" id="mjfMachine" list="mjMachineList" placeholder="พิมพ์/เลือกหมายเลขรถ" onchange="onMaintMachinePicked()" autocomplete="off">
+              <label class="form-label small fw-bold">หมายเลขรถ <span class="text-muted fw-normal">(ถ้ามี)</span></label>
+              <input type="text" class="form-control form-control-sm" id="mjfMachine" list="mjMachineList" placeholder="พิมพ์/เลือกหมายเลขรถ (เว้นว่างได้)" onchange="onMaintMachinePicked()" autocomplete="off">
               <datalist id="mjMachineList"></datalist>
               <div class="form-text" id="mjfMachineHint">เลือกจากรายการเครื่องในระบบ จะเติมรุ่น/ลูกค้าให้อัตโนมัติ</div>
             </div>
@@ -6023,7 +6023,7 @@ function renderMaintJobs() {
       + (j.source && j.remark && !['completed', 'cancelled'].includes(j.status) ? `<div class="mj-meta text-secondary"><i class="fa-solid fa-note-sticky me-1"></i>${mjText(j.remark)}</div>` : '');
     return `<div class="col-12 col-md-6 col-xl-4"><div class="mj-card" style="--mc:${st.color}">
       <div class="d-flex justify-content-between align-items-start"><label class="mj-id d-flex align-items-center gap-2 mb-0" style="cursor:pointer"><input type="checkbox" class="form-check-input m-0 mj-sel" ${maintSelected.has(j.job_id) ? 'checked' : ''} onchange="toggleMaintSelect('${mjAttr(j.job_id)}', this.checked)">${mjText(j.job_id)}</label><span><span class="mj-badge">${st.label}</span>${overdue}</span></div>
-      <div class="mj-machine"><i class="fa-solid fa-tractor me-1 text-muted"></i>${mjText(j.machine_id)} <small class="text-muted fw-normal">· ${mjText(j.model) || '-'}</small>${prio}${j.source ? ' <span class="badge bg-light text-secondary border fw-normal" style="font-size:.65rem" title="นำเข้าจากชีตแจ้งซ่อม Service_RST">ชีตแจ้งซ่อม</span>' : ''}</div>
+      <div class="mj-machine"><i class="fa-solid fa-tractor me-1 text-muted"></i>${mjText(j.machine_id) || '<span class="text-muted fw-normal">ไม่ระบุเลขรถ</span>'} <small class="text-muted fw-normal">· ${mjText(j.model) || '-'}</small>${prio}${j.source ? ' <span class="badge bg-light text-secondary border fw-normal" style="font-size:.65rem" title="นำเข้าจากชีตแจ้งซ่อม Service_RST">ชีตแจ้งซ่อม</span>' : ''}</div>
       <div class="mj-steps" title="รับงาน → รับแล้ว → ซ่อม → ปิดงาน">${steps}</div>
       <div class="mj-meta"><i class="fa-solid fa-wrench me-1 text-muted"></i>${mjText(j.job_type) || '-'}${j.problem ? ' — ' + mjText(j.problem.length > 80 ? j.problem.slice(0, 80) + '…' : j.problem) : ''}</div>
       <div class="mj-meta"><i class="fa-solid fa-user me-1 text-muted"></i>${mjText(j.customer) || '-'}${j.location ? ' · <i class="fa-solid fa-location-dot mx-1 text-muted"></i>' + mjText(j.location) : ''}</div>
@@ -6228,12 +6228,12 @@ async function submitMaintAssign() {
     payload.cause = g('mjfCause'); payload.work_detail = g('mjfDetail'); payload.parts_used = g('mjfParts'); payload.labor_hours = g('mjfLabor');
   }
   const isNewMachine = !document.getElementById('mjfNewMachineBox').classList.contains('d-none');
-  payload.register_machine = isNewMachine && document.getElementById('mjfRegister').checked;
+  payload.register_machine = !!payload.machine_id && isNewMachine && document.getElementById('mjfRegister').checked;
   if (payload.register_machine) {
     payload.current_hours = g('mjfHours'); payload.customer_id = g('mjfCustomerId'); payload.contract_date = g('mjfContractDate');
     if (!confirm(`รถ ${payload.machine_id} (${payload.model}) ยังไม่มีในฐานข้อมูล\nยืนยันเพิ่มเข้าฐานข้อมูลเครื่องจักร และจ่ายงานซ่อม?`)) return;
   }
-  if (!payload.machine_id) return alert('กรุณาระบุหมายเลขรถ');
+  // หมายเลขรถไม่บังคับ (รถแทรกเตอร์บางคันไม่มีเลขเครื่อง) — บังคับเฉพาะรุ่นรถ
   if (!payload.model) return alert('กรุณาระบุรุ่นรถ');
   if (!payload.assigned_to) return alert('กรุณาเลือกช่างอย่างน้อย 1 คน');
   const btn = document.getElementById('mjfSaveBtn'); btn.disabled = true;
@@ -6440,7 +6440,7 @@ function showMaintDetail(jobId) {
   ].map(([l, t, s]) => `<li class="${t ? 'done' : ''}"><strong>${l}</strong> <span class="text-muted">${t ? mjDate(t) : 'ยังไม่ถึงขั้นตอนนี้'}</span>${s && t ? '<br><small class="text-muted">' + mjText(s) + '</small>' : ''}</li>`).join('');
   const extraStatus = j.status === 'declined' ? `<div class="alert alert-danger py-2 small">ช่างปฏิเสธงาน: ${mjText(j.decline_reason)}</div>`
     : j.status === 'cancelled' ? `<div class="alert alert-secondary py-2 small">ยกเลิกงาน: ${mjText(j.cancel_reason) || '-'}</div>` : '';
-  document.getElementById('mjdTitle').textContent = j.job_id + ' · ' + j.machine_id;
+  document.getElementById('mjdTitle').textContent = j.job_id + (j.machine_id ? ' · ' + j.machine_id : '');
   const body = document.getElementById('mjdBody');
   body.innerHTML = `${extraStatus}
     <div class="row g-3">
