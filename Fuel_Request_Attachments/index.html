@@ -400,7 +400,7 @@ body.logged-out .app-only { display: none !important; }
           <h2 class="text-xl sm:text-2xl font-bold">แบบฟอร์มขอเติมน้ำมัน</h2>
           <p class="text-sm text-white/80 mt-1">กรอกข้อมูลให้ครบช่องที่มี <span class="font-semibold">*</span> แล้วกดส่ง ระบบจะออกรหัสอ้างอิงให้ทันที</p>
           <ol class="flow-steps">
-            <li>ส่งคำขอ</li><li>อนุมัติขั้นที่ 1</li><li>อนุมัติสูงสุด</li><li>เข้าเติม</li><li>บันทึกบิล</li>
+            <li>ส่งคำขอ</li><li>ผู้ดูแลอนุมัติ 1</li><li>ผู้อนุมัติสูงสุดอนุมัติ 2</li><li>เข้าเติม</li><li>บันทึกบิล</li>
           </ol>
         </div>
         <svg class="hero-art" viewBox="0 0 120 80" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -564,8 +564,8 @@ body.logged-out .app-only { display: none !important; }
           </div>
           <div class="flex flex-wrap items-center gap-3 sm:ml-auto text-sm">
             <div class="seg" id="stageSeg">
-              <button data-stage="1" class="active">ขั้นที่ 1 <b id="cntL1">0</b></button>
-              <button data-stage="2">ขั้นสุดท้าย <b id="cntL2">0</b></button>
+              <button data-stage="1" class="active">อนุมัติ 1 · ผู้ดูแล <b id="cntL1">0</b></button>
+              <button data-stage="2">อนุมัติ 2 · สูงสุด <b id="cntL2">0</b></button>
             </div>
             <span class="hidden sm:inline">รอดำเนินการ <b id="pendingCount" class="text-brand-600 text-lg">0</b> รายการ</span>
             <button type="button" class="btn-ghost refresh-btn">รีเฟรช</button>
@@ -592,8 +592,8 @@ body.logged-out .app-only { display: none !important; }
           <select id="mRole" class="input !py-2 !w-auto">
             <option value="">ทุกบทบาท</option>
             <option value="admin">ผู้ดูแลระบบ</option>
-            <option value="reviewer">ผู้อนุมัติขั้นที่ 1</option>
-            <option value="approver">ผู้อนุมัติสูงสุด</option>
+            <option value="reviewer">ผู้ดูแล (อนุมัติ 1)</option>
+            <option value="approver">ผู้อนุมัติสูงสุด (อนุมัติ 2)</option>
             <option value="branch">ผู้ใช้สาขา</option>
           </select>
           <button type="button" id="mAdd" class="btn-primary !min-w-0">+ เพิ่มสมาชิก</button>
@@ -737,8 +737,8 @@ body.logged-out .app-only { display: none !important; }
             <span class="label">สถานะ</span>
             <select id="hStatus" class="input">
               <option value="">ทุกสถานะ</option>
-              <option value="รออนุมัติขั้นที่ 1">รออนุมัติขั้นที่ 1</option>
-              <option value="รออนุมัติขั้นสุดท้าย">รออนุมัติขั้นสุดท้าย</option>
+              <option value="รออนุมัติขั้นที่ 1">รอผู้ดูแลอนุมัติ 1</option>
+              <option value="รออนุมัติขั้นสุดท้าย">รอผู้อนุมัติสูงสุดอนุมัติ 2</option>
               <option value="อนุมัติแล้ว รอเติม">อนุมัติแล้ว รอเติม</option>
               <option value="เติมแล้ว">เติมแล้ว</option>
               <option value="ไม่อนุมัติ">ไม่อนุมัติ</option>
@@ -908,7 +908,7 @@ const auth = {
   set(token, user) { store.set('rst_token', token); store.set('rst_user', JSON.stringify(user)); },
   clear() { try { localStorage.removeItem('rst_token'); localStorage.removeItem('rst_user'); } catch { /* ignore */ } }
 };
-const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', reviewer: 'ผู้อนุมัติขั้นที่ 1', approver: 'ผู้อนุมัติสูงสุด', branch: 'ผู้ใช้สาขา' };
+const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', reviewer: 'ผู้ดูแล (อนุมัติ 1)', approver: 'ผู้อนุมัติสูงสุด (อนุมัติ 2)', branch: 'ผู้ใช้สาขา' };
 const isRole = (...roles) => !!auth.user && roles.includes(auth.user.role);
 /** สาขาที่ผู้ใช้ปัจจุบันเห็นได้ (null = ทุกสาขา) */
 function myBranches() {
@@ -1357,7 +1357,7 @@ async function onSubmit(e) {
       <div class="text-center py-2">
         <div class="mx-auto w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 grid place-items-center text-3xl mb-3">✓</div>
         <p class="text-slate-600">ส่งคำขอเติมน้ำมันเรียบร้อยแล้ว</p>
-        <p class="text-sm text-slate-500 mt-1">สถานะ: <b>รออนุมัติขั้นที่ 1</b> · ระบบแจ้งผู้อนุมัติทางอีเมลแล้ว</p>
+        <p class="text-sm text-slate-500 mt-1">สถานะ: <b>รอผู้ดูแลอนุมัติ 1</b> · ระบบแจ้งผู้ดูแลทางอีเมลแล้ว</p>
         <p class="text-xs text-slate-400 mt-3">รหัสอ้างอิง</p>
         <p class="ref !text-lg font-semibold select-all">${esc(res.refId)}</p>
         ${isDemo() ? '<p class="text-xs text-amber-600 mt-3">(โหมด Demo — ยังไม่ได้บันทึกลง Google Sheets)</p>' : ''}
@@ -1401,7 +1401,8 @@ const STATUS_STYLE = {
 function statusPill(r) {
   const s = statusOf(r);
   const [cls, icon] = STATUS_STYLE[s] || ['st-wait', '•'];
-  return `<span class="status ${cls}">${icon} ${esc(s)}</span>`;
+  const label = { [ST.L1]: 'รอผู้ดูแลอนุมัติ 1', [ST.L2]: 'รอผู้อนุมัติสูงสุดอนุมัติ 2' }[s] || s;
+  return `<span class="status ${cls}">${icon} ${esc(label)}</span>`;
 }
 /** วันที่ใช้สรุปยอดเงิน: วันที่เติมจริง (ถ้ามี) ไม่งั้นวันที่ขอ */
 const recDate = (r) => r.filledDate || r.requestDate || '';
@@ -1602,8 +1603,11 @@ function renderApprove() {
   const scope = myBranches();
   $('#apprScope').textContent = `${ROLE_LABEL[auth.user.role]} · ${scope ? 'สาขา: ' + scope.join(', ') : 'ทุกสาขา'}`;
   // ขั้นที่แสดงได้ตามบทบาท
-  const stages = [canReview() && 1, canFinal() && 2].filter(Boolean);
-  if (!stages.includes(state.stage)) state.stage = stages[0];
+  const actStages = [canReview() && 1, canFinal() && 2].filter(Boolean);
+  // ผู้อนุมัติสูงสุดเห็นรายการที่ยังรอผู้ดูแล (ดูอย่างเดียว) เพื่อรู้ว่ามีอะไรกำลังจะมา
+  const stages = isRole('approver') ? [1, 2] : actStages;
+  if (!state.stagePicked || !stages.includes(state.stage)) state.stage = actStages[0];
+  const canAct = actStages.includes(state.stage);
   $$('#stageSeg button').forEach((b) => {
     const st = Number(b.dataset.stage);
     b.classList.toggle('hidden', !stages.includes(st));
@@ -1634,7 +1638,7 @@ function renderApprove() {
         ${s2 ? `<div class="col-span-2 rounded-lg bg-indigo-50 border border-indigo-100 p-3 flex flex-wrap items-center gap-x-6 gap-y-2">
           <div><dt>อนุมัติให้เติม</dt><dd class="big-liters">${liters(r.approvedLiters)} <span class="text-sm font-normal">ลิตร</span></dd></div>
           <div><dt>น้ำมันในถัง</dt><dd class="flex items-center gap-2">${tankBar(r.tankLevel)} ${esc(r.tankLevel || '-')}</dd></div>
-          <div><dt>ขั้นที่ 1 โดย</dt><dd>${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span></dd></div>
+          <div><dt>ผู้ดูแลอนุมัติ 1 โดย</dt><dd>${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span></dd></div>
           ${r.reviewNote ? `<div class="w-full"><dt>หมายเหตุ</dt><dd>${esc(r.reviewNote)}</dd></div>` : ''}
         </div>` : ''}
       </dl>
@@ -1642,8 +1646,9 @@ function renderApprove() {
         <span class="flex gap-1">${photoBtns(r)}</span>
         <button type="button" class="icon-btn" data-act="detail">รายละเอียด</button>
         <span class="flex-1"></span>
-        <button type="button" class="btn-ghost btn-reject" data-act="reject">✕ ไม่อนุมัติ</button>
-        <button type="button" class="btn-primary !min-w-0" data-act="approve">${s2 ? '✓ เซ็นอนุมัติ' : '✓ อนุมัติ + ระบุลิตร'}</button>
+        ${canAct ? `<button type="button" class="btn-ghost btn-reject" data-act="reject">✕ ไม่อนุมัติ</button>
+        <button type="button" class="btn-primary !min-w-0" data-act="approve">${s2 ? '✓ เซ็นอนุมัติ 2' : '✓ อนุมัติ 1 + ระบุลิตร'}</button>`
+        : '<span class="text-sm text-slate-400">รอผู้ดูแลอนุมัติ 1 และระบุจำนวนลิตรก่อน</span>'}
       </div>
     </article>`).join('');
 }
@@ -1706,7 +1711,7 @@ function openDecision(refId, decision, stage) {
   const approve = decision === 'approve';
   const sigKey = `rst_sig_${auth.user.username}`;
   const savedSig = store.get(sigKey);
-  const title = approve ? (stage === 1 ? 'อนุมัติขั้นที่ 1 — ระบุจำนวนลิตร' : 'อนุมัติขั้นสุดท้าย — เซ็นอนุมัติ') : 'ไม่อนุมัติคำขอ';
+  const title = approve ? (stage === 1 ? 'ผู้ดูแลอนุมัติ 1 — ระบุจำนวนลิตรที่ให้เติม' : 'ผู้อนุมัติสูงสุดอนุมัติ 2 — เซ็นอนุมัติ') : 'ไม่อนุมัติคำขอ';
   const levels = state.cfg.tankLevels || CONFIG.TANK_LEVELS;
   openModal(title, `
     <div class="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-sm mb-4">
@@ -1787,7 +1792,7 @@ function stepper(r) {
   const order = [ST.L1, ST.L2, ST.OK, ST.DONE];
   const idx = order.indexOf(s);
   const rejectedAt = s === ST.NO ? (r.reviewerName && !r.approvedLiters ? 0 : 1) : -1;
-  const labels = ['อนุมัติขั้นที่ 1', 'อนุมัติสูงสุด', 'เข้าเติม', 'บันทึกบิล'];
+  const labels = ['ผู้ดูแลอนุมัติ 1', 'ผู้อนุมัติสูงสุดอนุมัติ 2', 'เข้าเติม', 'บันทึกบิล'];
   return `<div class="stepper">${labels.map((l, i) => {
     let cls = '';
     if (rejectedAt >= 0) cls = i < rejectedAt ? 'done' : i === rejectedAt ? 'fail' : '';
@@ -1899,12 +1904,12 @@ async function printSlip(refId) {
     <h2>ผลการพิจารณา</h2>
     <table class="kv">
       ${kv('จำนวนลิตรที่อนุมัติ', r.approvedLiters ? `<b>${liters(r.approvedLiters)} ลิตร</b>` : '')}${kv('น้ำมันในถังก่อนเติม', esc(r.tankLevel))}
-      ${r.reviewNote ? kv('หมายเหตุขั้นที่ 1', esc(r.reviewNote)) : ''}${r.approvalNote ? kv('หมายเหตุผู้อนุมัติ', esc(r.approvalNote)) : ''}
+      ${r.reviewNote ? kv('หมายเหตุผู้ดูแล', esc(r.reviewNote)) : ''}${r.approvalNote ? kv('หมายเหตุผู้อนุมัติ', esc(r.approvalNote)) : ''}
     </table>
     <div class="sigs">
       ${sigBox('ผู้ขอเติม', sig.requester, r.recorderName, r.timestamp)}
-      ${sigBox('ผู้อนุมัติขั้นที่ 1', sig.reviewer, r.reviewerName, r.reviewedAt)}
-      ${sigBox('ผู้อนุมัติสูงสุด', sig.approver, r.approverName, r.approvedAt)}
+      ${sigBox('ผู้ดูแล (อนุมัติ 1)', sig.reviewer, r.reviewerName, r.reviewedAt)}
+      ${sigBox('ผู้อนุมัติสูงสุด (อนุมัติ 2)', sig.approver, r.approverName, r.approvedAt)}
     </div>
     ${s === ST.DONE ? `<h2>ผลการเติมน้ำมัน</h2><table class="kv">
       ${kv('วันที่เติม', thDate(r.filledDate))}${kv('จำนวนลิตร', liters(r.filledLiters) + ' ลิตร')}
@@ -2001,8 +2006,8 @@ function printBill(y, m, branch) {
     </div>
     <div class="pr-sign">
       <div><div class="line"></div>ผู้จัดทำ / ผู้วางบิล<br>วันที่ ......../......../........</div>
-      <div><div class="line"></div>ผู้ตรวจสอบ (ผู้อนุมัติขั้นที่ 1)<br>วันที่ ......../......../........</div>
-      <div><div class="line"></div>ผู้อนุมัติสูงสุด<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ผู้ดูแล (อนุมัติ 1)<br>วันที่ ......../......../........</div>
+      <div><div class="line"></div>ผู้อนุมัติสูงสุด (อนุมัติ 2)<br>วันที่ ......../......../........</div>
     </div>
     <div class="pr-foot"><span>RST-FUEL</span><span>Dev: tana.pittayatanadol</span></div>`;
   window.print();
@@ -2126,7 +2131,7 @@ function renderMembers() {
     (!q || [u.username, u.fullName, u.email, ...u.branches].join(' ').toLowerCase().includes(q)));
   const count = (r) => state.users.filter((u) => u.role === r).length;
   $('#mStats').innerHTML = [
-    ['สมาชิกทั้งหมด', state.users.length], ['ผู้ดูแลระบบ', count('admin')], ['ผู้อนุมัติขั้นที่ 1', count('reviewer')], ['ผู้อนุมัติสูงสุด', count('approver')], ['ผู้ใช้สาขา', count('branch')]
+    ['สมาชิกทั้งหมด', state.users.length], ['ผู้ดูแลระบบ', count('admin')], ['ผู้ดูแล (อนุมัติ 1)', count('reviewer')], ['ผู้อนุมัติสูงสุด (อนุมัติ 2)', count('approver')], ['ผู้ใช้สาขา', count('branch')]
   ].map(([k, v]) => `<div class="mini-stat"><b>${nf.format(v)}</b><span>${k}</span></div>`).join('');
   $('#mEmpty').classList.toggle('hidden', list.length > 0);
   $('#mTable').innerHTML = list.map((u) => `
@@ -2161,8 +2166,8 @@ function openMemberForm(username) {
         <label class="field"><span class="label req">บทบาท</span>
           <select name="role" class="input">
             <option value="branch">ผู้ใช้สาขา — ส่งคำขอ/ดูข้อมูลสาขาตัวเอง</option>
-            <option value="reviewer">ผู้อนุมัติขั้นที่ 1 — ตรวจสอบ ระบุลิตร/ระดับน้ำมัน</option>
-            <option value="approver">ผู้อนุมัติสูงสุด — เซ็นอนุมัติขั้นสุดท้าย</option>
+            <option value="reviewer">ผู้ดูแล (อนุมัติ 1) — ตรวจสอบ ระบุจำนวนลิตรที่ให้เติม</option>
+            <option value="approver">ผู้อนุมัติสูงสุด (อนุมัติ 2) — เซ็นอนุมัติ</option>
             <option value="admin">ผู้ดูแลระบบ — ทุกสิทธิ์ + จัดการสมาชิก</option>
           </select></label>
         <label class="field"><span class="label">อีเมล <span class="text-slate-400 font-normal">(รับแจ้งเตือนคำขอใหม่)</span></span><input type="email" name="email" class="input" value="${esc(data.email)}" /></label>
@@ -2404,7 +2409,7 @@ function showDetail(r) {
     ${r.mainDestination ? row('วัตถุประสงค์', esc(r.mainDestination)) : ''}
     ${r.gallonPurpose ? row('เติมแกลลอน (ใช้กับ)', esc(r.gallonPurpose)) : ''}
     ${row('ผู้ขอ', `${esc(r.recorderName)}<br><span class="text-xs text-slate-400">${esc(r.timestamp)}</span>${r.hasRequesterSignature ? sigCell('sigReq') : ''}`)}
-    ${r.reviewerName ? row('อนุมัติขั้นที่ 1', `${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span>
+    ${r.reviewerName ? row('ผู้ดูแลอนุมัติ 1', `${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span>
       ${r.approvedLiters ? `<br>ให้เติม <b>${liters(r.approvedLiters)} ลิตร</b> · ในถัง <b>${esc(r.tankLevel)}</b>` : ''}${r.reviewNote ? `<br><span class="text-sm">หมายเหตุ: ${esc(r.reviewNote)}</span>` : ''}${r.hasReviewerSignature ? sigCell('sigRev') : ''}`) : ''}
     ${r.approverName ? row('อนุมัติสูงสุด', `${esc(r.approverName)} <span class="text-xs text-slate-400">${esc(r.approvedAt)}</span>${r.approvalNote ? `<br><span class="text-sm">หมายเหตุ: ${esc(r.approvalNote)}</span>` : ''}${r.hasSignature ? sigCell('sigApp') : ''}`) : ''}
     ${s === ST.DONE ? row('ผลการเติม', `${thDate(r.filledDate)} · <b>${liters(r.filledLiters)} ลิตร</b> · <b>${baht(r.filledAmount)} บาท</b> (${baht(r.pricePerLiter)} บ./ลิตร)`) : ''}
@@ -2426,8 +2431,8 @@ function exportCsv() {
   const rows = historyFiltered();
   const head = ['รหัสอ้างอิง', 'วันที่เข้าเติม', 'สาขา', 'ผู้ขับ', 'ผู้ขอ', 'เลขไมล์ก่อนเติม', 'ทะเบียนรถ', 'ประเภทน้ำมัน', 'เติมแกลลอน (ใช้กับ)', 'วัตถุประสงค์', 'ต้นทาง',
     ...Array.from({ length: 8 }, (_, i) => `ปลายทาง ${i + 1}`), 'ระยะทางรวม (กม.)', 'รูปเข็มไมล์', 'รูปบิล', 'เวลาบันทึก', 'สถานะ',
-    'ผู้อนุมัติขั้นที่ 1', 'เวลาอนุมัติขั้นที่ 1', 'ลิตรที่อนุมัติ', 'ระดับน้ำมันในถัง', 'หมายเหตุขั้นที่ 1',
-    'ผู้อนุมัติสูงสุด', 'เวลาอนุมัติสูงสุด', 'หมายเหตุอนุมัติ', 'วันที่เติม', 'ลิตรที่เติม', 'ยอดเงิน (บาท)', 'บาท/ลิตร'];
+    'ผู้ดูแล (อนุมัติ 1)', 'เวลาอนุมัติ 1', 'ลิตรที่อนุมัติ', 'ระดับน้ำมันในถัง', 'หมายเหตุผู้ดูแล',
+    'ผู้อนุมัติสูงสุด (อนุมัติ 2)', 'เวลาอนุมัติ 2', 'หมายเหตุอนุมัติ', 'วันที่เติม', 'ลิตรที่เติม', 'ยอดเงิน (บาท)', 'บาท/ลิตร'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = rows.map((r) => [r.refId, r.requestDate, r.branch, r.driverName, r.recorderName, r.mileageBefore, r.vehicle, r.fuelType, r.gallonPurpose, r.mainDestination, r.origin,
     ...Array.from({ length: 8 }, (_, i) => (r.destinations || [])[i] || ''), r.totalDistanceKm, r.mileagePhotoUrl, r.receiptPhotoUrl, r.timestamp, statusOf(r),
@@ -2521,9 +2526,9 @@ function init() {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const ref = b.closest('[data-ref]').dataset.ref;
     if (b.dataset.act === 'detail') showDetail(state.records.find((r) => r.refId === ref));
-    else openDecision(ref, b.dataset.act, state.stage);
+    else if ((state.stage === 1 ? canReview() : canFinal())) openDecision(ref, b.dataset.act, state.stage);
   });
-  $('#stageSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-stage]'); if (b) { state.stage = Number(b.dataset.stage); renderApprove(); } });
+  $('#stageSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-stage]'); if (b) { state.stage = Number(b.dataset.stage); state.stagePicked = true; renderApprove(); } });
 
   // Track & fill
   $('#trackSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) { state.trackFilter = b.dataset.f; renderTrack(); } });

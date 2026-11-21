@@ -3,7 +3,7 @@
  * Backend : Google Apps Script (Web App) + Google Sheets + Google Drive
  * Dev: tana.pittayatanadol
  *
- * CODE_VERSION: r06-2026-11-20-two-level-approval-billing
+ * CODE_VERSION: r07-2026-11-21-reviewer-approver-labels
  *
  * ─────────────────────────────────────────────────────────────
  * ① จุดที่ต้องตั้งค่า
@@ -16,7 +16,7 @@
  *
  * ② ผู้ใช้เริ่มต้น (สร้างโดยฟังก์ชัน setup) : admin / admin1234  → เข้าระบบแล้วเปลี่ยนรหัสผ่านทันที
  */
-const CODE_VERSION    = 'r06-2026-11-20-two-level-approval-billing';
+const CODE_VERSION    = 'r07-2026-11-21-reviewer-approver-labels';
 const DRIVE_FOLDER_ID = '1KOthLdot3HMDwBxash_G3nMOKpaPd6P0'; // โฟลเดอร์ Fuel_Request_Attachments
 const SPREADSHEET_ID  = '13R0CkQ8LItQ4UpiMVEyoZ_nifBc1NSxkPgJ0cp5EWmM'; // ชีต RST-FUEL Database
 const APP_URL         = '';
@@ -44,7 +44,7 @@ const TANK_LEVELS = ['ขีดแดง', '1/4', '1/2', '3/4', 'เต็มถ
 
 /* ─────────── สิทธิ์ (RBAC) ─────────── */
 const ROLES = ['admin', 'reviewer', 'approver', 'branch'];
-const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', reviewer: 'ผู้อนุมัติขั้นที่ 1', approver: 'ผู้อนุมัติสูงสุด', branch: 'ผู้ใช้สาขา' };
+const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', reviewer: 'ผู้ดูแล (อนุมัติ 1)', approver: 'ผู้อนุมัติสูงสุด (อนุมัติ 2)', branch: 'ผู้ใช้สาขา' };
 const REVIEW_ROLES  = ['admin', 'reviewer'];   // อนุมัติขั้นที่ 1 (ระบุลิตร + ระดับน้ำมัน)
 const APPROVE_ROLES = ['admin', 'approver'];   // อนุมัติขั้นสุดท้าย (เซ็นอนุมัติ)
 const FILL_ROLES    = ['admin', 'branch'];     // บันทึกผลการเติม
@@ -408,7 +408,7 @@ function handleCreate_(user, body) {
     lock.releaseLock();
   }
   const r = rowToObj_(row);
-  notify_(usersFor_(['reviewer'], r.branch), r, 'คำขอเติมน้ำมันใหม่ รออนุมัติขั้นที่ 1', 'เปิดหน้าอนุมัติ', '#approve');
+  notify_(usersFor_(['reviewer'], r.branch), r, 'คำขอเติมน้ำมันใหม่ รอผู้ดูแลอนุมัติ 1 (ระบุจำนวนลิตร)', 'เปิดหน้าอนุมัติ', '#approve');
   return { refId: refId, status: S_L1 };
 }
 
@@ -461,8 +461,8 @@ function handleReview_(user, body) {
       approvedLiters: approve ? liters : 0, tankLevel: approve ? tank : '', hasReviewerSignature: !!sigUrl });
   } finally { lock.releaseLock(); }
 
-  if (approve) notify_(usersFor_(['approver'], rec.branch), rec, 'รออนุมัติขั้นสุดท้าย (ผ่านขั้นที่ 1 แล้ว · ' + rec.approvedLiters + ' ลิตร)', 'เปิดหน้าอนุมัติ', '#approve');
-  else notify_(requesterEmails_(rec), rec, 'คำขอไม่ได้รับอนุมัติ (ขั้นที่ 1): ' + note, 'ดูรายละเอียด', '#track');
+  if (approve) notify_(usersFor_(['approver'], rec.branch), rec, 'รอผู้อนุมัติสูงสุดอนุมัติ 2 (ผู้ดูแลอนุมัติ ' + rec.approvedLiters + ' ลิตร)', 'เปิดหน้าอนุมัติ', '#approve');
+  else notify_(requesterEmails_(rec), rec, 'คำขอไม่ได้รับอนุมัติจากผู้ดูแล: ' + note, 'ดูรายละเอียด', '#track');
   return rec;
 }
 
@@ -487,7 +487,7 @@ function handleDecide_(user, body) {
     Object.assign(rec, { status: approve ? S_OK : S_NO, approverName: name, approvedAt: fmtTs_(now), approvalNote: note, hasSignature: !!sigUrl });
   } finally { lock.releaseLock(); }
 
-  notify_(requesterEmails_(rec), rec, approve ? 'อนุมัติแล้ว — สาขาเข้าเติมน้ำมันได้ไม่เกิน ' + rec.approvedLiters + ' ลิตร' : 'คำขอไม่ได้รับอนุมัติ: ' + note, 'เปิดใบอนุมัติ', '#track');
+  notify_(requesterEmails_(rec), rec, approve ? 'อนุมัติแล้ว — สาขาเข้าเติมน้ำมันได้ไม่เกิน ' + rec.approvedLiters + ' ลิตร' : 'ผู้อนุมัติสูงสุดไม่อนุมัติ: ' + note, 'เปิดใบอนุมัติ', '#track');
   return rec;
 }
 
