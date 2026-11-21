@@ -3,7 +3,7 @@
  * Backend : Google Apps Script (Web App) + Google Sheets + Google Drive
  * Dev: tana.pittayatanadol
  *
- * CODE_VERSION: r08-2026-11-21-approvers-add-members
+ * CODE_VERSION: r09-2026-11-21-cancel-request
  *
  * ─────────────────────────────────────────────────────────────
  * ① จุดที่ต้องตั้งค่า
@@ -16,7 +16,7 @@
  *
  * ② ผู้ใช้เริ่มต้น (สร้างโดยฟังก์ชัน setup) : admin / admin1234  → เข้าระบบแล้วเปลี่ยนรหัสผ่านทันที
  */
-const CODE_VERSION    = 'r08-2026-11-21-approvers-add-members';
+const CODE_VERSION    = 'r09-2026-11-21-cancel-request';
 const DRIVE_FOLDER_ID = '1KOthLdot3HMDwBxash_G3nMOKpaPd6P0'; // โฟลเดอร์ Fuel_Request_Attachments
 const SPREADSHEET_ID  = '13R0CkQ8LItQ4UpiMVEyoZ_nifBc1NSxkPgJ0cp5EWmM'; // ชีต RST-FUEL Database
 const APP_URL         = '';
@@ -37,6 +37,7 @@ const S_L2   = 'รออนุมัติขั้นสุดท้าย';
 const S_OK   = 'อนุมัติแล้ว รอเติม';
 const S_DONE = 'เติมแล้ว';
 const S_NO   = 'ไม่อนุมัติ';
+const S_CANCEL = 'ยกเลิก';      // ยกเลิกคำขอ (ไม่ลบแถว เก็บเหตุผลไว้ตรวจย้อนหลัง)
 const LEGACY_STATUS = { 'รออนุมัติ': S_L1, 'อนุมัติ': S_OK };   // ข้อมูลจากเวอร์ชันก่อน
 
 const FUEL_TYPES  = ['ดีเซล', 'แก๊สโซฮอล์'];               // แก้/เพิ่มได้ในชีต Config คอลัมน์หัว "FuelTypes"
@@ -90,7 +91,10 @@ const HEADERS = [
   'FilledAmount',         // AO ยอดเงิน (บาท)
   'PricePerLiter',        // AP ราคาต่อลิตร (คำนวณ)
   'FilledBy',             // AQ username ผู้บันทึกผลการเติม
-  'FilledAt'              // AR เวลาบันทึกผลการเติม
+  'FilledAt',             // AR เวลาบันทึกผลการเติม
+  'CancelledBy',          // AS ผู้ยกเลิกคำขอ
+  'CancelledAt',          // AT เวลายกเลิก
+  'CancelReason'          // AU เหตุผลที่ยกเลิก
 ];
 const COL = {}; HEADERS.forEach((h, i) => COL[h] = i + 1);
 
@@ -157,6 +161,7 @@ function route_(body) {
     case 'review':         requireRole_(user, REVIEW_ROLES); return handleReview_(user, body);
     case 'decide':         requireRole_(user, APPROVE_ROLES); return handleDecide_(user, body);
     case 'fill':           requireRole_(user, FILL_ROLES); return handleFill_(user, body);
+    case 'cancel':         return handleCancel_(user, body);
     case 'listUsers':      requireRole_(user, MEMBER_ADD_ROLES); return listUsers_();
     case 'saveUser':       requireRole_(user, MEMBER_ADD_ROLES); return saveUser_(user, body.user || {});
     case 'deleteUser':     requireRole_(user, MEMBER_ROLES); return deleteUser_(user, body.username);
@@ -531,6 +536,43 @@ function handleFill_(user, body) {
   return rec;
 }
 
+/**
+ * ยกเลิกคำขอ (ไม่ลบข้อมูล)
+ *  - ผู้ส่งคำขอ / ผู้ใช้สาขานั้น : เฉพาะตอน "รออนุมัติขั้นที่ 1" (ยังไม่มีใครพิจารณา)
+ *  - admin                      : ทุกสถานะ ยกเว้น เติมแล้ว / ไม่อนุมัติ / ยกเลิก
+ */
+function handleCancel_(user, body) {
+  const refId = str_(body.refId, 40);
+  const reason = str_(body.reason, 500);
+  if (!reason) throw new Error('กรุณาระบุเหตุผลที่ยกเลิก');
+
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  let rec, prev;
+  try {
+    const sh = getDataSheet_();
+    const rowNo = findRowByRef_(sh, refId);
+    if (!rowNo) throw new Error('ไม่พบรายการ ' + refId);
+    rec = rowToObj_(sh.getRange(rowNo, 1, 1, HEADERS.length).getValues()[0]);
+    prev = rec.status;
+    if (!canBranch_(user, rec.branch)) throw new Error('คุณไม่มีสิทธิ์ในสาขา ' + rec.branch);
+    if (user.role === 'admin') {
+      if ([S_L1, S_L2, S_OK].indexOf(prev) < 0) throw new Error('ยกเลิกรายการสถานะ "' + prev + '" ไม่ได้');
+    } else {
+      const own = rec.createdBy === user.username || (user.role === 'branch' && canBranch_(user, rec.branch));
+      if (!own) throw new Error('ยกเลิกได้เฉพาะคำขอของตัวเองหรือของสาขาที่ดูแล');
+      if (prev !== S_L1) throw new Error('ยกเลิกได้เฉพาะคำขอที่ยังรอผู้ดูแลอนุมัติ 1 — กรุณาติดต่อผู้ดูแลระบบ');
+    }
+    const name = user.fullName || user.username, now = new Date();
+    setCols_(sh, rowNo, { Status: S_CANCEL, CancelledBy: name, CancelledAt: now, CancelReason: reason });
+    SpreadsheetApp.flush();
+    Object.assign(rec, { status: S_CANCEL, cancelledBy: name, cancelledAt: fmtTs_(now), cancelReason: reason });
+  } finally { lock.releaseLock(); }
+
+  // คำขอที่ผ่านการพิจารณาไปแล้ว แจ้งสาขาให้ทราบ (เช่น ใบอนุมัติที่พิมพ์ไว้ใช้ไม่ได้แล้ว)
+  if (prev !== S_L1) notify_(requesterEmails_(rec), rec, 'คำขอถูกยกเลิกโดยผู้ดูแลระบบ: ' + reason, 'ดูรายละเอียด', '#track');
+  return rec;
+}
+
 /* ─────────── อีเมลแจ้งเตือน ─────────── */
 /** ผู้ใช้ที่ active + มีอีเมล + บทบาทตรง + ดูแลสาขานั้น (ถ้าไม่มีเลย ส่งหา admin แทน) */
 function usersFor_(roles, branch) {
@@ -765,7 +807,10 @@ function rowToObj_(r) {
     filledAmount: Number(r[40]) || 0,
     pricePerLiter: Number(r[41]) || 0,
     filledBy: String(r[42] || ''),
-    filledAt: fmtTs_(r[43])
+    filledAt: fmtTs_(r[43]),
+    cancelledBy: String(r[44] || ''),
+    cancelledAt: fmtTs_(r[45]),
+    cancelReason: String(r[46] || '')
   };
 }
 
@@ -776,6 +821,7 @@ function normStatus_(v) {
 }
 
 function buildStats_(records) {
+  records = records.filter(x => x.status !== S_CANCEL);   // คำขอที่ยกเลิกไม่นับในสถิติ
   const byBranch = {}, byVehicle = {}, byMonth = {};
   let totalKm = 0, gallon = 0, pending = 0, liters = 0, amount = 0;
   records.forEach(x => {

@@ -238,6 +238,7 @@ body.logged-out .app-only { display: none !important; }
 .stepper div.fail { color: #a3141c; } .stepper div.fail::before { background: var(--brand); }
 .st-l2 { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
 .st-fill { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+.st-cancel { background: #f4f4f5; color: #52525b; border-color: #d4d4d8; }
 .appr-card.stage2 { border-left-color: #6366f1; }
 .big-liters { font-size: 1.6rem; font-weight: 700; color: var(--brand-deep); line-height: 1; }
 .role-reviewer-pill { background: #fff7e6; color: #8a5a00; border: 1px solid #fde3a7; }
@@ -881,6 +882,7 @@ body.booting { overflow: hidden; }
               <option value="อนุมัติแล้ว รอเติม">อนุมัติแล้ว รอเติม</option>
               <option value="เติมแล้ว">เติมแล้ว</option>
               <option value="ไม่อนุมัติ">ไม่อนุมัติ</option>
+              <option value="ยกเลิก">ยกเลิก</option>
             </select>
           </label>
           <div class="field">
@@ -1199,6 +1201,15 @@ const demo = {
     switch (b.action) {
       case 'logout': delete this.sessions[b.token]; return { done: true };
       case 'me': return this.pub(me);
+      case 'cancel': {
+        const r = this.records.find((x) => x.refId === b.refId); if (!r) this.fail('ไม่พบรายการ');
+        if (!String(b.reason || '').trim()) this.fail('กรุณาระบุเหตุผลที่ยกเลิก');
+        const ok = me.role === 'admin' ? ['รออนุมัติขั้นที่ 1', 'รออนุมัติขั้นสุดท้าย', 'อนุมัติแล้ว รอเติม'].includes(r.status)
+          : r.status === 'รออนุมัติขั้นที่ 1' && (r.createdBy === me.username || (me.role === 'branch' && can(r.branch)));
+        if (!ok) this.fail('ยกเลิกรายการนี้ไม่ได้');
+        Object.assign(r, { status: 'ยกเลิก', cancelledBy: me.fullName, cancelledAt: this.now(), cancelReason: b.reason });
+        return { ...r };
+      }
       case 'all': return { config: { branches: CONFIG.BRANCHES, plates: CONFIG.PLATES, fuelTypes: CONFIG.FUEL_TYPES, tankLevels: CONFIG.TANK_LEVELS }, records: this.records.filter((r) => can(r.branch)).map((r) => ({ ...r })), me: this.pub(me) };
       case 'signature': return this.signatures[`${b.refId}|${b.kind || 'approver'}`] || '';
       case 'changePassword':
@@ -1577,11 +1588,11 @@ function resetForm(form) {
 }
 
 /* ═════════════════════ STATUS (flow) ═════════════════════ */
-const ST = { L1: 'รออนุมัติขั้นที่ 1', L2: 'รออนุมัติขั้นสุดท้าย', OK: 'อนุมัติแล้ว รอเติม', DONE: 'เติมแล้ว', NO: 'ไม่อนุมัติ' };
+const ST = { L1: 'รออนุมัติขั้นที่ 1', L2: 'รออนุมัติขั้นสุดท้าย', OK: 'อนุมัติแล้ว รอเติม', DONE: 'เติมแล้ว', NO: 'ไม่อนุมัติ', CANCEL: 'ยกเลิก' };
 const LEGACY_ST = { 'รออนุมัติ': ST.L1, 'อนุมัติ': ST.OK };
 const statusOf = (r) => LEGACY_ST[r.status] || r.status || ST.L1;
 const STATUS_STYLE = {
-  [ST.L1]: ['st-wait', '⏳'], [ST.L2]: ['st-l2', '⏳'], [ST.OK]: ['st-ok', '✓'], [ST.DONE]: ['st-fill', '⛽'], [ST.NO]: ['st-no', '✕']
+  [ST.L1]: ['st-wait', '⏳'], [ST.L2]: ['st-l2', '⏳'], [ST.OK]: ['st-ok', '✓'], [ST.DONE]: ['st-fill', '⛽'], [ST.NO]: ['st-no', '✕'], [ST.CANCEL]: ['st-cancel', '⊘']
 };
 function statusPill(r) {
   const s = statusOf(r);
@@ -1644,7 +1655,7 @@ function aggregate(records, keyFn) {
 }
 
 const dashRecords = () => filterByPeriod(state.records, $('#dashYear').value, $('#dashMonth').value, $('#dashBranch').value, recDate)
-  .filter((r) => statusOf(r) !== ST.NO);
+  .filter((r) => ![ST.NO, ST.CANCEL].includes(statusOf(r)));
 
 function renderDashboard() {
   const recs = dashRecords();
@@ -1988,7 +1999,7 @@ function stepper(r) {
 
 function renderTrack() {
   const f = state.trackFilter;
-  const want = { active: [ST.L1, ST.L2, ST.OK], ok: [ST.OK], done: [ST.DONE, ST.NO], all: null }[f];
+  const want = { active: [ST.L1, ST.L2, ST.OK], ok: [ST.OK], done: [ST.DONE, ST.NO, ST.CANCEL], all: null }[f];
   const list = state.records.filter((r) => inScope(r) && (!want || want.includes(statusOf(r))))
     .sort((a, b) => (statusOf(a) === ST.OK ? -1 : 0) - (statusOf(b) === ST.OK ? -1 : 0) || b.requestDate.localeCompare(a.requestDate))
     .slice(0, 60);
@@ -2007,8 +2018,10 @@ function renderTrack() {
         ${r.approvedLiters ? `<span>อนุมัติ <b class="text-brand-700">${liters(r.approvedLiters)} ลิตร</b></span>` : ''}
         ${s === ST.DONE ? `<span>เติมจริง <b>${liters(r.filledLiters)} ลิตร</b> · <b>${baht(r.filledAmount)} บาท</b></span>` : ''}
         ${s === ST.NO ? `<span class="text-red-700">เหตุผล: ${esc(r.approvalNote || r.reviewNote || '-')}</span>` : ''}
+        ${s === ST.CANCEL ? `<span class="text-slate-600">ยกเลิกโดย ${esc(r.cancelledBy)} · เหตุผล: ${esc(r.cancelReason || '-')}</span>` : ''}
       </div>
       <div class="flex flex-wrap gap-2 mt-3 justify-end">
+        ${canCancel(r) ? '<button type="button" class="icon-btn btn-reject" data-act="cancel">⊘ ยกเลิกคำขอ</button>' : ''}
         <button type="button" class="icon-btn" data-act="detail">รายละเอียด</button>
         ${[ST.OK, ST.DONE].includes(s) ? '<button type="button" class="icon-btn" data-act="slip">🖨 ใบอนุมัติ</button>' : ''}
         ${s === ST.OK && canFill() ? '<button type="button" class="btn-primary !min-w-0 !py-2" data-act="fill">⛽ บันทึกผลการเติม</button>' : ''}
@@ -2016,6 +2029,52 @@ function renderTrack() {
     </article>`;
   }).join('');
   $$('#trackSeg button').forEach((b) => b.classList.toggle('active', b.dataset.f === f));
+}
+
+/** ยกเลิกคำขอ: ผู้ส่ง/ผู้ใช้สาขา เฉพาะตอนรอผู้ดูแลอนุมัติ 1 · admin ได้จนก่อนเติม (backend ตรวจซ้ำ) */
+function canCancel(r) {
+  const u = auth.user; if (!u || !r) return false;
+  const s = statusOf(r);
+  if (u.role === 'admin') return [ST.L1, ST.L2, ST.OK].includes(s);
+  return s === ST.L1 && (r.createdBy === u.username || (u.role === 'branch' && inScope(r)));
+}
+
+function openCancel(refId) {
+  const r = state.records.find((x) => x.refId === refId); if (!r) return;
+  const afterApproval = statusOf(r) !== ST.L1;
+  openModal('ยกเลิกคำขอ', `
+    <div class="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-sm mb-4">
+      <div class="flex justify-between gap-2"><span class="ref">${esc(r.refId)}</span>${statusPill(r)}</div>
+      <div class="font-semibold mt-1">${esc(r.vehicle)} · ${esc(r.fuelType || '-')} · ${esc(r.branch)}</div>
+      <div class="text-slate-500">เข้าเติม ${thDate(r.requestDate)} · ผู้ขอ ${esc(r.recorderName)}</div>
+    </div>
+    <p class="text-sm text-slate-600 mb-3">รายการจะเปลี่ยนเป็นสถานะ <b>ยกเลิก</b> และยังเก็บไว้ในประวัติ แต่ไม่นับในสถิติและใบวางบิล${afterApproval ? ' · <b class="text-red-700">ใบอนุมัติที่พิมพ์ไว้จะใช้ไม่ได้ และระบบจะแจ้งสาขาทางอีเมล</b>' : ''}</p>
+    <label class="field">
+      <span class="label req">เหตุผลที่ยกเลิก</span>
+      <textarea id="cancelReason" rows="2" class="input" placeholder="เช่น กรอกเลขไมล์ผิด จะส่งคำขอใหม่"></textarea>
+    </label>
+    <div class="flex gap-3 justify-end mt-5">
+      <button type="button" class="btn-ghost" data-close>ไม่ยกเลิก</button>
+      <button type="button" id="cancelOk" class="btn-danger">⊘ ยืนยันยกเลิกคำขอ</button>
+    </div>`);
+  $('#cancelReason').focus();
+  $('#cancelOk').addEventListener('click', async (e) => {
+    const reason = $('#cancelReason').value.trim();
+    if (!reason) { setError($('#cancelReason'), 'กรุณาระบุเหตุผล'); $('#cancelReason').focus(); return; }
+    const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังยกเลิก...';
+    try {
+      const res = await api.post({ action: 'cancel', refId, reason });
+      Object.assign(r, res);
+      closeModal();
+      toast(`ยกเลิกคำขอ ${refId} แล้ว`, 'info');
+      updatePendingBadge();
+      const active = $('.tab-btn.active')?.dataset.tab;
+      if (active) showTab(active);
+    } catch (err) {
+      toast(err.message, 'error', 6000);
+      btn.disabled = false; btn.textContent = '⊘ ยืนยันยกเลิกคำขอ';
+    }
+  });
 }
 
 function openFill(refId) {
@@ -2626,12 +2685,15 @@ function showDetail(r) {
     ${r.reviewerName ? row('ผู้ดูแลอนุมัติ 1', `${esc(r.reviewerName)} <span class="text-xs text-slate-400">${esc(r.reviewedAt)}</span>
       ${r.approvedLiters ? `<br>ให้เติม <b>${liters(r.approvedLiters)} ลิตร</b> · ในถัง <b>${esc(r.tankLevel)}</b>` : ''}${r.reviewNote ? `<br><span class="text-sm">หมายเหตุ: ${esc(r.reviewNote)}</span>` : ''}${r.hasReviewerSignature ? sigCell('sigRev') : ''}`) : ''}
     ${r.approverName ? row('อนุมัติสูงสุด', `${esc(r.approverName)} <span class="text-xs text-slate-400">${esc(r.approvedAt)}</span>${r.approvalNote ? `<br><span class="text-sm">หมายเหตุ: ${esc(r.approvalNote)}</span>` : ''}${r.hasSignature ? sigCell('sigApp') : ''}`) : ''}
+    ${s === ST.CANCEL ? row('ยกเลิกคำขอ', `${esc(r.cancelledBy)} <span class="text-xs text-slate-400">${esc(r.cancelledAt)}</span><br><span class="text-sm">เหตุผล: ${esc(r.cancelReason || '-')}</span>`) : ''}
     ${s === ST.DONE ? row('ผลการเติม', `${thDate(r.filledDate)} · <b>${liters(r.filledLiters)} ลิตร</b> · <b>${baht(r.filledAmount)} บาท</b> (${baht(r.pricePerLiter)} บ./ลิตร)`) : ''}
   </dl>
   <div class="flex flex-wrap gap-2 mt-4">${photoBtns(r, false)}
     ${[ST.OK, ST.DONE].includes(s) ? `<button type="button" class="btn-ghost" id="dSlip">🖨 ใบอนุมัติ</button>` : ''}
     ${s === ST.OK && canFill() && inScope(r) ? `<button type="button" class="btn-primary !min-w-0" id="dFill">⛽ บันทึกผลการเติม</button>` : ''}
+    ${canCancel(r) ? `<button type="button" class="btn-ghost btn-reject" id="dCancel">⊘ ยกเลิกคำขอ</button>` : ''}
   </div>`);
+  $('#dCancel')?.addEventListener('click', () => openCancel(r.refId));
   $('#dSlip')?.addEventListener('click', () => { closeModal(); printSlip(r.refId); });
   $('#dFill')?.addEventListener('click', () => openFill(r.refId));
   loadSignatures(r).then((sig) => {
@@ -2646,12 +2708,12 @@ function exportCsv() {
   const head = ['รหัสอ้างอิง', 'วันที่เข้าเติม', 'สาขา', 'ผู้ขับ', 'ผู้ขอ', 'เลขไมล์ก่อนเติม', 'ทะเบียนรถ', 'ประเภทน้ำมัน', 'เติมแกลลอน (ใช้กับ)', 'วัตถุประสงค์', 'ต้นทาง',
     ...Array.from({ length: 8 }, (_, i) => `ปลายทาง ${i + 1}`), 'ระยะทางรวม (กม.)', 'รูปเข็มไมล์', 'รูปบิล', 'เวลาบันทึก', 'สถานะ',
     'ผู้ดูแล (อนุมัติ 1)', 'เวลาอนุมัติ 1', 'ลิตรที่อนุมัติ', 'ระดับน้ำมันในถัง', 'หมายเหตุผู้ดูแล',
-    'ผู้อนุมัติสูงสุด (อนุมัติ 2)', 'เวลาอนุมัติ 2', 'หมายเหตุอนุมัติ', 'วันที่เติม', 'ลิตรที่เติม', 'ยอดเงิน (บาท)', 'บาท/ลิตร'];
+    'ผู้อนุมัติสูงสุด (อนุมัติ 2)', 'เวลาอนุมัติ 2', 'หมายเหตุอนุมัติ', 'วันที่เติม', 'ลิตรที่เติม', 'ยอดเงิน (บาท)', 'บาท/ลิตร', 'ผู้ยกเลิก', 'เวลายกเลิก', 'เหตุผลที่ยกเลิก'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = rows.map((r) => [r.refId, r.requestDate, r.branch, r.driverName, r.recorderName, r.mileageBefore, r.vehicle, r.fuelType, r.gallonPurpose, r.mainDestination, r.origin,
     ...Array.from({ length: 8 }, (_, i) => (r.destinations || [])[i] || ''), r.totalDistanceKm, r.mileagePhotoUrl, r.receiptPhotoUrl, r.timestamp, statusOf(r),
     r.reviewerName, r.reviewedAt, r.approvedLiters || '', r.tankLevel, r.reviewNote, r.approverName, r.approvedAt, r.approvalNote,
-    r.filledDate, r.filledLiters || '', r.filledAmount || '', r.pricePerLiter || ''].map(q).join(','));
+    r.filledDate, r.filledLiters || '', r.filledAmount || '', r.pricePerLiter || '', r.cancelledBy || '', r.cancelledAt || '', r.cancelReason || ''].map(q).join(','));
   const blob = new Blob(['﻿' + [head.map(q).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2750,6 +2812,7 @@ function init() {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const ref = b.closest('[data-ref]').dataset.ref;
     if (b.dataset.act === 'fill') openFill(ref);
+    else if (b.dataset.act === 'cancel') openCancel(ref);
     else if (b.dataset.act === 'slip') printSlip(ref);
     else showDetail(state.records.find((r) => r.refId === ref));
   });
