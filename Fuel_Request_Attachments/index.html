@@ -376,7 +376,7 @@ body.logged-out .app-only { display: none !important; }
         <button class="tab-btn" data-tab="history" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           ประวัติรายการ</button>
-        <button class="tab-btn role-admin" data-tab="members" role="tab">
+        <button class="tab-btn role-members" data-tab="members" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H2v-2a4 4 0 015-3.87m6-4.13a4 4 0 11-8 0 4 4 0 018 0zm6 2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           สมาชิก</button>
       </div>
@@ -2069,6 +2069,7 @@ function applyUser() {
   $$('.role-track').forEach((el) => el.classList.toggle('hidden', !isRole('admin', 'branch')));
   syncReqSigLast();
   $$('.role-admin').forEach((el) => el.classList.toggle('hidden', !isRole('admin')));
+  $$('.role-members').forEach((el) => el.classList.toggle('hidden', !canAddMembers()));
   if (!$('#recorderName').value) $('#recorderName').value = u.fullName;
 }
 
@@ -2116,10 +2117,12 @@ function openChangePassword(forced = false) {
 }
 
 /* ═════════════════════ MEMBERS (admin) ═════════════════════ */
+/** admin = จัดการได้ทั้งหมด · ผู้ดูแล (อนุมัติ 1) / ผู้อนุมัติสูงสุด = ดูรายชื่อ + เพิ่มสมาชิกใหม่ (ไม่ใช่ admin) */
+const canAddMembers = () => isRole('admin', 'reviewer', 'approver');
 function rolePill(role) { return `<span class="role-pill role-${role}-pill">${esc(ROLE_LABEL[role] || role)}</span>`; }
 
 async function loadUsers() {
-  if (!isRole('admin')) return;
+  if (!canAddMembers()) return;
   $('#mTable').innerHTML = '<tr><td class="td text-slate-400" colspan="7">กำลังโหลด...</td></tr>';
   try { state.users = await api.post({ action: 'listUsers' }); renderMembers(); }
   catch (err) { toast(err.message, 'error'); }
@@ -2146,8 +2149,8 @@ function renderMembers() {
       <td class="td">${u.active ? '<span class="status st-ok">ใช้งาน</span>' : '<span class="status st-no">ปิดใช้งาน</span>'}${u.mustChangePassword ? '<div class="text-[11px] text-amber-600 mt-1">รอเปลี่ยนรหัส</div>' : ''}</td>
       <td class="td text-xs whitespace-nowrap">${esc(u.lastLogin || '-')}</td>
       <td class="td text-right whitespace-nowrap">
-        <button type="button" class="btn-icon" data-medit="${esc(u.username)}">แก้ไข</button>
-        ${u.username === auth.user.username ? '' : `<button type="button" class="btn-icon danger" data-mdel="${esc(u.username)}">ลบ</button>`}
+        ${!isRole('admin') ? '' : `<button type="button" class="btn-icon" data-medit="${esc(u.username)}">แก้ไข</button>
+        ${u.username === auth.user.username ? '' : `<button type="button" class="btn-icon danger" data-mdel="${esc(u.username)}">ลบ</button>`}`}
       </td>
     </tr>`).join('');
 }
@@ -2155,7 +2158,10 @@ function renderMembers() {
 function openMemberForm(username) {
   const u = username ? state.users.find((x) => x.username === username) : null;
   const isNew = !u;
+  if (u && !isRole('admin')) return;   // แก้ไขได้เฉพาะ admin
   const data = u || { username: '', fullName: '', role: 'branch', branches: [], email: '', active: true };
+  const myScope = isRole('admin') ? null : myBranches();   // สาขาที่ผู้เพิ่มเลือกให้ได้ (null = ทุกสาขา)
+  const branchList = myScope ? state.branches.filter((b) => myScope.includes(b)) : state.branches;
   openModal(isNew ? 'เพิ่มสมาชิก' : `แก้ไขสมาชิก: ${data.username}`, `
     <form id="memberForm" class="grid gap-4" autocomplete="off" novalidate>
       <div class="grid sm:grid-cols-2 gap-4">
@@ -2168,14 +2174,14 @@ function openMemberForm(username) {
             <option value="branch">ผู้ใช้สาขา — ส่งคำขอ/ดูข้อมูลสาขาตัวเอง</option>
             <option value="reviewer">ผู้ดูแล (อนุมัติ 1) — ตรวจสอบ ระบุจำนวนลิตรที่ให้เติม</option>
             <option value="approver">ผู้อนุมัติสูงสุด (อนุมัติ 2) — เซ็นอนุมัติ</option>
-            <option value="admin">ผู้ดูแลระบบ — ทุกสิทธิ์ + จัดการสมาชิก</option>
+            ${isRole('admin') ? '<option value="admin">ผู้ดูแลระบบ — ทุกสิทธิ์ + จัดการสมาชิก</option>' : ''}
           </select></label>
         <label class="field"><span class="label">อีเมล <span class="text-slate-400 font-normal">(รับแจ้งเตือนคำขอใหม่)</span></span><input type="email" name="email" class="input" value="${esc(data.email)}" /></label>
       </div>
       <div class="field">
         <span class="label" id="brLabel">สาขา</span>
         <div class="branch-checks" id="brChecks">
-          ${state.branches.map((b) => `<label><input type="checkbox" class="chk" value="${esc(b)}" ${data.branches.includes(b) ? 'checked' : ''}/> ${esc(b)}</label>`).join('')}
+          ${branchList.map((b) => `<label><input type="checkbox" class="chk" value="${esc(b)}" ${data.branches.includes(b) ? 'checked' : ''}/> ${esc(b)}</label>`).join('')}
         </div>
         <span class="text-[11px] text-slate-400" id="brHint"></span>
       </div>
@@ -2196,7 +2202,8 @@ function openMemberForm(username) {
     const r = f.role.value;
     $('#brChecks').classList.toggle('disabled', r === 'admin');
     $('#brLabel').classList.toggle('req', r === 'branch');
-    $('#brHint').textContent = r === 'admin' ? 'ผู้ดูแลระบบเห็นทุกสาขาเสมอ' : (r === 'approver' || r === 'reviewer') ? 'ไม่เลือก = อนุมัติได้ทุกสาขา' : 'ต้องเลือกอย่างน้อย 1 สาขา';
+    $('#brLabel').classList.toggle('req', r === 'branch' || !!myScope);
+    $('#brHint').textContent = r === 'admin' ? 'ผู้ดูแลระบบเห็นทุกสาขาเสมอ' : myScope ? 'เลือกได้เฉพาะสาขาที่คุณดูแล (อย่างน้อย 1 สาขา)' : (r === 'approver' || r === 'reviewer') ? 'ไม่เลือก = อนุมัติได้ทุกสาขา' : 'ต้องเลือกอย่างน้อย 1 สาขา';
   };
   f.role.addEventListener('change', syncRole); syncRole();
   f.addEventListener('submit', async (e) => {
@@ -2210,6 +2217,7 @@ function openMemberForm(username) {
     if (!user.username) { setError(f.username, 'กรุณากรอกชื่อผู้ใช้'); return; }
     if (!user.fullName) { setError(f.fullName, 'กรุณากรอกชื่อ'); return; }
     if (role === 'branch' && !user.branches.length) { toast('ผู้ใช้สาขาต้องเลือกอย่างน้อย 1 สาขา', 'error'); return; }
+    if (myScope && !user.branches.length) { toast('กรุณาเลือกสาขาที่คุณดูแลอย่างน้อย 1 สาขา', 'error'); return; }
     if (isNew && user.password.length < 6) { setError(f.password, 'อย่างน้อย 6 ตัวอักษร'); return; }
     const btn = e.submitter; btn.disabled = true;
     try {

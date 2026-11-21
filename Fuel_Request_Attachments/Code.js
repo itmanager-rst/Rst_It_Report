@@ -3,7 +3,7 @@
  * Backend : Google Apps Script (Web App) + Google Sheets + Google Drive
  * Dev: tana.pittayatanadol
  *
- * CODE_VERSION: r07-2026-11-21-reviewer-approver-labels
+ * CODE_VERSION: r08-2026-11-21-approvers-add-members
  *
  * ─────────────────────────────────────────────────────────────
  * ① จุดที่ต้องตั้งค่า
@@ -16,7 +16,7 @@
  *
  * ② ผู้ใช้เริ่มต้น (สร้างโดยฟังก์ชัน setup) : admin / admin1234  → เข้าระบบแล้วเปลี่ยนรหัสผ่านทันที
  */
-const CODE_VERSION    = 'r07-2026-11-21-reviewer-approver-labels';
+const CODE_VERSION    = 'r08-2026-11-21-approvers-add-members';
 const DRIVE_FOLDER_ID = '1KOthLdot3HMDwBxash_G3nMOKpaPd6P0'; // โฟลเดอร์ Fuel_Request_Attachments
 const SPREADSHEET_ID  = '13R0CkQ8LItQ4UpiMVEyoZ_nifBc1NSxkPgJ0cp5EWmM'; // ชีต RST-FUEL Database
 const APP_URL         = '';
@@ -48,7 +48,8 @@ const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', reviewer: 'ผ�
 const REVIEW_ROLES  = ['admin', 'reviewer'];   // อนุมัติขั้นที่ 1 (ระบุลิตร + ระดับน้ำมัน)
 const APPROVE_ROLES = ['admin', 'approver'];   // อนุมัติขั้นสุดท้าย (เซ็นอนุมัติ)
 const FILL_ROLES    = ['admin', 'branch'];     // บันทึกผลการเติม
-const MEMBER_ROLES  = ['admin'];               // เพิ่ม/ลบ/แก้ไขสมาชิก
+const MEMBER_ROLES  = ['admin'];               // แก้ไข/ลบสมาชิก
+const MEMBER_ADD_ROLES = ['admin', 'reviewer', 'approver'];   // ดูรายชื่อ + เพิ่มสมาชิกใหม่ (ไม่ใช่ admin)
 
 /** หัวตารางคำขอ (ลำดับต้องตรงกับ buildRow_ และ rowToObj_) */
 const HEADERS = [
@@ -156,8 +157,8 @@ function route_(body) {
     case 'review':         requireRole_(user, REVIEW_ROLES); return handleReview_(user, body);
     case 'decide':         requireRole_(user, APPROVE_ROLES); return handleDecide_(user, body);
     case 'fill':           requireRole_(user, FILL_ROLES); return handleFill_(user, body);
-    case 'listUsers':      requireRole_(user, MEMBER_ROLES); return listUsers_();
-    case 'saveUser':       requireRole_(user, MEMBER_ROLES); return saveUser_(user, body.user || {});
+    case 'listUsers':      requireRole_(user, MEMBER_ADD_ROLES); return listUsers_();
+    case 'saveUser':       requireRole_(user, MEMBER_ADD_ROLES); return saveUser_(user, body.user || {});
     case 'deleteUser':     requireRole_(user, MEMBER_ROLES); return deleteUser_(user, body.username);
     default: throw new Error('Unknown action: ' + action);
   }
@@ -303,6 +304,18 @@ function saveUser_(admin, u) {
     const email = str_(u.email, 120);
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('รูปแบบอีเมลไม่ถูกต้อง');
     const active = u.active !== false;
+
+    // ผู้ดูแล (อนุมัติ 1) / ผู้อนุมัติสูงสุด: เพิ่มสมาชิกใหม่ได้เท่านั้น ไม่สร้าง admin และให้สาขาได้เฉพาะสาขาที่ตัวเองดูแล
+    if (admin.role !== 'admin') {
+      if (!u.isNew) throw new Error('แก้ไขสมาชิกได้เฉพาะผู้ดูแลระบบ');
+      if (role === 'admin') throw new Error('ไม่มีสิทธิ์สร้างผู้ดูแลระบบ');
+      const scope = userBranches_(admin);
+      if (scope) {
+        if (!branches.length) throw new Error('กรุณาเลือกสาขาที่คุณดูแลอย่างน้อย 1 สาขา');
+        const out = branches.filter(b => scope.indexOf(b) < 0);
+        if (out.length) throw new Error('คุณไม่ได้ดูแลสาขา ' + out.join(', '));
+      }
+    }
 
     const sh = usersSheet_();
     const found = findUser_(username);
