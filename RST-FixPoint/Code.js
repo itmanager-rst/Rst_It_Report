@@ -180,8 +180,8 @@ const ROUTES = {
   technicianKpi:   { roles: ['supervisor', 'manager', 'admin'], fn: technicianKpi_ },   // r29: KPI ช่างทุกคนที่ได้รับมอบหมาย
   dashboard:       { roles: MGR, fn: dashboard_ },
 
-  acceptTicket:    { roles: TECH, fn: acceptTicket_, write: true },
-  updateProgress:  { roles: TECH, fn: updateProgress_, write: true },
+  acceptTicket:    { roles: TECH.concat(['supervisor']), fn: acceptTicket_, write: true },   // r36: หัวหน้าช่างรับงานที่มอบหมายให้ตัวเอง
+  updateProgress:  { roles: TECH.concat(['supervisor']), fn: updateProgress_, write: true },   // r36
   completeTicket:  { roles: TECH.concat(['supervisor']), fn: completeTicket_, write: true },   // r34: หัวหน้าช่างปิดงานแทนทีมได้
 
   updateTicket:    { roles: ADMIN, fn: updateTicket_, write: true },   // r10: แก้ไขรายการ (admin เท่านั้น)
@@ -681,7 +681,7 @@ function addLog_(ticketId, action, u, from, to, note) {
 function canSee_(u, t) {
   if (u.Role === 'admin') return true;
   if (norm_(t.Username) === norm_(u.Username)) return true;
-  if (u.Role === 'supervisor') return supOwns_(u, t);   // r27: หัวหน้าช่างเห็นเฉพาะงานที่ถูกส่งต่อมาให้ตน
+  if (u.Role === 'supervisor') return supOwns_(u, t) || isMember_(t, u.Username);   // r36: หัวหน้าที่อยู่ในทีมเห็นงานนั้น   // r27: หัวหน้าช่างเห็นเฉพาะงานที่ถูกส่งต่อมาให้ตน
   if (!inScope_(u, t.Branch) && !(u.Role === 'technician' && isMember_(t, u.Username))) return false;   // r32: ช่างต่างสาขาที่อยู่ในทีมเห็นงานนี้ได้
   if (u.Role === 'manager') return true;
   if (u.Role === 'technician') return [ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1;
@@ -926,6 +926,9 @@ function listTickets_(u, req) {
   if (scope === 'approvals') list = list.filter(t => t.Status === ST.PENDING && inScope_(u, t.Branch));
   if (scope === 'dispatch') list = list.filter(t => t.Status === ST.DISPATCHED && supOwns_(u, t));          // r27: รอหัวหน้าช่างเลือกช่าง
   if (scope === 'supervised') list = list.filter(t => supOwns_(u, t) && [ST.DISPATCHED, ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1); // r27
+  if (scope === 'selfjobs') {   // r36: งานที่หัวหน้าช่างมอบหมายให้ตัวเองลงมือ
+    list = list.filter(t => isMember_(t, u.Username) && [ST.APPROVED, ST.IN_PROGRESS, ST.COMPLETED].indexOf(String(t.Status)) > -1);
+  }
   if (scope === 'jobs') {
     const mine = t => u.Role === 'admin' || isMember_(t, u.Username);   // r29: สมาชิกทีม
     list = list.filter(t => (inScope_(u, t.Branch) || mine(t)) && (   // r32: ช่างต่างสาขาในทีม
@@ -1288,6 +1291,11 @@ function isMember_(t, username) {
 }
 
 /** r29: หัวหน้าช่างมอบหมาย/แก้ทีมช่าง (ได้หลายคน) — ช่างคนแรกเป็นผู้รับผิดชอบหลัก */
+/** r36: หัวหน้าช่างมอบหมายให้ตัวเองได้ (ต้องเป็นตัวผู้มอบหมายเอง เท่านั้น) */
+function isSelfSup_(tech, u) {
+  return !!tech && tech.Role === 'supervisor' && norm_(tech.Username) === norm_(u.Username);
+}
+
 function assignTechnician_(u, req) {
   const t = getTicketRow_(req.ticketId);
   if (!supOwns_(u, t)) throw new Error('งานนี้ไม่ได้ถูกส่งต่อให้คุณ');
@@ -1307,10 +1315,10 @@ function assignTechnician_(u, req) {
     const tech = findUser_(x);
     const was = prev.find(m => norm_(m.u) === norm_(x));
     // r33: สมาชิกเดิมของทีมที่บัญชีถูกปิด/เปลี่ยนบทบาทแล้ว ให้คงอยู่ในทีมต่อไป (ไม่ทำให้ถูกลบเงียบ ๆ และไม่ error)
-    if (was && (!tech || tech.Role !== 'technician' || !isActive_(tech.Active))) {
+    if (was && (!tech || !(tech.Role === 'technician' || isSelfSup_(tech, u)) || !isActive_(tech.Active))) {
       return { u: was.u, n: was.n, at: was.at, by: was.by, byName: was.byName, br: was.br, x: !!was.x };
     }
-    if (!tech || tech.Role !== 'technician' || !isActive_(tech.Active)) throw new Error('ไม่พบช่าง ' + x);
+    if (!tech || !(tech.Role === 'technician' || isSelfSup_(tech, u)) || !isActive_(tech.Active)) throw new Error('ไม่พบช่าง ' + x);
     const old = was;
     const br = String(tech.Branch || '');
     const cross = !!br && br.toUpperCase() !== 'ALL' && br !== String(t.Branch);
