@@ -166,14 +166,6 @@ tbody tr:hover { background: #fafafa; }
 tbody tr.selected, .card.selected { background: var(--brand-soft); }
 .card.selected { border-color: #fca5a5; }
 #toast { z-index: 70 !important; }
-.work-box { margin-top: .75rem; border-radius: .75rem; padding: .6rem .75rem; border: 1px solid #fecaca; background: #fff5f5; }
-.work-box.ok { border-color: #a7f3d0; background: #ecfdf5; }
-.work-box .work-title { font-size: .85rem; font-weight: 700; }
-.work-thumbs { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
-.work-thumbs .wt { position: relative; }
-.work-thumbs a { display: inline-flex; align-items: center; justify-content: center; width: 72px; height: 72px; border-radius: .5rem; overflow: hidden; background: #fff; border: 1px solid #d4d4d4; font-size: .75rem; color: #525252; }
-.work-thumbs img { width: 100%; height: 100%; object-fit: cover; }
-.work-thumbs .wdel { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 999px; background: #171717; color: #fff; font-size: .7rem; line-height: 22px; text-align: center; }
 .new-pill { display: inline-block; font-size: .68rem; font-weight: 700; padding: .05rem .5rem; border-radius: 999px; background: var(--brand); color: #fff; margin-left: .35rem; vertical-align: middle; }
 .sig-thumb { display: flex; align-items: center; justify-content: center; min-height: 64px; background: #fff; border: 1px dashed #d4d4d4; border-radius: .6rem; padding: .25rem; }
 .sig-thumb img { max-height: 58px; max-width: 100%; }
@@ -845,11 +837,11 @@ body.booting { overflow: hidden; }
       <div class="toolbar mb-4">
         <div>
           <h2 class="font-bold text-lg">ใบอนุมัติที่ผู้อนุมัติสูงสุดเซ็นแล้ว</h2>
-          <p class="text-xs text-slate-500">ขึ้นอัตโนมัติเมื่อผู้อนุมัติสูงสุดเซ็นอนุมัติ 2 · ผู้ดูแล (อนุมัติ 1) กด "📷 ถ่ายรูปส่งงาน" ทุกใบ</p>
+          <p class="text-xs text-slate-500">ขึ้นอัตโนมัติเมื่อผู้อนุมัติสูงสุดเซ็นอนุมัติ 2 · กด "📄 เปิดใบอนุมัติ" แล้วแคปหน้าจอ / ถ่ายรูปส่งผู้บริหาร</p>
         </div>
         <div class="flex flex-wrap gap-2 sm:ml-auto">
           <div class="seg" id="approvedSeg">
-            <button data-f="pending">ยังไม่ส่งรูป <b id="cntDoneNew">0</b></button>
+            <button data-f="new">ใหม่ <b id="cntDoneNew">0</b></button>
             <button data-f="today">วันนี้ <b id="cntDoneToday">0</b></button>
             <button data-f="week">7 วัน</button>
             <button data-f="all">ทั้งหมด</button>
@@ -858,9 +850,7 @@ body.booting { overflow: hidden; }
           <button type="button" class="btn-ghost refresh-btn">รีเฟรช</button>
         </div>
       </div>
-      <div id="workWarn" class="hidden mb-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm px-4 py-3">ระบบส่งรูปยังไม่ได้ติดตั้งฝั่ง Apps Script (ไฟล์ WorkPhoto.gs) — กรุณาแจ้งผู้ดูแลระบบ</div>
       <div id="approvedList" class="grid lg:grid-cols-2 gap-4"></div>
-      <input type="file" id="workPhotoInput" accept="image/*" capture="environment" hidden />
       <div id="approvedEmpty" class="hidden card text-center py-12">
         <div class="text-4xl mb-2">📄</div>
         <p class="font-semibold" id="approvedEmptyMsg">ยังไม่มีใบอนุมัติใหม่</p>
@@ -1107,7 +1097,6 @@ body.booting { overflow: hidden; }
     <div class="pv-bar">
       <button type="button" id="pvClose" class="pv-btn" aria-label="ปิดเอกสาร">✕</button>
       <h3 id="pvTitle">เอกสาร</h3>
-      <button type="button" id="pvWork" class="pv-btn pv-primary" hidden>📷 ถ่ายรูปส่งงาน</button>
       <button type="button" id="pvShot" class="pv-btn" hidden>💾 บันทึกรูป</button>
       <button type="button" id="pvPrint" class="pv-btn pv-primary">🖨 พิมพ์ / PDF</button>
     </div>
@@ -1161,8 +1150,6 @@ const CONFIG = {
   MAX_DEST: 8,
   IMAGE_MAX_PX: 1600,      // ย่อรูปด้านยาวสุดไม่เกินกี่ px ก่อนอัปโหลด
   IMAGE_QUALITY: 0.8,
-  WORK_PHOTO_FROM: '2026-11-21', // ใบอนุมัติที่ผู้อนุมัติสูงสุดเซ็นตั้งแต่วันนี้ ผู้ดูแล (อนุมัติ 1) ต้องถ่ายรูปส่งงาน
-  WORK_PHOTO_MAX: 5,             // ถ่ายได้สูงสุดกี่รูปต่อใบ (ต้องตรงกับ WORK_MAX_PHOTOS ใน WorkPhoto.gs)
   MAX_UPLOAD_MB: 8,
   PAGE_SIZE: 20,
   CHART_COLOR: '#e60012',
@@ -1233,8 +1220,6 @@ function presentPrint(title, orient = 'landscape', wide = false, opts = {}) {
   state.pvOrient = orient;
   state.pvShotName = opts.shotName || '';
   $('#pvShot').hidden = !opts.shotName;
-  state.pvWorkRef = opts.workRef || '';
-  updatePvWork();
   $('#pvShotOut').hidden = true; $('#pvShotOut').innerHTML = '';
   if (!isMobile() && !opts.view) {
     setPrintPage(orient);
@@ -1247,8 +1232,7 @@ function presentPrint(title, orient = 'landscape', wide = false, opts = {}) {
   doc.innerHTML = $('#printArea').innerHTML;
   doc.classList.toggle('wide', wide);
   $('#pvHint').textContent = wide ? 'เลื่อนซ้าย-ขวาเพื่อดูทั้งตาราง · กด "พิมพ์ / PDF" เพื่อบันทึกเป็นไฟล์'
-    : opts.workRef ? 'กด "📷 ถ่ายรูปส่งงาน" เพื่อถ่ายรูปแนบกับใบอนุมัตินี้ · กด "💾 บันทึกรูป" เพื่อเก็บรูปใบอนุมัติทั้งใบ'
-    : opts.shotName ? 'ถ่ายรูปหน้าจอนี้ได้เลย หรือกด "💾 บันทึกรูป" เพื่อได้รูปใบอนุมัติทั้งใบ (ส่งต่อทาง LINE / อีเมลได้)'
+    : opts.shotName ? 'แคปหน้าจอ / ถ่ายรูปหน้านี้ส่งผู้บริหารได้เลย · หรือกด "💾 บันทึกรูป" เพื่อได้รูปใบอนุมัติทั้งใบ'
     : 'แสดงหน้านี้ที่ปั๊มได้เลย · กด "พิมพ์ / PDF" เพื่อบันทึกเป็นไฟล์';
   $('#printView').hidden = false;
   $('.pv-scroll').scrollTo(0, 0);
@@ -1502,26 +1486,6 @@ const demo = {
         need('admin');
         if (b.username === me.username) this.fail('ไม่สามารถลบบัญชีของตัวเองได้');
         this.users = this.users.filter((x) => x.username !== b.username); return this.list();
-      case 'workPhotos': {
-        const out = {}; Object.keys(this.work || {}).forEach((k) => { const r = this.records.find((x) => x.refId === k); if (r && can(r.branch)) out[k] = this.work[k]; });
-        return out;
-      }
-      case 'workPhoto': {
-        need('admin', 'reviewer');
-        const r = this.records.find((x) => x.refId === b.refId); if (!r) this.fail('ไม่พบรายการ');
-        if (!['อนุมัติแล้ว รอเติม', 'เติมแล้ว'].includes(r.status)) this.fail('ส่งรูปได้เฉพาะรายการที่ผู้อนุมัติสูงสุดอนุมัติแล้ว');
-        this.work = this.work || {}; const arr = this.work[b.refId] || (this.work[b.refId] = []);
-        if (arr.length >= CONFIG.WORK_PHOTO_MAX) this.fail('ส่งรูปครบจำนวนแล้ว');
-        arr.push({ url: `data:${b.photo.mimeType};base64,${b.photo.data}`, by: me.username, name: me.fullName, at: this.now() });
-        return { refId: b.refId, photos: arr.slice() };
-      }
-      case 'workPhotoDelete': {
-        need('admin', 'reviewer');
-        const arr = (this.work || {})[b.refId] || [];
-        const i = arr.findIndex((p) => p.url === b.url); if (i < 0) this.fail('ไม่พบรูป');
-        if (me.role !== 'admin' && arr[i].by !== me.username) this.fail('ลบได้เฉพาะรูปที่ตัวเองถ่าย');
-        arr.splice(i, 1); return { refId: b.refId, photos: arr.slice() };
-      }
       default: this.fail('Unknown action');
     }
   }
@@ -1544,10 +1508,7 @@ const state = {
   selected: new Set(), // refId ของรายการที่ติ๊กเลือกเพื่อพิมพ์
   sigCache: {},         // refId → dataURL ลายเซ็น
   branches: [],         // รายชื่อสาขาทั้งหมดจาก Config
-  users: [],            // รายชื่อสมาชิก (เฉพาะ admin)
-  workPhotos: {},        // refId → [{url, by, name, at}] รูปส่งงานของผู้ดูแล (อนุมัติ 1)
-  workThumbs: {},        // url → dataURL รูปที่เพิ่งถ่ายในเครื่องนี้ (แสดงทันทีไม่ต้องโหลด)
-  workLoaded: false
+  users: []             // รายชื่อสมาชิก (เฉพาะ admin)
 };
 
 async function loadData(force = false) {
@@ -1561,7 +1522,7 @@ async function loadData(force = false) {
       if (seq !== state.loadSeq) return;
       if (data.me) { auth.set(auth.token, data.me); applyUser(); }
       applyConfig(data.config);
-      state.records = data.records || [];
+      state.records = (data.records || []).map((r) => ({ ...r, tankLevel: normTank(r.tankLevel) }));
       state.loaded = true;
       fillPeriodSelects();
       updatePendingBadge();
@@ -1590,7 +1551,7 @@ function showTab(name) {
   if (name === 'dashboard') loadData().then(renderDashboard);
   if (name === 'history') loadData().then(renderHistory);
   if (name === 'approve') loadData().then(renderApprove);
-  if (name === 'approved') Promise.all([loadData(), state.workLoaded ? null : loadWorkPhotos()]).then(() => { updatePendingBadge(); renderApproved(); });
+  if (name === 'approved') loadData().then(renderApproved);
   if (name === 'members') loadUsers();
   if (name === 'track') loadData().then(renderTrack);
   if (name === 'form' && state.reqPad && state.reqPad.empty) setTimeout(() => state.reqPad.fit(), 0);
@@ -2037,9 +1998,20 @@ function updatePendingBadge() {
   const w = state.records.filter((r) => statusOf(r) === ST.OK && inScope(r)).length;
   const tb = $('#trackBadge');
   tb.textContent = w; tb.classList.toggle('hidden', !canFill() || w === 0);
-  const nNew = canSeeApproved() ? (state.workLoaded ? workPendingCount() : newApprovedCount()) : 0;
+  const nNew = canSeeApproved() ? newApprovedCount() : 0;
   const ab = $('#approvedBadge');
   ab.textContent = nNew > 99 ? '99+' : nNew; ab.classList.toggle('hidden', nNew === 0);
+}
+
+/** ระดับน้ำมันที่ Google Sheets แปลง "1/4" เป็นวันที่ (เช่น 1 เม.ย.) → แปลงกลับเป็นข้อความเดิม */
+function normTank(v) {
+  const levels = (state.cfg && state.cfg.tankLevels) || CONFIG.TANK_LEVELS;
+  const s = String(v ?? '').trim();
+  if (!s || levels.includes(s)) return s;
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  const a = `${d.getDate()}/${d.getMonth() + 1}`, b = `${d.getMonth() + 1}/${d.getDate()}`;
+  return levels.includes(a) ? a : levels.includes(b) ? b : s;
 }
 
 function tankBar(level) {
@@ -2268,59 +2240,25 @@ function markAllSeen() {
   store.set(seenKey(), JSON.stringify({ since: latest && latest.approvedAt > s.since ? latest.approvedAt : s.since, refs: [] }));
 }
 
-/* ---- รูปส่งงาน (ผู้ดูแลอนุมัติ 1 ถ่ายรูปแนบกับใบอนุมัติที่เซ็นครบ) ---- */
-const workOf = (refId) => state.workPhotos[refId] || [];
-const needsWork = (r) => r.approvedAt.slice(0, 10) >= CONFIG.WORK_PHOTO_FROM && !workOf(r.refId).length;
-const workPendingCount = () => approvedRecords().filter(needsWork).length;
-const driveId = (url) => (String(url).match(/[-\w]{25,}/) || [])[0] || '';
-
-async function loadWorkPhotos() {
-  if (!canSeeApproved()) return;
-  try {
-    state.workPhotos = (await api.post({ action: 'workPhotos' })) || {};
-    state.workLoaded = true; state.workUnsupported = false;
-  } catch (err) {
-    if (/Unknown action/i.test(err.message)) state.workUnsupported = true;
-    else if (err.code !== 'AUTH') console.warn('workPhotos', err);
-  }
-}
-
-function workBox(r) {
-  const photos = workOf(r.refId), me = auth.user || {};
-  const thumbs = photos.map((p, i) => {
-    const src = state.workThumbs[p.url] || (driveId(p.url) ? `https://drive.google.com/thumbnail?id=${driveId(p.url)}&sz=w200` : '');
-    const canDel = me.role === 'admin' || p.by === me.username;
-    return `<span class="wt"><a href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(`${p.name || p.by} · ${p.at}`)}">${src ? `<img src="${esc(src)}" alt="รูปส่งงาน ${i + 1}" onerror="this.replaceWith('รูปที่ ${i + 1}')">` : `รูปที่ ${i + 1}`}</a>${canDel ? `<button type="button" class="wdel" data-act="wdel" data-url="${esc(p.url)}" aria-label="ลบรูปที่ ${i + 1}">✕</button>` : ''}</span>`;
-  }).join('');
-  const last = photos[photos.length - 1];
-  return `<div class="work-box ${photos.length ? 'ok' : ''}">
-    <div class="work-title">${photos.length ? `✅ ส่งรูปแล้ว ${photos.length} รูป <span class="text-xs font-normal text-slate-500">· ${esc(last.name || last.by)} ${esc(last.at)}</span>` : needsWork(r) ? '⏳ ยังไม่ได้ถ่ายรูปส่งงาน' : '<span class="font-normal text-slate-500">ไม่มีรูปส่งงาน</span>'}</div>
-    ${thumbs ? `<div class="work-thumbs">${thumbs}</div>` : ''}
-  </div>`;
-}
-
 function renderApproved() {
   if (!canSeeApproved()) return;
   const seen = getSeen(), all = approvedRecords(), today = todayISO();
   const d7 = new Date(); d7.setDate(d7.getDate() - 6); d7.setMinutes(d7.getMinutes() - d7.getTimezoneOffset());
   const weekFrom = d7.toISOString().slice(0, 10);
-  const nPending = all.filter(needsWork).length;
   const nNew = all.filter((r) => isNewApproved(r, seen)).length;
   const nToday = all.filter((r) => r.approvedAt.slice(0, 10) === today).length;
-  if (!state.approvedFilter) state.approvedFilter = nPending ? 'pending' : 'today';
+  if (!state.approvedFilter) state.approvedFilter = nNew ? 'new' : 'today';
   const f = state.approvedFilter;
-  const list = all.filter((r) => f === 'pending' ? needsWork(r) : f === 'today' ? r.approvedAt.slice(0, 10) === today
+  const list = all.filter((r) => f === 'new' ? isNewApproved(r, seen) : f === 'today' ? r.approvedAt.slice(0, 10) === today
     : f === 'week' ? r.approvedAt.slice(0, 10) >= weekFrom : true).slice(0, 60);
-  $('#workWarn').classList.toggle('hidden', !state.workUnsupported);
-  $('#cntDoneNew').textContent = nPending; $('#cntDoneToday').textContent = nToday;
+  $('#cntDoneNew').textContent = nNew; $('#cntDoneToday').textContent = nToday;
   $$('#approvedSeg button').forEach((b) => b.classList.toggle('active', b.dataset.f === f));
   $('#approvedSeenAll').classList.toggle('hidden', nNew === 0);
-  $('#approvedEmptyMsg').textContent = f === 'pending' ? 'ถ่ายรูปส่งงานครบทุกใบแล้ว 🎉' : 'ไม่มีใบอนุมัติในช่วงนี้';
+  $('#approvedEmptyMsg').textContent = f === 'new' ? 'ไม่มีใบอนุมัติใหม่ — เปิดดูครบแล้ว' : 'ไม่มีใบอนุมัติในช่วงนี้';
   $('#approvedEmpty').classList.toggle('hidden', list.length > 0);
-  const busy = state.workBusy;
   $('#approvedList').innerHTML = list.map((r) => {
-    const isNew = isNewApproved(r, seen), full = workOf(r.refId).length >= CONFIG.WORK_PHOTO_MAX;
-    return `<article class="card done-card ${needsWork(r) ? 'is-new' : ''}" data-ref="${esc(r.refId)}">
+    const isNew = isNewApproved(r, seen);
+    return `<article class="card done-card ${isNew ? 'is-new' : ''}" data-ref="${esc(r.refId)}">
       <div class="flex flex-wrap justify-between items-start gap-2">
         <div><span class="ref">${esc(r.refId)}</span>${isNew ? '<span class="new-pill">ใหม่</span>' : ''}
           <div class="text-lg font-semibold mt-1">${esc(r.vehicle)} <span class="pill">${esc(r.fuelType || '-')}</span></div>
@@ -2335,70 +2273,14 @@ function renderApproved() {
         <div class="col-span-2"><dt>ลายเซ็นผู้อนุมัติสูงสุด</dt>
           <dd class="sig-thumb" data-sig="${esc(r.refId)}">${r.hasSignature ? '<span>กำลังโหลดลายเซ็น...</span>' : '<span>ไม่มีลายเซ็น</span>'}</dd></div>
       </dl>
-      ${workBox(r)}
       <div class="flex flex-wrap items-center gap-2 mt-4">
         <button type="button" class="icon-btn" data-act="detail">รายละเอียด</button>
-        <button type="button" class="icon-btn" data-act="slip">📄 เปิดใบอนุมัติ</button>
         <span class="flex-1"></span>
-        ${full ? '' : `<button type="button" class="btn-primary !min-w-0 !py-2" data-act="work" ${busy ? 'disabled' : ''}>${busy === r.refId ? 'กำลังส่งรูป...' : workOf(r.refId).length ? '📷 ถ่ายเพิ่ม' : '📷 ถ่ายรูปส่งงาน'}</button>`}
+        <button type="button" class="btn-primary !min-w-0 !py-2" data-act="slip">📄 เปิดใบอนุมัติ</button>
       </div>
     </article>`;
   }).join('');
   loadSigThumbs();
-}
-
-function updatePvWork() {
-  const btn = $('#pvWork'), ref = state.pvWorkRef;
-  const show = !!ref && canSeeApproved() && !state.workUnsupported && workOf(ref).length < CONFIG.WORK_PHOTO_MAX;
-  btn.hidden = !show;
-  btn.disabled = !!state.workBusy;
-  btn.textContent = state.workBusy ? 'กำลังส่งรูป...' : workOf(ref).length ? `📷 ถ่ายเพิ่ม (${workOf(ref).length})` : '📷 ถ่ายรูปส่งงาน';
-}
-
-function pickWorkPhoto(refId) {
-  if (state.workBusy) return;
-  if (state.workUnsupported) { toast('ระบบส่งรูปยังไม่ได้ติดตั้งฝั่ง Apps Script', 'error', 5000); return; }
-  state.workRef = refId;
-  const input = $('#workPhotoInput'); input.value = ''; input.click();
-}
-
-async function uploadWorkPhoto(refId, file) {
-  if (!refId || !file) return;
-  if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) { toast('กรุณาถ่ายหรือเลือกไฟล์รูปภาพ', 'error'); return; }
-  state.workBusy = refId; updatePvWork();
-  if ($('.tab-btn.active')?.dataset.tab === 'approved') renderApproved();
-  toast('กำลังส่งรูป...', 'info', 30000);
-  try {
-    const dataUrl = await compressImage(file);
-    const [meta, b64] = dataUrl.split(',');
-    const mimeType = (meta.match(/data:(.*?);/) || [])[1] || 'image/jpeg';
-    if (b64.length * 0.75 > CONFIG.MAX_UPLOAD_MB * 1024 * 1024) throw new Error(`รูปใหญ่เกิน ${CONFIG.MAX_UPLOAD_MB} MB`);
-    const res = await api.post({ action: 'workPhoto', refId, photo: { name: `${refId}_work${mimeType === 'image/jpeg' ? '.jpg' : ''}`, mimeType, data: b64 } });
-    state.workPhotos[refId] = res.photos || [];
-    const last = state.workPhotos[refId][state.workPhotos[refId].length - 1];
-    if (last && mimeType.startsWith('image/')) state.workThumbs[last.url] = dataUrl;
-    state.workLoaded = true;
-    markSeen(refId);
-    toast(`✅ ส่งรูปเรียบร้อย · ${refId}`, 'success', 3500);
-  } catch (err) {
-    if (/Unknown action/i.test(err.message)) state.workUnsupported = true;
-    toast('ส่งรูปไม่สำเร็จ: ' + err.message, 'error', 6000);
-  } finally {
-    state.workBusy = null;
-    updatePvWork(); updatePendingBadge();
-    if ($('.tab-btn.active')?.dataset.tab === 'approved') renderApproved();
-  }
-}
-
-async function deleteWorkPhoto(refId, url) {
-  if (!confirm('ลบรูปนี้? (ถ่ายใหม่ได้หลังลบ)')) return;
-  try {
-    const res = await api.post({ action: 'workPhotoDelete', refId, url });
-    state.workPhotos[refId] = res.photos || [];
-    toast('ลบรูปแล้ว', 'info', 2000);
-  } catch (err) { toast('ลบรูปไม่สำเร็จ: ' + err.message, 'error', 5000); }
-  updatePendingBadge(); updatePvWork();
-  if ($('.tab-btn.active')?.dataset.tab === 'approved') renderApproved();
 }
 
 /** โหลดลายเซ็นผู้อนุมัติสูงสุดเฉพาะการ์ดที่เลื่อนมาเห็น (ลดจำนวนครั้งที่เรียก backend) */
@@ -2417,7 +2299,7 @@ function loadSigThumbs() {
 async function openApprovedSlip(refId) {
   markSeen(refId);
   updatePendingBadge();
-  await printSlip(refId, { view: true, workRef: refId });
+  await printSlip(refId, { view: true });
   if ($('.tab-btn.active')?.dataset.tab === 'approved') renderApproved();
 }
 
@@ -2477,8 +2359,7 @@ async function autoRefreshTick() {
   if (!auth.token || !canSeeApproved()) { clearInterval(state.autoTimer); return; }
   if (document.visibilityState === 'hidden' || state.loading) return;
   const before = newApprovedCount();
-  await Promise.all([loadData(true), loadWorkPhotos()]);
-  updatePendingBadge();
+  await loadData(true);
   if (!state.loaded) return;
   const after = newApprovedCount();
   const active = $('.tab-btn.active')?.dataset.tab;
@@ -2667,7 +2548,7 @@ async function printSlip(refId, opts = {}) {
     <div class="pr-foot"><span>RST-FUEL · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</span><span>Dev: tana.pittayatanadol</span></div>
   </div>`;
   await waitImages();
-  presentPrint(`ใบอนุมัติ ${r.refId}`, 'portrait', false, { view: !!opts.view, shotName: r.refId, workRef: opts.workRef || '' });
+  presentPrint(`ใบอนุมัติ ${r.refId}`, 'portrait', false, { view: !!opts.view, shotName: r.refId });
 }
 
 function setPrintPage(orient) {
@@ -2772,7 +2653,7 @@ let authLostShown = false;
 function onAuthLost(msg) {
   auth.clear();
   state.loaded = false; state.records = []; state.loadSeq++; state.loading = null;
-  clearInterval(state.autoTimer); state.approvedFilter = null; state.workPhotos = {}; state.workLoaded = false; state.workThumbs = {};
+  clearInterval(state.autoTimer); state.approvedFilter = null;
   closeModal();
   if (!authLostShown) { authLostShown = true; showLogin(msg || 'กรุณาเข้าสู่ระบบใหม่'); setTimeout(() => { authLostShown = false; }, 3000); }
 }
@@ -2802,7 +2683,7 @@ async function logout() {
   try { await api.post({ action: 'logout' }); } catch { /* ignore */ }
   auth.clear();
   state.loaded = false; state.records = []; state.selected.clear(); state.sigCache = {}; state.loadSeq++; state.loading = null;
-  clearInterval(state.autoTimer); state.approvedFilter = null; state.workPhotos = {}; state.workLoaded = false; state.workThumbs = {};
+  clearInterval(state.autoTimer); state.approvedFilter = null;
   $('#userDrop').classList.add('hidden');
   showLogin('ออกจากระบบแล้ว');
 }
@@ -2857,7 +2738,6 @@ async function enterApp(opts = {}) {
   const roleHome = isRole('reviewer', 'approver') ? 'approve' : 'form';
   showTab(['approve', 'track', 'approved'].includes(initial) ? initial : roleHome);
   startAutoRefresh();
-  loadWorkPhotos().then(() => { updatePendingBadge(); if ($('.tab-btn.active')?.dataset.tab === 'approved') renderApproved(); });
   await boot.finish();
   return true;
 }
@@ -3332,12 +3212,8 @@ function init() {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const ref = b.closest('[data-ref]').dataset.ref;
     if (b.dataset.act === 'slip') openApprovedSlip(ref);
-    else if (b.dataset.act === 'work') pickWorkPhoto(ref);
-    else if (b.dataset.act === 'wdel') deleteWorkPhoto(ref, b.dataset.url);
     else showDetail(state.records.find((r) => r.refId === ref));
   });
-  $('#workPhotoInput').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; const ref = state.workRef; state.workRef = ''; if (f) uploadWorkPhoto(ref, f); });
-  $('#pvWork').addEventListener('click', () => pickWorkPhoto(state.pvWorkRef));
   $('#pvShot').addEventListener('click', saveDocImage);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && auth.token && state.loaded) autoRefreshTick(); });
 
@@ -3397,7 +3273,7 @@ function init() {
     if (active === 'approve') renderApprove();
     if (active === 'members') await loadUsers();
     if (active === 'track') renderTrack();
-    if (active === 'approved') { await loadWorkPhotos(); updatePendingBadge(); renderApproved(); }
+    if (active === 'approved') renderApproved();
     toast('อัปเดตข้อมูลแล้ว', 'info', 1500);
   }));
 
