@@ -165,6 +165,14 @@
 tbody tr:hover { background: #fafafa; }
 tbody tr.selected, .card.selected { background: var(--brand-soft); }
 .card.selected { border-color: #fca5a5; }
+.new-pill { display: inline-block; font-size: .68rem; font-weight: 700; padding: .05rem .5rem; border-radius: 999px; background: var(--brand); color: #fff; margin-left: .35rem; vertical-align: middle; }
+.sig-thumb { display: flex; align-items: center; justify-content: center; min-height: 64px; background: #fff; border: 1px dashed #d4d4d4; border-radius: .6rem; padding: .25rem; }
+.sig-thumb img { max-height: 58px; max-width: 100%; }
+.sig-thumb span { font-size: .75rem; color: #a3a3a3; }
+.done-card { border-left: 4px solid #10b981 !important; }
+.done-card.is-new { border-left-color: var(--brand) !important; box-shadow: 0 0 0 2px rgba(230,0,18,.15); }
+#pvShotOut { max-width: 820px; margin: 0 auto .75rem; background: #fff; border-radius: .5rem; padding: .75rem; text-align: center; }
+#pvShotOut img { width: 100%; height: auto; border: 1px solid #e5e5e5; border-radius: .25rem; }
 .pill { display: inline-block; font-size: .7rem; padding: .1rem .5rem; border-radius: 999px; background: #fff7e6; color: #8a5a00; border: 1px solid #fde3a7; }
 .ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; color: var(--brand-dark); font-weight: 600; }
 
@@ -362,6 +370,8 @@ body.booting { overflow: hidden; }
 .pv-btn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 2.5rem; padding: 0 .85rem; border-radius: .6rem;
   font-weight: 600; font-size: .85rem; color: #fff; background: rgba(255,255,255,.1); white-space: nowrap; }
 .pv-btn.pv-primary { background: var(--brand); }
+.pv-btn[hidden], #pvShotOut[hidden] { display: none; }
+.pv-btn:disabled { opacity: .6; }
 .pv-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .pv-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   padding: .75rem; padding-bottom: calc(.75rem + env(safe-area-inset-bottom, 0px)); }
@@ -611,6 +621,9 @@ body.booting { overflow: hidden; }
         <button class="tab-btn role-approve" data-tab="approve" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.768 9.232a2.5 2.5 0 00-3.536-3.536L4.464 16.464 4 20z"/></svg>
           <span class="tab-label">รออนุมัติ</span><span class="tab-short">อนุมัติ</span> <span id="pendingBadge" class="tab-badge hidden">0</span></button>
+        <button class="tab-btn role-approved hidden" data-tab="approved" role="tab">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span class="tab-label">ใบอนุมัติ (ส่งงาน)</span><span class="tab-short">ส่งงาน</span> <span id="approvedBadge" class="tab-badge hidden">0</span></button>
         <button class="tab-btn" data-tab="dashboard" role="tab">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
           <span class="tab-label">Dashboard สถิติ</span><span class="tab-short">สถิติ</span></button>
@@ -815,6 +828,32 @@ body.booting { overflow: hidden; }
           <p class="font-semibold">ไม่มีรายการรออนุมัติ</p>
           <p class="text-sm text-slate-500">คำขอใหม่จะแสดงที่นี่ และระบบจะส่งอีเมลแจ้งเตือน</p>
         </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ TAB : APPROVED (ผู้ดูแลอนุมัติ 1 · ใบอนุมัติที่เซ็นครบ ไว้ถ่ายรูปส่งงาน) ═════════════ -->
+    <section id="tab-approved" class="tab-panel hidden">
+      <div class="toolbar mb-4">
+        <div>
+          <h2 class="font-bold text-lg">ใบอนุมัติที่ผู้อนุมัติสูงสุดเซ็นแล้ว</h2>
+          <p class="text-xs text-slate-500">รายการจะขึ้นที่นี่อัตโนมัติเมื่อผู้อนุมัติสูงสุดอนุมัติ 2 · กด "📷 เปิดใบอนุมัติ" เพื่อถ่ายรูป / บันทึกรูปส่งงาน</p>
+        </div>
+        <div class="flex flex-wrap gap-2 sm:ml-auto">
+          <div class="seg" id="approvedSeg">
+            <button data-f="new">ใหม่ <b id="cntDoneNew">0</b></button>
+            <button data-f="today">วันนี้ <b id="cntDoneToday">0</b></button>
+            <button data-f="week">7 วัน</button>
+            <button data-f="all">ทั้งหมด</button>
+          </div>
+          <button type="button" class="btn-ghost" id="approvedSeenAll">✓ อ่านทั้งหมด</button>
+          <button type="button" class="btn-ghost refresh-btn">รีเฟรช</button>
+        </div>
+      </div>
+      <div id="approvedList" class="grid lg:grid-cols-2 gap-4"></div>
+      <div id="approvedEmpty" class="hidden card text-center py-12">
+        <div class="text-4xl mb-2">📄</div>
+        <p class="font-semibold" id="approvedEmptyMsg">ยังไม่มีใบอนุมัติใหม่</p>
+        <p class="text-sm text-slate-500">เมื่อผู้อนุมัติสูงสุดเซ็นอนุมัติ ใบอนุมัติจะแสดงที่นี่ (ระบบตรวจทุก 1 นาที)</p>
       </div>
     </section>
 
@@ -1057,9 +1096,11 @@ body.booting { overflow: hidden; }
     <div class="pv-bar">
       <button type="button" id="pvClose" class="pv-btn" aria-label="ปิดเอกสาร">✕</button>
       <h3 id="pvTitle">เอกสาร</h3>
+      <button type="button" id="pvShot" class="pv-btn" hidden>📷 บันทึกรูป</button>
       <button type="button" id="pvPrint" class="pv-btn pv-primary">🖨 พิมพ์ / PDF</button>
     </div>
     <div class="pv-scroll">
+      <div id="pvShotOut" hidden></div>
       <div id="pvDoc" class="pv-doc"></div>
       <p id="pvHint" class="pv-hint"></p>
     </div>
@@ -1174,9 +1215,12 @@ function tuneChartForMobile(opts, horizontal) {
 }
 
 /** แสดงเอกสารใน #printArea: คอมพิวเตอร์ → สั่งพิมพ์ทันที · มือถือ → เปิดหน้าดูเอกสารก่อน (แสดงที่ปั๊มได้ / กดพิมพ์-บันทึก PDF) */
-function presentPrint(title, orient = 'landscape', wide = false) {
+function presentPrint(title, orient = 'landscape', wide = false, opts = {}) {
   state.pvOrient = orient;
-  if (!isMobile()) {
+  state.pvShotName = opts.shotName || '';
+  $('#pvShot').hidden = !opts.shotName;
+  $('#pvShotOut').hidden = true; $('#pvShotOut').innerHTML = '';
+  if (!isMobile() && !opts.view) {
     setPrintPage(orient);
     window.print();
     if (orient !== 'landscape') setTimeout(() => setPrintPage('landscape'), 500);
@@ -1186,7 +1230,9 @@ function presentPrint(title, orient = 'landscape', wide = false) {
   const doc = $('#pvDoc');
   doc.innerHTML = $('#printArea').innerHTML;
   doc.classList.toggle('wide', wide);
-  $('#pvHint').textContent = wide ? 'เลื่อนซ้าย-ขวาเพื่อดูทั้งตาราง · กด "พิมพ์ / PDF" เพื่อบันทึกเป็นไฟล์' : 'แสดงหน้านี้ที่ปั๊มได้เลย · กด "พิมพ์ / PDF" เพื่อบันทึกเป็นไฟล์';
+  $('#pvHint').textContent = wide ? 'เลื่อนซ้าย-ขวาเพื่อดูทั้งตาราง · กด "พิมพ์ / PDF" เพื่อบันทึกเป็นไฟล์'
+    : opts.shotName ? 'ถ่ายรูปหน้าจอนี้ได้เลย หรือกด "📷 บันทึกรูป" เพื่อได้รูปใบอนุมัติทั้งใบ (ส่งต่อทาง LINE / อีเมลได้)'
+    : 'แสดงหน้านี้ที่ปั๊มได้เลย · กด "พิมพ์ / PDF" เพื่อบันทึกเป็นไฟล์';
   $('#printView').hidden = false;
   $('.pv-scroll').scrollTo(0, 0);
   document.body.style.overflow = 'hidden';
@@ -1196,6 +1242,7 @@ function closePrintView() {
   if ($('#printView').hidden) return false;
   $('#printView').hidden = true;
   $('#pvDoc').innerHTML = '';
+  $('#pvShotOut').hidden = true; $('#pvShotOut').innerHTML = '';
   if ($('#modal').classList.contains('hidden')) document.body.style.overflow = '';
   return true;
 }
@@ -1503,6 +1550,7 @@ function showTab(name) {
   if (name === 'dashboard') loadData().then(renderDashboard);
   if (name === 'history') loadData().then(renderHistory);
   if (name === 'approve') loadData().then(renderApprove);
+  if (name === 'approved') loadData().then(renderApproved);
   if (name === 'members') loadUsers();
   if (name === 'track') loadData().then(renderTrack);
   if (name === 'form' && state.reqPad && state.reqPad.empty) setTimeout(() => state.reqPad.fit(), 0);
@@ -1949,6 +1997,9 @@ function updatePendingBadge() {
   const w = state.records.filter((r) => statusOf(r) === ST.OK && inScope(r)).length;
   const tb = $('#trackBadge');
   tb.textContent = w; tb.classList.toggle('hidden', !canFill() || w === 0);
+  const nNew = canSeeApproved() ? newApprovedCount() : 0;
+  const ab = $('#approvedBadge');
+  ab.textContent = nNew > 99 ? '99+' : nNew; ab.classList.toggle('hidden', nNew === 0);
 }
 
 function tankBar(level) {
@@ -2148,6 +2199,163 @@ async function loadSignatures(r) {
   return { requester, reviewer, approver };
 }
 
+/* ═════════════════════ ใบอนุมัติที่เซ็นครบ (ผู้ดูแลอนุมัติ 1 ถ่ายรูปส่งงาน) ═════════════════════
+ * ดึงรายการที่ผู้อนุมัติสูงสุดอนุมัติแล้ว (อนุมัติแล้ว รอเติม / เติมแล้ว) มาแสดงอัตโนมัติ
+ * "ใหม่" = อนุมัติหลังจากที่ผู้ใช้เปิดดูครั้งล่าสุด (จำไว้ในเครื่อง) · ตรวจข้อมูลใหม่ทุก 1 นาที */
+const canSeeApproved = () => isRole('admin', 'reviewer');
+const seenKey = () => 'rst_apprseen_' + (auth.user?.username || '');
+function approvedRecords() {
+  return state.records.filter((r) => [ST.OK, ST.DONE].includes(statusOf(r)) && r.approvedAt && inScope(r))
+    .sort((a, b) => b.approvedAt.localeCompare(a.approvedAt));
+}
+function getSeen() {
+  let s = null;
+  try { s = JSON.parse(store.get(seenKey()) || 'null'); } catch { s = null; }
+  if (!s || typeof s.since !== 'string' || !Array.isArray(s.refs)) {
+    s = { since: todayISO() + ' 00:00', refs: [] };   // ใช้ครั้งแรก: ถือว่ารายการที่อนุมัติวันนี้เป็น "ใหม่"
+    store.set(seenKey(), JSON.stringify(s));
+  }
+  return s;
+}
+const isNewApproved = (r, seen = getSeen()) => r.approvedAt > seen.since && !seen.refs.includes(r.refId);
+const newApprovedCount = () => { const seen = getSeen(); return approvedRecords().filter((r) => isNewApproved(r, seen)).length; };
+function markSeen(refId) {
+  const s = getSeen();
+  if (!s.refs.includes(refId)) { s.refs.push(refId); s.refs = s.refs.slice(-400); store.set(seenKey(), JSON.stringify(s)); }
+}
+function markAllSeen() {
+  const s = getSeen(), latest = approvedRecords()[0];
+  store.set(seenKey(), JSON.stringify({ since: latest && latest.approvedAt > s.since ? latest.approvedAt : s.since, refs: [] }));
+}
+
+function renderApproved() {
+  if (!canSeeApproved()) return;
+  const seen = getSeen(), all = approvedRecords(), today = todayISO();
+  const d7 = new Date(); d7.setDate(d7.getDate() - 6); d7.setMinutes(d7.getMinutes() - d7.getTimezoneOffset());
+  const weekFrom = d7.toISOString().slice(0, 10);
+  const nNew = all.filter((r) => isNewApproved(r, seen)).length;
+  const nToday = all.filter((r) => r.approvedAt.slice(0, 10) === today).length;
+  if (!state.approvedFilter) state.approvedFilter = nNew ? 'new' : 'today';
+  const f = state.approvedFilter;
+  const list = all.filter((r) => f === 'new' ? isNewApproved(r, seen) : f === 'today' ? r.approvedAt.slice(0, 10) === today
+    : f === 'week' ? r.approvedAt.slice(0, 10) >= weekFrom : true).slice(0, 60);
+  $('#cntDoneNew').textContent = nNew; $('#cntDoneToday').textContent = nToday;
+  $$('#approvedSeg button').forEach((b) => b.classList.toggle('active', b.dataset.f === f));
+  $('#approvedSeenAll').classList.toggle('hidden', nNew === 0);
+  $('#approvedEmptyMsg').textContent = f === 'new' ? 'ไม่มีใบอนุมัติใหม่ — เปิดดูครบแล้ว' : 'ไม่มีใบอนุมัติในช่วงนี้';
+  $('#approvedEmpty').classList.toggle('hidden', list.length > 0);
+  $('#approvedList').innerHTML = list.map((r) => {
+    const isNew = isNewApproved(r, seen);
+    return `<article class="card done-card ${isNew ? 'is-new' : ''}" data-ref="${esc(r.refId)}">
+      <div class="flex flex-wrap justify-between items-start gap-2">
+        <div><span class="ref">${esc(r.refId)}</span>${isNew ? '<span class="new-pill">ใหม่</span>' : ''}
+          <div class="text-lg font-semibold mt-1">${esc(r.vehicle)} <span class="pill">${esc(r.fuelType || '-')}</span></div>
+          <div class="text-sm text-slate-500">${esc(r.branch)} · เข้าเติม ${thDate(r.requestDate)}</div></div>
+        ${statusPill(r)}
+      </div>
+      <dl class="appr-grid">
+        <div><dt>อนุมัติให้เติม</dt><dd class="big-liters">${liters(r.approvedLiters)} <span class="text-sm font-normal">ลิตร</span></dd></div>
+        <div><dt>น้ำมันในถัง</dt><dd class="flex items-center gap-2">${tankBar(r.tankLevel)} ${esc(r.tankLevel || '-')}</dd></div>
+        <div><dt>ผู้ดูแลอนุมัติ 1</dt><dd>${esc(r.reviewerName || '-')}</dd></div>
+        <div><dt>อนุมัติ 2 (สูงสุด)</dt><dd>${esc(r.approverName)} <span class="text-xs text-slate-400">${esc(r.approvedAt)}</span></dd></div>
+        <div class="col-span-2"><dt>ลายเซ็นผู้อนุมัติสูงสุด</dt>
+          <dd class="sig-thumb" data-sig="${esc(r.refId)}">${r.hasSignature ? '<span>กำลังโหลดลายเซ็น...</span>' : '<span>ไม่มีลายเซ็น</span>'}</dd></div>
+      </dl>
+      <div class="flex flex-wrap items-center gap-2 mt-4">
+        <button type="button" class="icon-btn" data-act="detail">รายละเอียด</button>
+        <span class="flex-1"></span>
+        <button type="button" class="btn-primary !min-w-0 !py-2" data-act="slip">📷 เปิดใบอนุมัติ</button>
+      </div>
+    </article>`;
+  }).join('');
+  loadSigThumbs();
+}
+
+/** โหลดลายเซ็นผู้อนุมัติสูงสุดเฉพาะการ์ดที่เลื่อนมาเห็น (ลดจำนวนครั้งที่เรียก backend) */
+function loadSigThumbs() {
+  if (state.sigObserver) state.sigObserver.disconnect();
+  const els = $$('#approvedList [data-sig]').filter((el) => { const r = state.records.find((x) => x.refId === el.dataset.sig); return r && r.hasSignature; });
+  const load = async (el) => {
+    const src = await getSignature(el.dataset.sig, 'approver');
+    if (el.isConnected) el.innerHTML = src ? `<img src="${src}" alt="ลายเซ็นผู้อนุมัติสูงสุด">` : '<span>โหลดลายเซ็นไม่สำเร็จ</span>';
+  };
+  if (!('IntersectionObserver' in window)) { els.forEach(load); return; }
+  state.sigObserver = new IntersectionObserver((entries, obs) => entries.forEach((e) => { if (e.isIntersecting) { obs.unobserve(e.target); load(e.target); } }), { rootMargin: '200px' });
+  els.forEach((el) => state.sigObserver.observe(el));
+}
+
+async function openApprovedSlip(refId) {
+  markSeen(refId);
+  updatePendingBadge();
+  await printSlip(refId, { view: true });
+  if ($('.tab-btn.active')?.dataset.tab === 'approved') renderApproved();
+}
+
+/* ---- บันทึกใบอนุมัติเป็นรูป (html2canvas โหลดเมื่อใช้ครั้งแรก) ---- */
+let h2cPromise = null;
+function loadHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve();
+  return h2cPromise || (h2cPromise = new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    sc.onload = res;
+    sc.onerror = () => { h2cPromise = null; rej(new Error('โหลดตัวสร้างรูปไม่สำเร็จ กรุณาถ่ายรูปหน้าจอแทน')); };
+    document.head.appendChild(sc);
+  }));
+}
+async function saveDocImage() {
+  const btn = $('#pvShot');
+  btn.disabled = true; btn.textContent = 'กำลังสร้างรูป...';
+  const box = document.createElement('div');
+  try {
+    await loadHtml2Canvas();
+    box.className = 'pv-doc';
+    box.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;max-width:none;border-radius:0;box-shadow:none;padding:28px 32px;background:#fff';
+    box.innerHTML = $('#pvDoc').innerHTML;
+    document.body.appendChild(box);
+    await Promise.all($$('img', box).map((im) => (im.complete ? 0 : new Promise((r) => { im.onload = im.onerror = r; }))));
+    const canvas = await html2canvas(box, { scale: 2, backgroundColor: '#ffffff', logging: false });
+    const name = `ใบอนุมัติ_${state.pvShotName || 'RST-FUEL'}.jpg`;
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
+    const file = blob && window.File ? new File([blob], name, { type: 'image/jpeg' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: name }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    // แชร์ไม่ได้ (คอมพิวเตอร์ / เบราว์เซอร์ไม่รองรับ) → แสดงรูปให้กดค้างบันทึก หรือดาวน์โหลด
+    const url = canvas.toDataURL('image/jpeg', 0.92);
+    const out = $('#pvShotOut');
+    out.innerHTML = `<p class="text-sm mb-2"><b>รูปใบอนุมัติพร้อมแล้ว</b> — มือถือ: กดค้างที่รูป → บันทึกรูปภาพ · คอมพิวเตอร์: กดดาวน์โหลด</p>
+      <img src="${url}" alt="${esc(name)}"><div class="mt-2"><a class="btn-primary inline-flex" href="${url}" download="${esc(name)}">⬇ ดาวน์โหลดรูป</a></div>`;
+    out.hidden = false;
+    $('.pv-scroll').scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (err) {
+    toast(err.message || 'สร้างรูปไม่สำเร็จ กรุณาถ่ายรูปหน้าจอแทน', 'error', 5000);
+  } finally {
+    box.remove();
+    btn.disabled = false; btn.textContent = '📷 บันทึกรูป';
+  }
+}
+
+/* ---- ตรวจข้อมูลใหม่อัตโนมัติ (ผู้ดูแลอนุมัติ 1 / admin) ---- */
+function startAutoRefresh() {
+  clearInterval(state.autoTimer);
+  if (!canSeeApproved()) return;
+  state.autoTimer = setInterval(autoRefreshTick, 60 * 1000);
+}
+async function autoRefreshTick() {
+  if (!auth.token || !canSeeApproved()) { clearInterval(state.autoTimer); return; }
+  if (document.visibilityState === 'hidden' || state.loading) return;
+  const before = newApprovedCount();
+  await loadData(true);
+  if (!state.loaded) return;
+  const after = newApprovedCount();
+  const active = $('.tab-btn.active')?.dataset.tab;
+  if (active === 'approved') renderApproved();
+  if (active === 'approve' && $('#modal').classList.contains('hidden')) renderApprove();
+  if (after > before) toast(`📄 มีใบอนุมัติใหม่ ${after - before} รายการ (ผู้อนุมัติสูงสุดเซ็นแล้ว)`, 'success', 6000);
+}
+
 /* ═════════════════════ TRACK & FILL (สาขา) ═════════════════════ */
 function stepper(r) {
   const s = statusOf(r);
@@ -2293,7 +2501,7 @@ function openFill(refId) {
 }
 
 /** ใบอนุมัติเติมน้ำมัน (1 รายการ) — พิมพ์หรือบันทึกเป็น PDF แทนกระดาษ */
-async function printSlip(refId) {
+async function printSlip(refId, opts = {}) {
   const r = state.records.find((x) => x.refId === refId); if (!r) return;
   toast('กำลังเตรียมใบอนุมัติ...', 'info', 1500);
   const sig = await loadSignatures(r);
@@ -2328,7 +2536,7 @@ async function printSlip(refId) {
     <div class="pr-foot"><span>RST-FUEL · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</span><span>Dev: tana.pittayatanadol</span></div>
   </div>`;
   await waitImages();
-  presentPrint(`ใบอนุมัติ ${r.refId}`, 'portrait');
+  presentPrint(`ใบอนุมัติ ${r.refId}`, 'portrait', false, { view: !!opts.view, shotName: r.refId });
 }
 
 function setPrintPage(orient) {
@@ -2433,6 +2641,7 @@ let authLostShown = false;
 function onAuthLost(msg) {
   auth.clear();
   state.loaded = false; state.records = []; state.loadSeq++; state.loading = null;
+  clearInterval(state.autoTimer); state.approvedFilter = null;
   closeModal();
   if (!authLostShown) { authLostShown = true; showLogin(msg || 'กรุณาเข้าสู่ระบบใหม่'); setTimeout(() => { authLostShown = false; }, 3000); }
 }
@@ -2462,6 +2671,7 @@ async function logout() {
   try { await api.post({ action: 'logout' }); } catch { /* ignore */ }
   auth.clear();
   state.loaded = false; state.records = []; state.selected.clear(); state.sigCache = {}; state.loadSeq++; state.loading = null;
+  clearInterval(state.autoTimer); state.approvedFilter = null;
   $('#userDrop').classList.add('hidden');
   showLogin('ออกจากระบบแล้ว');
 }
@@ -2477,6 +2687,7 @@ function applyUser() {
   $('#dropInfo').textContent = `${ROLE_LABEL[u.role]} · ${u.branches.length ? u.branches.join(', ') : 'ทุกสาขา'}`;
   $$('.role-approve').forEach((el) => el.classList.toggle('hidden', !isRole('admin', 'reviewer', 'approver')));
   $$('.role-track').forEach((el) => el.classList.toggle('hidden', !isRole('admin', 'branch')));
+  $$('.role-approved').forEach((el) => el.classList.toggle('hidden', !canSeeApproved()));
   syncReqSigLast();
   $$('.role-admin').forEach((el) => el.classList.toggle('hidden', !isRole('admin')));
   $$('.role-members').forEach((el) => el.classList.toggle('hidden', !canAddMembers()));
@@ -2513,7 +2724,8 @@ async function enterApp(opts = {}) {
   const initial = location.hash.replace('#', '');
   // ลิงก์จากอีเมล (#approve / #track) เปิดแท็บนั้น ไม่งั้นเปิดแท็บหลักตามบทบาท
   const roleHome = isRole('reviewer', 'approver') ? 'approve' : 'form';
-  showTab(['approve', 'track'].includes(initial) ? initial : roleHome);
+  showTab(['approve', 'track', 'approved'].includes(initial) ? initial : roleHome);
+  startAutoRefresh();
   await boot.finish();
   return true;
 }
@@ -2981,6 +3193,18 @@ function init() {
     else showDetail(state.records.find((r) => r.refId === ref));
   });
 
+  // ใบอนุมัติที่เซ็นครบ (ส่งงาน)
+  $('#approvedSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) { state.approvedFilter = b.dataset.f; renderApproved(); } });
+  $('#approvedSeenAll').addEventListener('click', () => { markAllSeen(); updatePendingBadge(); renderApproved(); toast('ทำเครื่องหมายว่าเปิดดูแล้วทั้งหมด', 'info', 1500); });
+  $('#approvedList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const ref = b.closest('[data-ref]').dataset.ref;
+    if (b.dataset.act === 'slip') openApprovedSlip(ref);
+    else showDetail(state.records.find((r) => r.refId === ref));
+  });
+  $('#pvShot').addEventListener('click', saveDocImage);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && auth.token && state.loaded) autoRefreshTick(); });
+
   // Dashboard summary + monthly bill
   $('#sumSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-g]'); if (!b) return; state.sumGroup = b.dataset.g; $$('#sumSeg button').forEach((x) => x.classList.toggle('active', x === b)); renderSummary(dashRecords()); });
   $$('.open-bill').forEach((b) => b.addEventListener('click', () => loadData().then(openBillDialog)));
@@ -3037,6 +3261,7 @@ function init() {
     if (active === 'approve') renderApprove();
     if (active === 'members') await loadUsers();
     if (active === 'track') renderTrack();
+    if (active === 'approved') renderApproved();
     toast('อัปเดตข้อมูลแล้ว', 'info', 1500);
   }));
 
