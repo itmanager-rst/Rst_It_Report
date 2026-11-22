@@ -87,6 +87,7 @@ button{font:inherit;color:inherit}
   background:var(--paper);border:3px solid #22314A;border-radius:10px;padding:2px 12px;display:inline-block}
 .menu-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .menu-meta{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+#crow-sky{position:fixed;inset:0;width:100%;height:100%;z-index:19;pointer-events:none}
 .chip{background:var(--panel);color:var(--text);border:2px solid var(--edge);border-radius:999px;padding:4px 12px;font-size:15px;font-weight:500}
 
 /* ---------- เลือกด่าน ---------- */
@@ -291,6 +292,7 @@ label.lbl{font-weight:600;font-size:15px}
 <div id="rotate-hint" class="chip" hidden>หมุนจอเป็นแนวนอนจะเห็นทางข้างหน้ากว้างขึ้น</div>
 
 <!-- ===================== เมนูหลัก ===================== -->
+<canvas id="crow-sky" role="img" aria-label="depv.tana pittayatanadol" hidden></canvas>
 <section class="screen" id="scr-menu">
   <h1 class="title" id="game-title">รถไถซิ่ง</h1>
   <div class="subtitle">Tractor Racing Cart – ซิ่งข้ามทุ่งให้ถึงเส้นชัย</div>
@@ -2052,6 +2054,184 @@ function togglePause(){
 }
 
 /* =====================================================================
+   ฝูงกาบินมาเรียงขบวนเป็นตัวหนังสือ บนหน้าเมนูหลัก
+   - แก้ข้อความได้ที่ CROW_LINES (จอแคบแบ่งบรรทัดตามนี้ จอกว้างต่อเป็นบรรทัดเดียว)
+   - วนรอบ: บินเข้า → ลอยค้างเป็นตัวหนังสือ → แตกฝูงบินออก → กลับมาใหม่
+   - ผู้ใช้ที่ตั้งค่า "ลดการเคลื่อนไหว" จะเห็นตัวหนังสือนิ่ง ๆ แทน
+   ===================================================================== */
+const CROW_LINES = ['depv.tana', 'pittayatanadol'];
+const Crows = (() => {
+  const cv = document.getElementById('crow-sky');
+  const ctx = cv.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const FONT = '"Mitr","Noto Sans Thai",Tahoma,sans-serif';
+  const HOLD = 6.5, GAP = 2.2;
+  let W = 0, H = 0, dpr = 1, birds = [], size = 8, running = false, raf = 0;
+  let phase = 'in', phaseAt = 0, phaseLen = 0, rzTimer = 0;
+
+  function fit(){
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
+  // พื้นที่ว่างบนท้องฟ้า: จากขอบบน (เผื่อ safe area) ลงมาถึงเหนือชื่อเกม
+  function band(){
+    const top = (parseFloat(getComputedStyle(document.documentElement).paddingTop) || 0) + 16;
+    const title = document.getElementById('game-title').getBoundingClientRect();
+    const above = { left: 0, w: W, top, h: Math.min(H * 0.55, title.top - 14) - top };
+    if (above.h >= 70) return above;
+    // จอแนวนอนเตี้ย ๆ: ไม่มีที่เหนือชื่อเกม ใช้ท้องฟ้าด้านขวาของชื่อเกมแทน
+    const sub = document.querySelector('#scr-menu .subtitle').getBoundingClientRect();
+    const left = title.right + 16;
+    const side = { left, w: W - left - 16, top, h: sub.top - 10 - top };
+    return side.w * side.h > W * above.h ? side : above;
+  }
+  function sample(){
+    const b = band(); if (b.h < 40 || b.w < 160) return [];
+    const m = document.createElement('canvas').getContext('2d'); m.font = '700 100px ' + FONT;
+    const one = CROW_LINES.join(' ');
+    const w1 = m.measureText(one).width, w2 = Math.max(...CROW_LINES.map(s => m.measureText(s).width));
+    const fs1 = Math.min(b.h * 0.7, b.w * 0.94 / w1 * 100);
+    const fs2 = Math.min(b.h / 2.6, b.w * 0.94 / w2 * 100);
+    const lines = fs2 > fs1 * 1.15 ? CROW_LINES : [one];
+    const fs = Math.floor(lines.length > 1 ? fs2 : fs1);
+    const lh = fs * 1.1, ow = Math.ceil(b.w), oh = Math.ceil(lh * lines.length + fs * 0.3);
+    const o = document.createElement('canvas'); o.width = ow; o.height = oh;
+    const c = o.getContext('2d');
+    c.font = `700 ${fs}px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#000';
+    lines.forEach((s, i) => c.fillText(s, ow / 2, lh * (i + 0.5) + fs * 0.15));
+    const d = c.getImageData(0, 0, ow, oh).data;
+    let ink = 0; for (let i = 3; i < d.length; i += 16) if (d[i] > 128) ink++;
+    ink *= 4;
+    const want = W < 700 ? 650 : 1100;                 // จำนวนกาโดยประมาณ
+    const step = Math.max(3, Math.sqrt(ink / want));
+    const offY = b.top + Math.max(0, (b.h - oh) / 2), pts = [];
+    for (let y = step / 2; y < oh; y += step) for (let x = step / 2; x < ow; x += step){
+      if (d[((y | 0) * ow + (x | 0)) * 4 + 3] > 128)
+        pts.push({ x: b.left + x + (Math.random() - .5) * step * .45, y: y + offY + (Math.random() - .5) * step * .45 });
+    }
+    size = step * 1.75;
+    return pts;
+  }
+  function build(){
+    birds = sample().map(p => {
+      const sy = -H * 0.1 + Math.random() * H * 0.6;
+      return {
+        tx: p.x, ty: p.y, x: W + 60, y: sy, dir: -1, tilt: 0,
+        ax: W + 40 + Math.random() * W * 0.3, ay: sy,
+        cx: W * (0.15 + Math.random() * 0.95), cy: -H * 0.2 + Math.random() * H * 0.55,
+        bx: p.x, by: p.y,
+        delay: Math.random() * 1.5 + (p.x / W) * 0.7, dur: 2.2 + Math.random() * 1.3,
+        seed: Math.random() * 6.283, fp: 10 + Math.random() * 5, s: 0.85 + Math.random() * 0.3,
+      };
+    });
+  }
+  function setPhase(p, now){
+    phase = p; phaseAt = now;
+    if (p === 'in'){ phaseLen = birds.reduce((m, b) => Math.max(m, b.delay + b.dur), 0); }
+    if (p === 'out'){
+      birds.forEach(b => {
+        b.ax = b.x; b.ay = b.y;
+        b.bx = -80 - Math.random() * W * 0.3; b.by = -H * 0.25 + Math.random() * H * 0.5;
+        b.cx = b.x - W * (0.1 + Math.random() * 0.4); b.cy = b.y - H * (0.1 + Math.random() * 0.35);
+        b.delay = Math.random() * 1.2 + (1 - b.x / W) * 0.5; b.dur = 1.6 + Math.random() * 1.0;
+      });
+      phaseLen = birds.reduce((m, b) => Math.max(m, b.delay + b.dur), 0);
+    }
+  }
+  const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+  function flight(b, u){
+    const v = 1 - u;
+    const x = v * v * b.ax + 2 * v * u * b.cx + u * u * b.bx;
+    const y = v * v * b.ay + 2 * v * u * b.cy + u * u * b.by;
+    const dx = 2 * v * (b.cx - b.ax) + 2 * u * (b.bx - b.cx);
+    const dy = 2 * v * (b.cy - b.ay) + 2 * u * (b.by - b.cy);
+    b.x = x; b.y = y;
+    if (Math.abs(dx) > 1) b.dir = dx < 0 ? -1 : 1;
+    b.tilt = Math.max(-0.7, Math.min(0.7, Math.atan2(-dy, Math.abs(dx) + 1e-3)));
+  }
+
+  // วาดกาหันหน้าไปทาง +x แล้วหมุน/กลับด้านตามทิศ  (หน่วย = ความกว้างปีก)
+  const BODY = [[.44,.01],[.31,-.06],[.2,-.085],[.05,-.07],[-.25,-.04],[-.5,-.1],[-.53,.07],[-.25,.055],[.05,.085],[.25,.055],[.33,.025]];
+  function wing(f){ return [[.12,-.02],[.07,-.27*f],[-.01,-.5*f],[-.22,-.62*f],[-.15,-.3*f],[-.12,-.02]]; }
+  function addShape(pts, b, s, sn, cs){
+    for (let i = 0; i < pts.length; i++){
+      const lx = pts[i][0] * s, ly = pts[i][1] * s;
+      const X = b.x + b.dir * (lx * cs + ly * sn), Y = b.y + (-lx * sn + ly * cs);
+      i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+    }
+    ctx.closePath();
+  }
+  function draw(t){
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1B2232';
+    ctx.beginPath();
+    for (const b of birds){
+      if (b.x < -120 || b.x > W + 120 || b.y < -120 || b.y > H + 120) continue;
+      const s = size * b.s, sn = Math.sin(b.tilt), cs = Math.cos(b.tilt);
+      const f = Math.sin(t * b.fl + b.seed) * b.amp;
+      addShape(BODY, b, s, sn, cs);
+      addShape(wing(f * 0.7), b, s * 0.9, sn, cs);
+      addShape(wing(f), b, s, sn, cs);
+    }
+    ctx.fill();
+  }
+  function frame(nowMs){
+    if (!running) return;
+    raf = requestAnimationFrame(frame);
+    const now = nowMs / 1000;
+    if (!phaseAt) setPhase('in', now);
+    const τ = now - phaseAt;
+    if (phase === 'in'){
+      for (const b of birds){
+        const u = clamp01((τ - b.delay) / b.dur), ue = 1 - Math.pow(1 - u, 3);
+        flight(b, ue);
+        b.tilt *= (1 - ue * ue);
+        b.fl = b.fp * (1 - 0.55 * ue); b.amp = 1 - 0.7 * ue;
+        if (u >= 1){ b.x = b.tx + Math.sin(now * .9 + b.seed) * .8; b.y = b.ty + Math.sin(now * 1.7 + b.seed) * 1.2; }
+      }
+      if (τ > phaseLen) setPhase('hold', now);
+    } else if (phase === 'hold'){
+      for (const b of birds){
+        b.x = b.tx + Math.sin(now * .9 + b.seed) * .8; b.y = b.ty + Math.sin(now * 1.7 + b.seed) * 1.2;
+        b.tilt = 0; b.fl = b.fp * .45; b.amp = .3;
+      }
+      if (τ > HOLD) setPhase('out', now);
+    } else if (phase === 'out'){
+      for (const b of birds){
+        const u = clamp01((τ - b.delay) / b.dur);
+        if (u > 0){ flight(b, u * u); b.fl = b.fp; b.amp = 1; }
+      }
+      if (τ > phaseLen + GAP){ build(); setPhase('in', now); }
+    }
+    draw(now);
+  }
+  function still(){
+    fit(); build();
+    birds.forEach(b => { b.x = b.tx; b.y = b.ty; b.tilt = 0; b.fl = 0; b.amp = 0; b.seed = 1.2; });
+    draw(0);
+  }
+  function start(){
+    if (!running) return;
+    fit();
+    if (reduce.matches){ still(); return; }
+    build(); phaseAt = 0;
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
+  }
+  function toggle(on){
+    if (on === running) return;
+    running = on; cv.hidden = !on;
+    if (!on){ cancelAnimationFrame(raf); birds = []; ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0, 0, cv.width, cv.height); return; }
+    const ready = document.fonts && document.fonts.load ? document.fonts.load('700 100px Mitr') : Promise.resolve();
+    Promise.race([ready, new Promise(r => setTimeout(r, 1500))]).catch(() => {}).then(start);
+  }
+  addEventListener('resize', () => { clearTimeout(rzTimer); rzTimer = setTimeout(() => running && start(), 250); });
+  reduce.addEventListener && reduce.addEventListener('change', () => running && start());
+  return { toggle };
+})();
+
+/* =====================================================================
    UI SCREENS
    ===================================================================== */
 const SCREENS = ['menu','levels','garage','board','settings','pause','result','online','lobby','gadgets','adminlogin','admin'];
@@ -2068,6 +2248,7 @@ function showScreen(name){
   if (name === 'adminlogin'){ document.getElementById('adm-pin').value = ''; document.getElementById('adm-msg').textContent = CONFIG.GAS_URL ? '' : 'ต้องตั้งค่า CONFIG.GAS_URL ก่อน รหัสตรวจสอบที่ Apps Script'; setTimeout(() => document.getElementById('adm-pin').focus(), 50); }
   if (name === 'lobby') renderLobby();
   document.querySelectorAll('.js-coins').forEach(e => e.textContent = SAVE.coins.toLocaleString('th-TH'));
+  Crows.toggle(name === 'menu');
   const first = name && document.querySelector(`#scr-${name} .btn`);
   if (first && !isTouch()) first.focus({ preventScroll: true });
 }
