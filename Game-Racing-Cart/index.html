@@ -170,6 +170,8 @@ button{font:inherit;color:inherit}
 .ledger tr.total td{border-bottom:0;font-size:20px}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .tabs .btn[aria-pressed="true"]{background:var(--red);color:#FFF4D6}
+.tabs .btn img{height:20px;width:auto;vertical-align:-4px;margin-right:4px}
+.size-tag{display:inline-block;font-size:13px;font-weight:600;border:2px solid var(--edge);border-radius:999px;padding:0 8px;margin-left:6px;vertical-align:3px}
 .board{width:100%;border-collapse:collapse;font-size:15px}
 .board th,.board td{padding:6px 4px;text-align:left;border-bottom:2px solid var(--pip-off)}
 .board td.n{text-align:right;font-variant-numeric:tabular-nums}
@@ -180,6 +182,15 @@ label.lbl{font-weight:600;font-size:15px}
 #rotate-hint{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);z-index:21;font-size:14px}
 @media (orientation:landscape),(min-width:700px){#rotate-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.title{transform:none}.big-stars span{transition:none}}
+
+/* ---------- อุปกรณ์เสริม ---------- */
+.gadget-stage{background:linear-gradient(#1C2C4A,#2E4A72 82%,#5FA43A 82.5%)}
+.gadget-list{display:flex;flex-direction:column;gap:10px}
+.gd{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;border:3px solid var(--edge);border-radius:14px;padding:8px 10px}
+.gd.on{border-color:#2AA9C9;box-shadow:inset 0 0 0 2px #5FE6FF}
+.gd .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:24px;background:#22314A}
+.gd h3{margin:0;font-size:16px;line-height:1.2}
+.gd p{margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.35}
 
 /* ---------- แข่งออนไลน์ ---------- */
 .online-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 12px}
@@ -268,6 +279,7 @@ label.lbl{font-weight:600;font-size:15px}
       <h2 style="margin:0">โรงรถ</h2>
       <span class="chip coin-tag"><span class="coin">฿</span><span class="js-coins">0</span></span>
     </div>
+    <div class="tabs" id="g-brands" role="tablist" aria-label="ยี่ห้อ" style="margin:12px 0 0"></div>
     <div class="garage-grid" style="margin-top:12px">
       <div>
         <div class="stage">
@@ -284,6 +296,30 @@ label.lbl{font-weight:600;font-size:15px}
     </div>
     <div class="row end" style="margin-top:14px">
       <button class="btn" data-go="menu">กลับเมนู</button>
+      <button class="btn" data-go="gadgets">อุปกรณ์เสริมล้ำยุค</button>
+      <button class="btn green" data-go="levels">ไปแข่ง</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== อุปกรณ์เสริมล้ำยุค ===================== -->
+<section class="screen dim" id="scr-gadgets" hidden>
+  <div class="panel garage">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">อุปกรณ์เสริมล้ำยุค</h2>
+      <span class="chip coin-tag"><span class="coin">฿</span><span class="js-coins">0</span></span>
+    </div>
+    <p class="muted" style="margin:4px 0 10px">ซื้อครั้งเดียวใช้ได้กับรถทุกคัน ติดตั้งพร้อมกันได้ <b id="gd-slots"></b></p>
+    <div class="garage-grid">
+      <div>
+        <div class="stage gadget-stage"><canvas id="gd-preview" width="440" height="190"></canvas></div>
+        <p class="tname" id="gd-car"></p>
+        <p class="ttag" id="gd-eq"></p>
+      </div>
+      <div class="gadget-list" id="gd-list"></div>
+    </div>
+    <div class="row end" style="margin-top:14px">
+      <button class="btn" data-go="garage">กลับโรงรถ</button>
       <button class="btn green" data-go="levels">ไปแข่ง</button>
     </div>
   </div>
@@ -397,6 +433,9 @@ const CONFIG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbw_AtKzz3ZCf-kcaJkU9A8vcUERKhNCgaTYdC6dg4sq8vDYZVVcmKY_sPQc03JSjqT5JQ/exec',
   SAVE_KEY: 'trc_save_v1',
   MAX_UPGRADE: 10,
+  // โฟลเดอร์รูปรถจริง: วางไฟล์ <รหัสรุ่น>.png (มุมข้าง หันขวา พื้นหลังโปร่งใส) เช่น assets/tractors/ym_ef393t.png
+  // เกมจะใช้รูปแทนรถวาดอัตโนมัติ รุ่นที่ไม่มีไฟล์จะใช้รถวาดตามเดิม (เว้นว่าง = ไม่โหลดรูป)
+  SPRITE_DIR: 'assets/tractors/',
 };
 
 // @@CORE_START  (ส่วนนี้ไม่แตะ DOM – ทดสอบ/จำลองใน Node.js ได้)
@@ -427,24 +466,45 @@ const GEO = {
 };
 
 /* =====================================================================
-   รถแทรกเตอร์ (ยี่ห้อสมมติ)
-   top = ความเร็วสูงสุด px/s, power = แรงขับ, mass = น้ำหนัก (สัมพัทธ์), grip = การยึดเกาะ
-   awd = ขับเคลื่อน 4 ล้อ, style = รูปแบบการวาด
+   ยี่ห้อและรุ่นรถแทรกเตอร์
+   - ค่าพลังกำหนดตาม "ขนาด" (CLASSES) เท่ากันทุกยี่ห้อ เพื่อให้แข่งกันที่ฝีมือ
+     ถ้าต้องการปรับรายรุ่น ใส่ค่าทับใน models ได้ เช่น { size:'M', model:'...', power: 960 }
+   - ชื่อรุ่นของยี่ห้ออื่นตั้งเป็นขนาดไว้ก่อน แก้เป็นชื่อรุ่นจริงได้ที่ช่อง model
+   - color/dark/rim = สีรถวาดสำรอง (ใช้เมื่อยังไม่มีรูปจริง) แก้ได้ตามต้องการ
+   - logo (ไม่บังคับ) = path รูปโลโก้ยี่ห้อ แสดงบนปุ่มเลือกยี่ห้อในโรงรถ
+   - รหัสรุ่น (id) ยาวไม่เกิน 12 ตัวอักษร ใช้ตั้งชื่อไฟล์รูป: <id>.png
    ===================================================================== */
-const TRACTORS = [
-  { id:'tp25', name:'ไถเพลิน TP-25', tag:'รถไถนาคลาสสิกสีแดง ขับง่าย สมดุลทุกด้าน',
-    top:470, power:640, mass:1.00, grip:1.00, awd:false, price:0,    tier:1.0,
-    color:'#D9302A', dark:'#9E1F1B', rim:'#F4C534', style:'classic' },
-  { id:'kl40', name:'ควายเหล็ก KL-40', tag:'ตัวหนัก 4WD แรงบิดสูง ปีนเนินชันและลุยโคลนเก่ง',
-    top:490, power:930, mass:1.35, grip:1.25, awd:true,  price:900,  tier:1.25,
-    color:'#3E8E3A', dark:'#276227', rim:'#F4C534', style:'heavy' },
-  { id:'nsr',  name:'นาซิ่ง NS-R', tag:'รถไถแต่งซิ่งสีน้ำเงิน ตัวเบา ปลายไหล แต่หน้าเหิน',
-    top:610, power:600, mass:0.85, grip:0.92, awd:false, price:1800, tier:1.5,
-    color:'#2F6FD6', dark:'#1F4C99', rim:'#E8EEF5', style:'race', num:'7' },
-  { id:'ttx',  name:'ทุ่งทอง TT-X เทอร์โบ', tag:'ตัวท็อปสีส้ม 4WD เทอร์โบคู่ แรงทั้งต้นและปลาย',
-    top:680, power:860, mass:1.05, grip:1.15, awd:true,  price:3600, tier:1.8,
-    color:'#F07A1A', dark:'#B5540C', rim:'#FFFFFF', style:'race', num:'1' },
+const CLASSES = {
+  S: { label:'รุ่นเล็ก',  top:470, power:640, mass:1.00, grip:1.00, awd:false, price:0,    tier:1.0,  style:'classic' },
+  M: { label:'รุ่นกลาง', top:520, power:860, mass:1.20, grip:1.15, awd:true,  price:1200, tier:1.35, style:'heavy' },
+  L: { label:'รุ่นใหญ่',  top:600, power:960, mass:1.30, grip:1.22, awd:true,  price:3000, tier:1.7,  style:'heavy' },
+};
+const BRANDS = [
+  { id:'ym', name:'Yanmar',          color:'#D9302A', dark:'#9E1F1B', rim:'#E8EEF5', logo:'',
+    models:[ { size:'S', model:'EF312T' }, { size:'M', model:'EF352T' }, { size:'L', model:'EF393T' } ] },
+  { id:'kb', name:'Kubota',          color:'#2F6FD6', dark:'#1F4C99', rim:'#E8EEF5', logo:'',
+    models:[ { size:'S' }, { size:'M' }, { size:'L' } ] },
+  { id:'nh', name:'New Holland',     color:'#3E8E3A', dark:'#276227', rim:'#F4C534', logo:'',
+    models:[ { size:'S' }, { size:'M' }, { size:'L' } ] },
+  { id:'jd', name:'John Deere',      color:'#F07A1A', dark:'#B5540C', rim:'#FFFFFF', logo:'',
+    models:[ { size:'S' }, { size:'M' }, { size:'L' } ] },
+  { id:'mf', name:'Massey Ferguson', color:'#7A5BA6', dark:'#523C75', rim:'#E8EEF5', logo:'',
+    models:[ { size:'S' }, { size:'M' }, { size:'L' } ] },
+  { id:'mh', name:'Mahindra',        color:'#5B6578', dark:'#3A4252', rim:'#F4C534', logo:'',
+    models:[ { size:'S' }, { size:'M' }, { size:'L' } ] },
 ];
+// รวมเป็นรายการรถที่ฟิสิกส์ใช้ (โครงสร้างเดิม: top, power, mass, grip, awd, price, tier, สี)
+const TRACTORS = [];
+BRANDS.forEach(b => b.models.forEach(m => {
+  const c = CLASSES[m.size], model = m.model || c.label;
+  const id = m.id || (b.id + '_' + (m.model ? m.model : m.size)).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 12);
+  TRACTORS.push(Object.assign({}, c, { id, brand: b.id, brandName: b.name, model, size: m.size,
+    name: `${b.name} ${model}`, tag: `${b.name} ${c.label}${c.awd ? ' ขับเคลื่อน 4 ล้อ' : ''}`,
+    color: b.color, dark: b.dark, rim: b.rim }, m, { id, model, name: `${b.name} ${model}` }));
+}));
+// รหัสรถรุ่นเก่า (เวอร์ชันก่อนมียี่ห้อ) → รุ่นใหม่ เพื่อให้เซฟเดิมและตารางอันดับเดิมยังแสดงถูก
+const LEGACY_TRACTOR = { tp25:'ym_ef312t', kl40:'ym_ef352t', nsr:'ym_ef352t', ttx:'ym_ef393t' };
+const FREE_TRACTORS = TRACTORS.filter(t => t.price === 0).map(t => t.id);
 
 /* หมวดอัปเกรด Lv.1–10 */
 const UPGRADES = [
@@ -452,6 +512,18 @@ const UPGRADES = [
   { key:'turbo',  name:'เกียร์และเทอร์โบ', eff: lv => `ความเร็วสูงสุด +${Math.round(4.5*(lv-1))}% เทอร์โบแรงขึ้น` },
   { key:'grip',   name:'ยางและช่วงล่าง', eff: lv => `ยึดเกาะ +${Math.round(6*(lv-1))}% ช่วงล่างนิ่งขึ้น` },
 ];
+/* =====================================================================
+   อุปกรณ์เสริมล้ำยุค: ซื้อครั้งเดียวใช้ได้ทุกคัน ติดตั้งพร้อมกันได้ GADGET_SLOTS ชิ้น
+   ===================================================================== */
+const GADGETS = [
+  { id:'jet',    name:'ไอพ่นจรวด',          price:900,  desc:'เทอร์โบแรงขึ้นมาก ใช้พลังน้อยลง และดันตัวกลางอากาศได้ไกล' },
+  { id:'wing',   name:'ปีกร่อนพับได้',       price:1600, desc:'กางปีกอัตโนมัติตอนลอย ตกช้าลง กระโดดข้ามเหวได้ไกลขึ้น' },
+  { id:'gyro',   name:'ไจโรกันคว่ำ',         price:1400, desc:'ดึงตัวรถกลับเมื่อเอียงมากเกินไป ลดโอกาสหงายท้อง' },
+  { id:'mag',    name:'ล้อแม่เหล็กนาโน',     price:1100, desc:'ยึดเกาะ +20% ไต่ขั้นบันไดดีขึ้น และแทบไม่จมโคลน' },
+  { id:'drone',  name:'โดรนดูดเหรียญ',       price:800,  desc:'โดรนบินตาม เก็บเหรียญในรัศมีกว้าง เหรียญ +1 ทุก 6 เหรียญ' },
+  { id:'shield', name:'ระบบกู้รถอัตโนมัติ',  price:2000, desc:'รถคว่ำหรือตกเหว ระบบดึงกลับมาวิ่งต่อที่เดิม 1 ครั้งต่อรอบ' },
+];
+const GADGET_SLOTS = 2;
 function upgradeCost(tractor, nextLv){ return Math.round((60 * Math.pow(nextLv - 1, 1.5) + 40) * tractor.tier / 10) * 10; }
 
 /* =====================================================================
@@ -465,6 +537,10 @@ const LEVELS = [
   { name:'ทางลูกรังขึ้นดอย',   desc:'เนินยาว หินเยอะ ต้องคุมรถไม่ให้หงาย', length:14000, amp:62,  hill:260, rough:7,  rocks:10, bales:4, ramps:2, mud:1, coins:8, reward:260, gold:36, silver:50, seed:37 },
   { name:'ฤดูโคลนหน้าฝน',     desc:'บ่อโคลนหลายจุด ยางดีมีชัย', length:16000, amp:56,  hill:200, rough:6,  rocks:8,  bales:6, ramps:3, mud:5, coins:9, reward:350, gold:44, silver:58, seed:41 },
   { name:'ดอยสุดโหด',         desc:'ชันสุด กระโดดไกล อุปสรรคครบชุด', length:19000, amp:84,  hill:340, rough:9,  rocks:14, bales:8, ramps:4, mud:3, coins:11, reward:500, gold:50, silver:66, seed:53 },
+  // ---- ด่านโหด: gaps = เหวลึก (ต้องกระโดดข้าม), steps = นาขั้นบันได ----
+  { name:'หน้าผาริมโขง',       desc:'เหวลึกหลายช่วง เร่งให้สุดแล้วกระโดดข้าม ตกเหว = จบ', length:17000, amp:58, hill:170, rough:6, rocks:9, bales:4, ramps:1, mud:1, gaps:4, steps:0, coins:10, reward:650, gold:42, silver:55, seed:61, hard:true },
+  { name:'นาขั้นบันไดดอยสูง',  desc:'ไต่ขั้นบันไดชันต่อเนื่อง สลับเหวและโคลน', length:19000, amp:64, hill:300, rough:7, rocks:10, bales:4, ramps:2, mud:3, gaps:2, steps:5, coins:11, reward:800, gold:64, silver:82, seed:71, hard:true },
+  { name:'พายุมรสุมสุดขั้ว',     desc:'ทุกอย่างในด่านเดียว ยาวที่สุด ต้องมีอุปกรณ์ดีๆ', length:23000, amp:84, hill:320, rough:10, rocks:16, bales:7, ramps:3, mud:4, gaps:5, steps:4, coins:13, reward:1100, gold:76, silver:98, seed:83, hard:true },
 ];
 
 /* RNG แบบกำหนด seed ได้ – ด่านเดิมได้หน้าตาเดิมทุกครั้ง */
@@ -486,7 +562,7 @@ function buildTrack(levelIndex){
                + L.rough * Math.sin(x*0.013 + p[2]) * Math.sin(x*0.0031)
                + L.hill * Math.sin(x*0.00055 + p[3]) );
   }
-  const T = { level: levelIndex, STEP, h, start: START, finish: FINISH, features: [], mud: [], coins: [], checkpoints: [] };
+  const T = { level: levelIndex, STEP, h, start: START, finish: FINISH, features: [], mud: [], coins: [], checkpoints: [], pits: [] };
 
   // ---- จัดวางอุปสรรคไม่ให้ทับกัน ----
   const used = [];
@@ -505,6 +581,52 @@ function buildTrack(levelIndex){
     for (let i = i0; i <= i1; i++){ const d = (i*STEP - cx) / (w/2); if (Math.abs(d) <= 1) h[i] -= height * profile(d); }
   };
 
+  // ---- เหวลึก / นาขั้นบันได ----
+  // จองตำแหน่งก่อน แล้วสร้างเรียงจากซ้ายไปขวา: เขียนทับภูมิประเทศในช่วงนั้น
+  // แล้ว "เลื่อนระดับ" เส้นทางที่เหลือทั้งหมดให้ต่อเนื่อง (ไม่เกิดเนินชันผิดธรรมชาติ)
+  const specs = [];
+  for (let k = 0; k < (L.gaps || 0); k++){
+    const gw = 105 + rnd()*35 + Math.max(0, levelIndex - 5)*10, drop = 150 + rnd()*40;
+    const run = 520, lip = 230, land = 420, total = run + lip + gw + land;
+    const x = place(total + 120); if (x !== null) specs.push({ type:'gap', a: x - (total + 120)/2, total, gw, drop, run, lip, land });
+  }
+  for (let k = 0; k < (L.steps || 0); k++){
+    const count = 4 + Math.floor(rnd()*3), tread = 190, top = 160, total = count * tread + top;
+    const rises = []; for (let q = 0; q < count; q++) rises.push(24 + rnd()*12 + Math.max(0, levelIndex - 5)*2);
+    const x = place(total + 120); if (x !== null) specs.push({ type:'steps', a: x - (total + 120)/2, total, count, tread, rises });
+  }
+  specs.sort((p1, p2) => p1.a - p2.a);
+  const blocked = [];
+  for (const sp of specs){
+    const a = sp.a, endX = a + sp.total;
+    const ia = Math.max(0, Math.ceil(a / STEP)), ie = Math.min(n-1, Math.floor(endX / STEP));
+    const y0 = h[Math.max(0, ia - 1)], yOrigEnd = h[ie];
+    if (sp.type === 'gap'){
+      const yRun = y0 + sp.run*0.04, rim = yRun - 72, lipX = a + sp.run + sp.lip, landX = lipX + sp.gw;
+      for (let i = ia; i <= ie; i++){
+        const xx = i * STEP;
+        if (xx < a + sp.run) h[i] = y0 + (xx - a) * 0.04;                          // ทางเร่ง ลาดลงเล็กน้อย
+        else if (xx < lipX) h[i] = yRun - smooth((xx - a - sp.run) / sp.lip) * 72;  // เนินส่งตัว
+        else if (xx < landX) h[i] = yRun + 560;                                     // ก้นเหว
+        else h[i] = rim + sp.drop + clamp((xx - landX) / sp.land, 0, 1) * 30;       // ลานลงจอด (ต่ำกว่าขอบ)
+      }
+      T.pits.push({ x0: lipX, x1: landX, rim });
+      T.features.push({ type:'gap', x: (lipX + landX) / 2, w: sp.gw, x0: lipX, x1: landX, floor: yRun + 560 });
+    } else {
+      for (let i = ia; i <= ie; i++){
+        const xx = i * STEP - a, sIdx = Math.min(sp.count, Math.floor(xx / sp.tread));
+        let base = y0; for (let q = 0; q < sIdx; q++) base -= sp.rises[q];
+        if (sIdx >= sp.count){ h[i] = base; continue; }
+        const within = xx - sIdx * sp.tread;
+        h[i] = base - smooth(clamp((within - sp.tread + 34) / 34, 0, 1)) * sp.rises[sIdx];   // ผนังขั้นกว้าง 34 px
+      }
+      T.features.push({ type:'steps', x: a + sp.total/2, w: sp.total, x0: a, x1: endX });
+    }
+    const delta = h[ie] - yOrigEnd;
+    for (let i = ie + 1; i < n; i++) h[i] += delta;
+    blocked.push([a - 60, endX]);
+  }
+  T.blocked = blocked;
   for (let k = 0; k < L.mud; k++){                       // บ่อโคลน: แอ่งตื้น + แรงต้าน
     const w = 260 + rnd()*220, x = place(w); if (x === null) continue;
     addBump(x, w, -7, d => 0.5*(1+Math.cos(Math.PI*d)));
@@ -533,10 +655,13 @@ function buildTrack(levelIndex){
     const x0 = 700 + (k + 0.5) * (FINISH - 1200) / L.coins + (rnd() - 0.5) * 300;
     for (let j = 0; j < 6; j++){
       const x = x0 + j*38;
-      T.coins.push({ x, y: groundY(T, x) - 46 - Math.sin(j/5*Math.PI)*22, taken: false });
+      const pit = T.pits.find(g => x > g.x0 - 40 && x < g.x1 + 40);
+      T.coins.push({ x, y: pit ? pit.rim - 70 - Math.sin(j/5*Math.PI)*30 : groundY(T, x) - 46 - Math.sin(j/5*Math.PI)*22, taken: false });
     }
   }
-  T.checkpoints = [FINISH/3, FINISH*2/3].map(x => ({ x: Math.round(x), reached: false }));
+  // เช็กพอยต์ต้องไม่อยู่กลางเหว/บันได: เลื่อนไปก่อนจุดเริ่มอุปสรรค
+  const cpX = x => { for (const bl of T.blocked) if (x > bl[0] - 40 && x < bl[1]) return bl[0] - 60; return x; };
+  T.checkpoints = [FINISH/3, FINISH*2/3].map(x => ({ x: Math.round(cpX(x)), reached: false }));
   return T;
 }
 
@@ -547,11 +672,14 @@ function groundY(T, x){
   const t = f - i; return T.h[i] * (1 - t) + T.h[i+1] * t;
 }
 function inMud(T, x){ for (const m of T.mud) if (x > m.x0 && x < m.x1) return true; return false; }
+// ตกเหว: อยู่ในช่วงเหวและต่ำกว่าขอบเหวเกิน 150 px
+function inPit(T, car){ for (const g of T.pits) if (car.x > g.x0 - 10 && car.x < g.x1 + 10 && car.y > g.rim + 150) return g; return null; }
 
 /* รวมค่าพื้นฐานรถ + ระดับอัปเกรด เป็นค่าที่ฟิสิกส์ใช้จริง */
-function computeStats(t, up){
+function computeStats(t, up, gadgets){
   const e = up.engine - 1, tu = up.turbo - 1, g = up.grip - 1;
-  return {
+  const has = id => !!gadgets && gadgets.indexOf(id) >= 0;
+  const s = {
     accel: t.power / t.mass * (1 + 0.085*e),
     top: t.top * (1 + 0.045*tu),
     boostAcc: 1.45 + 0.05*tu,
@@ -561,7 +689,16 @@ function computeStats(t, up){
     brake: 950,
     I: 1100 * Math.sqrt(t.mass),
     awd: t.awd,
+    mudGrip: 0.62, mudDrag: 1, airThrust: 260, boostDrain: 34, glide: 0, gyro: 0, magnet: 0, shield: 0,
+    gadgets: (gadgets || []).slice(),
   };
+  if (has('jet'))   { s.boostAcc += 0.45; s.boostTop += 0.10; s.airThrust = 620; s.boostDrain = 24; }
+  if (has('wing'))  { s.glide = 0.5; }
+  if (has('gyro'))  { s.gyro = 1; }
+  if (has('mag'))   { s.grip *= 1.2; s.mudGrip = 0.92; s.mudDrag = 0.3; }
+  if (has('drone')) { s.magnet = 190; }
+  if (has('shield')){ s.shield = 1; }
+  return s;
 }
 
 function createCar(T, x, stats){
@@ -611,7 +748,7 @@ function stepCar(car, T, inp, dt){
       car.x += nx*pOut; car.y += ny*pOut;
       if (vn < 0){ car.vx -= nx*vn*0.85; car.vy -= ny*vn*0.85; }
     }
-    const grip = s.grip * (mud ? 0.62 : 1);
+    const grip = s.grip * (mud ? s.mudGrip : 1);
     const maxT = grip * fn;                  // แรงยึดเกาะสูงสุดที่ล้อนี้ส่งได้
     const driven = wi === 0 || s.awd, share = s.awd ? 0.5 : 1;
     let ft = 0;
@@ -626,7 +763,7 @@ function stepCar(car, T, inp, dt){
       if (vt > 20) ft -= Math.min(s.brake * 0.5, maxT);
       else if (driven && vt > -150) ft -= Math.min(s.accel * 0.45 * share, maxT);   // ถอยหลัง
     }
-    ft -= vt * (PHYS.ROLL + (mud ? PHYS.MUD_DRAG : 0)) * 0.5;
+    ft -= vt * (PHYS.ROLL + (mud ? PHYS.MUD_DRAG * s.mudDrag : 0)) * 0.5;
     const fx = nx*fn + tx*ft, fy = ny*fn + ty*ft;
     ax += fx; ay += fy;
     tq += rx*fy - ry*fx;
@@ -637,11 +774,21 @@ function stepCar(car, T, inp, dt){
   car.grounded = contacts > 0;
   const lean = (gas ? -1 : 0) + (inp.brake ? 1 : 0);   // เร่ง = เงยหน้า, เบรก = ก้มหน้า
   tq += lean * (car.grounded ? PHYS.GROUND_TORQUE : PHYS.AIR_TORQUE) * s.I;
+  // ปีกร่อน: ขาลงกลางอากาศตกช้าลง
+  car.gliding = !car.grounded && s.glide > 0 && car.vy > 0;
+  if (car.gliding){ ay -= PHYS.G * s.glide; tq -= (car.a - 0.05) * 6 * s.I + car.w * 1.5 * s.I; }   // ปีกช่วยประคองหัวรถให้ราบ
+  // ไจโร: ปล่อยให้เอียงได้ตามปกติ แต่ถ้าเกิน 0.35 เรเดียนจากแนวพื้น จะออกแรงดึงกลับ
+  if (s.gyro){
+    const target = Math.atan((groundY(T, car.x + 40) - groundY(T, car.x - 40)) / 80);
+    let err = car.a - target; if (err > Math.PI) err -= 2*Math.PI; else if (err < -Math.PI) err += 2*Math.PI;
+    const over = Math.abs(err) - 0.35;
+    if (over > 0) tq -= Math.sign(err) * over * 14 * s.gyro * s.I + car.w * 1.2 * s.I;
+  }
   car.airTime = car.grounded ? 0 : car.airTime + dt;
 
   // เทอร์โบ: ใช้แล้วหมด ค่อยๆ เติมเอง
-  car.boost = boosting ? Math.max(0, car.boost - 34*dt) : Math.min(100, car.boost + 7*dt);
-  if (boosting && !car.grounded){ ax += Math.cos(car.a) * 260; ay += Math.sin(car.a) * 260; }
+  car.boost = boosting ? Math.max(0, car.boost - s.boostDrain*dt) : Math.min(100, car.boost + 7*dt);
+  if (boosting && !car.grounded){ ax += Math.cos(car.a) * s.airThrust; ay += Math.sin(car.a) * s.airThrust; }
 
   const sp = Math.hypot(car.vx, car.vy);
   ax -= car.vx * sp * PHYS.AIR_DRAG; ay -= car.vy * sp * PHYS.AIR_DRAG;
@@ -683,27 +830,58 @@ function botInput(car){
 function defaultSave(){
   const up = {}; TRACTORS.forEach(t => up[t.id] = { engine:1, turbo:1, grip:1 });
   return { v:1, playerId: 'p_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
-    name: 'นักซิ่ง' + Math.floor(100 + Math.random()*900), coins: 0, unlocked: 1, selected: 'tp25',
-    owned: ['tp25'], upgrades: up, best: {}, sound: true, updatedAt: Date.now() };
+    name: 'นักซิ่ง' + Math.floor(100 + Math.random()*900), coins: 0, unlocked: 1, selected: TRACTORS[0].id,
+    owned: FREE_TRACTORS.slice(), upgrades: up, best: {}, sound: true, gadgets: [], equipped: [], updatedAt: Date.now() };
 }
 let SAVE = loadSave();
 function loadSave(){
   try {
     const raw = localStorage.getItem(CONFIG.SAVE_KEY);
     if (raw){
-      const d = Object.assign(defaultSave(), JSON.parse(raw));
-      TRACTORS.forEach(t => { if (!d.upgrades[t.id]) d.upgrades[t.id] = { engine:1, turbo:1, grip:1 }; });
-      return d;
+      return migrateSave(Object.assign(defaultSave(), JSON.parse(raw)));
     }
   } catch (e) { console.warn('อ่านเซฟไม่ได้', e); }
   return defaultSave();
+}
+// แปลงเซฟเก่า/เซฟจากคลาวด์ให้เข้ากับรายการรถปัจจุบัน
+function migrateSave(d){
+  const map = id => LEGACY_TRACTOR[id] || id;
+  const known = id => TRACTORS.some(t => t.id === id);
+  const up = d.upgrades || {};
+  Object.keys(LEGACY_TRACTOR).forEach(old => {          // ย้ายระดับอัปเกรดของรุ่นเก่า (เก็บค่าที่สูงกว่า)
+    if (!up[old]) return;
+    const nid = LEGACY_TRACTOR[old], cur = up[nid] || { engine:1, turbo:1, grip:1 };
+    up[nid] = { engine: Math.max(cur.engine, up[old].engine), turbo: Math.max(cur.turbo, up[old].turbo), grip: Math.max(cur.grip, up[old].grip) };
+    delete up[old];
+  });
+  d.upgrades = up;
+  TRACTORS.forEach(t => { if (!d.upgrades[t.id]) d.upgrades[t.id] = { engine:1, turbo:1, grip:1 }; });
+  d.owned = Array.from(new Set([...FREE_TRACTORS, ...(d.owned || []).map(map)])).filter(known);
+  d.selected = known(map(d.selected)) ? map(d.selected) : TRACTORS[0].id;
+  Object.values(d.best || {}).forEach(b => { if (b && b.tractor) b.tractor = map(b.tractor); });
+  const gid = id => GADGETS.some(g => g.id === id);
+  d.gadgets = (Array.isArray(d.gadgets) ? d.gadgets : []).filter(gid);
+  d.equipped = (Array.isArray(d.equipped) ? d.equipped : []).filter(id => d.gadgets.includes(id)).slice(0, GADGET_SLOTS);
+  return d;
 }
 function persist(){
   SAVE.updatedAt = Date.now();
   try { localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify(SAVE)); } catch (e) { console.warn('บันทึกไม่ได้', e); }
   notifyHost('save', SAVE);
 }
-const tractorById = id => TRACTORS.find(t => t.id === id) || TRACTORS[0];
+const tractorById = id => { id = LEGACY_TRACTOR[id] || id; return TRACTORS.find(t => t.id === id) || TRACTORS[0]; };
+const brandById = id => BRANDS.find(b => b.id === id) || BRANDS[0];
+
+/* ---------- รูปรถจริง: โหลด <SPRITE_DIR><id>.png ถ้ามีไฟล์ ---------- */
+const SPRITES = {};
+function loadSprites(){
+  if (!CONFIG.SPRITE_DIR) return;
+  TRACTORS.forEach(t => {
+    const img = new Image();
+    img.onload = () => { SPRITES[t.id] = img; if (!document.getElementById('scr-garage').hidden) renderGarage(); };
+    img.src = (t.sprite && t.sprite.src) || (CONFIG.SPRITE_DIR + t.id + '.png');
+  });
+}
 
 /* =====================================================================
    AUDIO – เสียงเครื่องยนต์สังเคราะห์ (ไม่ต้องใช้ไฟล์เสียง)
@@ -781,6 +959,16 @@ function drawTractor(c, t, wheels){
   // ล้อยุบตามช่วงล่าง: ผิวพื้นอยู่ที่ (ขอบล่างล้อ - ระยะยุบ) จึงวาดศูนย์ล้อที่ GEO.y - comp
   const rwy = GEO.rear.y - Math.min(rw.comp, PHYS.TRAVEL);
   const fwy = GEO.front.y - Math.min(fw.comp, PHYS.TRAVEL);
+  const img = SPRITES[t.id];
+  if (img){
+    // รูปจริง: ขอบล่างรูป = ขอบล่างล้อ (y = 32) ยุบตามช่วงล่างเฉลี่ย
+    // ปรับขนาด/ตำแหน่งรายรุ่นได้ด้วย sprite: { height, dx, dy, wheels } ใน BRANDS[].models
+    const sp = t.sprite || {}, h = sp.height || 100, w = h * img.width / img.height;
+    const sink = (Math.min(rw.comp, PHYS.TRAVEL) + Math.min(fw.comp, PHYS.TRAVEL)) / 2;
+    if (sp.wheels === false){ drawWheel(c, GEO.front.x, fwy, GEO.front.r, fw.rot, t.rim); drawWheel(c, GEO.rear.x, rwy, GEO.rear.r, rw.rot, t.rim); }
+    c.drawImage(img, -w / 2 + 5 + (sp.dx || 0), 33 - h - sink + (sp.dy || 0), w, h);
+    return;
+  }
   c.lineJoin = 'round';
   // แชสซี
   c.fillStyle = '#2B2B30'; rr(c, -32, 2, 78, 10, 4); c.fill();
@@ -827,6 +1015,74 @@ function drawTractor(c, t, wheels){
   c.fillStyle = '#C98B5A'; c.beginPath(); c.arc(-13, -40, 6.5, 0, Math.PI*2); c.fill();
   c.fillStyle = '#E8C46A'; c.strokeStyle = '#8A6A2A'; c.lineWidth = 1.5;  // งอบ
   c.beginPath(); c.moveTo(-29, -42); c.lineTo(3, -42); c.lineTo(-13, -54); c.closePath(); c.fill(); c.stroke();
+}
+
+/* ---------- อุปกรณ์เสริมล้ำยุค (วาดในพิกัดตัวรถ เหมือน drawTractor) ----------
+   fx = { gadgets:[...], boosting, air, gliding, shield, t } */
+const NEON = '#5FE6FF';
+function drawGadgetsBack(c, fx){
+  const g = fx.gadgets || [];
+  if (g.includes('wing')){
+    // ปีก: พับแนบตัวรถ / กางออกตอนลอย
+    const open = fx.air ? 1 : 0;
+    c.save(); c.translate(-10, -30);
+    c.globalAlpha *= 0.9;
+    c.fillStyle = 'rgba(95,230,255,.35)'; c.strokeStyle = NEON; c.lineWidth = 2;
+    c.beginPath();
+    if (open){ c.moveTo(-6, 0); c.lineTo(-62, -30 + Math.sin(fx.t*10)*2); c.lineTo(-40, -6); c.lineTo(22, 4); }
+    else { c.moveTo(-4, 0); c.lineTo(-26, -8); c.lineTo(-20, 2); c.lineTo(10, 4); }
+    c.closePath(); c.fill(); c.stroke();
+    if (open){ c.beginPath(); c.moveTo(-14, -2); c.lineTo(-52, -24); c.stroke(); }
+    c.restore();
+  }
+  if (g.includes('jet')){
+    // ไอพ่นท้ายรถ + เปลวไฟสีฟ้าตอนใช้เทอร์โบ
+    c.save(); c.translate(-44, -14);
+    if (fx.boosting){
+      const L = 26 + Math.random()*16;
+      const fl = c.createLinearGradient(0, 0, -L, 0); fl.addColorStop(0, '#FFFFFF'); fl.addColorStop(0.3, NEON); fl.addColorStop(1, 'rgba(95,230,255,0)');
+      c.fillStyle = fl; c.beginPath(); c.moveTo(-6, -6); c.lineTo(-6 - L, 0); c.lineTo(-6, 6); c.closePath(); c.fill();
+    }
+    c.fillStyle = '#3A3A44'; c.strokeStyle = '#22314A'; c.lineWidth = 2;
+    rr(c, -8, -8, 22, 16, 4); c.fill(); c.stroke();
+    c.fillStyle = NEON; c.fillRect(-9, -5, 3, 10);
+    c.restore();
+  }
+}
+function drawGadgetsFront(c, fx, wheels){
+  const g = fx.gadgets || [];
+  if (g.includes('mag') && wheels){
+    // ล้อแม่เหล็ก: วงแสงรอบล้อ
+    c.save(); c.strokeStyle = NEON; c.lineWidth = 2.5; c.globalAlpha *= 0.55 + 0.25*Math.sin(fx.t*8);
+    for (const w of [wheels[0], wheels[1]]){ const wy = w.y - Math.min(w.comp, PHYS.TRAVEL); c.beginPath(); c.arc(w.x, wy, w.r + 3, 0, Math.PI*2); c.stroke(); }
+    c.restore();
+  }
+  if (g.includes('gyro')){
+    // ไจโร: วงแหวนหมุนใต้เบาะ
+    c.save(); c.translate(-2, -4); c.rotate(fx.t*4);
+    c.strokeStyle = NEON; c.lineWidth = 2.5; c.beginPath(); c.ellipse(0, 0, 13, 5, 0, 0, Math.PI*2); c.stroke();
+    c.fillStyle = '#FFFFFF'; c.beginPath(); c.arc(13, 0, 2, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+  if (g.includes('shield')){
+    // ไฟสัญญาณระบบกู้รถบนหลังคา: เขียว = พร้อม, เทา = ใช้ไปแล้ว
+    const ready = fx.shield > 0;
+    c.fillStyle = '#2B2B30'; c.fillRect(22, -54, 3, 8);
+    c.fillStyle = ready ? (Math.sin(fx.t*6) > 0 ? '#7CFF8A' : '#2FAE4A') : '#8A8F99';
+    c.beginPath(); c.arc(23.5, -57, 4, 0, Math.PI*2); c.fill();
+  }
+}
+function drawDrone(c, x, y, t){
+  c.save(); c.translate(x, y);
+  c.strokeStyle = 'rgba(95,230,255,.35)'; c.lineWidth = 1.5; c.setLineDash([3, 4]);
+  c.beginPath(); c.arc(0, 0, 20, 0, Math.PI*2); c.stroke(); c.setLineDash([]);
+  c.fillStyle = '#2B2B30'; c.fillRect(-16, -2, 32, 3);
+  c.fillStyle = 'rgba(200,240,255,.7)';
+  const sp = Math.abs(Math.sin(t*40)) * 10 + 2;
+  c.fillRect(-16 - sp/2, -5, sp, 2); c.fillRect(16 - sp/2, -5, sp, 2);
+  c.fillStyle = '#3A3A44'; c.strokeStyle = '#22314A'; c.lineWidth = 2; rr(c, -8, -1, 16, 9, 4); c.fill(); c.stroke();
+  c.fillStyle = NEON; c.beginPath(); c.arc(0, 4, 2.5, 0, Math.PI*2); c.fill();
+  c.restore();
 }
 
 /* ---------- ฉากหลังแบบพารัลแลกซ์ ---------- */
@@ -900,8 +1156,39 @@ function drawWorld(T, cam, zoom, time){
     ctx.fillStyle = 'rgba(255,255,255,.18)';
     for (let x = m.x0 + 40; x < m.x1 - 30; x += 70){ ctx.beginPath(); ctx.ellipse(x, groundY(T, x) + 2, 14, 2.5, 0, 0, Math.PI*2); ctx.fill(); }
   }
+  // เหว: น้ำโขงไหลที่ก้นเหว + ป้ายเตือนและแถบอันตรายที่ขอบ
+  for (const g of T.pits){
+    if (g.x1 < x0 - 200 || g.x0 > x1 + 200) continue;
+    const fy = groundY(T, (g.x0 + g.x1) / 2), wy = g.rim + 230;
+    // ผนังหุบเหวด้านหลัง (มืดลงตามความลึก)
+    const rg = ctx.createLinearGradient(0, g.rim, 0, wy);
+    rg.addColorStop(0, '#6B4A2E'); rg.addColorStop(1, '#24170D');
+    ctx.fillStyle = rg; ctx.fillRect(g.x0 - 2, g.rim + 4, g.x1 - g.x0 + 4, wy - g.rim);
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2;
+    for (let yy = g.rim + 40; yy < wy; yy += 46){ ctx.beginPath(); ctx.moveTo(g.x0, yy); ctx.lineTo(g.x0 + (g.x1 - g.x0)*0.4, yy + 10); ctx.lineTo(g.x1, yy - 4); ctx.stroke(); }
+    const wg = ctx.createLinearGradient(0, wy, 0, fy);
+    wg.addColorStop(0, '#3C8FC0'); wg.addColorStop(1, '#1E4E73');
+    ctx.fillStyle = wg; ctx.fillRect(g.x0 - 2, wy, g.x1 - g.x0 + 4, fy - wy + 4);
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++){ ctx.beginPath(); for (let x = g.x0; x <= g.x1; x += 6) ctx.lineTo(x, wy + 6 + k*14 + Math.sin(x*0.08 + time*3 + k)*2.5); ctx.stroke(); }
+    // ผนังหิน
+    ctx.fillStyle = '#5E4128';
+    ctx.fillRect(g.x0 - 6, g.rim, 6, fy - g.rim); ctx.fillRect(g.x1, groundY(T, g.x1 + 4), 6, fy - groundY(T, g.x1 + 4));
+    // แถบเหลืองดำที่ขอบ + ป้ายเตือน
+    const lx = g.x0 - 4, ly = groundY(T, lx);
+    for (let k = 0; k < 4; k++){ ctx.fillStyle = k % 2 ? '#22314A' : '#F4C534'; ctx.fillRect(lx - 16 + k*5, ly - 3, 5, 6); }
+    const sx = g.x0 - 420; if (sx > x0 - 60 && sx < x1 + 60){
+      const sy = groundY(T, sx);
+      ctx.fillStyle = '#22314A'; ctx.fillRect(sx - 2, sy - 62, 4, 62);
+      ctx.save(); ctx.translate(sx, sy - 74); ctx.rotate(Math.PI/4);
+      ctx.fillStyle = '#F4C534'; ctx.strokeStyle = '#22314A'; ctx.lineWidth = 3; ctx.fillRect(-16, -16, 32, 32); ctx.strokeRect(-16, -16, 32, 32); ctx.restore();
+      ctx.fillStyle = '#22314A'; ctx.font = '700 20px Mitr, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', sx, sy - 73);
+      ctx.font = '600 12px Mitr, sans-serif'; ctx.fillText('เหวข้างหน้า', sx, sy - 104);
+    }
+  }
   // อุปสรรค
   for (const f of T.features){
+    if (f.type === 'gap' || f.type === 'steps') continue;
     if (f.x + f.w < x0 || f.x - f.w > x1) continue;
     const xa = f.x - f.w/2, xb = f.x + f.w/2, base = (groundY(T, xa) + groundY(T, xb)) / 2 + 6;
     if (f.type === 'bale'){
@@ -996,12 +1283,12 @@ const G = {
 };
 const input = { gas: false, brake: false, boost: false };
 
-function currentStats(){ const t = tractorById(SAVE.selected); return computeStats(t, SAVE.upgrades[t.id]); }
+function currentStats(){ const t = tractorById(SAVE.selected); return computeStats(t, SAVE.upgrades[t.id], SAVE.equipped); }
 
 function startDemo(){
   G.demo = true; G.levelIdx = 0; G.T = buildTrack(0);
   G.tractor = tractorById(SAVE.selected);
-  G.car = createCar(G.T, G.T.start, computeStats(G.tractor, SAVE.upgrades[G.tractor.id]));
+  G.car = createCar(G.T, G.T.start, computeStats(G.tractor, SAVE.upgrades[G.tractor.id], SAVE.equipped));
   G.cam.x = G.car.x; G.cam.y = G.car.y;
 }
 
@@ -1010,11 +1297,12 @@ function startLevel(idx, opts){
   Audio.init(); if (Audio.ctx && Audio.ctx.state === 'suspended') Audio.ctx.resume();
   G.mode = opts.mode || 'solo'; G.ghost = opts.ghost || null;
   if (G.mode !== 'room') mpStopSync();
-  G.wall = 0; G.rec = []; G.recNext = 0; G.finTime = null; G.dnf = false; G.respawnT = 0;
+  G.wall = 0; G.rec = []; G.recNext = 0; G.finTime = null; G.dnf = false; G.respawnT = 0; G.fell = false;
   G.demo = false; G.levelIdx = idx; G.T = buildTrack(idx);
   G.tractor = tractorById(SAVE.selected);
   G.car = createCar(G.T, G.T.start, currentStats());
-  G.time = 0; G.coins = 0; G.penalty = 0; G.lastCp = null; particles.length = 0;
+  G.time = 0; G.coins = 0; G.penalty = 0; G.lastCp = null; particles.length = 0; G.shield = G.car.stats.shield; G.droneCoins = 0;
+  G.drone = { x: G.car.x - 60, y: G.car.y - 120 };
   G.cam.x = G.car.x + 120; G.cam.y = G.car.y;
   input.gas = input.brake = input.boost = false;
   showScreen(null);
@@ -1121,8 +1409,10 @@ function crashed(){
   Audio.engine(0, 0, false); Audio.blip(160, 0.4);
   notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(G.car.x) });
   document.getElementById('hud').hidden = true; document.getElementById('touch').hidden = true;
-  document.getElementById('r-title').textContent = 'รถไถคว่ำ!';
-  document.getElementById('r-body').innerHTML = `<p>ระวังเงยหน้ามากเกินไปตอนขึ้นเนิน ปล่อยคันเร่งหรือกดเบรกเพื่อกดหน้ารถลง</p>
+  document.getElementById('r-title').textContent = G.fell ? 'ตกเหว!' : 'รถไถคว่ำ!';
+  document.getElementById('r-body').innerHTML = `<p>${G.fell
+      ? 'ต้องมีความเร็วพอก่อนถึงขอบเหว: เร่งเต็มที่ตั้งแต่ทางตรง กดเทอร์โบตอนขึ้นเนินส่งตัว ลองติด "ปีกร่อน" หรือ "ไอพ่นจรวด" ช่วยได้มาก'
+      : 'ระวังเงยหน้ามากเกินไปตอนขึ้นเนิน ปล่อยคันเร่งหรือกดเบรกเพื่อกดหน้ารถลง'}</p>
     <p class="muted">ไปได้ ${Math.round(clamp(G.car.x / G.T.finish, 0, 1) * 100)}% ของเส้นทาง</p>`;
   const acts = document.getElementById('r-actions'); acts.innerHTML = '';
   acts.append(btn('ออกไปเมนู', '', () => goMenu()), btn('เริ่มด่านใหม่', '', restartCurrent));
@@ -1144,22 +1434,42 @@ function update(dt){
     if (G.mode === 'room'){ G.wall = Math.max(0, (serverNow() - MP.startAt) / 1000); G.time = G.wall + G.penalty; }
     else { G.wall += dt; G.time += dt; }
     recordSample(car);
+    const mag = car.stats.magnet;
     for (const c of T.coins){
-      if (!c.taken && Math.abs(c.x - car.x) < 44 && Math.abs(c.y - (car.y - 8)) < 52){
+      if (c.taken) continue;
+      const near = Math.abs(c.x - car.x) < 44 && Math.abs(c.y - (car.y - 8)) < 52;
+      const pulled = mag && Math.hypot(c.x - car.x, c.y - car.y) < mag;
+      if (near || pulled){
         c.taken = true; G.coins++; car.boost = Math.min(100, car.boost + 4); Audio.blip(1200, 0.08);
-        for (let k = 0; k < 6; k++) emit(c.x, c.y, (Math.random() - 0.5)*160, -Math.random()*160, 0.4, 2.5, '#F4C534');
+        if (pulled && !near){   // โดรนดูด: เส้นประกายจากเหรียญเข้าหาโดรน + โบนัสทุก 6 เหรียญ
+          for (let k = 0; k < 5; k++) emit(c.x + (G.drone.x - c.x)*k/5, c.y + (G.drone.y - c.y)*k/5, 0, 0, 0.25, 2.5, '#5FE6FF');
+          if (++G.droneCoins % 6 === 0){ G.coins++; toast('โดรนเก็บครบ 6 เหรียญ +1'); }
+        } else for (let k = 0; k < 6; k++) emit(c.x, c.y, (Math.random() - 0.5)*160, -Math.random()*160, 0.4, 2.5, '#F4C534');
       }
     }
     for (const cp of T.checkpoints) if (!cp.reached && car.x > cp.x){ cp.reached = true; G.lastCp = cp.x; toast('ผ่านจุดเช็กพอยต์'); }
     if (car.x >= T.finish){ finishRace(); return; }
+    const pit = inPit(T, car);
+    if ((car.crashed || pit) && G.shield > 0 && G.respawnT <= 0){
+      // ระบบกู้รถอัตโนมัติ: พลิกกลับ/ดึงขึ้นจากเหว แล้ววิ่งต่อ (ครั้งเดียวต่อรอบ)
+      G.shield--;
+      const vx = car.vx;
+      G.car = createCar(T, pit ? pit.x0 - 260 : car.x, car.stats);
+      if (!pit) G.car.vx = Math.max(0, vx * 0.5);
+      toast(pit ? 'ระบบกู้รถดึงขึ้นจากเหวแล้ว!' : 'ระบบกู้รถพลิกรถกลับแล้ว!');
+      Audio.blip(990, 0.15);
+      for (let k = 0; k < 24; k++) emit(G.car.x, G.car.y - 20, (Math.random() - 0.5)*300, -Math.random()*240, 0.6, 3, '#5FE6FF');
+      return;
+    }
+    if (pit && !car.crashed){ car.crashed = true; G.fell = true; }
     if (car.crashed){
       if (G.mode !== 'room'){ crashed(); return; }
       // แข่งออนไลน์: ไม่หยุดเกม กลับเช็กพอยต์อัตโนมัติ
-      if (G.respawnT <= 0){ G.respawnT = 1.2; Audio.blip(160, 0.3); toast('รถคว่ำ! กลับเช็กพอยต์ +5 วินาที'); notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(car.x), mode: 'room' }); }
+      if (G.respawnT <= 0){ G.respawnT = 1.2; Audio.blip(160, 0.3); toast((G.fell ? 'ตกเหว!' : 'รถคว่ำ!') + ' กลับเช็กพอยต์ +5 วินาที'); notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(car.x), mode: 'room' }); }
     }
     if (G.respawnT > 0){
       G.respawnT -= dt;
-      if (G.respawnT <= 0){ G.car = createCar(T, G.lastCp ?? T.start, currentStats()); G.penalty += 5; }
+      if (G.respawnT <= 0){ G.car = createCar(T, G.lastCp ?? T.start, currentStats()); G.penalty += 5; G.fell = false; }
     }
   }
   if (G.demo && (car.crashed || car.x > T.finish + 400)) startDemo();
@@ -1178,6 +1488,10 @@ function update(dt){
     else emit(ex, ey, -20 + (Math.random()-0.5)*20, -50, 0.9, 3, 'rgba(70,70,80,.55)', 7);
   }
   updateParticles(dt);
+  if (G.drone){   // โดรนลอยตามหลังรถ
+    G.drone.x += (car.x - 70 - G.drone.x) * Math.min(1, dt*3);
+    G.drone.y += (car.y - 125 + Math.sin(G.clock*3)*8 - G.drone.y) * Math.min(1, dt*3);
+  }
 
   // กล้องตามรถ มองไปข้างหน้าตามความเร็ว
   const base = Math.max(0.42, Math.min(1.5, Math.min(H / 560, W / 760)));
@@ -1205,13 +1519,17 @@ function render(){
   if (!G.demo) drawRivals();
   const car = G.car;
   ctx.save(); ctx.translate(car.x, car.y); ctx.rotate(car.a);
+  const fx = { gadgets: car.stats.gadgets, boosting: car.boosting, air: !car.grounded, gliding: car.gliding, shield: G.shield, t: G.clock };
+  drawGadgetsBack(ctx, fx);
   drawTractor(ctx, G.tractor, car.wheels);
+  drawGadgetsFront(ctx, fx, car.wheels);
   ctx.restore();
+  if (!G.demo && G.drone && car.stats.magnet) drawDrone(ctx, G.drone.x, G.drone.y, G.clock);
   ctx.restore();
 }
 
 function loop(ts){
-  const dt = Math.min(0.05, (ts - (G.last || ts)) / 1000); G.last = ts; G.clock += dt;
+  const dt = Math.min(0.05, (ts - (G.last || ts)) / 1000); G.last = ts; G.clock += dt; G.fdt = dt;
   if (G.state !== 'paused') update(dt);
   render();
   requestAnimationFrame(loop);
@@ -1279,15 +1597,16 @@ function togglePause(){
 /* =====================================================================
    UI SCREENS
    ===================================================================== */
-const SCREENS = ['menu','levels','garage','board','settings','pause','result','online','lobby'];
+const SCREENS = ['menu','levels','garage','board','settings','pause','result','online','lobby','gadgets'];
 function showScreen(name){
   SCREENS.forEach(s => document.getElementById('scr-' + s).hidden = s !== name);
   if (name === 'menu') renderMenu();
   if (name === 'levels') renderLevels();
-  if (name === 'garage'){ G.gIdx = TRACTORS.findIndex(t => t.id === SAVE.selected); renderGarage(); }
+  if (name === 'garage'){ G.gIdx = Math.max(0, TRACTORS.findIndex(t => t.id === SAVE.selected)); renderGarage(); }
   if (name === 'board') renderBoard(1);
   if (name === 'settings') renderSettings();
   if (name === 'online') renderOnline();
+  if (name === 'gadgets') renderGadgets();
   if (name === 'lobby') renderLobby();
   document.querySelectorAll('.js-coins').forEach(e => e.textContent = SAVE.coins.toLocaleString('th-TH'));
   const first = name && document.querySelector(`#scr-${name} .btn`);
@@ -1322,7 +1641,7 @@ function renderLevels(){
     const b = document.createElement('button'); b.className = 'lv' + (locked ? ' locked' : '');
     b.disabled = locked;
     b.innerHTML = `<span class="num">${locked ? '🔒' : i + 1}</span>
-      <span><span class="name">${L.name}</span><br><span class="desc">${locked ? 'ผ่านด่านก่อนหน้าเพื่อปลดล็อก' : L.desc}${best ? ` – ดีที่สุด ${fmtTime(best.time)}` : ''}</span></span>
+      <span><span class="name">${L.name}</span>${L.hard ? '<span class="size-tag" style="background:var(--red);color:#FFF4D6">โหด</span>' : ''}<br><span class="desc">${locked ? 'ผ่านด่านก่อนหน้าเพื่อปลดล็อก' : L.desc}${best ? ` – ดีที่สุด ${fmtTime(best.time)}` : ''}</span></span>
       <span class="stars" aria-label="${best ? best.stars : 0} ดาว">${'★'.repeat(best ? best.stars : 0)}<span style="color:var(--pip-off)">${'★'.repeat(3 - (best ? best.stars : 0))}</span></span>`;
     if (!locked) b.addEventListener('click', () => startLevel(i));
     list.append(b);
@@ -1332,15 +1651,23 @@ function renderLevels(){
 /* ---------- โรงรถ ---------- */
 function renderGarage(){
   const t = TRACTORS[G.gIdx], owned = SAVE.owned.includes(t.id), up = SAVE.upgrades[t.id];
-  document.getElementById('g-name').textContent = t.name;
-  document.getElementById('g-tag').textContent = t.tag + (t.awd ? ' (4WD)' : ' (2WD)');
+  // แท็บยี่ห้อ
+  const tabs = document.getElementById('g-brands'); tabs.innerHTML = '';
+  BRANDS.forEach(b => {
+    const bt = btn('', 'sm', () => { G.gIdx = TRACTORS.findIndex(x => x.brand === b.id); renderGarage(); });
+    if (b.logo){ const im = document.createElement('img'); im.src = b.logo; im.alt = ''; bt.append(im); }
+    bt.append(b.name); bt.setAttribute('aria-pressed', String(b.id === t.brand)); tabs.append(bt);
+  });
+  const sizeLabel = CLASSES[t.size].label;
+  document.getElementById('g-name').innerHTML = esc(t.name) + (t.model !== sizeLabel ? `<span class="size-tag">${esc(sizeLabel)}</span>` : '');
+  document.getElementById('g-tag').textContent = (t.awd ? 'ขับเคลื่อน 4 ล้อ (4WD)' : 'ขับเคลื่อน 2 ล้อ (2WD)') + (t.price === 0 ? ' – ใช้ได้ฟรี' : '');
   // วาดพรีวิว
   const pc = document.getElementById('preview'), p = pc.getContext('2d');
   p.setTransform(1,0,0,1,0,0); p.clearRect(0, 0, pc.width, pc.height);
   const sc = 1.5; p.setTransform(sc, 0, 0, sc, pc.width/2, pc.height*0.82 - 32*sc);   // พื้นเวที 82% = ขอบล่างล้อ (y=32)
   drawTractor(p, t, null);
   // ค่าสถานะ: ค่าพื้นฐาน vs หลังอัปเกรด
-  const s0 = computeStats(t, { engine:1, turbo:1, grip:1 }), s1 = computeStats(t, up);
+  const s0 = computeStats(t, { engine:1, turbo:1, grip:1 }), s1 = computeStats(t, up, SAVE.equipped);
   const rows = [
     ['ความเร็ว', s0.top / 1000, s1.top / 1000],
     ['อัตราเร่ง', s0.accel / 1700, s1.accel / 1700],
@@ -1380,8 +1707,48 @@ function buyTractor(t){
   toast('ซื้อแล้ว: ' + t.name); renderGarage();
   document.querySelectorAll('.js-coins').forEach(e => e.textContent = SAVE.coins.toLocaleString('th-TH'));
 }
-document.getElementById('g-prev').addEventListener('click', () => { G.gIdx = (G.gIdx + TRACTORS.length - 1) % TRACTORS.length; renderGarage(); });
-document.getElementById('g-next').addEventListener('click', () => { G.gIdx = (G.gIdx + 1) % TRACTORS.length; renderGarage(); });
+// ‹ › เลื่อนรุ่นภายในยี่ห้อเดียวกัน
+function stepModel(d){
+  const b = TRACTORS[G.gIdx].brand, list = TRACTORS.map((t, i) => [t, i]).filter(x => x[0].brand === b).map(x => x[1]);
+  G.gIdx = list[(list.indexOf(G.gIdx) + d + list.length) % list.length]; renderGarage();
+}
+document.getElementById('g-prev').addEventListener('click', () => stepModel(-1));
+document.getElementById('g-next').addEventListener('click', () => stepModel(1));
+
+/* ---------- อุปกรณ์เสริมล้ำยุค ---------- */
+const GADGET_ICON = { jet:'🚀', wing:'🪽', gyro:'🌀', mag:'🧲', drone:'🛸', shield:'🛡️' };
+function renderGadgets(){
+  const t = tractorById(SAVE.selected), eq = SAVE.equipped;
+  document.getElementById('gd-slots').textContent = `${eq.length}/${GADGET_SLOTS} ชิ้น`;
+  document.getElementById('gd-car').textContent = t.name;
+  document.getElementById('gd-eq').textContent = eq.length ? 'ติดตั้ง: ' + eq.map(id => GADGETS.find(g => g.id === id).name).join(', ') : 'ยังไม่ได้ติดตั้งอุปกรณ์';
+  // พรีวิว: โชว์ปีกกาง + ไอพ่นติดไฟ + โดรน
+  const pc = document.getElementById('gd-preview'), p = pc.getContext('2d');
+  p.setTransform(1,0,0,1,0,0); p.clearRect(0, 0, pc.width, pc.height);
+  const sc = 1.45; p.setTransform(sc, 0, 0, sc, pc.width/2 + 20, pc.height*0.82 - 32*sc);
+  const fx = { gadgets: eq, boosting: true, air: true, gliding: true, shield: 1, t: performance.now()/1000 };
+  drawGadgetsBack(p, fx); drawTractor(p, t, null);
+  drawGadgetsFront(p, fx, [{ ...GEO.rear, rot: 0, comp: 4 }, { ...GEO.front, rot: 0, comp: 4 }]);
+  if (eq.includes('drone')) drawDrone(p, -70, -80, fx.t);
+  const box = document.getElementById('gd-list'); box.innerHTML = '';
+  GADGETS.forEach(g => {
+    const owned = SAVE.gadgets.includes(g.id), on = eq.includes(g.id);
+    const d = document.createElement('div'); d.className = 'gd' + (on ? ' on' : '');
+    d.innerHTML = `<span class="ic" aria-hidden="true">${GADGET_ICON[g.id]}</span><div><h3>${esc(g.name)}</h3><p>${esc(g.desc)}</p></div>`;
+    let b;
+    if (!owned){ b = btn(`ซื้อ ${g.price.toLocaleString('th-TH')}`, 'sm red', () => buyGadget(g)); b.disabled = SAVE.coins < g.price; }
+    else if (on) b = btn('ถอดออก', 'sm', () => { SAVE.equipped = eq.filter(x => x !== g.id); persist(); renderGadgets(); });
+    else { b = btn(eq.length >= GADGET_SLOTS ? 'ช่องเต็ม' : 'ติดตั้ง', 'sm green', () => { SAVE.equipped = [...eq, g.id]; persist(); Audio.init(); Audio.blip(880, 0.12); renderGadgets(); }); b.disabled = eq.length >= GADGET_SLOTS; }
+    d.append(b); box.append(d);
+  });
+  document.querySelectorAll('.js-coins').forEach(e => e.textContent = SAVE.coins.toLocaleString('th-TH'));
+}
+function buyGadget(g){
+  if (SAVE.coins < g.price || SAVE.gadgets.includes(g.id)) return;
+  SAVE.coins -= g.price; SAVE.gadgets.push(g.id);
+  if (SAVE.equipped.length < GADGET_SLOTS) SAVE.equipped.push(g.id);   // ซื้อแล้วติดตั้งให้ทันทีถ้ามีช่องว่าง
+  persist(); Audio.init(); Audio.blip(700, 0.15); toast('ได้ ' + g.name + ' แล้ว'); renderGadgets();
+}
 
 /* ---------- ตารางอันดับ ---------- */
 async function renderBoard(level){
@@ -1427,7 +1794,7 @@ document.getElementById('set-cloud-save').addEventListener('click', async () => 
 });
 document.getElementById('set-cloud-load').addEventListener('click', async () => {
   const r = await gasGet({ action: 'loadPlayer', playerId: SAVE.playerId });
-  if (r && r.ok && r.save){ SAVE = Object.assign(defaultSave(), r.save); persist(); toast('โหลดข้อมูลจากคลาวด์แล้ว'); goMenu(); }
+  if (r && r.ok && r.save){ SAVE = migrateSave(Object.assign(defaultSave(), r.save)); persist(); toast('โหลดข้อมูลจากคลาวด์แล้ว'); goMenu(); }
   else toast('ไม่พบข้อมูลบนคลาวด์ของรหัสนี้');
 });
 
@@ -1469,12 +1836,13 @@ function submitScore(s){
    MULTIPLAYER – ห้องแข่งออนไลน์ + รถผี
    - ทุกเครื่องซิงก์นาฬิกากับ Apps Script แล้วออกตัวพร้อมกันที่เวลา startAt
    - แต่ละเครื่องบันทึกตำแหน่งตัวเองทุก 0.1 วินาที [t, x, y, a] แล้วส่งเป็นชุดทุก 0.8 วินาที
-   - รถคนอื่นแสดงย้อนหลังเล็กน้อย (MP.delay ≈ 1.5–3 วินาที ปรับตามความหน่วงจริง)
-     แล้วเกลี่ยตำแหน่งระหว่างจุด ทำให้วิ่งลื่นแม้ Apps Script ตอบช้า
+   - ลดดีเลย์ด้วยการทำนายตำแหน่ง (dead reckoning): ใช้ความเร็วล่าสุดของเพื่อน + รูปทรงถนน
+     (ทุกเครื่องสร้างด่านจาก seed เดียวกัน จึงรู้ว่าพื้นอยู่ตรงไหน) แล้วค่อยๆ ปรับเข้าหาตำแหน่งจริงเมื่อข้อมูลใหม่มาถึง
+     รถเพื่อนจึงแสดงใกล้ตำแหน่งปัจจุบัน แทนที่จะช้ากว่าจริง 1.5–3 วินาที
    - รถไม่ชนกัน จึงไม่ต้องให้เซิร์ฟเวอร์คำนวณฟิสิกส์
    ===================================================================== */
 const $id = id => document.getElementById(id);
-const MP_CFG = { POLL_MS: 1500, SYNC_MS: 800, SAMPLE: 0.1, MAX_SAMPLES: 2500 };
+const MP_CFG = { POLL_MS: 1500, SYNC_MS: 500, SAMPLE: 0.1, MAX_SAMPLES: 2500, MAX_PREDICT: 1.5, SMOOTH: 12 };
 const RIVAL_COLORS = ['#2F6FD6', '#3E8E3A', '#F07A1A', '#8E44AD'];
 const MP = { code: null, room: null, pollT: 0, syncT: 0, polling: false, sending: false, busy: false,
   sent: 0, rivals: {}, done: false, raceId: 0, startAt: 0, lastStart: 0, delay: 2, cdLast: '' };
@@ -1507,9 +1875,12 @@ function uploadGhost(timeMs){
 }
 
 /* ---------- วาดรถคู่แข่ง (โปร่งแสง + ป้ายชื่อ) ---------- */
-function drawGhostCar(p, tractor, color, name){
+function drawGhostCar(p, tractor, color, name, gear){
+  const wheels = [{ ...GEO.rear, rot: p[1] / GEO.rear.r, comp: 4 }, { ...GEO.front, rot: p[1] / GEO.front.r, comp: 4 }];
+  const air = G.T ? p[2] < groundY(G.T, p[1]) - 50 : false;
+  const fx = { gadgets: gear || [], boosting: false, air, gliding: air, shield: 1, t: G.clock };
   ctx.save(); ctx.globalAlpha = 0.5; ctx.translate(p[1], p[2]); ctx.rotate(p[3]);
-  drawTractor(ctx, tractor, [{ ...GEO.rear, rot: p[1] / GEO.rear.r, comp: 4 }, { ...GEO.front, rot: p[1] / GEO.front.r, comp: 4 }]);
+  drawGadgetsBack(ctx, fx); drawTractor(ctx, tractor, wheels); drawGadgetsFront(ctx, fx, wheels);
   ctx.restore();
   ctx.save();
   ctx.font = '600 15px Mitr, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1520,15 +1891,43 @@ function drawGhostCar(p, tractor, color, name){
   ctx.restore();
 }
 function roomRaceT(){ return (serverNow() - MP.startAt) / 1000; }
+// ทำนายตำแหน่ง ณ เวลา t จากตัวอย่างล่าสุด: บนพื้น = วิ่งตามผิวถนน, กลางอากาศ = วิถีโปรเจกไทล์
+function predictPose(r, t){
+  const s = r.s; if (!s.length) return null;
+  const last = s[s.length - 1];
+  if (t <= last[0] || r.fin != null || r.dnf || r.stale) return samplePose(s, Math.min(t, last[0]));
+  let k = s.length - 2; while (k > 0 && last[0] - s[k][0] < 0.2) k--;
+  const prev = s[Math.max(0, k)], span = Math.max(0.05, last[0] - prev[0]);
+  if (Math.abs(last[1] - prev[1]) > 400) return last;                   // เพิ่งวาร์ปกลับเช็กพอยต์
+  const vx = clamp((last[1] - prev[1]) / span, -300, 950), vy = (last[2] - prev[2]) / span;
+  const dt = Math.min(t - last[0], MP_CFG.MAX_PREDICT), T = G.T;
+  const x = last[1] + vx * dt, gy = groundY(T, x) - 34;
+  const overPit = T.pits.some(g => x > g.x0 - 20 && x < g.x1 + 20);
+  const onGround = Math.abs(last[2] - (groundY(T, last[1]) - 34)) < 22 && !overPit;
+  if (onGround) return [t, x, gy, Math.atan((groundY(T, x + 30) - groundY(T, x - 30)) / 60)];
+  const g = PHYS.G * (r.gear && r.gear.includes('wing') && vy > 0 ? 0.5 : 1);
+  let y = last[2] + vy * dt + 0.5 * g * dt * dt;
+  if (y > gy && !overPit) y = gy;
+  return [t, x, y, last[3]];
+}
+// ค่อยๆ ดึงตำแหน่งที่แสดงเข้าหาตำแหน่งทำนาย (ไม่กระตุกเมื่อข้อมูลใหม่มาถึง)
+function smoothPose(r, target){
+  if (!target) return r.disp;
+  if (!r.disp || Math.abs(target[1] - r.disp[1]) > 400){ r.disp = target.slice(); return r.disp; }
+  const k = Math.min(1, (G.fdt || 0.016) * MP_CFG.SMOOTH), d = r.disp;
+  d[1] += (target[1] - d[1]) * k; d[2] += (target[2] - d[2]) * k;
+  let da = target[3] - d[3]; if (da > Math.PI) da -= 2*Math.PI; else if (da < -Math.PI) da += 2*Math.PI;
+  d[3] += da * k; return d;
+}
 function drawRivals(){
   if (G.mode === 'ghost' && G.ghost){
     const p = samplePose(G.ghost.s, G.wall); G.ghost.pose = p;
     if (p) drawGhostCar(p, G.ghost.tractor, G.ghost.color, 'รถผี ' + G.ghost.name);
   } else if (G.mode === 'room'){
-    const t = roomRaceT() - MP.delay;
+    const t = roomRaceT();
     for (const r of Object.values(MP.rivals)){
-      const p = samplePose(r.s, t); r.pose = p;
-      if (p) drawGhostCar(p, r.tractor, r.color, r.name);
+      const p = smoothPose(r, predictPose(r, t)); r.pose = p;
+      if (p) drawGhostCar(p, r.tractor, r.color, r.name, r.gear);
     }
   }
 }
@@ -1551,8 +1950,7 @@ function updateRivalHud(){
     rankEl.textContent = G.car.x >= p[1] ? 'นำรถผี' : 'ตามรถผี';
     return;
   }
-  // เทียบตำแหน่งที่ "เวลาเดียวกัน" (คู่แข่งแสดงย้อนหลัง MP.delay วินาที จึงเทียบกับตำแหน่งเราเมื่อ MP.delay วินาทีก่อน)
-  const me = samplePose(G.rec, roomRaceT() - MP.delay), myX = me ? me[1] : G.car.x;
+  const myX = G.car.x;   // ตำแหน่งเพื่อนเป็นค่าทำนาย ณ ปัจจุบันแล้ว เทียบตรงๆ ได้
   let rank = 1, total = 1;
   for (const r of Object.values(MP.rivals)){
     total++;
@@ -1588,7 +1986,7 @@ function renderOnline(){
 }
 async function mpCreate(){
   const b = $id('on-create'); if (b.disabled) return; b.disabled = true;
-  const res = await gasPost({ action: 'mpCreate', playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, level: +$id('on-level').value || 1 });
+  const res = await gasPost({ action: 'mpCreate', playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, gear: SAVE.equipped.join(','), level: +$id('on-level').value || 1 });
   b.disabled = !CONFIG.GAS_URL;
   if (res && res.ok) enterLobby(res.room);
   else toast('สร้างห้องไม่สำเร็จ: ' + (res && res.error || 'ออฟไลน์'));
@@ -1597,7 +1995,7 @@ async function mpJoin(){
   const code = $id('on-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (code.length < 4){ toast('ใส่รหัสห้อง 4 ตัว'); return; }
   const b = $id('on-join'); if (b.disabled) return; b.disabled = true;
-  const res = await gasPost({ action: 'mpJoin', code, playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected });
+  const res = await gasPost({ action: 'mpJoin', code, playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, gear: SAVE.equipped.join(',') });
   b.disabled = !CONFIG.GAS_URL;
   if (res && res.ok) enterLobby(res.room);
   else toast(res && res.error || 'เข้าห้องไม่ได้ ตรวจการเชื่อมต่ออินเทอร์เน็ต');
@@ -1627,7 +2025,7 @@ function renderLobby(){
     const st = !p.online ? 'หลุดการเชื่อมต่อ' : p.id === r.host ? 'เจ้าของห้อง' : p.ready ? 'พร้อม' : 'ยังไม่พร้อม';
     const ok = p.online && (p.ready || p.id === r.host);
     return `<li class="${p.online ? '' : 'off'}"><span class="dot" style="background:${RIVAL_COLORS[p.color % 4]}"></span>
-      <span class="who">${esc(p.name)}${p.id === me ? ' (คุณ)' : ''}<small>${esc(tractorById(p.tractor).name)}</small></span>
+      <span class="who">${esc(p.name)}${p.id === me ? ' (คุณ)' : ''}<small>${esc(tractorById(p.tractor).name)} ${String(p.gear || '').split(',').map(id => GADGET_ICON[id] || '').join('')}</small></span>
       <span class="st${ok ? ' ok' : ''}">${st}</span></li>`;
   }).join('');
   const waiting = r.players.filter(p => p.online && p.id !== r.host && !p.ready).length;
@@ -1675,7 +2073,7 @@ async function mpAction(body){
 }
 $id('lb-ready').addEventListener('click', () => {
   const mine = MP.room && MP.room.players.find(p => p.id === SAVE.playerId);
-  mpAction({ action: 'mpReady', ready: !(mine && mine.ready), tractor: SAVE.selected });
+  mpAction({ action: 'mpReady', ready: !(mine && mine.ready), tractor: SAVE.selected, gear: SAVE.equipped.join(',') });
 });
 $id('lb-start').addEventListener('click', () => mpAction({ action: 'mpStart' }));
 $id('lb-levelsel').addEventListener('change', e => mpAction({ action: 'mpLevel', level: +e.target.value }));
@@ -1706,7 +2104,8 @@ function mpBeginRace(room){
   MP.rivals = {};
   room.players.forEach(p => {
     if (p.id !== SAVE.playerId && room.racers.includes(p.id))
-      MP.rivals[p.id] = { id: p.id, name: p.name, tractor: tractorById(p.tractor), color: RIVAL_COLORS[p.color % 4], s: [], fin: null, dnf: false, stale: false, pose: null };
+      MP.rivals[p.id] = { id: p.id, name: p.name, tractor: tractorById(p.tractor), color: RIVAL_COLORS[p.color % 4], s: [], fin: null, dnf: false, stale: false, pose: null, disp: null,
+        gear: String(p.gear || '').split(',').filter(id => GADGETS.some(g => g.id === id)) };
   });
   startLevel(room.level - 1, { mode: 'room' });
   mpStopSync(); MP.syncT = setInterval(mpSync, MP_CFG.SYNC_MS);
@@ -1730,7 +2129,7 @@ async function mpSync(){
     if (r.s.length > 4000) r.s.splice(0, r.s.length - 4000);
     r.fin = o.fin; r.dnf = !!o.dnf; r.stale = !!o.stale;
     // ปรับระยะแสดงย้อนหลังตามความหน่วงจริง (เน็ตช้า → ย้อนหลังมากขึ้นแต่รถยังวิ่งลื่น)
-    if (r.s.length && r.fin == null && !r.dnf && !r.stale) MP.delay = MP.delay * 0.8 + 0.2 * clamp(raceT - r.s[r.s.length - 1][0] + 0.4, 1.2, 4);
+    if (r.s.length) MP.delay = MP.delay * 0.8 + 0.2 * (raceT - r.s[r.s.length - 1][0]);   // อายุข้อมูลล่าสุด (ไว้ดูสถานะเน็ต)
   }
   if (res.done){
     MP.done = true; mpStopSync();
@@ -1796,7 +2195,7 @@ function notifyHost(event, data){
 }
 window.TRC = {
   getSave: () => JSON.parse(JSON.stringify(SAVE)),
-  setSave: (obj) => { SAVE = Object.assign(defaultSave(), obj); persist(); goMenu(); },
+  setSave: (obj) => { SAVE = migrateSave(Object.assign(defaultSave(), obj)); persist(); goMenu(); },
   addCoins: (n) => { SAVE.coins += Math.max(0, n|0); persist(); showScreen(SCREENS.find(s => !document.getElementById('scr-' + s).hidden) || null); },
   startLevel: (n) => startLevel(clamp((n|0) - 1, 0, SAVE.unlocked - 1)),
   setGasUrl: (url) => { CONFIG.GAS_URL = url; },
@@ -1806,6 +2205,7 @@ window.TRC = {
 };
 
 /* ---------- เริ่มเกม ---------- */
+loadSprites();
 resize(); startDemo(); showScreen('menu');
 requestAnimationFrame(loop);
 notifyHost('ready', { version: 1 });
