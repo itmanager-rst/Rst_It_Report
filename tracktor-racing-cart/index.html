@@ -192,6 +192,19 @@ label.lbl{font-weight:600;font-size:15px}
 .gd h3{margin:0;font-size:16px;line-height:1.2}
 .gd p{margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.35}
 
+/* ---------- น้ำมัน / หัวใจ / โบนัส ---------- */
+.fuelrow{display:flex;align-items:center;gap:6px;justify-content:center;margin-top:6px;font-size:16px;text-shadow:none}
+.fuelbar{width:120px;height:14px;border:3px solid #22314A;border-radius:8px;background:var(--paper);overflow:hidden}
+.fuelbar i{display:block;height:100%;background:linear-gradient(90deg,#D9302A,#F4C534 35%,#5FA43A 70%)}
+.fuelbar.low{animation:fuelblink .5s steps(2) infinite}
+@keyframes fuelblink{50%{border-color:#D9302A;background:#FFD0C8}}
+@media (prefers-reduced-motion:reduce){.fuelbar.low{animation:none;border-color:#D9302A}}
+#hud-hearts{letter-spacing:1px;font-size:15px}
+.diff-tabs .btn[aria-pressed="true"]{background:var(--red);color:#FFF4D6}
+.gameover{font-size:clamp(40px,9vw,64px);font-weight:700;text-align:center;color:var(--red);line-height:1;margin:4px 0 8px;
+  text-shadow:2px 0 0 var(--edge),-2px 0 0 var(--edge),0 2px 0 var(--edge),0 -2px 0 var(--edge)}
+.hearts-big{text-align:center;font-size:30px;letter-spacing:4px;margin:2px 0 6px}
+
 /* ---------- โหมดเทพ (ผู้ดูแล) ---------- */
 .god-chip{cursor:pointer;background:#22314A;color:#5FE6FF;border-color:#5FE6FF;font:inherit;font-size:15px}
 .god-box{background:#22314A;color:#5FE6FF;border-color:#5FE6FF}
@@ -233,12 +246,14 @@ label.lbl{font-weight:600;font-size:15px}
     <div class="progress" aria-hidden="true"><div class="fill" id="hud-prog"></div><div id="hud-cps"></div><div id="hud-rivals"></div><span class="flag">🏁</span></div>
     <div class="hud-box coin-tag"><span class="coin">฿</span><span id="hud-coins">0</span></div>
     <div class="hud-box" id="hud-time">00:00.00</div>
+    <div class="hud-box" id="hud-hearts" aria-label="หัวใจ"></div>
     <div class="hud-box" id="hud-rank" hidden></div>
     <div class="hud-box god-box" id="hud-god" hidden>⚡ โหมดเทพ</div>
   </div>
   <div class="keys-hint" id="keys-hint">→/D เร่ง &nbsp; ←/A เบรก-ถอย &nbsp; ↑/W เทอร์โบ &nbsp; P พัก &nbsp; R เริ่มใหม่</div>
   <div class="speedo"><b id="hud-speed">0</b><span>กม./ชม.</span>
-    <div class="boostbar" style="margin:6px auto 0"><i id="hud-boost" style="width:100%"></i></div></div>
+    <div class="boostbar" style="margin:6px auto 0"><i id="hud-boost" style="width:100%"></i></div>
+    <div class="fuelrow"><span aria-hidden="true">⛽</span><div class="fuelbar" id="hud-fuelbar"><i id="hud-fuel" style="width:100%"></i></div></div></div>
 </div>
 
 <!-- ปุ่มบนหน้าจอสำหรับมือถือ (ใช้ Pointer Events รองรับหลายนิ้วพร้อมกัน) -->
@@ -282,8 +297,12 @@ label.lbl{font-weight:600;font-size:15px}
 <!-- ===================== เลือกด่าน ===================== -->
 <section class="screen dim" id="scr-levels" hidden>
   <div class="panel">
-    <h2>เลือกด่าน</h2>
-    <p class="muted">จบด่านเพื่อปลดล็อกด่านถัดไป ยิ่งเร็วยิ่งได้ดาวและเหรียญมาก</p>
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">เลือกด่าน</h2>
+      <span class="chip" id="lv-stars">★ 0</span>
+    </div>
+    <div class="tabs diff-tabs" id="lv-diff" style="margin:10px 0 4px"></div>
+    <p class="muted" id="lv-diffdesc" style="margin:0 0 8px"></p>
     <div class="levels" id="level-list"></div>
     <div class="row end"><button class="btn" data-go="menu">กลับ</button></div>
   </div>
@@ -602,16 +621,32 @@ function upgradeCost(tractor, nextLv){ return Math.round((60 * Math.pow(nextLv -
    gold/silver = เวลา (วินาที) สำหรับ 3 ดาว / 2 ดาว
    ===================================================================== */
 const LEVELS = [
-  { name:'ทุ่งนาบ้านเรา',     desc:'ทางเรียบ คันนาเตี้ย ฝึกมือ', length:9000,  amp:28,  hill:60,  rough:3,  rocks:4,  bales:3, ramps:1, mud:0, coins:5, reward:120, gold:22, silver:30, seed:11 },
-  { name:'คันนาลูกคลื่น',     desc:'เนินขึ้นลงต่อเนื่อง มีฟางขวางทาง', length:12000, amp:48,  hill:120, rough:5,  rocks:6,  bales:5, ramps:2, mud:1, coins:7, reward:180, gold:29, silver:40, seed:23 },
-  { name:'ทางลูกรังขึ้นดอย',   desc:'เนินยาว หินเยอะ ต้องคุมรถไม่ให้หงาย', length:14000, amp:62,  hill:260, rough:7,  rocks:10, bales:4, ramps:2, mud:1, coins:8, reward:260, gold:36, silver:50, seed:37 },
-  { name:'ฤดูโคลนหน้าฝน',     desc:'บ่อโคลนหลายจุด ยางดีมีชัย', length:16000, amp:56,  hill:200, rough:6,  rocks:8,  bales:6, ramps:3, mud:5, coins:9, reward:350, gold:44, silver:58, seed:41 },
-  { name:'ดอยสุดโหด',         desc:'ชันสุด กระโดดไกล อุปสรรคครบชุด', length:19000, amp:84,  hill:340, rough:9,  rocks:14, bales:8, ramps:4, mud:3, coins:11, reward:500, gold:50, silver:66, seed:53 },
+  { name:'ทุ่งนาบ้านเรา', need:0,     desc:'ทางเรียบ คันนาเตี้ย ฝึกมือ', length:9000,  amp:28,  hill:60,  rough:3,  rocks:4,  bales:3, ramps:1, mud:0, coins:5, reward:120, gold:22, silver:30, seed:11 },
+  { name:'คันนาลูกคลื่น', need:1,     desc:'เนินขึ้นลงต่อเนื่อง มีฟางขวางทาง', length:12000, amp:48,  hill:120, rough:5,  rocks:6,  bales:5, ramps:2, mud:1, coins:7, reward:180, gold:29, silver:40, seed:23 },
+  { name:'ทางลูกรังขึ้นดอย', need:3,   desc:'เนินยาว หินเยอะ ต้องคุมรถไม่ให้หงาย', length:14000, amp:62,  hill:260, rough:7,  rocks:10, bales:4, ramps:2, mud:1, coins:8, reward:260, gold:36, silver:50, seed:37 },
+  { name:'ฤดูโคลนหน้าฝน', need:5,     desc:'บ่อโคลนหลายจุด ยางดีมีชัย', length:16000, amp:56,  hill:200, rough:6,  rocks:8,  bales:6, ramps:3, mud:5, coins:9, reward:350, gold:44, silver:58, seed:41 },
+  { name:'ดอยสุดโหด', need:8,         desc:'ชันสุด กระโดดไกล อุปสรรคครบชุด', length:19000, amp:84,  hill:340, rough:9,  rocks:14, bales:8, ramps:4, mud:3, coins:11, reward:500, gold:50, silver:66, seed:53 },
   // ---- ด่านโหด: gaps = เหวลึก (ต้องกระโดดข้าม), steps = นาขั้นบันได ----
-  { name:'หน้าผาริมโขง',       desc:'เหวลึกหลายช่วง เร่งให้สุดแล้วกระโดดข้าม ตกเหว = จบ', length:17000, amp:58, hill:170, rough:6, rocks:9, bales:4, ramps:1, mud:1, gaps:4, steps:0, coins:10, reward:650, gold:42, silver:55, seed:61, hard:true },
-  { name:'นาขั้นบันไดดอยสูง',  desc:'ไต่ขั้นบันไดชันต่อเนื่อง สลับเหวและโคลน', length:19000, amp:64, hill:300, rough:7, rocks:10, bales:4, ramps:2, mud:3, gaps:2, steps:5, coins:11, reward:800, gold:64, silver:82, seed:71, hard:true },
-  { name:'พายุมรสุมสุดขั้ว',     desc:'ทุกอย่างในด่านเดียว ยาวที่สุด ต้องมีอุปกรณ์ดีๆ', length:23000, amp:84, hill:320, rough:10, rocks:16, bales:7, ramps:3, mud:4, gaps:5, steps:4, coins:13, reward:1100, gold:76, silver:98, seed:83, hard:true },
+  { name:'หน้าผาริมโขง', need:11,       desc:'เหวลึกหลายช่วง เร่งให้สุดแล้วกระโดดข้าม ตกเหว = จบ', length:17000, amp:58, hill:170, rough:6, rocks:9, bales:4, ramps:1, mud:1, gaps:4, steps:0, coins:10, reward:650, gold:42, silver:55, seed:61, hard:true },
+  { name:'นาขั้นบันไดดอยสูง', need:14,  desc:'ไต่ขั้นบันไดชันต่อเนื่อง สลับเหวและโคลน', length:19000, amp:64, hill:300, rough:7, rocks:10, bales:4, ramps:2, mud:3, gaps:2, steps:5, coins:11, reward:800, gold:64, silver:82, seed:71, hard:true },
+  { name:'พายุมรสุมสุดขั้ว', need:17,     desc:'ทุกอย่างในด่านเดียว ยาวที่สุด ต้องมีอุปกรณ์ดีๆ', length:23000, amp:84, hill:320, rough:10, rocks:16, bales:7, ramps:3, mud:4, gaps:5, steps:4, coins:13, reward:1100, gold:76, silver:98, seed:83, hard:true },
 ];
+
+/* =====================================================================
+   ระดับความยาก + น้ำมัน
+   hearts = หัวใจต่อรอบ, fuelMul = อัตราใช้น้ำมัน, repairMul = ค่าซ่อม, reward = ตัวคูณรางวัล
+   can = น้ำมันที่ได้จากถัง 1 ถัง (%), allOpen = เปิดทุกด่าน
+   ===================================================================== */
+const DIFFS = {
+  easy:   { name:'ง่าย', hearts:5, fuelMul:0.55, repairMul:0, reward:0.5, can:45, allOpen:true,
+            desc:'หัวใจ 5 ดวง น้ำมันใช้น้อย ซ่อมฟรี เปิดทุกด่าน (รางวัล ×0.5 ดาวไม่นับปลดล็อก)' },
+  normal: { name:'ปกติ', hearts:3, fuelMul:1,    repairMul:1, reward:1,   can:35,
+            desc:'หัวใจ 3 ดวง ซ่อมรถต้องใช้เหรียญ ปลดล็อกด่านด้วยดาวสะสม' },
+  hard:   { name:'โหด',  hearts:2, fuelMul:1.3,  repairMul:2, reward:1.6, can:30,
+            desc:'หัวใจ 2 ดวง น้ำมันหมดไว ค่าซ่อม ×2 (รางวัล ×1.6)' },
+};
+const FUEL = { IDLE: 0.9, GAS: 5.4, BOOST: 3.2, SPACING: 2600, SPACING_HARD: 2050, START: 1800 };   // % ต่อวินาที, ระยะห่างถังน้ำมัน
+const fuelDrain = (inp, mul) => (FUEL.IDLE + (inp.gas || inp.boost ? FUEL.GAS : 0) + (inp.boost ? FUEL.BOOST : 0)) * mul;
 
 /* RNG แบบกำหนด seed ได้ – ด่านเดิมได้หน้าตาเดิมทุกครั้ง */
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -734,6 +769,13 @@ function buildTrack(levelIndex){
   // เช็กพอยต์ต้องไม่อยู่กลางเหว/บันได: เลื่อนไปก่อนจุดเริ่มอุปสรรค
   const cpX = x => { for (const bl of T.blocked) if (x > bl[0] - 40 && x < bl[1]) return bl[0] - 60; return x; };
   T.checkpoints = [FINISH/3, FINISH*2/3].map(x => ({ x: Math.round(cpX(x)), reached: false }));
+  // ถังน้ำมัน: ทุกๆ FUEL.SPACING px (ไม่วางกลางเหว/บันได) + 1 ถังที่เช็กพอยต์แต่ละจุด
+  T.fuels = [];
+  for (let x = FUEL.START; x < FINISH - 600; x += L.hard ? FUEL.SPACING_HARD : FUEL.SPACING){
+    const fx = cpX(x) + (rnd() - 0.5) * 300;
+    T.fuels.push({ x: fx, y: groundY(T, fx) - 34, taken: false });
+  }
+  T.checkpoints.forEach(c => T.fuels.push({ x: c.x + 140, y: groundY(T, c.x + 140) - 34, taken: false }));
   return T;
 }
 
@@ -903,7 +945,7 @@ function defaultSave(){
   const up = {}; TRACTORS.forEach(t => up[t.id] = { engine:1, turbo:1, grip:1 });
   return { v:1, playerId: 'p_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
     name: 'นักซิ่ง' + Math.floor(100 + Math.random()*900), coins: 0, unlocked: 1, selected: TRACTORS[0].id,
-    owned: FREE_TRACTORS.slice(), upgrades: up, best: {}, sound: true, gadgets: [], equipped: [], updatedAt: Date.now() };
+    owned: FREE_TRACTORS.slice(), upgrades: up, best: {}, sound: true, gadgets: [], equipped: [], difficulty: 'normal', updatedAt: Date.now() };
 }
 let SAVE = loadSave();
 function loadSave(){
@@ -934,6 +976,7 @@ function migrateSave(d){
   const gid = id => GADGETS.some(g => g.id === id);
   d.gadgets = (Array.isArray(d.gadgets) ? d.gadgets : []).filter(gid);
   d.equipped = (Array.isArray(d.equipped) ? d.equipped : []).filter(id => d.gadgets.includes(id)).slice(0, GADGET_SLOTS);
+  if (!DIFFS[d.difficulty]) d.difficulty = 'normal';
   return d;
 }
 function persist(){
@@ -943,6 +986,21 @@ function persist(){
 }
 const tractorById = id => { id = LEGACY_TRACTOR[id] || id; return TRACTORS.find(t => t.id === id) || TRACTORS[0]; };
 const brandById = id => BRANDS.find(b => b.id === id) || BRANDS[0];
+
+/* ---------- ความคืบหน้า: สถิติแยกตามความยาก, ดาวสะสม, ปลดล็อก ---------- */
+// คีย์สถิติ: ปกติ = 'L1' (เข้ากับเซฟเดิม), ง่าย = 'E1', โหด = 'H1'
+const bestKey = (idx, diff) => ({ easy: 'E', normal: 'L', hard: 'H' }[diff] || 'L') + (idx + 1);
+const bestOf = (idx, diff) => SAVE.best[bestKey(idx, diff)];
+const levelStars = idx => Math.max((bestOf(idx, 'normal') || {}).stars || 0, (bestOf(idx, 'hard') || {}).stars || 0);
+const totalStars = () => LEVELS.reduce((s, _, i) => s + levelStars(i), 0);   // ดาวจากระดับปกติ/โหดเท่านั้น
+function computeUnlocked(){
+  let u = 1;
+  for (let i = 1; i < LEVELS.length; i++){
+    if (levelStars(i - 1) >= 1 && totalStars() >= (LEVELS[i].need || 0)) u = i + 1; else break;
+  }
+  return Math.max(SAVE.unlocked || 1, u);   // ไม่ล็อกด่านที่เคยเปิดแล้ว
+}
+const levelOpen = (idx, diff) => (DIFFS[diff] || DIFFS.normal).allOpen || idx + 1 <= SAVE.unlocked;
 
 /* ---------- รูปรถจริง: โหลด <SPRITE_DIR><id>.png ถ้ามีไฟล์ ---------- */
 const SPRITES = {};
@@ -1336,6 +1394,18 @@ function drawWorld(T, cam, zoom, time){
     ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI*2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#8A5A00'; ctx.fillText('฿', 0, 1); ctx.restore();
   }
+  // ถังน้ำมัน (แกลลอนแดง ลอยขึ้นลงเบาๆ)
+  for (const f of (T.fuels || [])){
+    if (f.taken || f.x < x0 - 40 || f.x > x1 + 40) continue;
+    const by = f.y - 6 + Math.sin(time*3 + f.x)*3;
+    ctx.save(); ctx.translate(f.x, by);
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, 34 - (by - f.y) , 16, 4, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#D9302A'; ctx.strokeStyle = '#22314A'; ctx.lineWidth = 2.5;
+    rr(ctx, -14, -18, 28, 34, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#22314A'; ctx.fillRect(-6, -25, 12, 7); ctx.fillRect(4, -24, 8, 4);
+    ctx.strokeStyle = '#FFF4D6'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-8, -10); ctx.lineTo(8, 10); ctx.moveTo(8, -10); ctx.lineTo(-8, 10); ctx.stroke();
+    ctx.restore();
+  }
   // ป้ายเริ่ม / จุดเช็กพอยต์ / ซุ้มเส้นชัย
   flagPole(T.start, '#F4C534', 'เริ่ม');
   for (const cp of T.checkpoints) flagPole(cp.x, cp.reached ? '#5FA43A' : '#D9302A', 'เช็กพอยต์');
@@ -1410,6 +1480,9 @@ function startLevel(idx, opts){
   if (G.mode !== 'room') mpStopSync();
   G.wall = 0; G.rec = []; G.recNext = 0; G.finTime = null; G.dnf = false; G.respawnT = 0; G.fell = false;
   G.shots = []; G.beam = null; G.wcd = 0;
+  G.diff = G.mode === 'room' ? 'normal' : SAVE.difficulty; G.rules = DIFFS[G.diff];
+  G.hearts = G.rules.hearts; G.fuel = 100; G.fuelOutT = 0; G.repairs = 0; G.bonus = 0; G.popups = [];
+  G.airT = 0; G.airRot = 0; G.landT = -1; G.pendingTrick = null; G.failReason = null;
   G.demo = false; G.levelIdx = idx; G.T = buildTrack(idx);
   G.tractor = tractorById(SAVE.selected);
   G.car = createCar(G.T, G.T.start, currentStats());
@@ -1428,7 +1501,8 @@ function startLevel(idx, opts){
   document.getElementById('keys-hint').textContent = G.mode === 'room'
     ? '→/D เร่ง   ←/A เบรก-ถอย   ↑/W เทอร์โบ   (แข่งออนไลน์: รถคว่ำจะกลับเช็กพอยต์อัตโนมัติ +5 วินาที)'
     : '→/D เร่ง   ←/A เบรก-ถอย   ↑/W เทอร์โบ   P พัก   R เริ่มใหม่';
-  document.getElementById('hud-level').textContent = `ด่าน ${idx + 1}`;
+  document.getElementById('hud-level').textContent = `ด่าน ${idx + 1}` + (G.mode !== 'room' && G.diff !== 'normal' ? ` · ${G.rules.name}` : '');
+  document.getElementById('hud-hearts').hidden = G.mode === 'room';
   document.getElementById('hud-cps').innerHTML = G.T.checkpoints.map(c => `<i class="cp" style="left:${(c.x/G.T.finish*100).toFixed(1)}%"></i>`).join('');
   setupRivalHud();
   resize();
@@ -1455,10 +1529,16 @@ function countdown(){
   tick();
 }
 
+// ค่าซ่อม: ขึ้นกับด่านและความยาก แพงขึ้น 50% ทุกครั้งที่ซ่อมในรอบเดียวกัน
+const repairCost = () => Math.round((30 + G.levelIdx * 20) * G.rules.repairMul * (1 + G.repairs * 0.5) / 5) * 5;
 function respawnAtCheckpoint(){
+  const cost = repairCost();
+  if (SAVE.coins < cost) return;
+  SAVE.coins -= cost; G.repairs++; persist();
   const x = G.lastCp ?? G.T.start;
   G.car = createCar(G.T, x, currentStats());
-  G.penalty += 5; G.time += 5;
+  G.penalty += 5; G.time += 5; G.fuel = Math.max(G.fuel, 60); G.fuelOutT = 0; G.failReason = null; G.fell = false;
+  document.getElementById('hud').hidden = false; document.getElementById('touch').hidden = !isTouch();
   showScreen(null); countdown();
 }
 
@@ -1468,7 +1548,8 @@ function finishRace(){
   G.finTime = G.time;
   const L = LEVELS[G.levelIdx], t = G.time;
   const stars = t <= L.gold ? 3 : t <= L.silver ? 2 : 1;
-  const key = 'L' + (G.levelIdx + 1), prev = SAVE.best[key];
+  const key = bestKey(G.levelIdx, G.diff), prev = SAVE.best[key];
+  const totalBefore = totalStars();
   const firstClear = !prev;
   const lines = [
     ['รางวัลจบด่าน', L.reward],
@@ -1476,7 +1557,12 @@ function finishRace(){
     [`โบนัสดาว (${stars} ดาว)`, (stars - 1) * Math.round(L.reward * 0.5)],
   ];
   if (firstClear) lines.push(['โบนัสผ่านด่านครั้งแรก', L.reward]);
-  const total = lines.reduce((s, l) => s + l[1], 0);
+  if (G.bonus) lines.push(['โบนัสฝีมือ (ลอย/ตีลังกา/ลงจอดสวย)', G.bonus]);
+  const fuelLeft = Math.round(G.fuel);
+  if (fuelLeft >= 10) lines.push([`น้ำมันเหลือ ${fuelLeft}%`, Math.round(fuelLeft * 0.5)]);
+  if (G.hearts === G.rules.hearts && G.mode !== 'room') lines.push(['ไม่เสียหัวใจเลย', Math.round(L.reward * 0.25)]);
+  if (G.rules.reward !== 1){ const sub = lines.reduce((s, l) => s + l[1], 0); lines.push([`ความยาก${G.rules.name} ×${G.rules.reward}`, Math.round(sub * (G.rules.reward - 1))]); }
+  const total = Math.max(0, lines.reduce((s, l) => s + l[1], 0));
   SAVE.coins += total;
   // โหมดเทพ: ไม่บันทึกสถิติ ไม่ส่งตารางอันดับ ไม่ปลดล็อกด่าน (ได้เหรียญตามปกติ)
   const newRecord = !G.cheated && (!prev || t < prev.time);
@@ -1484,11 +1570,16 @@ function finishRace(){
   else if (!G.cheated && stars > prev.stars) prev.stars = stars;
   let unlockedNew = false;
   // ห้องออนไลน์อาจเป็นด่านที่ยังไม่ปลดล็อก: ปลดด่านถัดไปเฉพาะเมื่อเคยปลดด่านนี้แล้ว
-  const hadLevel = !G.cheated && G.levelIdx + 1 <= SAVE.unlocked;
-  if (hadLevel && G.levelIdx + 2 > SAVE.unlocked && G.levelIdx + 1 < LEVELS.length){ SAVE.unlocked = G.levelIdx + 2; unlockedNew = true; }
+  // ปลดล็อกด้วยดาว (เฉพาะระดับปกติ/โหด และต้องเป็นด่านที่เปิดแล้ว)
+  const hadLevel = !G.cheated && G.levelIdx + 1 <= SAVE.unlocked && G.diff !== 'easy';
+  const beforeU = SAVE.unlocked;
+  if (hadLevel){ SAVE.unlocked = computeUnlocked(); unlockedNew = SAVE.unlocked > beforeU; }
+  const starsGained = totalStars() - totalBefore;
+  const nextIdx = G.levelIdx + 1, nextNeed = nextIdx < LEVELS.length ? (LEVELS[nextIdx].need || 0) : 0;
+  const nextLockedByStars = G.diff !== 'easy' && nextIdx < LEVELS.length && nextIdx + 1 > SAVE.unlocked && totalStars() < nextNeed;
   persist();
   Audio.engine(0, 0, false);
-  if (!G.cheated) submitScore({ level: G.levelIdx + 1, timeMs: Math.round(t * 1000), stars, tractor: G.tractor.id, coinsEarned: total });
+  if (!G.cheated) submitScore({ level: G.levelIdx + 1, timeMs: Math.round(t * 1000), stars, tractor: G.tractor.id, coinsEarned: total, difficulty: G.diff });
   if (newRecord) uploadGhost(Math.round(t * 1000));
   if (G.cheated) vsNote = '<p class="muted" style="text-align:center">⚡ โหมดเทพ: รอบนี้ไม่บันทึกสถิติและตารางอันดับ</p>';
   if (G.mode === 'room') mpSync();
@@ -1508,14 +1599,16 @@ function finishRace(){
     <p class="muted" style="text-align:center;margin:2px 0 6px">3 ดาว ≤ ${L.gold} วินาที, 2 ดาว ≤ ${L.silver} วินาที${G.penalty ? `, รวมโทษเช็กพอยต์ ${G.penalty} วินาที` : ''}</p>
     <table class="ledger">${lines.map(l => `<tr><td>${l[0]}</td><td>+${l[1]}</td></tr>`).join('')}
       <tr class="total"><td>รวม</td><td><span class="coin-tag"><span class="coin">฿</span>${total}</span></td></tr></table>
-    ${unlockedNew ? `<p><b>ปลดล็อกด่าน ${G.levelIdx + 2}: ${LEVELS[G.levelIdx + 1].name}</b></p>` : ''}${vs}`;
+    ${starsGained > 0 ? `<p style="text-align:center">ดาวสะสม +${starsGained} → ★ ${totalStars()}</p>` : ''}
+    ${unlockedNew ? `<p><b>ปลดล็อกด่าน ${SAVE.unlocked}: ${LEVELS[SAVE.unlocked - 1].name}</b></p>` : ''}
+    ${nextLockedByStars ? `<p class="muted">ด่าน ${nextIdx + 1} ต้องมีดาวสะสม ★ ${nextNeed} (ตอนนี้ ${totalStars()}) ลองเก็บ 3 ดาวในด่านที่ผ่านแล้ว</p>` : ''}${vs}`;
   const acts = document.getElementById('r-actions'); acts.innerHTML = '';
   if (G.mode === 'room') roomResultActions(acts);
   else if (G.mode === 'ghost') acts.append(btn('ตารางอันดับ', '', () => showScreen('board')), btn('แข่งรถผีอีกครั้ง', 'red', restartCurrent));
   else {
     acts.append(btn('โรงรถ', '', () => showScreen('garage')), btn('เล่นอีกครั้ง', '', restartCurrent));
-    if (G.levelIdx + 1 < LEVELS.length) acts.append(btn('ด่านถัดไป', 'red', () => startLevel(G.levelIdx + 1)));
-    else acts.append(btn('กลับเมนู', 'red', () => goMenu()));
+    if (G.levelIdx + 1 < LEVELS.length && levelOpen(G.levelIdx + 1, G.diff)) acts.append(btn('ด่านถัดไป', 'red', () => startLevel(G.levelIdx + 1)));
+    else acts.append(btn('เลือกด่าน', 'red', () => showScreen('levels')));
   }
   showScreen('result');
   if (G.mode === 'room') renderRoomStandings();
@@ -1523,26 +1616,73 @@ function finishRace(){
   document.querySelectorAll('.big-stars span').forEach((s, i) => setTimeout(() => { s.classList.add('show'); if (s.classList.contains('got')) Audio.blip(600 + i*200, 0.2); }, 250 + i*280));
 }
 
+const FAIL_TEXT = {
+  crash: ['รถไถคว่ำ!', 'ระวังเงยหน้ามากเกินไปตอนขึ้นเนิน ปล่อยคันเร่งหรือกดเบรกเพื่อกดหน้ารถลง'],
+  fall:  ['ตกเหว!', 'ต้องมีความเร็วพอก่อนถึงขอบเหว: เร่งเต็มที่ตั้งแต่ทางตรง กดเทอร์โบตอนขึ้นเนินส่งตัว ลองติด "ปีกร่อน" หรือ "ไอพ่นจรวด"'],
+  fuel:  ['น้ำมันหมด!', 'เก็บถังน้ำมันสีแดงระหว่างทาง ใช้เทอร์โบเฉพาะจุดที่จำเป็น เพราะเทอร์โบกินน้ำมันมาก'],
+};
 function crashed(){
   G.state = 'result';
+  G.hearts--;
+  const reason = G.failReason || 'crash', [title, tip] = FAIL_TEXT[reason];
   Audio.engine(0, 0, false); Audio.blip(160, 0.4);
-  notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(G.car.x) });
+  notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(G.car.x), reason, hearts: G.hearts });
   document.getElementById('hud').hidden = true; document.getElementById('touch').hidden = true;
-  document.getElementById('r-title').textContent = G.fell ? 'ตกเหว!' : 'รถไถคว่ำ!';
-  document.getElementById('r-body').innerHTML = `<p>${G.fell
-      ? 'ต้องมีความเร็วพอก่อนถึงขอบเหว: เร่งเต็มที่ตั้งแต่ทางตรง กดเทอร์โบตอนขึ้นเนินส่งตัว ลองติด "ปีกร่อน" หรือ "ไอพ่นจรวด" ช่วยได้มาก'
-      : 'ระวังเงยหน้ามากเกินไปตอนขึ้นเนิน ปล่อยคันเร่งหรือกดเบรกเพื่อกดหน้ารถลง'}</p>
-    <p class="muted">ไปได้ ${Math.round(clamp(G.car.x / G.T.finish, 0, 1) * 100)}% ของเส้นทาง</p>`;
+  const hearts = `<div class="hearts-big" aria-label="เหลือหัวใจ ${G.hearts} ดวง">${'❤️'.repeat(Math.max(0, G.hearts))}${'🖤'.repeat(G.rules.hearts - Math.max(0, G.hearts))}</div>`;
+  const prog = `<p class="muted">ไปได้ ${Math.round(clamp(G.car.x / G.T.finish, 0, 1) * 100)}% ของเส้นทาง</p>`;
   const acts = document.getElementById('r-actions'); acts.innerHTML = '';
-  acts.append(btn('ออกไปเมนู', '', () => goMenu()), btn('เริ่มด่านใหม่', '', restartCurrent));
-  if (G.lastCp) acts.append(btn('ไปต่อจากเช็กพอยต์ (+5 วินาที)', 'red', respawnAtCheckpoint));
+  if (G.hearts <= 0){
+    // GAME OVER: เหรียญที่เก็บในรอบนี้และโบนัสฝีมือหายหมด
+    Audio.blip(110, 0.6);
+    document.getElementById('r-title').textContent = title;
+    document.getElementById('r-body').innerHTML = `<div class="gameover">GAME OVER</div>${hearts}
+      <p style="text-align:center">หมดหัวใจแล้ว เหรียญที่เก็บได้ในรอบนี้ (${G.coins} เหรียญ${G.bonus ? ` + โบนัส ${G.bonus}` : ''}) หายหมด</p>${prog}<p class="muted">${tip}</p>`;
+    acts.append(btn('โรงรถ', '', () => showScreen('garage')), btn('ออกไปเมนู', '', () => goMenu()), btn('เริ่มด่านใหม่', 'red', restartCurrent));
+    notifyHost('gameOver', { level: G.levelIdx + 1, reason });
+  } else {
+    const cost = repairCost(), can = SAVE.coins >= cost;
+    document.getElementById('r-title').textContent = title;
+    document.getElementById('r-body').innerHTML = `${hearts}<p>${tip}</p>${prog}
+      <p class="muted">ไปต่อ: กลับ${G.lastCp ? 'เช็กพอยต์' : 'จุดเริ่ม'} +5 วินาที ${cost ? `ค่าซ่อม ${cost} เหรียญ (มี ${SAVE.coins.toLocaleString('th-TH')})` : 'ซ่อมฟรี'}</p>`;
+    const go = btn(cost ? `ซ่อมแล้วไปต่อ (${cost} เหรียญ)` : 'ไปต่อ (ซ่อมฟรี)', 'red', respawnAtCheckpoint);
+    if (!can){ go.disabled = true; go.textContent = `เหรียญไม่พอซ่อม (${cost})`; }
+    acts.append(btn('ออกไปเมนู', '', () => goMenu()), btn('เริ่มด่านใหม่', '', restartCurrent), go);
+  }
   showScreen('result');
+}
+
+/* ---------- โบนัสฝีมือ: ลอยฟ้า / ตีลังกา / ลงจอดสวย ----------
+   นับตอนลงจอด แล้วรอ 0.4 วินาทีว่าไม่คว่ำ จึงให้รางวัล (คว่ำหลังลงจอด = ไม่ได้) */
+function popup(x, y, text, color){ if (G.popups) G.popups.push({ x, y, text, color: color || '#F4C534', life: 1.4 }); }
+function trackTricks(car, dt){
+  if (!car.grounded){ G.airT += dt; G.airRot += car.w * dt; G.landT = -1; return; }
+  if (G.airT > 0){
+    const slope = Math.atan((groundY(G.T, car.x + 30) - groundY(G.T, car.x - 30)) / 60);
+    let da = car.a - slope; if (da > Math.PI) da -= 2*Math.PI; else if (da < -Math.PI) da += 2*Math.PI;
+    G.pendingTrick = { air: G.airT, flips: Math.floor((Math.abs(G.airRot) + 0.6) / (2*Math.PI)), dir: G.airRot < 0 ? 'หลัง' : 'หน้า', clean: Math.abs(da) < 0.15 && G.airT >= 0.5 };
+    G.airT = 0; G.airRot = 0; G.landT = 0;
+  }
+  if (G.pendingTrick && G.landT >= 0 && (G.landT += dt) > 0.4){
+    const p = G.pendingTrick, lines = []; let pts = 0;
+    if (p.air >= 0.7){ const v = Math.round(p.air * 10); pts += v; lines.push(`ลอยฟ้า ${p.air.toFixed(1)} วิ +${v}`); }
+    if (p.flips > 0){ const v = 60 * p.flips; pts += v; lines.push(`ตีลังกา${p.dir}${p.flips > 1 ? ' x' + p.flips : ''} +${v}`); }
+    if (p.clean && pts > 0){ pts += 10; lines.push('ลงจอดสวย +10'); }
+    else if (p.clean && p.air >= 0.5){ pts += 5; lines.push('ลงจอดสวย +5'); }
+    if (pts){
+      pts = Math.max(1, Math.round(pts * G.rules.reward));
+      G.bonus += pts; Audio.blip(880, 0.1); Audio.blip(1320, 0.12);
+      lines.forEach((t, k) => setTimeout(() => popup(G.car.x, G.car.y - 135, t, k ? '#5FE6FF' : '#F4C534'), k * 300));
+    }
+    G.pendingTrick = null;
+  }
 }
 
 function update(dt){
   const T = G.T, car = G.car; if (!T) return;
   const racing = G.state === 'race';
-  const inp = G.demo ? botInput(car) : (racing ? input : { gas: false, brake: false, boost: false });
+  let inp = G.demo ? botInput(car) : (racing ? input : { gas: false, brake: false, boost: false });
+  const godFuel = G.cheated && (ADMIN.god.boost || ADMIN.god.immortal);
+  if (racing && !G.demo && G.fuel <= 0 && !godFuel) inp = { gas: false, brake: inp.brake, boost: false };   // น้ำมันหมด: เร่งไม่ได้
   if (racing || G.demo || G.state === 'countdown'){
     let steps = 0; G.acc += dt;
     while (G.acc >= PHYS.DT && steps < 10){ stepCar(car, T, inp, PHYS.DT); G.acc -= PHYS.DT; steps++; }
@@ -1553,6 +1693,19 @@ function update(dt){
     if (G.mode === 'room'){ G.wall = Math.max(0, (serverNow() - MP.startAt) / 1000); G.time = G.wall + G.penalty; }
     else { G.wall += dt; G.time += dt; }
     recordSample(car);
+    // ---- น้ำมัน ----
+    if (!godFuel) G.fuel = Math.max(0, G.fuel - fuelDrain(inp, G.rules.fuelMul) * dt);
+    for (const f of T.fuels){
+      if (!f.taken && Math.abs(f.x - car.x) < 52 && Math.abs(f.y - car.y) < 80){
+        f.taken = true; G.fuel = Math.min(100, G.fuel + G.rules.can); Audio.blip(520, 0.1); Audio.blip(780, 0.1);
+        popup(car.x + 40, car.y - 135, `⛽ +${G.rules.can}%`, '#7CFF8A');
+      }
+    }
+    // น้ำมันหมด + (รถหยุด หรือไหลถอยหลัง) ต่อเนื่อง 2 วินาที = แพ้
+    G.fuelOutT = G.fuel <= 0 && (Math.hypot(car.vx, car.vy) < 25 || car.vx < -20) ? G.fuelOutT + dt : 0;
+    if (G.fuel <= 0 && G.fuelOutT === 0 && !G.fuelWarned){ G.fuelWarned = true; toast('น้ำมันหมด! ไหลให้ถึงถังน้ำมันข้างหน้า'); }
+    if (G.fuel > 0) G.fuelWarned = false;
+    trackTricks(car, dt);
     const mag = car.stats.magnet;
     for (const c of T.coins){
       if (c.taken) continue;
@@ -1591,15 +1744,18 @@ function update(dt){
       for (let k = 0; k < 24; k++) emit(G.car.x, G.car.y - 20, (Math.random() - 0.5)*300, -Math.random()*240, 0.6, 3, '#5FE6FF');
       return;
     }
-    if (pit && !car.crashed){ car.crashed = true; G.fell = true; }
+    if (pit && !car.crashed){ car.crashed = true; G.fell = true; G.failReason = 'fall'; }
+    if (G.fuelOutT > 2 && !car.crashed){ car.crashed = true; G.failReason = 'fuel'; }
+    if (car.crashed && !G.failReason) G.failReason = G.fuel <= 0 ? 'fuel' : 'crash';
+    if (car.crashed) G.pendingTrick = null;   // คว่ำหลังลงจอด = ไม่ได้โบนัส
     if (car.crashed){
       if (G.mode !== 'room'){ crashed(); return; }
       // แข่งออนไลน์: ไม่หยุดเกม กลับเช็กพอยต์อัตโนมัติ
-      if (G.respawnT <= 0){ G.respawnT = 1.2; Audio.blip(160, 0.3); toast((G.fell ? 'ตกเหว!' : 'รถคว่ำ!') + ' กลับเช็กพอยต์ +5 วินาที'); notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(car.x), mode: 'room' }); }
+      if (G.respawnT <= 0){ G.respawnT = 1.2; Audio.blip(160, 0.3); toast(({ fall: 'ตกเหว!', fuel: 'น้ำมันหมด!' }[G.failReason] || 'รถคว่ำ!') + ' กลับเช็กพอยต์ +5 วินาที'); notifyHost('crash', { level: G.levelIdx + 1, x: Math.round(car.x), mode: 'room' }); }
     }
     if (G.respawnT > 0){
       G.respawnT -= dt;
-      if (G.respawnT <= 0){ G.car = createCar(T, G.lastCp ?? T.start, currentStats()); G.penalty += 5; G.fell = false; }
+      if (G.respawnT <= 0){ G.car = createCar(T, G.lastCp ?? T.start, currentStats()); G.penalty += 5; G.fell = false; G.failReason = null; G.fuel = Math.max(G.fuel, 60); G.fuelOutT = 0; }
     }
   }
   if (G.demo && (car.crashed || car.x > T.finish + 400)) startDemo();
@@ -1624,6 +1780,7 @@ function update(dt){
     else emit(ex, ey, -20 + (Math.random()-0.5)*20, -50, 0.9, 3, 'rgba(70,70,80,.55)', 7);
   }
   updateParticles(dt);
+  if (G.popups) for (let i = G.popups.length - 1; i >= 0; i--){ const q = G.popups[i]; q.life -= dt; q.y -= 40*dt; if (q.life <= 0) G.popups.splice(i, 1); }
   if (G.drone){   // โดรนลอยตามหลังรถ
     G.drone.x += (car.x - 70 - G.drone.x) * Math.min(1, dt*3);
     G.drone.y += (car.y - 125 + Math.sin(G.clock*3)*8 - G.drone.y) * Math.min(1, dt*3);
@@ -1663,6 +1820,12 @@ function render(){
   ctx.restore();
   if (!G.demo){
     drawWeapons();
+    for (const q of (G.popups || [])){   // ข้อความเด้ง: โบนัสฝีมือ / น้ำมัน
+      ctx.save(); ctx.globalAlpha = Math.min(1, q.life / 0.4);
+      ctx.font = '700 22px Mitr, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = '#22314A'; ctx.strokeText(q.text, q.x, q.y);
+      ctx.fillStyle = q.color; ctx.fillText(q.text, q.x, q.y); ctx.restore();
+    }
     if (SAVE.showName !== false){
       const meP = G.mode === 'room' && MP.room && MP.room.players.find(q => q.id === SAVE.playerId);
       drawNameTag(car.x, car.y, SAVE.name, meP ? RIVAL_COLORS[meP.color % 4] : '#D9302A', 1);
@@ -1691,6 +1854,13 @@ function hud(){
   e.coins.textContent = G.coins;
   e.prog.style.width = (clamp(G.car.x / G.T.finish, 0, 1) * 100).toFixed(1) + '%';
   e.boost.style.width = G.car.boost.toFixed(0) + '%';
+  const fb = hudEls.fuelbar || (hudEls.fuelbar = document.getElementById('hud-fuelbar'));
+  document.getElementById('hud-fuel').style.width = G.fuel.toFixed(0) + '%';
+  fb.classList.toggle('low', G.fuel < 20);
+  if (G.mode !== 'room'){
+    const hs = '❤️'.repeat(Math.max(0, G.hearts)) + '🖤'.repeat(Math.max(0, G.rules.hearts - G.hearts));
+    const he = document.getElementById('hud-hearts'); if (he.textContent !== hs) he.textContent = hs;
+  }
   ['t-gas','t-brake','t-boost'].forEach((id, i) => document.getElementById(id).classList.toggle('on', [input.gas, input.brake, input.boost][i]));
   updateRivalHud();
 }
@@ -1786,13 +1956,19 @@ function renderMenu(){
 }
 
 function renderLevels(){
+  const diff = SAVE.difficulty, D = DIFFS[diff];
+  const dt = document.getElementById('lv-diff'); dt.innerHTML = '';
+  Object.keys(DIFFS).forEach(k => { const b = btn(DIFFS[k].name, 'sm', () => { SAVE.difficulty = k; persist(); renderLevels(); }); b.setAttribute('aria-pressed', String(k === diff)); dt.append(b); });
+  document.getElementById('lv-diffdesc').textContent = D.desc;
+  document.getElementById('lv-stars').textContent = `★ ${totalStars()} / ${LEVELS.length * 3}`;
   const list = document.getElementById('level-list'); list.innerHTML = '';
   LEVELS.forEach((L, i) => {
-    const locked = i + 1 > SAVE.unlocked, best = SAVE.best['L' + (i + 1)];
+    const locked = !levelOpen(i, diff), best = bestOf(i, diff);
+    const why = levelStars(i - 1) < 1 ? `ผ่านด่าน ${i} ก่อน` : `ต้องมีดาวสะสม ★ ${L.need} (มี ${totalStars()})`;
     const b = document.createElement('button'); b.className = 'lv' + (locked ? ' locked' : '');
     b.disabled = locked;
     b.innerHTML = `<span class="num">${locked ? '🔒' : i + 1}</span>
-      <span><span class="name">${L.name}</span>${L.hard ? '<span class="size-tag" style="background:var(--red);color:#FFF4D6">โหด</span>' : ''}<br><span class="desc">${locked ? 'ผ่านด่านก่อนหน้าเพื่อปลดล็อก' : L.desc}${best ? ` – ดีที่สุด ${fmtTime(best.time)}` : ''}</span></span>
+      <span><span class="name">${L.name}</span>${L.hard ? '<span class="size-tag" style="background:var(--red);color:#FFF4D6">โหด</span>' : ''}<br><span class="desc">${locked ? why : L.desc}${best ? ` – ดีที่สุด ${fmtTime(best.time)}` : ''}</span></span>
       <span class="stars" aria-label="${best ? best.stars : 0} ดาว">${'★'.repeat(best ? best.stars : 0)}<span style="color:var(--pip-off)">${'★'.repeat(3 - (best ? best.stars : 0))}</span></span>`;
     if (!locked) b.addEventListener('click', () => startLevel(i));
     list.append(b);
@@ -1902,22 +2078,24 @@ function buyGadget(g){
 }
 
 /* ---------- ตารางอันดับ ---------- */
-async function renderBoard(level){
+async function renderBoard(level, diff){
+  diff = diff || G.boardDiff || SAVE.difficulty; G.boardDiff = diff;
   const tabs = document.getElementById('board-tabs'); tabs.innerHTML = '';
-  LEVELS.forEach((L, i) => { const b = btn(`ด่าน ${i + 1}`, 'sm', () => renderBoard(i + 1)); b.setAttribute('aria-pressed', String(i + 1 === level)); tabs.append(b); });
+  Object.keys(DIFFS).forEach(k => { const b = btn(DIFFS[k].name, 'sm', () => renderBoard(level, k)); b.setAttribute('aria-pressed', String(k === diff)); b.style.marginRight = k === 'hard' ? '14px' : ''; tabs.append(b); });
+  LEVELS.forEach((L, i) => { const b = btn(`ด่าน ${i + 1}`, 'sm', () => renderBoard(i + 1, diff)); b.setAttribute('aria-pressed', String(i + 1 === level)); tabs.append(b); });
   const body = document.getElementById('board-body');
-  const best = SAVE.best['L' + level];
+  const best = bestOf(level - 1, diff);
   const local = `<p><b>สถิติของคุณ:</b> ${best ? `${fmtTime(best.time)} ${'★'.repeat(best.stars)} (${tractorById(best.tractor).name})` : 'ยังไม่เคยผ่านด่านนี้'}</p>`;
   if (!CONFIG.GAS_URL){ body.innerHTML = local + `<p class="muted">ตารางอันดับออนไลน์ยังไม่เปิด ใส่ URL ของ Apps Script ใน CONFIG.GAS_URL ที่ต้นไฟล์ แล้วเปิดเกมผ่าน trc_tools.py serve หรือ Flutter</p>`; return; }
   body.innerHTML = local + '<p class="muted">กำลังโหลดอันดับ…</p>';
-  const res = await gasGet({ action: 'leaderboard', level, limit: 10 });
+  const res = await gasGet({ action: 'leaderboard', level, limit: 10, difficulty: diff });
   if (!res || !res.ok){ body.innerHTML = local + `<p class="muted">โหลดอันดับไม่ได้ (${esc(res && res.error || 'ออฟไลน์')}) ลองใหม่อีกครั้ง</p>`; return; }
-  const canRace = level <= SAVE.unlocked;
+  const canRace = levelOpen(level - 1, diff);
   body.innerHTML = local + (res.rows.length ? `<table class="board"><tr><th>#</th><th>ชื่อ</th><th>รถ</th><th class="n">เวลา</th><th></th></tr>${res.rows.map((r, i) =>
     `<tr${r.playerId === SAVE.playerId ? ' style="font-weight:700"' : ''}><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(tractorById(r.tractor).name)}</td><td class="n">${fmtTime(r.timeMs/1000)}</td>
       <td class="n">${r.hasGhost ? `<button class="btn sm" data-ghost="${esc(r.playerId)}" ${canRace ? '' : 'disabled title="ปลดล็อกด่านนี้ก่อน"'}>แข่งรถผี</button>` : ''}</td></tr>`).join('')}</table>`
     : '<p class="muted">ยังไม่มีใครส่งเวลา เป็นคนแรกเลย</p>');
-  body.querySelectorAll('[data-ghost]').forEach(b => b.addEventListener('click', () => raceGhost(level, b.dataset.ghost, b)));
+  body.querySelectorAll('[data-ghost]').forEach(b => b.addEventListener('click', () => raceGhost(level, b.dataset.ghost, b, diff)));
 }
 
 /* ---------- ตั้งค่า ---------- */
@@ -2024,7 +2202,7 @@ const decodeGhost = str => String(str || '').split(';').map(r => r.split(',').ma
 
 function uploadGhost(timeMs){
   if (!CONFIG.GAS_URL || G.rec.length < 10) return;
-  gasPost({ action: 'saveGhost', playerId: SAVE.playerId, name: SAVE.name, level: G.levelIdx + 1, timeMs, tractor: G.tractor.id, data: encodeGhost(G.rec) });
+  gasPost({ action: 'saveGhost', playerId: SAVE.playerId, name: SAVE.name, level: G.levelIdx + 1, timeMs, tractor: G.tractor.id, difficulty: G.diff, data: encodeGhost(G.rec) });
 }
 
 /* ---------- วาดรถคู่แข่ง (โปร่งแสง + ป้ายชื่อ) ---------- */
@@ -2333,13 +2511,14 @@ function mpToLobby(){
 }
 
 /* ---------- รถผีจากตารางอันดับ ---------- */
-async function raceGhost(level, playerId, b){
+async function raceGhost(level, playerId, b, diff){
   const label = b.textContent; b.disabled = true; b.textContent = 'กำลังโหลด…';
-  const res = await gasGet({ action: 'ghost', level, playerId });
+  const res = await gasGet({ action: 'ghost', level, playerId, difficulty: diff || 'normal' });
   b.disabled = false; b.textContent = label;
   if (!res || !res.ok || !res.ghost){ toast('โหลดรถผีไม่ได้: ' + (res && res.error || 'ออฟไลน์')); return; }
   const g = res.ghost, s = decodeGhost(g.data);
   if (s.length < 10){ toast('ข้อมูลรถผีไม่สมบูรณ์'); return; }
+  if (diff) SAVE.difficulty = diff;
   startLevel(level - 1, { mode: 'ghost', ghost: { name: g.playerId === SAVE.playerId ? 'สถิติของคุณ' : String(g.name), tractor: tractorById(g.tractor), color: '#8E44AD', s, timeMs: g.timeMs } });
 }
 
@@ -2559,7 +2738,8 @@ window.TRC = {
   getSave: () => JSON.parse(JSON.stringify(SAVE)),
   setSave: (obj) => { SAVE = migrateSave(Object.assign(defaultSave(), obj)); persist(); goMenu(); },
   addCoins: (n) => { SAVE.coins += Math.max(0, n|0); persist(); showScreen(SCREENS.find(s => !document.getElementById('scr-' + s).hidden) || null); },
-  startLevel: (n) => startLevel(clamp((n|0) - 1, 0, SAVE.unlocked - 1)),
+  startLevel: (n) => { const i = clamp((n|0) - 1, 0, LEVELS.length - 1); if (levelOpen(i, SAVE.difficulty)) startLevel(i); },
+  setDifficulty: (d) => { if (DIFFS[d]){ SAVE.difficulty = d; persist(); } },
   setGasUrl: (url) => { CONFIG.GAS_URL = url; },
   pause: () => { if (G.state === 'race') togglePause(); },
   joinRoom: (code) => { showScreen('online'); document.getElementById('on-code').value = String(code || ''); mpJoin(); },

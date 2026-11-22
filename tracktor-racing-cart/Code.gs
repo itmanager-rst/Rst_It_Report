@@ -14,7 +14,7 @@
  *
  * API
  *   GET  ?action=ping
- *   GET  ?action=leaderboard&level=1&limit=10     → เวลาที่ดีที่สุดของแต่ละคนในด่านนั้น
+ *   GET  ?action=leaderboard&level=1&limit=10&difficulty=normal → เวลาที่ดีที่สุดของแต่ละคน (easy / normal / hard)
  *   GET  ?action=loadPlayer&playerId=p_xxx        → เซฟล่าสุดของผู้เล่น
  *   POST {action:'submitScore', playerId, name, level, timeMs, stars, tractor, coinsEarned}
  *   POST {action:'savePlayer', save:{...ข้อมูลเซฟทั้งก้อน...}}
@@ -50,9 +50,9 @@ const MIN_TIME_MS = { 1: 8000, 2: 11000, 3: 14000, 4: 16000, 5: 20000, 6: 17000,
 
 const SHEETS = {
   Players: ['playerId', 'name', 'coins', 'unlockedLevel', 'selectedTractor', 'ownedTractors', 'upgradesJSON', 'bestJSON', 'updatedAt', 'gadgetsJSON'],
-  Scores:  ['timestamp', 'playerId', 'name', 'level', 'timeMs', 'timeText', 'stars', 'tractor', 'coinsEarned'],
+  Scores:  ['timestamp', 'playerId', 'name', 'level', 'timeMs', 'timeText', 'stars', 'tractor', 'coinsEarned', 'difficulty'],
   Races:   ['timestamp', 'roomCode', 'raceId', 'level', 'place', 'playerId', 'name', 'tractor', 'timeMs', 'timeText', 'status'],
-  Ghosts:  ['playerId', 'level', 'name', 'timeMs', 'tractor', 'data', 'updatedAt'],
+  Ghosts:  ['playerId', 'level', 'name', 'timeMs', 'tractor', 'data', 'updatedAt', 'difficulty'],
 };
 
 // ===== ผู้เล่นหลายคน =====
@@ -82,7 +82,7 @@ function setup() {
   sum.clear();
   sum.getRange('A1').setValue('เวลาที่ดีที่สุดของผู้เล่นแต่ละคนในแต่ละด่าน (คำนวณจากแท็บ Scores)');
   sum.getRange('A2').setFormula(
-    '=QUERY(Scores!A:I,"select D, C, min(E) where D is not null group by D, C order by D asc, min(E) asc label D \'ด่าน\', C \'ชื่อ\', min(E) \'เวลาดีที่สุด (ms)\'",1)');
+    '=QUERY(Scores!A:J,"select J, D, C, min(E) where D is not null group by J, D, C order by J asc, D asc, min(E) asc label J \'ความยาก\', D \'ด่าน\', C \'ชื่อ\', min(E) \'เวลาดีที่สุด (ms)\'",1)');
   sum.getRange('A1').setFontWeight('bold');
   sum.setColumnWidths(1, 3, 160);
 
@@ -100,10 +100,10 @@ function doGet(e) {
   try {
     switch (p.action) {
       case 'ping':        return json_({ ok: true, time: new Date().toISOString(), serverTime: Date.now() });
-      case 'leaderboard': return json_(leaderboard_(Number(p.level) || 1, Math.min(50, Number(p.limit) || 10)));
+      case 'leaderboard': return json_(leaderboard_(Number(p.level) || 1, Math.min(50, Number(p.limit) || 10), cleanDiff_(p.difficulty)));
       case 'loadPlayer':  return json_(loadPlayer_(String(p.playerId || '')));
       case 'mpRoom':      return json_(mpRoom_(p));
-      case 'ghost':       return json_(getGhost_(Number(p.level) || 1, String(p.playerId || '')));
+      case 'ghost':       return json_(getGhost_(Number(p.level) || 1, String(p.playerId || ''), cleanDiff_(p.difficulty)));
       case 'adminCheck':  return json_(adminCheck_(String(p.token || '')));
       default:            return json_({ ok: false, error: 'unknown action' });
     }
@@ -160,28 +160,29 @@ function submitScore_(b) {
   const sh = getSheet_(SpreadsheetApp.openById(SPREADSHEET_ID), 'Scores');
   sh.appendRow([
     new Date(), playerId, cleanText_(b.name, 20), level, timeMs, fmtTime_(timeMs),
-    clampInt_(b.stars, 0, 3), cleanText_(b.tractor, 12), clampInt_(b.coinsEarned, 0, 100000),
+    clampInt_(b.stars, 0, 3), cleanText_(b.tractor, 12), clampInt_(b.coinsEarned, 0, 100000), cleanDiff_(b.difficulty),
   ]);
-  return { ok: true, rank: rankOf_(level, playerId) };
+  return { ok: true, rank: rankOf_(level, playerId, cleanDiff_(b.difficulty)) };
 }
 
-function leaderboard_(level, limit) {
+function leaderboard_(level, limit, diff) {
+  diff = diff || 'normal';
   const sh = getSheet_(SpreadsheetApp.openById(SPREADSHEET_ID), 'Scores');
   const rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, SHEETS.Scores.length).getValues() : [];
   const best = {};   // เก็บเวลาดีที่สุดคนละ 1 แถว
   rows.forEach(r => {
-    if (Number(r[3]) !== level) return;
+    if (Number(r[3]) !== level || (String(r[9] || 'normal')) !== diff) return;   // แถวเก่าที่ไม่มีระดับ = ปกติ
     const id = r[1], t = Number(r[4]);
     if (!best[id] || t < best[id].timeMs) best[id] = { playerId: id, name: r[2], timeMs: t, stars: r[6], tractor: r[7] };
   });
   const list = Object.keys(best).map(k => best[k]).sort((a, b) => a.timeMs - b.timeMs).slice(0, limit);
-  const ghosts = ghostIndex_(level);
+  const ghosts = ghostIndex_(level, diff);
   list.forEach(r => r.hasGhost = !!ghosts[r.playerId]);
-  return { ok: true, level, rows: list };
+  return { ok: true, level, difficulty: diff, rows: list };
 }
 
-function rankOf_(level, playerId) {
-  const all = leaderboard_(level, 1000).rows;
+function rankOf_(level, playerId, diff) {
+  const all = leaderboard_(level, 1000, diff).rows;
   const i = all.findIndex(r => r.playerId === playerId);
   return i < 0 ? null : i + 1;
 }
@@ -265,9 +266,10 @@ function saveGhost_(b) {
   const data = String(b.data || '');
   if (!data || data.length > GHOST_MAX_CHARS || !/^[-0-9,;]+$/.test(data)) return { ok: false, error: 'bad ghost data' };
 
+  const diff = cleanDiff_(b.difficulty);
   const sh = getSheet_(SpreadsheetApp.openById(SPREADSHEET_ID), 'Ghosts');
-  const row = [id, level, cleanText_(b.name, 20), timeMs, cleanText_(b.tractor, 12), data, new Date()];
-  const r = findGhostRow_(sh, id, level);
+  const row = [id, level, cleanText_(b.name, 20), timeMs, cleanText_(b.tractor, 12), data, new Date(), diff];
+  const r = findGhostRow_(sh, id, level, diff);
   if (r) {
     const old = Number(sh.getRange(r, 4).getValue());
     if (old && old <= timeMs) return { ok: true, kept: true };   // ของเดิมเร็วกว่า เก็บไว้
@@ -278,28 +280,28 @@ function saveGhost_(b) {
   return { ok: true };
 }
 
-function getGhost_(level, playerId) {
+function getGhost_(level, playerId, diff) {
   const id = cleanId_(playerId);
   if (!id) return { ok: false, error: 'missing playerId' };
   const sh = getSheet_(SpreadsheetApp.openById(SPREADSHEET_ID), 'Ghosts');
-  const r = findGhostRow_(sh, id, level);
+  const r = findGhostRow_(sh, id, level, diff || 'normal');
   if (!r) return { ok: false, error: 'not found' };
   const v = sh.getRange(r, 1, 1, SHEETS.Ghosts.length).getValues()[0];
   return { ok: true, ghost: { playerId: v[0], level: Number(v[1]), name: v[2], timeMs: Number(v[3]), tractor: v[4], data: String(v[5]) } };
 }
 
-function findGhostRow_(sh, id, level) {
+function findGhostRow_(sh, id, level, diff) {
   if (sh.getLastRow() < 2) return 0;
-  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
-  for (let i = 0; i < v.length; i++) if (v[i][0] === id && Number(v[i][1]) === level) return i + 2;
+  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
+  for (let i = 0; i < v.length; i++) if (v[i][0] === id && Number(v[i][1]) === level && String(v[i][7] || 'normal') === diff) return i + 2;
   return 0;
 }
 
-function ghostIndex_(level) {
+function ghostIndex_(level, diff) {
   const sh = getSheet_(SpreadsheetApp.openById(SPREADSHEET_ID), 'Ghosts');
   const out = {};
   if (sh.getLastRow() < 2) return out;
-  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(r => { if (Number(r[1]) === level) out[r[0]] = true; });
+  sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues().forEach(r => { if (Number(r[1]) === level && String(r[7] || 'normal') === (diff || 'normal')) out[r[0]] = true; });
   return out;
 }
 
@@ -548,6 +550,7 @@ function findRow_(sh, id) {
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
 function cleanId_(s) { return String(s || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40); }
 function cleanText_(s, n) { return String(s == null ? '' : s).replace(/^[=+\-@]/, "'").slice(0, n); }   // กันสูตรแปลกปลอม (CSV/formula injection)
+function cleanDiff_(s) { s = String(s || 'normal'); return s === 'easy' || s === 'hard' ? s : 'normal'; }
 function cleanGear_(s) { return String(s || '').replace(/[^a-z,]/g, '').slice(0, 40); }   // อุปกรณ์เสริมที่ติดตั้ง เช่น "jet,wing"
 function clampInt_(v, a, b) { v = Math.round(Number(v) || 0); return Math.max(a, Math.min(b, v)); }
 function safeParse_(s, d) { try { return JSON.parse(s); } catch (e) { return d; } }
