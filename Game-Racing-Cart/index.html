@@ -192,6 +192,15 @@ label.lbl{font-weight:600;font-size:15px}
 .gd h3{margin:0;font-size:16px;line-height:1.2}
 .gd p{margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.35}
 
+/* ---------- โหมดเทพ (ผู้ดูแล) ---------- */
+.god-chip{cursor:pointer;background:#22314A;color:#5FE6FF;border-color:#5FE6FF;font:inherit;font-size:15px}
+.god-box{background:#22314A;color:#5FE6FF;border-color:#5FE6FF}
+.god-h{margin:12px 0 6px;font-size:17px}
+.god-panel .tabs .btn[aria-pressed="true"]{background:#22314A;color:#5FE6FF;border-color:#5FE6FF}
+.left-pad{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.weapon-pad{display:flex;gap:10px}
+.pedal.wpn{width:clamp(64px,12vw,84px);height:clamp(64px,12vw,84px);border-radius:50%;background:#22314A;color:#5FE6FF;font-size:15px;border-color:#5FE6FF}
+
 /* ---------- แข่งออนไลน์ ---------- */
 .online-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 12px}
 @media (max-width:640px){.online-grid{grid-template-columns:1fr}}
@@ -225,6 +234,7 @@ label.lbl{font-weight:600;font-size:15px}
     <div class="hud-box coin-tag"><span class="coin">฿</span><span id="hud-coins">0</span></div>
     <div class="hud-box" id="hud-time">00:00.00</div>
     <div class="hud-box" id="hud-rank" hidden></div>
+    <div class="hud-box god-box" id="hud-god" hidden>⚡ โหมดเทพ</div>
   </div>
   <div class="keys-hint" id="keys-hint">→/D เร่ง &nbsp; ←/A เบรก-ถอย &nbsp; ↑/W เทอร์โบ &nbsp; P พัก &nbsp; R เริ่มใหม่</div>
   <div class="speedo"><b id="hud-speed">0</b><span>กม./ชม.</span>
@@ -233,7 +243,13 @@ label.lbl{font-weight:600;font-size:15px}
 
 <!-- ปุ่มบนหน้าจอสำหรับมือถือ (ใช้ Pointer Events รองรับหลายนิ้วพร้อมกัน) -->
 <div id="touch" hidden>
-  <div class="pedal" id="t-brake" role="button" aria-label="เบรกหรือถอย">เบรก<small>ถอย / ก้มหน้า</small></div>
+  <div class="left-pad">
+    <div class="weapon-pad" id="weapon-pad" hidden>
+      <div class="pedal wpn" id="t-laser" role="button" aria-label="ยิงเลเซอร์">เลเซอร์</div>
+      <div class="pedal wpn" id="t-rocket" role="button" aria-label="ยิงจรวด">จรวด</div>
+    </div>
+    <div class="pedal" id="t-brake" role="button" aria-label="เบรกหรือถอย">เบรก<small>ถอย / ก้มหน้า</small></div>
+  </div>
   <div class="right-pad">
     <div class="pedal" id="t-boost" role="button" aria-label="เทอร์โบ">เทอร์โบ</div>
     <div class="pedal" id="t-gas" role="button" aria-label="เร่ง">เร่ง<small>เงยหน้า</small></div>
@@ -246,7 +262,7 @@ label.lbl{font-weight:600;font-size:15px}
 
 <!-- ===================== เมนูหลัก ===================== -->
 <section class="screen" id="scr-menu">
-  <h1 class="title">รถไถซิ่ง</h1>
+  <h1 class="title" id="game-title">รถไถซิ่ง</h1>
   <div class="subtitle">Tractor Racing Cart – ซิ่งข้ามทุ่งให้ถึงเส้นชัย</div>
   <div class="menu-actions">
     <button class="btn red big" data-go="levels">เริ่มแข่ง</button>
@@ -259,6 +275,7 @@ label.lbl{font-weight:600;font-size:15px}
     <span class="chip coin-tag"><span class="coin">฿</span><span class="js-coins">0</span> เหรียญ</span>
     <span class="chip" id="menu-tractor">–</span>
     <span class="chip" id="menu-player">–</span>
+    <button class="chip god-chip" id="menu-admin" hidden>⚡ โหมดเทพ</button>
   </div>
 </section>
 
@@ -395,6 +412,56 @@ label.lbl{font-weight:600;font-size:15px}
       <button class="btn ghost" id="lb-leave">ออกจากห้อง</button>
       <button class="btn green" id="lb-ready" hidden>พร้อมแข่ง</button>
       <button class="btn red" id="lb-start" hidden>เริ่มแข่ง</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ผู้ดูแลระบบ: เข้าสู่ระบบ ===================== -->
+<section class="screen dim" id="scr-adminlogin" hidden>
+  <div class="panel" style="width:min(380px,100%)">
+    <h2>ผู้ดูแลระบบ</h2>
+    <label class="lbl" for="adm-pin">รหัสผู้ดูแล</label>
+    <input class="field" id="adm-pin" type="password" autocomplete="off" maxlength="40">
+    <p class="muted" id="adm-msg" aria-live="polite"></p>
+    <div class="row end">
+      <button class="btn ghost" id="adm-cancel">ยกเลิก</button>
+      <button class="btn red" id="adm-login">เข้าสู่ระบบ</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ผู้ดูแลระบบ: โหมดเทพ ===================== -->
+<section class="screen dim" id="scr-admin" hidden>
+  <div class="panel garage god-panel">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">⚡ โหมดเทพ</h2>
+      <span class="chip coin-tag"><span class="coin">฿</span><span class="js-coins">0</span></span>
+    </div>
+    <p class="muted" style="margin:4px 0 10px">ชุดแต่งใช้ได้ทุกโหมด (เพื่อนในห้องออนไลน์เห็นด้วย) อาวุธและพลังเทพใช้ได้เฉพาะเล่นคนเดียว และรอบนั้นจะไม่บันทึกสถิติ</p>
+    <div class="garage-grid">
+      <div>
+        <div class="stage gadget-stage"><canvas id="adm-preview" width="440" height="190"></canvas></div>
+        <h3 class="god-h">แต่งรถเทพ</h3>
+        <div class="tabs" id="adm-skins"></div>
+        <div class="tabs" id="adm-fx"></div>
+      </div>
+      <div>
+        <h3 class="god-h" style="margin-top:0">อาวุธเทพ</h3>
+        <div class="tabs" id="adm-weapons"></div>
+        <p class="muted" style="font-size:13px;margin:0 0 8px">คีย์บอร์ด: F = เลเซอร์, G = จรวด (มือถือมีปุ่มบนจอ) ยิงทำลายหินและฟางข้างหน้า จรวดระเบิดบ่อโคลนได้</p>
+        <h3 class="god-h">พลังเทพ</h3>
+        <div class="tabs" id="adm-god"></div>
+        <h3 class="god-h">เครื่องมือ</h3>
+        <div class="row">
+          <button class="btn sm" id="adm-coins">+10,000 เหรียญ</button>
+          <button class="btn sm" id="adm-unlock">ปลดล็อกทั้งหมด</button>
+        </div>
+      </div>
+    </div>
+    <div class="row end" style="margin-top:14px">
+      <button class="btn ghost" id="adm-logout">ออกจากโหมดผู้ดูแล</button>
+      <button class="btn" data-go="menu">กลับเมนู</button>
+      <button class="btn green" data-go="levels">ไปแข่ง</button>
     </div>
   </div>
 </section>
@@ -578,7 +645,9 @@ function buildTrack(levelIndex){
   };
   const addBump = (cx, w, height, profile) => {
     const i0 = Math.max(0, Math.floor((cx - w/2) / STEP)), i1 = Math.min(n-1, Math.ceil((cx + w/2) / STEP));
-    for (let i = i0; i <= i1; i++){ const d = (i*STEP - cx) / (w/2); if (Math.abs(d) <= 1) h[i] -= height * profile(d); }
+    const d0 = [];   // เก็บส่วนที่เปลี่ยนไว้ เพื่อให้อาวุธทำลายอุปสรรคคืนพื้นเดิมได้
+    for (let i = i0; i <= i1; i++){ const d = (i*STEP - cx) / (w/2), v = Math.abs(d) <= 1 ? height * profile(d) : 0; h[i] -= v; d0.push(v); }
+    return { i0, d: d0 };
   };
 
   // ---- เหวลึก / นาขั้นบันได ----
@@ -629,8 +698,8 @@ function buildTrack(levelIndex){
   T.blocked = blocked;
   for (let k = 0; k < L.mud; k++){                       // บ่อโคลน: แอ่งตื้น + แรงต้าน
     const w = 260 + rnd()*220, x = place(w); if (x === null) continue;
-    addBump(x, w, -7, d => 0.5*(1+Math.cos(Math.PI*d)));
-    T.mud.push({ x0: x - w/2, x1: x + w/2 });
+    const bump = addBump(x, w, -7, d => 0.5*(1+Math.cos(Math.PI*d)));
+    T.mud.push({ x0: x - w/2, x1: x + w/2, bump });
   }
   for (let k = 0; k < L.ramps; k++){                     // ทางลาดกระโดด: ขึ้นยาว ลงสั้น (เร็วพอจะลอย ช้าก็ไหลลงได้)
     const w = 300, x = place(w + 80, 0.1, true); if (x === null) continue;
@@ -641,14 +710,14 @@ function buildTrack(levelIndex){
   for (let k = 0; k < L.bales; k++){                     // ฟ่อนฟาง: ทรงคางหมู ข้ามได้ถ้ามีความเร็ว
     const w = 120, x = place(w, 0.12); if (x === null) continue;
     const ht = 16 + rnd()*6;
-    addBump(x, w, ht, d => smooth(clamp((1 - Math.abs(d)) / 0.6, 0, 1)));
-    T.features.push({ type:'bale', x, w, ht });
+    const bump = addBump(x, w, ht, d => smooth(clamp((1 - Math.abs(d)) / 0.6, 0, 1)));
+    T.features.push({ type:'bale', x, w, ht, bump });
   }
   for (let k = 0; k < L.rocks; k++){                     // ก้อนหิน: เนินกลมเล็กๆ
     const w = 70 + rnd()*30, x = place(w, 0.22); if (x === null) continue;
     const ht = 8 + rnd()*(6 + levelIndex*1.5);
-    addBump(x, w, ht, d => 0.5*(1+Math.cos(Math.PI*d)));
-    T.features.push({ type:'rock', x, w, ht, seed: rnd() });
+    const bump = addBump(x, w, ht, d => 0.5*(1+Math.cos(Math.PI*d)));
+    T.features.push({ type:'rock', x, w, ht, seed: rnd(), bump });
   }
   // ---- เหรียญเป็นกลุ่มละ 6 ----
   for (let k = 0; k < L.coins; k++){
@@ -671,9 +740,9 @@ function groundY(T, x){
   if (i >= T.h.length - 1) return T.h[T.h.length - 1];
   const t = f - i; return T.h[i] * (1 - t) + T.h[i+1] * t;
 }
-function inMud(T, x){ for (const m of T.mud) if (x > m.x0 && x < m.x1) return true; return false; }
+function inMud(T, x){ for (const m of T.mud) if (!m.gone && x > m.x0 && x < m.x1) return true; return false; }
 // ตกเหว: อยู่ในช่วงเหวและต่ำกว่าขอบเหวเกิน 150 px
-function inPit(T, car){ for (const g of T.pits) if (car.x > g.x0 - 10 && car.x < g.x1 + 10 && car.y > g.rim + 150) return g; return null; }
+function inPit(T, car){ for (const g of T.pits) if (!g.bridged && car.x > g.x0 - 10 && car.x < g.x1 + 10 && car.y > g.rim + 150) return g; return null; }
 
 /* รวมค่าพื้นฐานรถ + ระดับอัปเกรด เป็นค่าที่ฟิสิกส์ใช้จริง */
 function computeStats(t, up, gadgets){
@@ -714,7 +783,7 @@ function createCar(T, x, stats){
 /* ฟิสิกส์ 1 step: สปริงช่วงล่างที่ล้อแต่ละข้าง + แรงขับ/เบรกตามแนวสัมผัส + แรงบิดหมุนตัวรถ */
 function stepCar(car, T, inp, dt){
   const s = car.stats, cos = Math.cos(car.a), sin = Math.sin(car.a);
-  let ax = 0, ay = PHYS.G, tq = 0, contacts = 0;
+  let ax = 0, ay = PHYS.G * (s.gScale || 1), tq = 0, contacts = 0;
   const mud = inMud(T, car.x); car.inMud = mud;
   const boosting = !!inp.boost && car.boost > 0;
   const gas = !!inp.gas || boosting;
@@ -1138,17 +1207,17 @@ function drawWorld(T, cam, zoom, time){
   const sg = ctx.createLinearGradient(0, cam.y - 100, 0, yBottom);
   sg.addColorStop(0, '#8B5A2B'); sg.addColorStop(1, '#4E311A');
   ctx.fillStyle = sg; ctx.beginPath(); ctx.moveTo(x0, yBottom);
-  for (let x = Math.floor(x0/STEP)*STEP; x <= x1; x += STEP) ctx.lineTo(x, groundY(T, x));
+  for (let x = Math.floor(x0/STEP)*STEP; x <= x1; x += STEP) ctx.lineTo(x, drawGY(T, x));
   ctx.lineTo(x1, yBottom); ctx.closePath(); ctx.fill();
   // ชั้นหญ้า/คันนา
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.beginPath();
-  for (let x = Math.floor(x0/STEP)*STEP; x <= x1; x += STEP){ const y = groundY(T, x) + 5; x === Math.floor(x0/STEP)*STEP ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  for (let x = Math.floor(x0/STEP)*STEP; x <= x1; x += STEP){ const y = drawGY(T, x) + 5; x === Math.floor(x0/STEP)*STEP ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
   ctx.strokeStyle = '#4E8D2E'; ctx.lineWidth = 12; ctx.stroke();
   ctx.strokeStyle = '#78BE45'; ctx.lineWidth = 5; ctx.translate(0, -4); ctx.stroke(); ctx.translate(0, 4);
   // บ่อโคลน
   for (const m of T.mud){
-    if (m.x1 < x0 || m.x0 > x1) continue;
+    if (m.gone || m.x1 < x0 || m.x0 > x1) continue;
     ctx.fillStyle = '#4A2E18'; ctx.beginPath();
     for (let x = m.x0; x <= m.x1; x += STEP) ctx.lineTo(x, groundY(T, x) - 3);
     for (let x = m.x1; x >= m.x0; x -= STEP) ctx.lineTo(x, groundY(T, x) + 16);
@@ -1177,6 +1246,15 @@ function drawWorld(T, cam, zoom, time){
     // แถบเหลืองดำที่ขอบ + ป้ายเตือน
     const lx = g.x0 - 4, ly = groundY(T, lx);
     for (let k = 0; k < 4; k++){ ctx.fillStyle = k % 2 ? '#22314A' : '#F4C534'; ctx.fillRect(lx - 16 + k*5, ly - 3, 5, 6); }
+    if (g.bridged){   // สะพานพลังงาน
+      const yA = g.rim, yB = g.rim;
+      ctx.save(); ctx.shadowColor = '#5FE6FF'; ctx.shadowBlur = 16;
+      ctx.strokeStyle = '#5FE6FF'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(g.x0 - 6, yA + 2); ctx.lineTo(g.x1 + 6, yB + 2); ctx.stroke();
+      ctx.lineWidth = 2; ctx.globalAlpha = 0.6;
+      for (let k = 0; k <= 6; k++){ const xx = g.x0 + (g.x1 - g.x0)*k/6, yy = yA + (yB - yA)*k/6; ctx.beginPath(); ctx.moveTo(xx, yy + 2); ctx.lineTo(xx + (k % 2 ? -14 : 14), yy + 26); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(g.x0, yA + 26); ctx.lineTo(g.x1, yB + 26); ctx.stroke();
+      ctx.restore();
+    }
     const sx = g.x0 - 420; if (sx > x0 - 60 && sx < x1 + 60){
       const sy = groundY(T, sx);
       ctx.fillStyle = '#22314A'; ctx.fillRect(sx - 2, sy - 62, 4, 62);
@@ -1188,7 +1266,7 @@ function drawWorld(T, cam, zoom, time){
   }
   // อุปสรรค
   for (const f of T.features){
-    if (f.type === 'gap' || f.type === 'steps') continue;
+    if (f.type === 'gap' || f.type === 'steps' || f.destroyed) continue;
     if (f.x + f.w < x0 || f.x - f.w > x1) continue;
     const xa = f.x - f.w/2, xb = f.x + f.w/2, base = (groundY(T, xa) + groundY(T, xb)) / 2 + 6;
     if (f.type === 'bale'){
@@ -1283,7 +1361,7 @@ const G = {
 };
 const input = { gas: false, brake: false, boost: false };
 
-function currentStats(){ const t = tractorById(SAVE.selected); return computeStats(t, SAVE.upgrades[t.id], SAVE.equipped); }
+function currentStats(){ const t = tractorById(SAVE.selected); return adminStats(computeStats(t, SAVE.upgrades[t.id], SAVE.equipped)); }
 
 function startDemo(){
   G.demo = true; G.levelIdx = 0; G.T = buildTrack(0);
@@ -1298,11 +1376,16 @@ function startLevel(idx, opts){
   G.mode = opts.mode || 'solo'; G.ghost = opts.ghost || null;
   if (G.mode !== 'room') mpStopSync();
   G.wall = 0; G.rec = []; G.recNext = 0; G.finTime = null; G.dnf = false; G.respawnT = 0; G.fell = false;
+  G.shots = []; G.beam = null; G.wcd = 0;
   G.demo = false; G.levelIdx = idx; G.T = buildTrack(idx);
   G.tractor = tractorById(SAVE.selected);
   G.car = createCar(G.T, G.T.start, currentStats());
   G.time = 0; G.coins = 0; G.penalty = 0; G.lastCp = null; particles.length = 0; G.shield = G.car.stats.shield; G.droneCoins = 0;
   G.drone = { x: G.car.x - 60, y: G.car.y - 120 };
+  G.cheated = godPlayActive();
+  if (G.cheated && ADMIN.weapons.bridge) applyBridges(G.T);
+  document.getElementById('hud-god').hidden = !G.cheated;
+  document.getElementById('weapon-pad').hidden = !(G.cheated && (ADMIN.weapons.laser || ADMIN.weapons.rocket));
   G.cam.x = G.car.x + 120; G.cam.y = G.car.y;
   input.gas = input.brake = input.boost = false;
   showScreen(null);
@@ -1347,6 +1430,7 @@ function respawnAtCheckpoint(){
 }
 
 function finishRace(){
+  let vsNote = '';
   G.state = 'result';
   G.finTime = G.time;
   const L = LEVELS[G.levelIdx], t = G.time;
@@ -1361,20 +1445,22 @@ function finishRace(){
   if (firstClear) lines.push(['โบนัสผ่านด่านครั้งแรก', L.reward]);
   const total = lines.reduce((s, l) => s + l[1], 0);
   SAVE.coins += total;
-  const newRecord = !prev || t < prev.time;
+  // โหมดเทพ: ไม่บันทึกสถิติ ไม่ส่งตารางอันดับ ไม่ปลดล็อกด่าน (ได้เหรียญตามปกติ)
+  const newRecord = !G.cheated && (!prev || t < prev.time);
   if (newRecord) SAVE.best[key] = { time: +t.toFixed(2), stars: Math.max(stars, prev ? prev.stars : 0), tractor: G.tractor.id };
-  else if (stars > prev.stars) prev.stars = stars;
+  else if (!G.cheated && stars > prev.stars) prev.stars = stars;
   let unlockedNew = false;
   // ห้องออนไลน์อาจเป็นด่านที่ยังไม่ปลดล็อก: ปลดด่านถัดไปเฉพาะเมื่อเคยปลดด่านนี้แล้ว
-  const hadLevel = G.levelIdx + 1 <= SAVE.unlocked;
+  const hadLevel = !G.cheated && G.levelIdx + 1 <= SAVE.unlocked;
   if (hadLevel && G.levelIdx + 2 > SAVE.unlocked && G.levelIdx + 1 < LEVELS.length){ SAVE.unlocked = G.levelIdx + 2; unlockedNew = true; }
   persist();
   Audio.engine(0, 0, false);
-  submitScore({ level: G.levelIdx + 1, timeMs: Math.round(t * 1000), stars, tractor: G.tractor.id, coinsEarned: total });
+  if (!G.cheated) submitScore({ level: G.levelIdx + 1, timeMs: Math.round(t * 1000), stars, tractor: G.tractor.id, coinsEarned: total });
   if (newRecord) uploadGhost(Math.round(t * 1000));
+  if (G.cheated) vsNote = '<p class="muted" style="text-align:center">⚡ โหมดเทพ: รอบนี้ไม่บันทึกสถิติและตารางอันดับ</p>';
   if (G.mode === 'room') mpSync();
   notifyHost('levelComplete', { level: G.levelIdx + 1, time: t, stars, coinsEarned: total, mode: G.mode });
-  let vs = '';
+  let vs = vsNote;
   if (G.mode === 'ghost' && G.ghost){
     const gt = G.ghost.timeMs / 1000, win = t < gt;
     vs = `<p style="text-align:center;font-size:18px;margin:4px 0"><b>${win ? 'ชนะรถผี' : 'แพ้รถผี'} ${esc(G.ghost.name)}</b> (${fmtTime(gt)}, ${win ? 'เร็วกว่า' : 'ช้ากว่า'} ${Math.abs(t - gt).toFixed(2)} วินาที)</p>`;
@@ -1450,6 +1536,17 @@ function update(dt){
     for (const cp of T.checkpoints) if (!cp.reached && car.x > cp.x){ cp.reached = true; G.lastCp = cp.x; toast('ผ่านจุดเช็กพอยต์'); }
     if (car.x >= T.finish){ finishRace(); return; }
     const pit = inPit(T, car);
+    if (G.cheated){
+      if (ADMIN.god.boost) car.boost = 100;
+      if (ADMIN.god.immortal && (car.crashed || pit)){   // อมตะ: ตั้งรถกลับทันที / ส่งข้ามเหว
+        const vx = car.vx;
+        G.car = createCar(T, pit ? pit.x1 + 120 : car.x, car.stats);
+        G.car.vx = Math.max(pit ? 450 : 0, vx * 0.6);
+        for (let k = 0; k < 16; k++) emit(G.car.x, G.car.y - 20, (Math.random() - 0.5)*260, -Math.random()*220, 0.5, 3, '#5FE6FF');
+        return;
+      }
+    }
+    updateWeapons(dt);
     if ((car.crashed || pit) && G.shield > 0 && G.respawnT <= 0){
       // ระบบกู้รถอัตโนมัติ: พลิกกลับ/ดึงขึ้นจากเหว แล้ววิ่งต่อ (ครั้งเดียวต่อรอบ)
       G.shield--;
@@ -1479,6 +1576,12 @@ function update(dt){
   if (rw.contact && (inp.gas || inp.boost) && Math.random() < 0.6){
     const wx = car.x + rw.x*c2 - (rw.y + rw.r)*s2, wy = car.y + rw.x*s2 + (rw.y + rw.r)*c2;
     emit(wx - 6, wy - 2, -60 - Math.random()*80, -40 - Math.random()*80, 0.5, 3 + Math.random()*3, car.inMud ? '#4A2E18' : '#C9A27A');
+  }
+  if (!G.demo && ADMIN.on && ADMIN.fx.fire && rw.contact && Math.abs(car.vx) > 60){   // ล้อไฟ
+    for (const w of car.wheels){
+      const wx = car.x + w.x*c2 - (w.y + w.r)*s2, wy = car.y + w.x*s2 + (w.y + w.r)*c2;
+      emit(wx - 4, wy - 4, -40 - Math.random()*60, -30 - Math.random()*60, 0.35, 3 + Math.random()*2, Math.random() < 0.5 ? '#FF6A1A' : '#FFC23A');
+    }
   }
   G.exhaustT -= dt;
   if (G.exhaustT <= 0){
@@ -1520,10 +1623,12 @@ function render(){
   const car = G.car;
   ctx.save(); ctx.translate(car.x, car.y); ctx.rotate(car.a);
   const fx = { gadgets: car.stats.gadgets, boosting: car.boosting, air: !car.grounded, gliding: car.gliding, shield: G.shield, t: G.clock };
+  const look = !G.demo ? myLook() : null;
   drawGadgetsBack(ctx, fx);
-  drawTractor(ctx, G.tractor, car.wheels);
+  drawTractorLook(ctx, G.tractor, car.wheels, look, G.clock);
   drawGadgetsFront(ctx, fx, car.wheels);
   ctx.restore();
+  if (!G.demo) drawWeapons();
   if (!G.demo && G.drone && car.stats.magnet) drawDrone(ctx, G.drone.x, G.drone.y, G.clock);
   ctx.restore();
 }
@@ -1560,6 +1665,9 @@ window.addEventListener('keydown', e => {
   const k = KEYMAP[e.code];
   if (k){ input[k] = true; e.preventDefault(); }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+  if (e.code === 'KeyF') fireWeapon('laser');
+  if (e.code === 'KeyG') fireWeapon('rocket');
+  if (e.code === 'KeyA' && e.ctrlKey && e.shiftKey){ e.preventDefault(); openAdmin(); }
   if (e.code === 'KeyR' && (G.state === 'race' || G.state === 'paused' || G.state === 'result') && !G.demo && G.mode !== 'room') restartCurrent();
 });
 window.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) input[k] = false; });
@@ -1573,6 +1681,7 @@ function bindPedal(id, key){
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 bindPedal('t-gas', 'gas'); bindPedal('t-brake', 'brake'); bindPedal('t-boost', 'boost');
+['laser', 'rocket'].forEach(w => document.getElementById('t-' + w).addEventListener('pointerdown', e => { e.preventDefault(); fireWeapon(w); }));
 const isTouch = () => window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'race' && G.mode !== 'room') togglePause(); });
 
@@ -1597,7 +1706,7 @@ function togglePause(){
 /* =====================================================================
    UI SCREENS
    ===================================================================== */
-const SCREENS = ['menu','levels','garage','board','settings','pause','result','online','lobby','gadgets'];
+const SCREENS = ['menu','levels','garage','board','settings','pause','result','online','lobby','gadgets','adminlogin','admin'];
 function showScreen(name){
   SCREENS.forEach(s => document.getElementById('scr-' + s).hidden = s !== name);
   if (name === 'menu') renderMenu();
@@ -1607,6 +1716,8 @@ function showScreen(name){
   if (name === 'settings') renderSettings();
   if (name === 'online') renderOnline();
   if (name === 'gadgets') renderGadgets();
+  if (name === 'admin') renderAdmin();
+  if (name === 'adminlogin'){ document.getElementById('adm-pin').value = ''; document.getElementById('adm-msg').textContent = CONFIG.GAS_URL ? '' : 'ต้องตั้งค่า CONFIG.GAS_URL ก่อน รหัสตรวจสอบที่ Apps Script'; setTimeout(() => document.getElementById('adm-pin').focus(), 50); }
   if (name === 'lobby') renderLobby();
   document.querySelectorAll('.js-coins').forEach(e => e.textContent = SAVE.coins.toLocaleString('th-TH'));
   const first = name && document.querySelector(`#scr-${name} .btn`);
@@ -1632,6 +1743,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', 
 function renderMenu(){
   document.getElementById('menu-tractor').textContent = 'รถ: ' + tractorById(SAVE.selected).name;
   document.getElementById('menu-player').textContent = SAVE.name;
+  document.getElementById('menu-admin').hidden = !ADMIN.on;
 }
 
 function renderLevels(){
@@ -1878,9 +1990,9 @@ function uploadGhost(timeMs){
 function drawGhostCar(p, tractor, color, name, gear){
   const wheels = [{ ...GEO.rear, rot: p[1] / GEO.rear.r, comp: 4 }, { ...GEO.front, rot: p[1] / GEO.front.r, comp: 4 }];
   const air = G.T ? p[2] < groundY(G.T, p[1]) - 50 : false;
-  const fx = { gadgets: gear || [], boosting: false, air, gliding: air, shield: 1, t: G.clock };
+  const fx = { gadgets: (gear || []).filter(id => GADGETS.some(g => g.id === id)), boosting: false, air, gliding: air, shield: 1, t: G.clock };
   ctx.save(); ctx.globalAlpha = 0.5; ctx.translate(p[1], p[2]); ctx.rotate(p[3]);
-  drawGadgetsBack(ctx, fx); drawTractor(ctx, tractor, wheels); drawGadgetsFront(ctx, fx, wheels);
+  drawGadgetsBack(ctx, fx); drawTractorLook(ctx, tractor, wheels, lookFromGear(gear), G.clock); drawGadgetsFront(ctx, fx, wheels);
   ctx.restore();
   ctx.save();
   ctx.font = '600 15px Mitr, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1986,7 +2098,7 @@ function renderOnline(){
 }
 async function mpCreate(){
   const b = $id('on-create'); if (b.disabled) return; b.disabled = true;
-  const res = await gasPost({ action: 'mpCreate', playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, gear: SAVE.equipped.join(','), level: +$id('on-level').value || 1 });
+  const res = await gasPost({ action: 'mpCreate', playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, gear: myGear(), level: +$id('on-level').value || 1 });
   b.disabled = !CONFIG.GAS_URL;
   if (res && res.ok) enterLobby(res.room);
   else toast('สร้างห้องไม่สำเร็จ: ' + (res && res.error || 'ออฟไลน์'));
@@ -1995,7 +2107,7 @@ async function mpJoin(){
   const code = $id('on-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (code.length < 4){ toast('ใส่รหัสห้อง 4 ตัว'); return; }
   const b = $id('on-join'); if (b.disabled) return; b.disabled = true;
-  const res = await gasPost({ action: 'mpJoin', code, playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, gear: SAVE.equipped.join(',') });
+  const res = await gasPost({ action: 'mpJoin', code, playerId: SAVE.playerId, name: SAVE.name, tractor: SAVE.selected, gear: myGear() });
   b.disabled = !CONFIG.GAS_URL;
   if (res && res.ok) enterLobby(res.room);
   else toast(res && res.error || 'เข้าห้องไม่ได้ ตรวจการเชื่อมต่ออินเทอร์เน็ต');
@@ -2073,7 +2185,7 @@ async function mpAction(body){
 }
 $id('lb-ready').addEventListener('click', () => {
   const mine = MP.room && MP.room.players.find(p => p.id === SAVE.playerId);
-  mpAction({ action: 'mpReady', ready: !(mine && mine.ready), tractor: SAVE.selected, gear: SAVE.equipped.join(',') });
+  mpAction({ action: 'mpReady', ready: !(mine && mine.ready), tractor: SAVE.selected, gear: myGear() });
 });
 $id('lb-start').addEventListener('click', () => mpAction({ action: 'mpStart' }));
 $id('lb-levelsel').addEventListener('change', e => mpAction({ action: 'mpLevel', level: +e.target.value }));
@@ -2105,7 +2217,7 @@ function mpBeginRace(room){
   room.players.forEach(p => {
     if (p.id !== SAVE.playerId && room.racers.includes(p.id))
       MP.rivals[p.id] = { id: p.id, name: p.name, tractor: tractorById(p.tractor), color: RIVAL_COLORS[p.color % 4], s: [], fin: null, dnf: false, stale: false, pose: null, disp: null,
-        gear: String(p.gear || '').split(',').filter(id => GADGETS.some(g => g.id === id)) };
+        gear: String(p.gear || '').split(',').filter(Boolean) };
   });
   startLevel(room.level - 1, { mode: 'room' });
   mpStopSync(); MP.syncT = setInterval(mpSync, MP_CFG.SYNC_MS);
@@ -2186,6 +2298,210 @@ async function raceGhost(level, playerId, b){
 }
 
 /* =====================================================================
+   ADMIN – โหมดเทพสำหรับผู้ดูแล
+   - เข้า: กดค้างที่ชื่อเกม "รถไถซิ่ง" ในเมนู 2 วินาที / Ctrl+Shift+A / TRC.admin()
+   - รหัสตรวจที่ Apps Script (Script Properties: ADMIN_PIN) ไม่อยู่ในโค้ดนี้
+   - รอบที่ใช้อาวุธ/พลังเทพ: ไม่บันทึกสถิติ ไม่ส่งตารางอันดับ ไม่อัปโหลดรถผี
+   - ห้องออนไลน์: ใช้ได้เฉพาะชุดแต่ง (อาวุธ/พลังเทพปิดอัตโนมัติ)
+   ===================================================================== */
+const ADMIN_KEY = 'trc_admin_v1';
+const ADMIN = Object.assign({ on: false, token: '', skin: '', fx: { fire: false, glow: false },
+  weapons: { laser: false, rocket: false, bridge: false }, god: { immortal: false, boost: false, power: false, moon: false } },
+  (() => { try { return JSON.parse(localStorage.getItem(ADMIN_KEY)) || {}; } catch (e) { return {}; } })());
+ADMIN.on = false;   // ต้องยืนยัน token กับเซิร์ฟเวอร์ก่อนทุกครั้ง
+function saveAdmin(){ try { localStorage.setItem(ADMIN_KEY, JSON.stringify(Object.assign({}, ADMIN, { on: false }))); } catch (e) {} }
+const SKINS = [
+  { id:'', name:'สีเดิม' }, { id:'gold', name:'ทองคำ' }, { id:'chrome', name:'โครเมียม' },
+  { id:'rainbow', name:'นีออนรุ้ง' }, { id:'carbon', name:'คาร์บอนนีออน' },
+];
+const godPlayActive = () => ADMIN.on && G.mode !== 'room' &&
+  (Object.values(ADMIN.weapons).some(Boolean) || Object.values(ADMIN.god).some(Boolean));
+function adminStats(s){
+  if (!(ADMIN.on && G.mode !== 'room')) return s;
+  if (ADMIN.god.power){ s.accel *= 2; s.top *= 1.35; s.boostTop += 0.1; s.grip *= 1.3; }
+  if (ADMIN.god.moon) s.gScale = 0.5;
+  return s;
+}
+function myLook(){ return ADMIN.on ? { skin: ADMIN.skin, fire: ADMIN.fx.fire, glow: ADMIN.fx.glow } : null; }
+function myGear(){
+  const g = SAVE.equipped.slice();
+  if (ADMIN.on){ if (ADMIN.skin) g.push('sk' + ADMIN.skin); if (ADMIN.fx.glow) g.push('fxglow'); if (ADMIN.fx.fire) g.push('fxfire'); }
+  return g.join(',');
+}
+function lookFromGear(gear){
+  if (!gear || !gear.length) return null;
+  const sk = gear.find(x => x.startsWith('sk'));
+  return { skin: sk ? sk.slice(2) : '', glow: gear.includes('fxglow'), fire: gear.includes('fxfire') };
+}
+
+/* ---------- วาดรถพร้อมชุดแต่ง ---------- */
+function skinned(c, t, skin, time){
+  if (!skin) return t;
+  let color, dark, rim;
+  if (skin === 'gold'){ const g = c.createLinearGradient(0, -20, 0, 10); g.addColorStop(0, '#FFF3B0'); g.addColorStop(0.45, '#F2C230'); g.addColorStop(1, '#9C6F0A'); color = g; dark = '#8A5F00'; rim = '#FFE27A'; }
+  else if (skin === 'chrome'){ const g = c.createLinearGradient(0, -20, 0, 10); g.addColorStop(0, '#FFFFFF'); g.addColorStop(0.5, '#AEB9C8'); g.addColorStop(1, '#55606F'); color = g; dark = '#46505E'; rim = '#E8EEF5'; }
+  else if (skin === 'rainbow'){ const hh = (time * 120) % 360; color = `hsl(${hh},88%,56%)`; dark = `hsl(${(hh + 50) % 360},80%,36%)`; rim = '#FFFFFF'; }
+  else if (skin === 'carbon'){ color = '#2A2D33'; dark = '#111317'; rim = '#5FE6FF'; }
+  else return t;
+  return Object.assign({}, t, { color, dark, rim });
+}
+function drawTractorLook(c, t, wheels, look, time){
+  if (look && (look.glow || look.skin)){
+    // ไฟนีออนใต้ท้อง + ออร่า (ใช้ได้กับรูปรถจริงด้วย)
+    c.save();
+    const col = look.skin === 'gold' ? '#FFD23A' : look.skin === 'rainbow' ? `hsl(${(time*120)%360},90%,60%)` : '#5FE6FF';
+    if (look.glow){ c.fillStyle = col; c.globalAlpha *= 0.45 + 0.2*Math.sin(time*6); c.beginPath(); c.ellipse(4, 36, 62, 7, 0, 0, Math.PI*2); c.fill(); }
+    c.restore();
+    c.save(); c.shadowColor = col; c.shadowBlur = look.glow ? 18 : 8;
+    drawTractor(c, skinned(c, t, look.skin, time), wheels);
+    c.restore();
+    return;
+  }
+  drawTractor(c, t, wheels);
+}
+
+/* ---------- อาวุธ ---------- */
+const destructible = f => !f.destroyed && (f.type === 'rock' || f.type === 'bale');
+function restoreBump(b){ if (!b) return; const h = G.T.h; b.d.forEach((v, k) => { h[b.i0 + k] += v; }); }
+function boom(x, y, big){
+  for (let k = 0; k < (big ? 40 : 22); k++){ const a = Math.random()*Math.PI*2, v = 120 + Math.random()*(big ? 380 : 240);
+    emit(x, y, Math.cos(a)*v, Math.sin(a)*v - 80, 0.5 + Math.random()*0.4, 3 + Math.random()*4, ['#FF6A1A', '#FFC23A', '#5FE6FF', '#8D8F94'][k % 4]); }
+  Audio.blip(90, 0.3); Audio.blip(60, 0.4);
+}
+function destroyFeature(f){ restoreBump(f.bump); f.destroyed = true; boom(f.x, groundY(G.T, f.x) - 10, f.type === 'rock'); }
+function fireWeapon(kind){
+  if (!(G.state === 'race' && G.cheated && ADMIN.weapons[kind] && G.wcd <= 0)) return;
+  const car = G.car, c2 = Math.cos(car.a), s2 = Math.sin(car.a);
+  const fx = car.x + 50*c2 + 15*s2, fy = car.y + 50*s2 - 15*c2;   // หน้ารถ
+  if (kind === 'laser'){
+    G.wcd = 0.35;
+    const target = G.T.features.filter(f => destructible(f) && f.x > car.x + 30 && f.x < car.x + 950).sort((a, b) => a.x - b.x)[0];
+    const tx = target ? target.x : car.x + 800, ty = target ? groundY(G.T, target.x) - target.ht*0.6 : fy + (groundY(G.T, car.x + 800) - groundY(G.T, car.x)) - 20;
+    G.beam = { x0: fx, y0: fy, x1: tx, y1: ty, t: 0.18 };
+    Audio.blip(1600, 0.08); Audio.blip(2400, 0.06);
+    if (target) destroyFeature(target);
+  } else {
+    G.wcd = 0.6;
+    G.shots.push({ x: fx, y: fy, vx: Math.max(0, car.vx) + 1200, life: 1.6 });
+    Audio.blip(300, 0.15);
+  }
+}
+function updateWeapons(dt){
+  if (G.wcd > 0) G.wcd -= dt;
+  if (G.beam && (G.beam.t -= dt) <= 0) G.beam = null;
+  for (let i = G.shots.length - 1; i >= 0; i--){
+    const r = G.shots[i]; r.life -= dt; r.x += r.vx * dt;
+    r.y += ((groundY(G.T, r.x) - 46) - r.y) * Math.min(1, dt * 6);
+    emit(r.x - 14, r.y, -80, (Math.random() - 0.5)*40, 0.3, 3, Math.random() < 0.5 ? '#FFC23A' : '#AEB9C8');
+    const hit = G.T.features.some(f => destructible(f) && Math.abs(f.x - r.x) < 50) || G.T.mud.some(m => !m.gone && r.x > m.x0 && r.x < m.x1);
+    if (hit || r.life <= 0){
+      // ระเบิด: ทำลายหิน/ฟางในรัศมี 220 px และระเหยบ่อโคลน
+      G.T.features.forEach(f => { if (destructible(f) && Math.abs(f.x - r.x) < 220) destroyFeature(f); });
+      G.T.mud.forEach(m => { if (!m.gone && r.x > m.x0 - 120 && r.x < m.x1 + 120){ restoreBump(m.bump); m.gone = true; } });
+      boom(r.x, r.y, true); G.shots.splice(i, 1);
+    }
+  }
+}
+function drawWeapons(){
+  if (G.beam){
+    const b = G.beam;
+    ctx.save(); ctx.globalAlpha = Math.min(1, b.t / 0.12); ctx.lineCap = 'round';
+    ctx.shadowColor = '#FF2AD4'; ctx.shadowBlur = 20;
+    ctx.strokeStyle = '#FF5AE0'; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(b.x0, b.y0); ctx.lineTo(b.x1, b.y1); ctx.stroke();
+    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+  }
+  for (const r of G.shots){
+    ctx.save(); ctx.translate(r.x, r.y);
+    ctx.fillStyle = '#E8EEF5'; ctx.strokeStyle = '#22314A'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(4, -5); ctx.lineTo(-12, -5); ctx.lineTo(-12, 5); ctx.lineTo(4, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#D9302A'; ctx.fillRect(-12, -7, 5, 14);
+    ctx.restore();
+  }
+}
+// สะพานพลังงาน: ถมเหวให้เป็นทางลาดตรงจากขอบไปลานลงจอด (ภาพยังเห็นเหวด้านล่าง)
+function applyBridges(T){
+  for (const g of T.pits){
+    if (g.bridged) continue;
+    const i0 = Math.floor(g.x0 / T.STEP), i1 = Math.floor(g.x1 / T.STEP);
+    g.orig = Array.from(T.h.slice(i0, i1 + 1)); g.oi = i0;
+    for (let i = i0; i <= i1; i++) T.h[i] = g.rim;   // สะพานแนวราบที่ระดับขอบเหว ปลายสะพานหล่นลงลานจอด
+    g.bridged = true;
+  }
+}
+function drawGY(T, x){   // ความสูงสำหรับวาดดิน (เหวที่มีสะพานยังวาดเป็นเหว)
+  for (const g of T.pits) if (g.bridged && x >= g.oi * T.STEP && x <= (g.oi + g.orig.length - 1) * T.STEP){
+    const f = x / T.STEP - g.oi, i = Math.floor(f), t = f - i;
+    return g.orig[i] * (1 - t) + (g.orig[Math.min(i + 1, g.orig.length - 1)]) * t;
+  }
+  return groundY(T, x);
+}
+
+/* ---------- เข้า/ออกโหมดผู้ดูแล ---------- */
+function openAdmin(){ if (G.state === 'race' || G.state === 'countdown') return; showScreen(ADMIN.on ? 'admin' : 'adminlogin'); }
+async function adminLogin(){
+  const pin = document.getElementById('adm-pin').value, msg = document.getElementById('adm-msg');
+  if (!CONFIG.GAS_URL){ msg.textContent = 'ต้องตั้งค่า CONFIG.GAS_URL ก่อน'; return; }
+  if (!pin){ msg.textContent = 'ใส่รหัสผู้ดูแล'; return; }
+  const b = document.getElementById('adm-login'); b.disabled = true; msg.textContent = 'กำลังตรวจสอบ…';
+  const r = await gasPost({ action: 'adminLogin', pin });
+  b.disabled = false;
+  if (r && r.ok){ ADMIN.on = true; ADMIN.token = r.token; saveAdmin(); toast('เข้าสู่โหมดเทพแล้ว'); showScreen('admin'); }
+  else msg.textContent = r && r.error === 'locked' ? 'ใส่รหัสผิดหลายครั้ง ระบบล็อกไว้ 15 นาที' : r && r.error === 'no pin' ? 'ยังไม่ได้ตั้ง ADMIN_PIN ใน Apps Script' : 'รหัสไม่ถูกต้อง';
+}
+function adminLogout(){ ADMIN.on = false; ADMIN.token = ''; saveAdmin(); toast('ออกจากโหมดผู้ดูแลแล้ว'); goMenu(); }
+async function adminVerify(){
+  if (!ADMIN.token || !CONFIG.GAS_URL) return;
+  const r = await gasGet({ action: 'adminCheck', token: ADMIN.token });
+  if (r && r.ok){ ADMIN.on = true; if (!document.getElementById('scr-menu').hidden) renderMenu(); }
+  else if (r && r.error === 'expired'){ ADMIN.token = ''; saveAdmin(); }   // เน็ตหลุดชั่วคราว: เก็บ token ไว้ลองใหม่
+}
+function renderAdmin(){
+  const toggles = (boxId, group, items) => {
+    const box = document.getElementById(boxId); box.innerHTML = '';
+    items.forEach(([k, label]) => {
+      const b = btn(label, 'sm', () => { ADMIN[group][k] = !ADMIN[group][k]; saveAdmin(); renderAdmin(); });
+      b.setAttribute('aria-pressed', String(!!ADMIN[group][k])); box.append(b);
+    });
+  };
+  const sk = document.getElementById('adm-skins'); sk.innerHTML = '';
+  SKINS.forEach(s => { const b = btn(s.name, 'sm', () => { ADMIN.skin = s.id; saveAdmin(); renderAdmin(); }); b.setAttribute('aria-pressed', String(ADMIN.skin === s.id)); sk.append(b); });
+  toggles('adm-fx', 'fx', [['fire', 'ล้อไฟ'], ['glow', 'ไฟนีออนใต้ท้อง']]);
+  toggles('adm-weapons', 'weapons', [['laser', 'ปืนเลเซอร์'], ['rocket', 'จรวดทำลายล้าง'], ['bridge', 'สะพานพลังงานข้ามเหว']]);
+  toggles('adm-god', 'god', [['immortal', 'อมตะ (ไม่คว่ำ ไม่ตกเหว)'], ['boost', 'เทอร์โบไม่จำกัด'], ['power', 'แรงม้า x2'], ['moon', 'แรงโน้มถ่วงดวงจันทร์']]);
+  // พรีวิว (หมุนสีรุ้งต่อเนื่องขณะเปิดหน้านี้)
+  const pc = document.getElementById('adm-preview'), p = pc.getContext('2d');
+  const draw = () => {
+    if (document.getElementById('scr-admin').hidden) return;
+    const time = performance.now() / 1000;
+    p.setTransform(1,0,0,1,0,0); p.clearRect(0, 0, pc.width, pc.height);
+    const sc = 1.45; p.setTransform(sc, 0, 0, sc, pc.width/2, pc.height*0.82 - 32*sc);
+    const fx = { gadgets: SAVE.equipped, boosting: true, air: false, gliding: false, shield: 1, t: time };
+    const wh = [{ ...GEO.rear, rot: time*6, comp: 4 }, { ...GEO.front, rot: time*9, comp: 4 }];
+    drawGadgetsBack(p, fx); drawTractorLook(p, tractorById(SAVE.selected), wh, myLook() || {}, time); drawGadgetsFront(p, fx, wh);
+    if (ADMIN.fx.fire){ for (const w of wh){ for (let k = 0; k < 4; k++){ p.fillStyle = k % 2 ? '#FF6A1A' : '#FFC23A'; p.globalAlpha = 0.7; p.beginPath(); p.arc(w.x - 8 - k*7 - Math.random()*4, w.y + w.r - 6 - Math.random()*8, 4 - k*0.6, 0, Math.PI*2); p.fill(); } } p.globalAlpha = 1; }
+    requestAnimationFrame(draw);
+  };
+  requestAnimationFrame(draw);
+  document.querySelectorAll('.js-coins').forEach(e => e.textContent = SAVE.coins.toLocaleString('th-TH'));
+}
+document.getElementById('adm-login').addEventListener('click', adminLogin);
+document.getElementById('adm-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+document.getElementById('adm-cancel').addEventListener('click', () => goMenu());
+document.getElementById('adm-logout').addEventListener('click', adminLogout);
+document.getElementById('menu-admin').addEventListener('click', () => showScreen('admin'));
+document.getElementById('adm-coins').addEventListener('click', () => { SAVE.coins += 10000; persist(); renderAdmin(); toast('+10,000 เหรียญ'); });
+document.getElementById('adm-unlock').addEventListener('click', () => {
+  SAVE.unlocked = LEVELS.length; SAVE.owned = TRACTORS.map(t => t.id); SAVE.gadgets = GADGETS.map(g => g.id); persist(); toast('ปลดล็อกทุกด่าน ทุกรถ และอุปกรณ์ทั้งหมดแล้ว');
+});
+// ทางเข้าลับ: กดค้างที่ชื่อเกม 2 วินาที
+(() => {
+  const el = document.getElementById('game-title'); let tm = 0;
+  el.addEventListener('pointerdown', () => { tm = setTimeout(openAdmin, 2000); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => el.addEventListener(ev, () => clearTimeout(tm)));
+})();
+
+/* =====================================================================
    FLUTTER BRIDGE
    - ฝั่ง Flutter เพิ่ม JavaScriptChannel ชื่อ "FlutterBridge" จะได้รับเหตุการณ์ทุกครั้ง
    - ฝั่ง Flutter เรียกเกมได้ผ่าน window.TRC เช่น runJavaScript("TRC.addCoins(500)")
@@ -2202,11 +2518,13 @@ window.TRC = {
   pause: () => { if (G.state === 'race') togglePause(); },
   joinRoom: (code) => { showScreen('online'); document.getElementById('on-code').value = String(code || ''); mpJoin(); },
   leaveRoom: () => mpLeave(),
+  admin: () => openAdmin(),
 };
 
 /* ---------- เริ่มเกม ---------- */
 loadSprites();
 resize(); startDemo(); showScreen('menu');
+adminVerify();
 requestAnimationFrame(loop);
 notifyHost('ready', { version: 1 });
 </script>

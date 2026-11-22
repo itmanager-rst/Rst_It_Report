@@ -29,6 +29,11 @@
  *   POST {action:'mpStart',  code, playerId}                (เจ้าของห้องเท่านั้น)
  *   POST {action:'mpSync',   code, playerId, raceId, s:[[t,x,y,a],...], fin, dnf}
  *
+ *   --- ผู้ดูแล (โหมดเทพ) ---
+ *   POST {action:'adminLogin', pin}       → { token } อายุ 12 ชม.
+ *   GET  ?action=adminCheck&token=...
+ *   ตั้งรหัส: Project Settings (รูปเฟือง) > Script Properties > Add property  ADMIN_PIN = รหัสที่ต้องการ
+ *
  *   --- รถผี (บันทึกการขับรอบที่ดีที่สุดของแต่ละคนต่อด่าน ลงแท็บ Ghosts) ---
  *   GET  ?action=ghost&level=1&playerId=p_xxx
  *   POST {action:'saveGhost', playerId, name, level, timeMs, tractor, data}
@@ -99,6 +104,7 @@ function doGet(e) {
       case 'loadPlayer':  return json_(loadPlayer_(String(p.playerId || '')));
       case 'mpRoom':      return json_(mpRoom_(p));
       case 'ghost':       return json_(getGhost_(Number(p.level) || 1, String(p.playerId || '')));
+      case 'adminCheck':  return json_(adminCheck_(String(p.token || '')));
       default:            return json_({ ok: false, error: 'unknown action' });
     }
   } catch (err) {
@@ -125,6 +131,7 @@ function doPost(e) {
       case 'submitScore': return json_(submitScore_(body));
       case 'savePlayer':  return json_(savePlayer_(body.save));
       case 'saveGhost':   return json_(saveGhost_(body));
+      case 'adminLogin':  return json_(adminLogin_(body));
       case 'mpCreate':    return json_(mpCreate_(body));
       case 'mpJoin':      return json_(mpJoin_(body));
       case 'mpLeave':     return json_(mpLeave_(body));
@@ -220,6 +227,30 @@ function backupJson_(id, save) {
   else folder.createFile(name, content, MimeType.PLAIN_TEXT);
 }
 
+
+// ================================================================
+// ผู้ดูแล: ตรวจรหัสที่ฝั่งเซิร์ฟเวอร์ (รหัสไม่อยู่ในโค้ดเกม) + ล็อกเมื่อใส่ผิดหลายครั้ง
+// ================================================================
+const ADMIN_MAX_FAIL = 8, ADMIN_LOCK_SEC = 900, ADMIN_TOKEN_SEC = 43200;
+function adminLogin_(b) {
+  const pin = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN');
+  if (!pin) return { ok: false, error: 'no pin' };
+  const c = cache_(), fails = Number(c.get('adm_fail') || 0);
+  if (fails >= ADMIN_MAX_FAIL) return { ok: false, error: 'locked' };
+  const given = String(b.pin || '');
+  // เทียบทุกตัวอักษร (ไม่หยุดกลางทาง) ลดการเดารหัสจากเวลาตอบกลับ
+  let diff = given.length ^ pin.length;
+  for (let i = 0; i < Math.max(given.length, pin.length); i++) diff |= (given.charCodeAt(i) || 0) ^ (pin.charCodeAt(i) || 0);
+  if (diff !== 0) { c.put('adm_fail', String(fails + 1), ADMIN_LOCK_SEC); Utilities.sleep(800); return { ok: false, error: 'bad pin' }; }
+  c.remove('adm_fail');
+  const token = Utilities.getUuid().replace(/-/g, '');
+  c.put('adm_' + token, '1', ADMIN_TOKEN_SEC);
+  return { ok: true, token, expiresIn: ADMIN_TOKEN_SEC };
+}
+function adminCheck_(token) {
+  token = String(token).replace(/[^a-f0-9]/g, '');
+  return token && cache_().get('adm_' + token) ? { ok: true } : { ok: false, error: 'expired' };
+}
 
 // ================================================================
 // รถผี (GHOST) – เก็บรอบที่เร็วที่สุดของแต่ละคนต่อด่าน
