@@ -360,6 +360,7 @@ label.lbl{font-weight:600;font-size:15px}
     <input class="field" id="set-name" maxlength="20" autocomplete="off">
     <div class="row" style="margin-bottom:12px">
       <button class="btn" id="set-sound"></button>
+      <button class="btn" id="set-nametag"></button>
       <button class="btn" id="set-cloud-save">เซฟขึ้นคลาวด์</button>
       <button class="btn" id="set-cloud-load">โหลดจากคลาวด์</button>
     </div>
@@ -539,6 +540,8 @@ const GEO = {
    - ชื่อรุ่นของยี่ห้ออื่นตั้งเป็นขนาดไว้ก่อน แก้เป็นชื่อรุ่นจริงได้ที่ช่อง model
    - color/dark/rim = สีรถวาดสำรอง (ใช้เมื่อยังไม่มีรูปจริง) แก้ได้ตามต้องการ
    - logo (ไม่บังคับ) = path รูปโลโก้ยี่ห้อ แสดงบนปุ่มเลือกยี่ห้อในโรงรถ
+   - label (ไม่บังคับ) = ข้อความบนฝากระโปรงรถ (ค่าเริ่มต้น = ชื่อยี่ห้อตัวพิมพ์ใหญ่)
+   - badge (ไม่บังคับ) = path รูปโลโก้สำหรับติดบนฝากระโปรงแทนข้อความ (PNG พื้นโปร่งใส แนวนอน)
    - รหัสรุ่น (id) ยาวไม่เกิน 12 ตัวอักษร ใช้ตั้งชื่อไฟล์รูป: <id>.png
    ===================================================================== */
 const CLASSES = {
@@ -547,7 +550,7 @@ const CLASSES = {
   L: { label:'รุ่นใหญ่',  top:600, power:960, mass:1.30, grip:1.22, awd:true,  price:3000, tier:1.7,  style:'heavy' },
 };
 const BRANDS = [
-  { id:'ym', name:'Yanmar',          color:'#D9302A', dark:'#9E1F1B', rim:'#E8EEF5', logo:'',
+  { id:'ym', name:'Yanmar',          color:'#D9302A', dark:'#9E1F1B', rim:'#E8EEF5', logo:'', badge:'',
     models:[ { size:'S', model:'EF312T' }, { size:'M', model:'EF352T' }, { size:'L', model:'EF393T' } ] },
   { id:'kb', name:'Kubota',          color:'#2F6FD6', dark:'#1F4C99', rim:'#E8EEF5', logo:'',
     models:[ { size:'S' }, { size:'M' }, { size:'L' } ] },
@@ -944,6 +947,12 @@ const brandById = id => BRANDS.find(b => b.id === id) || BRANDS[0];
 /* ---------- รูปรถจริง: โหลด <SPRITE_DIR><id>.png ถ้ามีไฟล์ ---------- */
 const SPRITES = {};
 function loadSprites(){
+  BRANDS.forEach(b => {
+    if (!b.badge) return;
+    const img = new Image();
+    img.onload = () => { BADGES[b.id] = img; if (!document.getElementById('scr-garage').hidden) renderGarage(); };
+    img.src = b.badge;
+  });
   if (!CONFIG.SPRITE_DIR) return;
   TRACTORS.forEach(t => {
     const img = new Image();
@@ -1021,6 +1030,29 @@ function drawWheel(c, x, y, r, rot, rim){
   c.restore();
 }
 
+/* ป้ายยี่ห้อบนฝากระโปรง: รูปโลโก้ (ถ้าตั้ง badge) หรือข้อความชื่อยี่ห้อ ย่อขนาดให้พอดีฝากระโปรง */
+const BADGES = {};
+function drawHoodBadge(c, t){
+  const b = BRANDS.find(x => x.id === t.brand); if (!b) return;
+  const W = 32, H = 11, cx = 24, cy = -7;          // ช่วงฝากระโปรงที่ไม่โดนคนขับ ล้อ และกระจังบัง
+  const img = BADGES[b.id];
+  if (img){
+    const s = Math.min(W / img.width, H / img.height);
+    c.drawImage(img, cx - img.width*s/2, cy - img.height*s/2, img.width*s, img.height*s);
+    return;
+  }
+  const text = (b.label || b.name).toUpperCase();
+  c.save();
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  let size = 10; c.font = `700 ${size}px Mitr, sans-serif`;
+  const w = c.measureText(text).width;
+  if (w > W){ size = Math.max(5, size * W / w); c.font = `700 ${size}px Mitr, sans-serif`; }
+  c.lineJoin = 'round'; c.lineWidth = 2.4; c.strokeStyle = 'rgba(34,49,74,.85)';
+  c.strokeText(text, cx, cy + 0.5);
+  c.fillStyle = '#FFFFFF'; c.fillText(text, cx, cy + 0.5);
+  c.restore();
+}
+
 /* วาดรถไถในพิกัดเฉพาะตัวรถ (เรียกหลัง translate/rotate แล้ว) */
 function drawTractor(c, t, wheels){
   const rw = wheels ? wheels[0] : { ...GEO.rear, rot: 0, comp: 4 };
@@ -1084,6 +1116,7 @@ function drawTractor(c, t, wheels){
   c.fillStyle = '#C98B5A'; c.beginPath(); c.arc(-13, -40, 6.5, 0, Math.PI*2); c.fill();
   c.fillStyle = '#E8C46A'; c.strokeStyle = '#8A6A2A'; c.lineWidth = 1.5;  // งอบ
   c.beginPath(); c.moveTo(-29, -42); c.lineTo(3, -42); c.lineTo(-13, -54); c.closePath(); c.fill(); c.stroke();
+  drawHoodBadge(c, t);   // วาดท้ายสุด ไม่ให้ล้อ/คนขับบัง
 }
 
 /* ---------- อุปกรณ์เสริมล้ำยุค (วาดในพิกัดตัวรถ เหมือน drawTractor) ----------
@@ -1628,7 +1661,13 @@ function render(){
   drawTractorLook(ctx, G.tractor, car.wheels, look, G.clock);
   drawGadgetsFront(ctx, fx, car.wheels);
   ctx.restore();
-  if (!G.demo) drawWeapons();
+  if (!G.demo){
+    drawWeapons();
+    if (SAVE.showName !== false){
+      const meP = G.mode === 'room' && MP.room && MP.room.players.find(q => q.id === SAVE.playerId);
+      drawNameTag(car.x, car.y, SAVE.name, meP ? RIVAL_COLORS[meP.color % 4] : '#D9302A', 1);
+    }
+  }
   if (!G.demo && G.drone && car.stats.magnet) drawDrone(ctx, G.drone.x, G.drone.y, G.clock);
   ctx.restore();
 }
@@ -1885,9 +1924,11 @@ async function renderBoard(level){
 function renderSettings(){
   document.getElementById('set-name').value = SAVE.name;
   document.getElementById('set-sound').textContent = SAVE.sound ? 'เสียง: เปิด' : 'เสียง: ปิด';
+  document.getElementById('set-nametag').textContent = SAVE.showName !== false ? 'ชื่อบนรถ: แสดง' : 'ชื่อบนรถ: ซ่อน';
   document.getElementById('set-cloud-note').textContent = CONFIG.GAS_URL ? `รหัสผู้เล่น ${SAVE.playerId}` : 'ปุ่มคลาวด์จะใช้งานได้เมื่อตั้งค่า CONFIG.GAS_URL แล้ว';
   ['set-cloud-save','set-cloud-load'].forEach(id => document.getElementById(id).disabled = !CONFIG.GAS_URL);
 }
+document.getElementById('set-nametag').addEventListener('click', () => { SAVE.showName = SAVE.showName === false; persist(); renderSettings(); });
 document.getElementById('set-sound').addEventListener('click', () => { SAVE.sound = !SAVE.sound; persist(); if (SAVE.sound) Audio.init(); renderSettings(); });
 document.getElementById('set-done').addEventListener('click', () => {
   const n = document.getElementById('set-name').value.trim().slice(0, 20);
@@ -1994,12 +2035,17 @@ function drawGhostCar(p, tractor, color, name, gear){
   ctx.save(); ctx.globalAlpha = 0.5; ctx.translate(p[1], p[2]); ctx.rotate(p[3]);
   drawGadgetsBack(ctx, fx); drawTractorLook(ctx, tractor, wheels, lookFromGear(gear), G.clock); drawGadgetsFront(ctx, fx, wheels);
   ctx.restore();
+  drawNameTag(p[1], p[2], name, color, 0.92);
+}
+// ป้ายชื่อลอยเหนือรถ (พิกัดโลก ไม่หมุนตามรถ อ่านง่ายแม้รถเอียง)
+function drawNameTag(x, y, name, color, alpha){
   ctx.save();
   ctx.font = '600 15px Mitr, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const w = ctx.measureText(name).width + 16;
-  ctx.globalAlpha = 0.92; ctx.fillStyle = color; ctx.strokeStyle = '#22314A'; ctx.lineWidth = 2;
-  rr(ctx, p[1] - w / 2, p[2] - 100, w, 24, 8); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#FFF4D6'; ctx.fillText(name, p[1], p[2] - 87.5);
+  ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.strokeStyle = '#22314A'; ctx.lineWidth = 2;
+  rr(ctx, x - w / 2, y - 100, w, 24, 8); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 6, y - 76); ctx.lineTo(x + 6, y - 76); ctx.lineTo(x, y - 69); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#FFF4D6'; ctx.fillText(name, x, y - 87.5);
   ctx.restore();
 }
 function roomRaceT(){ return (serverNow() - MP.startAt) / 1000; }
