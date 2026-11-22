@@ -196,7 +196,7 @@ function savePlayer_(save) {
     id, cleanText_(save.name, 20), clampInt_(save.coins, 0, 1e9), clampInt_(save.unlocked, 1, MAX_LEVEL),
     cleanText_(save.selected, 12), (save.owned || []).join(','), JSON.stringify(save.upgrades || {}),
     JSON.stringify(save.best || {}), new Date(),
-    JSON.stringify({ owned: (save.gadgets || []).map(String).slice(0, 20), equipped: (save.equipped || []).map(String).slice(0, 4) }),
+    JSON.stringify({ owned: (save.gadgets || []).map(String).slice(0, 20), equipped: (save.equipped || []).map(String).slice(0, 4), items: cleanItems_(save.items) }),
   ];
   const r = findRow_(sh, id);
   if (r) sh.getRange(r, 1, 1, row.length).setValues([row]);
@@ -215,7 +215,7 @@ function loadPlayer_(playerId) {
   return { ok: true, save: {
     playerId: v[0], name: v[1], coins: Number(v[2]), unlocked: Number(v[3]), selected: v[4],
     owned: String(v[5]).split(',').filter(String), upgrades: safeParse_(v[6], {}), best: safeParse_(v[7], {}),
-    gadgets: (safeParse_(v[9], {}).owned || []), equipped: (safeParse_(v[9], {}).equipped || []),
+    gadgets: (safeParse_(v[9], {}).owned || []), equipped: (safeParse_(v[9], {}).equipped || []), items: (safeParse_(v[9], {}).items || {}),
   } };
 }
 
@@ -550,6 +550,11 @@ function findRow_(sh, id) {
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
 function cleanId_(s) { return String(s || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40); }
 function cleanText_(s, n) { return String(s == null ? '' : s).replace(/^[=+\-@]/, "'").slice(0, n); }   // กันสูตรแปลกปลอม (CSV/formula injection)
+function cleanItems_(o) {   // คลังไอเท็มพิเศษ { laser: 2, rocket: 1, ... } สูงสุดชนิดละ 9
+  const out = {};
+  Object.keys(o || {}).slice(0, 10).forEach(k => { const n = Math.round(Number(o[k]) || 0); if (/^[a-z]{2,10}$/.test(k) && n > 0) out[k] = Math.min(9, n); });
+  return out;
+}
 function cleanDiff_(s) { s = String(s || 'normal'); return s === 'easy' || s === 'hard' ? s : 'normal'; }
 function cleanGear_(s) { return String(s || '').replace(/[^a-z,]/g, '').slice(0, 40); }   // อุปกรณ์เสริมที่ติดตั้ง เช่น "jet,wing"
 function clampInt_(v, a, b) { v = Math.round(Number(v) || 0); return Math.max(a, Math.min(b, v)); }
