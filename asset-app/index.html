@@ -2095,6 +2095,7 @@ if(!localStorage.getItem(TUK)) localStorage.setItem(TUK, DEFAULT_TICKET_URL);
 if(!localStorage.getItem(TRU) && DEFAULT_TRANSFER_URL) localStorage.setItem(TRU, DEFAULT_TRANSFER_URL);
 let editAssetKey = null, editTicketKey = null;
 let aFilter = '', tkFilter = '', trFilter = '';
+let tkLoadErr = '';   // เหตุผลที่โหลด Ticket จาก Sheets ไม่สำเร็จ (แสดงในหน้าแจ้งซ่อม)
 const CLR = ['#4f8ef7','#22c55e','#f59e0b','#a78bfa','#22d3ee','#f43f5e','#84cc16','#fb923c','#f472b6'];
 
 // ── ASSET TYPE / CATEGORY NORMALIZATION ──────────────────────────
@@ -2452,12 +2453,19 @@ async function loadFromSheets(opts){
       dbg('⚠ โหลดชีตเบิก/โอนไม่สำเร็จ — ใช้ข้อมูลในเครื่อง (ลายเซ็นจากคนอื่นจะไม่แสดง)');
       setTimeout(() => toast('⚠ โหลดข้อมูลเบิก/โอน (IT Transfers) ไม่สำเร็จ — ตรวจ URL Transfer ในหน้าตั้งค่า', 'warn'), 1500);
     }
+    if(r && r.kind === 'tickets'){
+      tkLoadErr = r.ok ? '' : (r.msg || 'โหลดไม่สำเร็จ');
+      if(!r.ok){
+        dbg('⚠ โหลด Ticket ไม่สำเร็จ: ' + tkLoadErr);
+        setTimeout(() => toast('⚠ โหลดรายการแจ้งซ่อม (IT Tickets) ไม่สำเร็จ: ' + tkLoadErr, 'warn'), 1800);
+      }
+    }
     if(!r || !r.ok) return;
     try{
       if(r.kind === 'assets')    { applyAssetRows(r.rows);    loaded++; }
       if(r.kind === 'transfers') { applyTransferRows(r.rows); loaded++; }
       if(r.kind === 'tickets')   { applyTicketRows(r.rows);   loaded++; }
-    }catch(e){ dbg(r.kind + ' apply EXCEPTION: ' + e.message); }
+    }catch(e){ dbg(r.kind + ' apply EXCEPTION: ' + e.message); if(r.kind === 'tickets') tkLoadErr = 'อ่านข้อมูลไม่ได้: ' + e.message; }
   });
 
   if(!opts.background) hideLoading();
@@ -2486,7 +2494,9 @@ function setCachedSheetName(kind, name){
 }
 async function fetchSheetRows(kind, url, candidates){
   try{
-    let name = getCachedSheetName(kind) || SHEET_NAMES[kind] || candidates[0];
+    // ชื่อชีตที่จำไว้ต้องอยู่ในรายชื่อที่คาดไว้ (กันจำชื่อผิด เช่น 'KPI Config' แล้วโหลดไม่ขึ้นตลอด)
+    const okName = n => n && candidates.some(c => c.toLowerCase() === String(n).toLowerCase());
+    let name = [getCachedSheetName(kind), SHEET_NAMES[kind], candidates[0]].find(okName) || candidates[0];
     let res = await callSheet({ action:'getAll', sheet:name }, url);
     // ชื่อชีตไม่ตรง → ตรวจชื่อจริงแล้วลองใหม่ครั้งเดียว
     if(res && res.status === 'error' && /sheet not found/i.test(res.msg || '')){
@@ -2495,11 +2505,12 @@ async function fetchSheetRows(kind, url, candidates){
     }
     dbg(kind + ' ← "' + name + '" status=' + (res && res.status) + ' rows=' + (res && res.rows ? res.rows.length : 'n/a'));
     if(res && res.status === 'ok' && Array.isArray(res.rows)){
-      SHEET_NAMES[kind] = name; setCachedSheetName(kind, name);
-      return { kind, ok: res.rows.length > 0, rows: res.rows };
+      if(okName(name)){ SHEET_NAMES[kind] = name; setCachedSheetName(kind, name); }
+      const n = res.rows.filter(r => r && r[0] && String(r[0]).trim() !== '').length;
+      return { kind, ok: n > 0, rows: res.rows, sheet: name, msg: n ? '' : 'ชีต "' + name + '" ไม่มีข้อมูล' };
     }
-  }catch(e){ dbg(kind + ' EXCEPTION: ' + e.message); }
-  return { kind, ok:false };
+    return { kind, ok:false, sheet:name, msg: (res && (res.msg || res.status)) || 'ไม่มีการตอบกลับ' };
+  }catch(e){ dbg(kind + ' EXCEPTION: ' + e.message); return { kind, ok:false, msg:e.message }; }
 }
 function waitNoModal(){
   return new Promise(resolve => {
@@ -2573,14 +2584,14 @@ function applyTransferRows(rows){
 function applyTicketRows(rows){
   const local = tickets.slice();
   const fresh = rows
-    .filter(r => r[0] && String(r[0]).trim() !== '')
+    .filter(r => Array.isArray(r) && r[0] && String(r[0]).trim() !== '' && String(r[0]).trim() !== '_k')
     .map(r => {
       const l = local.find(x => x._k === String(r[0]));
       if(l && l.synced === false) return l;
       return {
         _k:String(r[0]),      id:String(r[1]||''),       reporter:String(r[2]||''),
         dept:String(r[3]||''),category:String(r[4]||''), asset:String(r[5]||''),
-        priority:String(r[6]||'low'), status:String(r[7]||'open'),
+        priority:String(r[6]||'low').trim().toLowerCase(), status:tkNormStatus(r[7]),
         desc:String(r[8]||''),handler:String(r[9]||''),  solution:String(r[10]||''),
         created:String(r[11]||new Date().toISOString()),
         closed:r[12]||null,
@@ -2670,6 +2681,7 @@ function gv(name, el){
   document.querySelectorAll('.ni').forEach(n => n.classList.remove('on'));
   document.getElementById('view-'+name).classList.add('on');
   if(el) el.classList.add('on');
+  if(currentView !== name){ const qs = document.getElementById('qSearch'); if(qs) qs.value = ''; }
   currentView = name;
   const t = {kpim:'KPI รายเดือน (IT)',kpi:'KPI Dashboard',assets:'ทรัพย์สินทั้งหมด',transfer:'เบิก/โอนทรัพย์สิน',ticket:'แจ้งซ่อม / Ticket',repair:'ซ่อมบำรุง',setup:'ตั้งค่า Sheets',sw:'คำขอ Software / Audit'};
   document.getElementById('pTitle').textContent = t[name] || name;
@@ -3986,24 +3998,31 @@ async function tkRateSubmit(key, score, btn){
 }
 
 function renderTickets(){
-  renderTkRate();
-  const q = document.getElementById('qSearch').value.toLowerCase();
-  let rows = tkFilter ? tickets.filter(t => t.status === tkFilter) : tickets;
-  if(q) rows = rows.filter(t => [t.id,t.reporter,t.dept,t.category,t.desc].some(v => (v||'').toLowerCase().includes(q)));
-  rows = [...rows].sort((a,b) => new Date(b.created)-new Date(a.created));
-  document.getElementById('tkTblTitle').textContent = `รายการแจ้งซ่อม (${rows.length})`;
+  try{ renderTkRate(); }catch(e){ dbg('renderTkRate: ' + e.message); }   // แผงประเมินพังต้องไม่ทำให้ตารางหาย
+  const q = (document.getElementById('qSearch').value || '').trim().toLowerCase();
+  let rows = (tickets || []).filter(t => t && typeof t === 'object');
+  const total = rows.length;
+  if(tkFilter) rows = rows.filter(t => t.status === tkFilter);
+  if(q) rows = rows.filter(t => [t.id,t.reporter,t.dept,t.category,t.desc,t.asset].some(v => String(v == null ? '' : v).toLowerCase().includes(q)));
+  const tm = t => { const x = new Date(t.created).getTime(); return isNaN(x) ? 0 : x; };
+  rows = rows.sort((a,b) => tm(b) - tm(a));
+  document.getElementById('tkTblTitle').textContent = `รายการแจ้งซ่อม (${rows.length}${rows.length !== total ? '/' + total : ''})`;
   const empty = document.getElementById('tkEmpty');
-  if(!rows.length){ document.getElementById('tkTbl').innerHTML=''; empty.style.display='block'; return; }
+  if(!rows.length){
+    document.getElementById('tkTbl').innerHTML='';
+    empty.innerHTML = tkEmptyHtml(total, q);
+    empty.style.display='block'; return;
+  }
   empty.style.display = 'none';
   document.getElementById('tkTbl').innerHTML = rows.map(t => `
     <tr onclick="${canEdit()?'openTicketEdit(\"'+t._k+'\")':''}"
         style="cursor:${canEdit()?'pointer':'default'}">
-      <td class="mono">${t.id}</td>
-      <td><div style="font-size:13px;">${t.reporter}</div><div style="font-size:11px;color:var(--text3);">${t.dept||''}</div></td>
-      <td><span class="badge b-type">${t.category}</span></td>
-      <td style="font-size:12px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.desc}</td>
+      <td class="mono">${escH(t.id)}</td>
+      <td><div style="font-size:13px;">${escH(t.reporter)}</div><div style="font-size:11px;color:var(--text3);">${escH(t.dept)}</div></td>
+      <td><span class="badge b-type">${escH(t.category)}</span></td>
+      <td style="font-size:12px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escH(t.desc)}">${escH(t.desc)}</td>
       <td><span class="badge b-${t.priority}">${t.priority==='high'?'🔴 เร่งด่วน':t.priority==='med'?'🟡 ด่วน':'🟢 ปกติ'}</span></td>
-      <td><span class="badge b-${t.status}">${tkStatusTH(t.status)}</span></td>
+      <td><span class="badge b-${escH(t.status)}">${escH(tkStatusTH(t.status))}</span></td>
       <td class="mono" style="font-size:11px;color:var(--text3);">${fmtDate(t.created)}${(t.links&&t.links.length)?'<br><span style="color:var(--cyan)">🔗 '+t.links.length+' รูป</span>':''}</td>
       <td onclick="event.stopPropagation()"><div class="acts">
         <button class="ib" onclick="openTicketEdit('${t._k}')"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5l2.5 2.5-7 7L1 11l.5-2.5z"/></svg></button>
@@ -4011,6 +4030,38 @@ function renderTickets(){
         <button class="ib del" onclick="delTicket('${t._k}')"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h8M4 3V2h4v1M5 5v4M7 5v4M3 3l.5 7h5L9 3"/></svg></button>
       </div></td>
     </tr>`).join('');
+}
+
+function tkEmptyHtml(total, q){
+  if(total && (q || tkFilter)){
+    return `<div class="empty-ico">🔍</div><p>ไม่พบรายการตามตัวกรอง${q ? ' “' + escH(q) + '”' : ''}</p>
+      <button class="btn btn-g" style="margin-top:8px;" onclick="tkClearFilters()">ล้างตัวกรอง / คำค้นหา</button>`;
+  }
+  if(tkLoadErr){
+    return `<div class="empty-ico">⚠️</div><p>โหลดรายการแจ้งซ่อมจาก Google Sheets ไม่สำเร็จ</p>
+      <small>${escH(tkLoadErr)}</small><br>
+      <button class="btn btn-p" style="margin-top:8px;" onclick="tkReload()">⟳ ลองโหลดใหม่</button>`;
+  }
+  return `<div class="empty-ico">🎫</div><p>ยังไม่มี Ticket</p><small>กด "แจ้งซ่อมใหม่" เพื่อเริ่มต้น</small>`;
+}
+function tkClearFilters(){
+  document.getElementById('qSearch').value = '';
+  const all = document.querySelector('#view-ticket .chips .chip');
+  if(all) setTKF('', all); else { tkFilter = ''; renderTickets(); }
+}
+async function tkReload(){
+  if(!ticketUrl){ toast('⚠ ยังไม่ได้ตั้งค่า URL Ticket','warn'); return; }
+  showLoading('⟳ กำลังโหลดรายการแจ้งซ่อม...');
+  const r = await fetchSheetRows('tickets', ticketUrl, ['IT Tickets','Tickets','Sheet1']);
+  hideLoading();
+  if(r.ok){
+    try{ applyTicketRows(r.rows); tkLoadErr = ''; toast('✓ โหลด ' + tickets.length + ' tickets'); }
+    catch(e){ tkLoadErr = 'อ่านข้อมูลไม่ได้: ' + e.message; }
+  } else {
+    tkLoadErr = r.msg || 'โหลดไม่สำเร็จ';
+    toast('⚠ ' + tkLoadErr, 'warn');
+  }
+  renderTickets(); renderKPI(); updateNav();
 }
 
 function openTicketAdd(){
@@ -4406,6 +4457,15 @@ function hideLoading(){
 // ═══════════════════════════════════════════════════
 function g(id){ return document.getElementById(id).value; }
 function aStatusTH(s){ return {active:'ใช้งานได้',repair:'ซ่อมบำรุง',broken:'เสียหาย',storage:'เก็บคลัง'}[s]||s; }
+// สถานะในชีตอาจพิมพ์เป็นภาษาไทย/ตัวพิมพ์ใหญ่/มีช่องว่าง → แปลงเป็น open|progress|closed
+function tkNormStatus(v){
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if(!s) return 'open';
+  if(s === 'closed' || s === 'close' || s === 'done' || /ปิด|เสร็จ/.test(s)) return 'closed';
+  if(s === 'progress' || s === 'in progress' || s === 'inprogress' || /ดำเนินการ|กำลัง/.test(s)) return 'progress';
+  if(s === 'open' || /เปิด|ใหม่|รอ/.test(s)) return 'open';
+  return s;
+}
 function tkStatusTH(s){ return {open:'เปิด',progress:'กำลังดำเนินการ',closed:'ปิดแล้ว'}[s]||s; }
 function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'}); }
 function closeM(type){ document.getElementById(type==='asset'?'assetOverlay':type==='tr'?'trOverlay':'tkOverlay').classList.remove('show'); }
