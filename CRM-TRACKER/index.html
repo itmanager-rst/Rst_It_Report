@@ -2426,7 +2426,7 @@
         const FREE_TEXT_CATEGORY = 'อุปกรณ์ต่อพ่วง';
         const PRODUCT_CATALOG = {
             'Yanmar': ['EF393A / EF393T-45th', 'YM351R', 'YM358R', 'YM358R-L1', 'EF725T', 'YM241'],
-            'Solis': ['Solis 26', 'Solis26', 'YM-Solis22', 'YM-Solis26', 'YM-Solis30', 'YM-Solis30-45th', 'YM-Solis50', 'YM-Solis50-45th', 'YM-Solis 65', 'YM-Solis75', 'YM-Solis75-45th', 'YM-Solis90', 'YM-Solis105', 'YM-Solis 105 Cabin', 'Solis 65', 'Solis75-ตู้แอร์', 'Solis105', 'Solis 110', 'Solis 105-ตู้แอร์'],
+            'Solis': ['YM-Solis22', 'YM-Solis26', 'YM-Solis30', 'YM-Solis50', 'YM-Solis 65', 'YM-Solis75', 'YM-Solis75 Cabin', 'YM-Solis90', 'YM-Solis105', 'YM-Solis 105 Cabin', 'YM-Solis110'],
             'รถเกี่ยว': ['AW82V', 'YH700', 'YH700 Cabin', 'YH850GUW 2.3', 'YH850 Cabin', 'YH1180G26WU-TH'],
             'รถขุด': ['Vio17', 'Vio23', 'Vio30-7', 'Vio30-Air-7', 'Vio35-7', 'Vio35-Air-7', 'Vio50', 'Vio55 Air', 'Vio80', 'Vio100'],
             'รถแทรกเตอร์มือ 2': ['EF353T', 'EF393T', 'EF453T', 'EF494T', 'EF514T', 'YM351R', 'YM358R', 'EF725', 'Solis22', 'Solis26', 'Solis30', 'Solis50', 'Solis75', 'Solis90'],
@@ -2434,6 +2434,20 @@
             [FREE_TEXT_CATEGORY]: [],
             'อื่นๆ': ['เครื่องอัดฟาง', 'Drone']
         };
+        // (r76) ชื่อรุ่นเก่า/ซ้ำในหมวด Solis → ชื่อหลัก (ใช้ตอนเปิดแก้ไขลูกค้าเก่า และตอนกรอง)
+        const PRODUCT_MODEL_ALIASES = {
+            'Solis': {
+                'Solis 26': 'YM-Solis26', 'Solis26': 'YM-Solis26',
+                'Solis 65': 'YM-Solis 65', 'Solis105': 'YM-Solis105',
+                'Solis 105-ตู้แอร์': 'YM-Solis 105 Cabin', 'Solis75-ตู้แอร์': 'YM-Solis75 Cabin',
+                'Solis 110': 'YM-Solis110',
+                'YM-Solis30-45th': 'YM-Solis30', 'YM-Solis50-45th': 'YM-Solis50', 'YM-Solis75-45th': 'YM-Solis75'
+            }
+        };
+        function canonicalProductModel(category, model) {
+            const m = (PRODUCT_MODEL_ALIASES[category] || {});
+            return m[model] || model;
+        }
         function populateProductCategorySelect(selectId, allLabel) {
             const sel = document.getElementById(selectId);
             const categories = Object.keys(PRODUCT_CATALOG);
@@ -2445,6 +2459,7 @@
             const models = PRODUCT_CATALOG[category] || [];
             const placeholder = allLabel ? `<option value="ALL">${allLabel}</option>` : '<option value="">-- เลือกรุ่นรถ --</option>';
             sel.innerHTML = placeholder + models.map(m => `<option value="${m}">${m}</option>`).join('');
+            selected = canonicalProductModel(category, selected);
             if (selected && models.includes(selected)) sel.value = selected;
         }
         function toggleProductModelInputType(baseId, category) {
@@ -2497,7 +2512,8 @@
                 return { category: row.productCategory || '-', model: row.productModel || '-' };
             }
             const parts = String(row.product || '').split(' | ');
-            return { category: parts[0] || '-', model: parts.slice(1).join(' | ') || '-' };
+            const cat = parts[0] || '-';
+            return { category: cat, model: canonicalProductModel(cat, parts.slice(1).join(' | ')) || '-' };
         }
         function switchPage(name) {
             document.getElementById('page-add').style.display = (name === 'add') ? 'flex' : 'none';
